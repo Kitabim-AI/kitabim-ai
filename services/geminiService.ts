@@ -13,13 +13,13 @@ const getAIClient = () => {
  */
 export const extractUyghurText = async (base64Image: string): Promise<string> => {
   const ai = getAIClient();
-  
+
   const prompt = `Extract all Uyghur text from this image. 
   Rules: Maintain original formatting, use correct Uyghur Arabic script, ensure RTL order. 
   Output ONLY the extracted text.`;
 
   const response = await ai.models.generateContent({
-    model: 'gemini-flash-lite-latest', // Most cost-effective model for high-volume vision tasks
+    model: 'gemini-3-flash-preview', // Aligned with .env standard
     contents: {
       parts: [
         { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
@@ -57,12 +57,12 @@ const getRelevantContext = (question: string, content: string, maxChars: number 
     .substring(0, maxChars);
 };
 
-export const chatWithBook = async (question: string, bookContent: string, history: {role: string, text: string}[]): Promise<string> => {
+export const chatWithBook = async (question: string, bookContent: string, history: { role: string, text: string }[]): Promise<string> => {
   const ai = getAIClient();
-  
+
   // Minimize tokens by only sending relevant snippets
   const relevantContext = getRelevantContext(question, bookContent);
-  
+
   const systemInstruction = `You are a helpful assistant for Uyghur documents. 
   Answer based ONLY on this context:
   ---
@@ -71,7 +71,7 @@ export const chatWithBook = async (question: string, bookContent: string, histor
   Respond in Uyghur. Use RTL.`;
 
   const chat = ai.chats.create({
-    model: 'gemini-3-flash-preview', // Flash is cheaper for chat than Pro, and handles Uyghur well.
+    model: 'gemini-3-flash-preview', // Latest in this environment
     config: {
       systemInstruction,
       temperature: 0.7,

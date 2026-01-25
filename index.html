@@ -1,6 +1,6 @@
-
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,13 +12,100 @@
     body {
       font-family: 'Inter', system-ui, -apple-system, sans-serif;
     }
+
     .uyghur-text {
       font-family: 'Noto Sans Arabic', serif;
       direction: rtl;
       line-height: 1.8;
     }
+
+    .book-cover {
+      position: relative;
+      background: #fff;
+      box-shadow:
+        -1px 0 0 rgba(0, 0, 0, 0.05),
+        -2px 4px 16px rgba(0, 0, 0, 0.2),
+        -4px 8px 24px rgba(0, 0, 0, 0.1);
+      border-radius: 8px 2px 2px 8px;
+      overflow: hidden;
+      transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+      mask-image: linear-gradient(to right, black, black);
+    }
+
+    .book-cover::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 14%;
+      height: 100%;
+      background: linear-gradient(to left,
+          rgba(0, 0, 0, 0.3) 0%,
+          rgba(0, 0, 0, 0.1) 25%,
+          rgba(255, 255, 255, 0.15) 45%,
+          rgba(255, 255, 255, 0.05) 55%,
+          transparent 100%);
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    /* Edge highlight for the opening side (left) */
+    .book-cover::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 1px;
+      height: 100%;
+      background: linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.3), transparent);
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .book-cover:hover {
+      transform: translateY(-12px) scale(1.03) rotateY(-2deg);
+      box-shadow:
+        -2px 0 0 rgba(0, 0, 0, 0.05),
+        -8px 20px 40px rgba(0, 0, 0, 0.3),
+        -12px 30px 60px rgba(0, 0, 0, 0.15);
+    }
+
+    .book-spine-line {
+      position: absolute;
+      top: 0;
+      right: 14%;
+      width: 1.5px;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.15);
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .book-shelf-row {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 2rem;
+    }
+
+    @media (min-width: 768px) {
+      .book-shelf-row {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+
+    @media (min-width: 1024px) {
+      .book-shelf-row {
+        grid-template-columns: repeat(4, 1fr);
+      }
+    }
+
+    @media (min-width: 1280px) {
+      .book-shelf-row {
+        grid-template-columns: repeat(5, 1fr);
+      }
+    }
   </style>
-<script type="importmap">
+  <script type="importmap">
 {
   "imports": {
     "@google/genai": "https://esm.sh/@google/genai@^1.38.0",
@@ -29,10 +116,12 @@
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
+  <link rel="stylesheet" href="/index.css">
 </head>
+
 <body class="bg-slate-50 text-slate-900">
   <div id="root"></div>
-<script type="module" src="/index.tsx"></script>
+  <script type="module" src="/index.tsx"></script>
 </body>
+
 </html>

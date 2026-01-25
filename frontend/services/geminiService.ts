@@ -7,7 +7,9 @@ const getAIClient = () => {
   return new GoogleGenAI({ apiKey });
 };
 
-export const extractUyghurText = async (base64Image: string): Promise<string> => {
+const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+export const extractUyghurText = async (base64Image: string, retries = 5): Promise<string> => {
   const ai = getAIClient();
   const prompt = `Extract all text from this image accurately. 
   The text is in the Uyghur language (Arabic script).
@@ -19,69 +21,52 @@ export const extractUyghurText = async (base64Image: string): Promise<string> =>
   5. If there are tables or lists, represent them clearly.
   Output ONLY the extracted Uyghur text.`;
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
-    contents: {
-      parts: [
-        { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-        { text: prompt }
-      ]
-    },
-    config: {
-      temperature: 0.1,
-      topP: 0.95,
-      topK: 40
-    }
-  });
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview', // Flash is cheapest/latest in this env
+        contents: {
+          parts: [
+            { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
+            { text: prompt }
+          ]
+        },
+        config: {
+          temperature: 0.1,
+          topP: 0.95,
+          topK: 40
+        }
+      });
 
-  return response.text || '';
+      return response.text || '';
+    } catch (error: any) {
+      const isOverloaded = error?.message?.includes('503') || error?.message?.includes('overloaded') || error?.message?.includes('429');
+      if (isOverloaded && attempt < retries - 1) {
+        // More aggressive backoff for parallel processing: 2s, 4s, 8s, 16s...
+        const waitTime = Math.pow(2, attempt + 1) * 1000 + Math.random() * 2000;
+        console.warn(`Gemini API busy (503/429). Retrying in ${Math.round(waitTime)}ms... (Attempt ${attempt + 1}/${retries})`);
+        await sleep(waitTime);
+        continue;
+      }
+      throw error;
+    }
+  }
+  return '';
 };
 
-const getRelevantContext = (question: string, content: string, maxChars: number = 8000): string => {
-  const keywords = question.toLowerCase().split(' ').filter(w => w.length > 3);
-  if (keywords.length === 0 || content.length <= maxChars) return content.substring(0, maxChars);
+export const chatWithBook = async (question: string, bookId: string, currentPage?: number): Promise<string> => {
+  try {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bookId, question, currentPage })
+    });
 
-  const paragraphs = content.split('\n\n');
-  const scoredParagraphs = paragraphs.map(p => {
-    let score = 0;
-    keywords.forEach(k => { if (p.toLowerCase().includes(k)) score++; });
-    return { text: p, score };
-  });
-
-  return scoredParagraphs
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 8)
-    .map(p => p.text)
-    .join('\n\n')
-    .substring(0, maxChars);
-};
-
-export const chatWithBook = async (question: string, bookContent: string, history: { role: string, text: string }[]): Promise<string> => {
-  const ai = getAIClient();
-  const relevantContext = getRelevantContext(question, bookContent);
-
-  const systemInstruction = `You are Kitabim AI, a professional academic assistant specializing in Uyghur literature and documents.
-  Your goal is to provide high-precision answers based on the provided text context.
-  
-  Context Content:
-  ---
-  ${relevantContext}
-  ---
-  
-  Instructions:
-  1. Base your answer strictly on the provided context.
-  2. If the answer is not in the context, politely state that in Uyghur.
-  3. Respond in professional, academic Uyghur.
-  4. Ensure your output is correctly formatted for Right-to-Left (RTL) display.`;
-
-  const chat = ai.chats.create({
-    model: 'gemini-3-pro-preview',
-    config: {
-      systemInstruction,
-      temperature: 0.3,
-    }
-  });
-
-  const response = await chat.sendMessage({ message: question });
-  return response.text || "ئەپسۇس، جاۋاب تاپالمىدىم.";
+    if (!response.ok) throw new Error("Chat request failed");
+    const data = await response.json();
+    return data.answer;
+  } catch (err) {
+    console.error("Chat Error:", err);
+    return "ئەپسۇس، جاۋاب تاپالمىدىم.";
+  }
 };

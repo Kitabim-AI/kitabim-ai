@@ -1,5 +1,5 @@
 
-import { Book } from '../types';
+import { Book, PaginatedBooks } from '../types';
 
 const API_BASE = '/api';
 
@@ -17,26 +17,53 @@ export const PersistenceService = {
   },
 
   async saveBookGlobally(book: Book): Promise<void> {
-    try {
-      await fetch(`${API_BASE}/books`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(book),
-      });
-    } catch (error) {
-      console.error("Failed to save book to backend", error);
+    const response = await fetch(`${API_BASE}/books`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(book),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to save book: ${response.status} ${errorText}`);
     }
   },
 
-  async getGlobalLibrary(): Promise<Book[]> {
+  async getGlobalLibrary(page: number = 1, pageSize: number = 10, q?: string, sortBy: string = 'title', order: number = 1): Promise<PaginatedBooks> {
     try {
-      const response = await fetch(`${API_BASE}/books`);
-      if (!response.ok) return [];
+      let url = `${API_BASE}/books?page=${page}&pageSize=${pageSize}&sortBy=${sortBy}&order=${order}`;
+      if (q) url += `&q=${encodeURIComponent(q)}`;
+
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("Failed to fetch");
       const data = await response.json();
-      return data.map((b: any) => ({ ...b, uploadDate: new Date(b.uploadDate) }));
+      return {
+        ...data,
+        books: data.books.map((b: any) => ({
+          ...b,
+          uploadDate: new Date(b.uploadDate),
+          lastUpdated: b.lastUpdated ? new Date(b.lastUpdated) : null
+        }))
+      };
     } catch (error) {
       console.error("Failed to fetch library", error);
-      return [];
+      return { books: [], total: 0, page, pageSize };
+    }
+  },
+
+  async getBookById(id: string): Promise<Book | null> {
+    try {
+      const response = await fetch(`${API_BASE}/books/${id}`);
+      if (!response.ok) throw new Error("Failed to fetch book");
+      const b = await response.json();
+      return {
+        ...b,
+        uploadDate: new Date(b.uploadDate),
+        lastUpdated: b.lastUpdated ? new Date(b.lastUpdated) : null
+      };
+    } catch (error) {
+      console.error("Failed to fetch book by id", error);
+      return null;
     }
   },
 
@@ -47,6 +74,36 @@ export const PersistenceService = {
       });
     } catch (error) {
       console.error("Failed to delete book from backend", error);
+    }
+  },
+
+  /**
+   * Uploads a PDF to the backend for server-side processing.
+   */
+  async uploadPdf(file: File): Promise<string> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${API_BASE}/books/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Upload failed: ${response.status} ${errorText}`);
+    }
+
+    const data = await response.json();
+    return data.bookId;
+  },
+
+  async reprocessBook(bookId: string): Promise<void> {
+    const response = await fetch(`${API_BASE}/books/${bookId}/reprocess`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      throw new Error("Failed to start reprocessing");
     }
   }
 };

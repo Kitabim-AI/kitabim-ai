@@ -1,5 +1,9 @@
-
 fastapi
 uvicorn
 motor
 pydantic
+python-multipart
+pymupdf
+google-generativeai
+python-dotenv
+numpy
