@@ -9,10 +9,6 @@ export const getPageCount = async (file: File): Promise<number> => {
   return pdf.numPages;
 };
 
-/**
- * Generates a SHA-256 hash of the file content.
- * This acts as the unique "Primary Key" in the Document DB.
- */
 export const generateFileHash = async (file: File): Promise<string> => {
   const arrayBuffer = await file.arrayBuffer();
   const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
