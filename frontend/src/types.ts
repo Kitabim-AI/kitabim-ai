@@ -25,6 +25,7 @@ export interface Book {
 export interface PaginatedBooks {
   books: Book[];
   total: number;
+  totalReady: number;
   page: number;
   pageSize: number;
 }

@@ -63,6 +63,7 @@ class Book(BaseModel):
 class PaginatedBooks(BaseModel):
     books: List[Book]
     total: int
+    totalReady: int
     page: int
     pageSize: int
 
@@ -370,6 +371,7 @@ async def get_books(
         }
     
     total = await db.books.count_documents(query)
+    totalReady = await db.books.count_documents({"status": "ready"})
     
     # EXCLUDE heavy fields: content, results.text, results.embedding
     projection = {
@@ -390,6 +392,7 @@ async def get_books(
     return {
         "books": formatted_books,
         "total": total,
+        "totalReady": totalReady,
         "page": page,
         "pageSize": pageSize
     }

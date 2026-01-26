@@ -1,7 +1,7 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './frontend/App';
+import App from './frontend/src/App';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
