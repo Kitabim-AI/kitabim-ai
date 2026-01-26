@@ -25,9 +25,13 @@ const App: React.FC = () => {
   const [tempPageText, setTempPageText] = useState('');
   const [fontSize, setFontSize] = useState(24);
 
-  const [editingBookTagsId, setEditingBookTagsId] = useState<string | null>(null);
-  const [editingTagsList, setEditingTagsList] = useState<string[]>([]);
-  const [tempTags, setTempTags] = useState('');
+  const [editingBookSeriesId, setEditingBookSeriesId] = useState<string | null>(null);
+  const [editingSeriesList, setEditingSeriesList] = useState<string[]>([]);
+  const [tempSeries, setTempSeries] = useState('');
+
+  const [editingBookCategoriesId, setEditingBookCategoriesId] = useState<string | null>(null);
+  const [editingCategoriesList, setEditingCategoriesList] = useState<string[]>([]);
+  const [tempCategories, setTempCategories] = useState('');
   const loaderRef = React.useRef<HTMLDivElement>(null);
 
   const [modal, setModal] = useState<{
@@ -77,7 +81,8 @@ const App: React.FC = () => {
     openReader,
     saveCorrections,
     handleDeleteBook,
-    handleSaveTags,
+    handleSaveSeries,
+    handleSaveCategories,
   } = useBookActions(refreshLibrary, setBooks, setSelectedBook, setView, setModal);
 
   // Sync selectedBook with fresh data from the books list
@@ -140,13 +145,21 @@ const App: React.FC = () => {
             onOpenReader={(book) => openReader(book, setEditContent, setChatMessages, setCurrentPage)}
             onReprocess={handleReprocess}
             onDeleteBook={(id) => handleDeleteBook(id, selectedBook?.id)}
-            editingBookTagsId={editingBookTagsId}
-            setEditingBookTagsId={setEditingBookTagsId}
-            editingTagsList={editingTagsList}
-            setEditingTagsList={setEditingTagsList}
-            tempTags={tempTags}
-            setTempTags={setTempTags}
-            handleSaveTags={(id, tags) => handleSaveTags(id, tags, setEditingBookTagsId, setEditingTagsList)}
+            editingBookSeriesId={editingBookSeriesId}
+            setEditingBookSeriesId={setEditingBookSeriesId}
+            editingSeriesList={editingSeriesList}
+            setEditingSeriesList={setEditingSeriesList}
+            tempSeries={tempSeries}
+            setTempSeries={setTempSeries}
+            handleSaveSeries={(id, series) => handleSaveSeries(id, series, setEditingBookSeriesId, setEditingSeriesList)}
+
+            editingBookCategoriesId={editingBookCategoriesId}
+            setEditingBookCategoriesId={setEditingBookCategoriesId}
+            editingCategoriesList={editingCategoriesList}
+            setEditingCategoriesList={setEditingCategoriesList}
+            tempCategories={tempCategories}
+            setTempCategories={setTempCategories}
+            handleSaveCategories={(id, cats) => handleSaveCategories(id, cats, setEditingBookCategoriesId, setEditingCategoriesList)}
           />
         )}
 

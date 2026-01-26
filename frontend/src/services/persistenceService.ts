@@ -47,7 +47,7 @@ export const PersistenceService = {
       };
     } catch (error) {
       console.error("Failed to fetch library", error);
-      return { books: [], total: 0, page, pageSize };
+      return { books: [], total: 0, totalReady: 0, page, pageSize };
     }
   },
 
@@ -107,15 +107,20 @@ export const PersistenceService = {
     }
   },
 
-  async updateBookTags(bookId: string, tags: string[]): Promise<void> {
+  async updateBookMetadata(bookId: string, updates: Partial<Book>): Promise<void> {
     const response = await fetch(`${API_BASE}/books/${bookId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tags })
+      body: JSON.stringify(updates)
     });
 
     if (!response.ok) {
-      throw new Error("Failed to update tags");
+      throw new Error("Failed to update book metadata");
     }
+  },
+
+  async updateBookTags(bookId: string, tags: string[]): Promise<void> {
+    // Legacy support or specific tag update
+    return this.updateBookMetadata(bookId, { tags });
   }
 };

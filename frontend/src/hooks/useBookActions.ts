@@ -155,12 +155,36 @@ export const useBookActions = (
   const handleSaveTags = async (bookId: string, tagsArray: string[], setEditingBookTagsId: any, setEditingTagsList: any) => {
     try {
       const tags = tagsArray.map(t => t.trim()).filter(Boolean);
-      await PersistenceService.updateBookTags(bookId, tags);
+      await PersistenceService.updateBookMetadata(bookId, { tags });
       setBooks(prev => prev.map(b => b.id === bookId ? { ...b, tags } : b));
       setEditingBookTagsId(null);
       setEditingTagsList([]);
     } catch (e) {
       console.error("Failed to save tags", e);
+    }
+  };
+
+  const handleSaveSeries = async (bookId: string, seriesArray: string[], setEditingId: any, setEditingList: any) => {
+    try {
+      const series = seriesArray.map(t => t.trim()).filter(Boolean);
+      await PersistenceService.updateBookMetadata(bookId, { series });
+      setBooks(prev => prev.map(b => b.id === bookId ? { ...b, series } : b));
+      setEditingId(null);
+      setEditingList([]);
+    } catch (e) {
+      console.error("Failed to save series", e);
+    }
+  };
+
+  const handleSaveCategories = async (bookId: string, categoriesArray: string[], setEditingId: any, setEditingList: any) => {
+    try {
+      const categories = categoriesArray.map(t => t.trim()).filter(Boolean);
+      await PersistenceService.updateBookMetadata(bookId, { categories });
+      setBooks(prev => prev.map(b => b.id === bookId ? { ...b, categories } : b));
+      setEditingId(null);
+      setEditingList([]);
+    } catch (e) {
+      console.error("Failed to save categories", e);
     }
   };
 
@@ -174,5 +198,7 @@ export const useBookActions = (
     saveCorrections,
     handleDeleteBook,
     handleSaveTags,
+    handleSaveSeries,
+    handleSaveCategories,
   };
 };
