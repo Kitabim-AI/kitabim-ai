@@ -6,7 +6,7 @@ import {
   Loader2, CheckCircle2, X, MessageSquare,
   Globe, Database, Zap, Trash2, AlertCircle, RotateCcw,
   ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
-  Minus, Plus, Type
+  Minus, Plus, Type, Tag
 } from 'lucide-react';
 import { chatWithBook } from './services/geminiService';
 import { PersistenceService } from './services/persistenceService';
@@ -28,6 +28,9 @@ const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<number | null>(null);
   const [editingPageNum, setEditingPageNum] = useState<number | null>(null);
   const [tempPageText, setTempPageText] = useState('');
+  const [editingBookTagsId, setEditingBookTagsId] = useState<string | null>(null);
+  const [editingTagsList, setEditingTagsList] = useState<string[]>([]);
+  const [tempTags, setTempTags] = useState('');
   const [isCheckingGlobal, setIsCheckingGlobal] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -35,14 +38,40 @@ const App: React.FC = () => {
   const [fontSize, setFontSize] = useState(24); // Default font size in px
   const [sortConfig, setSortConfig] = useState<{ key: 'title' | 'lastUpdated' | 'status' | 'uploadDate'; direction: 'asc' | 'desc' }>(() => {
     const saved = sessionStorage.getItem('kitabim_sort_config');
-    return saved ? JSON.parse(saved) : { key: 'lastUpdated', direction: 'desc' };
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed.key === 'lastUpdated') return { key: 'uploadDate', direction: 'desc' };
+      return parsed;
+    }
+    return { key: 'uploadDate', direction: 'desc' };
   });
+
+  // Force migration of legacy sort key -> uploadDate
+  useEffect(() => {
+    if (sortConfig.key === 'lastUpdated') {
+      setSortConfig(prev => ({ ...prev, key: 'uploadDate' }));
+      sessionStorage.setItem('kitabim_sort_config', JSON.stringify({ key: 'uploadDate', direction: 'desc' }));
+    }
+  }, [sortConfig.key]);
 
   // Shelf (Global Library) Pagination
   const [shelfPage, setShelfPage] = useState(1);
   const [hasMoreShelf, setHasMoreShelf] = useState(true);
   const [isLoadingMoreShelf, setIsLoadingMoreShelf] = useState(false);
   const loaderRef = useRef<HTMLDivElement>(null);
+
+  // Ref for auto-scrolling chat
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [chatMessages, isChatting, view]);
 
   useEffect(() => {
     sessionStorage.setItem('kitabim_sort_config', JSON.stringify(sortConfig));
@@ -68,8 +97,8 @@ const App: React.FC = () => {
       const currentViewSize = isShelf ? SHELF_PAGE_SIZE : pageSize;
       const currentViewPage = isShelf ? 1 : page;
 
-      const sortBy = isShelf ? 'title' : sortConfig.key;
-      const order = isShelf ? 1 : (sortConfig.direction === 'asc' ? 1 : -1);
+      const sortBy = isShelf ? 'uploadDate' : sortConfig.key;
+      const order = isShelf ? -1 : (sortConfig.direction === 'asc' ? 1 : -1);
 
       const response = await PersistenceService.getGlobalLibrary(currentViewPage, currentViewSize, searchQuery, sortBy, order);
       setBooks(response.books);
@@ -91,16 +120,14 @@ const App: React.FC = () => {
     setIsLoadingMoreShelf(true);
     const nextPage = shelfPage + 1;
     try {
-      // Shelf is ALWAYS sorted by title ASC on server
-      const response = await PersistenceService.getGlobalLibrary(nextPage, SHELF_PAGE_SIZE, searchQuery, 'title', 1);
+      // Shelf is sorted by uploadDate DESC
+      const response = await PersistenceService.getGlobalLibrary(nextPage, SHELF_PAGE_SIZE, searchQuery, 'uploadDate', -1);
       if (response.books.length > 0) {
         setBooks(prev => {
           // Avoid duplicates
           const existingIds = prev.map(b => b.id);
           const newBooks = response.books.filter(b => !existingIds.includes(b.id));
           const updated = [...prev, ...newBooks];
-
-          // Update hasMore based on the newly formed list
           setHasMoreShelf(updated.length < response.total);
           return updated;
         });
@@ -292,7 +319,17 @@ const App: React.FC = () => {
 
     try {
       const bookId = (view === 'global-chat') ? 'global' : selectedBook!.id;
-      const aiResponse = await chatWithBook(chatInput, bookId, view === 'reader' ? (currentPage || undefined) : undefined);
+      // We pass the current chatMessages + the new userMsg (since state update depends on previous)
+      // Actually, since setChatMessages is async, 'chatMessages' here is the old state.
+      // We append the new userMsg to it for the history.
+      const historyToSend = [...chatMessages, userMsg];
+
+      const aiResponse = await chatWithBook(
+        userMsg.text,
+        bookId,
+        view === 'reader' ? (currentPage || undefined) : undefined,
+        historyToSend
+      );
       setChatMessages(prev => [...prev, { role: 'model', text: aiResponse }]);
     } catch (err) {
       setChatMessages(prev => [...prev, { role: 'model', text: "كەچۈرۈڭ، جاۋاب بېرەلمىدىم." }]);
@@ -362,6 +399,18 @@ const App: React.FC = () => {
         setModal(prev => ({ ...prev, isOpen: false }));
       }
     });
+  };
+
+  const handleSaveTags = async (bookId: string, tagsArray: string[]) => {
+    try {
+      const tags = tagsArray.map(t => t.trim()).filter(Boolean);
+      await PersistenceService.updateBookTags(bookId, tags);
+      setBooks(prev => prev.map(b => b.id === bookId ? { ...b, tags } : b));
+      setEditingBookTagsId(null);
+      setEditingTagsList([]);
+    } catch (e) {
+      console.error("Failed to save tags", e);
+    }
   };
 
   return (
@@ -560,11 +609,11 @@ const App: React.FC = () => {
                           </div>
                         </div>
                       </th>
-                      <th className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition-colors group" onClick={() => toggleSort('lastUpdated')}>
+                      <th className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition-colors group" onClick={() => toggleSort('uploadDate')}>
                         <div className="flex items-center gap-2">
-                          Last Updated
-                          <div className={`transition-opacity ${sortConfig.key === 'lastUpdated' ? 'opacity-100' : 'opacity-0 group-hover:opacity-50'}`}>
-                            {sortConfig.key === 'lastUpdated' && sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                          Uploaded Date
+                          <div className={`transition-opacity ${sortConfig.key === 'uploadDate' ? 'opacity-100' : 'opacity-0 group-hover:opacity-50'}`}>
+                            {sortConfig.key === 'uploadDate' && sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                           </div>
                         </div>
                       </th>
@@ -577,6 +626,7 @@ const App: React.FC = () => {
                         </div>
                       </th>
                       <th className="px-6 py-4">Pipeline Progress</th>
+                      <th className="px-6 py-4">Tags (Series)</th>
                       <th className="px-6 py-4">Action</th>
                     </tr>
                   </thead>
@@ -595,10 +645,10 @@ const App: React.FC = () => {
                         </td>
                         <td className="px-6 py-4">
                           <div className="text-sm font-medium text-slate-700">
-                            {new Date(book.lastUpdated || book.uploadDate).toLocaleDateString()}
+                            {new Date(book.uploadDate).toLocaleDateString()}
                           </div>
                           <div className="text-[10px] text-slate-400">
-                            {new Date(book.lastUpdated || book.uploadDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {new Date(book.uploadDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </div>
                         </td>
                         <td className="px-6 py-4">
@@ -632,6 +682,111 @@ const App: React.FC = () => {
                               )}
                             </div>
                           </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          {editingBookTagsId === book.id ? (
+                            <div className="flex flex-col gap-2 min-w-[200px]">
+                              <div className="flex flex-wrap gap-1 max-w-[250px]">
+                                {editingTagsList.map((tag, idx) => (
+                                  <span key={idx} className="flex items-center gap-1.5 px-2 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-bold rounded-md border border-indigo-100 group/tag">
+                                    {tag}
+                                    <button
+                                      onClick={() => setEditingTagsList(prev => prev.filter((_, i) => i !== idx))}
+                                      className="text-indigo-300 hover:text-red-500 transition-colors"
+                                    >
+                                      <X size={10} />
+                                    </button>
+                                  </span>
+                                ))}
+                              </div>
+                              <div className="flex gap-1.5 items-center">
+                                <input
+                                  autoFocus
+                                  type="text"
+                                  value={tempTags}
+                                  onChange={e => {
+                                    if (e.target.value.endsWith(',')) {
+                                      const newTag = e.target.value.slice(0, -1).trim();
+                                      if (newTag && !editingTagsList.includes(newTag)) {
+                                        setEditingTagsList(prev => [...prev, newTag]);
+                                      }
+                                      setTempTags('');
+                                    } else {
+                                      setTempTags(e.target.value);
+                                    }
+                                  }}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      const newTag = tempTags.trim();
+                                      if (newTag) {
+                                        if (!editingTagsList.includes(newTag)) {
+                                          setEditingTagsList(prev => [...prev, newTag]);
+                                          setTempTags('');
+                                        }
+                                      } else {
+                                        handleSaveTags(book.id, editingTagsList);
+                                      }
+                                    } else if (e.key === 'Backspace' && !tempTags && editingTagsList.length > 0) {
+                                      setEditingTagsList(prev => prev.slice(0, -1));
+                                    }
+                                  }}
+                                  placeholder="Add tag..."
+                                  className="px-2 py-1.5 text-xs border border-slate-200 rounded-lg bg-white flex-grow outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                />
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => {
+                                      const finalTags = [...editingTagsList];
+                                      const pendingTag = tempTags.trim();
+                                      if (pendingTag && !finalTags.includes(pendingTag)) {
+                                        finalTags.push(pendingTag);
+                                      }
+                                      handleSaveTags(book.id, finalTags);
+                                    }}
+                                    className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm transition-all active:scale-95"
+                                    title="Save Tags"
+                                  >
+                                    <Save size={14} />
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setEditingBookTagsId(null);
+                                      setEditingTagsList([]);
+                                    }}
+                                    className="p-2 bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 transition-colors"
+                                    title="Cancel"
+                                  >
+                                    <X size={14} />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div
+                              onClick={() => {
+                                setEditingBookTagsId(book.id);
+                                setEditingTagsList([...(book.tags || [])]);
+                                setTempTags('');
+                              }}
+                              className="cursor-pointer group/tags min-h-[24px] flex items-center hover:bg-slate-50 p-1 rounded-md transition-colors"
+                            >
+                              {book.tags && book.tags.length > 0 ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {book.tags.map((t, idx) => (
+                                    <span key={idx} className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-bold rounded-md border border-indigo-100 group-hover/tags:border-indigo-200">
+                                      {t}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1 text-slate-300 group-hover/tags:text-indigo-400 transition-colors">
+                                  <Tag size={12} />
+                                  <span className="text-[10px] italic">Add tags...</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-4">
@@ -734,6 +889,15 @@ const App: React.FC = () => {
               <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                 <div>
                   <h2 className="font-bold text-slate-900">{selectedBook.title}</h2>
+                  {selectedBook.tags && selectedBook.tags.length > 0 && (
+                    <div className="flex gap-1 mt-1">
+                      {selectedBook.tags.map((tag, i) => (
+                        <span key={i} className="text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-100 font-medium">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   {selectedBook.status !== 'processing' && (
@@ -881,7 +1045,7 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="flex-grow overflow-y-auto space-y-4 pr-2 mb-4 scroll-smooth">
+                <div ref={chatContainerRef} className="flex-grow overflow-y-auto space-y-4 pr-2 mb-4 scroll-smooth">
                   {chatMessages.length === 0 && (
                     <div className="bg-white/5 border border-white/5 rounded-2xl p-6 text-center">
                       <p className="text-sm text-white/60 leading-relaxed uyghur-text">
@@ -928,126 +1092,131 @@ const App: React.FC = () => {
               </div>
             </div>
           </div>
-        )}
+        )
+        }
 
-        {view === 'global-chat' && (
-          <div className="h-[calc(100vh-140px)] max-w-4xl mx-auto w-full flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="bg-indigo-950 text-white p-8 rounded-3xl shadow-2xl flex flex-col h-full border border-white/5 relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full -mr-32 -mt-32 blur-[100px] pointer-events-none"></div>
-              <div className="absolute bottom-0 left-0 w-64 h-64 bg-indigo-400/5 rounded-full -ml-32 -mb-32 blur-[80px] pointer-events-none"></div>
+        {
+          view === 'global-chat' && (
+            <div className="h-[calc(100vh-140px)] max-w-4xl mx-auto w-full flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="bg-indigo-950 text-white p-8 rounded-3xl shadow-2xl flex flex-col h-full border border-white/5 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full -mr-32 -mt-32 blur-[100px] pointer-events-none"></div>
+                <div className="absolute bottom-0 left-0 w-64 h-64 bg-indigo-400/5 rounded-full -ml-32 -mb-32 blur-[80px] pointer-events-none"></div>
 
-              <div className="flex items-center justify-between mb-8 relative">
-                <div className="flex items-center gap-4">
-                  <div className="bg-indigo-500/20 p-3 rounded-2xl border border-indigo-500/30">
-                    <Globe className="w-6 h-6 text-indigo-300" />
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-bold">Kitabim Global Mind</h3>
-                    <p className="text-xs text-indigo-300 font-bold uppercase tracking-widest">Searching across {books.filter(b => b.status === 'ready').length} processed books</p>
-                  </div>
-                </div>
-                <button onClick={() => setView('library')} className="p-2 hover:bg-white/10 rounded-xl transition-colors text-indigo-300 hover:text-white">
-                  <X size={20} />
-                </button>
-              </div>
-
-              <div className="flex-grow overflow-y-auto mb-6 space-y-6 pr-2 scrollbar-hide">
-                {chatMessages.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-center px-10">
-                    <div className="w-20 h-20 bg-indigo-500/10 rounded-full flex items-center justify-center mb-6 border border-white/5 animate-bounce">
-                      <MessageSquare className="text-indigo-400 w-10 h-10" />
+                <div className="flex items-center justify-between mb-8 relative">
+                  <div className="flex items-center gap-4">
+                    <div className="bg-indigo-500/20 p-3 rounded-2xl border border-indigo-500/30">
+                      <Globe className="w-6 h-6 text-indigo-300" />
                     </div>
-                    <h4 className="text-lg font-bold text-white mb-2">ئەلئامان كىتابخانىسىغا خۇش كەپسىز!</h4>
-                    <p className="text-indigo-300 text-sm max-w-sm leading-relaxed">
-                      كۈتۈپخانىڭىزدىكى بارلىق كىتابلارنى بىراقلا ئوقۇپ، سىزگە جاۋاب بېرىش تەييار. خالىغان سوئالنى سورىسىڭىز بولىدۇ.
-                    </p>
+                    <div>
+                      <h3 className="text-xl font-bold">Kitabim Global Mind</h3>
+                      <p className="text-xs text-indigo-300 font-bold uppercase tracking-widest">Searching across {books.filter(b => b.status === 'ready').length} processed books</p>
+                    </div>
                   </div>
-                ) : (
-                  chatMessages.map((msg, idx) => (
-                    <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-[85%] p-5 rounded-3xl text-sm leading-relaxed shadow-sm ${msg.role === 'user'
-                        ? 'bg-indigo-600 text-white rounded-tr-none'
-                        : 'bg-white/5 text-indigo-50 border border-white/5 rounded-tl-none uyghur-text text-lg'
-                        }`}>
-                        {msg.text}
+                  <button onClick={() => setView('library')} className="p-2 hover:bg-white/10 rounded-xl transition-colors text-indigo-300 hover:text-white">
+                    <X size={20} />
+                  </button>
+                </div>
+
+                <div ref={chatContainerRef} className="flex-grow overflow-y-auto mb-6 space-y-6 pr-2 scrollbar-hide">
+                  {chatMessages.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-center px-10">
+                      <div className="w-20 h-20 bg-indigo-500/10 rounded-full flex items-center justify-center mb-6 border border-white/5 animate-bounce">
+                        <MessageSquare className="text-indigo-400 w-10 h-10" />
+                      </div>
+                      <h4 className="text-lg font-bold text-white mb-2">ئەلئامان كىتابخانىسىغا خۇش كەپسىز!</h4>
+                      <p className="text-indigo-300 text-sm max-w-sm leading-relaxed">
+                        كۈتۈپخانىڭىزدىكى بارلىق كىتابلارنى بىراقلا ئوقۇپ، سىزگە جاۋاب بېرىش تەييار. خالىغان سوئالنى سورىسىڭىز بولىدۇ.
+                      </p>
+                    </div>
+                  ) : (
+                    chatMessages.map((msg, idx) => (
+                      <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[85%] p-5 rounded-3xl text-sm leading-relaxed shadow-sm ${msg.role === 'user'
+                          ? 'bg-indigo-600 text-white rounded-tr-none'
+                          : 'bg-white/5 text-indigo-50 border border-white/5 rounded-tl-none uyghur-text text-lg'
+                          }`}>
+                          {msg.text}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  {isChatting && (
+                    <div className="flex justify-start">
+                      <div className="bg-white/5 border border-white/5 p-4 rounded-2xl rounded-tl-none flex gap-1.5 items-center">
+                        <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" />
+                        <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:0.2s]" />
+                        <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:0.4s]" />
                       </div>
                     </div>
-                  ))
-                )}
-                {isChatting && (
-                  <div className="flex justify-start">
-                    <div className="bg-white/5 border border-white/5 p-4 rounded-2xl rounded-tl-none flex gap-1.5 items-center">
-                      <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" />
-                      <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:0.2s]" />
-                      <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:0.4s]" />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="relative">
-                <input
-                  type="text"
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                  placeholder="كۈتۈپخانىدىكى بارلىق كىتابلاردىن سوئال سوراش..."
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-6 pr-14 text-white focus:ring-4 focus:ring-indigo-500/20 outline-none transition-all uyghur-text text-lg"
-                  dir="rtl"
-                />
-                <button
-                  onClick={handleSendMessage}
-                  disabled={isChatting}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 p-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 transition-all shadow-lg active:scale-95 disabled:opacity-50"
-                >
-                  <Send size={20} />
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-        {modal.isOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => modal.type === 'alert' && setModal(prev => ({ ...prev, isOpen: false }))}></div>
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md relative z-10 overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-100">
-              <div className="p-8">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className={`p-2 rounded-xl ${modal.type === 'confirm' ? 'bg-amber-100 text-amber-600' : 'bg-red-100 text-red-600'}`}>
-                    <AlertCircle size={24} />
-                  </div>
-                  <h3 className="text-xl font-bold text-slate-900">{modal.title}</h3>
-                </div>
-                <p className="text-slate-600 leading-relaxed mb-8">
-                  {modal.message}
-                </p>
-                <div className="flex items-center gap-3">
-                  {modal.type === 'confirm' && (
-                    <button
-                      onClick={() => setModal(prev => ({ ...prev, isOpen: false }))}
-                      className="flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl transition-colors"
-                    >
-                      Cancel
-                    </button>
                   )}
+                </div>
+
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                    placeholder="كۈتۈپخانىدىكى بارلىق كىتابلاردىن سوئال سوراش..."
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-6 pr-14 text-white focus:ring-4 focus:ring-indigo-500/20 outline-none transition-all uyghur-text text-lg"
+                    dir="rtl"
+                  />
                   <button
-                    onClick={() => {
-                      if (modal.onConfirm) {
-                        modal.onConfirm();
-                      } else {
-                        setModal(prev => ({ ...prev, isOpen: false }));
-                      }
-                    }}
-                    className={`flex-1 py-3 px-4 text-white font-bold rounded-2xl transition-all shadow-lg active:scale-95 ${modal.type === 'confirm' ? 'bg-red-500 hover:bg-red-600 shadow-red-100' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-100'}`}
+                    onClick={handleSendMessage}
+                    disabled={isChatting}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 p-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 transition-all shadow-lg active:scale-95 disabled:opacity-50"
                   >
-                    {modal.type === 'confirm' ? 'Delete Permanently' : 'Understood'}
+                    <Send size={20} />
                   </button>
                 </div>
               </div>
             </div>
-          </div>
-        )}
-      </main>
-    </div>
+          )
+        }
+        {
+          modal.isOpen && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => modal.type === 'alert' && setModal(prev => ({ ...prev, isOpen: false }))}></div>
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md relative z-10 overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-100">
+                <div className="p-8">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className={`p-2 rounded-xl ${modal.type === 'confirm' ? 'bg-amber-100 text-amber-600' : 'bg-red-100 text-red-600'}`}>
+                      <AlertCircle size={24} />
+                    </div>
+                    <h3 className="text-xl font-bold text-slate-900">{modal.title}</h3>
+                  </div>
+                  <p className="text-slate-600 leading-relaxed mb-8">
+                    {modal.message}
+                  </p>
+                  <div className="flex items-center gap-3">
+                    {modal.type === 'confirm' && (
+                      <button
+                        onClick={() => setModal(prev => ({ ...prev, isOpen: false }))}
+                        className="flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        if (modal.onConfirm) {
+                          modal.onConfirm();
+                        } else {
+                          setModal(prev => ({ ...prev, isOpen: false }));
+                        }
+                      }}
+                      className={`flex-1 py-3 px-4 text-white font-bold rounded-2xl transition-all shadow-lg active:scale-95 ${modal.type === 'confirm' ? 'bg-red-500 hover:bg-red-600 shadow-red-100' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-100'}`}
+                    >
+                      {modal.type === 'confirm' ? 'Delete Permanently' : 'Understood'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        }
+      </main >
+    </div >
   );
 };
 

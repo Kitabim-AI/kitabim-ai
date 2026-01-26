@@ -54,12 +54,12 @@ export const extractUyghurText = async (base64Image: string, retries = 5): Promi
   return '';
 };
 
-export const chatWithBook = async (question: string, bookId: string, currentPage?: number): Promise<string> => {
+export const chatWithBook = async (question: string, bookId: string, currentPage?: number, history: { role: string, text: string }[] = []): Promise<string> => {
   try {
     const response = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bookId, question, currentPage })
+      body: JSON.stringify({ bookId, question, currentPage, history })
     });
 
     if (!response.ok) throw new Error("Chat request failed");

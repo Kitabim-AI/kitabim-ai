@@ -105,5 +105,17 @@ export const PersistenceService = {
     if (!response.ok) {
       throw new Error("Failed to start reprocessing");
     }
+  },
+
+  async updateBookTags(bookId: string, tags: string[]): Promise<void> {
+    const response = await fetch(`${API_BASE}/books/${bookId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tags })
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to update tags");
+    }
   }
 };

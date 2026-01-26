@@ -58,6 +58,7 @@ class Book(BaseModel):
     lastUpdated: Optional[datetime] = None
     coverUrl: Optional[str] = None
     processingStep: Optional[str] = "ocr" # "ocr" or "rag"
+    tags: List[str] = []
 
 class PaginatedBooks(BaseModel):
     books: List[Book]
@@ -299,6 +300,13 @@ async def lifespan(app: FastAPI):
         print("🔍 Checking for books needing resume or retrofitting...")
         all_books = await db.books.find().to_list(2000)
         for book in all_books:
+            # RETROFIT: Ensure 'id' field exists
+            if "id" not in book:
+                book_id = str(book["_id"])
+                print(f"🆔 Retrofitting missing ID for book: {book.get('title', 'Unknown')} -> {book_id}")
+                await db.books.update_one({"_id": book["_id"]}, {"$set": {"id": book_id}})
+                book["id"] = book_id
+
             needs_resume = book["status"] == "processing"
             needs_cover = book["status"] == "ready" and (not book.get("coverUrl") or not os.path.exists(os.path.join(COVERS_DIR, f"{book['id']}.jpg")))
             needs_rag = book["status"] == "ready" and any(r.get("status") == "completed" and "embedding" not in r for r in book.get("results", []))
@@ -370,7 +378,7 @@ async def get_books(
         "results.embedding": 0
     }
     
-    books_cursor = db.books.find(query, projection).sort(sortBy, order).skip(skip).limit(pageSize)
+    books_cursor = db.books.find(query, projection).sort([(sortBy, order), ("_id", -1)]).skip(skip).limit(pageSize)
     books_list = await books_cursor.to_list(pageSize)
     
     formatted_books = []
@@ -503,8 +511,31 @@ async def chat_with_book_api(req: ChatRequest):
             book = await db.books.find_one({"id": req.bookId})
             if not book:
                 raise HTTPException(status_code=404, detail="Book not found")
-            print(f"💬 Chat Request: Book={req.bookId}, Question='{req.question[:50]}...'")
-            pages_to_search = [dict(r, bookTitle=book["title"]) for r in book.get("results", []) if r.get("status") == "completed"]
+            
+            # SERIES EXPANSION: Check for tags
+            related_books = [book]
+            tags = book.get("tags", [])
+            
+            if tags:
+                print(f"� Book has tags {tags}. Expanding search to related books...")
+                # Find all other books that share AT LEAST ONE of these tags
+                siblings = await db.books.find({
+                    "tags": {"$in": tags},
+                    "id": {"$ne": req.bookId} # Exclude current book to avoid duplication
+                }).to_list(100)
+                
+                if siblings:
+                    print(f"   found {len(siblings)} sibling books: {[b['title'] for b in siblings]}")
+                    related_books.extend(siblings)
+
+            print(f"�💬 Chat Request: Book={req.bookId} (Scope: {len(related_books)} books), Question='{req.question[:50]}...'")
+            
+            pages_to_search = []
+            for b in related_books:
+                for r in b.get("results", []):
+                    if r.get("status") == "completed":
+                        r["bookTitle"] = b["title"]
+                        pages_to_search.append(r)
 
         # 1. Get embedding for the question
         try:
@@ -575,9 +606,28 @@ async def chat_with_book_api(req: ChatRequest):
         model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-3-flash-preview")
         model = genai.GenerativeModel(model_name)
         
-        system_prompt = CHAT_SYSTEM_PROMPT.format(context=context)
+        # Prepare history for context
+        chat_history = []
+        if req.history:
+             # Limit to last 6 messages to keep context window manageable
+            for h in req.history[-6:]:
+                role = "user" if h.get("role") == "user" else "model"
+                chat_history.append({"role": role, "parts": [h.get("text")]})
         
-        response = await model.generate_content_async([system_prompt, req.question])
+        # Start chat with system instruction
+        chat = model.start_chat(history=chat_history)
+        
+        # We inject the RAG context into the USER's prompt invisibly so the model knows what to answer from.
+        # This is better than putting it in system prompt because it changes per-turn.
+        rag_prompt = f"""
+[CONTEXT START]
+{context}
+[CONTEXT END]
+
+Based on the context above (if relevant), answer the user's question.
+Question: {req.question}
+"""
+        response = await chat.send_message_async(rag_prompt)
         return {"answer": response.text}
         
     except Exception as e:
@@ -597,11 +647,21 @@ async def create_book(book: Book, background_tasks: BackgroundTasks):
     background_tasks.add_task(process_pdf_task, book.id)
     return {"status": "success"}
 
+from bson import ObjectId
+
 @app.put("/api/books/{book_id}")
 async def update_book(book_id: str, book_update: dict):
-    result = await db.books.update_one({"id": book_id}, {"$set": book_update})
-    if result.modified_count:
-        return {"status": "updated"}
+    # Try both custom id and MongoDB _id
+    query = {"$or": [{"id": book_id}]}
+    if len(book_id) == 24:
+        try:
+            query["$or"].append({"_id": ObjectId(book_id)})
+        except:
+            pass
+            
+    result = await db.books.update_one(query, {"$set": book_update})
+    if result.matched_count:
+        return {"status": "updated", "modified": result.modified_count > 0}
     raise HTTPException(status_code=404, detail="Book not found")
 
 @app.delete("/api/books/{book_id}")
@@ -611,7 +671,14 @@ async def delete_book(book_id: str):
     if os.path.exists(file_path):
         os.remove(file_path)
 
-    result = await db.books.delete_one({"id": book_id})
+    query = {"$or": [{"id": book_id}]}
+    if len(book_id) == 24:
+        try:
+            query["$or"].append({"_id": ObjectId(book_id)})
+        except:
+            pass
+
+    result = await db.books.delete_one(query)
     if result.deleted_count:
         return {"status": "deleted"}
     raise HTTPException(status_code=404, detail="Book not found")

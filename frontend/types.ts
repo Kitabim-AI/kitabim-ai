@@ -19,6 +19,7 @@ export interface Book {
   lastUpdated: Date;
   coverUrl?: string;
   processingStep?: 'ocr' | 'rag';
+  tags?: string[];
 }
 
 export interface PaginatedBooks {
