@@ -71,7 +71,9 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick, onDelete }) =
         <div className="flex items-center justify-end gap-1.5 mt-1 opacity-70">
           <span className="text-xs font-bold text-slate-500">{book.totalPages} Pages</span>
           <div className="w-1 h-1 rounded-full bg-slate-300" />
-          <span className="text-xs font-bold text-indigo-600">READY</span>
+          <span className={`text-xs font-bold ${book.status === 'ready' ? 'text-indigo-600' : 'text-amber-600'}`}>
+            {book.status.toUpperCase()}
+          </span>
         </div>
       </div>
     </div>

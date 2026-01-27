@@ -3,6 +3,7 @@ import fitz
 import asyncio
 import random
 import google.generativeai as genai
+import httpx
 from datetime import datetime
 from app.core.config import settings
 from app.db.mongodb import db_manager
@@ -89,23 +90,49 @@ async def process_pdf_task(book_id: str):
                         pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
                         img_bytes = pix.tobytes("jpeg")
                         
-                        for attempt in range(5):
+                        if settings.OCR_PROVIDER == "local":
+                            # Use UyghurOCR Local API
                             try:
-                                print(f"🚀 AI OCR Request: Book={book_id} Page={page_num} Attempt={attempt+1}")
-                                response = await model.generate_content_async([
-                                    {"mime_type": "image/jpeg", "data": img_bytes},
-                                    {"text": OCR_PROMPT}
-                                ])
-                                page_text = clean_uyghur_text(response.text)
-                                success = True
-                                break
+                                print(f"🖥️ Local OCR Request: Book={book_id} Page={page_num}")
+                                async with httpx.AsyncClient(timeout=60.0) as client:
+                                    files = {'file': (f"page_{page_num}.jpg", img_bytes, 'image/jpeg')}
+                                    data = {
+                                        'lang': 'ukij', 
+                                        'mode': 'line',
+                                        'book_name': current_book.get('title', 'Unknown'),
+                                        'page_num': page_num
+                                    }
+                                    url = f"{settings.LOCAL_OCR_URL.rstrip('/')}/api/ocr/recognize"
+                                    
+                                    response = await client.post(url, files=files, data=data)
+                                    if response.status_code == 200:
+                                        page_text = clean_uyghur_text(response.json().get("text", ""))
+                                        success = True
+                                    else:
+                                        page_text = f"[Local OCR Error: {response.status_code}]"
+                                        print(f"❌ Local OCR failed for {book_id} p{page_num}: {response.text}")
                             except Exception as e:
-                                if ("503" in str(e) or "overloaded" in str(e).lower()) and attempt < 4:
-                                    await asyncio.sleep((2 ** (attempt + 1)) + random.uniform(0, 1))
-                                    continue
-                                else:
-                                    page_text = f"[OCR Error: {str(e)}]"
+                                page_text = f"[Local OCR Connection Error: {str(e)}]"
+                                print(f"❌ Local OCR connection error: {e}")
+                        else:
+                            # Default: Use Gemini AI
+                            for attempt in range(5):
+                                try:
+                                    print(f"🚀 Gemini OCR Request: Book={book_id} Page={page_num} Attempt={attempt+1}")
+                                    response = await model.generate_content_async([
+                                        {"mime_type": "image/jpeg", "data": img_bytes},
+                                        {"text": OCR_PROMPT}
+                                    ])
+                                    page_text = clean_uyghur_text(response.text)
+                                    success = True
                                     break
+                                except Exception as e:
+                                    if ("503" in str(e) or "overloaded" in str(e).lower()) and attempt < 4:
+                                        await asyncio.sleep((2 ** (attempt + 1)) + random.uniform(0, 1))
+                                        continue
+                                    else:
+                                        page_text = f"[Gemini OCR Error: {str(e)}]"
+                                        break
                     
                     await db.books.update_one(
                         {"id": book_id, "results.pageNumber": page_num},

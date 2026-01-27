@@ -16,11 +16,17 @@ class Settings:
     DATABASE_NAME: str = "kitabim_ai_db"
     
     # Directories
-    UPLOADS_DIR: str = "uploads"
-    COVERS_DIR: str = "covers"
+    BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    DATA_DIR: str = os.path.join(BASE_DIR, "data")
+    UPLOADS_DIR: str = os.path.join(DATA_DIR, "uploads")
+    COVERS_DIR: str = os.path.join(DATA_DIR, "covers")
     
     # Parallel Processing
     MAX_PARALLEL_PAGES: int = int(os.getenv("MAX_PARALLEL_PAGES", "1"))
+    
+    # OCR Settings
+    OCR_PROVIDER: str = os.getenv("OCR_PROVIDER", "gemini").lower()
+    LOCAL_OCR_URL: str = os.getenv("LOCAL_OCR_URL", "http://localhost:8001")
 
 settings = Settings()
 

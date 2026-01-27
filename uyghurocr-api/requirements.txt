@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+onnxruntime
+opencv-python
+numpy
+pytesseract
+pymupdf
+pyclipper
+python-multipart
+pillow

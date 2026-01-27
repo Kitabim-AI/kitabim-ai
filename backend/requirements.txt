@@ -7,3 +7,4 @@ pymupdf
 google-generativeai
 python-dotenv
 numpy
+httpx
