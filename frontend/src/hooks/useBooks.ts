@@ -36,7 +36,7 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
           const sortBy = isShelf ? 'uploadDate' : sortConfig.key;
           const order = isShelf ? -1 : (sortConfig.direction === 'asc' ? 1 : -1);
 
-          const response = await PersistenceService.getGlobalLibrary(1, currentSize, searchQuery, sortBy, order);
+          const response = await PersistenceService.getGlobalLibrary(1, currentSize, searchQuery, sortBy, order, isShelf);
 
           setBooks(prev => {
             // Match and update statuses rather than full replacement if possible, 
@@ -62,7 +62,7 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
       const sortBy = isShelf ? 'uploadDate' : sortConfig.key;
       const order = isShelf ? -1 : (sortConfig.direction === 'asc' ? 1 : -1);
 
-      const response = await PersistenceService.getGlobalLibrary(currentViewPage, currentViewSize, searchQuery, sortBy, order);
+      const response = await PersistenceService.getGlobalLibrary(currentViewPage, currentViewSize, searchQuery, sortBy, order, isShelf);
       setBooks(response.books);
       setTotalBooks(response.total);
       setTotalReady(response.totalReady);
@@ -82,7 +82,7 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
     setIsLoadingMoreShelf(true);
     const nextPage = shelfPage + 1;
     try {
-      const response = await PersistenceService.getGlobalLibrary(nextPage, SHELF_PAGE_SIZE, searchQuery, 'uploadDate', -1);
+      const response = await PersistenceService.getGlobalLibrary(nextPage, SHELF_PAGE_SIZE, searchQuery, 'uploadDate', -1, true);
       if (response.books.length > 0) {
         setBooks(prev => {
           const existingIds = prev.map(b => b.id);

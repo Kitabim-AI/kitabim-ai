@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File
+from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File, Form
 from typing import List, Optional
 from datetime import datetime
 import hashlib
@@ -17,7 +17,8 @@ async def get_books(
     pageSize: int = 10, 
     q: Optional[str] = None,
     sortBy: str = "title",
-    order: int = 1 # 1 for asc, -1 for desc
+    order: int = 1, # 1 for asc, -1 for desc
+    groupBySeries: bool = False  # When true, keeps books with same series together
 ):
     db = db_manager.db
     skip = (page - 1) * pageSize
@@ -40,6 +41,100 @@ async def get_books(
         "results.embedding": 0
     }
     
+    # Helper to safely get a datetime from potentially string or datetime value
+    # Returns naive datetime for consistent comparison
+    def parse_date(val):
+        if val is None:
+            return datetime.min
+        if isinstance(val, datetime):
+            # Strip timezone info for consistent comparison
+            if val.tzinfo is not None:
+                return val.replace(tzinfo=None)
+            return val
+        if isinstance(val, str):
+            try:
+                # Try ISO format first
+                parsed = datetime.fromisoformat(val.replace('Z', '+00:00'))
+                # Strip timezone info for consistent comparison
+                if parsed.tzinfo is not None:
+                    return parsed.replace(tzinfo=None)
+                return parsed
+            except:
+                return datetime.min
+        return datetime.min
+    
+    # Series-aware sorting: group books by series, order groups by most recent uploadDate
+    if groupBySeries and sortBy == "uploadDate":
+        # Fetch all matching books (we need all to properly group by series)
+        all_cursor = db.books.find(query, projection).sort([("uploadDate", order), ("_id", -1)])
+        all_books = await all_cursor.to_list(None)
+        
+        # Build series -> books mapping and track latest uploadDate per series
+        series_groups = {}  # series_name -> list of books
+        no_series_books = []  # Books without a series
+        series_priority = {}  # series_name -> latest uploadDate (as datetime)
+        
+        for b in all_books:
+            if "_id" in b and "id" not in b:
+                b["id"] = str(b["_id"])
+            
+            book_series = b.get("series", [])
+            book_date = parse_date(b.get("uploadDate"))
+            
+            if book_series:
+                # Use first series as the grouping key
+                primary_series = book_series[0]
+                if primary_series not in series_groups:
+                    series_groups[primary_series] = []
+                    series_priority[primary_series] = book_date
+                series_groups[primary_series].append(b)
+                # Update priority to the most recent uploadDate in the group
+                current_priority = series_priority[primary_series]
+                if (order == -1 and book_date > current_priority) or \
+                   (order == 1 and book_date < current_priority):
+                    series_priority[primary_series] = book_date
+            else:
+                no_series_books.append(b)
+        
+        # Sort books within each series by uploadDate
+        for series_name in series_groups:
+            series_groups[series_name].sort(
+                key=lambda x: parse_date(x.get("uploadDate")),
+                reverse=(order == -1)
+            )
+        
+        # Create list of (priority_date, is_series, series_name_or_book)
+        # For series groups, use the series priority date
+        # For individual books, use their own uploadDate
+        sortable_items = []
+        for series_name, books_in_series in series_groups.items():
+            priority_date = series_priority[series_name]
+            sortable_items.append((priority_date, True, series_name, books_in_series))
+        
+        for book in no_series_books:
+            priority_date = parse_date(book.get("uploadDate"))
+            sortable_items.append((priority_date, False, None, [book]))
+        
+        # Sort groups by priority date
+        sortable_items.sort(key=lambda x: x[0], reverse=(order == -1))
+        
+        # Flatten into final ordered list
+        ordered_books = []
+        for _, _, _, books_in_group in sortable_items:
+            ordered_books.extend(books_in_group)
+        
+        # Apply pagination
+        paginated_books = ordered_books[skip:skip + pageSize]
+        
+        return {
+            "books": paginated_books,
+            "total": total,
+            "totalReady": totalReady,
+            "page": page,
+            "pageSize": pageSize
+        }
+    
+    # Standard sorting (no series grouping)
     books_cursor = db.books.find(query, projection).sort([(sortBy, order), ("_id", -1)]).skip(skip).limit(pageSize)
     books_list = await books_cursor.to_list(pageSize)
     
@@ -204,3 +299,59 @@ async def delete_book(book_id: str):
     if result.deleted_count:
         return {"status": "deleted"}
     raise HTTPException(status_code=404, detail="Book not found")
+
+@router.post("/upload-cover")
+async def upload_cover(
+    title: str = Form(...),
+    file: UploadFile = File(...)
+):
+    """
+    Upload a cover image for a book by its title.
+    Accepts image files (PNG, JPG, JPEG, WebP) and converts to JPG.
+    """
+    from PIL import Image
+    import io
+    
+    db = db_manager.db
+    
+    # Find book by title (case-insensitive partial match)
+    book = await db.books.find_one({"title": {"$regex": title, "$options": "i"}})
+    if not book:
+        raise HTTPException(status_code=404, detail=f"Book with title '{title}' not found")
+    
+    book_id = book.get("id") or str(book.get("_id"))
+    
+    # Validate file type
+    allowed_types = ["image/png", "image/jpeg", "image/jpg", "image/webp"]
+    if file.content_type not in allowed_types:
+        raise HTTPException(status_code=400, detail=f"Invalid file type. Allowed: {allowed_types}")
+    
+    # Read and convert image to JPG
+    try:
+        image_data = await file.read()
+        img = Image.open(io.BytesIO(image_data))
+        
+        # Convert to RGB if necessary (for PNG with alpha, etc.)
+        if img.mode in ('RGBA', 'P', 'LA'):
+            img = img.convert('RGB')
+        
+        # Save as JPG
+        cover_path = os.path.join(settings.COVERS_DIR, f"{book_id}.jpg")
+        img.save(cover_path, 'JPEG', quality=90)
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to process image: {str(e)}")
+    
+    # Update book record
+    cover_url = f"/api/covers/{book_id}.jpg"
+    await db.books.update_one(
+        {"id": book_id},
+        {"$set": {"coverUrl": cover_url, "lastUpdated": datetime.now()}}
+    )
+    
+    return {
+        "status": "success",
+        "bookId": book_id,
+        "title": book.get("title"),
+        "coverUrl": cover_url
+    }

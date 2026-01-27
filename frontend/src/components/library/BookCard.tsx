@@ -17,7 +17,7 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick, onDelete }) =
       <div className="book-cover aspect-[3/4] bg-slate-100 relative shadow-lg">
         {book.coverUrl ? (
           <img
-            src={book.coverUrl}
+            src={`${book.coverUrl}?t=${book.lastUpdated ? new Date(book.lastUpdated).getTime() : ''}`}
             alt={book.title}
             className="w-full h-full object-cover"
           />

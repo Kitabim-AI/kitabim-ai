@@ -29,10 +29,11 @@ export const PersistenceService = {
     }
   },
 
-  async getGlobalLibrary(page: number = 1, pageSize: number = 10, q?: string, sortBy: string = 'title', order: number = 1): Promise<PaginatedBooks> {
+  async getGlobalLibrary(page: number = 1, pageSize: number = 10, q?: string, sortBy: string = 'title', order: number = 1, groupBySeries: boolean = false): Promise<PaginatedBooks> {
     try {
       let url = `${API_BASE}/books?page=${page}&pageSize=${pageSize}&sortBy=${sortBy}&order=${order}`;
       if (q) url += `&q=${encodeURIComponent(q)}`;
+      if (groupBySeries) url += `&groupBySeries=true`;
 
       const response = await fetch(url);
       if (!response.ok) throw new Error("Failed to fetch");
