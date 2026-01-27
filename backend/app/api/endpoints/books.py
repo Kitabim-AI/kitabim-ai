@@ -8,6 +8,7 @@ from app.models.schemas import Book, PaginatedBooks
 from app.db.mongodb import db_manager
 from app.core.config import settings
 from app.services.pdf_service import process_pdf_task
+from app.services.spell_check_service import spell_check_service
 
 router = APIRouter()
 
@@ -355,3 +356,115 @@ async def upload_cover(
         "title": book.get("title"),
         "coverUrl": cover_url
     }
+
+@router.post("/{book_id}/spell-check")
+async def check_book_spelling(book_id: str):
+    """
+    Check all pages of a book for spelling and OCR errors.
+    Returns a dictionary mapping page numbers to their spell check results.
+    """
+    db = db_manager.db
+    try:
+        results = await spell_check_service.check_book(book_id, db)
+        return {
+            "bookId": book_id,
+            "status": "success",
+            "totalPagesWithIssues": len(results),
+            "results": {
+                str(page_num): {
+                    "pageNumber": check.pageNumber,
+                    "corrections": [c.dict() for c in check.corrections],
+                    "totalIssues": check.totalIssues,
+                    "checkedAt": check.checkedAt
+                }
+                for page_num, check in results.items()
+            }
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Spell check failed: {str(e)}")
+
+@router.post("/{book_id}/pages/{page_num}/spell-check")
+async def check_page_spelling(book_id: str, page_num: int):
+    """
+    Check a single page for spelling and OCR errors.
+    """
+    db = db_manager.db
+    book = await db.books.find_one({"id": book_id})
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    
+    # Find the page
+    page_result = None
+    for page in book.get("results", []):
+        if page.get("pageNumber") == page_num:
+            page_result = page
+            break
+    
+    if not page_result:
+        raise HTTPException(status_code=404, detail=f"Page {page_num} not found")
+    
+    page_text = page_result.get("text", "")
+    if not page_text:
+        return {
+            "bookId": book_id,
+            "pageNumber": page_num,
+            "corrections": [],
+            "totalIssues": 0,
+            "message": "Page has no text to check"
+        }
+    
+    try:
+        spell_check = await spell_check_service.check_page_text(page_text, page_num)
+        return {
+            "bookId": book_id,
+            "pageNumber": spell_check.pageNumber,
+            "corrections": [c.dict() for c in spell_check.corrections],
+            "totalIssues": spell_check.totalIssues,
+            "checkedAt": spell_check.checkedAt
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Spell check failed: {str(e)}")
+
+@router.post("/{book_id}/pages/{page_num}/apply-corrections")
+async def apply_spelling_corrections(
+    book_id: str, 
+    page_num: int, 
+    payload: dict,
+    background_tasks: BackgroundTasks
+):
+    """
+    Apply approved spelling corrections to a page.
+    Expects payload: { "corrections": [...] }
+    """
+    db = db_manager.db
+    corrections = payload.get("corrections", [])
+    
+    if not corrections:
+        raise HTTPException(status_code=400, detail="No corrections provided")
+    
+    try:
+        success = await spell_check_service.apply_corrections(
+            book_id, 
+            page_num, 
+            corrections, 
+            db
+        )
+        
+        if success:
+            # Trigger embedding regeneration for the updated page
+            background_tasks.add_task(process_pdf_task, book_id)
+            return {
+                "status": "success",
+                "bookId": book_id,
+                "pageNumber": page_num,
+                "correctionsApplied": len(corrections),
+                "message": "Corrections applied successfully. Embeddings will be regenerated."
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Book or page not found")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to apply corrections: {str(e)}")
+
