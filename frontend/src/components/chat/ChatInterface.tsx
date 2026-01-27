@@ -138,7 +138,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         </div>
       </div>
 
-      <div ref={chatContainerRef} className="flex-grow overflow-y-auto space-y-4 pr-2 mb-4 scroll-smooth">
+      <div ref={chatContainerRef} className="flex-grow overflow-y-auto space-y-4 pr-2 mb-4 scroll-smooth custom-scrollbar">
         {chatMessages.length === 0 && (
           <div className="bg-white/5 border border-white/5 rounded-2xl p-6 text-center">
             <p className="text-sm text-white/60 leading-relaxed uyghur-text">
