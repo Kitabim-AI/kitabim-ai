@@ -23,7 +23,7 @@ const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<number | null>(null);
   const [editingPageNum, setEditingPageNum] = useState<number | null>(null);
   const [tempPageText, setTempPageText] = useState('');
-  const [fontSize, setFontSize] = useState(24);
+  const [fontSize, setFontSize] = useState(20);
 
   const [editingBookSeriesId, setEditingBookSeriesId] = useState<string | null>(null);
   const [editingSeriesList, setEditingSeriesList] = useState<string[]>([]);

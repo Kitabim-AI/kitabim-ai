@@ -123,7 +123,8 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
             <textarea
               value={editContent}
               onChange={(e) => setEditContent(e.target.value)}
-              className="w-full h-full p-6 uyghur-text text-2xl border border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none resize-none bg-white shadow-inner"
+              className="w-full h-full p-6 uyghur-text border border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none resize-none bg-white shadow-inner"
+              style={{ fontSize: `${fontSize}px` }}
               dir="rtl"
             />
           ) : (
@@ -157,7 +158,8 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                       <textarea
                         value={tempPageText}
                         onChange={(e) => setTempPageText(e.target.value)}
-                        className="w-full h-64 p-4 uyghur-text text-2xl border border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none resize-none bg-white font-medium"
+                        className="w-full h-64 p-4 uyghur-text border border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none resize-none bg-white font-medium"
+                        style={{ fontSize: `${fontSize}px` }}
                         dir="rtl"
                       />
                       <div className="flex gap-2">
