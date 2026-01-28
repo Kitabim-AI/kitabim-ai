@@ -298,17 +298,17 @@ export const AdminView: React.FC<AdminViewProps> = ({
                     <div className="flex items-center gap-3">
                       <button
                         onClick={() => onOpenReader(book)}
-                        className="text-indigo-600 font-bold text-[10px] bg-indigo-50 px-2 py-1 rounded hover:bg-indigo-100"
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-[10px] font-black rounded-lg hover:bg-indigo-700 transition-all active:scale-95 shadow-md shadow-indigo-100 uppercase tracking-tight"
                       >
                         READER
                       </button>
                       {book.status !== 'processing' && (
                         <button
                           onClick={() => onReprocess(book.id)}
-                          className="text-amber-600 hover:text-amber-700 transition-colors p-1"
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-600 text-[10px] font-black rounded-lg hover:bg-indigo-600 hover:text-white transition-all active:scale-95 shadow-sm shadow-indigo-100/50 uppercase tracking-tight"
                           title="Reprocess"
                         >
-                          <RotateCcw size={14} />
+                          <RotateCcw size={12} className="stroke-[3]" /> REPROCESS
                         </button>
                       )}
                       <button

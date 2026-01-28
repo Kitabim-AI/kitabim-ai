@@ -230,7 +230,7 @@ async def reset_page(book_id: str, page_num: int, background_tasks: BackgroundTa
     db = db_manager.db
     await db.books.update_one(
         {"id": book_id, "results.pageNumber": page_num},
-        {"$set": {"results.$.status": "pending", "results.$.text": ""}}
+        {"$set": {"results.$.status": "pending", "results.$.text": "", "results.$.isVerified": False}}
     )
     await db.books.update_one({"id": book_id}, {"$set": {"status": "processing", "lastUpdated": datetime.now()}})
     background_tasks.add_task(process_pdf_task, book_id)
@@ -245,7 +245,8 @@ async def update_page_text(book_id: str, page_num: int, payload: dict, backgroun
         {
             "$set": {
                 "results.$.text": new_text,
-                "results.$.status": "completed"
+                "results.$.status": "completed",
+                "results.$.isVerified": True
             },
             "$unset": {
                 "results.$.embedding": ""
@@ -259,9 +260,13 @@ async def update_page_text(book_id: str, page_num: int, payload: dict, backgroun
 @router.post("/")
 async def create_book(book: Book, background_tasks: BackgroundTasks):
     db = db_manager.db
+    # Protect uploadDate and isVerified from being overwritten in bulk
+    book_dict = book.dict()
+    book_dict.pop("uploadDate", None)
+    
     await db.books.update_one(
         {"id": book.id},
-        {"$set": book.dict()},
+        {"$set": book_dict},
         upsert=True
     )
     background_tasks.add_task(process_pdf_task, book.id)
@@ -270,6 +275,9 @@ async def create_book(book: Book, background_tasks: BackgroundTasks):
 @router.put("/{book_id}")
 async def update_book_details(book_id: str, book_update: dict):
     db = db_manager.db
+    # Protect uploadDate from being overwritten
+    book_update.pop("uploadDate", None)
+    
     query = {"$or": [{"id": book_id}]}
     if len(book_id) == 24:
         try:

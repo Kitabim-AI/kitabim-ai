@@ -184,20 +184,24 @@ Return ONLY the JSON array, no other text."""
         for correction in sorted_corrections:
             original = correction.get("original", "")
             corrected = correction.get("corrected", "")
-            
             if original and corrected:
-                # Simple replacement - could be enhanced with position-aware replacement
-                page_text = page_text.replace(original, corrected, 1)
+                # Replace all occurrences
+                page_text = page_text.replace(original, corrected)
         
-        # Update the page text
+        # Update the page text and metadata
         results[page_idx]["text"] = page_text
+        results[page_idx]["status"] = "completed"
+        results[page_idx]["isVerified"] = True
+        # Clear the old embedding so it gets regenerated
+        if "embedding" in results[page_idx]:
+            del results[page_idx]["embedding"]
         
         # Update the full content if it exists
         if book.get("content"):
             # Rebuild content from all pages
             all_text = "\n\n".join(
                 page.get("text", "") for page in results 
-                if page.get("status") == "success"
+                if page.get("status") == "completed"
             )
             await db.books.update_one(
                 {"_id": book_id},

@@ -21,6 +21,7 @@ export interface Book {
   processingStep?: 'ocr' | 'rag';
   series?: string[];
   categories?: string[];
+  tags?: string[];
 }
 
 export interface PaginatedBooks {

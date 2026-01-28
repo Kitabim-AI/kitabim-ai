@@ -6,6 +6,7 @@ class ExtractionResult(BaseModel):
     pageNumber: int
     text: Optional[str] = None
     status: str
+    isVerified: bool = False
     error: Optional[str] = None
 
 class Book(BaseModel):

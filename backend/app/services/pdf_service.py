@@ -75,7 +75,9 @@ async def process_pdf_task(book_id: str):
                     page_record = next((r for r in current_book["results"] if r["pageNumber"] == page_num), None)
                     
                     existing_text = page_record.get("text", "") if page_record else ""
-                    already_ocr = (page_record.get("status") == "completed" and len(existing_text) > 40) if page_record else False
+                    # Protect verified pages absolutely. 
+                    is_verified = page_record.get("isVerified", False) if page_record else False
+                    already_ocr = is_verified or (page_record.get("status") == "completed" and len(existing_text) > 40) if page_record else False
 
                     await db.books.update_one(
                         {"id": book_id, "results.pageNumber": page_num},

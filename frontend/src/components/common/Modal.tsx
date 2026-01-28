@@ -6,6 +6,7 @@ interface ModalProps {
   title: string;
   message: string;
   type: 'alert' | 'confirm';
+  confirmText?: string;
   onConfirm?: () => void;
   onClose: () => void;
 }
@@ -15,6 +16,7 @@ export const Modal: React.FC<ModalProps> = ({
   title,
   message,
   type,
+  confirmText,
   onConfirm,
   onClose,
 }) => {
@@ -54,9 +56,12 @@ export const Modal: React.FC<ModalProps> = ({
                   onClose();
                 }
               }}
-              className={`flex-1 py-3 px-4 text-white font-bold rounded-2xl transition-all shadow-lg active:scale-95 ${type === 'confirm' ? 'bg-red-500 hover:bg-red-600 shadow-red-100' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-100'}`}
+              className={`flex-1 py-3 px-4 text-white font-bold rounded-2xl transition-all shadow-lg active:scale-95 ${(confirmText === 'Delete Permanently' || (!confirmText && type === 'confirm' && title === 'Confirm Deletion'))
+                  ? 'bg-red-500 hover:bg-red-600 shadow-red-100'
+                  : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-100'
+                }`}
             >
-              {type === 'confirm' ? 'Delete Permanently' : 'Understood'}
+              {confirmText || (type === 'confirm' ? 'Confirm' : 'Understood')}
             </button>
           </div>
         </div>

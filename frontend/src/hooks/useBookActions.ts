@@ -67,6 +67,14 @@ export const useBookActions = (
         body: JSON.stringify({ text: newText })
       });
       setEditingPageNum(null);
+      setSelectedBook(prev => {
+        if (!prev || prev.id !== bookId) return prev;
+        return {
+          ...prev,
+          results: prev.results.map(r => r.pageNumber === pageNum ? { ...r, text: newText, isVerified: true } : r),
+          lastUpdated: new Date()
+        };
+      });
       refreshLibrary();
     } catch (err) {
       console.error("Failed to update page", err);
@@ -106,7 +114,8 @@ export const useBookActions = (
         return {
           ...res,
           text: pageLines.join('\n').trim(),
-          status: 'completed' as const
+          status: 'completed' as const,
+          isVerified: true
         };
       });
 
@@ -120,6 +129,7 @@ export const useBookActions = (
       };
 
       await PersistenceService.saveBookGlobally(updatedBook);
+      setSelectedBook(updatedBook);
       await refreshLibrary();
       setIsEditing(false);
     } catch (err) {
@@ -139,6 +149,7 @@ export const useBookActions = (
       title: "Confirm Deletion",
       message: "Are you sure you want to delete this book? This will permanently remove it from the global library platform.",
       type: 'confirm',
+      confirmText: "Delete Permanently",
       onConfirm: async () => {
         cancelledBooks.current.add(bookId);
         await PersistenceService.deleteBook(bookId);

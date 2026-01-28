@@ -68,7 +68,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           onClick={() => fileInputRef.current?.click()}
           className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm font-semibold shadow-md shadow-indigo-100 flex items-center gap-2 hover:bg-indigo-700 active:scale-95 transition-transform"
         >
-          <Upload size={16} /> Process PDF
+          <Upload size={16} /> ADD BOOK
         </button>
         <input
           type="file"

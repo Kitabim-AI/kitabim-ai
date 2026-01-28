@@ -39,6 +39,7 @@ const App: React.FC = () => {
     title: string;
     message: string;
     type: 'alert' | 'confirm';
+    confirmText?: string;
     onConfirm?: () => void;
   }>({
     isOpen: false,
@@ -101,6 +102,20 @@ const App: React.FC = () => {
       }
     }
   }, [books, selectedBook]);
+
+  // Sync global edit content with latest page results
+  useEffect(() => {
+    if (selectedBook && !isEditing) {
+      const combinedText = [...selectedBook.results]
+        .sort((a, b) => Number(a.pageNumber) - Number(b.pageNumber))
+        .map(r => r.text || '')
+        .join('\n\n');
+
+      if (combinedText !== editContent) {
+        setEditContent(combinedText);
+      }
+    }
+  }, [selectedBook?.results, isEditing, editContent]);
 
   useEffect(() => {
     refreshLibrary();
@@ -189,6 +204,7 @@ const App: React.FC = () => {
             onSendMessage={handleSendMessage}
             isChatting={isChatting}
             chatContainerRef={chatContainerRef}
+            setModal={setModal}
           />
         )}
 
@@ -212,6 +228,7 @@ const App: React.FC = () => {
           title={modal.title}
           message={modal.message}
           type={modal.type}
+          confirmText={modal.confirmText}
           onConfirm={modal.onConfirm}
           onClose={() => setModal(prev => ({ ...prev, isOpen: false }))}
         />
