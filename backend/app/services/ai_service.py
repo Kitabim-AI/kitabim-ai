@@ -14,9 +14,10 @@ async def get_embedding(text: str):
         clean_text = text.replace("\n", " ")[:2000] 
         result = await asyncio.to_thread(
             genai.embed_content,
-            model="models/embedding-001",
+            model=settings.GEMINI_EMBEDDING_MODEL,
             content=clean_text,
-            task_type="retrieval_document"
+            task_type="retrieval_document",
+            output_dimensionality=768
         )
         return result['embedding']
     except Exception as e:

@@ -44,9 +44,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 <Globe className="w-6 h-6 text-indigo-300" />
               </div>
               <div>
-                <h3 className="text-xl font-bold">Kitabim Global Mind</h3>
-                <p className="text-xs text-indigo-300 font-bold uppercase tracking-widest">
-                  Searching across {totalReady || books.filter(b => b.status === 'ready').length} processed books
+                <h3 className="text-xl font-bold tracking-tight">كىتابىم خەزىنىسى</h3>
+                <p className="text-[10px] text-indigo-300 font-black uppercase tracking-[0.2em] mt-0.5 opacity-80">
+                  پارچە كىتابتىن ئىزدەۋاتىدۇ {totalReady || books.filter(b => b.status === 'ready').length}
                 </p>
               </div>
             </div>
@@ -66,17 +66,17 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 <div className="w-20 h-20 bg-indigo-500/10 rounded-full flex items-center justify-center mb-6 border border-white/5 animate-bounce">
                   <MessageSquare className="text-indigo-400 w-10 h-10" />
                 </div>
-                <h4 className="text-lg font-bold text-white mb-2">ئەلئامان كىتابخانىسىغا خۇش كەپسىز!</h4>
+                <h4 className="text-lg font-bold text-white mb-2">!كىتابىم خەزىنىسىگە خۇش كەپسىز</h4>
                 <p className="text-indigo-300 text-sm max-w-sm leading-relaxed">
-                  كۈتۈپخانىڭىزدىكى بارلىق كىتابلارنى بىراقلا ئوقۇپ، سىزگە جاۋاب بېرىش تەييار. خالىغان سوئالنى سورىسىڭىز بولىدۇ.
+                  كۈتۈپخانىمىزدىكى بارلىق كىتابلارنى ئوقۇپ، سىزگە جاۋاب بېرىمەن
                 </p>
               </div>
             ) : (
               chatMessages.map((msg, idx) => (
-                <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] p-5 rounded-3xl text-sm leading-relaxed shadow-sm ${msg.role === 'user'
-                    ? 'bg-indigo-600 text-white rounded-tr-none'
-                    : 'bg-white/5 text-indigo-50 border border-white/5 rounded-tl-none uyghur-text text-lg'
+                <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
+                  <div className={`max-w-[85%] p-5 rounded-3xl text-sm leading-relaxed shadow-lg ${msg.role === 'user'
+                    ? 'bg-gradient-to-br from-indigo-500 to-indigo-700 text-white rounded-tr-none border border-white/10'
+                    : 'bg-white/5 backdrop-blur-md text-indigo-50 border border-white/10 rounded-tl-none uyghur-text text-[1.1rem] leading-[1.8] font-medium'
                     }`}>
                     {msg.text}
                   </div>
@@ -100,16 +100,16 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && onSendMessage()}
-              placeholder="كۈتۈپخانىدىكى بارلىق كىتابلاردىن سوئال سوراش..."
+              placeholder="كۈتۈپخانىدىكى ھەرقانداق كىتابتىن سۇئال سوراڭ..."
               className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 l-6 pr-14 text-white focus:ring-4 focus:ring-indigo-500/20 outline-none transition-all uyghur-text text-lg"
               dir="rtl"
             />
             <button
               onClick={onSendMessage}
-              disabled={isChatting}
-              className="absolute left-2 top-1/2 -translate-y-1/2 p-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 transition-all shadow-lg active:scale-95 disabled:opacity-50"
+              disabled={isChatting || !chatInput.trim()}
+              className="absolute left-2 top-1/2 -translate-y-1/2 p-2.5 bg-indigo-500 text-white rounded-xl hover:bg-indigo-400 transition-all shadow-xl active:scale-95 disabled:opacity-30 disabled:grayscale"
             >
-              <Send size={20} />
+              <Send size={20} className="stroke-[2.5]" />
             </button>
           </div>
         </div>
@@ -126,12 +126,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           <MessageSquare className="w-5 h-5 text-indigo-300" />
         </div>
         <div>
-          <h3 className="font-bold text-sm">Kitabim AI Assistant</h3>
+          <h3 className="font-bold text-sm">كىتابىم ياردەمچىسى</h3>
           <div className="flex items-center gap-2">
-            <p className="text-[10px] text-indigo-300 font-bold uppercase tracking-widest">Intelligent Retrieval</p>
+            <p className="text-[10px] text-indigo-300 font-bold uppercase tracking-widest">ئەقلىي ئىقتىدارلىق ئىزدەش</p>
             {currentPage && (
-              <div className="px-1.5 py-0.5 bg-indigo-500/30 text-[9px] rounded-md border border-indigo-500/20 text-indigo-200">
-                FOCUS: PAGE {currentPage}
+              <div className="px-1.5 py-0.5 bg-indigo-500/30 text-[9px] rounded-md border border-indigo-500/20 text-indigo-200 uppercase font-black">
+                بەت: {currentPage}
               </div>
             )}
           </div>
@@ -147,10 +147,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           </div>
         )}
         {chatMessages.map((msg, idx) => (
-          <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm ${msg.role === 'user'
-              ? 'bg-indigo-600 text-white rounded-tr-none shadow-lg'
-              : 'bg-white/10 text-white rounded-tl-none border border-white/5 uyghur-text text-right leading-loose'
+          <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-1 duration-200`}>
+            <div className={`max-w-[90%] px-4 py-3 rounded-2xl text-sm ${msg.role === 'user'
+              ? 'bg-gradient-to-br from-indigo-500 to-indigo-600 text-white rounded-tr-none shadow-md'
+              : 'bg-white/10 backdrop-blur-sm text-white rounded-tl-none border border-white/5 uyghur-text text-right leading-[1.8] text-[0.95rem]'
               }`}>
               {msg.text}
             </div>
@@ -168,11 +168,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       <div className="mt-auto relative">
         <input
           type="text"
-          placeholder="Ask a question..."
+          placeholder="سوئال سوراش..."
           value={chatInput}
           onChange={(e) => setChatInput(e.target.value)}
           onKeyPress={(e) => e.key === 'Enter' && onSendMessage()}
-          className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 pl-5 pr-12 text-sm text-white focus:ring-2 focus:ring-indigo-500 transition-all outline-none"
+          className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 pl-5 pr-12 text-sm text-white focus:ring-2 focus:ring-indigo-500 transition-all outline-none uyghur-text"
+          dir="rtl"
         />
         <button
           onClick={onSendMessage}

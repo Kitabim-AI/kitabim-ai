@@ -23,36 +23,65 @@ async def chat_with_book_api(req: ChatRequest):
             
             if all_categories:
                 try:
-                    cat_model = genai.GenerativeModel(settings.GEMINI_CATEGORIZATION_MODEL)
+                    # Feed the last few messages for context to handle follow-up questions
+                    history_context = ""
+                    if req.history:
+                        history_context = "\nRecent Conversation:\n" + "\n".join([f"{h.get('role')}: {h.get('text')}" for h in req.history[-3:]])
+
                     cat_prompt = f"""
                     You are a librarian efficiently categorizing a user's question to find the right section of the library.
+                    {history_context}
                     
                     Available Categories: {all_categories}
                     
-                    User's Question: "{req.question}"
+                    User's New Question: "{req.question}"
                     
-                    Task: Identify which of the available categories are most relevant to this question.
+                    Task: Identify which of the available categories are most relevant to this *New Question*.
+                    If the question is a follow-up (e.g., "who are his parents?"), use the conversation history to determine the right category.
                     Return ONLY a JSON array of strings, e.g. ["History", "Literature"].
-                    If the question is general or doesn't fit any specific category, return [].
+                    If the question is completely general or doesn't fit any category even with context, return [].
                     """
+                    print(f"🤖 Calling Gemini Categorization Model: {settings.GEMINI_CATEGORIZATION_MODEL}")
+                    print(f"   Query: {req.question}")
+                    cat_model = genai.GenerativeModel(settings.GEMINI_CATEGORIZATION_MODEL)
                     cat_result = await cat_model.generate_content_async(cat_prompt)
                     import json
                     text = cat_result.text.strip()
                     if text.startswith("```json"):
                         text = text[7:-3]
                     relevant_categories = json.loads(text)
+                    
+                    # 🔄 Fallback: If current question yields no categories, try categorizing the previous user question
+                    if not relevant_categories and req.history:
+                        last_user_msg = next((h.get('text') for h in reversed(req.history) if h.get('role') == 'user'), None)
+                        if last_user_msg and last_user_msg != req.question:
+                            print(f"   🔄 Empty result. Re-trying with previous question: '{last_user_msg[:40]}...'")
+                            fallback_prompt = f"""
+                            Available Categories: {all_categories}
+                            Previous Question: "{last_user_msg}"
+                            Identify the relevant categories for this previous question.
+                            Return ONLY a JSON array of strings.
+                            """
+                            fb_result = await cat_model.generate_content_async(fallback_prompt)
+                            fb_text = fb_result.text.strip()
+                            if fb_text.startswith("```json"): fb_text = fb_text[7:-3]
+                            relevant_categories = json.loads(fb_text)
+
+                    print(f"   💡 Final Categories identified: {relevant_categories}")
                 except Exception as e:
                     print(f"⚠️ Categorization failed: {e}")
             
             query = {}
             if relevant_categories and isinstance(relevant_categories, list) and len(relevant_categories) > 0:
+                 # Use categories as a broad filter first
                  query = {"categories": {"$in": relevant_categories}}
             
-            all_books = await db.books.find(query).to_list(2000)
+            # Fetch books based on identified categories
+            all_books = await db.books.find(query).to_list(100)
             
-            if not all_books and relevant_categories:
-                 # Fallback to all books if category filtering was too strict
-                 all_books = await db.books.find().to_list(200)
+            if not all_books:
+                 # Fallback to all books if no categories matched or no books in categories
+                 all_books = await db.books.find().sort("lastUpdated", -1).to_list(200)
 
             for b in all_books:
                 for r in b.get("results", []):
@@ -84,13 +113,16 @@ async def chat_with_book_api(req: ChatRequest):
 
         # 1. Get embedding for the question
         try:
+            print(f"🧬 Generating Embedding for query: '{req.question[:50]}...'")
             query_result = await asyncio.to_thread(
                 genai.embed_content,
-                model="models/embedding-001",
+                model=settings.GEMINI_EMBEDDING_MODEL,
                 content=req.question,
-                task_type="retrieval_query"
+                task_type="retrieval_query",
+                output_dimensionality=768
             )
             query_vector = query_result['embedding']
+            print(f"   ✅ Embedding generated successfully.")
         except Exception as e:
             print(f"⚠️ Embedding failed: {e}")
             query_vector = None
@@ -104,7 +136,11 @@ async def chat_with_book_api(req: ChatRequest):
             if page_rec and page_rec.get("text"):
                 current_page_context = f"CURRENT PAGE (THE USER IS LOOKING AT THIS NOW) - Book: {page_rec['bookTitle']}, Page {req.currentPage}:\n{page_rec['text']}"
 
-        keywords = req.question.split()
+        import re
+        # Clean keywords: keep letters, numbers, and common whitespace. 
+        # Standardize for Uyghur script.
+        keywords = [re.sub(r'[^\w]', '', k, flags=re.UNICODE).strip() for k in req.question.split()]
+        keywords = [k for k in keywords if len(k) > 2] # Only meaningful keywords
         
         for r in pages_to_search:
             score = 0.0
@@ -113,17 +149,19 @@ async def chat_with_book_api(req: ChatRequest):
             
             txt = r.get("text", "")
             match_count = 0
+            # Faster keyword scanning
             for k in keywords:
-                if len(k) > 2 and k in txt:
+                if k in txt:
                     match_count += 1
             
             if match_count > 0:
                 score += (match_count * 0.15)
             
-            if score > 0.45: # Increased threshold for stricter relevance
+            if score > 0.35: # Lowered threshold for better recall
                  scored_results.append({ "text": r["text"], "score": score, "page": r["pageNumber"], "title": r["bookTitle"] })
         
-        top_results = sorted(scored_results, key=lambda x: x["score"], reverse=True)[:7]
+        # 3. Sort and take more results for better context
+        top_results = sorted(scored_results, key=lambda x: x["score"], reverse=True)[:12]
         
         context_parts = []
         if current_page_context:
@@ -135,8 +173,9 @@ async def chat_with_book_api(req: ChatRequest):
         
         context = "\n\n---\n\n".join(context_parts)
         
+        # If no context found, we still proceed but note it in the prompt
         if not context and is_global:
-             return {"answer": "I could not find any relevant information in the library matching your question. Please try asking about a different topic or rephrasing your query."}
+             context = "NO RELEVANT DOCUMENTS FOUND IN THE LIBRARY."
 
         # 3. Generate Answer with Gemini
         model = genai.GenerativeModel(settings.GEMINI_MODEL_NAME)
@@ -155,14 +194,21 @@ async def chat_with_book_api(req: ChatRequest):
 [CONTEXT END]
 
 Instructions:
-1. Answer the user's question based ONLY on the provided context above. 
-2. If the context does not contain the answer, state clearly that you cannot find the information in the available books.
-3. Do NOT make up facts or use outside knowledge to answer the specific question if it's not in the context.
-4. cite the book title and page number if possible.
+1. Primary Goal: Answer the user's question based on the provided context.
+2. If the context contains the information, cite the book title and page number.
+3. If the context is marked as 'NO RELEVANT DOCUMENTS FOUND' or does not contain the answer:
+   - Politely explain that you couldn't find a specific match in the indexed books.
+   - If it's a general question or greeting, respond naturally but maintain your persona as a librarian advisor.
+4. Respond ONLY in professional Uyghur (Arabic script).
 
 Question: {req.question}
 """
+        print(f"🚀 Calling Gemini Generation Model: {settings.GEMINI_MODEL_NAME}")
+        print(f"   History length: {len(chat_history)} messages")
+        print(f"   Context length: {len(context)} chars")
+        
         response = await chat.send_message_async(rag_prompt)
+        print(f"   ✅ Response received ({len(response.text)} chars).")
         return {"answer": response.text}
         
     except HTTPException as e:

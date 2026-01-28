@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 class Settings:
     PROJECT_NAME: str = "Kitabim.AI"
@@ -9,7 +9,8 @@ class Settings:
     # API Keys
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY")
     GEMINI_MODEL_NAME: str = os.getenv("GEMINI_MODEL_NAME", "gemini-3-flash-preview")
-    GEMINI_CATEGORIZATION_MODEL: str = os.getenv("GEMINI_CATEGORIZATION_MODEL", "gemini-1.5-flash")
+    GEMINI_CATEGORIZATION_MODEL: str = os.getenv("GEMINI_CATEGORIZATION_MODEL", "gemini-3-flash-preview")
+    GEMINI_EMBEDDING_MODEL: str = os.getenv("GEMINI_EMBEDDING_MODEL", "models/gemini-embedding-001")
     
     # Database
     MONGODB_URL: str = os.getenv("MONGODB_URL", "mongodb://localhost:27017")

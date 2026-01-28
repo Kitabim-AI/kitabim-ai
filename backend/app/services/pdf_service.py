@@ -121,11 +121,13 @@ async def process_pdf_task(book_id: str):
                             for attempt in range(5):
                                 try:
                                     print(f"🚀 Gemini OCR Request: Book={book_id} Page={page_num} Attempt={attempt+1}")
+                                    print(f"   Model: {settings.GEMINI_MODEL_NAME}")
                                     response = await model.generate_content_async([
                                         {"mime_type": "image/jpeg", "data": img_bytes},
                                         {"text": OCR_PROMPT}
                                     ])
                                     page_text = clean_uyghur_text(response.text)
+                                    print(f"   ✅ OCR Success for p{page_num} ({len(page_text)} chars)")
                                     success = True
                                     break
                                 except Exception as e:
@@ -157,10 +159,12 @@ async def process_pdf_task(book_id: str):
         if pages_to_embed:
             text_batch = [r["text"][:2000] for r in pages_to_embed]
             try:
+                print(f"🧬 Calling Gemini Batch Embedding for {len(text_batch)} pages...")
                 embedding_results = genai.embed_content(
-                    model="models/embedding-001",
+                    model=settings.GEMINI_EMBEDDING_MODEL,
                     content=text_batch,
-                    task_type="retrieval_document"
+                    task_type="retrieval_document",
+                    output_dimensionality=768
                 )
                 
                 for idx, r in enumerate(pages_to_embed):
