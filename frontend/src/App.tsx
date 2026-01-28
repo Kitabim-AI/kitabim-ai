@@ -32,6 +32,9 @@ const App: React.FC = () => {
   const [editingBookCategoriesId, setEditingBookCategoriesId] = useState<string | null>(null);
   const [editingCategoriesList, setEditingCategoriesList] = useState<string[]>([]);
   const [tempCategories, setTempCategories] = useState('');
+
+  const [editingBookAuthorId, setEditingBookAuthorId] = useState<string | null>(null);
+  const [tempAuthor, setTempAuthor] = useState('');
   const loaderRef = React.useRef<HTMLDivElement>(null);
 
   const [modal, setModal] = useState<{
@@ -58,6 +61,7 @@ const App: React.FC = () => {
     toggleSort,
     refreshLibrary,
     loadMoreShelf,
+    isLoading,
     isLoadingMoreShelf,
     hasMoreShelf,
   } = useBooks(view, searchQuery, pageSize, page);
@@ -84,6 +88,7 @@ const App: React.FC = () => {
     handleDeleteBook,
     handleSaveSeries,
     handleSaveCategories,
+    handleSaveAuthor,
   } = useBookActions(refreshLibrary, setBooks, setSelectedBook, setView, setModal);
 
   // Sync selectedBook with fresh data from the books list
@@ -132,7 +137,16 @@ const App: React.FC = () => {
         clearChat={clearChat}
       />
 
-      <main className="flex-grow p-6 max-w-7xl mx-auto w-full">
+      <main className="flex-grow p-6 max-w-7xl mx-auto w-full relative">
+        {isLoading && view !== 'reader' && (
+          <div className="absolute inset-0 bg-slate-50/50 backdrop-blur-[2px] z-40 flex items-center justify-center min-h-[400px]">
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+              <span className="text-sm font-bold text-indigo-600 uppercase tracking-widest animate-pulse">Loading Library</span>
+            </div>
+          </div>
+        )}
+
         {view === 'library' && (
           <LibraryView
             books={sortedBooks}
@@ -140,7 +154,6 @@ const App: React.FC = () => {
             hasMore={hasMoreShelf}
             searchQuery={searchQuery}
             onBookClick={(book) => openReader(book, setEditContent, setChatMessages, setCurrentPage)}
-            onDeleteBook={(id) => handleDeleteBook(id, selectedBook?.id)}
             loaderRef={loaderRef}
             loadMore={loadMoreShelf}
           />
@@ -175,6 +188,12 @@ const App: React.FC = () => {
             tempCategories={tempCategories}
             setTempCategories={setTempCategories}
             handleSaveCategories={(id, cats) => handleSaveCategories(id, cats, setEditingBookCategoriesId, setEditingCategoriesList)}
+
+            editingBookAuthorId={editingBookAuthorId}
+            setEditingBookAuthorId={setEditingBookAuthorId}
+            tempAuthor={tempAuthor}
+            setTempAuthor={setTempAuthor}
+            handleSaveAuthor={(id, author) => handleSaveAuthor(id, author, setEditingBookAuthorId, setTempAuthor)}
           />
         )}
 

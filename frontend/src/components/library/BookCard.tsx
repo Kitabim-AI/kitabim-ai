@@ -5,7 +5,7 @@ import { Book } from '../../types';
 interface BookCardProps {
   book: Book;
   onClick: (book: Book) => void;
-  onDelete: (bookId: string) => void;
+  onDelete?: (bookId: string) => void;
 }
 
 export const BookCard: React.FC<BookCardProps> = ({ book, onClick, onDelete }) => {
@@ -32,17 +32,19 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick, onDelete }) =
         <div className="book-spine-line" />
 
         {/* Hover Controls */}
-        <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-all transform -translate-x-2 group-hover:translate-x-0 z-20">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(book.id);
-            }}
-            className="p-1.5 bg-white/90 hover:bg-red-500 hover:text-white text-slate-500 rounded-lg shadow-xl backdrop-blur-md transition-all"
-          >
-            <Trash2 size={14} />
-          </button>
-        </div>
+        {onDelete && (
+          <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-all transform -translate-x-2 group-hover:translate-x-0 z-20">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(book.id);
+              }}
+              className="p-1.5 bg-white/90 hover:bg-red-500 hover:text-white text-slate-500 rounded-lg shadow-xl backdrop-blur-md transition-all"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        )}
 
         <div className="absolute top-2 right-2 flex flex-col gap-1.5 z-20">
           {book.status !== 'ready' ? (

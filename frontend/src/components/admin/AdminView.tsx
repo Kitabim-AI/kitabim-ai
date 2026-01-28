@@ -1,5 +1,5 @@
 import React from 'react';
-import { Database, ChevronUp, ChevronDown, Tag, X, Save, RotateCcw, Trash2, Layers, BookType } from 'lucide-react';
+import { Database, ChevronUp, ChevronDown, Tag, X, Save, RotateCcw, Trash2, Layers, BookType, User } from 'lucide-react';
 import { Book } from '../../types';
 import { Pagination } from '../common/Pagination';
 
@@ -32,6 +32,12 @@ interface AdminViewProps {
   tempCategories: string;
   setTempCategories: (val: string) => void;
   handleSaveCategories: (bookId: string, items: string[]) => void;
+
+  editingBookAuthorId: string | null;
+  setEditingBookAuthorId: (id: string | null) => void;
+  tempAuthor: string;
+  setTempAuthor: (val: string) => void;
+  handleSaveAuthor: (bookId: string, author: string) => void;
 }
 
 const TagEditor: React.FC<{
@@ -153,7 +159,8 @@ export const AdminView: React.FC<AdminViewProps> = ({
   onDeleteBook,
 
   editingBookSeriesId, setEditingBookSeriesId, editingSeriesList, setEditingSeriesList, tempSeries, setTempSeries, handleSaveSeries,
-  editingBookCategoriesId, setEditingBookCategoriesId, editingCategoriesList, setEditingCategoriesList, tempCategories, setTempCategories, handleSaveCategories
+  editingBookCategoriesId, setEditingBookCategoriesId, editingCategoriesList, setEditingCategoriesList, tempCategories, setTempCategories, handleSaveCategories,
+  editingBookAuthorId, setEditingBookAuthorId, tempAuthor, setTempAuthor, handleSaveAuthor
 }) => {
   return (
     <div className="space-y-6">
@@ -186,6 +193,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                     </div>
                   </div>
                 </th>
+                <th className="px-6 py-4 w-48">Author</th>
                 <th className="px-6 py-4 w-40">Series</th>
                 <th className="px-6 py-4 w-40">Categories</th>
                 <th className="px-6 py-4 w-32">Status</th>
@@ -202,12 +210,67 @@ export const AdminView: React.FC<AdminViewProps> = ({
                         <Database size={18} />
                       </div>
                       <div>
-                        <div className="font-bold text-slate-900 text-sm truncate max-w-[200px]">{book.title}</div>
+                        <button
+                          onClick={() => onOpenReader(book)}
+                          className="font-bold text-slate-900 text-sm truncate max-w-[200px] hover:text-indigo-600 transition-colors text-left"
+                        >
+                          {book.title}
+                        </button>
                         <div className="text-[10px] text-slate-400 mt-0.5">
                           {new Date(book.uploadDate).toLocaleDateString()}
                         </div>
                       </div>
                     </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    {editingBookAuthorId === book.id ? (
+                      <div className="flex items-center gap-1.5 min-w-[150px]">
+                        <input
+                          autoFocus
+                          type="text"
+                          value={tempAuthor}
+                          onChange={e => setTempAuthor(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') handleSaveAuthor(book.id, tempAuthor);
+                            if (e.key === 'Escape') setEditingBookAuthorId(null);
+                          }}
+                          className="px-2 py-1 text-xs border border-slate-200 rounded-lg bg-white flex-grow outline-none focus:ring-2 focus:ring-indigo-500/20"
+                        />
+                        <button
+                          onClick={() => handleSaveAuthor(book.id, tempAuthor)}
+                          className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm transition-all active:scale-95"
+                          title="Save"
+                        >
+                          <Save size={12} />
+                        </button>
+                        <button
+                          onClick={() => setEditingBookAuthorId(null)}
+                          className="p-1.5 bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 transition-colors"
+                          title="Cancel"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        onClick={() => {
+                          setEditingBookAuthorId(book.id);
+                          setTempAuthor(book.author || '');
+                        }}
+                        className="cursor-pointer group/author min-h-[24px] flex items-center hover:bg-slate-50 p-1 rounded-md transition-colors"
+                      >
+                        {book.author && book.author !== 'Unknown Author' ? (
+                          <span className="text-sm font-medium text-slate-600 group-hover/author:text-indigo-600 truncate max-w-[180px]">
+                            {book.author}
+                          </span>
+                        ) : (
+                          <div className="flex items-center gap-1 text-slate-300 group-hover/author:text-indigo-400 transition-colors">
+                            <User size={12} />
+                            <span className="text-[10px] italic">Add author...</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </td>
                   <td className="px-6 py-4">
                     <TagEditor
@@ -296,25 +359,19 @@ export const AdminView: React.FC<AdminViewProps> = ({
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => onOpenReader(book)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-[10px] font-black rounded-lg hover:bg-indigo-700 transition-all active:scale-95 shadow-md shadow-indigo-100 uppercase tracking-tight"
-                      >
-                        READER
-                      </button>
                       {book.status !== 'processing' && (
                         <button
                           onClick={() => onReprocess(book.id)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-600 text-[10px] font-black rounded-lg hover:bg-indigo-600 hover:text-white transition-all active:scale-95 shadow-sm shadow-indigo-100/50 uppercase tracking-tight"
-                          title="Reprocess"
+                          className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-600 hover:text-white transition-all active:scale-95 shadow-sm shadow-indigo-100/50"
+                          title="REPROCESS"
                         >
-                          <RotateCcw size={12} className="stroke-[3]" /> REPROCESS
+                          <RotateCcw size={14} className="stroke-[3]" />
                         </button>
                       )}
                       <button
                         onClick={() => onDeleteBook(book.id)}
-                        className="text-red-500 hover:text-red-700 transition-colors p-1"
-                        title="Delete Book"
+                        className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all active:scale-95 shadow-sm shadow-red-100/50"
+                        title="DELETE"
                       >
                         <Trash2 size={14} />
                       </button>

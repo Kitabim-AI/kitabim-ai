@@ -9,7 +9,6 @@ interface LibraryViewProps {
   hasMore: boolean;
   searchQuery: string;
   onBookClick: (book: Book) => void;
-  onDeleteBook: (bookId: string) => void;
   loaderRef: React.RefObject<HTMLDivElement>;
   loadMore: () => void;
 }
@@ -20,7 +19,6 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   hasMore,
   searchQuery,
   onBookClick,
-  onDeleteBook,
   loaderRef,
   loadMore,
 }) => {
@@ -60,7 +58,6 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             key={book.id}
             book={book}
             onClick={onBookClick}
-            onDelete={onDeleteBook}
           />
         ))}
         {books.length === 0 && !isLoadingMore && (

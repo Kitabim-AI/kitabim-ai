@@ -7,6 +7,7 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
   const [totalBooks, setTotalBooks] = useState(0);
   const [totalReady, setTotalReady] = useState(0);
   const [isLoadingMoreShelf, setIsLoadingMoreShelf] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [hasMoreShelf, setHasMoreShelf] = useState(true);
   const [shelfPage, setShelfPage] = useState(1);
   const SHELF_PAGE_SIZE = 12;
@@ -54,6 +55,7 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
   }, [books.length, books.some(b => b.status === 'processing'), view, searchQuery, sortConfig, pageSize]);
 
   const refreshLibrary = useCallback(async () => {
+    setIsLoading(true);
     try {
       const isShelf = view === 'library';
       const currentViewSize = isShelf ? SHELF_PAGE_SIZE : pageSize;
@@ -73,6 +75,8 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
       }
     } catch (err) {
       console.error("Manual refresh failed", err);
+    } finally {
+      setIsLoading(false);
     }
   }, [view, page, pageSize, searchQuery, sortConfig]);
 
@@ -136,6 +140,7 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
     toggleSort,
     refreshLibrary,
     loadMoreShelf,
+    isLoading,
     isLoadingMoreShelf,
     hasMoreShelf,
   };

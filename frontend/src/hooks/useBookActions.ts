@@ -199,6 +199,18 @@ export const useBookActions = (
     }
   };
 
+  const handleSaveAuthor = async (bookId: string, author: string, setEditingId: any, setTempAuthor: any) => {
+    try {
+      const trimmedAuthor = author.trim() || 'Unknown Author';
+      await PersistenceService.updateBookMetadata(bookId, { author: trimmedAuthor });
+      setBooks(prev => prev.map(b => b.id === bookId ? { ...b, author: trimmedAuthor } : b));
+      setEditingId(null);
+      setTempAuthor('');
+    } catch (e) {
+      console.error("Failed to save author", e);
+    }
+  };
+
   return {
     isCheckingGlobal,
     handleFileUpload,
@@ -211,5 +223,6 @@ export const useBookActions = (
     handleSaveTags,
     handleSaveSeries,
     handleSaveCategories,
+    handleSaveAuthor,
   };
 };
