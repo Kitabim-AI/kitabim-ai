@@ -19,7 +19,7 @@ async def get_books(
     q: Optional[str] = None,
     sortBy: str = "title",
     order: int = 1, # 1 for asc, -1 for desc
-    groupBySeries: bool = False  # When true, keeps books with same series together
+    groupByWork: bool = False  # When true, keeps books with same title+author together
 ):
     db = db_manager.db
     skip = (page - 1) * pageSize
@@ -64,55 +64,55 @@ async def get_books(
                 return datetime.min
         return datetime.min
     
-    # Series-aware sorting: group books by series, order groups by most recent uploadDate
-    if groupBySeries and sortBy == "uploadDate":
-        # Fetch all matching books (we need all to properly group by series)
+    # Work-aware sorting: group books by title+author, order groups by most recent uploadDate
+    if groupByWork and sortBy == "uploadDate":
+        # Fetch all matching books (we need all to properly group by work)
         all_cursor = db.books.find(query, projection).sort([("uploadDate", order), ("_id", -1)])
         all_books = await all_cursor.to_list(None)
         
-        # Build series -> books mapping and track latest uploadDate per series
-        series_groups = {}  # series_name -> list of books
-        no_series_books = []  # Books without a series
-        series_priority = {}  # series_name -> latest uploadDate (as datetime)
+        # Build work -> books mapping and track latest uploadDate per work
+        work_groups = {}  # (title, author) -> list of books
+        no_work_books = []  # Books without title
+        work_priority = {}  # (title, author) -> latest uploadDate (as datetime)
         
         for b in all_books:
             if "_id" in b and "id" not in b:
                 b["id"] = str(b["_id"])
             
-            book_series = b.get("series", [])
+            book_title = b.get("title")
+            book_author = b.get("author") or ""
             book_date = parse_date(b.get("uploadDate"))
             
-            if book_series:
-                # Use first series as the grouping key
-                primary_series = book_series[0]
-                if primary_series not in series_groups:
-                    series_groups[primary_series] = []
-                    series_priority[primary_series] = book_date
-                series_groups[primary_series].append(b)
+            if book_title:
+                work_key = (book_title, book_author)
+                if work_key not in work_groups:
+                    work_groups[work_key] = []
+                    work_priority[work_key] = book_date
+                work_groups[work_key].append(b)
                 # Update priority to the most recent uploadDate in the group
-                current_priority = series_priority[primary_series]
+                current_priority = work_priority[work_key]
                 if (order == -1 and book_date > current_priority) or \
                    (order == 1 and book_date < current_priority):
-                    series_priority[primary_series] = book_date
+                    work_priority[work_key] = book_date
             else:
-                no_series_books.append(b)
+                no_work_books.append(b)
         
-        # Sort books within each series by uploadDate
-        for series_name in series_groups:
-            series_groups[series_name].sort(
+        # Sort books within each work by uploadDate
+        for work_key in work_groups:
+            work_groups[work_key].sort(
                 key=lambda x: parse_date(x.get("uploadDate")),
                 reverse=(order == -1)
             )
         
-        # Create list of (priority_date, is_series, series_name_or_book)
-        # For series groups, use the series priority date
+        # Create list of (priority_date, is_work, work_key_or_book)
+        # For work groups, use the work priority date
         # For individual books, use their own uploadDate
         sortable_items = []
-        for series_name, books_in_series in series_groups.items():
-            priority_date = series_priority[series_name]
-            sortable_items.append((priority_date, True, series_name, books_in_series))
+        for work_key, books_in_work in work_groups.items():
+            priority_date = work_priority[work_key]
+            sortable_items.append((priority_date, True, work_key, books_in_work))
         
-        for book in no_series_books:
+        for book in no_work_books:
             priority_date = parse_date(book.get("uploadDate"))
             sortable_items.append((priority_date, False, None, [book]))
         
@@ -135,7 +135,7 @@ async def get_books(
             "pageSize": pageSize
         }
     
-    # Standard sorting (no series grouping)
+    # Standard sorting (no work grouping)
     books_cursor = db.books.find(query, projection).sort([(sortBy, order), ("_id", -1)]).skip(skip).limit(pageSize)
     books_list = await books_cursor.to_list(pageSize)
     
@@ -196,13 +196,13 @@ async def upload_pdf(background_tasks: BackgroundTasks, file: UploadFile = File(
         "contentHash": content_hash,
         "title": file.filename.replace(".pdf", ""),
         "author": "Unknown Author",
+        "volume": None,
         "totalPages": 0,
         "content": "",
         "results": [],
         "status": "processing",
         "uploadDate": now,
         "lastUpdated": now,
-        "series": [],
         "categories": []
     }
     
@@ -475,4 +475,3 @@ async def apply_spelling_corrections(
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to apply corrections: {str(e)}")
-

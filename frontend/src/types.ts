@@ -11,6 +11,7 @@ export interface Book {
   contentHash: string;
   title: string;
   author: string;
+  volume?: number | null;
   totalPages: number;
   content?: string;
   results: ExtractionResult[];
@@ -19,7 +20,6 @@ export interface Book {
   lastUpdated: Date;
   coverUrl?: string;
   processingStep?: 'ocr' | 'rag';
-  series?: string[];
   categories?: string[];
   tags?: string[];
 }

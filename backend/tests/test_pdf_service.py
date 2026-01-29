@@ -1,12 +1,11 @@
 import pytest
 import os
-from unittest.mock import MagicMock, AsyncMock, patch
-from app.services.pdf_service import process_pdf_task
+from unittest.mock import MagicMock, patch
+from app.services.pdf_service import process_pdf_task, RUNNING_TASKS
 
 @pytest.mark.asyncio
 @patch("app.services.pdf_service.fitz.open")
-@patch("app.services.pdf_service.genai.GenerativeModel")
-async def test_process_pdf_task_not_found(mock_model, mock_fitz, mock_db):
+async def test_process_pdf_task_not_found(mock_fitz, mock_db):
     # Test file not found
     with patch("os.path.exists", return_value=False):
         await process_pdf_task("test-id")
@@ -16,8 +15,7 @@ async def test_process_pdf_task_not_found(mock_model, mock_fitz, mock_db):
 
 @pytest.mark.asyncio
 @patch("app.services.pdf_service.fitz.open")
-@patch("app.services.pdf_service.genai.GenerativeModel")
-async def test_process_pdf_task_success(mock_model_class, mock_fitz, mock_db):
+async def test_process_pdf_task_success(mock_fitz, mock_db):
     book_id = "test-id"
     # Setup mocks
     mock_doc = MagicMock()
@@ -31,13 +29,6 @@ async def test_process_pdf_task_success(mock_model_class, mock_fitz, mock_db):
         {"id": book_id, "results": [{"pageNumber": 1, "status": "completed", "text": "text"}], "status": "processing"} # final build (L148)
     ]
     
-    # Mock AI model
-    mock_model = MagicMock()
-    mock_model_class.return_value = mock_model
-    mock_response = AsyncMock()
-    mock_response.text = "Extracted text"
-    mock_model.generate_content_async.return_value = mock_response
-    
     # Mock os.path.exists for both PDF and cover
     def exists_side_effect(path):
         if path.endswith(".pdf"): return True
@@ -45,9 +36,7 @@ async def test_process_pdf_task_success(mock_model_class, mock_fitz, mock_db):
         return False
     
     with patch("os.path.exists", side_effect=exists_side_effect):
-        with patch("app.services.pdf_service.genai.embed_content") as mock_embed:
-            mock_embed.return_value = {"embedding": [[0.1]*768]}
-            await process_pdf_task(book_id)
+        await process_pdf_task(book_id)
     
     # Check if 'ready' status was eventually set
     calls = [call.args[1].get("$set", {}).get("status") for call in mock_db.books.update_one.call_args_list if len(call.args) > 1]
@@ -55,8 +44,7 @@ async def test_process_pdf_task_success(mock_model_class, mock_fitz, mock_db):
 
 @pytest.mark.asyncio
 @patch("app.services.pdf_service.fitz.open")
-@patch("app.services.pdf_service.genai.GenerativeModel")
-async def test_process_pdf_task_ocr_error(mock_model_class, mock_fitz, mock_db):
+async def test_process_pdf_task_ocr_error(mock_fitz, mock_db, mock_gemini):
     book_id = "test-id"
     mock_doc = MagicMock()
     mock_doc.page_count = 1
@@ -70,9 +58,7 @@ async def test_process_pdf_task_ocr_error(mock_model_class, mock_fitz, mock_db):
     ]
     
     # Mock AI model to raise exception
-    mock_model = MagicMock()
-    mock_model_class.return_value = mock_model
-    mock_model.generate_content_async.side_effect = Exception("AI Failure")
+    mock_gemini["client"].aio.models.generate_content.side_effect = Exception("AI Failure")
     
     with patch("os.path.exists", return_value=True):
         await process_pdf_task(book_id)
@@ -80,3 +66,53 @@ async def test_process_pdf_task_ocr_error(mock_model_class, mock_fitz, mock_db):
     # Status should be error if any page failed
     calls = [call.args[1].get("$set", {}).get("status") for call in mock_db.books.update_one.call_args_list if len(call.args) > 1]
     assert "error" in calls
+
+@pytest.mark.asyncio
+async def test_process_pdf_task_duplicate_skips(mock_db):
+    book_id = "dup-id"
+    RUNNING_TASKS.add(book_id)
+    try:
+        await process_pdf_task(book_id)
+    finally:
+        RUNNING_TASKS.discard(book_id)
+    assert mock_db.books.find_one.await_count == 0
+
+@pytest.mark.asyncio
+@patch("app.services.pdf_service.fitz.open")
+async def test_process_pdf_task_book_not_found(mock_fitz, mock_db):
+    book_id = "missing-book"
+    mock_doc = MagicMock()
+    mock_doc.page_count = 1
+    mock_fitz.return_value = mock_doc
+    mock_db.books.find_one.return_value = None
+    
+    with patch("os.path.exists", return_value=True):
+        await process_pdf_task(book_id)
+    
+    mock_db.books.find_one.assert_awaited()
+
+@pytest.mark.asyncio
+@patch("app.services.pdf_service.fitz.open")
+async def test_process_pdf_task_no_pages_to_process(mock_fitz, mock_db):
+    book_id = "ready-book"
+    mock_doc = MagicMock()
+    mock_doc.page_count = 1
+    mock_fitz.return_value = mock_doc
+    mock_db.books.find_one.return_value = {
+        "id": book_id,
+        "results": [{"pageNumber": 1, "status": "completed", "text": "text", "embedding": [0.1]}],
+        "status": "processing"
+    }
+    
+    def exists_side_effect(path):
+        if path.endswith(".pdf"):
+            return True
+        if path.endswith(".jpg"):
+            return True
+        return False
+    
+    with patch("os.path.exists", side_effect=exists_side_effect):
+        await process_pdf_task(book_id)
+    
+    calls = [call.args[1].get("$set", {}).get("status") for call in mock_db.books.update_one.call_args_list if len(call.args) > 1]
+    assert "ready" in calls

@@ -4,10 +4,12 @@ import asyncio
 import os
 import numpy as np
 from dotenv import load_dotenv
-import google.generativeai as genai
+from google import genai
+from google.genai import types
+from app.services import genai_client
 
 load_dotenv()
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 def cosine_similarity(v1, v2):
     dot_product = np.dot(v1, v2)
@@ -24,12 +26,12 @@ async def debug_search():
     
     # 1. Get embedding for the question
     try:
-        query_result = genai.embed_content(
+        query_result = await client.aio.models.embed_content(
             model="models/embedding-001",
-            content=question,
-            task_type="retrieval_query"
+            contents=question,
+            config=types.EmbedContentConfig(task_type="RETRIEVAL_QUERY"),
         )
-        query_vector = query_result['embedding']
+        query_vector = genai_client.extract_embedding_vector(query_result)
         print("✅ Computed query embedding.")
     except Exception as e:
         print(f"❌ Costly failure: {e}")

@@ -12,6 +12,7 @@ vi.mock('../services/persistenceService', () => ({
     saveBookGlobally: vi.fn(),
     deleteBook: vi.fn(),
     updateBookTags: vi.fn(),
+    updateBookMetadata: vi.fn(),
   }
 }));
 
@@ -41,6 +42,31 @@ test('useBookActions handles file upload', async () => {
   expect(PersistenceService.uploadPdf).toHaveBeenCalledWith(file);
   expect(refreshLibrary).toHaveBeenCalled();
   expect(setView).toHaveBeenCalledWith('admin');
+});
+
+test('useBookActions ignores non-pdf uploads and handles upload errors', async () => {
+  const refreshLibrary = vi.fn();
+  const setView = vi.fn();
+  const setModal = vi.fn();
+  const { result } = renderHook(() => useBookActions(refreshLibrary, vi.fn(), vi.fn(), setView, setModal));
+
+  const badFile = new File(['data'], 'test.txt', { type: 'text/plain' });
+  const badEvent = { target: { files: [badFile] } } as any;
+
+  await act(async () => {
+    await result.current.handleFileUpload(badEvent);
+  });
+  expect(PersistenceService.uploadPdf).not.toHaveBeenCalled();
+
+  (PersistenceService.uploadPdf as any).mockRejectedValueOnce(new Error('fail'));
+  const pdfFile = new File(['%PDF-1.4'], 'test.pdf', { type: 'application/pdf' });
+  const pdfEvent = { target: { files: [pdfFile] } } as any;
+
+  await act(async () => {
+    await result.current.handleFileUpload(pdfEvent);
+  });
+
+  expect(setModal).toHaveBeenCalledWith(expect.objectContaining({ type: 'alert' }));
 });
 
 test('useBookActions handles openReader', async () => {
@@ -78,4 +104,97 @@ test('useBookActions handles handleDeleteBook', async () => {
   });
 
   expect(PersistenceService.deleteBook).toHaveBeenCalledWith('1');
+});
+
+test('useBookActions handles reprocess and page reset', async () => {
+  const setBooks = vi.fn();
+  const refreshLibrary = vi.fn();
+  const { result } = renderHook(() => useBookActions(refreshLibrary, setBooks, vi.fn(), vi.fn(), vi.fn()));
+
+  await act(async () => {
+    await result.current.handleReprocess('1');
+  });
+  expect(PersistenceService.reprocessBook).toHaveBeenCalledWith('1');
+  expect(setBooks).toHaveBeenCalled();
+
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+  // @ts-expect-error test mock
+  global.fetch = fetchMock;
+  await act(async () => {
+    await result.current.handleReProcessPage('1', 2);
+  });
+  expect(fetchMock).toHaveBeenCalledWith('/api/books/1/pages/2/reset', { method: 'POST' });
+});
+
+test('useBookActions updates page text and saves corrections', async () => {
+  const setSelectedBook = vi.fn();
+  const setEditingPageNum = vi.fn();
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+  // @ts-expect-error test mock
+  global.fetch = fetchMock;
+
+  const { result } = renderHook(() => useBookActions(vi.fn(), vi.fn(), setSelectedBook, vi.fn(), vi.fn()));
+
+  await act(async () => {
+    await result.current.handleUpdatePage('1', 1, 'New Text', setEditingPageNum);
+  });
+
+  expect(fetchMock).toHaveBeenCalledWith('/api/books/1/pages/1/update', expect.any(Object));
+  expect(setEditingPageNum).toHaveBeenCalledWith(null);
+  expect(setSelectedBook).toHaveBeenCalled();
+
+  const setIsEditing = vi.fn();
+  const bookForSave: Book = {
+    id: '1',
+    title: 'T',
+    author: 'A',
+    totalPages: 2,
+    results: [
+      { pageNumber: 1, text: 'a', status: 'completed' },
+      { pageNumber: 2, text: 'b', status: 'completed' }
+    ],
+    status: 'ready',
+    uploadDate: new Date(),
+    lastUpdated: new Date(),
+    contentHash: 'h'
+  };
+
+  await act(async () => {
+    await result.current.saveCorrections(bookForSave, 'line1\\nline2', setIsEditing);
+  });
+
+  expect(PersistenceService.saveBookGlobally).toHaveBeenCalled();
+  expect(setIsEditing).toHaveBeenCalledWith(false);
+});
+
+test('useBookActions updates title, author, and categories', async () => {
+  const setBooks = vi.fn();
+  const { result } = renderHook(() => useBookActions(vi.fn(), setBooks, vi.fn(), vi.fn(), vi.fn()));
+
+  await act(async () => {
+    await result.current.handleSaveTitle('1', 'New Title', vi.fn(), vi.fn());
+    await result.current.handleSaveAuthor('1', 'New Author', vi.fn(), vi.fn());
+    await result.current.handleSaveCategories('1', ['History', ' Culture '], vi.fn(), vi.fn());
+  });
+
+  expect(PersistenceService.updateBookMetadata).toHaveBeenCalledWith('1', { title: 'New Title' });
+  expect(PersistenceService.updateBookMetadata).toHaveBeenCalledWith('1', { author: 'New Author' });
+  expect(PersistenceService.updateBookMetadata).toHaveBeenCalledWith('1', { categories: ['History', 'Culture'] });
+  expect(setBooks).toHaveBeenCalled();
+});
+
+test('useBookActions validates volume input', async () => {
+  const { result } = renderHook(() => useBookActions(vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn()));
+
+  await act(async () => {
+    await result.current.handleSaveVolume('1', '2', vi.fn(), vi.fn());
+  });
+  expect(PersistenceService.updateBookMetadata).toHaveBeenCalledWith('1', { volume: 2 });
+
+  vi.clearAllMocks();
+
+  await act(async () => {
+    await result.current.handleSaveVolume('1', '2.5', vi.fn(), vi.fn());
+  });
+  expect(PersistenceService.updateBookMetadata).not.toHaveBeenCalled();
 });

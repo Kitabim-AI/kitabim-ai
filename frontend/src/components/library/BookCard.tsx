@@ -9,6 +9,11 @@ interface BookCardProps {
 }
 
 export const BookCard: React.FC<BookCardProps> = ({ book, onClick, onDelete }) => {
+  const titleWithVolume = book.volume !== null && book.volume !== undefined
+    ? `${book.title} (${book.volume}-قىسىم)`
+    : book.title;
+  const displayAuthor = book.author?.trim();
+
   return (
     <div
       onClick={() => onClick(book)}
@@ -18,14 +23,14 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick, onDelete }) =
         {book.coverUrl ? (
           <img
             src={`${book.coverUrl}?t=${book.lastUpdated ? new Date(book.lastUpdated).getTime() : ''}`}
-            alt={book.title}
+            alt={titleWithVolume}
             className="w-full h-full object-cover"
           />
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center bg-indigo-50 border-l-[6px] border-indigo-200 p-4 text-center">
             <FileText className={`w-8 h-8 mb-2 ${book.status === 'ready' ? 'text-slate-300' : 'text-indigo-300'}`} />
             <span className="text-[10px] font-bold text-indigo-300 break-words leading-tight uppercase opacity-50">
-              {book.title.substring(0, 20)}
+              {titleWithVolume.substring(0, 20)}
             </span>
           </div>
         )}
@@ -68,15 +73,15 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick, onDelete }) =
 
       <div className="px-1 mt-1">
         <h3 className="font-bold text-slate-900 text-sm leading-tight line-clamp-2 text-right transition-colors group-hover:text-indigo-600" dir="rtl">
-          {book.title}
+          {titleWithVolume}
         </h3>
-        <div className="flex items-center justify-end gap-1.5 mt-1 opacity-70">
-          <span className="text-xs font-bold text-slate-500">{book.totalPages} Pages</span>
-          <div className="w-1 h-1 rounded-full bg-slate-300" />
-          <span className={`text-xs font-bold ${book.status === 'ready' ? 'text-indigo-600' : 'text-amber-600'}`}>
-            {book.status.toUpperCase()}
-          </span>
-        </div>
+        {displayAuthor && displayAuthor !== 'Unknown Author' && (
+          <div className="mt-1 text-right">
+            <span className="text-xs font-bold text-slate-500" dir="rtl">
+              {displayAuthor}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

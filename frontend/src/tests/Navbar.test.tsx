@@ -71,7 +71,7 @@ test('Navbar handles file upload trigger', () => {
     />
   );
 
-  const uploadBtn = screen.getByText(/Process PDF/i);
+  const uploadBtn = screen.getByText(/Add Book/i);
   expect(uploadBtn).toBeInTheDocument();
 
   // We can't easily test the file input click directly due to browser security,

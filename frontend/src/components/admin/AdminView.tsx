@@ -1,5 +1,5 @@
 import React from 'react';
-import { Database, ChevronUp, ChevronDown, Tag, X, Save, RotateCcw, Trash2, Layers, BookType, User } from 'lucide-react';
+import { Database, ChevronUp, ChevronDown, Tag, X, Save, RotateCcw, Trash2, BookType, User, Hash, BookOpen } from 'lucide-react';
 import { Book } from '../../types';
 import { Pagination } from '../common/Pagination';
 
@@ -17,13 +17,11 @@ interface AdminViewProps {
   onReprocess: (bookId: string) => void;
   onDeleteBook: (bookId: string) => void;
 
-  editingBookSeriesId: string | null;
-  setEditingBookSeriesId: (id: string | null) => void;
-  editingSeriesList: string[];
-  setEditingSeriesList: (items: string[] | ((prev: string[]) => string[])) => void;
-  tempSeries: string;
-  setTempSeries: (val: string) => void;
-  handleSaveSeries: (bookId: string, items: string[]) => void;
+  editingBookTitleId: string | null;
+  setEditingBookTitleId: (id: string | null) => void;
+  tempTitle: string;
+  setTempTitle: (val: string) => void;
+  handleSaveTitle: (bookId: string, title: string) => void;
 
   editingBookCategoriesId: string | null;
   setEditingBookCategoriesId: (id: string | null) => void;
@@ -38,6 +36,12 @@ interface AdminViewProps {
   tempAuthor: string;
   setTempAuthor: (val: string) => void;
   handleSaveAuthor: (bookId: string, author: string) => void;
+
+  editingBookVolumeId: string | null;
+  setEditingBookVolumeId: (id: string | null) => void;
+  tempVolume: string;
+  setTempVolume: (val: string) => void;
+  handleSaveVolume: (bookId: string, volume: string) => void;
 }
 
 const TagEditor: React.FC<{
@@ -158,9 +162,10 @@ export const AdminView: React.FC<AdminViewProps> = ({
   onReprocess,
   onDeleteBook,
 
-  editingBookSeriesId, setEditingBookSeriesId, editingSeriesList, setEditingSeriesList, tempSeries, setTempSeries, handleSaveSeries,
   editingBookCategoriesId, setEditingBookCategoriesId, editingCategoriesList, setEditingCategoriesList, tempCategories, setTempCategories, handleSaveCategories,
-  editingBookAuthorId, setEditingBookAuthorId, tempAuthor, setTempAuthor, handleSaveAuthor
+  editingBookAuthorId, setEditingBookAuthorId, tempAuthor, setTempAuthor, handleSaveAuthor,
+  editingBookTitleId, setEditingBookTitleId, tempTitle, setTempTitle, handleSaveTitle,
+  editingBookVolumeId, setEditingBookVolumeId, tempVolume, setTempVolume, handleSaveVolume
 }) => {
   return (
     <div className="space-y-6">
@@ -179,7 +184,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
 
       {!isCheckingGlobal && (
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm overflow-x-auto">
-          <table className="w-full text-left min-w-[1000px]">
+          <table className="w-full text-left min-w-[1100px]">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
                 <th
@@ -193,8 +198,8 @@ export const AdminView: React.FC<AdminViewProps> = ({
                     </div>
                   </div>
                 </th>
+                <th className="px-6 py-4 w-28">Volume</th>
                 <th className="px-6 py-4 w-48">Author</th>
-                <th className="px-6 py-4 w-40">Series</th>
                 <th className="px-6 py-4 w-40">Categories</th>
                 <th className="px-6 py-4 w-32">Status</th>
                 <th className="px-6 py-4">Pipeline</th>
@@ -209,18 +214,103 @@ export const AdminView: React.FC<AdminViewProps> = ({
                       <div className="bg-indigo-50 p-2 rounded-lg text-indigo-600">
                         <Database size={18} />
                       </div>
-                      <div>
-                        <button
-                          onClick={() => onOpenReader(book)}
-                          className="font-bold text-slate-900 text-sm truncate max-w-[200px] hover:text-indigo-600 transition-colors text-left"
-                        >
-                          {book.title}
-                        </button>
-                        <div className="text-[10px] text-slate-400 mt-0.5">
-                          {new Date(book.uploadDate).toLocaleDateString()}
+                      {editingBookTitleId === book.id ? (
+                        <div className="flex items-center gap-1.5 min-w-[200px]">
+                          <input
+                            autoFocus
+                            type="text"
+                            value={tempTitle}
+                            onChange={e => setTempTitle(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') handleSaveTitle(book.id, tempTitle);
+                              if (e.key === 'Escape') setEditingBookTitleId(null);
+                            }}
+                            className="px-2 py-1 text-xs border border-slate-200 rounded-lg bg-white w-full outline-none focus:ring-2 focus:ring-indigo-500/20"
+                          />
+                          <button
+                            onClick={() => handleSaveTitle(book.id, tempTitle)}
+                            className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm transition-all active:scale-95"
+                            title="Save"
+                          >
+                            <Save size={12} />
+                          </button>
+                          <button
+                            onClick={() => setEditingBookTitleId(null)}
+                            className="p-1.5 bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 transition-colors"
+                            title="Cancel"
+                          >
+                            <X size={12} />
+                          </button>
                         </div>
-                      </div>
+                      ) : (
+                        <div
+                          onClick={() => {
+                            setEditingBookTitleId(book.id);
+                            setTempTitle(book.title || '');
+                          }}
+                          className="cursor-pointer group/title min-h-[24px] flex flex-col justify-center hover:bg-slate-50 p-1 rounded-md transition-colors"
+                        >
+                          <span className="font-bold text-slate-900 text-sm truncate max-w-[200px] group-hover/title:text-indigo-600">
+                            {book.title}
+                          </span>
+                          <span className="text-[10px] text-slate-400 mt-0.5">
+                            {new Date(book.uploadDate).toLocaleDateString()}
+                          </span>
+                        </div>
+                      )}
                     </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    {editingBookVolumeId === book.id ? (
+                      <div className="flex items-center gap-1.5 min-w-[90px]">
+                        <input
+                          autoFocus
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={tempVolume}
+                          onChange={e => setTempVolume(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') handleSaveVolume(book.id, tempVolume);
+                            if (e.key === 'Escape') setEditingBookVolumeId(null);
+                          }}
+                          className="no-spinner px-2 py-1 text-xs border border-slate-200 rounded-lg bg-white w-full outline-none focus:ring-2 focus:ring-indigo-500/20"
+                        />
+                        <button
+                          onClick={() => handleSaveVolume(book.id, tempVolume)}
+                          className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm transition-all active:scale-95"
+                          title="Save"
+                        >
+                          <Save size={12} />
+                        </button>
+                        <button
+                          onClick={() => setEditingBookVolumeId(null)}
+                          className="p-1.5 bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 transition-colors"
+                          title="Cancel"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        onClick={() => {
+                          setEditingBookVolumeId(book.id);
+                          setTempVolume(book.volume !== null && book.volume !== undefined ? String(book.volume) : '');
+                        }}
+                        className="cursor-pointer group/volume min-h-[24px] flex items-center hover:bg-slate-50 p-1 rounded-md transition-colors"
+                      >
+                        {book.volume !== null && book.volume !== undefined ? (
+                          <span className="text-sm font-medium text-slate-600 group-hover/volume:text-indigo-600">
+                            {book.volume}
+                          </span>
+                        ) : (
+                          <div className="flex items-center gap-1 text-slate-300 group-hover/volume:text-indigo-400 transition-colors">
+                            <Hash size={12} />
+                            <span className="text-[10px] italic">Add volume...</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </td>
                   <td className="px-6 py-4">
                     {editingBookAuthorId === book.id ? (
@@ -271,36 +361,6 @@ export const AdminView: React.FC<AdminViewProps> = ({
                         )}
                       </div>
                     )}
-                  </td>
-                  <td className="px-6 py-4">
-                    <TagEditor
-                      isOpen={editingBookSeriesId === book.id}
-                      onOpen={() => {
-                        setEditingBookSeriesId(book.id);
-                        setEditingSeriesList([...(book.series || [])]);
-                        setTempSeries('');
-                      }}
-                      onClose={() => {
-                        setEditingBookSeriesId(null);
-                        setEditingSeriesList([]);
-                      }}
-                      onSave={() => {
-                        let list = [...editingSeriesList];
-                        if (tempSeries.trim() && !list.includes(tempSeries.trim())) list.push(tempSeries.trim());
-                        handleSaveSeries(book.id, list);
-                      }}
-                      items={editingSeriesList}
-                      tempValue={tempSeries}
-                      onTempValueChange={setTempSeries}
-                      onAddItem={(val) => {
-                        if (val && !editingSeriesList.includes(val)) setEditingSeriesList(prev => [...prev, val]);
-                        setTempSeries('');
-                      }}
-                      onRemoveItem={(idx) => setEditingSeriesList(prev => prev.filter((_, i) => i !== idx))}
-                      existingItems={book.series || []}
-                      placeholder="Add series..."
-                      icon={<Layers size={12} />}
-                    />
                   </td>
                   <td className="px-6 py-4">
                     <TagEditor
@@ -359,6 +419,13 @@ export const AdminView: React.FC<AdminViewProps> = ({
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => onOpenReader(book)}
+                        className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-600 hover:text-white transition-all active:scale-95 shadow-sm shadow-emerald-100/50"
+                        title="VIEW"
+                      >
+                        <BookOpen size={14} className="stroke-[2.5]" />
+                      </button>
                       {book.status !== 'processing' && (
                         <button
                           onClick={() => onReprocess(book.id)}

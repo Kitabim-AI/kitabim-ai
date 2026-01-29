@@ -1,11 +1,12 @@
 """
 Spell checking service for Uyghur text using Gemini AI
 """
-import google.generativeai as genai
 import json
 import os
+from datetime import datetime
 from typing import List, Dict, Optional
 from pydantic import BaseModel
+from app.services import genai_client
 
 class SpellCorrection(BaseModel):
     """Model for a single spelling correction"""
@@ -28,8 +29,6 @@ class SpellCheckService:
     
     def __init__(self):
         self.model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-2.0-flash-exp")
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        self.model = genai.GenerativeModel(self.model_name)
     
     async def check_page_text(self, page_text: str, page_number: int, language: str = "Uyghur") -> PageSpellCheck:
         """
@@ -75,7 +74,11 @@ If no issues found, return an empty array: []
 Return ONLY the JSON array, no other text."""
 
         try:
-            response = self.model.generate_content(prompt)
+            client = genai_client.get_genai_client()
+            response = await client.aio.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+            )
             result_text = response.text.strip()
             
             # Extract JSON from markdown code blocks if present

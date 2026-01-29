@@ -25,16 +25,16 @@ const App: React.FC = () => {
   const [tempPageText, setTempPageText] = useState('');
   const [fontSize, setFontSize] = useState(20);
 
-  const [editingBookSeriesId, setEditingBookSeriesId] = useState<string | null>(null);
-  const [editingSeriesList, setEditingSeriesList] = useState<string[]>([]);
-  const [tempSeries, setTempSeries] = useState('');
-
   const [editingBookCategoriesId, setEditingBookCategoriesId] = useState<string | null>(null);
   const [editingCategoriesList, setEditingCategoriesList] = useState<string[]>([]);
   const [tempCategories, setTempCategories] = useState('');
 
   const [editingBookAuthorId, setEditingBookAuthorId] = useState<string | null>(null);
   const [tempAuthor, setTempAuthor] = useState('');
+  const [editingBookVolumeId, setEditingBookVolumeId] = useState<string | null>(null);
+  const [tempVolume, setTempVolume] = useState('');
+  const [editingBookTitleId, setEditingBookTitleId] = useState<string | null>(null);
+  const [tempTitle, setTempTitle] = useState('');
   const loaderRef = React.useRef<HTMLDivElement>(null);
 
   const [modal, setModal] = useState<{
@@ -86,9 +86,10 @@ const App: React.FC = () => {
     openReader,
     saveCorrections,
     handleDeleteBook,
-    handleSaveSeries,
     handleSaveCategories,
     handleSaveAuthor,
+    handleSaveTitle,
+    handleSaveVolume,
   } = useBookActions(refreshLibrary, setBooks, setSelectedBook, setView, setModal);
 
   // Sync selectedBook with fresh data from the books list
@@ -173,14 +174,6 @@ const App: React.FC = () => {
             onOpenReader={(book) => openReader(book, setEditContent, setChatMessages, setCurrentPage)}
             onReprocess={handleReprocess}
             onDeleteBook={(id) => handleDeleteBook(id, selectedBook?.id)}
-            editingBookSeriesId={editingBookSeriesId}
-            setEditingBookSeriesId={setEditingBookSeriesId}
-            editingSeriesList={editingSeriesList}
-            setEditingSeriesList={setEditingSeriesList}
-            tempSeries={tempSeries}
-            setTempSeries={setTempSeries}
-            handleSaveSeries={(id, series) => handleSaveSeries(id, series, setEditingBookSeriesId, setEditingSeriesList)}
-
             editingBookCategoriesId={editingBookCategoriesId}
             setEditingBookCategoriesId={setEditingBookCategoriesId}
             editingCategoriesList={editingCategoriesList}
@@ -194,6 +187,18 @@ const App: React.FC = () => {
             tempAuthor={tempAuthor}
             setTempAuthor={setTempAuthor}
             handleSaveAuthor={(id, author) => handleSaveAuthor(id, author, setEditingBookAuthorId, setTempAuthor)}
+
+            editingBookTitleId={editingBookTitleId}
+            setEditingBookTitleId={setEditingBookTitleId}
+            tempTitle={tempTitle}
+            setTempTitle={setTempTitle}
+            handleSaveTitle={(id, title) => handleSaveTitle(id, title, setEditingBookTitleId, setTempTitle)}
+
+            editingBookVolumeId={editingBookVolumeId}
+            setEditingBookVolumeId={setEditingBookVolumeId}
+            tempVolume={tempVolume}
+            setTempVolume={setTempVolume}
+            handleSaveVolume={(id, volume) => handleSaveVolume(id, volume, setEditingBookVolumeId, setTempVolume)}
           />
         )}
 

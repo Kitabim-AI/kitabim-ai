@@ -1,14 +1,15 @@
-import google.generativeai as genai
 import os
 from dotenv import load_dotenv
+from google import genai
 
 load_dotenv()
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 print("Listing models with embedding capability...")
 try:
-    for m in genai.list_models():
-        if 'embedContent' in m.supported_generation_methods:
-            print(f"{m.name} - {m.supported_generation_methods}")
+    for m in client.models.list():
+        methods = getattr(m, "supported_actions", None) or getattr(m, "supported_generation_methods", None) or []
+        if "embedContent" in methods or "embed_content" in methods:
+            print(f"{m.name} - {methods}")
 except Exception as e:
     print(f"Error: {e}")

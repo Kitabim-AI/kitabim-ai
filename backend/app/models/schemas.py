@@ -14,6 +14,7 @@ class Book(BaseModel):
     contentHash: str
     title: str
     author: str
+    volume: Optional[int] = None
     totalPages: int
     content: Optional[str] = None
     results: List[ExtractionResult]
@@ -22,7 +23,6 @@ class Book(BaseModel):
     lastUpdated: Optional[datetime] = None
     coverUrl: Optional[str] = None
     processingStep: Optional[str] = "ocr" # "ocr" or "rag"
-    series: List[str] = []
     categories: List[str] = []
 
 class PaginatedBooks(BaseModel):

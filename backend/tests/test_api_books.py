@@ -1,6 +1,8 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from datetime import datetime
+from app.services.spell_check_service import PageSpellCheck, SpellCorrection
+import sys
 
 @pytest.mark.asyncio
 async def test_get_books_empty(client, mock_db):
@@ -182,3 +184,155 @@ async def test_get_book_retrofit(client, mock_db):
     response = await client.get(f"/api/books/{str(oid)}")
     assert response.status_code == 200
     assert response.json()["id"] == str(oid)
+
+@pytest.mark.asyncio
+async def test_get_books_group_by_work_sort(client, mock_db):
+    mock_db.books.count_documents.side_effect = [4, 2]
+    mock_db.books.find.return_value.to_list.return_value = [
+        {
+            "_id": "work-new",
+            "title": "Work",
+            "author": "A",
+            "uploadDate": "2024-01-10T00:00:00Z",
+            "contentHash": "h1",
+            "totalPages": 1,
+            "results": [],
+            "status": "ready"
+        },
+        {
+            "id": "work-old",
+            "title": "Work",
+            "author": "A",
+            "uploadDate": datetime(2024, 1, 9),
+            "contentHash": "h2",
+            "totalPages": 1,
+            "results": [],
+            "status": "ready"
+        },
+        {
+            "id": "no-title",
+            "title": "",
+            "author": "",
+            "uploadDate": datetime(2024, 1, 6),
+            "contentHash": "h3",
+            "totalPages": 1,
+            "results": [],
+            "status": "ready"
+        },
+        {
+            "id": "other",
+            "title": "Other",
+            "author": "B",
+            "uploadDate": datetime(2024, 1, 5),
+            "contentHash": "h4",
+            "totalPages": 1,
+            "results": [],
+            "status": "ready"
+        }
+    ]
+    response = await client.get("/api/books/?groupByWork=true&sortBy=uploadDate&order=-1")
+    assert response.status_code == 200
+    ordered = [b["id"] for b in response.json()["books"]]
+    assert ordered == ["work-new", "work-old", "no-title", "other"]
+
+@pytest.mark.asyncio
+async def test_upload_cover_not_found(client, mock_db):
+    mock_db.books.find_one.return_value = None
+    files = {"file": ("cover.png", b"fake", "image/png")}
+    data = {"title": "Missing"}
+    mock_pil = MagicMock()
+    mock_image_module = MagicMock()
+    mock_pil.Image = mock_image_module
+    with patch.dict(sys.modules, {"PIL": mock_pil, "PIL.Image": mock_image_module}):
+        response = await client.post("/api/books/upload-cover", data=data, files=files)
+        assert response.status_code == 404
+
+@pytest.mark.asyncio
+async def test_upload_cover_invalid_type(client, mock_db):
+    mock_db.books.find_one.return_value = {"id": "book-id", "title": "T"}
+    files = {"file": ("cover.txt", b"fake", "text/plain")}
+    data = {"title": "T"}
+    mock_pil = MagicMock()
+    mock_image_module = MagicMock()
+    mock_pil.Image = mock_image_module
+    with patch.dict(sys.modules, {"PIL": mock_pil, "PIL.Image": mock_image_module}):
+        response = await client.post("/api/books/upload-cover", data=data, files=files)
+        assert response.status_code == 400
+
+@pytest.mark.asyncio
+async def test_upload_cover_success(client, mock_db):
+    mock_db.books.find_one.return_value = {"id": "book-id", "title": "T"}
+    files = {"file": ("cover.png", b"fake", "image/png")}
+    data = {"title": "T"}
+    
+    mock_img = MagicMock()
+    mock_img.mode = "RGBA"
+    mock_converted = MagicMock()
+    mock_img.convert.return_value = mock_converted
+    
+    mock_pil = MagicMock()
+    mock_image_module = MagicMock()
+    mock_image_module.open.return_value = mock_img
+    mock_pil.Image = mock_image_module
+    with patch.dict(sys.modules, {"PIL": mock_pil, "PIL.Image": mock_image_module}):
+        response = await client.post("/api/books/upload-cover", data=data, files=files)
+        assert response.status_code == 200
+        assert response.json()["bookId"] == "book-id"
+
+@pytest.mark.asyncio
+async def test_check_book_spelling_success(client, mock_db):
+    correction = SpellCorrection(original="a", corrected="b", confidence=0.9, reason="typo")
+    page_check = PageSpellCheck(pageNumber=1, corrections=[correction], totalIssues=1, checkedAt="2024-01-01T00:00:00")
+    with patch("app.api.endpoints.books.spell_check_service.check_book", new_callable=AsyncMock) as mock_check:
+        mock_check.return_value = {1: page_check}
+        response = await client.post("/api/books/book-id/spell-check")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["totalPagesWithIssues"] == 1
+        assert data["results"]["1"]["totalIssues"] == 1
+
+@pytest.mark.asyncio
+async def test_check_book_spelling_not_found(client, mock_db):
+    with patch("app.api.endpoints.books.spell_check_service.check_book", new_callable=AsyncMock) as mock_check:
+        mock_check.side_effect = ValueError("Book not found")
+        response = await client.post("/api/books/book-id/spell-check")
+        assert response.status_code == 404
+
+@pytest.mark.asyncio
+async def test_check_page_spelling_no_text(client, mock_db):
+    mock_db.books.find_one.return_value = {
+        "id": "book-id",
+        "results": [{"pageNumber": 2, "text": ""}]
+    }
+    response = await client.post("/api/books/book-id/pages/2/spell-check")
+    assert response.status_code == 200
+    assert response.json()["totalIssues"] == 0
+
+@pytest.mark.asyncio
+async def test_check_page_spelling_success(client, mock_db):
+    mock_db.books.find_one.return_value = {
+        "id": "book-id",
+        "results": [{"pageNumber": 2, "text": "text"}]
+    }
+    correction = SpellCorrection(original="a", corrected="b", confidence=0.9, reason="typo")
+    page_check = PageSpellCheck(pageNumber=2, corrections=[correction], totalIssues=1, checkedAt="2024-01-01T00:00:00")
+    with patch("app.api.endpoints.books.spell_check_service.check_page_text", new_callable=AsyncMock) as mock_check:
+        mock_check.return_value = page_check
+        response = await client.post("/api/books/book-id/pages/2/spell-check")
+        assert response.status_code == 200
+        assert response.json()["totalIssues"] == 1
+
+@pytest.mark.asyncio
+async def test_apply_spelling_corrections_no_payload(client, mock_db):
+    response = await client.post("/api/books/book-id/pages/2/apply-corrections", json={})
+    assert response.status_code == 400
+
+@pytest.mark.asyncio
+async def test_apply_spelling_corrections_success(client, mock_db):
+    with patch("app.api.endpoints.books.spell_check_service.apply_corrections", new_callable=AsyncMock) as mock_apply, \
+         patch("app.api.endpoints.books.process_pdf_task") as mock_task:
+        mock_apply.return_value = True
+        payload = {"corrections": [{"original": "a", "corrected": "b"}]}
+        response = await client.post("/api/books/book-id/pages/2/apply-corrections", json=payload)
+        assert response.status_code == 200
+        assert response.json()["correctionsApplied"] == 1

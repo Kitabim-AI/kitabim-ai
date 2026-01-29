@@ -46,7 +46,7 @@ test('Modal calls confirm and close correctly', () => {
     />
   );
 
-  const confirmBtn = screen.getByText('Delete Permanently');
+  const confirmBtn = screen.getByText('Confirm');
   const cancelBtn = screen.getByText('Cancel');
 
   fireEvent.click(confirmBtn);

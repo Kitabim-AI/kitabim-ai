@@ -1,38 +1,38 @@
-
 # Kitabim.AI Monorepo
 
-The intelligent Uyghur Digital Library platform.
+The intelligent Uyghur Digital Library platform for OCR, curation, and RAG-powered reading.
 
 ## Structure
 
-- `/backend`: FastAPI Python implementation for document processing and RAG.
-  - `app/api`: API endpoints for books, chat, and status management.
-  - `app/services`: PDF processing, Gemini OCR integration, and RAG logic.
-  - `app/db`: MongoDB connection and repository management.
-  - `app/models`: Pydantic schemes and data models.
-- `/uyghurocr-api`: Local OCR service using Tesseract and ONNX models.
+- `/backend`: FastAPI API + background processing pipeline.
+  - `app/api`: Book and chat endpoints.
+  - `app/services`: PDF OCR, embeddings, spell check, and AI helpers.
+  - `app/core`: Settings and prompts.
+  - `app/db`: MongoDB connection and repositories.
+  - `app/models`: Pydantic schemas.
+  - `app/utils`: Text cleaning helpers.
+- `/uyghurocr-api`: Local OCR service (FastAPI) using Tesseract + ONNX.
   - `logic`: OCR and PDF processing logic.
   - `tessdata`: Tesseract language data.
-- `/frontend/src`: React frontend source code (served by Vite).
-  - `components`: Functional UI components:
-    - `Library`: Grid and list views for browsing books.
-    - `Reader`: Immersive RTL reading experience with inline editing.
-    - `Chat`: Local and Global RAG interfaces.
-    - `Admin`: Batch management, reprocessing, and metadata editing.
-  - `services`: Frontend API clients (Backend and Direct-to-Gemini OCR).
-  - `hooks`: Custom React hooks for global state and data fetching.
-- `/data`: Persistent storage for application data (ignored by git).
+- `/frontend/src`: React UI.
+  - `components`: Library, Reader, Admin, Chat, Spell Check, layout/common UI.
+  - `hooks`: Global state and data fetching.
+  - `services`: API clients and Gemini helpers.
+- `/data`: Persistent storage created at runtime (ignored by git).
   - `uploads/`: Original PDF files.
   - `covers/`: Extracted book cover images.
-- `/index.tsx`: Main React entry point mounting the App.
-- `/vite.config.ts`: Vite configuration with API proxying to the backend.
+- `/index.html`, `/index.tsx`, `/index.css`: Vite entry + global styles (Tailwind via CDN).
+- `/vite.config.ts`: Vite config + API proxying to backend.
 
 ## Core Features
 
-- **SHA-256 Deduplication**: Files are fingerprinted to avoid redundant OCR costs.
-- **RAG-Powered Chat**: High-precision context retrieval for Uyghur documents using Gemini.
-- **Global Knowledge Base**: A shared, persistent library of processed Uyghur literature.
-- **Real-time Processing**: Background tasks for OCR and embedding extraction.
+- **SHA-256 deduplication** to avoid re-processing identical PDFs.
+- **Parallel OCR pipeline** with resumable tasks, cover extraction, and batch embeddings.
+- **Gemini or local OCR** (switchable via `OCR_PROVIDER`).
+- **RAG chat** per book or global, with work-aware context and citations by page.
+- **Spell check & correction workflow** for OCR cleanup and embedding regeneration.
+- **Admin tools** for reprocessing, deletion, author/volume/category edits, and cover uploads.
+- **RTL reader** with inline page editing and page-level reprocess.
 
 ## Local Development
 
@@ -40,64 +40,70 @@ The intelligent Uyghur Digital Library platform.
 
 - **Node.js**: v18+
 - **Python**: 3.9+
-- **MongoDB**: Running locally on `mongodb://localhost:27017`
+- **MongoDB**: `mongodb://localhost:27017`
 
-### Setup
+### Environment Variables
 
-1. **Environment Variables**:
-   Create a `.env` file in the root directory:
-   ```env
-   GEMINI_API_KEY=your_google_gemini_api_key
-   GEMINI_MODEL_NAME=gemini-3-flash-preview
-   GEMINI_CATEGORIZATION_MODEL=gemini-1.5-flash
-   MONGODB_URL=mongodb://localhost:27017
-   MAX_PARALLEL_PAGES=5
-   ```
+Create a `.env` file in the repo root:
 
-2. **Backend Setup**:
-   ```bash
-   # Create a virtual environment (if not already created)
-   python3 -m venv venv
+```env
+GEMINI_API_KEY=your_google_gemini_api_key
+GEMINI_MODEL_NAME=gemini-3-flash-preview
+GEMINI_CATEGORIZATION_MODEL=gemini-3-flash-preview
+GEMINI_EMBEDDING_MODEL=models/gemini-embedding-001
+MONGODB_URL=mongodb://localhost:27017
+MAX_PARALLEL_PAGES=1
+OCR_PROVIDER=gemini
+LOCAL_OCR_URL=http://localhost:8001
+```
 
-   # Activate the virtual environment
-   source venv/bin/activate
+Notes:
+- `GEMINI_API_KEY` is used by both the backend and the frontend (Vite injects it).
+- Set `OCR_PROVIDER=local` to route OCR to the local OCR service.
 
-   # Install dependencies
-   pip install -r backend/requirements.txt
+### Backend Setup
 
-   # Start the FastAPI server
-   python3 backend/main.py
-   ```
-   The backend will run on `http://localhost:8000`.
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r backend/requirements.txt
+python3 backend/main.py
+```
 
-4. **Local OCR API Setup (Optional)**:
-   ```bash
-   # Navigate to the OCR API directory
-   cd uyghurocr-api
+Backend runs on `http://localhost:8000`.
 
-   # Reuse the main venv or create a new one
-   # If reusing:
-   source ../venv/bin/activate
-   pip install -r requirements.txt
+### Frontend Setup
 
-   # Start the OCR server (on a different port if needed)
-   python3 main.py
-   ```
-   The local OCR API will run on `http://localhost:8000` (default, consider adjusting if running alongside the main backend).
+```bash
+npm install
+npm run dev
+```
 
-5. **Frontend Setup**:
-   ```bash
-   # Install dependencies
-   npm install
+Frontend runs on `http://localhost:3000` (Vite proxies `/api` to the backend).
 
-   # Start the React development server
-   npm run dev
-   ```
-   The frontend will run on `http://localhost:3000`.
+### Local OCR API (Optional)
+
+```bash
+cd uyghurocr-api
+source ../venv/bin/activate
+pip install -r requirements.txt
+python3 main.py
+```
+
+Local OCR API runs on `http://localhost:8001` by default.
+
+### Tests
+
+```bash
+npm test
+```
+
+```bash
+python3 -m pytest backend/tests
+```
 
 ## Technology Stack
 
-- **Frontend**: React 19, Vite, Tailwind CSS, Lucide Icons, `@google/genai`.
-- **Backend**: Python FastAPI, MongoDB (Motor), PyMuPDF, `numpy`.
-- **AI**: Google Gemini (1.5 Flash for OCR and Reasoning).
-
+- **Frontend**: React 19, Vite 6, Tailwind (CDN), Lucide, pdf.js, `@google/genai`.
+- **Backend**: FastAPI, MongoDB (Motor), PyMuPDF, `google-genai`, `httpx`, `numpy`.
+- **Local OCR**: FastAPI, Tesseract, ONNX.

@@ -61,3 +61,32 @@ async def test_chat_current_page(client, mock_db):
     response = await client.post("/api/chat/", json=payload)
     assert response.status_code == 200
     assert "Mocked Response" in response.json()["answer"]
+
+@pytest.mark.asyncio
+async def test_chat_global_with_category_fallback(client, mock_db, mock_gemini):
+    mock_db.books.distinct.return_value = ["History", "Science"]
+    mock_db.books.find.return_value.to_list = AsyncMock(side_effect=[
+        [],  # first query returns none -> triggers fallback
+        [
+            {"id": "b1", "title": "T1", "results": [{"pageNumber": 1, "text": "p1", "status": "completed", "embedding": [0.1]*768}]},
+        ]
+    ])
+    
+    cat_response = MagicMock()
+    cat_response.text = "[]"
+    fb_response = MagicMock()
+    fb_response.text = '["History"]'
+    mock_gemini["client"].aio.models.generate_content.side_effect = [
+        cat_response,
+        fb_response,
+        mock_gemini["response"],
+    ]
+    
+    payload = {
+        "bookId": "global",
+        "question": "q",
+        "history": [{"role": "user", "text": "previous question"}]
+    }
+    response = await client.post("/api/chat/", json=payload)
+    assert response.status_code == 200
+    assert "Mocked Response" in response.json()["answer"]

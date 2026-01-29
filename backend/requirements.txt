@@ -4,7 +4,7 @@ motor
 pydantic
 python-multipart
 pymupdf
-google-generativeai
+google-genai
 python-dotenv
 numpy
 httpx

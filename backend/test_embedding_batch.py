@@ -1,20 +1,24 @@
-import google.generativeai as genai
 import os
 from dotenv import load_dotenv
+from google import genai
+from google.genai import types
+from app.services import genai_client
 
 load_dotenv()
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 texts = ["Hello", "World"]
 print("Testing batch embedding...")
 try:
-    result = genai.embed_content(
+    result = client.models.embed_content(
         model="models/embedding-001",
-        content=texts,
-        task_type="retrieval_document"
+        contents=texts,
+        config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT"),
     )
-    print(f"Result keys: {result.keys()}")
-    print(f"Length of embedding: {len(result['embedding'])}")
-    print(f"Type of first item: {type(result['embedding'][0])}")
+    embeddings = genai_client.extract_embeddings_list(result)
+    print(f"Embedding batch size: {len(embeddings)}")
+    if embeddings:
+        print(f"Length of first embedding: {len(embeddings[0])}")
+        print(f"Type of first item: {type(embeddings[0])}")
 except Exception as e:
     print(f"Error: {e}")

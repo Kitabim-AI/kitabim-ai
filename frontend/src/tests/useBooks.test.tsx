@@ -41,6 +41,12 @@ test('useBooks handles sorting', () => {
   });
 
   expect(result.current.sortConfig.key).toBe('title');
+  expect(sessionStorage.getItem('kitabim_sort_config')).toContain('title');
+
+  act(() => {
+    result.current.toggleSort('title');
+  });
+  expect(result.current.sortConfig.direction).toBe('asc');
 });
 
 test('useBooks handles loadMoreShelf', async () => {

@@ -175,17 +175,6 @@ export const useBookActions = (
     }
   };
 
-  const handleSaveSeries = async (bookId: string, seriesArray: string[], setEditingId: any, setEditingList: any) => {
-    try {
-      const series = seriesArray.map(t => t.trim()).filter(Boolean);
-      await PersistenceService.updateBookMetadata(bookId, { series });
-      setBooks(prev => prev.map(b => b.id === bookId ? { ...b, series } : b));
-      setEditingId(null);
-      setEditingList([]);
-    } catch (e) {
-      console.error("Failed to save series", e);
-    }
-  };
 
   const handleSaveCategories = async (bookId: string, categoriesArray: string[], setEditingId: any, setEditingList: any) => {
     try {
@@ -211,6 +200,42 @@ export const useBookActions = (
     }
   };
 
+  const handleSaveTitle = async (bookId: string, title: string, setEditingId: any, setTempTitle: any) => {
+    try {
+      const trimmedTitle = title.trim();
+      if (!trimmedTitle) return;
+      await PersistenceService.updateBookMetadata(bookId, { title: trimmedTitle });
+      setBooks(prev => prev.map(b => b.id === bookId ? { ...b, title: trimmedTitle } : b));
+      setEditingId(null);
+      setTempTitle('');
+    } catch (e) {
+      console.error("Failed to save title", e);
+    }
+  };
+
+  const handleSaveVolume = async (bookId: string, volumeInput: string, setEditingId: any, setTempVolume: any) => {
+    try {
+      const trimmed = volumeInput.trim();
+      let volume: number | null = null;
+
+      if (trimmed.length > 0) {
+        const parsed = Number(trimmed);
+        if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0) {
+          console.error("Invalid volume value:", volumeInput);
+          return;
+        }
+        volume = parsed;
+      }
+
+      await PersistenceService.updateBookMetadata(bookId, { volume });
+      setBooks(prev => prev.map(b => b.id === bookId ? { ...b, volume } : b));
+      setEditingId(null);
+      setTempVolume('');
+    } catch (e) {
+      console.error("Failed to save volume", e);
+    }
+  };
+
   return {
     isCheckingGlobal,
     handleFileUpload,
@@ -221,8 +246,9 @@ export const useBookActions = (
     saveCorrections,
     handleDeleteBook,
     handleSaveTags,
-    handleSaveSeries,
     handleSaveCategories,
     handleSaveAuthor,
+    handleSaveTitle,
+    handleSaveVolume,
   };
 };

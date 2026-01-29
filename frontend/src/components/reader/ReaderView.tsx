@@ -169,6 +169,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                   }
                 }}
                 className="p-2 text-slate-400 hover:bg-red-50 hover:text-red-500 rounded-xl transition-all active:scale-95"
+                aria-label="Close Reader"
               >
                 <X size={20} />
               </button>

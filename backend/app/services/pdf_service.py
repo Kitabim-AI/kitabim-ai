@@ -2,11 +2,12 @@ import os
 import fitz
 import asyncio
 import random
-import google.generativeai as genai
 import httpx
 from datetime import datetime
+from google.genai import types
 from app.core.config import settings
 from app.db.mongodb import db_manager
+from app.services import genai_client
 from app.utils.text import clean_uyghur_text
 from app.core.prompts import OCR_PROMPT
 
@@ -62,7 +63,7 @@ async def process_pdf_task(book_id: str):
             return
 
         print(f"📦 Starting Parallel Process for Book {book_id}: {len(pages_to_process)} tasks.")
-        model = genai.GenerativeModel(settings.GEMINI_MODEL_NAME)
+        client = genai_client.get_genai_client()
         
         semaphore = asyncio.Semaphore(settings.MAX_PARALLEL_PAGES)
         
@@ -122,10 +123,16 @@ async def process_pdf_task(book_id: str):
                                 try:
                                     print(f"🚀 Gemini OCR Request: Book={book_id} Page={page_num} Attempt={attempt+1}")
                                     print(f"   Model: {settings.GEMINI_MODEL_NAME}")
-                                    response = await model.generate_content_async([
-                                        {"mime_type": "image/jpeg", "data": img_bytes},
-                                        {"text": OCR_PROMPT}
-                                    ])
+                                    response = await client.aio.models.generate_content(
+                                        model=settings.GEMINI_MODEL_NAME,
+                                        contents=[
+                                            OCR_PROMPT,
+                                            types.Part.from_bytes(
+                                                data=img_bytes,
+                                                mime_type="image/jpeg",
+                                            ),
+                                        ],
+                                    )
                                     page_text = clean_uyghur_text(response.text)
                                     print(f"   ✅ OCR Success for p{page_num} ({len(page_text)} chars)")
                                     success = True
@@ -160,17 +167,22 @@ async def process_pdf_task(book_id: str):
             text_batch = [r["text"][:2000] for r in pages_to_embed]
             try:
                 print(f"🧬 Calling Gemini Batch Embedding for {len(text_batch)} pages...")
-                embedding_results = genai.embed_content(
+                embedding_results = await client.aio.models.embed_content(
                     model=settings.GEMINI_EMBEDDING_MODEL,
-                    content=text_batch,
-                    task_type="retrieval_document",
-                    output_dimensionality=768
+                    contents=text_batch,
+                    config=types.EmbedContentConfig(
+                        task_type="RETRIEVAL_DOCUMENT",
+                        output_dimensionality=768,
+                    ),
                 )
-                
+
+                embeddings = genai_client.extract_embeddings_list(embedding_results)
                 for idx, r in enumerate(pages_to_embed):
+                    if idx >= len(embeddings):
+                        break
                     await db.books.update_one(
                         {"id": book_id, "results.pageNumber": r["pageNumber"]},
-                        {"$set": {"results.$.embedding": embedding_results['embedding'][idx]}}
+                        {"$set": {"results.$.embedding": embeddings[idx]}}
                     )
                 print(f"✅ Batch Embeddings Complete ({len(pages_to_embed)} pages).")
             except Exception as e:

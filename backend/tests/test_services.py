@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from app.services.ai_service import cosine_similarity, get_embedding
 
 def test_cosine_similarity():
@@ -18,16 +18,24 @@ async def test_get_embedding_empty():
     assert await get_embedding("\n\n") is None
 
 @pytest.mark.asyncio
-@patch("google.generativeai.embed_content")
-async def test_get_embedding_success(mock_embed):
-    mock_embed.return_value = {"embedding": [0.1, 0.2, 0.3]}
+@patch("app.services.ai_service.genai_client.get_genai_client")
+async def test_get_embedding_success(mock_get_client):
+    mock_client = MagicMock()
+    mock_result = MagicMock()
+    mock_embedding = MagicMock()
+    mock_embedding.values = [0.1, 0.2, 0.3]
+    mock_result.embeddings = [mock_embedding]
+    mock_client.aio.models.embed_content = AsyncMock(return_value=mock_result)
+    mock_get_client.return_value = mock_client
     result = await get_embedding("test text")
     assert result == [0.1, 0.2, 0.3]
-    mock_embed.assert_called_once()
+    mock_client.aio.models.embed_content.assert_awaited_once()
 
 @pytest.mark.asyncio
-@patch("google.generativeai.embed_content")
-async def test_get_embedding_error(mock_embed):
-    mock_embed.side_effect = Exception("API Error")
+@patch("app.services.ai_service.genai_client.get_genai_client")
+async def test_get_embedding_error(mock_get_client):
+    mock_client = MagicMock()
+    mock_client.aio.models.embed_content = AsyncMock(side_effect=Exception("API Error"))
+    mock_get_client.return_value = mock_client
     result = await get_embedding("test text")
     assert result is None

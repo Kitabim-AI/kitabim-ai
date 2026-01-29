@@ -1,5 +1,4 @@
 import pytest
-import google.generativeai as genai
 from unittest.mock import MagicMock, AsyncMock, patch
 import motor.motor_asyncio
 from httpx import AsyncClient
@@ -24,6 +23,7 @@ def mock_db():
     m_db.books.update_one = AsyncMock()
     m_db.books.delete_one = AsyncMock()
     m_db.books.count_documents = AsyncMock()
+    m_db.books.distinct = AsyncMock(return_value=[])
     
     # Patch the global db_manager
     with patch("app.db.mongodb.db_manager.db", m_db), \
@@ -38,27 +38,26 @@ async def client(mock_db):
 
 @pytest.fixture(autouse=True)
 def mock_gemini():
-    # Mock both the main module and the embed_content/GenerativeModel
-    with patch("google.generativeai.embed_content") as mock_embed, \
-         patch("google.generativeai.GenerativeModel") as mock_model:
-        
-        # Default behaviors
-        mock_embed.return_value = {"embedding": [0.1] * 768}
-        
-        mock_instance = MagicMock()
-        mock_chat = MagicMock()
-        # send_message_async must be an AsyncMock itself to be awaited
-        mock_chat.send_message_async = AsyncMock()
+    with patch("app.services.genai_client.get_genai_client") as mock_get_client:
+        mock_client = MagicMock()
+        mock_client.aio = MagicMock()
+        mock_client.aio.models = MagicMock()
+
+        mock_embed_result = MagicMock()
+        mock_embedding = MagicMock()
+        mock_embedding.values = [0.1] * 768
+        mock_embed_result.embeddings = [mock_embedding]
+
         mock_response = MagicMock()
         mock_response.text = "Mocked Response"
-        mock_chat.send_message_async.return_value = mock_response
-        mock_instance.start_chat.return_value = mock_chat
-        mock_model.return_value = mock_instance
-        
+
+        mock_client.aio.models.embed_content = AsyncMock(return_value=mock_embed_result)
+        mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+        mock_get_client.return_value = mock_client
+
         yield {
-            "embed": mock_embed,
-            "model": mock_model,
-            "instance": mock_instance,
-            "chat": mock_chat,
-            "response": mock_response
+            "client": mock_client,
+            "embed_result": mock_embed_result,
+            "response": mock_response,
+            "get_client": mock_get_client,
         }

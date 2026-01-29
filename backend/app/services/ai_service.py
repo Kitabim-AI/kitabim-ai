@@ -1,10 +1,7 @@
-import google.generativeai as genai
 import numpy as np
-import asyncio
+from google.genai import types
 from app.core.config import settings
-
-if settings.GEMINI_API_KEY:
-    genai.configure(api_key=settings.GEMINI_API_KEY)
+from app.services import genai_client
 
 async def get_embedding(text: str):
     try:
@@ -12,14 +9,16 @@ async def get_embedding(text: str):
             return None
         # Clean text slightly for embedding
         clean_text = text.replace("\n", " ")[:2000] 
-        result = await asyncio.to_thread(
-            genai.embed_content,
+        client = genai_client.get_genai_client()
+        result = await client.aio.models.embed_content(
             model=settings.GEMINI_EMBEDDING_MODEL,
-            content=clean_text,
-            task_type="retrieval_document",
-            output_dimensionality=768
+            contents=clean_text,
+            config=types.EmbedContentConfig(
+                task_type="RETRIEVAL_DOCUMENT",
+                output_dimensionality=768,
+            ),
         )
-        return result['embedding']
+        return genai_client.extract_embedding_vector(result)
     except Exception as e:
         print(f"Embedding error: {e}")
         return None
@@ -31,4 +30,4 @@ def cosine_similarity(v1, v2):
     return dot_product / (norm_a * norm_b)
 
 async def get_generative_model():
-    return genai.GenerativeModel(settings.GEMINI_MODEL_NAME)
+    return genai_client.get_genai_client()
