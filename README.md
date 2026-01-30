@@ -39,7 +39,7 @@ The intelligent Uyghur Digital Library platform for OCR, curation, and RAG-power
 ### Prerequisites
 
 - **Node.js**: v18+
-- **Python**: 3.9+
+- **Python**: 3.13 (required)
 - **MongoDB**: `mongodb://localhost:27017`
 
 ### Environment Variables
@@ -64,10 +64,10 @@ Notes:
 ### Backend Setup
 
 ```bash
-python3 -m venv venv
+python3.13 -m venv venv
 source venv/bin/activate
 pip install -r backend/requirements.txt
-python3 backend/main.py
+python3.13 backend/main.py
 ```
 
 Backend runs on `http://localhost:8000`.
@@ -87,7 +87,7 @@ Frontend runs on `http://localhost:3000` (Vite proxies `/api` to the backend).
 cd uyghurocr-api
 source ../venv/bin/activate
 pip install -r requirements.txt
-python3 main.py
+python3.13 main.py
 ```
 
 Local OCR API runs on `http://localhost:8001` by default.
@@ -99,7 +99,7 @@ npm test
 ```
 
 ```bash
-python3 -m pytest backend/tests
+python3.13 -m pytest backend/tests
 ```
 
 ## Technology Stack
