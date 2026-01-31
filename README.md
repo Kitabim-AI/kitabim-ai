@@ -82,6 +82,8 @@ All configuration is managed via Kubernetes:
 
 Notes:
 - `GEMINI_API_KEY` is used by the backend only. The frontend proxies AI calls to the backend.
+- Use only `GEMINI_API_KEY` (Google’s recommended env var). Do not also set `GOOGLE_API_KEY` to avoid client warnings.
+- `.env` files are not used for local dev; configuration lives in Kubernetes manifests.
 - Set `OCR_PROVIDER=local` to route OCR to the local OCR service.
 
 ### Docker Desktop Kubernetes Quickstart

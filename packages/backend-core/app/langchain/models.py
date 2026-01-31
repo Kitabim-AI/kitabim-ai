@@ -4,7 +4,6 @@ import asyncio
 import base64
 import inspect
 import logging
-import os
 from typing import List
 
 from langchain_core.embeddings import Embeddings
@@ -37,12 +36,6 @@ _EMBED_BREAKER = CircuitBreaker(
 _CHAT_MODEL_CACHE: dict[str, ChatGoogleGenerativeAI] = {}
 
 
-def _ensure_google_api_key() -> None:
-    if settings.gemini_api_key:
-        os.environ.setdefault("GOOGLE_API_KEY", settings.gemini_api_key)
-        os.environ.setdefault("GEMINI_API_KEY", settings.gemini_api_key)
-
-
 def _build_kwargs(cls, model_name: str, task_type: str | None = None) -> dict:
     sig = inspect.signature(cls)
     kwargs: dict = {}
@@ -70,7 +63,6 @@ def _build_kwargs(cls, model_name: str, task_type: str | None = None) -> dict:
 
 
 def _build_chat_model(model_name: str) -> ChatGoogleGenerativeAI:
-    _ensure_google_api_key()
     cached = _CHAT_MODEL_CACHE.get(model_name)
     if cached is not None:
         return cached
@@ -81,7 +73,6 @@ def _build_chat_model(model_name: str) -> ChatGoogleGenerativeAI:
 
 
 def _build_embeddings(model_name: str, task_type: str | None) -> GoogleGenerativeAIEmbeddings:
-    _ensure_google_api_key()
     kwargs = _build_kwargs(GoogleGenerativeAIEmbeddings, model_name, task_type=task_type)
     return GoogleGenerativeAIEmbeddings(**kwargs)
 
