@@ -1,0 +1,19 @@
+node_modules
+**/node_modules
+**/__pycache__
+**/*.pyc
+.env
+.env.*
+coverage
+.data
+# Runtime data
+/data
+# Virtual envs
+venv
+**/venv
+# Reference repo
+UyghurOCR
+# Logs
+*.log
+# Build outputs
+**/dist

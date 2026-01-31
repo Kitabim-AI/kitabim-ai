@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: kitabim
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret.yaml
+  - pv.yaml
+  - pvc.yaml
+  - mongo.yaml
+  - uyghurocr.yaml
+  - backend.yaml
+  - frontend.yaml

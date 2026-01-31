@@ -1,32 +1,15 @@
 {
-  "name": "kitabim.ai",
+  "name": "kitabim-ai",
   "private": true,
-  "version": "0.0.0",
-  "type": "module",
+  "workspaces": [
+    "apps/frontend",
+    "packages/shared"
+  ],
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "test": "vitest",
-    "test:coverage": "vitest run --coverage"
-  },
-  "dependencies": {
-    "@google/genai": "^1.38.0",
-    "lucide-react": "^0.563.0",
-    "react": "^19.2.3",
-    "react-dom": "^19.2.3"
-  },
-  "devDependencies": {
-    "@testing-library/dom": "^10.4.1",
-    "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.2",
-    "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.1.2",
-    "@vitest/coverage-v8": "^4.0.18",
-    "cross-env": "^10.1.0",
-    "jsdom": "^27.4.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0",
-    "vitest": "^4.0.18"
+    "dev": "npm --workspace apps/frontend run dev",
+    "build": "npm --workspace apps/frontend run build",
+    "preview": "npm --workspace apps/frontend run preview",
+    "test": "npm --workspace apps/frontend run test",
+    "test:coverage": "npm --workspace apps/frontend run test:coverage"
   }
 }

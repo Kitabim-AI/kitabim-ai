@@ -1,0 +1,46 @@
+services:
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  uyghurocr:
+    build:
+      context: ./services/uyghurocr
+    ports:
+      - "8001:8001"
+
+  backend:
+    build:
+      context: ./services/backend
+    env_file:
+      - .env
+    environment:
+      MONGODB_URL: mongodb://mongo:27017
+      OCR_PROVIDER: local
+      LOCAL_OCR_URL: http://uyghurocr:8001
+      DATA_DIR: /data
+    volumes:
+      - kitabim_data:/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mongo
+      - uyghurocr
+
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+      args:
+        GEMINI_API_KEY: ${GEMINI_API_KEY}
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  mongo_data:
+  kitabim_data:
