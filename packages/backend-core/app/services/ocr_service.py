@@ -4,11 +4,10 @@ import random
 import asyncio
 import httpx
 import fitz
-from google.genai import types
 
 from app.core.config import settings
 from app.core.prompts import OCR_PROMPT
-from app.services import genai_client
+from app.langchain.models import generate_text_with_image
 from app.utils.text import clean_uyghur_text
 
 
@@ -18,15 +17,12 @@ async def ocr_page_with_gemini(page: fitz.Page) -> str:
 
     for attempt in range(settings.ocr_max_retries):
         try:
-            response = await genai_client.generate_content(
-                model=settings.gemini_model_name,
-                contents=[
-                    OCR_PROMPT,
-                    types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
-                ],
+            text = await generate_text_with_image(
+                OCR_PROMPT,
+                img_bytes,
+                settings.gemini_model_name,
             )
-            text = response.text or ""
-            return clean_uyghur_text(text)
+            return clean_uyghur_text(text or "")
         except Exception as exc:
             err_msg = str(exc)
             if ("503" in err_msg or "overloaded" in err_msg.lower()) and attempt < settings.ocr_max_retries - 1:

@@ -1,46 +1,145 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, List, Optional
+import base64
+import inspect
+import logging
+import os
+from typing import List
 
-from google.genai import types
 from langchain_core.embeddings import Embeddings
+from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableLambda
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 
 from app.core.config import settings
-from app.services import genai_client
+from app.utils.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitBreakerOpen
+from app.utils.observability import log_json
+
+_logger = logging.getLogger("app.llm")
+
+_TEXT_BREAKER = CircuitBreaker(
+    "llm_generate",
+    CircuitBreakerConfig(
+        failure_threshold=settings.llm_cb_failure_threshold,
+        recovery_timeout=float(settings.llm_cb_recovery_seconds),
+        half_open_max_calls=settings.llm_cb_half_open_max_calls,
+    ),
+)
+_EMBED_BREAKER = CircuitBreaker(
+    "llm_embed",
+    CircuitBreakerConfig(
+        failure_threshold=settings.llm_cb_failure_threshold,
+        recovery_timeout=float(settings.llm_cb_recovery_seconds),
+        half_open_max_calls=settings.llm_cb_half_open_max_calls,
+    ),
+)
+_CHAT_MODEL_CACHE: dict[str, ChatGoogleGenerativeAI] = {}
 
 
-def _extract_model_text(response) -> Optional[str]:
+def _ensure_google_api_key() -> None:
+    if settings.gemini_api_key:
+        os.environ.setdefault("GOOGLE_API_KEY", settings.gemini_api_key)
+        os.environ.setdefault("GEMINI_API_KEY", settings.gemini_api_key)
+
+
+def _build_kwargs(cls, model_name: str, task_type: str | None = None) -> dict:
+    sig = inspect.signature(cls)
+    kwargs: dict = {}
+
+    if "model" in sig.parameters:
+        kwargs["model"] = model_name
+    elif "model_name" in sig.parameters:
+        kwargs["model_name"] = model_name
+
+    if task_type and "task_type" in sig.parameters:
+        kwargs["task_type"] = task_type
+
+    if "dimensions" in sig.parameters:
+        kwargs["dimensions"] = 768
+    elif "output_dimensionality" in sig.parameters:
+        kwargs["output_dimensionality"] = 768
+
+    if settings.gemini_api_key:
+        if "google_api_key" in sig.parameters:
+            kwargs["google_api_key"] = settings.gemini_api_key
+        elif "api_key" in sig.parameters:
+            kwargs["api_key"] = settings.gemini_api_key
+
+    return kwargs
+
+
+def _build_chat_model(model_name: str) -> ChatGoogleGenerativeAI:
+    _ensure_google_api_key()
+    cached = _CHAT_MODEL_CACHE.get(model_name)
+    if cached is not None:
+        return cached
+    kwargs = _build_kwargs(ChatGoogleGenerativeAI, model_name)
+    model = ChatGoogleGenerativeAI(**kwargs)
+    _CHAT_MODEL_CACHE[model_name] = model
+    return model
+
+
+def _build_embeddings(model_name: str, task_type: str | None) -> GoogleGenerativeAIEmbeddings:
+    _ensure_google_api_key()
+    kwargs = _build_kwargs(GoogleGenerativeAIEmbeddings, model_name, task_type=task_type)
+    return GoogleGenerativeAIEmbeddings(**kwargs)
+
+
+def _extract_message_text(response) -> str:
+    if response is None:
+        return ""
+    if isinstance(response, str):
+        return response
+    content = getattr(response, "content", None)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: List[str] = []
+        for part in content:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict) and "text" in part:
+                parts.append(str(part["text"]))
+        return "".join(parts)
+    return str(response)
+
+
+async def _call_with_breaker(breaker: CircuitBreaker, fn, *args, **kwargs):
     try:
-        text = response.text
-        if text:
-            return text
-    except Exception:
-        pass
-
-    candidates = getattr(response, "candidates", None) or []
-    for candidate in candidates:
-        content = getattr(candidate, "content", None)
-        if not content:
-            continue
-        parts = getattr(content, "parts", None) or []
-        for part in parts:
-            part_text = getattr(part, "text", None)
-            if part_text:
-                return part_text
-    return None
+        return await breaker.call(fn, *args, **kwargs)
+    except CircuitBreakerOpen as exc:
+        log_json(_logger, logging.ERROR, "LLM circuit open", error=str(exc))
+        raise
 
 
 async def generate_text(prompt: str, model_name: str) -> str:
-    response = await genai_client.generate_content(
-        model=model_name,
-        contents=prompt,
-    )
-    return _extract_model_text(response) or ""
+    llm = _build_chat_model(model_name)
+
+    async def _call():
+        return await llm.ainvoke(prompt)
+
+    response = await _call_with_breaker(_TEXT_BREAKER, _call)
+    return _extract_message_text(response)
 
 
-def _normalize_prompt_value(value: Any) -> str:
+async def generate_text_with_image(prompt: str, image_bytes: bytes, model_name: str) -> str:
+    llm = _build_chat_model(model_name)
+    image_b64 = base64.b64encode(image_bytes).decode("ascii")
+    content = [
+        {"type": "text", "text": prompt},
+        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+    ]
+    message = HumanMessage(content=content)
+
+    async def _call():
+        return await llm.ainvoke([message])
+
+    response = await _call_with_breaker(_TEXT_BREAKER, _call)
+    return _extract_message_text(response)
+
+
+def _normalize_prompt_value(value) -> str:
     if hasattr(value, "to_string"):
         try:
             return value.to_string()
@@ -50,7 +149,7 @@ def _normalize_prompt_value(value: Any) -> str:
 
 
 def build_text_llm(model_name: str) -> RunnableLambda:
-    async def _call_llm(prompt_value: Any) -> str:
+    async def _call_llm(prompt_value) -> str:
         prompt = _normalize_prompt_value(prompt_value)
         return await generate_text(prompt, model_name)
 
@@ -60,33 +159,18 @@ def build_text_llm(model_name: str) -> RunnableLambda:
 class GeminiEmbeddings(Embeddings):
     def __init__(self, model_name: str | None = None) -> None:
         self.model_name = model_name or settings.gemini_embedding_model
+        self._doc_embeddings = _build_embeddings(self.model_name, task_type="RETRIEVAL_DOCUMENT")
+        self._query_embeddings = _build_embeddings(self.model_name, task_type="RETRIEVAL_QUERY")
 
     async def aembed_documents(self, texts: List[str]) -> List[List[float]]:
         if not texts:
             return []
-        result = await genai_client.embed_content(
-            model=self.model_name,
-            contents=texts,
-            config=types.EmbedContentConfig(
-                task_type="RETRIEVAL_DOCUMENT",
-                output_dimensionality=768,
-            ),
-        )
-        return genai_client.extract_embeddings_list(result)
+        return await _call_with_breaker(_EMBED_BREAKER, self._doc_embeddings.aembed_documents, texts)
 
     async def aembed_query(self, text: str) -> List[float]:
         if not text:
             return []
-        result = await genai_client.embed_content(
-            model=self.model_name,
-            contents=text,
-            config=types.EmbedContentConfig(
-                task_type="RETRIEVAL_QUERY",
-                output_dimensionality=768,
-            ),
-        )
-        vector = genai_client.extract_embedding_vector(result)
-        return vector or []
+        return await _call_with_breaker(_EMBED_BREAKER, self._query_embeddings.aembed_query, text)
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         return _run_sync(self.aembed_documents(texts))

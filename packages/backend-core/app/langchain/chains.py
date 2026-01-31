@@ -32,7 +32,7 @@ def build_structured_chain(
         format_instructions=parser.get_format_instructions()
     )
     llm = build_text_llm(model_name)
-    chain = prompt | llm | parser
+    chain = prompt | llm | StrOutputParser() | parser
     if run_name:
         return chain.with_config(run_name=run_name)
     return chain

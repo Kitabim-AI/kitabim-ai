@@ -1,11 +1,13 @@
-FROM node:18-alpine AS build
+FROM node:20-bullseye-slim AS build
 
 WORKDIR /repo
 
 COPY . .
 
 WORKDIR /repo/apps/frontend
-RUN npm ci
+RUN npm ci --include=optional
+RUN ROLLUP_PKG=$(node -p "require('os').arch()==='arm64'?'@rollup/rollup-linux-arm64-gnu':'@rollup/rollup-linux-x64-gnu'") \
+    && npm install --no-save "$ROLLUP_PKG"
 RUN npm run build
 
 FROM nginx:1.27-alpine

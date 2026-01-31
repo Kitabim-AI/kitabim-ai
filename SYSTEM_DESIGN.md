@@ -45,6 +45,20 @@ Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered readi
   - `data/uploads` for PDFs
   - `data/covers` for cover images
 
+### Architecture Diagram
+```mermaid
+flowchart LR
+  FE[Frontend<br/>React/Vite] -->|/api| BE[Backend API<br/>FastAPI]
+  BE -->|jobs| RQ[(Redis/ARQ)]
+  RQ --> WK[Worker<br/>ARQ]
+  BE --> DB[(MongoDB)]
+  WK --> DB
+  BE -.->|OCR (optional)| OCR[UyghurOCR]
+  WK -.->|OCR (optional)| OCR
+  BE <-->|files| DATA[(data/ volume)]
+  WK <-->|files| DATA
+```
+
 ## 4) Monorepo Structure
 ```
 /apps
@@ -57,7 +71,7 @@ Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered readi
   /shared
   /backend-core
 /infra
-  /k8s/kind
+  /k8s/docker-desktop
 /data (runtime)
 ```
 
@@ -93,7 +107,7 @@ Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered readi
 ### A) PDF Upload & Processing
 1. Frontend uploads PDF to `/api/books/upload`
 2. Backend stores file in `data/uploads`
-3. Backend enqueues job (`process_pdf`) via Redis (or local fallback)
+3. Backend enqueues job (`process_pdf`) via Redis
 4. Worker (ARQ):
    - OCR pages (Gemini or UyghurOCR)
    - Generates embeddings
@@ -121,6 +135,7 @@ Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered readi
 - Structured output parsing with `PydanticOutputParser`
 - Optional in‑memory cache (`LANGCHAIN_CACHE=true`)
 - Optional LangSmith tracing (`LANGCHAIN_TRACING=true`)
+- Gemini provider accessed via `langchain-google-genai` wrappers (no direct SDK calls)
 
 ## 8) Reliability & Idempotency
 - Job locks stored in MongoDB prevent duplicate processing
@@ -134,9 +149,9 @@ Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered readi
 - Optional RAG evaluation capture (latency, scores, context size)
 
 ## 10) Deployment (Local)
-- **Dev Mode**: run MongoDB, Redis, backend, worker, uyghurocr, frontend
-- **Docker Compose**: includes MongoDB, Redis, backend, worker, frontend, uyghurocr
-- **Kubernetes (kind)**: manifests provided in `/infra/k8s/kind`
+- **Docker Desktop Kubernetes**: supported local dev environment; manifests in `/infra/k8s/docker-desktop`
+- **Note**: Docker Compose is not supported for local development; use Docker Desktop Kubernetes.
+- **Manual Run (optional)**: run MongoDB, Redis, backend, worker, uyghurocr, frontend for debugging
 
 ## 11) Security & Secrets
 - Gemini API key stored in backend only

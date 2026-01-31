@@ -46,3 +46,4 @@ The API listens on `http://localhost:8001` by default.
 - The service uses `tessdata/` and `model.onnx` in this folder.
 - The Kitabim.AI backend calls this service via `LOCAL_OCR_URL`.
 - If you want the backend to use this service, set `OCR_PROVIDER=local` in the repo root `.env`.
+- Local dev uses Docker Desktop Kubernetes manifests in `/infra/k8s/docker-desktop`.

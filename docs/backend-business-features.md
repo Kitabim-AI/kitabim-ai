@@ -3,6 +3,7 @@
 ## Library ingestion and processing
 - PDF upload with content-hash deduplication and background processing.
 - OCR pipeline for Uyghur books using Gemini or a local OCR service, with parallel page processing.
+- Redis/ARQ worker executes OCR, embeddings, and RAG preprocessing with retries and idempotent locks.
 - Automatic cover extraction from the first PDF page and cover URL generation.
 - Per-page embeddings generation and full-book content compilation for RAG.
 - Resume/reprocess workflows for in-flight books and retrofitting missing fields at startup.
@@ -16,10 +17,10 @@
 
 ## Reader assistance (RAG chat)
 - Book-scoped and global chat endpoints with Uyghur-only responses.
-- Author lookup from natural-language queries, including title extraction in Uyghur.
 - Current-page and current-volume scoping to narrow answers when requested.
 - Category-based global routing using Gemini to pick relevant book categories.
 - Hybrid retrieval (embeddings + keyword matching) with fallback context building.
+- Optional RAG evaluation capture for latency, scores, and context sizing.
 
 ## Text quality control
 - Spell-check for full books or individual pages using Gemini.

@@ -2,6 +2,8 @@
 
 Shared backend Python package used by the API service and the worker.
 
+Local dev uses Docker Desktop Kubernetes manifests in `/infra/k8s/docker-desktop`.
+
 ## Run (Dev)
 
 ```bash

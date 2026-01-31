@@ -20,9 +20,10 @@
 
 ## Run (Dev)
 - `PYTHONPATH=packages/backend-core uvicorn app.main:app --reload --port 8000 --app-dir packages/backend-core`
-- Queue worker (optional): `PYTHONPATH=packages/backend-core python -m arq app.worker.WorkerSettings`
+- Queue worker (required): `PYTHONPATH=packages/backend-core python -m arq app.worker.WorkerSettings`
 
 ## Notes
+- Local dev uses Docker Desktop Kubernetes manifests in `/infra/k8s/docker-desktop`.
 - Uses MongoDB from `MONGODB_URL` and the shared `data/` folder for uploads/covers.
 - Override the data location with `DATA_DIR` (useful for Docker/K8s).
 - If using local OCR, set `OCR_PROVIDER=local` and ensure `services/uyghurocr` is running on `LOCAL_OCR_URL`.

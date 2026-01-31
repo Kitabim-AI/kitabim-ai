@@ -10,4 +10,4 @@ spec:
   persistentVolumeReclaimPolicy: Retain
   storageClassName: manual
   hostPath:
-    path: /data
+    path: /Users/Omarjan/Projects/kitabim-ai/data

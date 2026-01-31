@@ -4,11 +4,11 @@ motor
 pydantic
 python-multipart
 pymupdf
-google-genai
 python-dotenv
 numpy
 httpx
 pillow
 langchain
 langchain-core
+langchain-google-genai
 arq
