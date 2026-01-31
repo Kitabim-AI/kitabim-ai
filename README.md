@@ -72,44 +72,17 @@ flowchart LR
 - **Docker Desktop** with Kubernetes enabled + **kubectl**
 - **Note**: Docker Compose is not supported for local development; use Docker Desktop Kubernetes.
 
-### Environment Variables
+### Environment Variables (Kubernetes)
 
-Create a `.env` file in the repo root:
+All configuration is managed via Kubernetes:
 
-```env
-GEMINI_API_KEY=your_google_gemini_api_key
-GEMINI_MODEL_NAME=gemini-3-flash-preview
-GEMINI_CATEGORIZATION_MODEL=gemini-3-flash-preview
-GEMINI_EMBEDDING_MODEL=models/gemini-embedding-001
-MONGODB_URL=mongodb://localhost:27017
-MONGODB_DATABASE=kitabim_ai_db
-MAX_PARALLEL_PAGES=5
-OCR_PROVIDER=gemini
-LOCAL_OCR_URL=http://localhost:8001
-OCR_MAX_RETRIES=4
-RAG_SCORE_THRESHOLD=0.35
-RAG_TOP_K=12
-RAG_FALLBACK_K=8
-RAG_MAX_CHARS_PER_BOOK=4000
-DATA_DIR=./data
-LANGCHAIN_CACHE=false
-LANGCHAIN_TRACING=false
-LANGCHAIN_PROJECT=kitabim-local
-RAG_EVAL_ENABLED=false
-LLM_CB_FAILURE_THRESHOLD=5
-LLM_CB_RECOVERY_SECONDS=30
-LLM_CB_HALF_OPEN_MAX_CALLS=1
-REDIS_URL=redis://localhost:6379/0
-QUEUE_MAX_JOBS=2
-QUEUE_JOB_TIMEOUT=1800
-QUEUE_MAX_RETRIES=3
-JOB_LOCK_TTL_SECONDS=1800
-```
+- Secrets: `infra/k8s/docker-desktop/secret.yaml`
+- Non‑secrets: `infra/k8s/docker-desktop/configmap.yaml`
+- Example secret template: `infra/k8s/docker-desktop/secret.yaml.example` (copy to `secret.yaml` and fill in your key)
 
 Notes:
 - `GEMINI_API_KEY` is used by the backend only. The frontend proxies AI calls to the backend.
 - Set `OCR_PROVIDER=local` to route OCR to the local OCR service.
-- For Docker Desktop Kubernetes, copy required values into `infra/k8s/docker-desktop/secret.yaml` (secrets) and `infra/k8s/docker-desktop/configmap.yaml` (non-secrets).
 
 ### Docker Desktop Kubernetes Quickstart
 

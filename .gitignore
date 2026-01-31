@@ -38,6 +38,7 @@ ENV/
 .env.test.local
 .env.production.local
 *.env
+infra/k8s/docker-desktop/secret.yaml
 
 # Logs
 npm-debug.log*
