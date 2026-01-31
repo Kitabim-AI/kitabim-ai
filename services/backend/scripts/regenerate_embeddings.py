@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import sys
+from pathlib import Path
+
+CORE_PATH = Path(__file__).resolve().parents[3] / "packages" / "backend-core"
+if str(CORE_PATH) not in sys.path:
+    sys.path.append(str(CORE_PATH))
 
 from app.db.mongodb import db_manager
 from app.services.pdf_service import process_pdf_task

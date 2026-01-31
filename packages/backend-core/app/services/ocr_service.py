@@ -16,10 +16,9 @@ async def ocr_page_with_gemini(page: fitz.Page) -> str:
     pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
     img_bytes = pix.tobytes("jpeg")
 
-    client = genai_client.get_genai_client()
     for attempt in range(settings.ocr_max_retries):
         try:
-            response = await client.aio.models.generate_content(
+            response = await genai_client.generate_content(
                 model=settings.gemini_model_name,
                 contents=[
                     OCR_PROMPT,

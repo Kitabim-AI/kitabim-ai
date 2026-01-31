@@ -25,9 +25,9 @@ Return a JSON array of corrections. Each correction should have:
 - "context": a short snippet showing the surrounding text (max 50 chars)
 
 Only include corrections where confidence >= 0.6.
-If no issues found, return an empty array: []
+If no issues found, return an empty list.
 
-Return ONLY the JSON array, no other text."""
+{format_instructions}"""
 
 CATEGORY_PROMPT = """You are a librarian efficiently categorizing a user's question to find the right section of the library.
 
@@ -36,8 +36,9 @@ Available Categories: {categories}
 User's New Question: "{question}"
 
 Task: Identify which of the available categories are most relevant to this *New Question*.
-Return ONLY a JSON array of strings, e.g. ["History", "Literature"].
-If the question is completely general or doesn't fit any category, return []."""
+If the question is completely general or doesn't fit any category, return an empty list.
+
+{format_instructions}"""
 
 RAG_PROMPT_TEMPLATE = """
 [CONTEXT START]

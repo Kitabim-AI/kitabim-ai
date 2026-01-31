@@ -33,8 +33,7 @@ def _extract_model_text(response) -> Optional[str]:
 
 
 async def generate_text(prompt: str, model_name: str) -> str:
-    client = genai_client.get_genai_client()
-    response = await client.aio.models.generate_content(
+    response = await genai_client.generate_content(
         model=model_name,
         contents=prompt,
     )
@@ -65,8 +64,7 @@ class GeminiEmbeddings(Embeddings):
     async def aembed_documents(self, texts: List[str]) -> List[List[float]]:
         if not texts:
             return []
-        client = genai_client.get_genai_client()
-        result = await client.aio.models.embed_content(
+        result = await genai_client.embed_content(
             model=self.model_name,
             contents=texts,
             config=types.EmbedContentConfig(
@@ -79,8 +77,7 @@ class GeminiEmbeddings(Embeddings):
     async def aembed_query(self, text: str) -> List[float]:
         if not text:
             return []
-        client = genai_client.get_genai_client()
-        result = await client.aio.models.embed_content(
+        result = await genai_client.embed_content(
             model=self.model_name,
             contents=text,
             config=types.EmbedContentConfig(

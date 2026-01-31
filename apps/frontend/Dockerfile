@@ -4,9 +4,6 @@ WORKDIR /repo
 
 COPY . .
 
-ARG GEMINI_API_KEY
-RUN echo "GEMINI_API_KEY=${GEMINI_API_KEY}" > /repo/.env
-
 WORKDIR /repo/apps/frontend
 RUN npm ci
 RUN npm run build

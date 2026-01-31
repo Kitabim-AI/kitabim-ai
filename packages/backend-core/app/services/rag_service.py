@@ -1,24 +1,35 @@
 from __future__ import annotations
 
-import json
 import re
-from typing import List, Optional
+from typing import List
+from datetime import datetime
+from pydantic import BaseModel, Field
+from langchain_core.output_parsers import PydanticOutputParser
 
 import numpy as np
 from langchain_core.documents import Document
 
 from app.core.config import settings
 from app.core.prompts import CATEGORY_PROMPT, RAG_PROMPT_TEMPLATE
-from app.langchain import GeminiEmbeddings, build_text_chain
+from app.langchain import GeminiEmbeddings, build_structured_chain, build_text_chain
 from app.models.schemas import ChatRequest
+from app.utils.observability import log_json
+import logging
+import time
+
+
+class CategoryResponse(BaseModel):
+    categories: List[str] = Field(default_factory=list)
 
 
 class RAGService:
     def __init__(self) -> None:
+        parser = PydanticOutputParser(pydantic_object=CategoryResponse)
         self.embeddings = GeminiEmbeddings()
-        self.category_chain = build_text_chain(
+        self.category_chain = build_structured_chain(
             CATEGORY_PROMPT,
             settings.gemini_categorization_model,
+            parser,
             run_name="category_chain",
         )
         self.rag_chain = build_text_chain(
@@ -26,14 +37,7 @@ class RAGService:
             settings.gemini_model_name,
             run_name="rag_chain",
         )
-
-    @staticmethod
-    def _is_author_query_ug(question: str) -> bool:
-        if not question:
-            return False
-        q = question.strip()
-        keywords = ["ئاپتورى", "ئاپتور", "يازغۇچىسى", "يازغۇچى", "مۇئەللىپى", "مۇئەللىف"]
-        return any(k in q for k in keywords)
+        self.logger = logging.getLogger("app.rag")
 
     @staticmethod
     def _is_current_volume_query(question: str) -> bool:
@@ -50,85 +54,6 @@ class RAGService:
         q = question.strip()
         keywords = ["ئۇشبۇ بەتتە", "مەزكور بەتتە", "بۇ بەتتە"]
         return any(k in q for k in keywords)
-
-    @staticmethod
-    def _extract_title_ug(question: str) -> Optional[str]:
-        if not question:
-            return None
-
-        q = question.strip()
-        quote_pairs = [("«", "»"), ("《", "》"), ("“", "”"), ('"', '"'), ("'", "'")]
-        for left, right in quote_pairs:
-            pattern = re.compile(re.escape(left) + r"(.+?)" + re.escape(right))
-            match = pattern.search(q)
-            if match:
-                title = match.group(1).strip()
-                if title:
-                    return title
-
-        cleanup_patterns = [
-            r"كىتاب(نىڭ)?",
-            r"دېگەن|دەگەن",
-            r"ئاپتورى\s*كىم|ئاپتور\s*كىم",
-            r"يازغۇچىسى\s*كىم|يازغۇچى\s*كىم",
-            r"مۇئەللىپى\s*كىم|مۇئەللىف\s*كىم",
-            r"نېمە|كىم",
-            r"[؟?]",
-        ]
-        cleaned = q
-        for pat in cleanup_patterns:
-            cleaned = re.sub(pat, " ", cleaned)
-        cleaned = re.sub(r"\s+", " ", cleaned).strip()
-        return cleaned or None
-
-    @staticmethod
-    def _normalize_title_for_tokens(title: str) -> str:
-        t = title or ""
-        t = re.sub(r"[\u064B-\u065F\u0670\u06D6-\u06ED]", "", t)
-        t = re.sub(r"[«»“”\"'()\[\]{}،,؟?!؛:]", " ", t)
-        t = re.sub(r"\s+", " ", t).strip()
-        return t
-
-    @staticmethod
-    def _build_title_regex(title: str, allow_optional_hamza: bool) -> str:
-        if not title:
-            return ""
-        pattern = re.escape(title)
-        if allow_optional_hamza:
-            pattern = pattern.replace("ئ", "ئ?")
-        pattern = re.sub(r"\\s+", r"\\s+", pattern)
-        return pattern
-
-    async def _find_books_by_title(self, db, title: str) -> List[dict]:
-        queries = []
-        raw = title.strip()
-        if raw:
-            queries.append({"title": {"$regex": re.escape(raw), "$options": "i"}})
-            hamza_regex = self._build_title_regex(raw, allow_optional_hamza=True)
-            if hamza_regex and hamza_regex != re.escape(raw):
-                queries.append({"title": {"$regex": hamza_regex, "$options": "i"}})
-
-        normalized = self._normalize_title_for_tokens(raw)
-        if normalized:
-            tokens = [t for t in normalized.split() if len(t) > 1]
-            if tokens:
-                token_query = {"$and": [{"title": {"$regex": re.escape(t), "$options": "i"}} for t in tokens]}
-                queries.append(token_query)
-                token_query_hamza = {"$and": []}
-                for t in tokens:
-                    if t.startswith("ئ") and len(t) > 1:
-                        token_regex = "ئ?" + re.escape(t[1:])
-                    else:
-                        token_regex = re.escape(t).replace("ئ", "ئ?")
-                    token_query_hamza["$and"].append({"title": {"$regex": token_regex, "$options": "i"}})
-                if token_query_hamza["$and"]:
-                    queries.append(token_query_hamza)
-
-        for query in queries:
-            matches = await db.books.find(query).to_list(6)
-            if matches:
-                return matches
-        return []
 
     @staticmethod
     def _build_empty_response_message() -> str:
@@ -209,22 +134,15 @@ class RAGService:
     async def _categorize_question(self, question: str, categories: List[str]) -> List[str]:
         if not categories:
             return []
-        response_text = await self.category_chain.ainvoke(
+        response = await self.category_chain.ainvoke(
             {
                 "categories": categories,
                 "question": question,
             }
         )
-        cleaned = response_text.strip()
-        if cleaned.startswith("```json"):
-            cleaned = cleaned[7:-3].strip()
-        try:
-            result = json.loads(cleaned)
-            if isinstance(result, list):
-                return [str(x) for x in result]
-        except json.JSONDecodeError:
+        if not response:
             return []
-        return []
+        return [str(x) for x in (response.categories or [])]
 
     async def _generate_answer(
         self,
@@ -243,34 +161,19 @@ class RAGService:
         )
         return response_text.strip() or self._build_empty_response_message()
 
+    async def _record_eval(self, db, payload: dict) -> None:
+        if not settings.rag_eval_enabled or db is None:
+            return
+        payload["ts"] = datetime.utcnow()
+        try:
+            await db.rag_evaluations.insert_one(payload)
+        except Exception as exc:
+            log_json(self.logger, logging.WARNING, "RAG eval insert failed", error=str(exc))
+
     async def answer_question(self, req: ChatRequest, db) -> str:
-        if self._is_author_query_ug(req.question):
-            extracted_title = self._extract_title_ug(req.question)
-            if extracted_title:
-                matches = await self._find_books_by_title(db, extracted_title)
-                if not matches:
-                    return (
-                        f"«{extracted_title}» ناملىق كىتابنى تېپىلمىدى. "
-                        "لطفەن كىتاب نامىنى تولۇق ياكى باشقا شەكىلدە تەكرار سوراڭ."
-                    )
-                book_match = matches[0]
-                title = book_match.get("title", "نامسىز كىتاب")
-                author = book_match.get("author") or "ئاپتور نامەلۇم"
-                return f"«{title}» ناملىق ئەسەرنىڭ ئاپتورى {author}."
-
-            if req.bookId != "global":
-                book = await db.books.find_one({"id": req.bookId})
-                if book:
-                    title = book.get("title", "نامسىز كىتاب")
-                    author = book.get("author") or "ئاپتور نامەلۇم"
-                    return f"«{title}» ناملىق ئەسەرنىڭ ئاپتورى {author}."
-
-            return (
-                "كىتابنىڭ ئاپتورىنى تاپالايمەن، ئەمما كىتاب نامىنى "
-                "تەمىنلەپ بەرگەندىن كېيىنلا جاۋاب بېرەلەيمەن."
-            )
-
+        start_ts = time.monotonic()
         is_global = req.bookId == "global"
+        relevant_categories: List[str] = []
         book = None
         if not is_global:
             book = await db.books.find_one({"id": req.bookId})
@@ -311,7 +214,8 @@ class RAGService:
             relevant_categories = []
             try:
                 relevant_categories = await self._categorize_question(req.question, all_categories)
-            except Exception:
+            except Exception as exc:
+                log_json(self.logger, logging.WARNING, "Category routing failed", error=str(exc))
                 relevant_categories = []
 
             query = {}
@@ -413,12 +317,30 @@ class RAGService:
         if not context and is_global:
             context = "NO RELEVANT DOCUMENTS FOUND IN THE LIBRARY."
 
-        return await self._generate_answer(
+        answer = await self._generate_answer(
             context,
             req.question,
             strict_no_answer=False,
             suppress_page_notice=False,
         )
+
+        await self._record_eval(
+            db,
+            {
+                "bookId": req.bookId,
+                "isGlobal": is_global,
+                "question": req.question,
+                "currentPage": req.currentPage,
+                "retrievedCount": len(top_results),
+                "contextChars": len(context),
+                "scores": [r.get("score") for r in top_results],
+                "categoryFilter": relevant_categories if is_global else [],
+                "latencyMs": int((time.monotonic() - start_ts) * 1000),
+                "answerChars": len(answer),
+            },
+        )
+
+        return answer
 
 
 rag_service = RAGService()

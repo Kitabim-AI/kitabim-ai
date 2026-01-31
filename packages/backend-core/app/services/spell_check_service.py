@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel
+import logging
+from pydantic import BaseModel, Field
+from langchain_core.output_parsers import PydanticOutputParser
 
 from app.core.config import settings
 from app.core.prompts import SPELL_CHECK_PROMPT
-from app.langchain.chains import build_text_chain
+from app.langchain.chains import build_structured_chain
+from app.utils.observability import log_json
 
 
 class SpellCorrection(BaseModel):
@@ -27,33 +29,31 @@ class PageSpellCheck(BaseModel):
     checkedAt: str
 
 
+class SpellCheckResponse(BaseModel):
+    corrections: List[SpellCorrection] = Field(default_factory=list)
+
+
 class SpellCheckService:
     def __init__(self) -> None:
-        self.chain = build_text_chain(
+        parser = PydanticOutputParser(pydantic_object=SpellCheckResponse)
+        self.chain = build_structured_chain(
             SPELL_CHECK_PROMPT,
             settings.gemini_model_name,
+            parser,
             run_name="spell_check_chain",
         )
+        self.logger = logging.getLogger("app.spellcheck")
 
     async def check_page_text(self, page_text: str, page_number: int, language: str = "Uyghur") -> PageSpellCheck:
         if not page_text or not page_text.strip():
             return PageSpellCheck(pageNumber=page_number, corrections=[], totalIssues=0, checkedAt="")
 
-        response_text = await self.chain.ainvoke({"language": language, "text": page_text})
-        response_text = response_text.strip()
-
-        if response_text.startswith("```"):
-            lines = response_text.split("\n")
-            response_text = "\n".join(lines[1:-1]) if len(lines) > 2 else response_text
-            if response_text.startswith("json"):
-                response_text = response_text[4:].strip()
-
         try:
-            corrections_data = json.loads(response_text)
-        except json.JSONDecodeError:
-            corrections_data = []
-
-        corrections = [SpellCorrection(**item) for item in corrections_data]
+            response = await self.chain.ainvoke({"language": language, "text": page_text})
+            corrections = response.corrections if response else []
+        except Exception as exc:
+            log_json(self.logger, logging.WARNING, "Spell check parsing failed", error=str(exc))
+            corrections = []
         return PageSpellCheck(
             pageNumber=page_number,
             corrections=corrections,

@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+class ErrorEvent(BaseModel):
+    ts: datetime
+    kind: str
+    message: str
+    context: Optional[dict] = None
 
 
 class ExtractionResult(BaseModel):
@@ -27,7 +34,9 @@ class Book(BaseModel):
     lastUpdated: Optional[datetime] = None
     coverUrl: Optional[str] = None
     processingStep: Optional[str] = "ocr"
-    categories: List[str] = []
+    categories: List[str] = Field(default_factory=list)
+    errors: List[ErrorEvent] = Field(default_factory=list)
+    lastError: Optional[ErrorEvent] = None
 
 
 class PaginatedBooks(BaseModel):

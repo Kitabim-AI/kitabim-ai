@@ -10,3 +10,4 @@ data:
   LOCAL_OCR_URL: http://uyghurocr:8001
   MAX_PARALLEL_PAGES: "1"
   DATA_DIR: /data
+  REDIS_URL: redis://redis:6379/0

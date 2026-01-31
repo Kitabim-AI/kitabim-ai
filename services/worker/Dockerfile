@@ -11,6 +11,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY packages/backend-core /app/backend-core
 ENV PYTHONPATH=/app/backend-core
 
-EXPOSE 8000
-
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--app-dir", "/app/backend-core"]
+CMD ["python", "-m", "arq", "app.worker.WorkerSettings"]

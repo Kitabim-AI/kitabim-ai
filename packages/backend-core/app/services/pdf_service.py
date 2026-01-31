@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+import logging
+from datetime import datetime, timedelta
 from pathlib import Path
 import fitz
+from pymongo import ReturnDocument
 
 from app.core.config import settings
 from app.db.mongodb import db_manager
+from app.jobs import increment_attempts, update_job_status
 from app.langchain.models import GeminiEmbeddings
 from app.services.ocr_service import ocr_page
+from app.utils.errors import record_book_error
+from app.utils.observability import log_json
 from app.utils.text import clean_uyghur_text
 
 RUNNING_TASKS: set[str] = set()
+logger = logging.getLogger("app.pdf")
 
 
 def _resolve_pdf_path(book_id: str) -> Path:
@@ -22,19 +28,66 @@ def _resolve_cover_path(book_id: str) -> Path:
     return settings.covers_dir / f"{book_id}.jpg"
 
 
-async def process_pdf_task(book_id: str) -> None:
+async def _acquire_lock(db, book_id: str, job_key: str | None) -> bool:
+    now = datetime.utcnow()
+    expires = now + timedelta(seconds=settings.job_lock_ttl_seconds)
+    result = await db.books.find_one_and_update(
+        {
+            "id": book_id,
+            "$or": [
+                {"processingLockExpiresAt": {"$exists": False}},
+                {"processingLockExpiresAt": {"$lt": now}},
+            ],
+        },
+        {
+            "$set": {
+                "processingLock": job_key or "local",
+                "processingLockExpiresAt": expires,
+            }
+        },
+        return_document=ReturnDocument.AFTER,
+    )
+    return result is not None and result.get("processingLock") in {job_key, "local"}
+
+
+async def _release_lock(db, book_id: str, job_key: str | None) -> None:
+    await db.books.update_one(
+        {"id": book_id, "processingLock": job_key or "local"},
+        {"$unset": {"processingLock": "", "processingLockExpiresAt": ""}},
+    )
+
+
+async def process_pdf_task(
+    book_id: str,
+    job_key: str | None = None,
+    raise_on_error: bool = False,
+) -> None:
     if book_id in RUNNING_TASKS:
-        print(f"⏩ Task for {book_id} already running.")
+        log_json(logger, logging.INFO, "Task already running", book_id=book_id)
         return
 
     RUNNING_TASKS.add(book_id)
     db = db_manager.db
 
     try:
+        if job_key:
+            await increment_attempts(db, job_key)
+            await update_job_status(db, job_key, "running")
+
+        lock_acquired = await _acquire_lock(db, book_id, job_key)
+        if not lock_acquired:
+            log_json(logger, logging.WARNING, "Processing lock busy", book_id=book_id)
+            if job_key:
+                await update_job_status(db, job_key, "skipped", "Lock busy")
+            return
+
         file_path = _resolve_pdf_path(book_id)
         if not file_path.exists():
-            print(f"File not found: {file_path}")
+            log_json(logger, logging.ERROR, "PDF file missing", book_id=book_id, path=str(file_path))
             await db.books.update_one({"id": book_id}, {"$set": {"status": "error"}})
+            await record_book_error(db, book_id, "processing", "PDF file missing", {"path": str(file_path)})
+            if job_key:
+                await update_job_status(db, job_key, "failed", "PDF file missing")
             return
 
         doc = fitz.open(file_path)
@@ -85,7 +138,8 @@ async def process_pdf_task(book_id: str) -> None:
                     {"$set": {"coverUrl": f"/api/covers/{book_id}.jpg"}},
                 )
             except Exception as exc:
-                print(f"Failed to extract cover for {book_id}: {exc}")
+                log_json(logger, logging.WARNING, "Cover extraction failed", book_id=book_id, error=str(exc))
+                await record_book_error(db, book_id, "cover", str(exc))
 
         pages_to_process = [
             r["pageNumber"]
@@ -121,6 +175,7 @@ async def process_pdf_task(book_id: str) -> None:
 
                     success = already_ocr
                     page_text = existing_text
+                    page_error: str | None = None
 
                     if not already_ocr:
                         page = doc.load_page(page_num - 1)
@@ -132,20 +187,49 @@ async def process_pdf_task(book_id: str) -> None:
                             )
                             success = True
                         except Exception as exc:
-                            print(f"OCR failed for {book_id} p{page_num}: {exc}")
+                            log_json(
+                                logger,
+                                logging.ERROR,
+                                "OCR failed",
+                                book_id=book_id,
+                                page_num=page_num,
+                                error=str(exc),
+                            )
+                            page_error = str(exc)
                             page_text = f"[OCR Error: {exc}]"
+                            await record_book_error(
+                                db,
+                                book_id,
+                                "ocr",
+                                str(exc),
+                                {"page_num": page_num},
+                            )
 
+                    update_fields = {
+                        "results.$.text": page_text,
+                        "results.$.status": "completed" if success else "error",
+                        "results.$.error": page_error,
+                    }
                     await db.books.update_one(
                         {"id": book_id, "results.pageNumber": page_num},
-                        {
-                            "$set": {
-                                "results.$.text": page_text,
-                                "results.$.status": "completed" if success else "error",
-                            }
-                        },
+                        {"$set": update_fields},
                     )
                 except Exception as exc:
-                    print(f"Error processing page {page_num}: {exc}")
+                    log_json(
+                        logger,
+                        logging.ERROR,
+                        "Page processing failed",
+                        book_id=book_id,
+                        page_num=page_num,
+                        error=str(exc),
+                    )
+                    await record_book_error(
+                        db,
+                        book_id,
+                        "ocr",
+                        str(exc),
+                        {"page_num": page_num},
+                    )
 
         await asyncio.gather(*[process_page(p) for p in pages_to_process])
 
@@ -161,10 +245,18 @@ async def process_pdf_task(book_id: str) -> None:
             batch_size = 100
             for start in range(0, len(pages_to_embed), batch_size):
                 batch = pages_to_embed[start : start + batch_size]
-                text_batch = [r.get("text", "")[:2000] for r in batch]
+                pairs = []
+                for r in batch:
+                    text = (r.get("text") or "").strip()
+                    if text:
+                        pairs.append((r, text[:2000]))
+                if not pairs:
+                    continue
+                batch_records = [p[0] for p in pairs]
+                text_batch = [p[1] for p in pairs]
                 try:
                     embeddings = await embedder.aembed_documents(text_batch)
-                    for idx, r in enumerate(batch):
+                    for idx, r in enumerate(batch_records):
                         if idx >= len(embeddings):
                             break
                         await db.books.update_one(
@@ -172,7 +264,22 @@ async def process_pdf_task(book_id: str) -> None:
                             {"$set": {"results.$.embedding": embeddings[idx]}},
                         )
                 except Exception as exc:
-                    print(f"Embedding batch failed for {book_id} (batch {start}-{start+len(batch)-1}): {exc}")
+                    log_json(
+                        logger,
+                        logging.ERROR,
+                        "Embedding batch failed",
+                        book_id=book_id,
+                        batch_start=start,
+                        batch_end=start + len(batch) - 1,
+                        error=str(exc),
+                    )
+                    await record_book_error(
+                        db,
+                        book_id,
+                        "embedding",
+                        str(exc),
+                        {"batch_start": start, "batch_end": start + len(batch) - 1},
+                    )
 
         updated_book = await db.books.find_one({"id": book_id})
         sorted_results = sorted(updated_book.get("results", []), key=lambda x: x.get("pageNumber", 0))
@@ -192,12 +299,23 @@ async def process_pdf_task(book_id: str) -> None:
                 }
             },
         )
-        print(f"Book {book_id} finished with status {final_status}.")
+        log_json(logger, logging.INFO, "Book processing finished", book_id=book_id, status=final_status)
+        if job_key:
+            if final_status == "ready":
+                await update_job_status(db, job_key, "succeeded")
+            else:
+                await update_job_status(db, job_key, "failed", f"Final status: {final_status}")
 
     except Exception as exc:
-        print(f"Processing task failed for {book_id}: {exc}")
+        log_json(logger, logging.ERROR, "Processing task failed", book_id=book_id, error=str(exc))
         await db.books.update_one({"id": book_id}, {"$set": {"status": "error"}})
+        await record_book_error(db, book_id, "processing", str(exc))
+        if job_key:
+            await update_job_status(db, job_key, "failed", str(exc))
+        if raise_on_error:
+            raise
     finally:
         RUNNING_TASKS.discard(book_id)
+        await _release_lock(db, book_id, job_key)
         if "doc" in locals():
             doc.close()

@@ -38,6 +38,26 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TESSDATA_PATH = os.path.join(BASE_DIR, "tessdata")
 MODEL_PATH = os.path.join(BASE_DIR, "model.onnx")
 
+# Health/ready endpoints for local dev + k8s probes
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
+@app.get("/ready")
+async def ready():
+    tess_ok = os.path.isdir(TESSDATA_PATH)
+    model_ok = os.path.exists(MODEL_PATH)
+    if not tess_ok or not model_ok:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "tessdata_ok": tess_ok,
+                "model_ok": model_ok,
+            },
+        )
+    return {"status": "ready"}
+
 # Initialize Processors
 ocr_processor = OcrProcessor(TESSDATA_PATH, MODEL_PATH)
 pdf_processor = PdfProcessor()

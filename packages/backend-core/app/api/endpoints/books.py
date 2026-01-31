@@ -11,7 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Uploa
 from app.core.config import settings
 from app.db.mongodb import db_manager
 from app.models.schemas import Book, PaginatedBooks
-from app.services.pdf_service import process_pdf_task
+from app.queue import enqueue_pdf_processing
 from app.services.spell_check_service import spell_check_service
 
 router = APIRouter()
@@ -189,7 +189,7 @@ async def upload_pdf(background_tasks: BackgroundTasks, file: UploadFile = File(
     }
 
     await db.books.insert_one(new_book)
-    background_tasks.add_task(process_pdf_task, book_id)
+    await enqueue_pdf_processing(book_id, reason="upload", background_tasks=background_tasks)
 
     return {"bookId": book_id, "status": "started"}
 
@@ -208,7 +208,7 @@ async def reprocess_book(book_id: str, background_tasks: BackgroundTasks):
         {"id": book_id},
         {"$set": {"status": "processing", "lastUpdated": datetime.utcnow()}},
     )
-    background_tasks.add_task(process_pdf_task, book_id)
+    await enqueue_pdf_processing(book_id, reason="reprocess", background_tasks=background_tasks)
     return {"status": "reprocessing_started"}
 
 
@@ -229,7 +229,7 @@ async def reset_page(book_id: str, page_num: int, background_tasks: BackgroundTa
         {"id": book_id},
         {"$set": {"status": "processing", "lastUpdated": datetime.utcnow()}},
     )
-    background_tasks.add_task(process_pdf_task, book_id)
+    await enqueue_pdf_processing(book_id, reason="page_reset", background_tasks=background_tasks)
     return {"status": "page_reset_started"}
 
 
@@ -249,7 +249,7 @@ async def update_page_text(book_id: str, page_num: int, payload: dict, backgroun
         },
     )
     await db.books.update_one({"id": book_id}, {"$set": {"lastUpdated": datetime.utcnow()}})
-    background_tasks.add_task(process_pdf_task, book_id)
+    await enqueue_pdf_processing(book_id, reason="page_update", background_tasks=background_tasks)
     return {"status": "page_updated", "requires_rag": True}
 
 
@@ -260,7 +260,7 @@ async def create_book(book: Book, background_tasks: BackgroundTasks):
     book_dict.pop("uploadDate", None)
 
     await db.books.update_one({"id": book.id}, {"$set": book_dict}, upsert=True)
-    background_tasks.add_task(process_pdf_task, book.id)
+    await enqueue_pdf_processing(book.id, reason="create_book", background_tasks=background_tasks)
     return {"status": "success"}
 
 
@@ -415,7 +415,7 @@ async def apply_spelling_corrections(
     try:
         success = await spell_check_service.apply_corrections(book_id, page_num, corrections, db)
         if success:
-            background_tasks.add_task(process_pdf_task, book_id)
+            await enqueue_pdf_processing(book_id, reason="spell_apply", background_tasks=background_tasks)
             return {
                 "status": "success",
                 "bookId": book_id,

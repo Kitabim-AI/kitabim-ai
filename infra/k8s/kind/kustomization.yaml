@@ -8,6 +8,8 @@ resources:
   - pv.yaml
   - pvc.yaml
   - mongo.yaml
+  - redis.yaml
   - uyghurocr.yaml
   - backend.yaml
+  - worker.yaml
   - frontend.yaml

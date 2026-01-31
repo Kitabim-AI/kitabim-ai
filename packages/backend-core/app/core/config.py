@@ -47,6 +47,24 @@ class Settings:
     rag_fallback_k: int = int(os.getenv("RAG_FALLBACK_K", "8"))
     rag_max_chars_per_book: int = int(os.getenv("RAG_MAX_CHARS_PER_BOOK", "4000"))
 
+    # LangChain / Observability
+    langchain_cache_enabled: bool = os.getenv("LANGCHAIN_CACHE", "false").lower() == "true"
+    langchain_tracing_enabled: bool = os.getenv("LANGCHAIN_TRACING", "false").lower() == "true"
+    langchain_project: str | None = os.getenv("LANGCHAIN_PROJECT")
+    rag_eval_enabled: bool = os.getenv("RAG_EVAL_ENABLED", "false").lower() == "true"
+
+    # LLM Circuit Breaker
+    llm_cb_failure_threshold: int = int(os.getenv("LLM_CB_FAILURE_THRESHOLD", "5"))
+    llm_cb_recovery_seconds: int = int(os.getenv("LLM_CB_RECOVERY_SECONDS", "30"))
+    llm_cb_half_open_max_calls: int = int(os.getenv("LLM_CB_HALF_OPEN_MAX_CALLS", "1"))
+
+    # Queue / Workers
+    redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    queue_max_jobs: int = int(os.getenv("QUEUE_MAX_JOBS", "2"))
+    queue_job_timeout: int = int(os.getenv("QUEUE_JOB_TIMEOUT", "1800"))
+    queue_max_retries: int = int(os.getenv("QUEUE_MAX_RETRIES", "3"))
+    job_lock_ttl_seconds: int = int(os.getenv("JOB_LOCK_TTL_SECONDS", "1800"))
+
 
 settings = Settings()
 

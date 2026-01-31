@@ -11,3 +11,4 @@ httpx
 pillow
 langchain
 langchain-core
+arq

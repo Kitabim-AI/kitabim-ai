@@ -6,6 +6,11 @@ services:
     volumes:
       - mongo_data:/data/db
 
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
   uyghurocr:
     build:
       context: ./services/uyghurocr
@@ -14,11 +19,13 @@ services:
 
   backend:
     build:
-      context: ./services/backend
+      context: .
+      dockerfile: services/backend/Dockerfile
     env_file:
       - .env
     environment:
       MONGODB_URL: mongodb://mongo:27017
+      REDIS_URL: redis://redis:6379/0
       OCR_PROVIDER: local
       LOCAL_OCR_URL: http://uyghurocr:8001
       DATA_DIR: /data
@@ -28,18 +35,37 @@ services:
       - "8000:8000"
     depends_on:
       - mongo
+      - redis
       - uyghurocr
 
   frontend:
     build:
       context: .
       dockerfile: apps/frontend/Dockerfile
-      args:
-        GEMINI_API_KEY: ${GEMINI_API_KEY}
     ports:
       - "3000:80"
     depends_on:
       - backend
+
+  worker:
+    build:
+      context: .
+      dockerfile: services/worker/Dockerfile
+    env_file:
+      - .env
+    environment:
+      MONGODB_URL: mongodb://mongo:27017
+      REDIS_URL: redis://redis:6379/0
+      OCR_PROVIDER: local
+      LOCAL_OCR_URL: http://uyghurocr:8001
+      DATA_DIR: /data
+    command: ["python", "-m", "arq", "app.worker.WorkerSettings"]
+    volumes:
+      - kitabim_data:/data
+    depends_on:
+      - mongo
+      - redis
+      - uyghurocr
 
 volumes:
   mongo_data:

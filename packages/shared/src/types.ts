@@ -6,6 +6,13 @@ export interface ExtractionResult {
   error?: string;
 }
 
+export interface ErrorEvent {
+  ts: string | Date;
+  kind: string;
+  message: string;
+  context?: Record<string, unknown>;
+}
+
 export interface Book {
   id: string;
   contentHash: string;
@@ -22,6 +29,8 @@ export interface Book {
   processingStep?: 'ocr' | 'rag';
   categories?: string[];
   tags?: string[];
+  errors?: ErrorEvent[];
+  lastError?: ErrorEvent | null;
 }
 
 export interface PaginatedBooks {
