@@ -1,6 +1,9 @@
-from pydantic import BaseModel
-from typing import List, Optional
+from __future__ import annotations
+
 from datetime import datetime
+from typing import List, Optional
+from pydantic import BaseModel
+
 
 class ExtractionResult(BaseModel):
     pageNumber: int
@@ -8,6 +11,7 @@ class ExtractionResult(BaseModel):
     status: str
     isVerified: bool = False
     error: Optional[str] = None
+
 
 class Book(BaseModel):
     id: str
@@ -22,8 +26,9 @@ class Book(BaseModel):
     uploadDate: datetime
     lastUpdated: Optional[datetime] = None
     coverUrl: Optional[str] = None
-    processingStep: Optional[str] = "ocr" # "ocr" or "rag"
+    processingStep: Optional[str] = "ocr"
     categories: List[str] = []
+
 
 class PaginatedBooks(BaseModel):
     books: List[Book]
@@ -32,11 +37,13 @@ class PaginatedBooks(BaseModel):
     page: int
     pageSize: int
 
+
 class ChatRequest(BaseModel):
     bookId: str
     question: str
     history: List[dict] = []
     currentPage: Optional[int] = None
+
 
 class ChatResponse(BaseModel):
     answer: str

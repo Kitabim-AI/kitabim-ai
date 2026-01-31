@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Iterable, List, Optional
-
-from langchain_core.embeddings import Embeddings
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import PromptTemplate
-from langchain_core.runnables import RunnableLambda
+from typing import Any, List, Optional
 
 from google.genai import types
+from langchain_core.embeddings import Embeddings
+from langchain_core.runnables import RunnableLambda
+
 from app.core.config import settings
 from app.services import genai_client
 
@@ -43,8 +41,25 @@ async def generate_text(prompt: str, model_name: str) -> str:
     return _extract_model_text(response) or ""
 
 
+def _normalize_prompt_value(value: Any) -> str:
+    if hasattr(value, "to_string"):
+        try:
+            return value.to_string()
+        except Exception:
+            pass
+    return str(value)
+
+
+def build_text_llm(model_name: str) -> RunnableLambda:
+    async def _call_llm(prompt_value: Any) -> str:
+        prompt = _normalize_prompt_value(prompt_value)
+        return await generate_text(prompt, model_name)
+
+    return RunnableLambda(_call_llm)
+
+
 class GeminiEmbeddings(Embeddings):
-    def __init__(self, model_name: str | None = None):
+    def __init__(self, model_name: str | None = None) -> None:
         self.model_name = model_name or settings.gemini_embedding_model
 
     async def aembed_documents(self, texts: List[str]) -> List[List[float]]:
@@ -81,18 +96,6 @@ class GeminiEmbeddings(Embeddings):
 
     def embed_query(self, text: str) -> List[float]:
         return _run_sync(self.aembed_query(text))
-
-
-class PromptChainFactory:
-    @staticmethod
-    def build_text_chain(template: str, model_name: str) -> RunnableLambda:
-        prompt = PromptTemplate.from_template(template)
-
-        async def _call_llm(rendered: str) -> str:
-            return await generate_text(rendered, model_name)
-
-        llm = RunnableLambda(_call_llm)
-        return prompt | llm | StrOutputParser()
 
 
 def _run_sync(awaitable):

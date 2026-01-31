@@ -8,3 +8,6 @@ google-genai
 python-dotenv
 numpy
 httpx
+pillow
+langchain
+langchain-core

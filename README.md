@@ -7,6 +7,7 @@ The intelligent Uyghur Digital Library platform for OCR, curation, and RAG-power
 - `/backend`: FastAPI API + background processing pipeline.
   - `app/api`: Book and chat endpoints.
   - `app/services`: PDF OCR, embeddings, spell check, and AI helpers.
+  - `app/langchain`: LangChain-native chains and model/embedding adapters.
   - `app/core`: Settings and prompts.
   - `app/db`: MongoDB connection and repositories.
   - `app/models`: Pydantic schemas.
@@ -105,5 +106,5 @@ python3.13 -m pytest backend/tests
 ## Technology Stack
 
 - **Frontend**: React 19, Vite 6, Tailwind (CDN), Lucide, pdf.js, `@google/genai`.
-- **Backend**: FastAPI, MongoDB (Motor), PyMuPDF, `google-genai`, `httpx`, `numpy`.
+- **Backend**: FastAPI, MongoDB (Motor), PyMuPDF, LangChain, `google-genai`, `httpx`, `numpy`.
 - **Local OCR**: FastAPI, Tesseract, ONNX.

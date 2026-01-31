@@ -7,8 +7,8 @@ _CLIENT = None
 def get_genai_client():
     global _CLIENT
     if _CLIENT is None:
-        if settings.GEMINI_API_KEY:
-            _CLIENT = genai.Client(api_key=settings.GEMINI_API_KEY)
+        if settings.gemini_api_key:
+            _CLIENT = genai.Client(api_key=settings.gemini_api_key)
         else:
             _CLIENT = genai.Client()
     return _CLIENT

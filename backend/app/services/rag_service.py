@@ -5,23 +5,26 @@ import re
 from typing import List, Optional
 
 import numpy as np
+from langchain_core.documents import Document
 
 from app.core.config import settings
 from app.core.prompts import CATEGORY_PROMPT, RAG_PROMPT_TEMPLATE
+from app.langchain import GeminiEmbeddings, build_text_chain
 from app.models.schemas import ChatRequest
-from app.services.langchain_service import GeminiEmbeddings, PromptChainFactory
 
 
 class RAGService:
     def __init__(self) -> None:
         self.embeddings = GeminiEmbeddings()
-        self.category_chain = PromptChainFactory.build_text_chain(
+        self.category_chain = build_text_chain(
             CATEGORY_PROMPT,
             settings.gemini_categorization_model,
+            run_name="category_chain",
         )
-        self.answer_chain = PromptChainFactory.build_text_chain(
+        self.rag_chain = build_text_chain(
             RAG_PROMPT_TEMPLATE,
             settings.gemini_model_name,
+            run_name="rag_chain",
         )
 
     @staticmethod
@@ -44,6 +47,7 @@ class RAGService:
     def _is_current_page_query(question: str) -> bool:
         if not question:
             return False
+        q = question.strip()
         keywords = ["ئۇشبۇ بەتتە", "مەزكور بەتتە", "بۇ بەتتە"]
         return any(k in q for k in keywords)
 
@@ -179,6 +183,14 @@ class RAGService:
         return "\n\n---\n\n".join(parts)
 
     @staticmethod
+    def _format_document(doc: Document) -> str:
+        title = doc.metadata.get("title", "Unknown")
+        page = doc.metadata.get("page")
+        if page is None:
+            return f"Book: {title}:\n{doc.page_content}"
+        return f"Book: {title}, Page {page}:\n{doc.page_content}"
+
+    @staticmethod
     def _cosine_similarity(v1: List[float], v2: List[float]) -> float:
         if not v1 or not v2:
             return 0.0
@@ -222,7 +234,7 @@ class RAGService:
         suppress_page_notice: bool = False,
     ) -> str:
         instructions = self._build_instructions(strict_no_answer, suppress_page_notice)
-        response_text = await self.answer_chain.ainvoke(
+        response_text = await self.rag_chain.ainvoke(
             {
                 "context": context,
                 "instructions": instructions,
@@ -375,9 +387,19 @@ class RAGService:
         if current_page_context:
             context_parts.append(current_page_context)
 
+        documents: List[Document] = []
         for r in top_results:
             if is_global or r["page"] != req.currentPage:
-                context_parts.append(f"Book: {r['title']}, Page {r['page']}:\n{r['text']}")
+                title = r.get("title") or "Unknown"
+                documents.append(
+                    Document(
+                        page_content=r["text"],
+                        metadata={"title": title, "page": r.get("page")},
+                    )
+                )
+
+        for doc in documents:
+            context_parts.append(self._format_document(doc))
 
         if not top_results and not is_global:
             fallback_context = self._build_books_fallback_context(
