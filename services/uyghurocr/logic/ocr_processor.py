@@ -127,6 +127,7 @@ class OcrProcessor:
 
         # Detect text lines
         boxes, _ = self.line_detector.detect(img)
+        img_h, img_w = img.shape[:2]
         
         # Sort boxes by Y coordinate (top to bottom)
         # Using the center Y of the box for more robust sorting
@@ -136,7 +137,19 @@ class OcrProcessor:
         custom_config = f'--tessdata-dir "{self.tessdata_path}" --oem 1 --psm 13'
 
         results = []
+        footer_threshold = img_h * 0.92 # Bottom 8% is usually footer area
+
         for box in boxes:
+            min_y = np.min(box[:, 1])
+            max_y = np.max(box[:, 1])
+            center_y = (min_y + max_y) / 2
+            
+            # Simple footer skipping: ignore boxes centered in the bottom area
+            if center_y > footer_threshold:
+                # We skip it if it's likely a standalone footer (not many boxes near it)
+                # For now, just skip everything in the extreme bottom to be safe
+                continue
+
             # Warp/Crop the text line
             line_img = self.get_rotate_crop_image(img, box)
             
@@ -150,7 +163,7 @@ class OcrProcessor:
                 results.append((line_text, box))
 
         # Post-processing: Join lines with hyphen-aware merging and paragraph detection
-        final_text = self.join_lines_smart(results, img.shape[1])
+        final_text = self.join_lines_smart(results, img_w)
         return final_text
 
     def post_process(self, text: str) -> str:
@@ -167,70 +180,84 @@ class OcrProcessor:
         if not lines_with_boxes:
             return ""
         
-        # Heuristic constants
-        # Uyghur is RTL, so paragraph indentation is on the RIGHT (smaller max_x if we assume 0 is left)
-        # However, usually images are scanned such that text is loosely centered.
+        # 1. Analyze global margins to find 'normal' text boundaries
+        all_max_x = [np.max(box[:, 0]) for _, box in lines_with_boxes]
+        all_min_x = [np.min(box[:, 0]) for _, box in lines_with_boxes]
         
-        final_lines = []
+        if not all_max_x: return ""
+        
+        # Use median to avoid being threw off by single headers or short lines
+        median_right = np.median(all_max_x)
+        median_left = np.median(all_min_x)
+        body_width = median_right - median_left
+        
+        # Thresholds
+        indent_threshold = body_width * 0.04
+        centered_threshold = body_width * 0.15
+
+        final_paragraphs = []
         current_paragraph = ""
-        
+        last_was_header = False
+
         for i, (text, box) in enumerate(lines_with_boxes):
             s = text.strip()
-            if not s:
-                continue
+            if not s: continue
             
-            # Box metrics
             min_x = np.min(box[:, 0])
             max_x = np.max(box[:, 0])
-            line_width = max_x - min_x
             
-            if not current_paragraph:
-                current_paragraph = s
-                continue
+            # Determine line characteristics
+            is_indented_right = (median_right - max_x) > indent_threshold
+            is_short_left = (min_x - median_left) > indent_threshold
             
-            # 1. Hyphen check (always merge)
-            if current_paragraph.endswith(("-", "–", "—", "_")):
-                current_paragraph = current_paragraph.rstrip(" -–—_") + s
-                continue
+            # Centered check: if it's both significantly indented from right and short from left
+            right_diff = median_right - max_x
+            left_diff = min_x - median_left
+            is_centered = is_indented_right and is_short_left and abs(right_diff - left_diff) < (body_width * 0.15)
             
-            # 2. Paragraph break heuristics
-            is_new_paragraph = False
+            # 2. Logic to decide if we start a new paragraph
+            start_new = False
+            indent_spaces = 0
             
-            # Marker check (Sentence enders in Uyghur: . ؟ ! ؛)
-            ends_with_sentence_marker = current_paragraph.strip().endswith((".", "!", "؟", "؛", "»"))
-            
-            # Line length check: If the previous line was significantly shorter than the average line width
-            # We don't have average yet, but we can compare to the current line width or a threshold.
-            if i > 0:
-                prev_text, prev_box = lines_with_boxes[i-1]
-                prev_width = np.max(prev_box[:, 0]) - np.min(prev_box[:, 0])
-                # If previous line is much shorter than current line, it might be the end of a paragraph.
-                if prev_width < line_width * 0.8 and ends_with_sentence_marker:
-                    is_new_paragraph = True
+            # Sentence enders in Uyghur: . ؟ ! ؛ » :
+            ends_with_marker = current_paragraph.strip().endswith((".", "!", "؟", "؛", "»", ":", "\"", ")", "]", "}", "﴾"))
 
-            # Indentation check (RTL): 
-            # In RTL books, paragraphs are often indented from the right.
-            # So the max_x of the box will be less than the 'normal' right margin.
-            # We can compare max_x of current line with the max_x of the previous line.
-            if i > 0:
-                prev_text, prev_box = lines_with_boxes[i-1]
-                prev_max_x = np.max(prev_box[:, 0])
-                # If current line starts significantly further to the left (smaller max_x) than previous line
-                # it's likely a paragraph indentation.
-                if max_x < prev_max_x - (page_width * 0.05):
-                    is_new_paragraph = True
+            if is_centered:
+                # Headers ALWAYS start a new paragraph
+                start_new = True
+                indent_spaces = 0
+            elif is_indented_right:
+                # Start new paragraph if indented AND (previous line finished OR was a header)
+                if last_was_header or ends_with_marker or not current_paragraph:
+                    start_new = True
+                    indent_spaces = 4 
+            elif i > 0:
+                # Previous line finished with a marker and was a short line (paragraph end)
+                _, prev_box = lines_with_boxes[i-1]
+                prev_min_x = np.min(prev_box[:, 0])
+                prev_short = (prev_min_x - median_left) > (body_width * 0.1)
+                
+                if (prev_short and ends_with_marker) or last_was_header:
+                    start_new = True
 
-            if is_new_paragraph:
-                final_lines.append(current_paragraph)
-                current_paragraph = s
+            # 3. Apply the decision
+            if start_new or not current_paragraph:
+                if current_paragraph:
+                    final_paragraphs.append(current_paragraph)
+                current_paragraph = (" " * indent_spaces) + s
             else:
-                # Merge into current paragraph with a space
-                current_paragraph = current_paragraph.rstrip() + " " + s
+                # Merge into current paragraph
+                if current_paragraph.endswith(("-", "–", "—", "_")):
+                    current_paragraph = current_paragraph.rstrip(" -–—_") + s
+                else:
+                    current_paragraph = current_paragraph.rstrip() + " " + s
+            
+            last_was_header = is_centered
                 
         if current_paragraph:
-            final_lines.append(current_paragraph)
+            final_paragraphs.append(current_paragraph)
             
-        return "\n\n".join(final_lines)
+        return "\n\n".join(final_paragraphs)
 
     def __del__(self):
         pass

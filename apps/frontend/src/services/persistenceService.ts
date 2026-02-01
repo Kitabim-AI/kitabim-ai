@@ -6,7 +6,7 @@ const API_BASE = '/api';
 export const PersistenceService = {
   async findBookByHash(hash: string): Promise<Book | null> {
     try {
-      const response = await fetch(`${API_BASE}/books/hash/${hash}/`);
+      const response = await fetch(`${API_BASE}/books/hash/${hash}`);
       if (!response.ok) return null;
       const data = await response.json();
       return { ...data, uploadDate: new Date(data.uploadDate) };
@@ -17,7 +17,7 @@ export const PersistenceService = {
   },
 
   async saveBookGlobally(book: Book): Promise<void> {
-    const response = await fetch(`${API_BASE}/books/`, {
+    const response = await fetch(`${API_BASE}/books`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(book),
@@ -54,7 +54,7 @@ export const PersistenceService = {
 
   async getBookById(id: string): Promise<Book | null> {
     try {
-      const response = await fetch(`${API_BASE}/books/${id}/`);
+      const response = await fetch(`${API_BASE}/books/${id}`);
       if (!response.ok) throw new Error("Failed to fetch book");
       const b = await response.json();
       return {
@@ -70,7 +70,7 @@ export const PersistenceService = {
 
   async deleteBook(bookId: string): Promise<void> {
     try {
-      await fetch(`${API_BASE}/books/${bookId}/`, {
+      await fetch(`${API_BASE}/books/${bookId}`, {
         method: 'DELETE',
       });
     } catch (error) {
@@ -85,7 +85,7 @@ export const PersistenceService = {
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await fetch(`${API_BASE}/books/upload/`, {
+    const response = await fetch(`${API_BASE}/books/upload`, {
       method: 'POST',
       body: formData,
     });
@@ -109,7 +109,7 @@ export const PersistenceService = {
   },
 
   async updateBookMetadata(book_id: string, updates: Partial<Book>): Promise<void> {
-    const response = await fetch(`${API_BASE}/books/${book_id}/`, {
+    const response = await fetch(`${API_BASE}/books/${book_id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates)

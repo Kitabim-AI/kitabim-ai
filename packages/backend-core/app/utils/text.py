@@ -5,40 +5,49 @@ def clean_uyghur_text(text: str) -> str:
     if not text:
         return ""
 
-    # Join words split by hyphen/dash at line endings
+    # 1. Join words split by hyphen/dash at line endings (standardizing line breaks)
     text = re.sub(r"(\w)[-—–_]\s*\n\s*(\w)", r"\1\2", text)
-
-    # Standardize hyphens/dashes at line ends
     text = re.sub(r"(\w)[-—–_]\s*\n\s*", r"\1", text)
-
-    # Remove tatweels at line breaks
     text = re.sub(r"ـ+\s*\n\s*", "", text)
 
-    # Split by paragraphs (double newlines or more)
-    paragraphs = re.split(r"\n\s*\n", text)
-    cleaned_paragraphs = []
+    # 2. Split into blocks by double newlines (paragraphs)
+    blocks = re.split(r"\n\s*\n", text)
+    cleaned_blocks = []
 
-    for para in paragraphs:
-        if not para.strip():
+    for block in blocks:
+        if not block.strip():
             continue
-
-        lines = [line.strip() for line in para.split("\n") if line.strip()]
+        
+        # We split by single newline to process lines within a block
+        # DO NOT use line.strip() here as it kills indentation
+        lines = [line.rstrip() for line in block.split("\n") if line.strip()]
         if not lines:
             continue
 
-        result_para = ""
+        result_block = ""
         for idx, line in enumerate(lines):
+            # If line has leading spaces, it's likely intentional indentation
+            # We preserve it.
             if idx < len(lines) - 1:
                 next_line = lines[idx + 1]
                 is_ending = re.search(r"[.؟!:؛»\"”)\]}﴾﴿…]\s*$", line)
-                is_new_item = re.match(r"^\s*([-—–*•\d])", next_line)
+                
+                # A line is a "New Item" (list) only if the previous line ended a sentence.
+                # Otherwise, it's just a continuation (like a mid-line dash).
+                raw_next = next_line.lstrip()
+                is_list_marker = raw_next and raw_next[0] in "-—–*•"
+                is_digit_marker = raw_next and raw_next[0].isdigit() and (len(raw_next) > 1 and raw_next[1] in ". )")
+                
+                is_new_item = is_ending and (is_list_marker or is_digit_marker)
+                
                 if is_ending or is_new_item:
-                    result_para += line + "\n"
+                    result_block += line + "\n"
                 else:
-                    result_para += line + " "
+                    # Join with space if it's clearly part of the same sentence flow
+                    result_block += line + " "
             else:
-                result_para += line
+                result_block += line
 
-        cleaned_paragraphs.append(result_para.strip())
+        cleaned_blocks.append(result_block)
 
-    return "\n\n".join(cleaned_paragraphs)
+    return "\n\n".join(cleaned_blocks)
