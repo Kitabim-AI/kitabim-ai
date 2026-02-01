@@ -52,7 +52,7 @@ export const useBookActions = (
 
   const handleReProcessPage = async (bookId: string, pageNum: number) => {
     try {
-      await fetch(`/api/books/${bookId}/pages/${pageNum}/reset`, { method: 'POST' });
+      await fetch(`/api/books/${bookId}/pages/${pageNum}/reset/`, { method: 'POST' });
       refreshLibrary();
     } catch (err) {
       console.error("Failed to reset page", err);
@@ -61,7 +61,7 @@ export const useBookActions = (
 
   const handleUpdatePage = async (bookId: string, pageNum: number, newText: string, setEditingPageNum: any) => {
     try {
-      await fetch(`/api/books/${bookId}/pages/${pageNum}/update`, {
+      await fetch(`/api/books/${bookId}/pages/${pageNum}/update/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: newText })

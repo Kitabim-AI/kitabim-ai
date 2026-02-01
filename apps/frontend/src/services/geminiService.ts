@@ -4,7 +4,7 @@ const API_BASE = '/api';
 export const extractUyghurText = async (base64Image: string, retries = 5): Promise<string> => {
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
-      const response = await fetch(`${API_BASE}/ai/ocr`, {
+      const response = await fetch(`${API_BASE}/ai/ocr/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageBase64: base64Image })
@@ -29,7 +29,7 @@ export const extractUyghurText = async (base64Image: string, retries = 5): Promi
 
 export const chatWithBook = async (question: string, bookId: string, currentPage?: number, history: { role: string, text: string }[] = []): Promise<string> => {
   try {
-    const response = await fetch(`${API_BASE}/chat`, {
+    const response = await fetch(`${API_BASE}/chat/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bookId, question, currentPage, history })

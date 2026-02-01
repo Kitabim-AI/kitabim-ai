@@ -63,8 +63,10 @@ metadata:
   name: backend
   namespace: kitabim
 spec:
+  type: LoadBalancer
   selector:
     app: backend
   ports:
     - port: 8000
       targetPort: 8000
+      nodePort: 30081

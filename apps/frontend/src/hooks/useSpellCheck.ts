@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { SpellCorrection, SpellCheckResult } from '../components/spell-check/SpellCheckPanel';
 
-const API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL = '/api';
 
 export const useSpellCheck = (bookId: string, pageNumber: number) => {
   const [isChecking, setIsChecking] = useState(false);
@@ -19,7 +19,7 @@ export const useSpellCheck = (bookId: string, pageNumber: number) => {
 
     try {
       const response = await fetch(
-        `${API_BASE_URL}/books/${bookId}/pages/${pageNumber}/spell-check`,
+        `${API_BASE_URL}/books/${bookId}/pages/${pageNumber}/spell-check/`,
         {
           method: 'POST',
           headers: {

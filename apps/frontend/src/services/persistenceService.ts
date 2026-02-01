@@ -6,7 +6,7 @@ const API_BASE = '/api';
 export const PersistenceService = {
   async findBookByHash(hash: string): Promise<Book | null> {
     try {
-      const response = await fetch(`${API_BASE}/books/hash/${hash}`);
+      const response = await fetch(`${API_BASE}/books/hash/${hash}/`);
       if (!response.ok) return null;
       const data = await response.json();
       return { ...data, uploadDate: new Date(data.uploadDate) };
@@ -17,7 +17,7 @@ export const PersistenceService = {
   },
 
   async saveBookGlobally(book: Book): Promise<void> {
-    const response = await fetch(`${API_BASE}/books`, {
+    const response = await fetch(`${API_BASE}/books/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(book),
@@ -31,7 +31,7 @@ export const PersistenceService = {
 
   async getGlobalLibrary(page: number = 1, pageSize: number = 10, q?: string, sortBy: string = 'title', order: number = 1, groupByWork: boolean = false): Promise<PaginatedBooks> {
     try {
-      let url = `${API_BASE}/books?page=${page}&pageSize=${pageSize}&sortBy=${sortBy}&order=${order}`;
+      let url = `${API_BASE}/books/?page=${page}&pageSize=${pageSize}&sortBy=${sortBy}&order=${order}`;
       if (q) url += `&q=${encodeURIComponent(q)}`;
       if (groupByWork) url += `&groupByWork=true`;
 
@@ -54,7 +54,7 @@ export const PersistenceService = {
 
   async getBookById(id: string): Promise<Book | null> {
     try {
-      const response = await fetch(`${API_BASE}/books/${id}`);
+      const response = await fetch(`${API_BASE}/books/${id}/`);
       if (!response.ok) throw new Error("Failed to fetch book");
       const b = await response.json();
       return {
@@ -70,7 +70,7 @@ export const PersistenceService = {
 
   async deleteBook(bookId: string): Promise<void> {
     try {
-      await fetch(`${API_BASE}/books/${bookId}`, {
+      await fetch(`${API_BASE}/books/${bookId}/`, {
         method: 'DELETE',
       });
     } catch (error) {
@@ -85,7 +85,7 @@ export const PersistenceService = {
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await fetch(`${API_BASE}/books/upload`, {
+    const response = await fetch(`${API_BASE}/books/upload/`, {
       method: 'POST',
       body: formData,
     });
@@ -108,8 +108,8 @@ export const PersistenceService = {
     }
   },
 
-  async updateBookMetadata(bookId: string, updates: Partial<Book>): Promise<void> {
-    const response = await fetch(`${API_BASE}/books/${bookId}`, {
+  async updateBookMetadata(book_id: string, updates: Partial<Book>): Promise<void> {
+    const response = await fetch(`${API_BASE}/books/${book_id}/`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates)

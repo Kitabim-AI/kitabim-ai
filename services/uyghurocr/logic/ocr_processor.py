@@ -117,7 +117,7 @@ class OcrProcessor:
             elif mode == "single": psm = 6 # Single block
             
             # Use custom tessdata and config
-            custom_config = f'--tessdata-dir "{self.tessdata_path}" --psm {psm}'
+            custom_config = f'--tessdata-dir "{self.tessdata_path}" --oem 1 --psm {psm}'
             text = pytesseract.image_to_string(img, lang=lang, config=custom_config)
             return self.post_process(text)
 
@@ -132,7 +132,8 @@ class OcrProcessor:
         # Using the center Y of the box for more robust sorting
         boxes.sort(key=lambda b: (np.min(b[:, 1]) + np.max(b[:, 1])) / 2)
         
-        custom_config = f'--tessdata-dir "{self.tessdata_path}" --psm 7' # PSM 7 = Treat the image as a single text line.
+        # PSM 13 (Raw line) to match reference UyghurOCR behavior
+        custom_config = f'--tessdata-dir "{self.tessdata_path}" --oem 1 --psm 13'
 
         results = []
         for box in boxes:
@@ -146,11 +147,10 @@ class OcrProcessor:
             line_text = pytesseract.image_to_string(line_img, lang=lang, config=custom_config)
             line_text = self.post_process(line_text).strip()
             if line_text:
-                results.append(line_text)
+                results.append((line_text, box))
 
-        # Post-processing: Join lines
-        # Here we could implement paragraph detection or hyphen removal
-        final_text = "\n".join(results)
+        # Post-processing: Join lines with hyphen-aware merging and paragraph detection
+        final_text = self.join_lines_smart(results, img.shape[1])
         return final_text
 
     def post_process(self, text: str) -> str:
@@ -162,6 +162,75 @@ class OcrProcessor:
         # Hyphen handling could happen here if we processed full text, 
         # but since we join lines later, simpler regex might be better on full text.
         return text
+
+    def join_lines_smart(self, lines_with_boxes: List[Tuple[str, np.ndarray]], page_width: int) -> str:
+        if not lines_with_boxes:
+            return ""
+        
+        # Heuristic constants
+        # Uyghur is RTL, so paragraph indentation is on the RIGHT (smaller max_x if we assume 0 is left)
+        # However, usually images are scanned such that text is loosely centered.
+        
+        final_lines = []
+        current_paragraph = ""
+        
+        for i, (text, box) in enumerate(lines_with_boxes):
+            s = text.strip()
+            if not s:
+                continue
+            
+            # Box metrics
+            min_x = np.min(box[:, 0])
+            max_x = np.max(box[:, 0])
+            line_width = max_x - min_x
+            
+            if not current_paragraph:
+                current_paragraph = s
+                continue
+            
+            # 1. Hyphen check (always merge)
+            if current_paragraph.endswith(("-", "–", "—", "_")):
+                current_paragraph = current_paragraph.rstrip(" -–—_") + s
+                continue
+            
+            # 2. Paragraph break heuristics
+            is_new_paragraph = False
+            
+            # Marker check (Sentence enders in Uyghur: . ؟ ! ؛)
+            ends_with_sentence_marker = current_paragraph.strip().endswith((".", "!", "؟", "؛", "»"))
+            
+            # Line length check: If the previous line was significantly shorter than the average line width
+            # We don't have average yet, but we can compare to the current line width or a threshold.
+            if i > 0:
+                prev_text, prev_box = lines_with_boxes[i-1]
+                prev_width = np.max(prev_box[:, 0]) - np.min(prev_box[:, 0])
+                # If previous line is much shorter than current line, it might be the end of a paragraph.
+                if prev_width < line_width * 0.8 and ends_with_sentence_marker:
+                    is_new_paragraph = True
+
+            # Indentation check (RTL): 
+            # In RTL books, paragraphs are often indented from the right.
+            # So the max_x of the box will be less than the 'normal' right margin.
+            # We can compare max_x of current line with the max_x of the previous line.
+            if i > 0:
+                prev_text, prev_box = lines_with_boxes[i-1]
+                prev_max_x = np.max(prev_box[:, 0])
+                # If current line starts significantly further to the left (smaller max_x) than previous line
+                # it's likely a paragraph indentation.
+                if max_x < prev_max_x - (page_width * 0.05):
+                    is_new_paragraph = True
+
+            if is_new_paragraph:
+                final_lines.append(current_paragraph)
+                current_paragraph = s
+            else:
+                # Merge into current paragraph with a space
+                current_paragraph = current_paragraph.rstrip() + " " + s
+                
+        if current_paragraph:
+            final_lines.append(current_paragraph)
+            
+        return "\n\n".join(final_lines)
 
     def __del__(self):
         pass

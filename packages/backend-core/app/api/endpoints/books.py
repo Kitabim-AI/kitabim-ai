@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import uuid
 import os
 import io
 from datetime import datetime
@@ -158,18 +159,31 @@ async def upload_pdf(background_tasks: BackgroundTasks, file: UploadFile = File(
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
 
-    pdf_bytes = await file.read()
-    content_hash = hashlib.sha256(pdf_bytes).hexdigest()
+    temp_path = settings.uploads_dir / f".upload_{uuid.uuid4().hex}.pdf"
+    hasher = hashlib.sha256()
 
-    existing = await db.books.find_one({"contentHash": content_hash})
-    if existing:
-        return {"bookId": existing.get("id"), "status": "existing"}
+    try:
+        with open(temp_path, "wb") as handle:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                hasher.update(chunk)
+                handle.write(chunk)
 
-    book_id = hashlib.md5(f"{file.filename}{datetime.utcnow()}".encode()).hexdigest()[:12]
+        content_hash = hasher.hexdigest()
+        existing = await db.books.find_one({"contentHash": content_hash})
+        if existing:
+            temp_path.unlink(missing_ok=True)
+            return {"bookId": existing.get("id"), "status": "existing"}
 
-    file_path = settings.uploads_dir / f"{book_id}.pdf"
-    with open(file_path, "wb") as handle:
-        handle.write(pdf_bytes)
+        book_id = hashlib.md5(f"{file.filename}{datetime.utcnow()}".encode()).hexdigest()[:12]
+        file_path = settings.uploads_dir / f"{book_id}.pdf"
+        os.replace(temp_path, file_path)
+    except Exception:
+        if temp_path.exists():
+            temp_path.unlink(missing_ok=True)
+        raise
 
     now = datetime.utcnow()
     new_book = {
