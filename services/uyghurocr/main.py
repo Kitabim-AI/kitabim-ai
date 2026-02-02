@@ -10,6 +10,9 @@ from logic.ocr_processor import OcrProcessor
 from logic.pdf_processor import PdfProcessor
 from pydantic import BaseModel
 
+# Optimization: Limit internal Tesseract threading to allow our parallel line logic to work better
+os.environ["OMP_THREAD_LIMIT"] = "1"
+
 class LangEnum(str, Enum):
     ukij = "ukij"
     uig = "uig"
@@ -103,7 +106,7 @@ async def get_pdf_page(file: UploadFile = File(...), page: int = Form(0)):
             os.remove(temp_path)
 
 @app.post("/api/ocr/recognize", response_model=OcrResponse)
-async def recognize(
+def recognize(
     file: UploadFile = File(...),
     lang: LangEnum = Form(LangEnum.ukij),
     mode: ModeEnum = Form(ModeEnum.auto),
@@ -116,7 +119,7 @@ async def recognize(
 ):
     try:
         print(f"📖 OCR Request: Book={book_name or 'Unknown'}, Page={page_num or 'Unknown'}, Mode={mode.value}")
-        image_bytes = await file.read()
+        image_bytes = file.file.read()
         roi = (x, y, width, height)
         result = ocr_processor.perform_ocr(image_bytes, lang.value, mode.value, roi)
         print(f"✅ OCR Success: Book={book_name or 'Unknown'}, Page={page_num or 'Unknown'}")

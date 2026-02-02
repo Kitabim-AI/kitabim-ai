@@ -13,7 +13,8 @@ class OcrProcessor:
         self.tessdata_path = tessdata_path
         self.onnx_model_path = onnx_model_path
         self.line_detector = None
-        self.executor = ThreadPoolExecutor(max_workers=os.cpu_count() or 4)
+        # Fixed pool size to prevent OOM when multiple API requests hit at once
+        self.executor = ThreadPoolExecutor(max_workers=4)
         # Configure tesseract for custom tessdata
         os.environ["TESSDATA_PREFIX"] = os.path.abspath(tessdata_path)
 
@@ -136,31 +137,38 @@ class OcrProcessor:
         # PSM 13 (Raw line) to match reference UyghurOCR behavior
         custom_config = f'--tessdata-dir "{self.tessdata_path}" --oem 1 --psm 13'
 
-        results = []
-        footer_threshold = img_h * 0.92 # Bottom 8% is usually footer area
+        # Prepare line images for parallel processing
+        line_tasks = []
+        footer_threshold = img_h * 0.92
 
         for box in boxes:
-            min_y = np.min(box[:, 1])
-            max_y = np.max(box[:, 1])
-            center_y = (min_y + max_y) / 2
-            
-            # Simple footer skipping: ignore boxes centered in the bottom area
+            center_y = (np.min(box[:, 1]) + np.max(box[:, 1])) / 2
             if center_y > footer_threshold:
-                # We skip it if it's likely a standalone footer (not many boxes near it)
-                # For now, just skip everything in the extreme bottom to be safe
                 continue
 
-            # Warp/Crop the text line
             line_img = self.get_rotate_crop_image(img, box)
-            
-            if line_img.shape[0] == 0 or line_img.shape[1] == 0:
-                continue
+            if line_img.shape[0] > 0 and line_img.shape[1] > 0:
+                line_tasks.append((line_img, box))
 
-            # Run Tesseract on the line
-            line_text = pytesseract.image_to_string(line_img, lang=lang, config=custom_config)
-            line_text = self.post_process(line_text).strip()
-            if line_text:
-                results.append((line_text, box))
+        if not line_tasks:
+            return ""
+
+        # Helper for thread worker
+        def recognize_single_line(task):
+            line_img, box = task
+            try:
+                text = pytesseract.image_to_string(line_img, lang=lang, config=custom_config)
+                processed_text = self.post_process(text).strip()
+                return (processed_text, box)
+            except Exception as e:
+                print(f"Error in line processor: {e}")
+                return ("", box)
+
+        # Execute in parallel - .map() preserves order!
+        threaded_results = list(self.executor.map(recognize_single_line, line_tasks))
+
+        # Filter out empty results while keeping the relative order
+        results = [(text, box) for text, box in threaded_results if text]
 
         # Post-processing: Join lines with hyphen-aware merging and paragraph detection
         final_text = self.join_lines_smart(results, img_w)
