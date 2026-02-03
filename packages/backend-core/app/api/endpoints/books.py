@@ -5,13 +5,13 @@ import uuid
 import os
 import io
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 from bson import ObjectId
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
 from app.core.config import settings
 from app.db.mongodb import db_manager
-from app.models.schemas import Book, PaginatedBooks
+from app.models.schemas import Book, PaginatedBooks, ExtractionResult
 from app.queue import enqueue_pdf_processing
 from app.services.spell_check_service import spell_check_service
 from app.utils.markdown import normalize_markdown
@@ -65,8 +65,31 @@ async def get_books(
         return datetime.min
 
     if groupByWork and sortBy == "uploadDate":
-        all_cursor = db.books.find(query, projection).sort([("uploadDate", order), ("_id", -1)])
-        all_books = await all_cursor.to_list(None)
+        pipeline = [
+            {"$match": query},
+            {"$sort": {"uploadDate": order, "_id": -1}},
+            {"$lookup": {
+                "from": "pages",
+                "localField": "id",
+                "foreignField": "bookId",
+                "as": "pageStats",
+                "pipeline": [
+                    {"$group": {
+                        "_id": "$status",
+                        "count": {"$sum": 1}
+                    }}
+                ]
+            }},
+            {"$project": {
+                "content": 0,
+                "results": 0,
+                "previousContent": 0,
+                "previousResults": 0,
+                "embedding": 0
+            }}
+        ]
+
+        all_books = await db.books.aggregate(pipeline).to_list(None)
 
         work_groups = {}
         no_work_books = []
@@ -75,6 +98,13 @@ async def get_books(
         for b in all_books:
             if "_id" in b and "id" not in b:
                 b["id"] = str(b["_id"])
+
+            # Extract stats from aggregation
+            stats = {s["_id"]: s["count"] for s in b.get("pageStats", [])}
+            b["completedCount"] = stats.get("completed", 0)
+            b["errorCount"] = stats.get("error", 0)
+            if "results" not in b:
+                b["results"] = []
 
             book_title = b.get("title")
             book_author = b.get("author") or ""
@@ -117,18 +147,49 @@ async def get_books(
             "pageSize": pageSize,
         }
 
-    books_cursor = (
-        db.books.find(query, projection)
-        .sort([(sortBy, order), ("_id", -1)])
-        .skip(skip)
-        .limit(pageSize)
-    )
-    books_list = await books_cursor.to_list(pageSize)
+    pipeline = [
+        {"$match": query},
+        {"$sort": {sortBy: order, "_id": -1}},
+        {"$skip": skip},
+        {"$limit": pageSize},
+        {"$lookup": {
+            "from": "pages",
+            "localField": "id",
+            "foreignField": "bookId",
+            "as": "pageStats",
+            "pipeline": [
+                {"$group": {
+                    "_id": "$status",
+                    "count": {"$sum": 1}
+                }}
+            ]
+        }},
+        {"$project": {
+            "content": 0,
+            "results": 0,
+            "previousContent": 0,
+            "previousResults": 0,
+            "embedding": 0
+        }}
+    ]
+
+    cursor = db.books.aggregate(pipeline)
+    books_list = await cursor.to_list(pageSize)
 
     formatted = []
     for b in books_list:
         if "_id" in b and "id" not in b:
             b["id"] = str(b["_id"])
+        
+        # Extract stats from aggregation
+        stats = {s["_id"]: s["count"] for s in b.get("pageStats", [])}
+        b["completedCount"] = stats.get("completed", 0)
+        b["errorCount"] = stats.get("error", 0)
+        
+        # Ensure results is an empty list if not provided
+        if "results" not in b:
+            b["results"] = []
+            
         formatted.append(b)
 
     return {
@@ -141,14 +202,33 @@ async def get_books(
 
 
 @router.get("/{book_id}", response_model=Book)
-async def get_book(book_id: str):
+async def get_book(book_id: str, initial_pages: int = 20):
     db = db_manager.db
-    book = await db.books.find_one({"id": book_id}, {"results.embedding": 0})
+    book = await db.books.find_one({"id": book_id}, {"content": 0})
     if book:
         if "_id" in book and "id" not in book:
             book["id"] = str(book["_id"])
+        
+        # Return only the initial batch of pages
+        cursor = db.pages.find({"bookId": book_id}, {"embedding": 0}).sort("pageNumber", 1).limit(initial_pages)
+        pages = await cursor.to_list(initial_pages)
+        book["results"] = pages
+        
         return book
     raise HTTPException(status_code=404, detail="Book not found")
+
+
+@router.get("/{book_id}/pages", response_model=List[ExtractionResult])
+async def get_book_pages(book_id: str, skip: int = 0, limit: int = 20):
+    db = db_manager.db
+    # Verify book exists first (optional, but good for 404s)
+    book = await db.books.find_one({"id": book_id}, {"_id": 1})
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    cursor = db.pages.find({"bookId": book_id}, {"embedding": 0}).sort("pageNumber", 1).skip(skip).limit(limit)
+    pages = await cursor.to_list(limit)
+    return pages
 
 
 @router.get("/hash/{content_hash}", response_model=Book)
@@ -245,18 +325,20 @@ async def start_ocr(book_id: str, payload: dict, background_tasks: BackgroundTas
         update_fields["previousVersionAt"] = datetime.utcnow()
 
     if book.get("status") != "pending" and book.get("totalPages", 0) > 0:
-        reset_results = []
-        for page_num in range(1, int(book.get("totalPages", 0)) + 1):
-            reset_results.append(
-                {
-                    "pageNumber": page_num,
+        # Reset pages collection
+        await db.pages.update_many(
+            {"bookId": book_id},
+            {
+                "$set": {
                     "text": "",
                     "status": "pending",
                     "isVerified": False,
                     "error": None,
-                }
-            )
-        update_fields["results"] = reset_results
+                    "lastUpdated": datetime.utcnow()
+                },
+                "$unset": {"embedding": ""}
+            }
+        )
         update_fields["content"] = ""
 
     await db.books.update_one({"id": book_id}, {"$set": update_fields})
@@ -288,11 +370,12 @@ async def retry_failed_ocr(
     if provider not in {"local", "gemini"}:
         raise HTTPException(status_code=400, detail="Invalid OCR provider")
 
-    failed_pages = [
-        r.get("pageNumber")
-        for r in (book.get("results") or [])
-        if r.get("status") == "error"
-    ]
+    failed_pages_cursor = db.pages.find(
+        {"bookId": book_id, "status": "error"},
+        {"pageNumber": 1}
+    )
+    failed_pages = [r.get("pageNumber") async for r in failed_pages_cursor]
+    
     if not failed_pages:
         return {"status": "no_failed_pages"}
 
@@ -307,18 +390,19 @@ async def retry_failed_ocr(
             }
         },
     )
-    for page_num in failed_pages:
-        await db.books.update_one(
-            {"id": book_id, "results.pageNumber": page_num},
-            {
-                "$set": {
-                    "results.$.status": "pending",
-                    "results.$.text": "",
-                    "results.$.error": None,
-                    "results.$.isVerified": False,
-                }
-            },
-        )
+    
+    await db.pages.update_many(
+        {"bookId": book_id, "pageNumber": {"$in": failed_pages}},
+        {
+            "$set": {
+                "status": "pending",
+                "text": "",
+                "error": None,
+                "isVerified": False,
+                "lastUpdated": datetime.utcnow()
+            }
+        }
+    )
     await enqueue_pdf_processing(book_id, reason="retry_failed", background_tasks=background_tasks)
     return {"status": "retry_started", "provider": provider, "failedPages": failed_pages}
 
@@ -386,14 +470,16 @@ async def reprocess_book(book_id: str, background_tasks: BackgroundTasks):
 @router.post("/{book_id}/pages/{page_num}/reset")
 async def reset_page(book_id: str, page_num: int, background_tasks: BackgroundTasks):
     db = db_manager.db
-    await db.books.update_one(
-        {"id": book_id, "results.pageNumber": page_num},
+    await db.pages.update_one(
+        {"bookId": book_id, "pageNumber": page_num},
         {
             "$set": {
-                "results.$.status": "pending",
-                "results.$.text": "",
-                "results.$.isVerified": False,
-            }
+                "status": "pending",
+                "text": "",
+                "isVerified": False,
+                "lastUpdated": datetime.utcnow(),
+            },
+            "$unset": {"embedding": ""}
         },
     )
     await db.books.update_one(
@@ -408,15 +494,16 @@ async def reset_page(book_id: str, page_num: int, background_tasks: BackgroundTa
 async def update_page_text(book_id: str, page_num: int, payload: dict, background_tasks: BackgroundTasks):
     db = db_manager.db
     new_text = normalize_markdown(payload.get("text", ""))
-    await db.books.update_one(
-        {"id": book_id, "results.pageNumber": page_num},
+    await db.pages.update_one(
+        {"bookId": book_id, "pageNumber": page_num},
         {
             "$set": {
-                "results.$.text": new_text,
-                "results.$.status": "completed",
-                "results.$.isVerified": True,
+                "text": new_text,
+                "status": "completed",
+                "isVerified": True,
+                "lastUpdated": datetime.utcnow(),
             },
-            "$unset": {"results.$.embedding": ""},
+            "$unset": {"embedding": ""},
         },
     )
     await db.books.update_one({"id": book_id}, {"$set": {"lastUpdated": datetime.utcnow()}})

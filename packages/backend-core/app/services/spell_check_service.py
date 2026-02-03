@@ -66,15 +66,13 @@ class SpellCheckService:
         )
 
     async def check_book(self, book_id: str, db) -> Dict[int, PageSpellCheck]:
-        book = await db.books.find_one({"id": book_id})
-        if not book:
-            raise ValueError(f"Book {book_id} not found")
-
+        pages_cursor = db.pages.find({"bookId": book_id, "status": "completed"})
+        
         results: Dict[int, PageSpellCheck] = {}
-        for page_result in book.get("results", []):
-            page_num = page_result.get("pageNumber")
-            page_text = page_result.get("text", "")
-            if not page_text or page_result.get("status") != "completed":
+        async for page_rec in pages_cursor:
+            page_num = page_rec.get("pageNumber")
+            page_text = page_rec.get("text", "")
+            if not page_text:
                 continue
             spell_check = await self.check_page_text(page_text, page_num)
             if spell_check.totalIssues > 0:
@@ -89,21 +87,11 @@ class SpellCheckService:
         corrections: List[Dict],
         db,
     ) -> bool:
-        book = await db.books.find_one({"id": book_id})
-        if not book:
+        page_rec = await db.pages.find_one({"bookId": book_id, "pageNumber": page_number})
+        if not page_rec:
             return False
 
-        results = book.get("results", [])
-        page_idx = None
-        for idx, page in enumerate(results):
-            if page.get("pageNumber") == page_number:
-                page_idx = idx
-                break
-
-        if page_idx is None:
-            return False
-
-        page_text = results[page_idx].get("text", "")
+        page_text = page_rec.get("text", "")
         sorted_corrections = sorted(corrections, key=lambda x: x.get("position", 0), reverse=True)
         for correction in sorted_corrections:
             original = correction.get("original", "")
@@ -111,13 +99,24 @@ class SpellCheckService:
             if original and corrected:
                 page_text = page_text.replace(original, corrected)
 
-        results[page_idx]["text"] = normalize_markdown(page_text)
-        results[page_idx]["status"] = "completed"
-        results[page_idx]["isVerified"] = True
-        results[page_idx].pop("embedding", None)
+        new_text = normalize_markdown(page_text)
+        
+        await db.pages.update_one(
+            {"bookId": book_id, "pageNumber": page_number},
+            {
+                "$set": {
+                    "text": new_text,
+                    "status": "completed",
+                    "isVerified": True,
+                    "lastUpdated": datetime.utcnow()
+                },
+                "$unset": {"embedding": ""}
+            }
+        )
 
+        all_pages = await db.pages.find({"bookId": book_id}).sort("pageNumber", 1).to_list(None)
         all_text = "\n\n".join(
-            page.get("text", "") for page in results if page.get("status") == "completed"
+            page.get("text", "") for page in all_pages if page.get("status") == "completed"
         )
         all_text = normalize_markdown(all_text)
 
@@ -125,7 +124,6 @@ class SpellCheckService:
             {"id": book_id},
             {
                 "$set": {
-                    "results": results,
                     "content": all_text,
                     "lastUpdated": datetime.utcnow(),
                 }

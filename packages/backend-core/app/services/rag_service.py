@@ -187,9 +187,8 @@ class RAGService:
         current_page_only = include_current_page_context
 
         if include_current_page_context and not is_global and req.currentPage and book:
-            page_rec = next(
-                (r for r in book.get("results", []) if r.get("pageNumber") == req.currentPage),
-                None,
+            page_rec = await db.pages.find_one(
+                {"bookId": req.bookId, "pageNumber": req.currentPage}
             )
             if page_rec and page_rec.get("text"):
                 page_text = strip_markdown(page_rec.get("text") or "")
@@ -224,33 +223,46 @@ class RAGService:
             if relevant_categories:
                 query = {"categories": {"$in": relevant_categories}}
 
-            all_books = await db.books.find(query).to_list(100)
-            if not all_books:
-                all_books = await db.books.find().sort("lastUpdated", -1).to_list(200)
-
-            for b in all_books:
-                for r in b.get("results", []):
-                    if r.get("status") == "completed":
-                        r["bookTitle"] = b.get("title")
-                        pages_to_search.append(r)
+            all_books_recs = await db.books.find(query, {"id": 1, "title": 1}).to_list(100)
+            if not all_books_recs:
+                all_books_recs = await db.books.find({}, {"id": 1, "title": 1}).sort("lastUpdated", -1).to_list(200)
+            
+            book_id_to_title = {b["id"]: b.get("title") for b in all_books_recs}
+            book_ids = list(book_id_to_title.keys())
+            
+            # Fetch pages from pages collection
+            pages_recs = await db.pages.find(
+                {"bookId": {"$in": book_ids}, "status": "completed"}
+            ).to_list(10000)
+            
+            for r in pages_recs:
+                r["bookTitle"] = book_id_to_title.get(r.get("bookId"))
+                pages_to_search.append(r)
         else:
-            related_books = [book]
+            # For specific book, get siblings
             title = book.get("title")
             author = book.get("author")
+            
+            related_ids = [req.bookId]
+            book_id_to_title = {req.bookId: book.get("title")}
 
             if title and not use_current_volume_only:
                 sibling_query = {"title": title, "id": {"$ne": req.bookId}}
                 if author:
                     sibling_query["author"] = author
-                siblings = await db.books.find(sibling_query).to_list(200)
-                if siblings:
-                    related_books.extend(siblings)
+                siblings = await db.books.find(sibling_query, {"id": 1, "title": 1}).to_list(200)
+                for s in siblings:
+                    related_ids.append(s["id"])
+                    book_id_to_title[s["id"]] = s.get("title")
 
-            for b in related_books:
-                for r in b.get("results", []):
-                    if r.get("status") == "completed":
-                        r["bookTitle"] = b.get("title")
-                        pages_to_search.append(r)
+            # Fetch pages from pages collection
+            pages_recs = await db.pages.find(
+                {"bookId": {"$in": related_ids}, "status": "completed"}
+            ).to_list(10000)
+            
+            for r in pages_recs:
+                r["bookTitle"] = book_id_to_title.get(r.get("bookId"))
+                pages_to_search.append(r)
 
         query_vector = []
         try:

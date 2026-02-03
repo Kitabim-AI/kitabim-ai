@@ -14,11 +14,11 @@ test('LibraryView renders books and header', () => {
   render(
     <LibraryView
       books={mockBooks}
+      isInitialLoading={false}
       isLoadingMore={false}
       hasMore={false}
       searchQuery=""
       onBookClick={vi.fn()}
-      onDeleteBook={vi.fn()}
       loaderRef={ref}
       loadMore={vi.fn()}
     />
@@ -34,11 +34,11 @@ test('LibraryView shows empty state', () => {
   render(
     <LibraryView
       books={[]}
+      isInitialLoading={false}
       isLoadingMore={false}
       hasMore={false}
       searchQuery=""
       onBookClick={vi.fn()}
-      onDeleteBook={vi.fn()}
       loaderRef={ref}
       loadMore={vi.fn()}
     />
@@ -52,11 +52,11 @@ test('LibraryView shows search empty state', () => {
   render(
     <LibraryView
       books={[]}
+      isInitialLoading={false}
       isLoadingMore={false}
       hasMore={false}
       searchQuery="unknown book"
       onBookClick={vi.fn()}
-      onDeleteBook={vi.fn()}
       loaderRef={ref}
       loadMore={vi.fn()}
     />
@@ -70,11 +70,11 @@ test('LibraryView shows loading state', () => {
   render(
     <LibraryView
       books={mockBooks}
+      isInitialLoading={false}
       isLoadingMore={true}
       hasMore={true}
       searchQuery=""
       onBookClick={vi.fn()}
-      onDeleteBook={vi.fn()}
       loaderRef={ref}
       loadMore={vi.fn()}
     />

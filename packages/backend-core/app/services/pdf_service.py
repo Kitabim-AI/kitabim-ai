@@ -97,22 +97,25 @@ async def process_pdf_task(
         if not book:
             return
 
-        results = book.get("results", []) or []
-        existing_by_page = {r.get("pageNumber"): r for r in results if r.get("pageNumber")}
-
-        if not results or len(results) != total_pages:
-            results = []
+        if total_pages > 0:
+            objs = []
             for page_num in range(1, total_pages + 1):
-                existing = existing_by_page.get(page_num, {})
-                results.append(
+                objs.append(
                     {
+                        "bookId": book_id,
                         "pageNumber": page_num,
-                        "text": existing.get("text", ""),
-                        "status": existing.get("status", "pending"),
-                        "isVerified": existing.get("isVerified", False),
-                        "error": existing.get("error"),
-                        **({"embedding": existing.get("embedding")} if existing.get("embedding") else {}),
+                        "status": "pending",
+                        "isVerified": False,
+                        "text": "",
+                        "lastUpdated": datetime.utcnow(),
                     }
+                )
+            # Use upsert to avoid duplicates if re-running
+            for obj in objs:
+                await db.pages.update_one(
+                    {"bookId": book_id, "pageNumber": obj["pageNumber"]},
+                    {"$setOnInsert": obj},
+                    upsert=True
                 )
 
             await db.books.update_one(
@@ -120,7 +123,6 @@ async def process_pdf_task(
                 {
                     "$set": {
                         "totalPages": total_pages,
-                        "results": results,
                         "status": "processing",
                         "lastUpdated": datetime.utcnow(),
                     }
@@ -141,11 +143,18 @@ async def process_pdf_task(
                 log_json(logger, logging.WARNING, "Cover extraction failed", book_id=book_id, error=str(exc))
                 await record_book_error(db, book_id, "cover", str(exc))
 
-        pages_to_process = [
-            r["pageNumber"]
-            for r in results
-            if r.get("status") != "completed" or (r.get("status") == "completed" and "embedding" not in r)
-        ]
+        # Find pages that need processing
+        pages_to_process_recs = await db.pages.find(
+            {
+                "bookId": book_id,
+                "$or": [
+                    {"status": {"$ne": "completed"}},
+                    {"embedding": {"$exists": False}}
+                ]
+            }
+        ).to_list(None)
+        
+        pages_to_process = [r["pageNumber"] for r in pages_to_process_recs]
 
         if not pages_to_process:
             await db.books.update_one({"id": book_id}, {"$set": {"status": "ready"}})
@@ -156,11 +165,7 @@ async def process_pdf_task(
         async def process_page(page_num: int) -> None:
             async with semaphore:
                 try:
-                    current_book = await db.books.find_one({"id": book_id})
-                    page_record = next(
-                        (r for r in current_book.get("results", []) if r.get("pageNumber") == page_num),
-                        None,
-                    )
+                    page_record = await db.pages.find_one({"bookId": book_id, "pageNumber": page_num})
                     existing_text = page_record.get("text", "") if page_record else ""
                     is_verified = page_record.get("isVerified", False) if page_record else False
                     already_ocr = is_verified or (
@@ -168,9 +173,9 @@ async def process_pdf_task(
                     )
 
                     if not already_ocr:
-                        await db.books.update_one(
-                            {"id": book_id, "results.pageNumber": page_num},
-                            {"$set": {"results.$.status": "processing"}},
+                        await db.pages.update_one(
+                            {"bookId": book_id, "pageNumber": page_num},
+                            {"$set": {"status": "processing"}},
                         )
 
                     success = already_ocr
@@ -180,10 +185,10 @@ async def process_pdf_task(
                     if not already_ocr:
                         page = doc.load_page(page_num - 1)
                         try:
-                            provider = (current_book.get("ocrProvider") or settings.ocr_provider).lower()
+                            provider = (book.get("ocrProvider") or settings.ocr_provider).lower()
                             page_text = await ocr_page(
                                 page,
-                                current_book.get("title", "Unknown"),
+                                book.get("title", "Unknown"),
                                 page_num,
                                 provider=provider,
                             )
@@ -211,12 +216,13 @@ async def process_pdf_task(
                         page_text = normalize_markdown(page_text)
 
                     update_fields = {
-                        "results.$.text": page_text,
-                        "results.$.status": "completed" if success else "error",
-                        "results.$.error": page_error,
+                        "text": page_text,
+                        "status": "completed" if success else "error",
+                        "error": page_error,
+                        "lastUpdated": datetime.utcnow(),
                     }
-                    await db.books.update_one(
-                        {"id": book_id, "results.pageNumber": page_num},
+                    await db.pages.update_one(
+                        {"bookId": book_id, "pageNumber": page_num},
                         {"$set": update_fields},
                     )
                     if success:
@@ -248,10 +254,9 @@ async def process_pdf_task(
 
         await db.books.update_one({"id": book_id}, {"$set": {"processingStep": "rag"}})
 
-        updated_book = await db.books.find_one({"id": book_id})
-        pages_to_embed = [
-            r for r in updated_book.get("results", []) if r.get("status") == "completed" and "embedding" not in r
-        ]
+        pages_to_embed = await db.pages.find(
+            {"bookId": book_id, "status": "completed", "embedding": {"$exists": False}}
+        ).to_list(None)
 
         if pages_to_embed:
             embedder = GeminiEmbeddings()
@@ -272,9 +277,9 @@ async def process_pdf_task(
                     for idx, r in enumerate(batch_records):
                         if idx >= len(embeddings):
                             break
-                        await db.books.update_one(
-                            {"id": book_id, "results.pageNumber": r.get("pageNumber")},
-                            {"$set": {"results.$.embedding": embeddings[idx]}},
+                        await db.pages.update_one(
+                            {"bookId": book_id, "pageNumber": r.get("pageNumber")},
+                            {"$set": {"embedding": embeddings[idx]}},
                         )
                 except Exception as exc:
                     log_json(
@@ -294,12 +299,11 @@ async def process_pdf_task(
                         {"batch_start": start, "batch_end": start + len(batch) - 1},
                     )
 
-        updated_book = await db.books.find_one({"id": book_id})
-        sorted_results = sorted(updated_book.get("results", []), key=lambda x: x.get("pageNumber", 0))
-        raw_combined = "\n\n".join([r.get("text", "") for r in sorted_results if r.get("status") == "completed"])
+        all_pages = await db.pages.find({"bookId": book_id}).sort("pageNumber", 1).to_list(None)
+        raw_combined = "\n\n".join([r.get("text", "") for r in all_pages if r.get("status") == "completed"])
         full_content = normalize_markdown(raw_combined)
 
-        completed_count = len([r for r in updated_book.get("results", []) if r.get("status") == "completed"])
+        completed_count = len([r for r in all_pages if r.get("status") == "completed"])
         final_status = "ready" if completed_count == total_pages else "error"
 
         await db.books.update_one(

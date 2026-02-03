@@ -28,7 +28,7 @@ class Book(BaseModel):
     volume: Optional[int] = None
     totalPages: int
     content: Optional[str] = None
-    results: List[ExtractionResult]
+    results: List[ExtractionResult] = Field(default_factory=list)
     status: str
     uploadDate: datetime
     lastUpdated: Optional[datetime] = None
@@ -41,6 +41,8 @@ class Book(BaseModel):
     categories: List[str] = Field(default_factory=list)
     errors: List[ErrorEvent] = Field(default_factory=list)
     lastError: Optional[ErrorEvent] = None
+    completedCount: int = 0
+    errorCount: int = 0
 
 
 class PaginatedBooks(BaseModel):

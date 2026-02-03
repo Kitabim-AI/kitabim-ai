@@ -40,12 +40,19 @@ async def lifespan(app: FastAPI):
                     book.get("status") == "ready"
                     and (not book.get("coverUrl") or not cover_file.exists())
                 )
+                # Check pages needing RAG (embeddings)
+                has_missing_embeddings = False
+                if book.get("status") == "ready":
+                    missing_emb_count = await db.pages.count_documents({
+                        "bookId": book["id"],
+                        "status": "completed",
+                        "embedding": {"$exists": False}
+                    })
+                    has_missing_embeddings = missing_emb_count > 0
+
                 needs_rag = (
                     book.get("status") == "ready"
-                    and any(
-                        r.get("status") == "completed" and "embedding" not in r
-                        for r in book.get("results", [])
-                    )
+                    and has_missing_embeddings
                 )
                 needs_results = (
                     book.get("status") != "pending"

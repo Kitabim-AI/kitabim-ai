@@ -20,7 +20,7 @@ spec:
             - sh
             - -c
             - |
-              until nc -z mongo 27017; do echo "waiting for mongo"; sleep 2; done
+
               until nc -z redis 6379; do echo "waiting for redis"; sleep 2; done
       containers:
         - name: backend

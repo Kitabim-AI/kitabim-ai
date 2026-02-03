@@ -37,6 +37,8 @@ interface ReaderViewProps {
   setModal: (modal: any) => void;
 }
 
+import { PersistenceService } from '../../services/persistenceService';
+
 export const ReaderView: React.FC<ReaderViewProps> = ({
   selectedBook,
   isEditing,
@@ -66,6 +68,15 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   const pageTextAreaRef = useRef<HTMLTextAreaElement>(null);
   const globalTextAreaRef = useRef<HTMLTextAreaElement>(null);
   const [shouldRunSpellCheck, setShouldRunSpellCheck] = React.useState(false);
+  const [loadedPages, setLoadedPages] = React.useState<any[]>(selectedBook.results || []);
+  const [isLoadingMore, setIsLoadingMore] = React.useState(false);
+  const [hasMorePages, setHasMorePages] = React.useState(true);
+  const observerTarget = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Initial sync
+    setLoadedPages(selectedBook.results || []);
+  }, [selectedBook.id]); // Only reset on book change, rely on subsequent fetch logic for updates
 
   // Auto-resize textarea for page edit
   useEffect(() => {
@@ -82,6 +93,77 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
       globalTextAreaRef.current.style.height = `${globalTextAreaRef.current.scrollHeight}px`;
     }
   }, [editContent, isEditing]);
+
+  const fetchMorePages = React.useCallback(async () => {
+    if (isLoadingMore || !hasMorePages) return;
+    setIsLoadingMore(true);
+
+    try {
+      const currentLength = loadedPages.length;
+      const newPages = await PersistenceService.getBookPages(selectedBook.id, currentLength, 20);
+
+      if (newPages.length === 0) {
+        setHasMorePages(false);
+      } else {
+        setLoadedPages(prev => {
+          // De-duplicate in case of race conditions or overlaps
+          const existingIds = new Set(prev.map(p => p.pageNumber));
+          const uniqueNew = newPages.filter((p: any) => !existingIds.has(p.pageNumber));
+          return [...prev, ...uniqueNew].sort((a, b) => Number(a.pageNumber) - Number(b.pageNumber));
+        });
+      }
+    } catch (err) {
+      console.error("Failed to load more pages", err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [isLoadingMore, hasMorePages, loadedPages.length, selectedBook.id]);
+
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0].isIntersecting) {
+          fetchMorePages();
+        }
+      },
+      { threshold: 0.1, rootMargin: '400px' }
+    );
+
+    if (observerTarget.current) {
+      observer.observe(observerTarget.current);
+    }
+
+    return () => observer.disconnect();
+  }, [fetchMorePages]);
+
+
+  // Also update loadedPages if selectedBook updates (e.g. from polling in App.tsx) - but be careful not to overwrite fetched pages if App.tsx doesn't have them all
+  // Actually, App.tsx polling might overwrite 'results' with just the initial set if we aren't careful.
+  // We need to merge polling updates into our local state.
+  useEffect(() => {
+    if (selectedBook.results && selectedBook.results.length > 0) {
+      setLoadedPages(prev => {
+        const prevMap = new Map(prev.map(p => [p.pageNumber, p]));
+        let hasChanges = false;
+
+        selectedBook.results.forEach(p => {
+          const existing = prevMap.get(p.pageNumber);
+          // Check if content or status changed and update if so
+          if (!existing || existing.status !== p.status || existing.text !== p.text || existing.error !== p.error) {
+            prevMap.set(p.pageNumber, p);
+            hasChanges = true;
+          }
+        });
+
+        if (hasChanges) {
+          return Array.from(prevMap.values()).sort((a, b) => Number(a.pageNumber) - Number(b.pageNumber));
+        }
+        return prev;
+      });
+    }
+  }, [selectedBook.results]);
+
 
   const {
     isChecking,
@@ -188,7 +270,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
             />
           ) : (
             <div className="max-w-3xl mx-auto space-y-12 pb-32">
-              {[...selectedBook.results]
+              {[...loadedPages]
                 .sort((a, b) => Number(a.pageNumber) - Number(b.pageNumber))
                 // Deduplicate by pageNumber just in case
                 .filter((page, index, self) =>
@@ -324,6 +406,18 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                     )}
                   </div>
                 ))}
+
+              {/* Loader Element for Intersection Observer */}
+              {hasMorePages && !isEditing && (
+                <div ref={observerTarget} className="flex justify-center p-8">
+                  {isLoadingMore && (
+                    <div className="flex flex-col items-center gap-2">
+                      <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+                      <span className="text-xs text-indigo-400 font-medium uppercase tracking-wider">Loading more pages...</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

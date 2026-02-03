@@ -5,6 +5,7 @@ import { BookCard } from './BookCard';
 
 interface LibraryViewProps {
   books: Book[];
+  isInitialLoading: boolean;
   isLoadingMore: boolean;
   hasMore: boolean;
   searchQuery: string;
@@ -15,6 +16,7 @@ interface LibraryViewProps {
 
 export const LibraryView: React.FC<LibraryViewProps> = ({
   books,
+  isInitialLoading,
   isLoadingMore,
   hasMore,
   searchQuery,
@@ -25,16 +27,16 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   React.useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && hasMore && !isLoadingMore) {
+        if (entries[0].isIntersecting && !isInitialLoading && hasMore && !isLoadingMore) {
           loadMore();
         }
       },
-      { threshold: 0.1 }
+      { threshold: 0.1, rootMargin: '200px' }
     );
 
     if (loaderRef.current) observer.observe(loaderRef.current);
     return () => observer.disconnect();
-  }, [hasMore, isLoadingMore, loadMore, loaderRef]);
+  }, [hasMore, isLoadingMore, loadMore, loaderRef, isInitialLoading]);
 
   return (
     <div className="space-y-6">
@@ -72,7 +74,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
       {/* Infinite Scroll Trigger */}
       <div ref={loaderRef} className="h-32 flex items-center justify-center">
-        {isLoadingMore && (
+        {!isInitialLoading && isLoadingMore && (
           <div className="flex flex-col items-center gap-3 animate-in fade-in slide-in-from-bottom-2">
             <div className="relative">
               <div className="w-10 h-10 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin"></div>

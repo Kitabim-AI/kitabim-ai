@@ -61,7 +61,7 @@ export const useBookActions = (
   };
 
   const handleRetryFailedOcr = async (book: Book, provider?: 'local' | 'gemini') => {
-    const hasFailedPages = book.results?.some(r => r.status === 'error');
+    const hasFailedPages = (book.errorCount ?? 0) > 0 || (book.results?.some(r => r.status === 'error') ?? false);
     if (!hasFailedPages) {
       setModal({
         isOpen: true,

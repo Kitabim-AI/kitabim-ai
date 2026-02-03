@@ -70,6 +70,17 @@ export const PersistenceService = {
     }
   },
 
+  async getBookPages(id: string, skip: number, limit: number): Promise<any[]> {
+    try {
+      const response = await fetch(`${API_BASE}/books/${id}/pages?skip=${skip}&limit=${limit}`);
+      if (!response.ok) throw new Error("Failed to fetch pages");
+      return await response.json();
+    } catch (error) {
+      console.error("Failed to fetch pages", error);
+      return [];
+    }
+  },
+
   async deleteBook(bookId: string): Promise<void> {
     try {
       await fetch(`${API_BASE}/books/${bookId}`, {

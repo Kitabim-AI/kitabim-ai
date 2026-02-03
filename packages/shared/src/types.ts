@@ -35,6 +35,8 @@ export interface Book {
   tags?: string[];
   errors?: ErrorEvent[];
   lastError?: ErrorEvent | null;
+  completedCount?: number;
+  errorCount?: number;
 }
 
 export interface PaginatedBooks {

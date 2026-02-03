@@ -4,7 +4,7 @@ metadata:
   name: frontend
   namespace: kitabim
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app: frontend

@@ -50,6 +50,11 @@ class MongoDB:
         await safe_create_index(jobs, [("jobKey", 1)], unique=True)
         await safe_create_index(jobs, [("status", 1)])
 
+        pages = self.db.pages
+        await safe_create_index(pages, [("bookId", 1), ("pageNumber", 1)], unique=True)
+        await safe_create_index(pages, [("bookId", 1)])
+        await safe_create_index(pages, [("status", 1)])
+
 
 db_manager = MongoDB()
 
