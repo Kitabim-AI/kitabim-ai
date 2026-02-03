@@ -8,6 +8,7 @@ import { ChatInterface } from '../chat/ChatInterface';
 import { SpellCheckPanel } from '../spell-check/SpellCheckPanel';
 import { HighlightedText } from '../spell-check/HighlightedText';
 import { useSpellCheck } from '../../hooks/useSpellCheck';
+import { MarkdownContent } from '../common/MarkdownContent';
 
 interface ReaderViewProps {
   selectedBook: Book;
@@ -19,7 +20,6 @@ interface ReaderViewProps {
   fontSize: number;
   setFontSize: (size: number | ((prev: number) => number)) => void;
   onClose: () => void;
-  onReprocess: (id: string) => void;
   onReProcessPage: (id: string, num: number) => void;
   onUpdatePage: (id: string, num: number, text: string) => void;
   currentPage: number | null;
@@ -47,7 +47,6 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   fontSize,
   setFontSize,
   onClose,
-  onReprocess,
   onReProcessPage,
   onUpdatePage,
   currentPage,
@@ -207,6 +206,9 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                         <span className="text-[11px] font-black text-slate-400 font-mono tracking-tighter uppercase">
                           PAGE {page.pageNumber}
                         </span>
+                        {currentPage === page.pageNumber && (page.status === 'pending' || page.status === 'processing') && (
+                          <Loader2 size={12} className="text-indigo-400 animate-spin" />
+                        )}
                         {page.isVerified && (
                           <div className="flex items-center gap-1 text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full ring-1 ring-emerald-500/20 shadow-sm shadow-emerald-100/50">
                             <CheckCircle2 size={10} className="stroke-[3]" />
@@ -307,19 +309,18 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                         </div>
                       </div>
                     ) : (
-                      <>
-                        {(page.status === 'pending' || page.status === 'processing') && (
-                          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-indigo-400">
-                            <Loader2 size={32} className="animate-spin" />
-                          </div>
-                        )}
-                        <div
-                          className="uyghur-text text-slate-800 leading-relaxed whitespace-pre-wrap"
-                          style={{ fontSize: `${fontSize}px` }}
-                        >
-                          {page.text || "..."}
+                      page.status === 'pending' || page.status === 'processing' ? (
+                        <div className="flex flex-col items-center justify-center py-20 text-indigo-400">
+                          <Loader2 size={32} className="animate-spin" />
+                          <span className="mt-3 text-xs font-bold uppercase tracking-widest text-indigo-300">Processing...</span>
                         </div>
-                      </>
+                      ) : (
+                        <MarkdownContent
+                          content={page.text || "..."}
+                          className="uyghur-text text-slate-800"
+                          style={{ fontSize: `${fontSize}px` }}
+                        />
+                      )
                     )}
                   </div>
                 ))}

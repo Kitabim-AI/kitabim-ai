@@ -14,6 +14,7 @@ from app.db.mongodb import db_manager
 from app.models.schemas import Book, PaginatedBooks
 from app.queue import enqueue_pdf_processing
 from app.services.spell_check_service import spell_check_service
+from app.utils.markdown import normalize_markdown
 
 router = APIRouter()
 
@@ -42,7 +43,13 @@ async def get_books(
     total = await db.books.count_documents(query)
     total_ready = await db.books.count_documents({"status": "ready"})
 
-    projection = {"content": 0, "results.text": 0, "results.embedding": 0}
+    projection = {
+        "content": 0,
+        "results.text": 0,
+        "results.embedding": 0,
+        "previousContent": 0,
+        "previousResults": 0,
+    }
 
     def parse_date(val):
         if val is None:
@@ -195,17 +202,167 @@ async def upload_pdf(background_tasks: BackgroundTasks, file: UploadFile = File(
         "totalPages": 0,
         "content": "",
         "results": [],
-        "status": "processing",
+        "status": "pending",
         "uploadDate": now,
         "lastUpdated": now,
         "categories": [],
         "processingStep": "ocr",
+        "ocrProvider": None,
+        "previousContent": None,
+        "previousResults": None,
+        "previousVersionAt": None,
     }
 
     await db.books.insert_one(new_book)
-    await enqueue_pdf_processing(book_id, reason="upload", background_tasks=background_tasks)
 
-    return {"bookId": book_id, "status": "started"}
+    return {"bookId": book_id, "status": "uploaded"}
+
+
+@router.post("/{book_id}/start-ocr")
+async def start_ocr(book_id: str, payload: dict, background_tasks: BackgroundTasks):
+    db = db_manager.db
+    provider = (payload.get("provider") or "").lower()
+    if provider not in {"local", "gemini"}:
+        raise HTTPException(status_code=400, detail="Invalid OCR provider")
+
+    book = await db.books.find_one({"id": book_id})
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    if book.get("status") == "processing":
+        return {"status": "already_processing"}
+
+    update_fields = {
+        "status": "processing",
+        "processingStep": "ocr",
+        "ocrProvider": provider,
+        "lastUpdated": datetime.utcnow(),
+    }
+
+    if book.get("status") != "pending" and (book.get("content") or book.get("results")):
+        update_fields["previousContent"] = book.get("content") or ""
+        update_fields["previousResults"] = book.get("results") or []
+        update_fields["previousVersionAt"] = datetime.utcnow()
+
+    if book.get("status") != "pending" and book.get("totalPages", 0) > 0:
+        reset_results = []
+        for page_num in range(1, int(book.get("totalPages", 0)) + 1):
+            reset_results.append(
+                {
+                    "pageNumber": page_num,
+                    "text": "",
+                    "status": "pending",
+                    "isVerified": False,
+                    "error": None,
+                }
+            )
+        update_fields["results"] = reset_results
+        update_fields["content"] = ""
+
+    await db.books.update_one({"id": book_id}, {"$set": update_fields})
+    await enqueue_pdf_processing(book_id, reason=f"start_{provider}", background_tasks=background_tasks)
+    return {"status": "started", "provider": provider}
+
+
+@router.post("/{book_id}/retry-ocr")
+async def retry_failed_ocr(
+    book_id: str,
+    background_tasks: BackgroundTasks,
+    payload: Optional[dict] = None,
+):
+    db = db_manager.db
+    book = await db.books.find_one({"id": book_id})
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    if book.get("status") == "processing":
+        return {"status": "already_processing"}
+
+    provider = (payload or {}).get("provider") if payload else None
+    if provider:
+        provider = provider.lower()
+        if provider not in {"local", "gemini"}:
+            raise HTTPException(status_code=400, detail="Invalid OCR provider")
+
+    provider = provider or (book.get("ocrProvider") or settings.ocr_provider)
+    if provider not in {"local", "gemini"}:
+        raise HTTPException(status_code=400, detail="Invalid OCR provider")
+
+    failed_pages = [
+        r.get("pageNumber")
+        for r in (book.get("results") or [])
+        if r.get("status") == "error"
+    ]
+    if not failed_pages:
+        return {"status": "no_failed_pages"}
+
+    await db.books.update_one(
+        {"id": book_id},
+        {
+            "$set": {
+                "status": "processing",
+                "processingStep": "ocr",
+                "ocrProvider": provider,
+                "lastUpdated": datetime.utcnow(),
+            }
+        },
+    )
+    for page_num in failed_pages:
+        await db.books.update_one(
+            {"id": book_id, "results.pageNumber": page_num},
+            {
+                "$set": {
+                    "results.$.status": "pending",
+                    "results.$.text": "",
+                    "results.$.error": None,
+                    "results.$.isVerified": False,
+                }
+            },
+        )
+    await enqueue_pdf_processing(book_id, reason="retry_failed", background_tasks=background_tasks)
+    return {"status": "retry_started", "provider": provider, "failedPages": failed_pages}
+
+
+@router.post("/{book_id}/revert")
+async def revert_book(book_id: str, background_tasks: BackgroundTasks):
+    db = db_manager.db
+    book = await db.books.find_one({"id": book_id})
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    previous_content = book.get("previousContent")
+    previous_results = book.get("previousResults")
+    if not previous_content and not previous_results:
+        raise HTTPException(status_code=400, detail="No previous version available")
+
+    restored_results = []
+    for res in (previous_results or []):
+        r = dict(res)
+        r.pop("embedding", None)
+        r["isVerified"] = True
+        if r.get("text"):
+            r["status"] = "completed"
+        restored_results.append(r)
+
+    await db.books.update_one(
+        {"id": book_id},
+        {
+            "$set": {
+                "content": previous_content or "",
+                "results": restored_results,
+                "status": "processing",
+                "processingStep": "rag",
+                "lastUpdated": datetime.utcnow(),
+            },
+            "$unset": {
+                "previousContent": "",
+                "previousResults": "",
+                "previousVersionAt": "",
+            },
+        },
+    )
+    await enqueue_pdf_processing(book_id, reason="revert", background_tasks=background_tasks)
+    return {"status": "reverted"}
 
 
 @router.post("/{book_id}/reprocess")
@@ -250,7 +407,7 @@ async def reset_page(book_id: str, page_num: int, background_tasks: BackgroundTa
 @router.post("/{book_id}/pages/{page_num}/update")
 async def update_page_text(book_id: str, page_num: int, payload: dict, background_tasks: BackgroundTasks):
     db = db_manager.db
-    new_text = payload.get("text", "")
+    new_text = normalize_markdown(payload.get("text", ""))
     await db.books.update_one(
         {"id": book_id, "results.pageNumber": page_num},
         {
@@ -272,6 +429,12 @@ async def create_book(book: Book, background_tasks: BackgroundTasks):
     db = db_manager.db
     book_dict = book.dict()
     book_dict.pop("uploadDate", None)
+    if "content" in book_dict:
+        book_dict["content"] = normalize_markdown(book_dict.get("content") or "")
+    results = book_dict.get("results") or []
+    for result in results:
+        if "text" in result:
+            result["text"] = normalize_markdown(result.get("text") or "")
 
     await db.books.update_one({"id": book.id}, {"$set": book_dict}, upsert=True)
     await enqueue_pdf_processing(book.id, reason="create_book", background_tasks=background_tasks)
@@ -282,6 +445,12 @@ async def create_book(book: Book, background_tasks: BackgroundTasks):
 async def update_book_details(book_id: str, book_update: dict):
     db = db_manager.db
     book_update.pop("uploadDate", None)
+    if "content" in book_update:
+        book_update["content"] = normalize_markdown(book_update.get("content") or "")
+    if "results" in book_update:
+        for result in book_update.get("results") or []:
+            if "text" in result:
+                result["text"] = normalize_markdown(result.get("text") or "")
 
     query = {"$or": [{"id": book_id}]}
     if len(book_id) == 24:

@@ -37,9 +37,10 @@ def configure_logging(level: int = logging.INFO) -> None:
     root.setLevel(level)
     root.handlers = [handler]
 
-    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access", "google_genai"):
         logging.getLogger(name).handlers = [handler]
         logging.getLogger(name).propagate = False
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 
 def log_json(logger: logging.Logger, level: int, message: str, **fields: Any) -> None:

@@ -34,6 +34,10 @@ class Book(BaseModel):
     lastUpdated: Optional[datetime] = None
     coverUrl: Optional[str] = None
     processingStep: Optional[str] = "ocr"
+    ocrProvider: Optional[str] = None
+    previousContent: Optional[str] = None
+    previousResults: Optional[List[ExtractionResult]] = None
+    previousVersionAt: Optional[datetime] = None
     categories: List[str] = Field(default_factory=list)
     errors: List[ErrorEvent] = Field(default_factory=list)
     lastError: Optional[ErrorEvent] = None

@@ -35,28 +35,173 @@ export const useBookActions = (
     }
   };
 
-  const handleReprocess = async (bookId: string) => {
-    try {
-      setBooks(prev => prev.map(b => b.id === bookId ? { ...b, status: 'processing', processingStep: 'ocr' } : b));
-      await PersistenceService.reprocessBook(bookId);
-      refreshLibrary();
-    } catch (err) {
+  const handleStartOcr = (bookId: string, provider: 'local' | 'gemini') => {
+    setModal({
+      isOpen: true,
+      title: "Confirm OCR Start",
+      message: `Are you sure you want to start ${provider === 'gemini' ? 'Gemini' : 'Local'} OCR? This will analyze the document and extract text.`,
+      type: 'confirm',
+      confirmText: "Start Processing",
+      onConfirm: async () => {
+        try {
+          setBooks(prev => prev.map(b => b.id === bookId ? { ...b, status: 'processing', processingStep: 'ocr', ocrProvider: provider } : b));
+          await PersistenceService.startOcr(bookId, provider);
+          await refreshLibrary();
+          setModal((prev: any) => ({ ...prev, isOpen: false }));
+        } catch (err) {
+          setModal({
+            isOpen: true,
+            title: "Process Error",
+            message: "Failed to start OCR. Please try again.",
+            type: 'alert'
+          });
+        }
+      }
+    });
+  };
+
+  const handleRetryFailedOcr = async (book: Book, provider?: 'local' | 'gemini') => {
+    const hasFailedPages = book.results?.some(r => r.status === 'error');
+    if (!hasFailedPages) {
       setModal({
         isOpen: true,
-        title: "Process Error",
-        message: "Failed to start reprocessing. Please try again.",
+        title: "No Failed Pages",
+        message: "This book has no failed OCR pages to retry.",
+        type: 'alert'
+      });
+      return;
+    }
+
+    const effectiveProvider = provider || book.ocrProvider || 'local';
+    let previousSelected: Book | null = null;
+    let previousBooks: Book[] | null = null;
+
+    setSelectedBook(prev => {
+      previousSelected = prev;
+      if (!prev || prev.id !== book.id) return prev;
+      return {
+        ...prev,
+        status: 'processing',
+        processingStep: 'ocr',
+        ocrProvider: effectiveProvider,
+        lastUpdated: new Date(),
+        results: prev.results.map(r =>
+          r.status === 'error'
+            ? { ...r, status: 'pending', text: '', error: undefined, isVerified: false }
+            : r
+        ),
+      };
+    });
+
+    setBooks(prev => {
+      previousBooks = prev;
+      return prev.map(b => {
+        if (b.id !== book.id) return b;
+        return {
+          ...b,
+          status: 'processing',
+          processingStep: 'ocr',
+          ocrProvider: effectiveProvider,
+          lastUpdated: new Date(),
+          results: b.results.map(r =>
+            r.status === 'error'
+              ? { ...r, status: 'pending', text: '', error: undefined, isVerified: false }
+              : r
+          ),
+        };
+      });
+    });
+
+    try {
+      await PersistenceService.retryFailedOcr(book.id, effectiveProvider);
+      refreshLibrary();
+    } catch (err) {
+      if (previousSelected) setSelectedBook(previousSelected);
+      if (previousBooks) setBooks(previousBooks);
+      console.error("Failed to retry OCR", err);
+      setModal({
+        isOpen: true,
+        title: "Retry Error",
+        message: "Failed to retry OCR for failed pages. Please try again.",
         type: 'alert'
       });
     }
   };
 
   const handleReProcessPage = async (bookId: string, pageNum: number) => {
+    let previousSelected: Book | null = null;
+    let previousBooks: Book[] | null = null;
+
+    setSelectedBook(prev => {
+      previousSelected = prev;
+      if (!prev || prev.id !== bookId) return prev;
+      return {
+        ...prev,
+        status: 'processing',
+        lastUpdated: new Date(),
+        results: prev.results.map(r =>
+          r.pageNumber === pageNum
+            ? { ...r, status: 'pending', text: '', isVerified: false }
+            : r
+        ),
+      };
+    });
+
+    setBooks(prev => {
+      previousBooks = prev;
+      return prev.map(b => {
+        if (b.id !== bookId) return b;
+        return {
+          ...b,
+          status: 'processing',
+          lastUpdated: new Date(),
+          results: b.results.map(r =>
+            r.pageNumber === pageNum
+              ? { ...r, status: 'pending', text: '', isVerified: false }
+              : r
+          ),
+        };
+      });
+    });
+
     try {
       await fetch(`/api/books/${bookId}/pages/${pageNum}/reset/`, { method: 'POST' });
       refreshLibrary();
     } catch (err) {
+      if (previousSelected) setSelectedBook(previousSelected);
+      if (previousBooks) setBooks(previousBooks);
       console.error("Failed to reset page", err);
+      setModal({
+        isOpen: true,
+        title: "Re-OCR Error",
+        message: "Failed to start re-OCR for this page. Please try again.",
+        type: 'alert'
+      });
     }
+  };
+
+  const handleRevertBook = (bookId: string) => {
+    setModal({
+      isOpen: true,
+      title: "Confirm Revert",
+      message: "Are you sure you want to revert to the previous version? This will overwrite all current changes with the backup version.",
+      type: 'confirm',
+      confirmText: "Revert Version",
+      onConfirm: async () => {
+        try {
+          await PersistenceService.revertBook(bookId);
+          await refreshLibrary();
+          setModal((prev: any) => ({ ...prev, isOpen: false }));
+        } catch (err) {
+          setModal({
+            isOpen: true,
+            title: "Revert Error",
+            message: "Failed to revert the book. Please try again.",
+            type: 'alert'
+          });
+        }
+      }
+    });
   };
 
   const handleUpdatePage = async (bookId: string, pageNum: number, newText: string, setEditingPageNum: any) => {
@@ -239,8 +384,10 @@ export const useBookActions = (
   return {
     isCheckingGlobal,
     handleFileUpload,
-    handleReprocess,
+    handleStartOcr,
+    handleRetryFailedOcr,
     handleReProcessPage,
+    handleRevertBook,
     handleUpdatePage,
     openReader,
     saveCorrections,

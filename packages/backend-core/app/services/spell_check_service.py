@@ -10,6 +10,7 @@ from langchain_core.output_parsers import PydanticOutputParser
 from app.core.config import settings
 from app.core.prompts import SPELL_CHECK_PROMPT
 from app.langchain.chains import build_structured_chain
+from app.utils.markdown import normalize_markdown, strip_markdown
 from app.utils.observability import log_json
 
 
@@ -49,7 +50,10 @@ class SpellCheckService:
             return PageSpellCheck(pageNumber=page_number, corrections=[], totalIssues=0, checkedAt="")
 
         try:
-            response = await self.chain.ainvoke({"language": language, "text": page_text})
+            clean_text = strip_markdown(page_text)
+            if not clean_text.strip():
+                return PageSpellCheck(pageNumber=page_number, corrections=[], totalIssues=0, checkedAt="")
+            response = await self.chain.ainvoke({"language": language, "text": clean_text})
             corrections = response.corrections if response else []
         except Exception as exc:
             log_json(self.logger, logging.WARNING, "Spell check parsing failed", error=str(exc))
@@ -107,7 +111,7 @@ class SpellCheckService:
             if original and corrected:
                 page_text = page_text.replace(original, corrected)
 
-        results[page_idx]["text"] = page_text
+        results[page_idx]["text"] = normalize_markdown(page_text)
         results[page_idx]["status"] = "completed"
         results[page_idx]["isVerified"] = True
         results[page_idx].pop("embedding", None)
@@ -115,6 +119,7 @@ class SpellCheckService:
         all_text = "\n\n".join(
             page.get("text", "") for page in results if page.get("status") == "completed"
         )
+        all_text = normalize_markdown(all_text)
 
         await db.books.update_one(
             {"id": book_id},

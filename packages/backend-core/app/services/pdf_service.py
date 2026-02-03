@@ -13,8 +13,8 @@ from app.jobs import increment_attempts, update_job_status
 from app.langchain.models import GeminiEmbeddings
 from app.services.ocr_service import ocr_page
 from app.utils.errors import record_book_error
+from app.utils.markdown import normalize_markdown, strip_markdown
 from app.utils.observability import log_json
-from app.utils.text import clean_uyghur_text
 
 RUNNING_TASKS: set[str] = set()
 logger = logging.getLogger("app.pdf")
@@ -180,10 +180,12 @@ async def process_pdf_task(
                     if not already_ocr:
                         page = doc.load_page(page_num - 1)
                         try:
+                            provider = (current_book.get("ocrProvider") or settings.ocr_provider).lower()
                             page_text = await ocr_page(
                                 page,
                                 current_book.get("title", "Unknown"),
                                 page_num,
+                                provider=provider,
                             )
                             success = True
                         except Exception as exc:
@@ -205,6 +207,9 @@ async def process_pdf_task(
                                 {"page_num": page_num},
                             )
 
+                    if success:
+                        page_text = normalize_markdown(page_text)
+
                     update_fields = {
                         "results.$.text": page_text,
                         "results.$.status": "completed" if success else "error",
@@ -214,6 +219,14 @@ async def process_pdf_task(
                         {"id": book_id, "results.pageNumber": page_num},
                         {"$set": update_fields},
                     )
+                    if success:
+                        log_json(
+                            logger,
+                            logging.INFO,
+                            "OCR page completed",
+                            book_id=book_id,
+                            page_num=page_num,
+                        )
                 except Exception as exc:
                     log_json(
                         logger,
@@ -247,7 +260,7 @@ async def process_pdf_task(
                 batch = pages_to_embed[start : start + batch_size]
                 pairs = []
                 for r in batch:
-                    text = (r.get("text") or "").strip()
+                    text = strip_markdown(r.get("text") or "").strip()
                     if text:
                         pairs.append((r, text[:2000]))
                 if not pairs:
@@ -283,8 +296,8 @@ async def process_pdf_task(
 
         updated_book = await db.books.find_one({"id": book_id})
         sorted_results = sorted(updated_book.get("results", []), key=lambda x: x.get("pageNumber", 0))
-        raw_combined = "\n".join([r.get("text", "") for r in sorted_results if r.get("status") == "completed"])
-        full_content = clean_uyghur_text(raw_combined)
+        raw_combined = "\n\n".join([r.get("text", "") for r in sorted_results if r.get("status") == "completed"])
+        full_content = normalize_markdown(raw_combined)
 
         completed_count = len([r for r in updated_book.get("results", []) if r.get("status") == "completed"])
         final_status = "ready" if completed_count == total_pages else "error"

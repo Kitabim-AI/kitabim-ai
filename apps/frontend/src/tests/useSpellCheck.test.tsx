@@ -19,7 +19,7 @@ test('useSpellCheck runs and stores results', async () => {
   });
 
   expect(fetchMock).toHaveBeenCalledWith(
-    'http://localhost:8000/api/books/1/pages/2/spell-check',
+    '/api/books/1/pages/2/spell-check/',
     expect.any(Object)
   );
   expect(result.current.spellCheckResult?.bookId).toBe('1');

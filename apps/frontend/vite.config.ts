@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
   const repoRoot = path.resolve(__dirname, '../..');
   const env = loadEnv(mode, repoRoot, '');
+  const apiTarget = env.VITE_API_TARGET || 'http://localhost:8000';
   return {
     envDir: repoRoot,
     server: {
@@ -12,7 +13,7 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       proxy: {
         '/api': {
-          target: 'http://localhost:8000',
+          target: apiTarget,
           changeOrigin: true,
         },
       },

@@ -66,7 +66,7 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick, onDelete }) =
         {/* Quick Info Overlay on Hover */}
         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2 pointer-events-none">
           <span className="text-[9px] text-white font-black uppercase tracking-tighter bg-indigo-600/80 px-1.5 py-0.5 rounded">
-            {book.status === 'ready' ? 'OPEN READER' : 'PROCESSING'}
+            {book.status === 'ready' ? 'OPEN READER' : book.status === 'pending' ? 'PENDING OCR' : 'PROCESSING'}
           </span>
         </div>
       </div>

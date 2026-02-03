@@ -8,6 +8,9 @@ vi.mock('../services/persistenceService', () => ({
   PersistenceService: {
     uploadPdf: vi.fn(),
     reprocessBook: vi.fn(),
+    retryFailedOcr: vi.fn(),
+    startOcr: vi.fn(),
+    revertBook: vi.fn(),
     getBookById: vi.fn(),
     saveBookGlobally: vi.fn(),
     deleteBook: vi.fn(),
@@ -106,15 +109,15 @@ test('useBookActions handles handleDeleteBook', async () => {
   expect(PersistenceService.deleteBook).toHaveBeenCalledWith('1');
 });
 
-test('useBookActions handles reprocess and page reset', async () => {
+test('useBookActions handles start OCR and page reset', async () => {
   const setBooks = vi.fn();
   const refreshLibrary = vi.fn();
   const { result } = renderHook(() => useBookActions(refreshLibrary, setBooks, vi.fn(), vi.fn(), vi.fn()));
 
   await act(async () => {
-    await result.current.handleReprocess('1');
+    await result.current.handleStartOcr('1', 'local');
   });
-  expect(PersistenceService.reprocessBook).toHaveBeenCalledWith('1');
+  expect(PersistenceService.startOcr).toHaveBeenCalledWith('1', 'local');
   expect(setBooks).toHaveBeenCalled();
 
   const fetchMock = vi.fn().mockResolvedValue({ ok: true });
@@ -123,7 +126,7 @@ test('useBookActions handles reprocess and page reset', async () => {
   await act(async () => {
     await result.current.handleReProcessPage('1', 2);
   });
-  expect(fetchMock).toHaveBeenCalledWith('/api/books/1/pages/2/reset', { method: 'POST' });
+  expect(fetchMock).toHaveBeenCalledWith('/api/books/1/pages/2/reset/', { method: 'POST' });
 });
 
 test('useBookActions updates page text and saves corrections', async () => {
@@ -139,7 +142,7 @@ test('useBookActions updates page text and saves corrections', async () => {
     await result.current.handleUpdatePage('1', 1, 'New Text', setEditingPageNum);
   });
 
-  expect(fetchMock).toHaveBeenCalledWith('/api/books/1/pages/1/update', expect.any(Object));
+  expect(fetchMock).toHaveBeenCalledWith('/api/books/1/pages/1/update/', expect.any(Object));
   expect(setEditingPageNum).toHaveBeenCalledWith(null);
   expect(setSelectedBook).toHaveBeenCalled();
 

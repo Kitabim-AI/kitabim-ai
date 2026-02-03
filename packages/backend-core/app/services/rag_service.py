@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.prompts import CATEGORY_PROMPT, RAG_PROMPT_TEMPLATE
 from app.langchain import GeminiEmbeddings, build_structured_chain, build_text_chain
 from app.models.schemas import ChatRequest
+from app.utils.markdown import strip_markdown
 from app.utils.observability import log_json
 import logging
 import time
@@ -91,7 +92,7 @@ class RAGService:
         parts = []
         for b in (books or [])[:max_books]:
             title = b.get("title", "نامسىز كىتاب")
-            content = (b.get("content") or "").strip()
+            content = strip_markdown(b.get("content") or "").strip()
             if not content:
                 pages = [
                     r
@@ -99,7 +100,7 @@ class RAGService:
                     if r.get("status") == "completed" and r.get("text")
                 ]
                 pages = sorted(pages, key=lambda x: x.get("pageNumber", 0))[:3]
-                content = "\n\n".join([r.get("text", "") for r in pages]).strip()
+                content = "\n\n".join([strip_markdown(r.get("text", "")) for r in pages]).strip()
             if not content:
                 continue
             if len(content) > max_chars_per_book:
@@ -191,10 +192,11 @@ class RAGService:
                 None,
             )
             if page_rec and page_rec.get("text"):
+                page_text = strip_markdown(page_rec.get("text") or "")
                 current_page_context = (
                     "CURRENT PAGE (THE USER IS LOOKING AT THIS NOW) - "
                     f"Book: {book.get('title', 'Unknown')}, Page {req.currentPage}:\n"
-                    f"{page_rec['text']}"
+                    f"{page_text}"
                 )
 
         if current_page_only:
@@ -264,7 +266,7 @@ class RAGService:
             if query_vector and r.get("embedding"):
                 score = self._cosine_similarity(query_vector, r["embedding"])
 
-            txt = r.get("text", "")
+            txt = strip_markdown(r.get("text", ""))
             match_count = 0
             for k in keywords:
                 if k and k in txt:
@@ -274,7 +276,7 @@ class RAGService:
 
             scored_results.append(
                 {
-                    "text": r.get("text", ""),
+                    "text": txt,
                     "score": score,
                     "page": r.get("pageNumber"),
                     "title": r.get("bookTitle"),

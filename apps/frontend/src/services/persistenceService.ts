@@ -43,7 +43,8 @@ export const PersistenceService = {
         books: data.books.map((b: any) => ({
           ...b,
           uploadDate: new Date(b.uploadDate),
-          lastUpdated: b.lastUpdated ? new Date(b.lastUpdated) : null
+          lastUpdated: b.lastUpdated ? new Date(b.lastUpdated) : null,
+          previousVersionAt: b.previousVersionAt ? new Date(b.previousVersionAt) : null
         }))
       };
     } catch (error) {
@@ -60,7 +61,8 @@ export const PersistenceService = {
       return {
         ...b,
         uploadDate: new Date(b.uploadDate),
-        lastUpdated: b.lastUpdated ? new Date(b.lastUpdated) : null
+        lastUpdated: b.lastUpdated ? new Date(b.lastUpdated) : null,
+        previousVersionAt: b.previousVersionAt ? new Date(b.previousVersionAt) : null
       };
     } catch (error) {
       console.error("Failed to fetch book by id", error);
@@ -105,6 +107,40 @@ export const PersistenceService = {
     });
     if (!response.ok) {
       throw new Error("Failed to start reprocessing");
+    }
+  },
+
+  async retryFailedOcr(bookId: string, provider?: 'local' | 'gemini'): Promise<void> {
+    const response = await fetch(`${API_BASE}/books/${bookId}/retry-ocr`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(provider ? { provider } : {}),
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to retry OCR: ${response.status} ${errorText}`);
+    }
+  },
+
+  async startOcr(bookId: string, provider: 'local' | 'gemini'): Promise<void> {
+    const response = await fetch(`${API_BASE}/books/${bookId}/start-ocr`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider })
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to start OCR: ${response.status} ${errorText}`);
+    }
+  },
+
+  async revertBook(bookId: string): Promise<void> {
+    const response = await fetch(`${API_BASE}/books/${bookId}/revert`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to revert book: ${response.status} ${errorText}`);
     }
   },
 

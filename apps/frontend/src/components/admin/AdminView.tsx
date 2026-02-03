@@ -1,5 +1,5 @@
 import React from 'react';
-import { Database, ChevronUp, ChevronDown, Tag, X, Save, RotateCcw, Trash2, BookType, User, Hash, BookOpen } from 'lucide-react';
+import { Database, ChevronUp, ChevronDown, Tag, X, Save, Trash2, BookType, User, Hash, BookOpen, Cpu, ScanText, History, RotateCcw } from 'lucide-react';
 import { Book } from '@shared/types';
 import { Pagination } from '../common/Pagination';
 
@@ -14,7 +14,9 @@ interface AdminViewProps {
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
   onOpenReader: (book: Book) => void;
-  onReprocess: (bookId: string) => void;
+  onStartOcr: (bookId: string, provider: 'local' | 'gemini') => void;
+  onRetryFailedOcr: (book: Book, provider?: 'local' | 'gemini') => void;
+  onRevert: (bookId: string) => void;
   onDeleteBook: (bookId: string) => void;
 
   editingBookTitleId: string | null;
@@ -159,7 +161,9 @@ export const AdminView: React.FC<AdminViewProps> = ({
   onPageChange,
   onPageSizeChange,
   onOpenReader,
-  onReprocess,
+  onStartOcr,
+  onRetryFailedOcr,
+  onRevert,
   onDeleteBook,
 
   editingBookCategoriesId, setEditingBookCategoriesId, editingCategoriesList, setEditingCategoriesList, tempCategories, setTempCategories, handleSaveCategories,
@@ -172,6 +176,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
       <header>
         <h2 className="text-2xl font-bold text-slate-800">Kitabim Processing Pipeline</h2>
         <p className="text-slate-500">Managing global document indexing and OCR extraction.</p>
+        <p className="text-xs text-slate-400 mt-1">Uploads stay pending until you start OCR with Local or Gemini.</p>
       </header>
 
       {isCheckingGlobal && (
@@ -201,7 +206,6 @@ export const AdminView: React.FC<AdminViewProps> = ({
                 <th className="px-6 py-4 w-28">Volume</th>
                 <th className="px-6 py-4 w-48">Author</th>
                 <th className="px-6 py-4 w-40">Categories</th>
-                <th className="px-6 py-4 w-32">Status</th>
                 <th className="px-6 py-4">Pipeline</th>
                 <th className="px-6 py-4">Action</th>
               </tr>
@@ -393,14 +397,6 @@ export const AdminView: React.FC<AdminViewProps> = ({
                     />
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${book.status === 'ready' ? 'bg-green-100 text-green-700' :
-                      book.status === 'processing' ? 'bg-blue-100 text-blue-700' :
-                        'bg-red-100 text-red-700'
-                      }`}>
-                      {book.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
                     <div className="flex flex-col gap-1.5 min-w-[120px]">
                       <div className="flex items-center gap-2">
                         <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
@@ -414,6 +410,13 @@ export const AdminView: React.FC<AdminViewProps> = ({
                         <span className="text-[10px] font-bold text-slate-400">
                           {book.results.filter(r => r.status === 'completed').length}/{book.totalPages || 0} pages
                         </span>
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${book.status === 'ready' ? 'bg-green-100 text-green-700' :
+                          book.status === 'processing' ? 'bg-blue-100 text-blue-700' :
+                            book.status === 'pending' ? 'bg-amber-100 text-amber-700' :
+                              'bg-red-100 text-red-700'
+                          }`}>
+                          {book.status}
+                        </span>
                       </div>
                     </div>
                   </td>
@@ -426,15 +429,61 @@ export const AdminView: React.FC<AdminViewProps> = ({
                       >
                         <BookOpen size={14} className="stroke-[2.5]" />
                       </button>
-                      {book.status !== 'processing' && (
-                        <button
-                          onClick={() => onReprocess(book.id)}
-                          className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-600 hover:text-white transition-all active:scale-95 shadow-sm shadow-indigo-100/50"
-                          title="REPROCESS"
-                        >
-                          <RotateCcw size={14} className="stroke-[3]" />
-                        </button>
-                      )}
+                      <>
+                        {(() => {
+                          const canRevert = Boolean(book.previousVersionAt) && book.status !== 'processing';
+                          return (
+                            <button
+                              onClick={() => {
+                                if (canRevert) onRevert(book.id);
+                              }}
+                              disabled={!canRevert}
+                              className={`p-2 rounded-lg transition-all shadow-sm shadow-slate-200/50 ${canRevert
+                                ? 'bg-slate-100 text-slate-600 hover:bg-slate-700 hover:text-white active:scale-95'
+                                : 'bg-slate-50 text-slate-300 cursor-not-allowed opacity-60'
+                                }`}
+                              title={canRevert ? 'REVERT VERSION' : 'NO BACKUP AVAILABLE'}
+                            >
+                              <History size={14} className="stroke-[2.5]" />
+                            </button>
+                          );
+                        })()}
+                        {(() => {
+                          const canStartOcr = book.status !== 'processing';
+                          const hasFailedPages = book.results?.some(r => r.status === 'error');
+                          const canRetry = Boolean(hasFailedPages) && canStartOcr;
+                          return (
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => {
+                                  if (canRetry) onRetryFailedOcr(book);
+                                }}
+                                disabled={!canRetry}
+                                className={`p-2 rounded-lg transition-all shadow-sm shadow-amber-100/50 ${canRetry
+                                  ? 'bg-amber-50 text-amber-700 hover:bg-amber-500 hover:text-white active:scale-95'
+                                  : 'bg-amber-50 text-amber-200 cursor-not-allowed opacity-60'
+                                  }`}
+                                title={canRetry ? 'RETRY FAILED PAGES' : (!hasFailedPages ? 'NO FAILED PAGES' : 'OCR IN PROGRESS')}
+                              >
+                                <RotateCcw size={12} className="stroke-[2.5]" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (canStartOcr) onStartOcr(book.id, 'gemini');
+                                }}
+                                disabled={!canStartOcr}
+                                className={`p-2 rounded-lg transition-all shadow-sm shadow-indigo-100/50 ${canStartOcr
+                                  ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white active:scale-95'
+                                  : 'bg-indigo-50 text-indigo-200 cursor-not-allowed opacity-60'
+                                  }`}
+                                title={canStartOcr ? 'START GEMINI OCR' : 'OCR IN PROGRESS'}
+                              >
+                                <ScanText size={14} className="stroke-[2.5]" />
+                              </button>
+                            </div>
+                          );
+                        })()}
+                      </>
                       <button
                         onClick={() => onDeleteBook(book.id)}
                         className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all active:scale-95 shadow-sm shadow-red-100/50"

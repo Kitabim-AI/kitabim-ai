@@ -47,7 +47,11 @@ async def lifespan(app: FastAPI):
                         for r in book.get("results", [])
                     )
                 )
-                needs_results = book.get("totalPages", 0) == 0 and (settings.uploads_dir / f"{book['id']}.pdf").exists()
+                needs_results = (
+                    book.get("status") != "pending"
+                    and book.get("totalPages", 0) == 0
+                    and (settings.uploads_dir / f"{book['id']}.pdf").exists()
+                )
 
                 if needs_resume or needs_cover or needs_rag or needs_results:
                     reason = "Resume" if needs_resume else "Cover Retrofit" if needs_cover else "RAG Retrofit" if needs_rag else "Results Retrofit"

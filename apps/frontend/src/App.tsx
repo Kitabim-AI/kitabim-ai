@@ -9,6 +9,7 @@ import { Modal } from './components/common/Modal';
 import { useBooks } from './hooks/useBooks';
 import { useChat } from './hooks/useChat';
 import { useBookActions } from './hooks/useBookActions';
+import { PersistenceService } from './services/persistenceService';
 import { Book } from '@shared/types';
 
 const App: React.FC = () => {
@@ -36,6 +37,7 @@ const App: React.FC = () => {
   const [editingBookTitleId, setEditingBookTitleId] = useState<string | null>(null);
   const [tempTitle, setTempTitle] = useState('');
   const loaderRef = React.useRef<HTMLDivElement>(null);
+  const isPollingSelectedRef = React.useRef(false);
 
   const [modal, setModal] = useState<{
     isOpen: boolean;
@@ -80,8 +82,10 @@ const App: React.FC = () => {
   const {
     isCheckingGlobal,
     handleFileUpload,
-    handleReprocess,
+    handleStartOcr,
+    handleRetryFailedOcr,
     handleReProcessPage,
+    handleRevertBook,
     handleUpdatePage,
     openReader,
     saveCorrections,
@@ -126,6 +130,62 @@ const App: React.FC = () => {
   useEffect(() => {
     refreshLibrary();
   }, [refreshLibrary]);
+
+  useEffect(() => {
+    const hasProcessingPage = selectedBook?.results?.some(
+      r => r.status === 'pending' || r.status === 'processing'
+    );
+    const shouldPoll = view === 'reader' && selectedBook && (selectedBook.status === 'processing' || hasProcessingPage);
+
+    if (!shouldPoll) return;
+
+    let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const shouldDelayInitialPoll = () => {
+      if (!selectedBook?.lastUpdated) return false;
+      const updatedAt = selectedBook.lastUpdated instanceof Date
+        ? selectedBook.lastUpdated.getTime()
+        : new Date(selectedBook.lastUpdated).getTime();
+      if (Number.isNaN(updatedAt)) return false;
+      const recentlyUpdated = Date.now() - updatedAt < 1500;
+      const hasPendingEmpty = selectedBook.results?.some(
+        r => (r.status === 'pending' || r.status === 'processing') && !r.text
+      );
+      return recentlyUpdated && hasPendingEmpty;
+    };
+
+    const pollSelectedBook = async () => {
+      if (isPollingSelectedRef.current || !selectedBook) return;
+      isPollingSelectedRef.current = true;
+      try {
+        const fresh = await PersistenceService.getBookById(selectedBook.id);
+        if (!cancelled && fresh) {
+          setSelectedBook(prev => {
+            if (!prev || prev.id !== fresh.id) return prev;
+            return {
+              ...fresh,
+              content: prev.content || fresh.content,
+            };
+          });
+        }
+      } finally {
+        isPollingSelectedRef.current = false;
+      }
+    };
+
+    const delay = shouldDelayInitialPoll() ? 1500 : 0;
+    const timeout = setTimeout(() => {
+      pollSelectedBook();
+      interval = setInterval(pollSelectedBook, 4000);
+    }, delay);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+      if (interval) clearInterval(interval);
+    };
+  }, [view, selectedBook?.id, selectedBook?.status, selectedBook?.results]);
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
@@ -172,7 +232,9 @@ const App: React.FC = () => {
             onPageChange={setPage}
             onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
             onOpenReader={(book) => openReader(book, setEditContent, setChatMessages, setCurrentPage)}
-            onReprocess={handleReprocess}
+            onStartOcr={handleStartOcr}
+            onRetryFailedOcr={handleRetryFailedOcr}
+            onRevert={handleRevertBook}
             onDeleteBook={(id) => handleDeleteBook(id, selectedBook?.id)}
             editingBookCategoriesId={editingBookCategoriesId}
             setEditingBookCategoriesId={setEditingBookCategoriesId}
@@ -213,7 +275,6 @@ const App: React.FC = () => {
             fontSize={fontSize}
             setFontSize={setFontSize}
             onClose={() => setView('library')}
-            onReprocess={handleReprocess}
             onReProcessPage={handleReProcessPage}
             onUpdatePage={(id, num, text) => handleUpdatePage(id, num, text, setEditingPageNum)}
             currentPage={currentPage}

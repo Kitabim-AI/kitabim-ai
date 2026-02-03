@@ -60,6 +60,7 @@ flowchart LR
 - **SHA-256 deduplication** to avoid re-processing identical PDFs.
 - **Parallel OCR pipeline** with resumable tasks, cover extraction, and batch embeddings.
 - **Gemini or local OCR** (switchable via `OCR_PROVIDER`).
+- **Manual OCR start**: uploads are stored as pending; start OCR from the Management page with Local or Gemini.
 - **RAG chat** per book or global, with work-aware context and citations by page.
 - **Spell check & correction workflow** for OCR cleanup and embedding regeneration.
 - **Admin tools** for reprocessing, deletion, author/volume/category edits, and cover uploads.

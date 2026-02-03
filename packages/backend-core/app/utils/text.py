@@ -5,6 +5,9 @@ def clean_uyghur_text(text: str) -> str:
     if not text:
         return ""
 
+    # Normalize common OCR character variants
+    text = text.replace("ی", "ي").replace("ه", "ە")
+
     # 1. Join words split by hyphen/dash at line endings (standardizing line breaks)
     text = re.sub(r"(\w)[-—–_]\s*\n\s*(\w)", r"\1\2", text)
     text = re.sub(r"(\w)[-—–_]\s*\n\s*", r"\1", text)
@@ -13,6 +16,10 @@ def clean_uyghur_text(text: str) -> str:
     # 2. Split into blocks by double newlines (paragraphs)
     blocks = re.split(r"\n\s*\n", text)
     cleaned_blocks = []
+
+    dot_leader_pattern = re.compile(r"(?:[\.·•∙⋅․﹒｡]\s*){3,}|…{2,}")
+    list_marker_pattern = re.compile(r"^\s*([-—–*•]|\d+[.)])\s+")
+    header_prefixes = ("[Header]", "[Footer]", "#")
 
     for block in blocks:
         if not block.strip():
@@ -39,8 +46,13 @@ def clean_uyghur_text(text: str) -> str:
                 is_digit_marker = raw_next and raw_next[0].isdigit() and (len(raw_next) > 1 and raw_next[1] in ". )")
                 
                 is_new_item = is_ending and (is_list_marker or is_digit_marker)
+
+                raw_line = line.lstrip()
+                is_markdown_list = bool(list_marker_pattern.match(raw_line))
+                is_markdown_header = raw_line.startswith(header_prefixes)
+                is_toc_line = bool(dot_leader_pattern.search(line))
                 
-                if is_ending or is_new_item:
+                if is_markdown_list or is_markdown_header or is_toc_line or is_ending or is_new_item or is_list_marker or is_digit_marker:
                     result_block += line + "\n"
                 else:
                     # Join with space if it's clearly part of the same sentence flow

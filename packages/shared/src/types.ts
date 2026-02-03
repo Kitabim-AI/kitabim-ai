@@ -22,11 +22,15 @@ export interface Book {
   totalPages: number;
   content?: string;
   results: ExtractionResult[];
-  status: 'uploading' | 'processing' | 'ready' | 'error';
+  status: 'uploading' | 'pending' | 'processing' | 'ready' | 'error';
   uploadDate: Date;
   lastUpdated: Date | null;
   coverUrl?: string;
   processingStep?: 'ocr' | 'rag';
+  ocrProvider?: 'gemini' | 'local';
+  previousContent?: string;
+  previousResults?: ExtractionResult[];
+  previousVersionAt?: Date | string | null;
   categories?: string[];
   tags?: string[];
   errors?: ErrorEvent[];

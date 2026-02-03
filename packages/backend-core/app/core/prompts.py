@@ -1,10 +1,17 @@
 OCR_PROMPT = (
-    "Extract all text from this image as high-quality flowing prose. "
-    "The text is in Uyghur. Rules: 1. If it is NOT a poem, DO NOT break sentences into multiple "
-    "lines to match page width; provide continuous text for each paragraph. "
-    "2. Maintain separate paragraphs. 3. Use Uyghur symbols & Arabic script. "
-    "4. Preserve punctuation exactly. Output ONLY Uyghur text. "
-    "5. Ignore the header and footer content if they exist. "
+    "Extract all text from this image as high-quality Uyghur text with light Markdown structure. "
+    "The text is in Uyghur. Rules: "
+    "1. If it is NOT a poem, DO NOT break sentences into multiple lines to match page width; "
+    "provide continuous text for each paragraph. "
+    "2. Maintain separate paragraphs. "
+    "3. Preserve punctuation exactly and keep Uyghur symbols & Arabic script. "
+    "4. Identify and preserve structure: "
+    "use Markdown headings for titles/headers/chapters, "
+    "render table of contents as a Markdown list, "
+    "keep poems with their original line breaks, "
+    "and include header/footer text (if present) on separate lines, prefixed with "
+    "\"[Header]\" or \"[Footer]\". "
+    "5. Output ONLY the recognized Uyghur text with the minimal Markdown needed for structure. "
 )
 
 SPELL_CHECK_PROMPT = """You are an expert {language} language and OCR error detection specialist.

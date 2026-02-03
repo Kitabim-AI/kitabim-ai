@@ -4,7 +4,7 @@ metadata:
   name: mongo
   namespace: kitabim
 spec:
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app: mongo

@@ -34,10 +34,11 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
         try {
           const isShelf = view === 'library';
           const currentSize = isShelf ? Math.max(books.length, SHELF_PAGE_SIZE) : pageSize;
+          const currentPage = isShelf ? 1 : page;
           const sortBy = isShelf ? 'uploadDate' : sortConfig.key;
           const order = isShelf ? -1 : (sortConfig.direction === 'asc' ? 1 : -1);
 
-          const response = await PersistenceService.getGlobalLibrary(1, currentSize, searchQuery, sortBy, order, isShelf);
+          const response = await PersistenceService.getGlobalLibrary(currentPage, currentSize, searchQuery, sortBy, order, isShelf);
 
           setBooks(prev => {
             // Match and update statuses rather than full replacement if possible, 
@@ -52,7 +53,7 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
       }, 10000);
       return () => clearInterval(interval);
     }
-  }, [books.length, books.some(b => b.status === 'processing'), view, searchQuery, sortConfig, pageSize]);
+  }, [books.length, books.some(b => b.status === 'processing'), view, searchQuery, sortConfig, pageSize, page]);
 
   const refreshLibrary = useCallback(async () => {
     setIsLoading(true);

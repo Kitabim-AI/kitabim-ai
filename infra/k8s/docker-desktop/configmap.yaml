@@ -9,10 +9,10 @@ data:
   GEMINI_MODEL_NAME: gemini-3-flash-preview
   GEMINI_CATEGORIZATION_MODEL: gemini-3-flash-preview
   GEMINI_EMBEDDING_MODEL: models/gemini-embedding-001
-  OCR_PROVIDER: local
+  OCR_PROVIDER: gemini
   LOCAL_OCR_URL: http://uyghurocr:8001
   OCR_MAX_RETRIES: "4"
-  MAX_PARALLEL_PAGES: "5"
+  MAX_PARALLEL_PAGES: "15"
   RAG_SCORE_THRESHOLD: "0.35"
   RAG_TOP_K: "12"
   RAG_FALLBACK_K: "8"
@@ -28,5 +28,5 @@ data:
   REDIS_URL: redis://redis:6379/0
   QUEUE_MAX_JOBS: "2"
   QUEUE_JOB_TIMEOUT: "1800"
-  QUEUE_MAX_RETRIES: "3"
+  QUEUE_MAX_RETRIES: "10"
   JOB_LOCK_TTL_SECONDS: "1800"

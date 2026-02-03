@@ -19,7 +19,8 @@ const mockBooks: Book[] = [
     uploadDate: new Date(),
     lastUpdated: new Date(),
     contentHash: 'h',
-    categories: ['Cat1']
+    categories: ['Cat1'],
+    previousVersionAt: new Date()
   }
 ];
 
@@ -51,7 +52,9 @@ test('AdminView renders table and data', () => {
       onPageChange={vi.fn()}
       onPageSizeChange={vi.fn()}
       onOpenReader={vi.fn()}
-      onReprocess={vi.fn()}
+      onStartOcr={vi.fn()}
+      onRetryFailedOcr={vi.fn()}
+      onRevert={vi.fn()}
       onDeleteBook={vi.fn()}
 
       editingBookTitleId={null} setEditingBookTitleId={vi.fn()}
@@ -88,7 +91,9 @@ test('AdminView shows upload state', () => {
       onPageChange={vi.fn()}
       onPageSizeChange={vi.fn()}
       onOpenReader={vi.fn()}
-      onReprocess={vi.fn()}
+      onStartOcr={vi.fn()}
+      onRetryFailedOcr={vi.fn()}
+      onRevert={vi.fn()}
       onDeleteBook={vi.fn()}
 
       editingBookTitleId={null} setEditingBookTitleId={vi.fn()}
@@ -125,7 +130,9 @@ test('AdminView edits title and author', () => {
       onPageChange={vi.fn()}
       onPageSizeChange={vi.fn()}
       onOpenReader={vi.fn()}
-      onReprocess={vi.fn()}
+      onStartOcr={vi.fn()}
+      onRetryFailedOcr={vi.fn()}
+      onRevert={vi.fn()}
       onDeleteBook={vi.fn()}
 
       editingBookTitleId={'1'} setEditingBookTitleId={vi.fn()}
@@ -151,7 +158,7 @@ test('AdminView edits title and author', () => {
   expect(handleSaveAuthor).toHaveBeenCalledWith('1', 'New Author');
 });
 
-test('AdminView hides reprocess when processing', () => {
+test('AdminView disables start OCR when processing', () => {
   const processingBook: Book = { ...mockBooks[0], status: 'processing' };
 
   render(
@@ -166,7 +173,9 @@ test('AdminView hides reprocess when processing', () => {
       onPageChange={vi.fn()}
       onPageSizeChange={vi.fn()}
       onOpenReader={vi.fn()}
-      onReprocess={vi.fn()}
+      onStartOcr={vi.fn()}
+      onRetryFailedOcr={vi.fn()}
+      onRevert={vi.fn()}
       onDeleteBook={vi.fn()}
 
       editingBookTitleId={null} setEditingBookTitleId={vi.fn()}
@@ -184,7 +193,9 @@ test('AdminView hides reprocess when processing', () => {
     />
   );
 
-  expect(screen.queryByTitle('REPROCESS')).toBeNull();
+  const disabledBtns = screen.getAllByTitle('OCR IN PROGRESS');
+  expect(disabledBtns.length).toBe(2);
+  disabledBtns.forEach(btn => expect(btn).toBeDisabled());
 });
 
 test('AdminView opens and closes category editor', () => {
@@ -203,7 +214,9 @@ test('AdminView opens and closes category editor', () => {
       onPageChange={vi.fn()}
       onPageSizeChange={vi.fn()}
       onOpenReader={vi.fn()}
-      onReprocess={vi.fn()}
+      onStartOcr={vi.fn()}
+      onRetryFailedOcr={vi.fn()}
+      onRevert={vi.fn()}
       onDeleteBook={vi.fn()}
 
       editingBookTitleId={null} setEditingBookTitleId={vi.fn()}
@@ -244,7 +257,9 @@ test('AdminView renders rag pipeline styling', () => {
       onPageChange={vi.fn()}
       onPageSizeChange={vi.fn()}
       onOpenReader={vi.fn()}
-      onReprocess={vi.fn()}
+      onStartOcr={vi.fn()}
+      onRetryFailedOcr={vi.fn()}
+      onRevert={vi.fn()}
       onDeleteBook={vi.fn()}
 
       editingBookTitleId={null} setEditingBookTitleId={vi.fn()}
@@ -280,7 +295,9 @@ test('AdminView handles sorting', () => {
       onPageChange={vi.fn()}
       onPageSizeChange={vi.fn()}
       onOpenReader={vi.fn()}
-      onReprocess={vi.fn()}
+      onStartOcr={vi.fn()}
+      onRetryFailedOcr={vi.fn()}
+      onRevert={vi.fn()}
       onDeleteBook={vi.fn()}
 
       editingBookTitleId={null} setEditingBookTitleId={vi.fn()}
@@ -317,7 +334,8 @@ test('AdminView enters title edit mode', () => {
       onPageChange={vi.fn()}
       onPageSizeChange={vi.fn()}
       onOpenReader={vi.fn()}
-      onReprocess={vi.fn()}
+      onStartOcr={vi.fn()}
+      onRevert={vi.fn()}
       onDeleteBook={vi.fn()}
 
       editingBookTitleId={null} setEditingBookTitleId={setEditingBookTitleId}
@@ -342,8 +360,9 @@ test('AdminView enters title edit mode', () => {
 
 test('AdminView calls action handlers', () => {
   const onOpenReader = vi.fn();
-  const onReprocess = vi.fn();
+  const onStartOcr = vi.fn();
   const onDeleteBook = vi.fn();
+  const onRevert = vi.fn();
 
   render(
     <AdminView
@@ -357,7 +376,9 @@ test('AdminView calls action handlers', () => {
       onPageChange={vi.fn()}
       onPageSizeChange={vi.fn()}
       onOpenReader={onOpenReader}
-      onReprocess={onReprocess}
+      onStartOcr={onStartOcr}
+      onRetryFailedOcr={vi.fn()}
+      onRevert={onRevert}
       onDeleteBook={onDeleteBook}
 
       editingBookTitleId={null} setEditingBookTitleId={vi.fn()}
@@ -378,8 +399,14 @@ test('AdminView calls action handlers', () => {
   fireEvent.click(screen.getByTitle('VIEW'));
   expect(onOpenReader).toHaveBeenCalledWith(mockBooks[0]);
 
-  fireEvent.click(screen.getByTitle('REPROCESS'));
-  expect(onReprocess).toHaveBeenCalledWith('1');
+  fireEvent.click(screen.getByTitle('START LOCAL OCR'));
+  expect(onStartOcr).toHaveBeenCalledWith('1', 'local');
+
+  fireEvent.click(screen.getByTitle('START GEMINI OCR'));
+  expect(onStartOcr).toHaveBeenCalledWith('1', 'gemini');
+
+  fireEvent.click(screen.getByTitle('REVERT VERSION'));
+  expect(onRevert).toHaveBeenCalledWith('1');
 
   fireEvent.click(screen.getByTitle('DELETE'));
   expect(onDeleteBook).toHaveBeenCalledWith('1');
@@ -401,7 +428,9 @@ test('AdminView saves volume and categories', () => {
       onPageChange={vi.fn()}
       onPageSizeChange={vi.fn()}
       onOpenReader={vi.fn()}
-      onReprocess={vi.fn()}
+      onStartOcr={vi.fn()}
+      onRetryFailedOcr={vi.fn()}
+      onRevert={vi.fn()}
       onDeleteBook={vi.fn()}
 
       editingBookTitleId={null} setEditingBookTitleId={vi.fn()}
@@ -442,7 +471,9 @@ test('AdminView shows category placeholder and handles backspace', () => {
       onPageChange={vi.fn()}
       onPageSizeChange={vi.fn()}
       onOpenReader={vi.fn()}
-      onReprocess={vi.fn()}
+      onStartOcr={vi.fn()}
+      onRetryFailedOcr={vi.fn()}
+      onRevert={vi.fn()}
       onDeleteBook={vi.fn()}
 
       editingBookTitleId={null} setEditingBookTitleId={vi.fn()}

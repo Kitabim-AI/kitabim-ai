@@ -48,8 +48,9 @@ test('App renders and navigates between views', () => {
   mockUseBookActions.mockReturnValue({
     isCheckingGlobal: false,
     handleFileUpload: vi.fn(),
-    handleReprocess: vi.fn(),
+    handleStartOcr: vi.fn(),
     handleReProcessPage: vi.fn(),
+    handleRevertBook: vi.fn(),
     handleUpdatePage: vi.fn(),
     openReader: vi.fn(),
     saveCorrections: vi.fn(),
@@ -118,8 +119,9 @@ test('App opens reader from library click', () => {
   mockUseBookActions.mockImplementation((_refresh: any, _setBooks: any, setSelectedBook: any, setView: any) => ({
     isCheckingGlobal: false,
     handleFileUpload: vi.fn(),
-    handleReprocess: vi.fn(),
+    handleStartOcr: vi.fn(),
     handleReProcessPage: vi.fn(),
+    handleRevertBook: vi.fn(),
     handleUpdatePage: vi.fn(),
     openReader: (b: any, _setEditContent: any, _setChatMessages: any, _setCurrentPage: any) => {
       setSelectedBook(b);
@@ -169,8 +171,9 @@ test('App shows loading overlay', () => {
   mockUseBookActions.mockReturnValue({
     isCheckingGlobal: false,
     handleFileUpload: vi.fn(),
-    handleReprocess: vi.fn(),
+    handleStartOcr: vi.fn(),
     handleReProcessPage: vi.fn(),
+    handleRevertBook: vi.fn(),
     handleUpdatePage: vi.fn(),
     openReader: vi.fn(),
     saveCorrections: vi.fn(),

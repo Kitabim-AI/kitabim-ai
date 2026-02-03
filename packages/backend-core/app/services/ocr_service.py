@@ -50,7 +50,13 @@ async def ocr_page_with_local(page: fitz.Page, book_title: str, page_num: int) -
         return clean_uyghur_text(payload.get("text", ""))
 
 
-async def ocr_page(page: fitz.Page, book_title: str, page_num: int) -> str:
-    if settings.ocr_provider == "local":
+async def ocr_page(
+    page: fitz.Page,
+    book_title: str,
+    page_num: int,
+    provider: str | None = None,
+) -> str:
+    selected = (provider or settings.ocr_provider or "gemini").lower()
+    if selected == "local":
         return await ocr_page_with_local(page, book_title, page_num)
     return await ocr_page_with_gemini(page)
