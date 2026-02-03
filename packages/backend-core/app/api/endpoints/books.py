@@ -204,7 +204,7 @@ async def get_books(
 @router.get("/{book_id}", response_model=Book)
 async def get_book(book_id: str, initial_pages: int = 20):
     db = db_manager.db
-    book = await db.books.find_one({"id": book_id}, {"content": 0})
+    book = await db.books.find_one({"id": book_id}, {"content": 0, "previousContent": 0, "previousResults": 0})
     if book:
         if "_id" in book and "id" not in book:
             book["id"] = str(book["_id"])
@@ -319,27 +319,27 @@ async def start_ocr(book_id: str, payload: dict, background_tasks: BackgroundTas
         "lastUpdated": datetime.utcnow(),
     }
 
-    if book.get("status") != "pending" and (book.get("content") or book.get("results")):
-        update_fields["previousContent"] = book.get("content") or ""
-        update_fields["previousResults"] = book.get("results") or []
-        update_fields["previousVersionAt"] = datetime.utcnow()
+    # BACKUP LOGIC: Fetch pages from 'pages' collection
+    if book.get("status") != "pending":
+        current_pages_cursor = db.pages.find({"bookId": book_id}, {"embedding": 0}).sort("pageNumber", 1)
+        current_pages = await current_pages_cursor.to_list(None)
+        
+        if current_pages or book.get("content"):
+            update_fields["previousContent"] = book.get("content") or ""
+            # Store full page objects in previousResults
+            update_fields["previousResults"] = current_pages
+            update_fields["previousVersionAt"] = datetime.utcnow()
 
-    if book.get("status") != "pending" and book.get("totalPages", 0) > 0:
-        # Reset pages collection
-        await db.pages.update_many(
-            {"bookId": book_id},
-            {
-                "$set": {
-                    "text": "",
-                    "status": "pending",
-                    "isVerified": False,
-                    "error": None,
-                    "lastUpdated": datetime.utcnow()
-                },
-                "$unset": {"embedding": ""}
-            }
-        )
+    # CLEAR OLD DATA
+    if book.get("status") != "pending":
+        # Delete existing pages
+        await db.pages.delete_many({"bookId": book_id})
         update_fields["content"] = ""
+
+        # Note: We don't need to re-initialize pages with empty state here because 
+        # the OCR worker (process_pdf) creates new page entries as it processes.
+        # But if we want to show placeholders, we could create them. 
+        # For now, deleting is cleaner as it signals "processing" effectively.
 
     await db.books.update_one({"id": book_id}, {"$set": update_fields})
     await enqueue_pdf_processing(book_id, reason=f"start_{provider}", background_tasks=background_tasks)
@@ -419,21 +419,41 @@ async def revert_book(book_id: str, background_tasks: BackgroundTasks):
     if not previous_content and not previous_results:
         raise HTTPException(status_code=400, detail="No previous version available")
 
-    restored_results = []
-    for res in (previous_results or []):
-        r = dict(res)
-        r.pop("embedding", None)
-        r["isVerified"] = True
-        if r.get("text"):
-            r["status"] = "completed"
-        restored_results.append(r)
+    # RESTORE LOGIC: Restore to 'pages' collection
+    
+    # 1. Clear current bad pages
+    await db.pages.delete_many({"bookId": book_id})
 
+    # 2. Restore previous pages
+    if previous_results:
+        restored_pages = []
+        for res in previous_results:
+            r = dict(res)
+            # Ensure _id is not reused to avoid conflicts, let Mongo generate new ones
+            r.pop("_id", None) 
+            r.pop("embedding", None)
+            
+            # Ensure mandatory fields are present
+            r["bookId"] = book_id
+            r["lastUpdated"] = datetime.utcnow()
+            
+            # If it was a valid result, mark as completed/verified
+            r["isVerified"] = True
+            if r.get("text"):
+                r["status"] = "completed"
+            
+            restored_pages.append(r)
+        
+        if restored_pages:
+            await db.pages.insert_many(restored_pages)
+
+    # 3. Update Book metadata
     await db.books.update_one(
         {"id": book_id},
         {
             "$set": {
                 "content": previous_content or "",
-                "results": restored_results,
+                "results": [], # Keep results empty in books collection
                 "status": "processing",
                 "processingStep": "rag",
                 "lastUpdated": datetime.utcnow(),
