@@ -349,10 +349,6 @@ async def process_pdf_task(
                         {"batch_start": start, "batch_end": start + len(batch) - 1},
                     )
 
-        all_pages = await db.pages.find({"bookId": book_id}).sort("pageNumber", 1).to_list(None)
-        raw_combined = "\n\n".join([r.get("text", "") for r in all_pages if r.get("status") == "completed"])
-        full_content = normalize_markdown(raw_combined)
-
         completed_count = len([r for r in all_pages if r.get("status") == "completed"])
         final_status = "ready" if completed_count == total_pages else "error"
 
@@ -360,7 +356,6 @@ async def process_pdf_task(
             {"id": book_id},
             {
                 "$set": {
-                    "content": full_content,
                     "status": final_status,
                     "lastUpdated": datetime.utcnow(),
                 }

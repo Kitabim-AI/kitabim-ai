@@ -4,6 +4,18 @@ import { Book, PaginatedBooks } from '@shared/types';
 const API_BASE = '/api';
 
 export const PersistenceService = {
+  async getBookContent(id: string): Promise<string> {
+    try {
+      const response = await fetch(`${API_BASE}/books/${id}/content`);
+      if (!response.ok) throw new Error("Failed to fetch content");
+      const data = await response.json();
+      return data.content || "";
+    } catch (error) {
+      console.error("Failed to fetch book content", error);
+      return "";
+    }
+  },
+
   async findBookByHash(hash: string): Promise<Book | null> {
     try {
       const response = await fetch(`${API_BASE}/books/hash/${hash}`);
@@ -17,8 +29,8 @@ export const PersistenceService = {
   },
 
   async saveBookGlobally(book: Book): Promise<void> {
-    const response = await fetch(`${API_BASE}/books`, {
-      method: 'POST',
+    const response = await fetch(`${API_BASE}/books/${book.id}`, {
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(book),
     });
@@ -44,7 +56,6 @@ export const PersistenceService = {
           ...b,
           uploadDate: new Date(b.uploadDate),
           lastUpdated: b.lastUpdated ? new Date(b.lastUpdated) : null,
-          previousVersionAt: b.previousVersionAt ? new Date(b.previousVersionAt) : null
         }))
       };
     } catch (error) {
@@ -62,7 +73,6 @@ export const PersistenceService = {
         ...b,
         uploadDate: new Date(b.uploadDate),
         lastUpdated: b.lastUpdated ? new Date(b.lastUpdated) : null,
-        previousVersionAt: b.previousVersionAt ? new Date(b.previousVersionAt) : null
       };
     } catch (error) {
       console.error("Failed to fetch book by id", error);

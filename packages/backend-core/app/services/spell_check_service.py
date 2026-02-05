@@ -114,17 +114,10 @@ class SpellCheckService:
             }
         )
 
-        all_pages = await db.pages.find({"bookId": book_id}).sort("pageNumber", 1).to_list(None)
-        all_text = "\n\n".join(
-            page.get("text", "") for page in all_pages if page.get("status") == "completed"
-        )
-        all_text = normalize_markdown(all_text)
-
         await db.books.update_one(
             {"id": book_id},
             {
                 "$set": {
-                    "content": all_text,
                     "lastUpdated": datetime.utcnow(),
                 }
             },

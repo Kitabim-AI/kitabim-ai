@@ -235,8 +235,10 @@ export const useBookActions = (
       const fullBook = await PersistenceService.getBookById(book.id);
       if (!fullBook) throw new Error("Could not load book content");
 
+      const content = await PersistenceService.getBookContent(book.id);
+
       setSelectedBook(fullBook);
-      setEditContent(fullBook.content);
+      setEditContent(content || '');
       setChatMessages([]);
       setView('reader');
       setCurrentPage(1);
@@ -253,26 +255,49 @@ export const useBookActions = (
   const saveCorrections = async (selectedBook: Book | null, editContent: string, setIsEditing: any) => {
     if (!selectedBook) return;
     try {
-      const lines = editContent.split('\n');
-      const linesPerPage = Math.max(1, Math.ceil(lines.length / (selectedBook.results.length || 1)));
+      // 1. Extract content by markers
+      const segments = editContent.split(/\[\[PAGE \d+\]\]/);
+      const markers = editContent.match(/\[\[PAGE (\d+)\]\]/g);
 
-      const updatedResults = selectedBook.results.map((res, i) => {
-        const start = i * linesPerPage;
-        const end = start + linesPerPage;
-        const pageLines = lines.slice(start, end);
-        return {
-          ...res,
-          text: pageLines.join('\n').trim(),
-          status: 'completed' as const,
-          isVerified: true
-        };
+      const newPageMap = new Map<number, string>();
+      if (markers) {
+        markers.forEach((m, i) => {
+          const match = m.match(/\d+/);
+          if (match) {
+            const pageNum = parseInt(match[0]);
+            newPageMap.set(pageNum, (segments[i + 1] || "").trim());
+          }
+        });
+      }
+
+      // 2. Identify changes and build updated results
+      let hasChanges = false;
+      const updatedResults = selectedBook.results.map(res => {
+        const newText = newPageMap.get(res.pageNumber);
+
+        // If marker exists and text is different, update
+        if (newText !== undefined && newText !== (res.text || "")) {
+          hasChanges = true;
+          return {
+            ...res,
+            text: newText,
+            status: 'completed' as const,
+            isVerified: true
+          };
+        }
+        // Otherwise keep original (avoids re-verifying or re-syncing unchanged pages)
+        return res;
       });
+
+      if (!hasChanges) {
+        setIsEditing(false);
+        return;
+      }
 
       const cleanResults = updatedResults.map(({ embedding, ...rest }: any) => rest);
 
       const updatedBook = {
         ...selectedBook,
-        content: editContent,
         results: cleanResults as any,
         lastUpdated: new Date()
       };

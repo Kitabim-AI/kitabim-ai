@@ -86,21 +86,13 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
     }
   }, [tempPageText, editingPageNum]);
 
-  // Auto-resize textarea for global edit
-  useEffect(() => {
-    if (globalTextAreaRef.current && isEditing) {
-      globalTextAreaRef.current.style.height = 'auto';
-      globalTextAreaRef.current.style.height = `${globalTextAreaRef.current.scrollHeight}px`;
-    }
-  }, [editContent, isEditing]);
-
   const fetchMorePages = React.useCallback(async () => {
     if (isLoadingMore || !hasMorePages) return;
     setIsLoadingMore(true);
 
     try {
       const currentLength = loadedPages.length;
-      const newPages = await PersistenceService.getBookPages(selectedBook.id, currentLength, 20);
+      const newPages = await PersistenceService.getBookPages(selectedBook.id, currentLength, 10000);
 
       if (newPages.length === 0) {
         setHasMorePages(false);
@@ -258,13 +250,13 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
           </div>
         </div>
 
-        <div className="flex-grow p-10 overflow-y-auto bg-[url('https://www.transparenttextures.com/patterns/paper-fibers.png')]">
+        <div className={`flex-grow ${isEditing ? 'p-6 flex flex-col' : 'p-10 overflow-y-auto'} bg-[url('https://www.transparenttextures.com/patterns/paper-fibers.png')]`}>
           {isEditing ? (
             <textarea
               ref={globalTextAreaRef}
               value={editContent}
               onChange={(e) => setEditContent(e.target.value)}
-              className="w-full p-6 uyghur-text border border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none resize-none bg-white shadow-inner overflow-hidden"
+              className="flex-grow w-full p-6 uyghur-text border border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none resize-none bg-white shadow-inner overflow-y-auto"
               style={{ fontSize: `${fontSize}px` }}
               dir="rtl"
             />

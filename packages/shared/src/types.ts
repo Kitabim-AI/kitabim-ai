@@ -20,7 +20,6 @@ export interface Book {
   author: string;
   volume?: number | null;
   totalPages: number;
-  content?: string;
   results: ExtractionResult[];
   status: 'uploading' | 'pending' | 'processing' | 'ready' | 'error';
   uploadDate: Date;
@@ -28,9 +27,6 @@ export interface Book {
   coverUrl?: string;
   processingStep?: 'ocr' | 'rag';
   ocrProvider?: 'gemini' | 'local';
-  previousContent?: string;
-  previousResults?: ExtractionResult[];
-  previousVersionAt?: Date | string | null;
   categories?: string[];
   tags?: string[];
   errors?: ErrorEvent[];

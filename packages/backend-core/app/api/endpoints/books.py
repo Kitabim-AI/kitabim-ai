@@ -9,12 +9,16 @@ from typing import Optional, List
 
 from bson import ObjectId
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
+from pymongo import UpdateOne
 from app.core.config import settings
 from app.db.mongodb import db_manager
 from app.models.schemas import Book, PaginatedBooks, ExtractionResult
 from app.queue import enqueue_pdf_processing
 from app.services.spell_check_service import spell_check_service
+import logging
 from app.utils.markdown import normalize_markdown
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -47,7 +51,6 @@ async def get_books(
         "content": 0,
         "results.text": 0,
         "results.embedding": 0,
-        "previousContent": 0,
         "previousResults": 0,
     }
 
@@ -83,7 +86,6 @@ async def get_books(
             {"$project": {
                 "content": 0,
                 "results": 0,
-                "previousContent": 0,
                 "previousResults": 0,
                 "embedding": 0
             }}
@@ -167,7 +169,6 @@ async def get_books(
         {"$project": {
             "content": 0,
             "results": 0,
-            "previousContent": 0,
             "previousResults": 0,
             "embedding": 0
         }}
@@ -202,9 +203,9 @@ async def get_books(
 
 
 @router.get("/{book_id}", response_model=Book)
-async def get_book(book_id: str, initial_pages: int = 20):
+async def get_book(book_id: str, initial_pages: int = 10000):
     db = db_manager.db
-    book = await db.books.find_one({"id": book_id}, {"content": 0, "previousContent": 0, "previousResults": 0})
+    book = await db.books.find_one({"id": book_id}, {"previousResults": 0})
     if book:
         if "_id" in book and "id" not in book:
             book["id"] = str(book["_id"])
@@ -216,6 +217,30 @@ async def get_book(book_id: str, initial_pages: int = 20):
         
         return book
     raise HTTPException(status_code=404, detail="Book not found")
+
+
+@router.get("/{book_id}/content")
+async def get_book_content(book_id: str):
+    db = db_manager.db
+    # Verify book exists
+    book = await db.books.find_one({"id": book_id}, {"_id": 1})
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+        
+    # Aggregate ALL pages from the pages collection
+    # This avoids relying on the potentially stale or deprecated book.content field
+    pages = await db.pages.find({"bookId": book_id}).sort("pageNumber", 1).to_list(10000)
+    logger.info(f"DEBUG: Found {len(pages)} pages for book {book_id}")
+    
+    content_blocks = []
+    for p in pages:
+        page_num = p.get("pageNumber")
+        text = p.get("text", "")
+        content_blocks.append(f"[[PAGE {page_num}]]\n{text}")
+        
+    full_text = "\n\n".join(content_blocks)
+    
+    return {"content": full_text.strip()}
 
 
 @router.get("/{book_id}/pages", response_model=List[ExtractionResult])
@@ -288,9 +313,6 @@ async def upload_pdf(background_tasks: BackgroundTasks, file: UploadFile = File(
         "categories": [],
         "processingStep": "ocr",
         "ocrProvider": None,
-        "previousContent": None,
-        "previousResults": None,
-        "previousVersionAt": None,
     }
 
     await db.books.insert_one(new_book)
@@ -522,15 +544,37 @@ async def create_book(book: Book, background_tasks: BackgroundTasks):
 
 
 @router.put("/{book_id}")
-async def update_book_details(book_id: str, book_update: dict):
+async def update_book_details(book_id: str, book_update: dict, background_tasks: BackgroundTasks):
     db = db_manager.db
     book_update.pop("uploadDate", None)
-    if "content" in book_update:
-        book_update["content"] = normalize_markdown(book_update.get("content") or "")
+    book_update.pop("content", None)
+    has_page_updates = False
     if "results" in book_update:
+        pages_ops = []
         for result in book_update.get("results") or []:
             if "text" in result:
                 result["text"] = normalize_markdown(result.get("text") or "")
+            
+            # Sync to pages collection
+            if "pageNumber" in result:
+                has_page_updates = True
+                page_update = {
+                    "text": result.get("text"),
+                    "status": result.get("status"),
+                    "isVerified": result.get("isVerified", False),
+                    "isIndexed": False, # Force re-indexing for RAG
+                    "lastUpdated": datetime.utcnow()
+                }
+                pages_ops.append(
+                    UpdateOne(
+                        {"bookId": book_id, "pageNumber": result["pageNumber"]},
+                        {"$set": page_update},
+                        upsert=True
+                    )
+                )
+        
+        if pages_ops:
+            await db.pages.bulk_write(pages_ops)
 
     query = {"$or": [{"id": book_id}]}
     if len(book_id) == 24:
@@ -541,6 +585,8 @@ async def update_book_details(book_id: str, book_update: dict):
 
     result = await db.books.update_one(query, {"$set": book_update})
     if result.matched_count:
+        if has_page_updates:
+            await enqueue_pdf_processing(book_id, reason="global_edit", background_tasks=background_tasks)
         return {"status": "updated", "modified": result.modified_count > 0}
     raise HTTPException(status_code=404, detail="Book not found")
 

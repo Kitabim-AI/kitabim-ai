@@ -20,7 +20,6 @@ const mockBooks: Book[] = [
     lastUpdated: new Date(),
     contentHash: 'h',
     categories: ['Cat1'],
-    previousVersionAt: new Date()
   }
 ];
 
@@ -54,7 +53,7 @@ test('AdminView renders table and data', () => {
       onOpenReader={vi.fn()}
       onStartOcr={vi.fn()}
       onRetryFailedOcr={vi.fn()}
-      onRevert={vi.fn()}
+      onReindex={vi.fn()}
       onDeleteBook={vi.fn()}
 
       editingBookTitleId={null} setEditingBookTitleId={vi.fn()}
@@ -93,7 +92,7 @@ test('AdminView shows upload state', () => {
       onOpenReader={vi.fn()}
       onStartOcr={vi.fn()}
       onRetryFailedOcr={vi.fn()}
-      onRevert={vi.fn()}
+      onReindex={vi.fn()}
       onDeleteBook={vi.fn()}
 
       editingBookTitleId={null} setEditingBookTitleId={vi.fn()}
@@ -132,7 +131,7 @@ test('AdminView edits title and author', () => {
       onOpenReader={vi.fn()}
       onStartOcr={vi.fn()}
       onRetryFailedOcr={vi.fn()}
-      onRevert={vi.fn()}
+      onReindex={vi.fn()}
       onDeleteBook={vi.fn()}
 
       editingBookTitleId={'1'} setEditingBookTitleId={vi.fn()}
@@ -175,7 +174,7 @@ test('AdminView disables start OCR when processing', () => {
       onOpenReader={vi.fn()}
       onStartOcr={vi.fn()}
       onRetryFailedOcr={vi.fn()}
-      onRevert={vi.fn()}
+      onReindex={vi.fn()}
       onDeleteBook={vi.fn()}
 
       editingBookTitleId={null} setEditingBookTitleId={vi.fn()}
@@ -216,7 +215,7 @@ test('AdminView opens and closes category editor', () => {
       onOpenReader={vi.fn()}
       onStartOcr={vi.fn()}
       onRetryFailedOcr={vi.fn()}
-      onRevert={vi.fn()}
+      onReindex={vi.fn()}
       onDeleteBook={vi.fn()}
 
       editingBookTitleId={null} setEditingBookTitleId={vi.fn()}
@@ -259,7 +258,7 @@ test('AdminView renders rag pipeline styling', () => {
       onOpenReader={vi.fn()}
       onStartOcr={vi.fn()}
       onRetryFailedOcr={vi.fn()}
-      onRevert={vi.fn()}
+      onReindex={vi.fn()}
       onDeleteBook={vi.fn()}
 
       editingBookTitleId={null} setEditingBookTitleId={vi.fn()}
@@ -297,7 +296,7 @@ test('AdminView handles sorting', () => {
       onOpenReader={vi.fn()}
       onStartOcr={vi.fn()}
       onRetryFailedOcr={vi.fn()}
-      onRevert={vi.fn()}
+      onReindex={vi.fn()}
       onDeleteBook={vi.fn()}
 
       editingBookTitleId={null} setEditingBookTitleId={vi.fn()}
@@ -335,7 +334,7 @@ test('AdminView enters title edit mode', () => {
       onPageSizeChange={vi.fn()}
       onOpenReader={vi.fn()}
       onStartOcr={vi.fn()}
-      onRevert={vi.fn()}
+      onReindex={vi.fn()}
       onDeleteBook={vi.fn()}
 
       editingBookTitleId={null} setEditingBookTitleId={setEditingBookTitleId}
@@ -362,7 +361,7 @@ test('AdminView calls action handlers', () => {
   const onOpenReader = vi.fn();
   const onStartOcr = vi.fn();
   const onDeleteBook = vi.fn();
-  const onRevert = vi.fn();
+  const onReindex = vi.fn();
 
   render(
     <AdminView
@@ -378,7 +377,8 @@ test('AdminView calls action handlers', () => {
       onOpenReader={onOpenReader}
       onStartOcr={onStartOcr}
       onRetryFailedOcr={vi.fn()}
-      onRevert={onRevert}
+      onReindex={vi.fn()}
+      onReindex={onReindex}
       onDeleteBook={onDeleteBook}
 
       editingBookTitleId={null} setEditingBookTitleId={vi.fn()}
@@ -405,8 +405,8 @@ test('AdminView calls action handlers', () => {
   fireEvent.click(screen.getByTitle('START GEMINI OCR'));
   expect(onStartOcr).toHaveBeenCalledWith('1', 'gemini');
 
-  fireEvent.click(screen.getByTitle('REVERT VERSION'));
-  expect(onRevert).toHaveBeenCalledWith('1');
+  fireEvent.click(screen.getByTitle('RE-INDEX (SEMANTIC CHUNKING)'));
+  expect(onReindex).toHaveBeenCalledWith('1');
 
   fireEvent.click(screen.getByTitle('DELETE'));
   expect(onDeleteBook).toHaveBeenCalledWith('1');
@@ -430,7 +430,7 @@ test('AdminView saves volume and categories', () => {
       onOpenReader={vi.fn()}
       onStartOcr={vi.fn()}
       onRetryFailedOcr={vi.fn()}
-      onRevert={vi.fn()}
+      onReindex={vi.fn()}
       onDeleteBook={vi.fn()}
 
       editingBookTitleId={null} setEditingBookTitleId={vi.fn()}
@@ -473,7 +473,7 @@ test('AdminView shows category placeholder and handles backspace', () => {
       onOpenReader={vi.fn()}
       onStartOcr={vi.fn()}
       onRetryFailedOcr={vi.fn()}
-      onRevert={vi.fn()}
+      onReindex={vi.fn()}
       onDeleteBook={vi.fn()}
 
       editingBookTitleId={null} setEditingBookTitleId={vi.fn()}

@@ -87,26 +87,7 @@ class RAGService:
             + extra_rules
         )
 
-    @staticmethod
-    def _build_books_fallback_context(books, max_chars_per_book: int = 4000, max_books: int = 2) -> str:
-        parts = []
-        for b in (books or [])[:max_books]:
-            title = b.get("title", "نامسىز كىتاب")
-            content = strip_markdown(b.get("content") or "").strip()
-            if not content:
-                pages = [
-                    r
-                    for r in b.get("results", [])
-                    if r.get("status") == "completed" and r.get("text")
-                ]
-                pages = sorted(pages, key=lambda x: x.get("pageNumber", 0))[:3]
-                content = "\n\n".join([strip_markdown(r.get("text", "")) for r in pages]).strip()
-            if not content:
-                continue
-            if len(content) > max_chars_per_book:
-                content = content[:max_chars_per_book]
-            parts.append(f"Book: {title} (overview excerpt):\n{content}")
-        return "\n\n---\n\n".join(parts)
+
 
     @staticmethod
     def _format_document(doc: Document) -> str:
@@ -341,13 +322,7 @@ class RAGService:
         for doc in documents:
             context_parts.append(self._format_document(doc))
 
-        if not top_results and not is_global:
-            fallback_context = self._build_books_fallback_context(
-                related_books,
-                max_chars_per_book=settings.rag_max_chars_per_book,
-            )
-            if fallback_context:
-                context_parts.append(fallback_context)
+
 
         context = "\n\n---\n\n".join(context_parts)
         if not context and is_global:

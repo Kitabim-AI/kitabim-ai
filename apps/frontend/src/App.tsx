@@ -105,7 +105,6 @@ const App: React.FC = () => {
           if (!prev) return updated;
           return {
             ...updated,
-            content: prev.content || updated.content,
             results: (prev.results && prev.results.some(r => r.text)) ? prev.results : updated.results
           };
         });
@@ -114,18 +113,19 @@ const App: React.FC = () => {
   }, [books, selectedBook]);
 
   // Sync global edit content with latest page results
-  useEffect(() => {
-    if (selectedBook && !isEditing) {
-      const combinedText = [...selectedBook.results]
-        .sort((a, b) => Number(a.pageNumber) - Number(b.pageNumber))
-        .map(r => r.text || '')
-        .join('\n\n');
+  // Sync global edit content with latest page results - REMOVED to prevent overwriting full content with partial initial load
+  // useEffect(() => {
+  //   if (selectedBook && !isEditing) {
+  //     const combinedText = [...selectedBook.results]
+  //       .sort((a, b) => Number(a.pageNumber) - Number(b.pageNumber))
+  //       .map(r => r.text || '')
+  //       .join('\n\n');
 
-      if (combinedText !== editContent) {
-        setEditContent(combinedText);
-      }
-    }
-  }, [selectedBook?.results, isEditing, editContent]);
+  //     if (combinedText !== editContent) {
+  //       setEditContent(combinedText);
+  //     }
+  //   }
+  // }, [selectedBook?.results, isEditing, editContent]);
 
   useEffect(() => {
     refreshLibrary();
@@ -165,7 +165,6 @@ const App: React.FC = () => {
             if (!prev || prev.id !== fresh.id) return prev;
             return {
               ...fresh,
-              content: prev.content || fresh.content,
             };
           });
         }
