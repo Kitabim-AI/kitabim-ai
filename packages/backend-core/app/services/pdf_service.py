@@ -12,6 +12,7 @@ from app.db.mongodb import db_manager
 from app.jobs import increment_attempts, update_job_status
 from app.langchain.models import GeminiEmbeddings
 from app.services.ocr_service import ocr_page
+from app.services.chunking_service import chunking_service
 from app.utils.errors import record_book_error
 from app.utils.markdown import normalize_markdown, strip_markdown
 from app.utils.observability import log_json
@@ -149,7 +150,7 @@ async def process_pdf_task(
                 "bookId": book_id,
                 "$or": [
                     {"status": {"$ne": "completed"}},
-                    {"embedding": {"$exists": False}}
+                    {"isIndexed": {"$ne": True}}
                 ]
             }
         ).to_list(None)
@@ -220,6 +221,7 @@ async def process_pdf_task(
                         "status": "completed" if success else "error",
                         "error": page_error,
                         "lastUpdated": datetime.utcnow(),
+                        "isIndexed": False
                     }
                     await db.pages.update_one(
                         {"bookId": book_id, "pageNumber": page_num},
@@ -255,7 +257,7 @@ async def process_pdf_task(
         await db.books.update_one({"id": book_id}, {"$set": {"processingStep": "rag"}})
 
         pages_to_embed = await db.pages.find(
-            {"bookId": book_id, "status": "completed", "embedding": {"$exists": False}}
+            {"bookId": book_id, "status": "completed", "isIndexed": {"$ne": True}}
         ).to_list(None)
 
         if pages_to_embed:
@@ -267,19 +269,67 @@ async def process_pdf_task(
                 for r in batch:
                     text = strip_markdown(r.get("text") or "").strip()
                     if text:
-                        pairs.append((r, text[:2000]))
+                        pairs.append((r, text))
                 if not pairs:
                     continue
-                batch_records = [p[0] for p in pairs]
-                text_batch = [p[1] for p in pairs]
+
                 try:
-                    embeddings = await embedder.aembed_documents(text_batch)
-                    for idx, r in enumerate(batch_records):
-                        if idx >= len(embeddings):
-                            break
+                    # Flatten all chunks from the batch
+                    all_chunks_text = []
+                    page_chunk_counts = [] # Keep track of how many chunks each page has
+
+                    for r, text in pairs:
+                        chunks = chunking_service.split_text(text)
+                        if not chunks:
+                            chunks = [text] if text else []
+                        
+                        all_chunks_text.extend(chunks)
+                        page_chunk_counts.append(len(chunks))
+
+                    if not all_chunks_text:
+                        continue
+
+                    all_embeddings = await embedder.aembed_documents(all_chunks_text)
+
+                    # Distribute embeddings back to pages and save chunks
+                    current_embed_idx = 0
+                    
+                    for i, (r, original_text) in enumerate(pairs):
+                        count = page_chunk_counts[i]
+                        if count == 0:
+                            # Just mark indexed?
+                            await db.pages.update_one(
+                                {"bookId": book_id, "pageNumber": r.get("pageNumber")},
+                                {"$set": {"isIndexed": True}}
+                            )
+                            continue
+
+                        page_chunks = all_chunks_text[current_embed_idx : current_embed_idx + count]
+                        page_vectors = all_embeddings[current_embed_idx : current_embed_idx + count]
+                        current_embed_idx += count
+
+                        chunk_docs = []
+                        for chunk_idx, (txt, vec) in enumerate(zip(page_chunks, page_vectors)):
+                            chunk_docs.append({
+                                "bookId": book_id,
+                                "pageNumber": r.get("pageNumber"),
+                                "chunkIndex": chunk_idx,
+                                "text": txt,
+                                "embedding": vec,
+                                "createdAt": datetime.utcnow()
+                            })
+
+                        # Clean up old chunks for this page
+                        await db.chunks.delete_many({"bookId": book_id, "pageNumber": r.get("pageNumber")})
+                        
+                        # Insert new chunks
+                        if chunk_docs:
+                            await db.chunks.insert_many(chunk_docs)
+
+                        # Update page status
                         await db.pages.update_one(
                             {"bookId": book_id, "pageNumber": r.get("pageNumber")},
-                            {"$set": {"embedding": embeddings[idx]}},
+                            {"$set": {"isIndexed": True}}
                         )
                 except Exception as exc:
                     log_json(

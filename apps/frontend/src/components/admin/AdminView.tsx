@@ -1,5 +1,5 @@
 import React from 'react';
-import { Database, ChevronUp, ChevronDown, Tag, X, Save, Trash2, BookType, User, Hash, BookOpen, Cpu, ScanText, History, RotateCcw } from 'lucide-react';
+import { Database, ChevronUp, ChevronDown, Tag, X, Save, Trash2, BookType, User, Hash, BookOpen, Cpu, ScanText, History, RotateCcw, RefreshCw } from 'lucide-react';
 import { Book } from '@shared/types';
 import { Pagination } from '../common/Pagination';
 
@@ -16,7 +16,8 @@ interface AdminViewProps {
   onOpenReader: (book: Book) => void;
   onStartOcr: (bookId: string, provider: 'local' | 'gemini') => void;
   onRetryFailedOcr: (book: Book, provider?: 'local' | 'gemini') => void;
-  onRevert: (bookId: string) => void;
+
+  onReindex: (bookId: string) => void;
   onDeleteBook: (bookId: string) => void;
 
   editingBookTitleId: string | null;
@@ -163,7 +164,8 @@ export const AdminView: React.FC<AdminViewProps> = ({
   onOpenReader,
   onStartOcr,
   onRetryFailedOcr,
-  onRevert,
+
+  onReindex,
   onDeleteBook,
 
   editingBookCategoriesId, setEditingBookCategoriesId, editingCategoriesList, setEditingCategoriesList, tempCategories, setTempCategories, handleSaveCategories,
@@ -423,35 +425,32 @@ export const AdminView: React.FC<AdminViewProps> = ({
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       <button
-                        onClick={() => onOpenReader(book)}
-                        className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-600 hover:text-white transition-all active:scale-95 shadow-sm shadow-emerald-100/50"
-                        title="VIEW"
+                        onClick={() => {
+                          if (book.status !== 'pending') onOpenReader(book);
+                        }}
+                        disabled={book.status === 'pending'}
+                        className={`p-2 rounded-lg transition-all shadow-sm ${book.status === 'pending'
+                          ? 'bg-slate-50 text-slate-300 cursor-not-allowed opacity-60'
+                          : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white active:scale-95 shadow-emerald-100/50'
+                          }`}
+                        title={book.status === 'pending' ? 'NO CONTENT' : 'VIEW'}
                       >
                         <BookOpen size={14} className="stroke-[2.5]" />
                       </button>
                       <>
+
                         {(() => {
-                          const canRevert = Boolean(book.previousVersionAt) && book.status !== 'processing';
-                          return (
-                            <button
-                              onClick={() => {
-                                if (canRevert) onRevert(book.id);
-                              }}
-                              disabled={!canRevert}
-                              className={`p-2 rounded-lg transition-all shadow-sm shadow-slate-200/50 ${canRevert
-                                ? 'bg-slate-100 text-slate-600 hover:bg-slate-700 hover:text-white active:scale-95'
-                                : 'bg-slate-50 text-slate-300 cursor-not-allowed opacity-60'
-                                }`}
-                              title={canRevert ? 'REVERT VERSION' : 'NO BACKUP AVAILABLE'}
-                            >
-                              <History size={14} className="stroke-[2.5]" />
-                            </button>
-                          );
-                        })()}
-                        {(() => {
-                          const canStartOcr = book.status !== 'processing';
+                          const isProcessing = book.status === 'processing';
                           const hasFailedPages = (book.errorCount ?? 0) > 0 || book.results?.some(r => r.status === 'error');
-                          const canRetry = Boolean(hasFailedPages) && canStartOcr;
+                          const isReady = book.status === 'ready';
+
+                          // Retry is available if we have errors/failures and are not currently processing
+                          const canRetry = (Boolean(hasFailedPages) || book.status === 'error') && !isProcessing;
+
+                          // Start OCR (Reset) is available only if we are NOT processing AND NOT in a state where Retry is preferred AND NOT Ready
+                          // We disable Start OCR for Ready books to prevent accidental resets.
+                          const canStartOcr = !isProcessing && !canRetry && !isReady;
+
                           return (
                             <div className="flex items-center gap-2">
                               <button
@@ -463,7 +462,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                                   ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white active:scale-95'
                                   : 'bg-indigo-50 text-indigo-200 cursor-not-allowed opacity-60'
                                   }`}
-                                title={canStartOcr ? 'START GEMINI OCR' : 'OCR IN PROGRESS'}
+                                title={canStartOcr ? 'START GEMINI OCR' : (canRetry ? 'USE RETRY INSTEAD' : (isReady ? 'ALREADY COMPLETED' : 'OCR IN PROGRESS'))}
                               >
                                 <ScanText size={14} className="stroke-[2.5]" />
                               </button>
@@ -476,11 +475,29 @@ export const AdminView: React.FC<AdminViewProps> = ({
                                   ? 'bg-amber-50 text-amber-700 hover:bg-amber-500 hover:text-white active:scale-95'
                                   : 'bg-amber-50 text-amber-200 cursor-not-allowed opacity-60'
                                   }`}
-                                title={canRetry ? 'RETRY FAILED PAGES' : (!hasFailedPages ? 'NO FAILED PAGES' : 'OCR IN PROGRESS')}
+                                title={canRetry ? 'RETRY FAILED PAGES (RESUME)' : 'NO FAILED PAGES'}
                               >
                                 <RotateCcw size={12} className="stroke-[2.5]" />
                               </button>
                             </div>
+                          );
+                        })()}
+                        {(() => {
+                          const canReindex = book.status === 'ready';
+                          return (
+                            <button
+                              onClick={() => {
+                                if (canReindex) onReindex(book.id);
+                              }}
+                              disabled={!canReindex}
+                              className={`p-2 rounded-lg transition-all shadow-sm shadow-blue-100/50 ${canReindex
+                                ? 'bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white active:scale-95'
+                                : 'bg-blue-50 text-blue-200 cursor-not-allowed opacity-60'
+                                }`}
+                              title={canReindex ? 'RE-INDEX (SEMANTIC CHUNKING)' : 'PROCESSING'}
+                            >
+                              <RefreshCw size={14} className="stroke-[2.5]" />
+                            </button>
                           );
                         })()}
                       </>

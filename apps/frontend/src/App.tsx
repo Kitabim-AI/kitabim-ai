@@ -85,7 +85,7 @@ const App: React.FC = () => {
     handleStartOcr,
     handleRetryFailedOcr,
     handleReProcessPage,
-    handleRevertBook,
+    handleReindexBook,
     handleUpdatePage,
     openReader,
     saveCorrections,
@@ -196,6 +196,7 @@ const App: React.FC = () => {
         setSearchQuery={setSearchQuery}
         onFileUpload={handleFileUpload}
         clearChat={clearChat}
+        setPage={setPage}
       />
 
       <main className="flex-grow p-6 max-w-7xl mx-auto w-full relative">
@@ -235,7 +236,8 @@ const App: React.FC = () => {
             onOpenReader={(book) => openReader(book, setEditContent, setChatMessages, setCurrentPage)}
             onStartOcr={handleStartOcr}
             onRetryFailedOcr={handleRetryFailedOcr}
-            onRevert={handleRevertBook}
+
+            onReindex={handleReindexBook}
             onDeleteBook={(id) => handleDeleteBook(id, selectedBook?.id)}
             editingBookCategoriesId={editingBookCategoriesId}
             setEditingBookCategoriesId={setEditingBookCategoriesId}

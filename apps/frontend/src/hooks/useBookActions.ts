@@ -62,7 +62,8 @@ export const useBookActions = (
 
   const handleRetryFailedOcr = async (book: Book, provider?: 'local' | 'gemini') => {
     const hasFailedPages = (book.errorCount ?? 0) > 0 || (book.results?.some(r => r.status === 'error') ?? false);
-    if (!hasFailedPages) {
+
+    if (!hasFailedPages && book.status !== 'error') {
       setModal({
         isOpen: true,
         title: "No Failed Pages",
@@ -180,23 +181,26 @@ export const useBookActions = (
     }
   };
 
-  const handleRevertBook = (bookId: string) => {
+
+
+  const handleReindexBook = (bookId: string) => {
     setModal({
       isOpen: true,
-      title: "Confirm Revert",
-      message: "Are you sure you want to revert to the previous version? This will overwrite all current changes with the backup version.",
+      title: "Confirm Re-Index",
+      message: "Are you sure you want to re-chunk and re-embed all pages in this book? This is useful for model upgrades or fixing search issues. Existing content will be preserved.",
       type: 'confirm',
-      confirmText: "Revert Version",
+      confirmText: "Re-Index Book",
       onConfirm: async () => {
         try {
-          await PersistenceService.revertBook(bookId);
+          await PersistenceService.reindexBook(bookId);
+          setBooks(prev => prev.map(b => b.id === bookId ? { ...b, status: 'processing', processingStep: 'rag' } : b));
           await refreshLibrary();
           setModal((prev: any) => ({ ...prev, isOpen: false }));
         } catch (err) {
           setModal({
             isOpen: true,
-            title: "Revert Error",
-            message: "Failed to revert the book. Please try again.",
+            title: "Re-Index Error",
+            message: "Failed to start re-indexing. Please try again.",
             type: 'alert'
           });
         }
@@ -387,7 +391,7 @@ export const useBookActions = (
     handleStartOcr,
     handleRetryFailedOcr,
     handleReProcessPage,
-    handleRevertBook,
+    handleReindexBook,
     handleUpdatePage,
     openReader,
     saveCorrections,

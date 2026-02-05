@@ -8,6 +8,7 @@ interface NavbarProps {
   setSearchQuery: (query: string) => void;
   onFileUpload: (event: React.ChangeEvent<HTMLInputElement>) => void;
   clearChat: () => void;
+  setPage: (page: number) => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -17,6 +18,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   setSearchQuery,
   onFileUpload,
   clearChat,
+  setPage,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -45,7 +47,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <MessageSquare size={18} /> Global Assistant
           </button>
           <button
-            onClick={() => setView('admin')}
+            onClick={() => { setView('admin'); setPage(1); }}
             className={`px-4 py-2 rounded-md text-sm font-semibold transition-colors flex items-center gap-2 ${view === 'admin' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:bg-slate-50'}`}
           >
             <LayoutDashboard size={18} /> Management

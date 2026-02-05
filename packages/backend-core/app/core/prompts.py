@@ -54,5 +54,9 @@ RAG_PROMPT_TEMPLATE = """
 
 {instructions}
 
+[CHAT HISTORY START]
+{chat_history}
+[CHAT HISTORY END]
+
 Question: {question}
 """

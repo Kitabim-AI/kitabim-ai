@@ -145,10 +145,23 @@ class RAGService:
             return []
         return [str(x) for x in (response.categories or [])]
 
+    @staticmethod
+    def _format_chat_history(history: List[dict]) -> str:
+        if not history:
+            return "No previous conversation."
+        
+        formatted = []
+        for msg in history[-6:]:  # Limit to last 6 turns to keep context incomplete but focused
+            role = "User" if msg.get("role") == "user" else "AI"
+            text = msg.get("text", "").replace("\n", " ").strip()
+            formatted.append(f"{role}: {text}")
+        return "\n".join(formatted)
+
     async def _generate_answer(
         self,
         context: str,
         question: str,
+        chat_history: str = "",
         strict_no_answer: bool = False,
         suppress_page_notice: bool = False,
     ) -> str:
@@ -157,6 +170,7 @@ class RAGService:
             {
                 "context": context,
                 "instructions": instructions,
+                "chat_history": chat_history,
                 "question": question,
             }
         )
@@ -186,11 +200,15 @@ class RAGService:
         current_page_context = ""
         current_page_only = include_current_page_context
 
+        # Prepare chat history string
+        chat_history_str = self._format_chat_history(req.history)
+
         if include_current_page_context and not is_global and req.currentPage and book:
             page_rec = await db.pages.find_one(
                 {"bookId": req.bookId, "pageNumber": req.currentPage}
             )
             if page_rec and page_rec.get("text"):
+                # ... existing logic remains ...
                 page_text = strip_markdown(page_rec.get("text") or "")
                 current_page_context = (
                     "CURRENT PAGE (THE USER IS LOOKING AT THIS NOW) - "
@@ -203,9 +221,13 @@ class RAGService:
             return await self._generate_answer(
                 context,
                 req.question,
+                chat_history=chat_history_str,
                 strict_no_answer=False,
                 suppress_page_notice=False,
             )
+
+        # ... (rest of search logic) ...
+
 
         pages_to_search = []
         related_books = []
@@ -230,12 +252,12 @@ class RAGService:
             book_id_to_title = {b["id"]: b.get("title") for b in all_books_recs}
             book_ids = list(book_id_to_title.keys())
             
-            # Fetch pages from pages collection
-            pages_recs = await db.pages.find(
-                {"bookId": {"$in": book_ids}, "status": "completed"}
-            ).to_list(10000)
+            # Fetch chunks from chunks collection
+            chunks_recs = await db.chunks.find(
+                {"bookId": {"$in": book_ids}}
+            ).to_list(15000)
             
-            for r in pages_recs:
+            for r in chunks_recs:
                 r["bookTitle"] = book_id_to_title.get(r.get("bookId"))
                 pages_to_search.append(r)
         else:
@@ -255,12 +277,12 @@ class RAGService:
                     related_ids.append(s["id"])
                     book_id_to_title[s["id"]] = s.get("title")
 
-            # Fetch pages from pages collection
-            pages_recs = await db.pages.find(
-                {"bookId": {"$in": related_ids}, "status": "completed"}
-            ).to_list(10000)
+            # Fetch chunks from chunks collection
+            chunks_recs = await db.chunks.find(
+                {"bookId": {"$in": related_ids}}
+            ).to_list(15000)
             
-            for r in pages_recs:
+            for r in chunks_recs:
                 r["bookTitle"] = book_id_to_title.get(r.get("bookId"))
                 pages_to_search.append(r)
 
@@ -334,6 +356,7 @@ class RAGService:
         answer = await self._generate_answer(
             context,
             req.question,
+            chat_history=chat_history_str,
             strict_no_answer=False,
             suppress_page_notice=False,
         )

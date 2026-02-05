@@ -121,6 +121,15 @@ export const PersistenceService = {
     }
   },
 
+  async reindexBook(bookId: string): Promise<void> {
+    const response = await fetch(`${API_BASE}/books/${bookId}/reindex`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      throw new Error("Failed to start reindexing");
+    }
+  },
+
   async retryFailedOcr(bookId: string, provider?: 'local' | 'gemini'): Promise<void> {
     const response = await fetch(`${API_BASE}/books/${bookId}/retry-ocr`, {
       method: 'POST',
@@ -145,15 +154,7 @@ export const PersistenceService = {
     }
   },
 
-  async revertBook(bookId: string): Promise<void> {
-    const response = await fetch(`${API_BASE}/books/${bookId}/revert`, {
-      method: 'POST',
-    });
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to revert book: ${response.status} ${errorText}`);
-    }
-  },
+
 
   async updateBookMetadata(book_id: string, updates: Partial<Book>): Promise<void> {
     const response = await fetch(`${API_BASE}/books/${book_id}`, {

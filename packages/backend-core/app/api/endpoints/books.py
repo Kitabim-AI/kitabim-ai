@@ -319,22 +319,12 @@ async def start_ocr(book_id: str, payload: dict, background_tasks: BackgroundTas
         "lastUpdated": datetime.utcnow(),
     }
 
-    # BACKUP LOGIC: Fetch pages from 'pages' collection
-    if book.get("status") != "pending":
-        current_pages_cursor = db.pages.find({"bookId": book_id}, {"embedding": 0}).sort("pageNumber", 1)
-        current_pages = await current_pages_cursor.to_list(None)
-        
-        if current_pages or book.get("content"):
-            update_fields["previousContent"] = book.get("content") or ""
-            # Store full page objects in previousResults
-            update_fields["previousResults"] = current_pages
-            update_fields["previousVersionAt"] = datetime.utcnow()
-
     # CLEAR OLD DATA
     if book.get("status") != "pending":
         # Delete existing pages
         await db.pages.delete_many({"bookId": book_id})
         update_fields["content"] = ""
+
 
         # Note: We don't need to re-initialize pages with empty state here because 
         # the OCR worker (process_pdf) creates new page entries as it processes.
@@ -376,6 +366,22 @@ async def retry_failed_ocr(
     )
     failed_pages = [r.get("pageNumber") async for r in failed_pages_cursor]
     
+    # Resume Logic: If no specific pages failed but book is in error state (e.g. timeout)
+    if not failed_pages and book.get("status") == "error":
+        await db.books.update_one(
+            {"id": book_id},
+            {
+                "$set": {
+                    "status": "processing",
+                    "processingStep": "ocr",
+                    "ocrProvider": provider,
+                    "lastUpdated": datetime.utcnow(),
+                }
+            },
+        )
+        await enqueue_pdf_processing(book_id, reason="resume_error", background_tasks=background_tasks)
+        return {"status": "resumed", "provider": provider}
+
     if not failed_pages:
         return {"status": "no_failed_pages"}
 
@@ -407,66 +413,7 @@ async def retry_failed_ocr(
     return {"status": "retry_started", "provider": provider, "failedPages": failed_pages}
 
 
-@router.post("/{book_id}/revert")
-async def revert_book(book_id: str, background_tasks: BackgroundTasks):
-    db = db_manager.db
-    book = await db.books.find_one({"id": book_id})
-    if not book:
-        raise HTTPException(status_code=404, detail="Book not found")
 
-    previous_content = book.get("previousContent")
-    previous_results = book.get("previousResults")
-    if not previous_content and not previous_results:
-        raise HTTPException(status_code=400, detail="No previous version available")
-
-    # RESTORE LOGIC: Restore to 'pages' collection
-    
-    # 1. Clear current bad pages
-    await db.pages.delete_many({"bookId": book_id})
-
-    # 2. Restore previous pages
-    if previous_results:
-        restored_pages = []
-        for res in previous_results:
-            r = dict(res)
-            # Ensure _id is not reused to avoid conflicts, let Mongo generate new ones
-            r.pop("_id", None) 
-            r.pop("embedding", None)
-            
-            # Ensure mandatory fields are present
-            r["bookId"] = book_id
-            r["lastUpdated"] = datetime.utcnow()
-            
-            # If it was a valid result, mark as completed/verified
-            r["isVerified"] = True
-            if r.get("text"):
-                r["status"] = "completed"
-            
-            restored_pages.append(r)
-        
-        if restored_pages:
-            await db.pages.insert_many(restored_pages)
-
-    # 3. Update Book metadata
-    await db.books.update_one(
-        {"id": book_id},
-        {
-            "$set": {
-                "content": previous_content or "",
-                "results": [], # Keep results empty in books collection
-                "status": "processing",
-                "processingStep": "rag",
-                "lastUpdated": datetime.utcnow(),
-            },
-            "$unset": {
-                "previousContent": "",
-                "previousResults": "",
-                "previousVersionAt": "",
-            },
-        },
-    )
-    await enqueue_pdf_processing(book_id, reason="revert", background_tasks=background_tasks)
-    return {"status": "reverted"}
 
 
 @router.post("/{book_id}/reprocess")
@@ -485,6 +432,31 @@ async def reprocess_book(book_id: str, background_tasks: BackgroundTasks):
     )
     await enqueue_pdf_processing(book_id, reason="reprocess", background_tasks=background_tasks)
     return {"status": "reprocessing_started"}
+
+
+@router.post("/{book_id}/reindex")
+async def reindex_book(book_id: str, background_tasks: BackgroundTasks):
+    db = db_manager.db
+    book = await db.books.find_one({"id": book_id})
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    if book.get("status") == "processing":
+        return {"status": "already_processing"}
+
+    # Reset index status for all completed pages
+    await db.pages.update_many(
+        {"bookId": book_id, "status": "completed"},
+        {"$set": {"isIndexed": False}, "$unset": {"embedding": ""}}
+    )
+
+    await db.books.update_one(
+        {"id": book_id},
+        {"$set": {"status": "processing", "lastUpdated": datetime.utcnow()}},
+    )
+    
+    await enqueue_pdf_processing(book_id, reason="reindex", background_tasks=background_tasks)
+    return {"status": "reindex_started"}
 
 
 @router.post("/{book_id}/pages/{page_num}/reset")
@@ -522,6 +494,7 @@ async def update_page_text(book_id: str, page_num: int, payload: dict, backgroun
                 "status": "completed",
                 "isVerified": True,
                 "lastUpdated": datetime.utcnow(),
+                "isIndexed": False
             },
             "$unset": {"embedding": ""},
         },

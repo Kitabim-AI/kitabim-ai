@@ -61,7 +61,7 @@ class Settings:
     # Queue / Workers
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     queue_max_jobs: int = int(os.getenv("QUEUE_MAX_JOBS", "2"))
-    queue_job_timeout: int = int(os.getenv("QUEUE_JOB_TIMEOUT", "1800"))
+    queue_job_timeout: int = int(os.getenv("QUEUE_JOB_TIMEOUT", "7200"))
     queue_max_retries: int = int(os.getenv("QUEUE_MAX_RETRIES", "3"))
     job_lock_ttl_seconds: int = int(os.getenv("JOB_LOCK_TTL_SECONDS", "1800"))
 
