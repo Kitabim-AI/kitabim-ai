@@ -27,7 +27,7 @@ class Book(BaseModel):
     author: str
     volume: Optional[int] = None
     totalPages: int
-    results: List[ExtractionResult] = Field(default_factory=list)
+    pages: List[ExtractionResult] = Field(default_factory=list)
     status: str
     uploadDate: datetime
     lastUpdated: Optional[datetime] = None

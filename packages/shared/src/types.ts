@@ -20,7 +20,7 @@ export interface Book {
   author: string;
   volume?: number | null;
   totalPages: number;
-  results: ExtractionResult[];
+  pages: ExtractionResult[];
   status: 'uploading' | 'pending' | 'processing' | 'ready' | 'error';
   uploadDate: Date;
   lastUpdated: Date | null;

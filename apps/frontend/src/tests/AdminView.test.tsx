@@ -11,7 +11,7 @@ const mockBooks: Book[] = [
     author: 'Author',
     volume: 1,
     totalPages: 5,
-    results: [
+    pages: [
       { pageNumber: 1, status: 'completed' },
       { pageNumber: 2, status: 'completed' }
     ],
@@ -29,7 +29,7 @@ const mockBooksEmpty: Book[] = [
     title: 'Empty Book',
     author: 'Unknown Author',
     totalPages: 1,
-    results: [{ pageNumber: 1, status: 'completed' }],
+    pages: [{ pageNumber: 1, status: 'completed' }],
     status: 'ready',
     uploadDate: new Date(),
     lastUpdated: new Date(),

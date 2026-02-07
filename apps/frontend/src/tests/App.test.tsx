@@ -84,7 +84,7 @@ test('App opens reader from library click', () => {
     title: 'Reader Book',
     author: 'Author',
     totalPages: 1,
-    results: [{ pageNumber: 1, text: 'Page', status: 'completed' }],
+    pages: [{ pageNumber: 1, text: 'Page', status: 'completed' }],
     status: 'ready',
     uploadDate: new Date(),
     lastUpdated: new Date(),

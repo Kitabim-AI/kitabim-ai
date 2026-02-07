@@ -68,14 +68,14 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   const pageTextAreaRef = useRef<HTMLTextAreaElement>(null);
   const globalTextAreaRef = useRef<HTMLTextAreaElement>(null);
   const [shouldRunSpellCheck, setShouldRunSpellCheck] = React.useState(false);
-  const [loadedPages, setLoadedPages] = React.useState<any[]>(selectedBook.results || []);
+  const [loadedPages, setLoadedPages] = React.useState<any[]>(selectedBook.pages || []);
   const [isLoadingMore, setIsLoadingMore] = React.useState(false);
   const [hasMorePages, setHasMorePages] = React.useState(true);
   const observerTarget = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // Initial sync
-    setLoadedPages(selectedBook.results || []);
+    setLoadedPages(selectedBook.pages || []);
   }, [selectedBook.id]); // Only reset on book change, rely on subsequent fetch logic for updates
 
   // Auto-resize textarea for page edit
@@ -134,12 +134,12 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   // Actually, App.tsx polling might overwrite 'results' with just the initial set if we aren't careful.
   // We need to merge polling updates into our local state.
   useEffect(() => {
-    if (selectedBook.results && selectedBook.results.length > 0) {
+    if (selectedBook.pages && selectedBook.pages.length > 0) {
       setLoadedPages(prev => {
         const prevMap = new Map(prev.map(p => [p.pageNumber, p]));
         let hasChanges = false;
 
-        selectedBook.results.forEach(p => {
+        selectedBook.pages.forEach(p => {
           const existing = prevMap.get(p.pageNumber);
           // Check if content or status changed and update if so
           if (!existing || existing.status !== p.status || existing.text !== p.text || existing.error !== p.error) {
@@ -154,7 +154,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
         return prev;
       });
     }
-  }, [selectedBook.results]);
+  }, [selectedBook.pages]);
 
 
   const {

@@ -49,8 +49,8 @@ async def get_books(
 
     projection = {
         "content": 0,
-        "results.text": 0,
-        "results.embedding": 0,
+        "pages.text": 0,
+        "pages.embedding": 0,
         "previousResults": 0,
     }
 
@@ -85,7 +85,7 @@ async def get_books(
             }},
             {"$project": {
                 "content": 0,
-                "results": 0,
+                "pages": 0,
                 "previousResults": 0,
                 "embedding": 0
             }}
@@ -105,8 +105,8 @@ async def get_books(
             stats = {s["_id"]: s["count"] for s in b.get("pageStats", [])}
             b["completedCount"] = stats.get("completed", 0)
             b["errorCount"] = stats.get("error", 0)
-            if "results" not in b:
-                b["results"] = []
+            if "pages" not in b:
+                b["pages"] = []
 
             book_title = b.get("title")
             book_author = b.get("author") or ""
@@ -168,7 +168,7 @@ async def get_books(
         }},
         {"$project": {
             "content": 0,
-            "results": 0,
+            "pages": 0,
             "previousResults": 0,
             "embedding": 0
         }}
@@ -188,8 +188,8 @@ async def get_books(
         b["errorCount"] = stats.get("error", 0)
         
         # Ensure results is an empty list if not provided
-        if "results" not in b:
-            b["results"] = []
+        if "pages" not in b:
+            b["pages"] = []
             
         formatted.append(b)
 
@@ -213,7 +213,7 @@ async def get_book(book_id: str, initial_pages: int = 10000):
         # Return only the initial batch of pages
         cursor = db.pages.find({"bookId": book_id}, {"embedding": 0}).sort("pageNumber", 1).limit(initial_pages)
         pages = await cursor.to_list(initial_pages)
-        book["results"] = pages
+        book["pages"] = pages
         
         return book
     raise HTTPException(status_code=404, detail="Book not found")
@@ -305,8 +305,6 @@ async def upload_pdf(background_tasks: BackgroundTasks, file: UploadFile = File(
         "author": "Unknown Author",
         "volume": None,
         "totalPages": 0,
-        "content": "",
-        "results": [],
         "status": "pending",
         "uploadDate": now,
         "lastUpdated": now,
@@ -345,7 +343,6 @@ async def start_ocr(book_id: str, payload: dict, background_tasks: BackgroundTas
     if book.get("status") != "pending":
         # Delete existing pages
         await db.pages.delete_many({"bookId": book_id})
-        update_fields["content"] = ""
 
 
         # Note: We don't need to re-initialize pages with empty state here because 
@@ -530,16 +527,39 @@ async def update_page_text(book_id: str, page_num: int, payload: dict, backgroun
 async def create_book(book: Book, background_tasks: BackgroundTasks):
     db = db_manager.db
     book_dict = book.dict()
+    book_id = book_dict.get("id")
+    
+    # Remove fields we don't want to store in the books document
     book_dict.pop("uploadDate", None)
-    if "content" in book_dict:
-        book_dict["content"] = normalize_markdown(book_dict.get("content") or "")
-    results = book_dict.get("results") or []
-    for result in results:
-        if "text" in result:
-            result["text"] = normalize_markdown(result.get("text") or "")
+    book_dict.pop("content", None)
+    pages_input = book_dict.pop("pages", []) or []
+    
+    # Sync results to pages collection if they exist
+    if pages_input:
+        pages_ops = []
+        for r in pages_input:
+            page_text = normalize_markdown(r.get("text") or "")
+            page_update = {
+                "bookId": book_id,
+                "pageNumber": r.get("pageNumber"),
+                "text": page_text,
+                "status": r.get("status", "completed"),
+                "isVerified": r.get("isVerified", False),
+                "isIndexed": False, # Force re-indexing
+                "lastUpdated": datetime.utcnow()
+            }
+            pages_ops.append(
+                UpdateOne(
+                    {"bookId": book_id, "pageNumber": r["pageNumber"]},
+                    {"$set": page_update},
+                    upsert=True
+                )
+            )
+        if pages_ops:
+            await db.pages.bulk_write(pages_ops)
 
-    await db.books.update_one({"id": book.id}, {"$set": book_dict}, upsert=True)
-    await enqueue_pdf_processing(book.id, reason="create_book", background_tasks=background_tasks)
+    await db.books.update_one({"id": book_id}, {"$set": book_dict}, upsert=True)
+    await enqueue_pdf_processing(book_id, reason="create_book", background_tasks=background_tasks)
     return {"status": "success"}
 
 
@@ -549,9 +569,9 @@ async def update_book_details(book_id: str, book_update: dict, background_tasks:
     book_update.pop("uploadDate", None)
     book_update.pop("content", None)
     has_page_updates = False
-    if "results" in book_update:
+    if "pages" in book_update:
         pages_ops = []
-        for result in book_update.get("results") or []:
+        for result in book_update.get("pages") or []:
             if "text" in result:
                 result["text"] = normalize_markdown(result.get("text") or "")
             
@@ -583,6 +603,7 @@ async def update_book_details(book_id: str, book_update: dict, background_tasks:
         except Exception:
             pass
 
+    book_update.pop("pages", None)
     result = await db.books.update_one(query, {"$set": book_update})
     if result.matched_count:
         if has_page_updates:
@@ -682,7 +703,7 @@ async def check_page_spelling(book_id: str, page_num: int):
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
 
-    page_result = next((page for page in book.get("results", []) if page.get("pageNumber") == page_num), None)
+    page_result = next((page for page in book.get("pages", []) if page.get("pageNumber") == page_num), None)
     if not page_result:
         raise HTTPException(status_code=404, detail=f"Page {page_num} not found")
 

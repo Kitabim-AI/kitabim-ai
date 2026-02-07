@@ -14,7 +14,7 @@ const mockBook: Book = {
   title: 'Reader Book',
   author: 'Author',
   totalPages: 2,
-  results: [
+  pages: [
     { pageNumber: 1, text: 'Page 1 content', status: 'completed' },
     { pageNumber: 2, text: 'Page 2 content', status: 'completed' }
   ],
@@ -245,7 +245,7 @@ test('ReaderView triggers page actions and close logic', () => {
 
   const verifiedBook: Book = {
     ...mockBook,
-    results: [{ pageNumber: 1, text: 'Page 1 content', status: 'completed', isVerified: true }]
+    pages: [{ pageNumber: 1, text: 'Page 1 content', status: 'completed', isVerified: true }]
   };
 
   render(

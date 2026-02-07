@@ -9,7 +9,7 @@ vi.mock('../services/geminiService', () => ({
 }));
 
 const mockBook: Book = {
-  id: '1', title: 'T', author: 'A', totalPages: 10, results: [], status: 'ready', uploadDate: new Date(), lastUpdated: new Date(), contentHash: 'h'
+  id: '1', title: 'T', author: 'A', totalPages: 10, pages: [], status: 'ready', uploadDate: new Date(), lastUpdated: new Date(), contentHash: 'h'
 };
 
 beforeEach(() => {

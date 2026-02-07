@@ -61,7 +61,7 @@ export const useBookActions = (
   };
 
   const handleRetryFailedOcr = async (book: Book, provider?: 'local' | 'gemini') => {
-    const hasFailedPages = (book.errorCount ?? 0) > 0 || (book.results?.some(r => r.status === 'error') ?? false);
+    const hasFailedPages = (book.errorCount ?? 0) > 0 || (book.pages?.some(r => r.status === 'error') ?? false);
 
     if (!hasFailedPages && book.status !== 'error') {
       setModal({
@@ -86,7 +86,7 @@ export const useBookActions = (
         processingStep: 'ocr',
         ocrProvider: effectiveProvider,
         lastUpdated: new Date(),
-        results: prev.results.map(r =>
+        pages: prev.pages.map(r =>
           r.status === 'error'
             ? { ...r, status: 'pending', text: '', error: undefined, isVerified: false }
             : r
@@ -104,7 +104,7 @@ export const useBookActions = (
           processingStep: 'ocr',
           ocrProvider: effectiveProvider,
           lastUpdated: new Date(),
-          results: b.results.map(r =>
+          pages: b.pages.map(r =>
             r.status === 'error'
               ? { ...r, status: 'pending', text: '', error: undefined, isVerified: false }
               : r
@@ -140,7 +140,7 @@ export const useBookActions = (
         ...prev,
         status: 'processing',
         lastUpdated: new Date(),
-        results: prev.results.map(r =>
+        pages: prev.pages.map(r =>
           r.pageNumber === pageNum
             ? { ...r, status: 'pending', text: '', isVerified: false }
             : r
@@ -156,7 +156,7 @@ export const useBookActions = (
           ...b,
           status: 'processing',
           lastUpdated: new Date(),
-          results: b.results.map(r =>
+          pages: b.pages.map(r =>
             r.pageNumber === pageNum
               ? { ...r, status: 'pending', text: '', isVerified: false }
               : r
@@ -220,7 +220,7 @@ export const useBookActions = (
         if (!prev || prev.id !== bookId) return prev;
         return {
           ...prev,
-          results: prev.results.map(r => r.pageNumber === pageNum ? { ...r, text: newText, isVerified: true } : r),
+          pages: prev.pages.map(r => r.pageNumber === pageNum ? { ...r, text: newText, isVerified: true } : r),
           lastUpdated: new Date()
         };
       });
@@ -272,7 +272,7 @@ export const useBookActions = (
 
       // 2. Identify changes and build updated results
       let hasChanges = false;
-      const updatedResults = selectedBook.results.map(res => {
+      const updatedPages = selectedBook.pages.map(res => {
         const newText = newPageMap.get(res.pageNumber);
 
         // If marker exists and text is different, update
@@ -294,11 +294,11 @@ export const useBookActions = (
         return;
       }
 
-      const cleanResults = updatedResults.map(({ embedding, ...rest }: any) => rest);
+      const cleanPages = updatedPages.map(({ embedding, ...rest }: any) => rest);
 
       const updatedBook = {
         ...selectedBook,
-        results: cleanResults as any,
+        pages: cleanPages as any,
         lastUpdated: new Date()
       };
 

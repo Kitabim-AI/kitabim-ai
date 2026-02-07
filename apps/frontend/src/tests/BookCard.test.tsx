@@ -9,7 +9,7 @@ const mockBook: Book = {
   title: 'Test Book',
   author: 'Test Author',
   totalPages: 100,
-  results: [],
+  pages: [],
   status: 'ready',
   uploadDate: new Date(),
   lastUpdated: new Date(),

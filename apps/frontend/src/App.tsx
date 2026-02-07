@@ -105,7 +105,7 @@ const App: React.FC = () => {
           if (!prev) return updated;
           return {
             ...updated,
-            results: (prev.results && prev.results.some(r => r.text)) ? prev.results : updated.results
+            pages: (prev.pages && prev.pages.some(r => r.text)) ? prev.pages : updated.pages
           };
         });
       }
@@ -132,7 +132,7 @@ const App: React.FC = () => {
   }, [refreshLibrary]);
 
   useEffect(() => {
-    const hasProcessingPage = selectedBook?.results?.some(
+    const hasProcessingPage = selectedBook?.pages?.some(
       r => r.status === 'pending' || r.status === 'processing'
     );
     const shouldPoll = view === 'reader' && selectedBook && (selectedBook.status === 'processing' || hasProcessingPage);
@@ -149,7 +149,7 @@ const App: React.FC = () => {
         : new Date(selectedBook.lastUpdated).getTime();
       if (Number.isNaN(updatedAt)) return false;
       const recentlyUpdated = Date.now() - updatedAt < 1500;
-      const hasPendingEmpty = selectedBook.results?.some(
+      const hasPendingEmpty = selectedBook.pages?.some(
         r => (r.status === 'pending' || r.status === 'processing') && !r.text
       );
       return recentlyUpdated && hasPendingEmpty;
@@ -184,7 +184,7 @@ const App: React.FC = () => {
       clearTimeout(timeout);
       if (interval) clearInterval(interval);
     };
-  }, [view, selectedBook?.id, selectedBook?.status, selectedBook?.results]);
+  }, [view, selectedBook?.id, selectedBook?.status, selectedBook?.pages]);
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">

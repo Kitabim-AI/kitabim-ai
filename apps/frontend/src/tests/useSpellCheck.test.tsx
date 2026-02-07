@@ -6,7 +6,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-test('useSpellCheck runs and stores results', async () => {
+test('useSpellCheck runs and stores pages', async () => {
   const response = { ok: true, json: vi.fn().mockResolvedValue({ bookId: '1', pageNumber: 2, corrections: [], totalIssues: 0, checkedAt: 'now' }) };
   const fetchMock = vi.fn().mockResolvedValue(response);
   // @ts-expect-error test mock

@@ -404,13 +404,13 @@ export const AdminView: React.FC<AdminViewProps> = ({
                         <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
                           <div
                             className={`h-full transition-all duration-500 ${book.processingStep === 'rag' ? 'bg-amber-500 animate-pulse' : 'bg-indigo-600'}`}
-                            style={{ width: `${((book.completedCount ?? book.results.filter(r => r.status === 'completed').length) / (book.totalPages || 1)) * 100}%` }}
+                            style={{ width: `${((book.completedCount ?? book.pages.filter(r => r.status === 'completed').length) / (book.totalPages || 1)) * 100}%` }}
                           />
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="text-[10px] font-bold text-slate-400">
-                          {book.completedCount ?? book.results.filter(r => r.status === 'completed').length}/{book.totalPages || 0} pages
+                          {book.completedCount ?? book.pages.filter(r => r.status === 'completed').length}/{book.totalPages || 0} pages
                         </span>
                         <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${book.status === 'ready' ? 'bg-green-100 text-green-700' :
                           book.status === 'processing' ? 'bg-blue-100 text-blue-700' :
@@ -441,7 +441,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
 
                         {(() => {
                           const isProcessing = book.status === 'processing';
-                          const hasFailedPages = (book.errorCount ?? 0) > 0 || book.results?.some(r => r.status === 'error');
+                          const hasFailedPages = (book.errorCount ?? 0) > 0 || book.pages?.some(r => r.status === 'error');
                           const isReady = book.status === 'ready';
 
                           // Retry is available if we have errors/failures and are not currently processing

@@ -23,7 +23,7 @@ vi.mock('../services/persistenceService', () => ({
 global.fetch = vi.fn() as any;
 
 const mockBook: Book = {
-  id: '1', title: 'T', author: 'A', totalPages: 1, results: [{ pageNumber: 1, status: 'completed' }], status: 'ready', uploadDate: new Date(), lastUpdated: new Date(), contentHash: 'h'
+  id: '1', title: 'T', author: 'A', totalPages: 1, pages: [{ pageNumber: 1, status: 'completed' }], status: 'ready', uploadDate: new Date(), lastUpdated: new Date(), contentHash: 'h'
 };
 
 beforeEach(() => {
@@ -152,7 +152,7 @@ test('useBookActions updates page text and saves corrections', async () => {
     title: 'T',
     author: 'A',
     totalPages: 2,
-    results: [
+    pages: [
       { pageNumber: 1, text: 'a', status: 'completed' },
       { pageNumber: 2, text: 'b', status: 'completed' }
     ],
