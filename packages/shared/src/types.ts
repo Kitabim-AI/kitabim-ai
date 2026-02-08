@@ -47,3 +47,37 @@ export interface Message {
   role: 'user' | 'model';
   text: string;
 }
+
+export interface OcrCandidate {
+  token: string;
+  frequency: number;
+  bookSpan: number;
+  confidence: number;
+  distance: number;
+}
+
+export interface OcrSuspect {
+  token: string;
+  frequency: number;
+  bookSpan: number;
+  candidates: OcrCandidate[];
+  status?: string;
+  lastSeenAt?: string;
+}
+
+export interface OcrRegistryStats {
+  total_tokens: number;
+  verified_tokens: number;
+  suspect_tokens: number;
+  corrected_tokens: number;
+  health_score: number;
+}
+
+export interface OcrContext {
+  bookTitle: string;
+  bookId: string;
+  volume?: number | null;
+  pageNumber: number;
+  snippet: string;
+  matchedToken?: string;
+}

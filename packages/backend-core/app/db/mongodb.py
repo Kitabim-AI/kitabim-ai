@@ -55,6 +55,21 @@ class MongoDB:
         await safe_create_index(pages, [("bookId", 1)])
         await safe_create_index(pages, [("status", 1)])
 
+        # OCR Correction System Indexes
+        vocabulary = self.db.ocr_vocabulary
+        await safe_create_index(vocabulary, [("token", 1)], unique=True)
+        await safe_create_index(vocabulary, [("frequency", -1)])
+        await safe_create_index(vocabulary, [("bookSpan", -1), ("frequency", -1)])
+        await safe_create_index(vocabulary, [("status", 1), ("frequency", -1)])
+        await safe_create_index(vocabulary, [("token", "text")])  # For search
+
+        cor_jobs = self.db.ocr_correction_jobs
+        await safe_create_index(cor_jobs, [("status", 1), ("createdAt", 1)])
+
+        cor_history = self.db.ocr_correction_history
+        await safe_create_index(cor_history, [("jobId", 1)])
+        await safe_create_index(cor_history, [("pageId", 1), ("appliedAt", -1)])
+
 
 db_manager = MongoDB()
 

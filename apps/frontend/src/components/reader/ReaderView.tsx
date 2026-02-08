@@ -271,6 +271,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                 .filter(page => editingPageNum === null || Number(page.pageNumber) === Number(editingPageNum))
                 .map((page) => (
                   <div
+                    id={`page-${page.pageNumber}`}
                     key={page.pageNumber}
                     onMouseEnter={() => setCurrentPage(page.pageNumber)}
                     className={`group relative p-8 rounded-2xl transition-all duration-300 ${currentPage === page.pageNumber ? 'bg-white shadow-xl ring-1 ring-indigo-100 scale-[1.02]' : 'bg-transparent opacity-80'}`}

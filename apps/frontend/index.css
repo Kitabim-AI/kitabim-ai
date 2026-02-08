@@ -45,4 +45,25 @@
 
 .no-spinner {
   -moz-appearance: textfield;
+  appearance: none;
+}
+
+@keyframes progress-indefinite {
+  0% {
+    transform: translateX(-100%);
+    width: 30%;
+  }
+
+  50% {
+    width: 50%;
+  }
+
+  100% {
+    transform: translateX(200%);
+    width: 20%;
+  }
+}
+
+.animate-progress-indefinite {
+  animation: progress-indefinite 2s infinite linear;
 }

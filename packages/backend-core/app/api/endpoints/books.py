@@ -272,14 +272,18 @@ async def get_book_content(book_id: str):
 
 
 @router.get("/{book_id}/pages", response_model=List[ExtractionResult])
-async def get_book_pages(book_id: str, skip: int = 0, limit: int = 20):
+async def get_book_pages(book_id: str, skip: int = 0, limit: int = 20, pageNumber: Optional[int] = None):
     db = db_manager.db
-    # Verify book exists first (optional, but good for 404s)
+    # Verify book exists first
     book = await db.books.find_one({"id": book_id}, {"_id": 1})
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
 
-    cursor = db.pages.find({"bookId": book_id}, {"embedding": 0}).sort("pageNumber", 1).skip(skip).limit(limit)
+    query = {"bookId": book_id}
+    if pageNumber is not None:
+        query["pageNumber"] = pageNumber
+
+    cursor = db.pages.find(query, {"embedding": 0}).sort("pageNumber", 1).skip(skip).limit(limit)
     pages = await cursor.to_list(limit)
     return pages
 

@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.endpoints import ai, books, chat
+from app.api.endpoints import ai, books, chat, registry
 from app.core.config import settings
 from app.db.mongodb import db_manager
 from app.queue import enqueue_pdf_processing
@@ -122,6 +122,7 @@ app.mount("/api/covers", StaticFiles(directory=str(settings.covers_dir)), name="
 app.include_router(books.router, prefix="/api/books", tags=["books"])
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
+app.include_router(registry.router, prefix="/api/registry", tags=["registry"])
 
 
 @app.get("/")

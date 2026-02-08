@@ -97,6 +97,18 @@ export const PersistenceService = {
     }
   },
 
+  async getPage(id: string, pageNumber: number): Promise<any | null> {
+    try {
+      const response = await fetch(`${API_BASE}/books/${id}/pages?pageNumber=${pageNumber}`);
+      if (!response.ok) throw new Error("Failed to fetch page");
+      const pages = await response.json();
+      return pages.find((p: any) => p.pageNumber === pageNumber) || null;
+    } catch (error) {
+      console.error("Failed to fetch specific page", error);
+      return null;
+    }
+  },
+
   async deleteBook(bookId: string): Promise<void> {
     try {
       await fetch(`${API_BASE}/books/${bookId}`, {

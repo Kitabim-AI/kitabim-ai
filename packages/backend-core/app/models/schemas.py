@@ -57,3 +57,50 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     answer: str
+
+
+# --- OCR Correction System Models ---
+
+class RawVariant(BaseModel):
+    token: str
+    count: int = 0
+
+
+class OcrVocabulary(BaseModel):
+    token: str
+    rawVariants: List[RawVariant] = Field(default_factory=list)
+    frequency: int
+    bookSpan: int
+    pageSpan: int
+    lastSeenAt: datetime
+    status: str  # "verified" | "suspect" | "ignored" | "corrected"
+    correctedTo: Optional[str] = None
+    manualOverride: bool = False
+    flags: List[str] = Field(default_factory=list)
+
+
+class OcrCorrectionJob(BaseModel):
+    id: Optional[str] = Field(None, alias="_id")
+    status: str  # "pending" | "running" | "completed" | "failed" | "paused"
+    sourceToken: str
+    targetToken: str
+    totalPages: int
+    processedPages: int = 0
+    lastProcessedPageId: Optional[str] = None
+    affectedBookIds: List[str] = Field(default_factory=list)
+    error: Optional[str] = None
+    createdAt: datetime = Field(default_factory=datetime.utcnow)
+    startedAt: Optional[datetime] = None
+
+
+class OcrCorrectionHistory(BaseModel):
+    jobId: str
+    pageId: str
+    bookId: str
+    sourceToken: str
+    targetToken: str
+    lineIndex: int
+    contextBefore: str
+    contextAfter: str
+    originalText: str
+    appliedAt: datetime = Field(default_factory=datetime.utcnow)

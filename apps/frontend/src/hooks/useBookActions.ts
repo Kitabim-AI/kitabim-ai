@@ -228,7 +228,7 @@ export const useBookActions = (
     }
   };
 
-  const openReader = async (book: Book, setEditContent: any, setChatMessages: any, setCurrentPage: any) => {
+  const openReader = async (book: Book, setEditContent: any, setChatMessages: any, setCurrentPage: any, startPage?: number) => {
     try {
       const fullBook = await PersistenceService.getBookById(book.id);
       if (!fullBook) throw new Error("Could not load book content");
@@ -239,7 +239,7 @@ export const useBookActions = (
       setEditContent(content || '');
       setChatMessages([]);
       setView('reader');
-      setCurrentPage(1);
+      setCurrentPage(startPage || 1);
     } catch (err) {
       setModal({
         isOpen: true,

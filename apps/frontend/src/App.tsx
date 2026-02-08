@@ -232,7 +232,7 @@ const App: React.FC = () => {
             totalBooks={totalBooks}
             onPageChange={setPage}
             onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
-            onOpenReader={(book) => openReader(book, setEditContent, setChatMessages, setCurrentPage)}
+            onOpenReader={(book, startPage) => openReader(book, setEditContent, setChatMessages, setCurrentPage, startPage)}
             onStartOcr={handleStartOcr}
             onRetryFailedOcr={handleRetryFailedOcr}
 
