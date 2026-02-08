@@ -1,7 +1,7 @@
 # System Design — Kitabim.AI
 
 ## 1) Overview
-Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered reading of Uyghur books. The system supports two OCR modes (Gemini and local UyghurOCR), a FastAPI backend with a resumable processing pipeline, and a React/Vite frontend. Background processing is handled through a Redis-backed queue with a dedicated worker service. The backend API and worker share a common Python package (`packages/backend-core`).
+Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered reading of Uyghur books. The system uses Gemini for OCR, a FastAPI backend with a resumable processing pipeline, and a React/Vite frontend. Background processing is handled through a Redis-backed queue with a dedicated worker service. The backend API and worker share a common Python package (`packages/backend-core`).
 
 ## 2) Goals & Non‑Goals
 **Goals**
@@ -12,8 +12,8 @@ Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered readi
 
 **Non‑Goals (current)**
 - Multi-tenant auth and billing
-- Managed vector DB (currently stored with embeddings in MongoDB)
-- Fully managed cloud deployments
+- Fully managed cloud deployments (infrastructure currently automated via Kubernetes)
+- In-cluster database (transitioned to external/managed MongoDB and Redis)
 
 ## 3) Architecture (High-Level)
 
@@ -27,10 +27,6 @@ Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered readi
 - **Worker (`services/worker`)**
   - ARQ worker process for background OCR/embedding/RAG jobs
   - Shares code with the backend via `packages/backend-core`
-
-- **UyghurOCR (`services/uyghurocr`)**
-  - FastAPI OCR service using Tesseract + ONNX line detection
-  - Optional local OCR provider for backend
 
 - **Frontend (`apps/frontend`)**
   - React 19 + Vite UI
@@ -51,10 +47,8 @@ flowchart LR
   FE[Frontend<br/>React/Vite] -->|/api| BE[Backend API<br/>FastAPI]
   BE -->|jobs| RQ[(Redis/ARQ)]
   RQ --> WK[Worker<br/>ARQ]
-  BE --> DB[(MongoDB)]
+  BE --> DB[(External MongoDB)]
   WK --> DB
-  BE -.->|OCR (optional)| OCR[UyghurOCR]
-  WK -.->|OCR (optional)| OCR
   BE <-->|files| DATA[(data/ volume)]
   WK <-->|files| DATA
 ```
@@ -66,7 +60,6 @@ flowchart LR
 /services
   /backend
   /worker
-  /uyghurocr
 /packages
   /shared
   /backend-core
@@ -92,7 +85,7 @@ flowchart LR
 **Books** (primary collection)
 - `id`, `contentHash`, `title`, `author`, `volume`
 - `status`, `processingStep`, `uploadDate`, `lastUpdated`
-- `results[]` per page: `text`, `status`, `embedding`, `error`, `isVerified`
+- `pages[]` per page: `text`, `status`, `embedding`, `error`, `isVerified`
 - `errors[]`, `lastError`
 - `processingLock`, `processingLockExpiresAt` (idempotent job lock)
 
@@ -109,8 +102,8 @@ flowchart LR
 2. Backend stores file in `data/uploads`
 3. Backend enqueues job (`process_pdf`) via Redis
 4. Worker (ARQ):
-   - OCR pages (Gemini or UyghurOCR)
-   - Generates embeddings
+    - OCR pages with Gemini prompt
+    - Generates embeddings
    - Builds full text + cover image
    - Updates status and writes to MongoDB
 
@@ -145,13 +138,13 @@ flowchart LR
 
 ## 9) Observability
 - Structured JSON logging with request correlation IDs
-- `/health` and `/ready` endpoints on backend and UyghurOCR
+- `/health` and `/ready` endpoints on backend API
 - Optional RAG evaluation capture (latency, scores, context size)
 
 ## 10) Deployment (Local)
 - **Docker Desktop Kubernetes**: supported local dev environment; manifests in `/infra/k8s/docker-desktop`
 - **Note**: Docker Compose is not supported for local development; use Docker Desktop Kubernetes.
-- **Manual Run (optional)**: run MongoDB, Redis, backend, worker, uyghurocr, frontend for debugging
+- **Manual Run (optional)**: run Redis, backend, worker, frontend for debugging (requires access to managed/external MongoDB)
 
 ## 11) Security & Secrets
 - Gemini API key stored in backend only
@@ -165,8 +158,8 @@ flowchart LR
 
 ## 13) Risks & Future Improvements
 - Embeddings stored in MongoDB may become large at scale
-- OCR quality depends on provider; local OCR requires tuning
-- Consider vector database integration for faster retrieval
+- OCR quality depends on Gemini model; costs scale with volume
+- Consider dedicated vector database integration for faster retrieval if metadata search gets slow
 - Add auth, user profiles, and multi‑tenant isolation
 
 ## 14) Open Questions

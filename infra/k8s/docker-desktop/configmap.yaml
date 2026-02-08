@@ -9,8 +9,6 @@ data:
   GEMINI_MODEL_NAME: gemini-3-flash-preview
   GEMINI_CATEGORIZATION_MODEL: gemini-3-flash-preview
   GEMINI_EMBEDDING_MODEL: models/gemini-embedding-001
-  OCR_PROVIDER: gemini
-  LOCAL_OCR_URL: http://uyghurocr:8001
   OCR_MAX_RETRIES: "4"
   MAX_PARALLEL_PAGES: "15"
   RAG_SCORE_THRESHOLD: "0.35"

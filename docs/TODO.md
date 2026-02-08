@@ -2,7 +2,7 @@
 
 ## Phase 1 — Stabilize & Make Observable
 1) Add request/job correlation IDs and structured JSON logging in backend ✅
-2) Add health/readiness endpoints for backend + uyghurocr ✅
+2) Add health/readiness endpoints for backend API ✅
 3) Add DB indexes for `contentHash`, `status`, `uploadDate`, `tags`, `categories` ✅
 4) Add error model for OCR/embedding/chat with persisted error summaries ✅
 

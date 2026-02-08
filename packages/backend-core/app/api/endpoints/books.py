@@ -321,9 +321,7 @@ async def upload_pdf(background_tasks: BackgroundTasks, file: UploadFile = File(
 @router.post("/{book_id}/start-ocr")
 async def start_ocr(book_id: str, payload: dict, background_tasks: BackgroundTasks):
     db = db_manager.db
-    provider = (payload.get("provider") or "").lower()
-    if provider not in {"local", "gemini"}:
-        raise HTTPException(status_code=400, detail="Invalid OCR provider")
+    provider = "gemini"
 
     book = await db.books.find_one({"id": book_id})
     if not book:
@@ -369,15 +367,7 @@ async def retry_failed_ocr(
     if book.get("status") == "processing":
         return {"status": "already_processing"}
 
-    provider = (payload or {}).get("provider") if payload else None
-    if provider:
-        provider = provider.lower()
-        if provider not in {"local", "gemini"}:
-            raise HTTPException(status_code=400, detail="Invalid OCR provider")
-
-    provider = provider or (book.get("ocrProvider") or settings.ocr_provider)
-    if provider not in {"local", "gemini"}:
-        raise HTTPException(status_code=400, detail="Invalid OCR provider")
+    provider = "gemini"
 
     failed_pages_cursor = db.pages.find(
         {"bookId": book_id, "status": "error"},

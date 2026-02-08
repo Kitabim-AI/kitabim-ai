@@ -35,17 +35,17 @@ export const useBookActions = (
     }
   };
 
-  const handleStartOcr = (bookId: string, provider: 'local' | 'gemini') => {
+  const handleStartOcr = (bookId: string) => {
     setModal({
       isOpen: true,
       title: "Confirm OCR Start",
-      message: `Are you sure you want to start ${provider === 'gemini' ? 'Gemini' : 'Local'} OCR? This will analyze the document and extract text.`,
+      message: `Are you sure you want to start Gemini OCR? This will analyze the document and extract text.`,
       type: 'confirm',
       confirmText: "Start Processing",
       onConfirm: async () => {
         try {
-          setBooks(prev => prev.map(b => b.id === bookId ? { ...b, status: 'processing', processingStep: 'ocr', ocrProvider: provider } : b));
-          await PersistenceService.startOcr(bookId, provider);
+          setBooks(prev => prev.map(b => b.id === bookId ? { ...b, status: 'processing', processingStep: 'ocr' } : b));
+          await PersistenceService.startOcr(bookId);
           await refreshLibrary();
           setModal((prev: any) => ({ ...prev, isOpen: false }));
         } catch (err) {
@@ -60,7 +60,7 @@ export const useBookActions = (
     });
   };
 
-  const handleRetryFailedOcr = async (book: Book, provider?: 'local' | 'gemini') => {
+  const handleRetryFailedOcr = async (book: Book) => {
     const hasFailedPages = (book.errorCount ?? 0) > 0 || (book.pages?.some(r => r.status === 'error') ?? false);
 
     if (!hasFailedPages && book.status !== 'error') {
@@ -73,7 +73,7 @@ export const useBookActions = (
       return;
     }
 
-    const effectiveProvider = provider || book.ocrProvider || 'local';
+    const effectiveProvider = 'gemini';
     let previousSelected: Book | null = null;
     let previousBooks: Book[] | null = null;
 
@@ -84,7 +84,6 @@ export const useBookActions = (
         ...prev,
         status: 'processing',
         processingStep: 'ocr',
-        ocrProvider: effectiveProvider,
         lastUpdated: new Date(),
         pages: (prev.pages || []).map(r =>
           r.status === 'error'
@@ -102,7 +101,6 @@ export const useBookActions = (
           ...b,
           status: 'processing',
           processingStep: 'ocr',
-          ocrProvider: effectiveProvider,
           lastUpdated: new Date(),
           pages: (b.pages || []).map(r =>
             r.status === 'error'
@@ -114,7 +112,7 @@ export const useBookActions = (
     });
 
     try {
-      await PersistenceService.retryFailedOcr(book.id, effectiveProvider);
+      await PersistenceService.retryFailedOcr(book.id);
       refreshLibrary();
     } catch (err) {
       if (previousSelected) setSelectedBook(previousSelected);

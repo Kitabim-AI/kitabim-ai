@@ -37,8 +37,6 @@ class Settings:
     max_parallel_pages: int = int(os.getenv("MAX_PARALLEL_PAGES", "4"))
 
     # OCR Settings
-    ocr_provider: str = os.getenv("OCR_PROVIDER", "gemini").lower()
-    local_ocr_url: str = os.getenv("LOCAL_OCR_URL", "http://localhost:8001")
     ocr_max_retries: int = int(os.getenv("OCR_MAX_RETRIES", "4"))
 
     # RAG Settings

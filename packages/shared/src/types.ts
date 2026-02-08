@@ -26,7 +26,6 @@ export interface Book {
   lastUpdated: Date | null;
   coverUrl?: string;
   processingStep?: 'ocr' | 'rag';
-  ocrProvider?: 'gemini' | 'local';
   categories?: string[];
   tags?: string[];
   errors?: ErrorEvent[];

@@ -5,13 +5,12 @@ This file provides guidance for automated agents working in this repo.
 
 ## Repository Rules
 - Keep the monorepo structure intact.
-- **Do not modify** the top-level `UyghurOCR/` folder; it is a reference repo.
 - Local development uses **Docker Desktop Kubernetes**. Docker Compose is not supported.
 
 ## Microservices
 - Backend API: `services/backend` (FastAPI, uses `packages/backend-core`)
+- Backend API: `services/backend` (FastAPI, uses `packages/backend-core`)
 - Worker: `services/worker` (ARQ, uses `packages/backend-core`)
-- UyghurOCR: `services/uyghurocr` (local OCR service)
 - Frontend: `apps/frontend` (React/Vite)
 
 ## Shared Configuration

@@ -186,12 +186,10 @@ async def process_pdf_task(
                     if not already_ocr:
                         page = doc.load_page(page_num - 1)
                         try:
-                            provider = (book.get("ocrProvider") or settings.ocr_provider).lower()
                             page_text = await ocr_page(
                                 page,
                                 book.get("title", "Unknown"),
                                 page_num,
-                                provider=provider,
                             )
                             success = True
                         except Exception as exc:

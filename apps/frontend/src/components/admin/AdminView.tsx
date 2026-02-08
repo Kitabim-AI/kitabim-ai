@@ -14,8 +14,8 @@ interface AdminViewProps {
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
   onOpenReader: (book: Book) => void;
-  onStartOcr: (bookId: string, provider: 'local' | 'gemini') => void;
-  onRetryFailedOcr: (book: Book, provider?: 'local' | 'gemini') => void;
+  onStartOcr: (bookId: string) => void;
+  onRetryFailedOcr: (book: Book) => void;
 
   onReindex: (bookId: string) => void;
   onDeleteBook: (bookId: string) => void;
@@ -178,7 +178,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
       <header>
         <h2 className="text-2xl font-bold text-slate-800">Kitabim Processing Pipeline</h2>
         <p className="text-slate-500">Managing global document indexing and OCR extraction.</p>
-        <p className="text-xs text-slate-400 mt-1">Uploads stay pending until you start OCR with Local or Gemini.</p>
+        <p className="text-xs text-slate-400 mt-1">Uploads stay pending until you start Gemini OCR.</p>
       </header>
 
       {isCheckingGlobal && (
@@ -455,7 +455,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                             <div className="flex items-center gap-2">
                               <button
                                 onClick={() => {
-                                  if (canStartOcr) onStartOcr(book.id, 'gemini');
+                                  if (canStartOcr) onStartOcr(book.id);
                                 }}
                                 disabled={!canStartOcr}
                                 className={`p-2 rounded-lg transition-all shadow-sm shadow-indigo-100/50 ${canStartOcr

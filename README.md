@@ -13,9 +13,6 @@ The intelligent Uyghur Digital Library platform for OCR, curation, and RAG-power
   - `app/db`: MongoDB connection and repositories.
   - `app/models`: Pydantic schemas.
   - `app/utils`: Text cleaning helpers.
-- `/services/uyghurocr`: Local OCR service (FastAPI) using Tesseract + ONNX.
-  - `logic`: OCR and PDF processing logic.
-  - `tessdata`: Tesseract language data.
 - `/services/worker`: ARQ worker that processes background OCR/embedding/RAG jobs (uses backend-core).
 - `/apps/frontend`: React UI (Vite).
   - `src/components`: Library, Reader, Admin, Chat, Spell Check, layout/common UI.
@@ -49,8 +46,6 @@ flowchart LR
   RQ --> WK[Worker<br/>ARQ]
   BE --> DB[(MongoDB)]
   WK --> DB
-  BE -.->|OCR (optional)| OCR[UyghurOCR]
-  WK -.->|OCR (optional)| OCR
   BE <-->|files| DATA[(data/ volume)]
   WK <-->|files| DATA
 ```
@@ -58,9 +53,8 @@ flowchart LR
 ## Core Features
 
 - **SHA-256 deduplication** to avoid re-processing identical PDFs.
-- **Parallel OCR pipeline** with resumable tasks, cover extraction, and batch embeddings.
-- **Gemini or local OCR** (switchable via `OCR_PROVIDER`).
-- **Manual OCR start**: uploads are stored as pending; start OCR from the Management page with Local or Gemini.
+- **Gemini OCR pipeline** with resumable tasks, cover extraction, and batch embeddings.
+- **Manual OCR start**: uploads are stored as pending; start OCR from the Management page.
 - **RAG chat** per book or global, with work-aware context and citations by page.
 - **Spell check & correction workflow** for OCR cleanup and embedding regeneration.
 - **Admin tools** for reprocessing, deletion, author/volume/category edits, and cover uploads.
@@ -85,7 +79,6 @@ Notes:
 - `GEMINI_API_KEY` is used by the backend only. The frontend proxies AI calls to the backend.
 - Use only `GEMINI_API_KEY` (Google’s recommended env var). Do not also set `GOOGLE_API_KEY` to avoid client warnings.
 - `.env` files are not used for local dev; configuration lives in Kubernetes manifests.
-- Set `OCR_PROVIDER=local` to route OCR to the local OCR service.
 
 ### Docker Desktop Kubernetes Quickstart
 
@@ -101,7 +94,6 @@ kubectl config use-context docker-desktop
 ```bash
 docker build -t kitabim-backend:local -f services/backend/Dockerfile .
 docker build -t kitabim-worker:local -f services/worker/Dockerfile .
-docker build -t kitabim-uyghurocr:local services/uyghurocr
 docker build -t kitabim-frontend:local -f apps/frontend/Dockerfile .
 ```
 
@@ -126,7 +118,7 @@ kubectl apply -k infra/k8s/docker-desktop
 kubectl delete namespace kitabim
 
 # Restart (rolling restart all deployments)
-kubectl -n kitabim rollout restart deployment/backend deployment/worker deployment/frontend deployment/uyghurocr deployment/mongo deployment/redis
+kubectl -n kitabim rollout restart deployment/backend deployment/worker deployment/frontend deployment/mongo deployment/redis
 ```
 
 ### Logs
@@ -140,9 +132,6 @@ kubectl -n kitabim logs deployment/worker --tail=200 -f
 
 # Frontend (nginx)
 kubectl -n kitabim logs deployment/frontend --tail=200 -f
-
-# UyghurOCR
-kubectl -n kitabim logs deployment/uyghurocr --tail=200 -f
 
 # MongoDB
 kubectl -n kitabim logs deployment/mongo --tail=200 -f
@@ -192,5 +181,5 @@ python3.13 -m pytest services/backend/tests
 - **Frontend**: React 19, Vite 6, Tailwind (CDN), Lucide, pdf.js.
 - **Backend**: FastAPI, MongoDB (Motor), PyMuPDF, LangChain, `langchain-google-genai`, `httpx`, `numpy`.
 - **Queue/Worker**: Redis + ARQ.
-- **Local OCR**: FastAPI, Tesseract, ONNX.
+- **Microservices**: Backend (FastAPI), Worker (ARQ).
 - **Local Dev**: Docker Desktop Kubernetes.

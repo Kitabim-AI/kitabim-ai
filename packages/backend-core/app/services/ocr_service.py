@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import random
 import asyncio
-import httpx
 import fitz
 
 from app.core.config import settings
@@ -31,32 +30,11 @@ async def ocr_page_with_gemini(page: fitz.Page) -> str:
             raise
 
 
-async def ocr_page_with_local(page: fitz.Page, book_title: str, page_num: int) -> str:
-    pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
-    img_bytes = pix.tobytes("jpeg")
-
-    url = f"{settings.local_ocr_url.rstrip('/')}/api/ocr/recognize"
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        files = {"file": (f"page_{page_num}.jpg", img_bytes, "image/jpeg")}
-        data = {
-            "lang": "ukij",
-            "mode": "line",
-            "book_name": book_title,
-            "page_num": page_num,
-        }
-        response = await client.post(url, files=files, data=data)
-        response.raise_for_status()
-        payload = response.json() or {}
-        return clean_uyghur_text(payload.get("text", ""))
-
-
 async def ocr_page(
     page: fitz.Page,
     book_title: str,
     page_num: int,
     provider: str | None = None,
 ) -> str:
-    selected = (provider or settings.ocr_provider or "gemini").lower()
-    if selected == "local":
-        return await ocr_page_with_local(page, book_title, page_num)
+    # We now exclusively use Gemini for OCR
     return await ocr_page_with_gemini(page)

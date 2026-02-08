@@ -146,11 +146,11 @@ export const PersistenceService = {
     }
   },
 
-  async retryFailedOcr(bookId: string, provider?: 'local' | 'gemini'): Promise<void> {
+  async retryFailedOcr(bookId: string): Promise<void> {
     const response = await fetch(`${API_BASE}/books/${bookId}/retry-ocr`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(provider ? { provider } : {}),
+      body: JSON.stringify({ provider: 'gemini' }),
     });
     if (!response.ok) {
       const errorText = await response.text();
@@ -158,11 +158,11 @@ export const PersistenceService = {
     }
   },
 
-  async startOcr(bookId: string, provider: 'local' | 'gemini'): Promise<void> {
+  async startOcr(bookId: string): Promise<void> {
     const response = await fetch(`${API_BASE}/books/${bookId}/start-ocr`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider })
+      body: JSON.stringify({ provider: 'gemini' })
     });
     if (!response.ok) {
       const errorText = await response.text();
