@@ -4,7 +4,7 @@ import hashlib
 import uuid
 import os
 import io
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List
 
 from bson import ObjectId
@@ -36,6 +36,34 @@ async def get_books(
     skip = (page - 1) * pageSize
 
     query = {}
+    # Cleanup stale processing books
+    # 1. Books with an expired lock
+    # 2. Books in 'processing' state without a lock field that haven't been updated in 2 hours
+    stale_threshold = datetime.utcnow() - timedelta(seconds=settings.queue_job_timeout)
+    await db.books.update_many(
+        {
+            "status": "processing",
+            "$or": [
+                {"processingLockExpiresAt": {"$lt": datetime.utcnow()}},
+                {
+                    "processingLockExpiresAt": {"$exists": False},
+                    "lastUpdated": {"$lt": stale_threshold}
+                }
+            ]
+        },
+        {
+            "$set": {
+                "status": "error",
+                "lastError": {
+                    "ts": datetime.utcnow(),
+                    "kind": "timeout",
+                    "message": "Processing timed out (stale state detected)"
+                }
+            },
+            "$unset": {"processingLock": "", "processingLockExpiresAt": ""}
+        }
+    )
+
     if q:
         query = {
             "$or": [
@@ -328,7 +356,11 @@ async def start_ocr(book_id: str, payload: dict, background_tasks: BackgroundTas
         raise HTTPException(status_code=404, detail="Book not found")
 
     if book.get("status") == "processing":
-        return {"status": "already_processing"}
+        # Check if lock is actually still valid
+        lock_expires = book.get("processingLockExpiresAt")
+        if lock_expires and lock_expires.replace(tzinfo=None) > datetime.utcnow():
+            return {"status": "already_processing"}
+        logger.warning(f"Book {book_id} was stuck in processing (lock expired). Allowing restart.")
 
     update_fields = {
         "status": "processing",
@@ -365,7 +397,11 @@ async def retry_failed_ocr(
         raise HTTPException(status_code=404, detail="Book not found")
 
     if book.get("status") == "processing":
-        return {"status": "already_processing"}
+        # Check if lock is actually still valid
+        lock_expires = book.get("processingLockExpiresAt")
+        if lock_expires and lock_expires.replace(tzinfo=None) > datetime.utcnow():
+            return {"status": "already_processing"}
+        logger.warning(f"Book {book_id} was stuck in processing (lock expired). Allowing retry.")
 
     provider = "gemini"
 
@@ -375,8 +411,12 @@ async def retry_failed_ocr(
     )
     failed_pages = [r.get("pageNumber") async for r in failed_pages_cursor]
     
-    # Resume Logic: If no specific pages failed but book is in error state (e.g. timeout)
-    if not failed_pages and book.get("status") == "error":
+    # Determine if it's effectively a timeout/stale state
+    lock_expires = book.get("processingLockExpiresAt")
+    is_stale = book.get("status") == "processing" and lock_expires and lock_expires.replace(tzinfo=None) < datetime.utcnow()
+    
+    # Resume Logic: If no specific pages failed but book is in error state or stale (e.g. timeout)
+    if not failed_pages and (book.get("status") == "error" or is_stale):
         await db.books.update_one(
             {"id": book_id},
             {
@@ -388,7 +428,7 @@ async def retry_failed_ocr(
                 }
             },
         )
-        await enqueue_pdf_processing(book_id, reason="resume_error", background_tasks=background_tasks)
+        await enqueue_pdf_processing(book_id, reason="resume_timeout" if is_stale else "resume_error", background_tasks=background_tasks)
         return {"status": "resumed", "provider": provider}
 
     if not failed_pages:
@@ -433,7 +473,11 @@ async def reprocess_book(book_id: str, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=404, detail="Book not found")
 
     if book.get("status") == "processing":
-        return {"status": "already_processing"}
+        # Check if lock is actually still valid
+        lock_expires = book.get("processingLockExpiresAt")
+        if lock_expires and lock_expires.replace(tzinfo=None) > datetime.utcnow():
+            return {"status": "already_processing"}
+        logger.warning(f"Book {book_id} was stuck in processing (lock expired). Allowing reprocess.")
 
     await db.books.update_one(
         {"id": book_id},
@@ -451,7 +495,11 @@ async def reindex_book(book_id: str, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=404, detail="Book not found")
 
     if book.get("status") == "processing":
-        return {"status": "already_processing"}
+        # Check if lock is actually still valid
+        lock_expires = book.get("processingLockExpiresAt")
+        if lock_expires and lock_expires.replace(tzinfo=None) > datetime.utcnow():
+            return {"status": "already_processing"}
+        logger.warning(f"Book {book_id} was stuck in processing (lock expired). Allowing reindex.")
 
     # Reset index status for all completed pages
     await db.pages.update_many(

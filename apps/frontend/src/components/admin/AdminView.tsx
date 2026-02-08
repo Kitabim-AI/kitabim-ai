@@ -412,12 +412,18 @@ export const AdminView: React.FC<AdminViewProps> = ({
                         <span className="text-[10px] font-bold text-slate-400">
                           {book.completedCount ?? book.pages.filter(r => r.status === 'completed').length}/{book.totalPages || 0} pages
                         </span>
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${book.status === 'ready' ? 'bg-green-100 text-green-700' :
-                          book.status === 'processing' ? 'bg-blue-100 text-blue-700' :
-                            book.status === 'pending' ? 'bg-amber-100 text-amber-700' :
-                              'bg-red-100 text-red-700'
-                          }`}>
-                          {book.status}
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${(() => {
+                          const isStale = book.status === 'processing' && book.processingLockExpiresAt && new Date(book.processingLockExpiresAt) < new Date();
+                          if (isStale) return 'bg-red-100 text-red-700';
+                          return book.status === 'ready' ? 'bg-green-100 text-green-700' :
+                            book.status === 'processing' ? 'bg-blue-100 text-blue-700' :
+                              book.status === 'pending' ? 'bg-amber-100 text-amber-700' :
+                                'bg-red-100 text-red-700';
+                        })()}`}>
+                          {(() => {
+                            const isStale = book.status === 'processing' && book.processingLockExpiresAt && new Date(book.processingLockExpiresAt) < new Date();
+                            return isStale ? 'TIMEOUT' : book.status;
+                          })()}
                         </span>
                       </div>
                     </div>
@@ -440,16 +446,17 @@ export const AdminView: React.FC<AdminViewProps> = ({
                       <>
 
                         {(() => {
-                          const isProcessing = book.status === 'processing';
+                          const isStale = book.status === 'processing' && book.processingLockExpiresAt && new Date(book.processingLockExpiresAt) < new Date();
+                          const isActuallyProcessing = book.status === 'processing' && !isStale;
+
                           const hasFailedPages = (book.errorCount ?? 0) > 0 || book.pages?.some(r => r.status === 'error');
                           const isReady = book.status === 'ready';
 
-                          // Retry is available if we have errors/failures and are not currently processing
-                          const canRetry = (Boolean(hasFailedPages) || book.status === 'error') && !isProcessing;
+                          // Retry is available if we have errors/failures and are not currently processing (or if processing is stale)
+                          const canRetry = (Boolean(hasFailedPages) || book.status === 'error' || isStale) && !isActuallyProcessing;
 
                           // Start OCR (Reset) is available only if we are NOT processing AND NOT in a state where Retry is preferred AND NOT Ready
-                          // We disable Start OCR for Ready books to prevent accidental resets.
-                          const canStartOcr = !isProcessing && !canRetry && !isReady;
+                          const canStartOcr = !isActuallyProcessing && !canRetry && !isReady;
 
                           return (
                             <div className="flex items-center gap-2">

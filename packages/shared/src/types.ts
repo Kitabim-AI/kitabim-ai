@@ -32,6 +32,7 @@ export interface Book {
   lastError?: ErrorEvent | null;
   completedCount?: number;
   errorCount?: number;
+  processingLockExpiresAt?: Date | string | null;
 }
 
 export interface PaginatedBooks {
