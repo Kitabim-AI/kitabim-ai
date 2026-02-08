@@ -737,11 +737,7 @@ async def check_book_spelling(book_id: str):
 @router.post("/{book_id}/pages/{page_num}/spell-check")
 async def check_page_spelling(book_id: str, page_num: int):
     db = db_manager.db
-    book = await db.books.find_one({"id": book_id})
-    if not book:
-        raise HTTPException(status_code=404, detail="Book not found")
-
-    page_result = next((page for page in book.get("pages", []) if page.get("pageNumber") == page_num), None)
+    page_result = await db.pages.find_one({"bookId": book_id, "pageNumber": page_num})
     if not page_result:
         raise HTTPException(status_code=404, detail=f"Page {page_num} not found")
 
