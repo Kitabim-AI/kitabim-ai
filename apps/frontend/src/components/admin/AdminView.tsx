@@ -403,7 +403,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                       <div className="flex items-center gap-2">
                         <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
                           <div
-                            className={`h-full transition-all duration-500 ${book.processingStep === 'rag' ? 'bg-amber-500 animate-pulse' : 'bg-indigo-600'}`}
+                            className={`h-full transition-all duration-500 ${book.status === 'ready' ? 'bg-amber-500' : book.processingStep === 'rag' ? 'bg-amber-500 animate-pulse' : 'bg-indigo-600'}`}
                             style={{ width: `${((book.completedCount ?? book.pages.filter(r => r.status === 'completed').length) / (book.totalPages || 1)) * 100}%` }}
                           />
                         </div>
