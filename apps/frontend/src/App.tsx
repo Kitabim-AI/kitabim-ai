@@ -112,11 +112,11 @@ const App: React.FC = () => {
     }
   }, [books, selectedBook]);
 
-  // Sync global edit content with latest page results
-  // Sync global edit content with latest page results - REMOVED to prevent overwriting full content with partial initial load
+  // Sync global edit content with latest page data
+  // Sync global edit content with latest page data - REMOVED to prevent overwriting full content with partial initial load
   // useEffect(() => {
   //   if (selectedBook && !isEditing) {
-  //     const combinedText = [...selectedBook.results]
+  //     const combinedText = [...selectedBook.pages]
   //       .sort((a, b) => Number(a.pageNumber) - Number(b.pageNumber))
   //       .map(r => r.text || '')
   //       .join('\n\n');
@@ -125,7 +125,7 @@ const App: React.FC = () => {
   //       setEditContent(combinedText);
   //     }
   //   }
-  // }, [selectedBook?.results, isEditing, editContent]);
+  // }, [selectedBook?.pages, isEditing, editContent]);
 
   useEffect(() => {
     refreshLibrary();

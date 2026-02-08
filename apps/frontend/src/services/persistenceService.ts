@@ -21,7 +21,11 @@ export const PersistenceService = {
       const response = await fetch(`${API_BASE}/books/hash/${hash}`);
       if (!response.ok) return null;
       const data = await response.json();
-      return { ...data, uploadDate: new Date(data.uploadDate) };
+      return {
+        ...data,
+        pages: data.pages || [],
+        uploadDate: new Date(data.uploadDate)
+      };
     } catch (error) {
       console.error("Backend unreachable", error);
       return null;
@@ -54,6 +58,7 @@ export const PersistenceService = {
         ...data,
         books: data.books.map((b: any) => ({
           ...b,
+          pages: b.pages || [],
           uploadDate: new Date(b.uploadDate),
           lastUpdated: b.lastUpdated ? new Date(b.lastUpdated) : null,
         }))
@@ -71,6 +76,7 @@ export const PersistenceService = {
       const b = await response.json();
       return {
         ...b,
+        pages: b.pages || [],
         uploadDate: new Date(b.uploadDate),
         lastUpdated: b.lastUpdated ? new Date(b.lastUpdated) : null,
       };

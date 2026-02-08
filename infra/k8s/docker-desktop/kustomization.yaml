@@ -7,7 +7,6 @@ resources:
   - secret.yaml
   - pv.yaml
   - pvc.yaml
-  - mongo.yaml
   - redis.yaml
   - uyghurocr.yaml
   - backend.yaml

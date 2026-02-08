@@ -86,7 +86,7 @@ export const useBookActions = (
         processingStep: 'ocr',
         ocrProvider: effectiveProvider,
         lastUpdated: new Date(),
-        pages: prev.pages.map(r =>
+        pages: (prev.pages || []).map(r =>
           r.status === 'error'
             ? { ...r, status: 'pending', text: '', error: undefined, isVerified: false }
             : r
@@ -104,7 +104,7 @@ export const useBookActions = (
           processingStep: 'ocr',
           ocrProvider: effectiveProvider,
           lastUpdated: new Date(),
-          pages: b.pages.map(r =>
+          pages: (b.pages || []).map(r =>
             r.status === 'error'
               ? { ...r, status: 'pending', text: '', error: undefined, isVerified: false }
               : r
@@ -140,7 +140,7 @@ export const useBookActions = (
         ...prev,
         status: 'processing',
         lastUpdated: new Date(),
-        pages: prev.pages.map(r =>
+        pages: (prev.pages || []).map(r =>
           r.pageNumber === pageNum
             ? { ...r, status: 'pending', text: '', isVerified: false }
             : r
@@ -156,7 +156,7 @@ export const useBookActions = (
           ...b,
           status: 'processing',
           lastUpdated: new Date(),
-          pages: b.pages.map(r =>
+          pages: (b.pages || []).map(r =>
             r.pageNumber === pageNum
               ? { ...r, status: 'pending', text: '', isVerified: false }
               : r
@@ -220,7 +220,7 @@ export const useBookActions = (
         if (!prev || prev.id !== bookId) return prev;
         return {
           ...prev,
-          pages: prev.pages.map(r => r.pageNumber === pageNum ? { ...r, text: newText, isVerified: true } : r),
+          pages: (prev.pages || []).map(r => r.pageNumber === pageNum ? { ...r, text: newText, isVerified: true } : r),
           lastUpdated: new Date()
         };
       });
@@ -272,7 +272,7 @@ export const useBookActions = (
 
       // 2. Identify changes and build updated results
       let hasChanges = false;
-      const updatedPages = selectedBook.pages.map(res => {
+      const updatedPages = (selectedBook.pages || []).map(res => {
         const newText = newPageMap.get(res.pageNumber);
 
         // If marker exists and text is different, update

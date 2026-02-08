@@ -131,7 +131,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
 
 
   // Also update loadedPages if selectedBook updates (e.g. from polling in App.tsx) - but be careful not to overwrite fetched pages if App.tsx doesn't have them all
-  // Actually, App.tsx polling might overwrite 'results' with just the initial set if we aren't careful.
+  // Actually, App.tsx polling might overwrite 'pages' with just the initial set if we aren't careful.
   // We need to merge polling updates into our local state.
   useEffect(() => {
     if (selectedBook.pages && selectedBook.pages.length > 0) {
