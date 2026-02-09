@@ -68,23 +68,27 @@ def clean_uyghur_text(text: str) -> str:
 def generate_uyghur_regex(q: str) -> str:
     """
     Generate a regex that handles common Uyghur character variants
-    (like the multiple ways to encode 'ئ').
+    (like the multiple ways to encode 'ئ' and 'ۇ').
     """
     if not q:
         return ""
     
-    # 1. Escape regex special characters
+    # 1. Escape regex special characters first
     res = re.escape(q)
     
-    # 2. Handle 'ئ' (U+0626) and 'ئ' (U+064A + U+0654)
-    # The user might type either, and the DB might contain either.
-    # We replace any form of hemza-carrier with a group that matches both.
-    hemza_variants = [
-        "\u0626",          # ئ (Standard)
-        "\u064A\u0654",    # ئ (Decomposed)
-    ]
+    # Define mapping of single character/sequence to a common group
+    # We work on the string after re.escape(), so we use escaped keys
+    norm_map = {
+        re.escape("\u0626"): "(\u0626|\u064A\u0654)",
+        re.escape("\u064A\u0654"): "(\u0626|\u064A\u0654)",
+        re.escape("\u0648"): "(\u0648|\u06C7)",
+        re.escape("\u06C7"): "(\u0648|\u06C7)",
+        re.escape("\u0649"): "(\u0649|\u064A)",
+        re.escape("\u064A"): "(\u0649|\u064A)",
+    }
     
-    for variant in hemza_variants:
-        res = res.replace(re.escape(variant), f"({'|'.join(hemza_variants)})")
-        
-    return res
+    # Use a single-pass regex substitution to avoid nested/double replacements
+    # Sort keys by length descending to match longer sequences (like ئ) first.
+    pattern = re.compile("|".join(sorted(norm_map.keys(), key=len, reverse=True)))
+    
+    return pattern.sub(lambda m: norm_map[m.group(0)], res)

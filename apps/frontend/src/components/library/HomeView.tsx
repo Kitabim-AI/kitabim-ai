@@ -11,6 +11,8 @@ interface HomeViewProps {
   hasMore: boolean;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
+  selectedCategory: string;
+  setSelectedCategory: (category: string) => void;
   onBookClick: (book: Book) => void;
   loaderRef: React.RefObject<HTMLDivElement>;
   loadMore: () => void;
@@ -28,6 +30,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
   hasMore,
   searchQuery,
   setSearchQuery,
+  selectedCategory,
+  setSelectedCategory,
   onBookClick,
   loaderRef,
   loadMore,
@@ -35,8 +39,23 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isSuggesting, setIsSuggesting] = useState(false);
+  const [proverb, setProverb] = useState<{ text: string; volume: number; pageNumber: number } | null>(null);
+  const [topCategories, setTopCategories] = useState<string[]>([]);
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const fetchProverb = async () => {
+      const data = await PersistenceService.getRandomProverb();
+      setProverb(data);
+    };
+    const fetchCategories = async () => {
+      const categories = await PersistenceService.getTopCategories(5);
+      setTopCategories(categories);
+    };
+    fetchProverb();
+    fetchCategories();
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -48,34 +67,40 @@ export const HomeView: React.FC<HomeViewProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  useEffect(() => {
-    const fetchSuggestions = async () => {
-      if (searchQuery.length < 2) {
-        setSuggestions([]);
-        return;
-      }
+  // Autocomplete disabled for home page since results are shown inline
+  // useEffect(() => {
+  //   const fetchSuggestions = async () => {
+  //     if (searchQuery.length < 2) {
+  //       setSuggestions([]);
+  //       return;
+  //     }
 
-      setIsSuggesting(true);
-      try {
-        const data = await PersistenceService.getSuggestions(searchQuery);
-        setSuggestions(data);
-      } catch (error) {
-        console.error('Error fetching suggestions:', error);
-      } finally {
-        setIsSuggesting(false);
-      }
-    };
+  //     setIsSuggesting(true);
+  //     try {
+  //       const data = await PersistenceService.getSuggestions(searchQuery);
+  //       setSuggestions(data);
+  //     } catch (error) {
+  //       console.error('Error fetching suggestions:', error);
+  //     } finally {
+  //       setIsSuggesting(false);
+  //     }
+  //   };
 
-    const debounce = setTimeout(fetchSuggestions, 300);
-    return () => clearTimeout(debounce);
-  }, [searchQuery]);
+  //   const debounce = setTimeout(fetchSuggestions, 300);
+  //   return () => clearTimeout(debounce);
+  // }, [searchQuery]);
 
   const handleSuggestionClick = (suggestion: Suggestion) => {
     setSearchQuery(suggestion.text);
     setShowSuggestions(false);
   };
 
-  const hasSearch = searchQuery.length > 0;
+  const handleCategoryClick = (category: string) => {
+    setSelectedCategory(category);
+    setSearchQuery(''); // Clear search when clicking a category
+  };
+
+  const hasSearch = searchQuery.length > 0 || selectedCategory.length > 0;
 
   return (
     <div className={`flex flex-col items-center transition-all duration-700 ${hasSearch ? 'pt-10' : 'pt-32'}`}>
@@ -84,7 +109,15 @@ export const HomeView: React.FC<HomeViewProps> = ({
         <h1 className="text-6xl md:text-7xl font-serif font-black text-slate-900 tracking-tight mb-2">
           Kitabim<span className="text-indigo-600">.AI</span>
         </h1>
-        <p className="text-slate-500 font-medium text-lg">Your Portal to Uyghur Literature & Knowledge</p>
+        {proverb ? (
+          <div className="flex flex-col items-center gap-1 animate-in fade-in slide-in-from-bottom-2 duration-1000">
+            <p className="text-indigo-600 font-serif text-xl md:text-2xl max-w-2xl px-4 leading-relaxed italic">
+              {proverb.text}
+            </p>
+          </div>
+        ) : (
+          <p className="text-slate-500 font-medium text-lg">Your Portal to Uyghur Literature & Knowledge</p>
+        )}
       </div>
 
       {/* Search Section */}
@@ -146,20 +179,20 @@ export const HomeView: React.FC<HomeViewProps> = ({
           </div>
         )}
 
-        {/* Categories helper - only shown when no results/search */}
-        {!hasSearch && (
+        {/* Categories helper - hidden for now */}
+        {/* {!hasSearch && topCategories.length > 0 && (
           <div className="mt-8 flex flex-wrap justify-center gap-2">
-            {['History', 'Literature', 'Religion', 'Biography', 'Science'].map(cat => (
+            {topCategories.map(cat => (
               <button
                 key={cat}
-                onClick={() => setSearchQuery(cat)}
+                onClick={() => handleCategoryClick(cat)}
                 className="px-4 py-1.5 bg-white border border-slate-100 text-slate-600 text-sm font-bold rounded-full hover:border-indigo-300 hover:text-indigo-600 shadow-sm transition-all active:scale-95"
               >
                 {cat}
               </button>
             ))}
           </div>
-        )}
+        )} */}
       </div>
 
       {/* Results Section */}

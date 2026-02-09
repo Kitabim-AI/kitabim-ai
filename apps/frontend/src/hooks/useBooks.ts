@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Book, PaginatedBooks } from '@shared/types';
 import { PersistenceService } from '../services/persistenceService';
 
-export const useBooks = (view: string, searchQuery: string, pageSize: number, page: number) => {
+export const useBooks = (view: string, searchQuery: string, pageSize: number, page: number, category?: string) => {
   const [books, setBooks] = useState<Book[]>([]);
   const [totalBooks, setTotalBooks] = useState(0);
   const [totalReady, setTotalReady] = useState(0);
@@ -10,7 +10,7 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
   const [isLoading, setIsLoading] = useState(true);
   const [hasMoreShelf, setHasMoreShelf] = useState(true);
   const [shelfPage, setShelfPage] = useState(1);
-  const SHELF_PAGE_SIZE = 12;
+  const COLLECTION_PAGE_SIZE = 40; // Increased to show more results at once
 
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>(() => {
     const saved = sessionStorage.getItem('kitabim_sort_config');
@@ -22,6 +22,11 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
     return { key: 'uploadDate', direction: 'desc' };
   });
 
+  // Helper to determine if we should use shelf-style (infinite scroll) behavior
+  const isShelfView = useMemo(() => {
+    return view === 'library' || (view === 'home' && (searchQuery.trim().length > 0 || category));
+  }, [view, searchQuery, category]);
+
   useEffect(() => {
     sessionStorage.setItem('kitabim_sort_config', JSON.stringify(sortConfig));
   }, [sortConfig]);
@@ -32,17 +37,14 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
     if (hasProcessing) {
       const interval = setInterval(async () => {
         try {
-          const isShelf = view === 'library';
-          const currentSize = isShelf ? Math.max(books.length, SHELF_PAGE_SIZE) : pageSize;
-          const currentPage = isShelf ? 1 : page;
-          const sortBy = isShelf ? 'uploadDate' : sortConfig.key;
-          const order = isShelf ? -1 : (sortConfig.direction === 'asc' ? 1 : -1);
+          const currentSize = isShelfView ? Math.max(books.length, COLLECTION_PAGE_SIZE) : pageSize;
+          const currentPage = isShelfView ? 1 : page;
+          const sortBy = isShelfView ? 'uploadDate' : sortConfig.key;
+          const order = isShelfView ? -1 : (sortConfig.direction === 'asc' ? 1 : -1);
 
-          const response = await PersistenceService.getGlobalLibrary(currentPage, currentSize, searchQuery, sortBy, order, isShelf);
+          const response = await PersistenceService.getGlobalLibrary(currentPage, currentSize, searchQuery, sortBy, order, isShelfView, category);
 
           setBooks(prev => {
-            // Match and update statuses rather than full replacement if possible, 
-            // but for simplicity we replace with the same count.
             return response.books;
           });
           setTotalBooks(response.total);
@@ -53,24 +55,23 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
       }, 10000);
       return () => clearInterval(interval);
     }
-  }, [books.length, books.some(b => b.status === 'processing'), view, searchQuery, sortConfig, pageSize, page]);
+  }, [books.length, books.some(b => b.status === 'processing'), isShelfView, searchQuery, sortConfig, pageSize, page, category]);
 
   const refreshLibrary = useCallback(async () => {
     setIsLoading(true);
     try {
-      const isShelf = view === 'library';
-      const currentViewSize = isShelf ? SHELF_PAGE_SIZE : pageSize;
-      const currentViewPage = isShelf ? 1 : page;
+      const currentViewSize = isShelfView ? COLLECTION_PAGE_SIZE : pageSize;
+      const currentViewPage = isShelfView ? 1 : page;
 
-      const sortBy = isShelf ? 'uploadDate' : sortConfig.key;
-      const order = isShelf ? -1 : (sortConfig.direction === 'asc' ? 1 : -1);
+      const sortBy = isShelfView ? 'uploadDate' : sortConfig.key;
+      const order = isShelfView ? -1 : (sortConfig.direction === 'asc' ? 1 : -1);
 
-      const response = await PersistenceService.getGlobalLibrary(currentViewPage, currentViewSize, searchQuery, sortBy, order, isShelf);
+      const response = await PersistenceService.getGlobalLibrary(currentViewPage, currentViewSize, searchQuery, sortBy, order, isShelfView, category);
       setBooks(response.books);
       setTotalBooks(response.total);
       setTotalReady(response.totalReady);
 
-      if (isShelf) {
+      if (isShelfView) {
         setShelfPage(1);
         setHasMoreShelf(response.books.length < response.total);
       }
@@ -79,15 +80,15 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
     } finally {
       setIsLoading(false);
     }
-  }, [view, page, pageSize, searchQuery, sortConfig]);
+  }, [isShelfView, page, pageSize, searchQuery, sortConfig, category]);
 
   const loadMoreShelf = useCallback(async () => {
-    if (isLoadingMoreShelf || !hasMoreShelf || view !== 'library') return;
+    if (isLoadingMoreShelf || !hasMoreShelf || !isShelfView) return;
 
     setIsLoadingMoreShelf(true);
     const nextPage = shelfPage + 1;
     try {
-      const response = await PersistenceService.getGlobalLibrary(nextPage, SHELF_PAGE_SIZE, searchQuery, 'uploadDate', -1, true);
+      const response = await PersistenceService.getGlobalLibrary(nextPage, COLLECTION_PAGE_SIZE, searchQuery, 'uploadDate', -1, true);
       if (response.books.length > 0) {
         setBooks(prev => {
           const existingIds = prev.map(b => b.id);
@@ -101,15 +102,14 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
         setHasMoreShelf(false);
       }
     } catch (err) {
-      console.error("Failed to load more shelf items", err);
+      console.error("Failed to load more items", err);
     } finally {
       setIsLoadingMoreShelf(false);
     }
-  }, [shelfPage, hasMoreShelf, isLoadingMoreShelf, view, searchQuery]);
+  }, [shelfPage, hasMoreShelf, isLoadingMoreShelf, isShelfView, searchQuery]);
 
   const sortedBooks = useMemo(() => {
-    // For shelf, we follow the backend SORT (uploadDate DESC) to keep pagination stable
-    if (view === 'library') {
+    if (isShelfView) {
       return books;
     }
 
@@ -120,7 +120,7 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
       if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [books, sortConfig, view]);
+  }, [books, sortConfig, isShelfView]);
 
   const toggleSort = (key: string) => {
     setSortConfig(prev => ({

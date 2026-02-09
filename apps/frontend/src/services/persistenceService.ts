@@ -46,10 +46,11 @@ export const PersistenceService = {
     }
   },
 
-  async getGlobalLibrary(page: number = 1, pageSize: number = 10, q?: string, sortBy: string = 'title', order: number = 1, groupByWork: boolean = false): Promise<PaginatedBooks> {
+  async getGlobalLibrary(page: number = 1, pageSize: number = 10, q?: string, sortBy: string = 'title', order: number = 1, groupByWork: boolean = false, category?: string): Promise<PaginatedBooks> {
     try {
       let url = `${API_BASE}/books/?page=${page}&pageSize=${pageSize}&sortBy=${sortBy}&order=${order}`;
-      if (q) url += `&q=${encodeURIComponent(q)}`;
+      if (q && q.trim()) url += `&q=${encodeURIComponent(q.trim())}`;
+      if (category && category.trim()) url += `&category=${encodeURIComponent(category.trim())}`;
       if (groupByWork) url += `&groupByWork=true`;
 
       const response = await authFetch(url);
@@ -223,6 +224,29 @@ export const PersistenceService = {
       return data.suggestions || [];
     } catch (error) {
       console.error("Failed to fetch suggestions", error);
+      return [];
+    }
+  },
+
+  async getRandomProverb(): Promise<{ text: string; volume: number; pageNumber: number }> {
+    try {
+      const response = await authFetch(`${API_BASE}/books/random-proverb`);
+      if (!response.ok) throw new Error("Failed to fetch proverb");
+      return await response.json();
+    } catch (error) {
+      console.error("Failed to fetch random proverb", error);
+      return { text: "كىتاب — بىلىم بۇلىقى.", volume: 1, pageNumber: 1 };
+    }
+  },
+
+  async getTopCategories(limit: number = 10): Promise<string[]> {
+    try {
+      const response = await authFetch(`${API_BASE}/books/top-categories?limit=${limit}`);
+      if (!response.ok) throw new Error("Failed to fetch categories");
+      const data = await response.json();
+      return data.categories || [];
+    } catch (error) {
+      console.error("Failed to fetch top categories", error);
       return [];
     }
   }

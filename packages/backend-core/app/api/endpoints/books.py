@@ -4,6 +4,7 @@ import hashlib
 import uuid
 import os
 import io
+import re
 from datetime import datetime, timedelta
 from typing import Optional, List
 
@@ -77,6 +78,7 @@ async def get_books(
     page: int = 1,
     pageSize: int = 10,
     q: Optional[str] = None,
+    category: Optional[str] = None,
     sortBy: str = "title",
     order: int = 1,
     groupByWork: bool = False,
@@ -117,8 +119,16 @@ async def get_books(
         }
     )
 
-    # Add search filter
-    if q:
+    # Add category filter (exact match)
+    if category:
+        normalized_category = generate_uyghur_regex(category)
+        category_filter = {"categories": {"$regex": normalized_category, "$options": "i"}}
+        if query:
+            query = {"$and": [query, category_filter]}
+        else:
+            query = category_filter
+    # Add search filter (searches across title, author, categories)
+    elif q:
         normalized_q = generate_uyghur_regex(q)
         search_filter = {
             "$or": [
@@ -288,6 +298,85 @@ async def get_books(
         "page": page,
         "pageSize": pageSize,
     }
+
+
+@router.get("/random-proverb")
+async def get_random_proverb():
+    """
+    Fetch a random proverb from the proverbs collection containing specific keywords.
+    """
+    db = db_manager.db
+    keywords = ["كىتاب", "بىلىم", "ئەقىل", "پاراسەت"]
+    
+    # Create regexes for keywords to handle multi-encoding
+    regex_queries = []
+    for k in keywords:
+        pattern = generate_uyghur_regex(k)
+        regex_queries.append({"text": {"$regex": pattern, "$options": "i"}})
+    
+    query = {"$or": regex_queries}
+    
+    # Use $sample to get a random record from matches
+    pipeline = [
+        {"$match": query},
+        {"$sample": {"size": 1}}
+    ]
+    
+    cursor = db.proverbs.aggregate(pipeline)
+    proverbs = await cursor.to_list(1)
+    
+    if proverbs:
+        p = proverbs[0]
+        return {
+            "text": p.get("text"),
+            "volume": p.get("volume"),
+            "pageNumber": p.get("pageNumber")
+        }
+    
+    return {
+        "text": "كىتاب — بىلىم بۇلىقى.",
+        "volume": 1,
+        "pageNumber": 1
+    }
+
+
+@router.get("/top-categories")
+async def get_top_categories(
+    limit: int = 10,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    """
+    Get the most popular categories from books.
+    Returns categories sorted by frequency.
+    """
+    db = db_manager.db
+    
+    # Build base query for guest access
+    query = {}
+    if current_user is None:
+        query = get_guest_filter()
+    
+    # Aggregate to unwind categories and count them
+    pipeline = [
+        {"$match": query},
+        {"$unwind": "$categories"},
+        {"$group": {
+            "_id": "$categories",
+            "count": {"$sum": 1}
+        }},
+        {"$sort": {"count": -1}},
+        {"$limit": limit},
+        {"$project": {
+            "category": "$_id",
+            "count": 1,
+            "_id": 0
+        }}
+    ]
+    
+    cursor = db.books.aggregate(pipeline)
+    categories = await cursor.to_list(limit)
+    
+    return {"categories": [c["category"] for c in categories]}
 
 
 @router.get("/suggest")

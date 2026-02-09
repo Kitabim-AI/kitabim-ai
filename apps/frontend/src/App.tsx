@@ -17,6 +17,8 @@ import { Book } from '@shared/types';
 const App: React.FC = () => {
   const [view, setView] = useState<'home' | 'library' | 'admin' | 'reader' | 'global-chat'>('home');
   const [searchQuery, setSearchQuery] = useState('');
+  const [homeSearchQuery, setHomeSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -68,7 +70,7 @@ const App: React.FC = () => {
     isLoading,
     isLoadingMoreShelf,
     hasMoreShelf,
-  } = useBooks(view, searchQuery, pageSize, page);
+  } = useBooks(view, view === 'home' ? homeSearchQuery : searchQuery, pageSize, page, view === 'home' ? selectedCategory : undefined);
 
   const {
     chatMessages,
@@ -217,8 +219,10 @@ const App: React.FC = () => {
             isInitialLoading={isLoading}
             isLoadingMore={isLoadingMoreShelf}
             hasMore={hasMoreShelf}
-            searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
+            searchQuery={homeSearchQuery}
+            setSearchQuery={setHomeSearchQuery}
+            selectedCategory={selectedCategory}
+            setSelectedCategory={setSelectedCategory}
             onBookClick={(book) => openReader(book, setEditContent, setChatMessages, setCurrentPage)}
             loaderRef={loaderRef}
             loadMore={loadMoreShelf}
