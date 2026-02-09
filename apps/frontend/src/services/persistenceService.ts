@@ -1,12 +1,13 @@
 
 import { Book, PaginatedBooks } from '@shared/types';
+import { authFetch, getAuthHeaders } from './authService';
 
 const API_BASE = '/api';
 
 export const PersistenceService = {
   async getBookContent(id: string): Promise<string> {
     try {
-      const response = await fetch(`${API_BASE}/books/${id}/content`);
+      const response = await authFetch(`${API_BASE}/books/${id}/content`);
       if (!response.ok) throw new Error("Failed to fetch content");
       const data = await response.json();
       return data.content || "";
@@ -18,7 +19,7 @@ export const PersistenceService = {
 
   async findBookByHash(hash: string): Promise<Book | null> {
     try {
-      const response = await fetch(`${API_BASE}/books/hash/${hash}`);
+      const response = await authFetch(`${API_BASE}/books/hash/${hash}`);
       if (!response.ok) return null;
       const data = await response.json();
       return {
@@ -33,7 +34,7 @@ export const PersistenceService = {
   },
 
   async saveBookGlobally(book: Book): Promise<void> {
-    const response = await fetch(`${API_BASE}/books/${book.id}`, {
+    const response = await authFetch(`${API_BASE}/books/${book.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(book),
@@ -51,7 +52,7 @@ export const PersistenceService = {
       if (q) url += `&q=${encodeURIComponent(q)}`;
       if (groupByWork) url += `&groupByWork=true`;
 
-      const response = await fetch(url);
+      const response = await authFetch(url);
       if (!response.ok) throw new Error("Failed to fetch");
       const data = await response.json();
       return {
@@ -71,7 +72,7 @@ export const PersistenceService = {
 
   async getBookById(id: string): Promise<Book | null> {
     try {
-      const response = await fetch(`${API_BASE}/books/${id}`);
+      const response = await authFetch(`${API_BASE}/books/${id}`);
       if (!response.ok) throw new Error("Failed to fetch book");
       const b = await response.json();
       return {
@@ -88,7 +89,7 @@ export const PersistenceService = {
 
   async getBookPages(id: string, skip: number, limit: number): Promise<any[]> {
     try {
-      const response = await fetch(`${API_BASE}/books/${id}/pages?skip=${skip}&limit=${limit}`);
+      const response = await authFetch(`${API_BASE}/books/${id}/pages?skip=${skip}&limit=${limit}`);
       if (!response.ok) throw new Error("Failed to fetch pages");
       return await response.json();
     } catch (error) {
@@ -99,11 +100,18 @@ export const PersistenceService = {
 
   async deleteBook(bookId: string): Promise<void> {
     try {
-      await fetch(`${API_BASE}/books/${bookId}`, {
+      const response = await authFetch(`${API_BASE}/books/${bookId}`, {
         method: 'DELETE',
       });
+      if (!response.ok) {
+        if (response.status === 403) {
+          throw new Error("Permission denied: Admin access required");
+        }
+        throw new Error("Failed to delete book");
+      }
     } catch (error) {
       console.error("Failed to delete book from backend", error);
+      throw error;
     }
   },
 
@@ -114,12 +122,15 @@ export const PersistenceService = {
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await fetch(`${API_BASE}/books/upload`, {
+    const response = await authFetch(`${API_BASE}/books/upload`, {
       method: 'POST',
       body: formData,
     });
 
     if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Editor access required");
+      }
       const errorText = await response.text();
       throw new Error(`Upload failed: ${response.status} ${errorText}`);
     }
@@ -129,42 +140,54 @@ export const PersistenceService = {
   },
 
   async reprocessBook(bookId: string): Promise<void> {
-    const response = await fetch(`${API_BASE}/books/${bookId}/reprocess`, {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess`, {
       method: 'POST',
     });
     if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Editor access required");
+      }
       throw new Error("Failed to start reprocessing");
     }
   },
 
   async reindexBook(bookId: string): Promise<void> {
-    const response = await fetch(`${API_BASE}/books/${bookId}/reindex`, {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/reindex`, {
       method: 'POST',
     });
     if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Editor access required");
+      }
       throw new Error("Failed to start reindexing");
     }
   },
 
   async retryFailedOcr(bookId: string): Promise<void> {
-    const response = await fetch(`${API_BASE}/books/${bookId}/retry-ocr`, {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/retry-ocr`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ provider: 'gemini' }),
     });
     if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Editor access required");
+      }
       const errorText = await response.text();
       throw new Error(`Failed to retry OCR: ${response.status} ${errorText}`);
     }
   },
 
   async startOcr(bookId: string): Promise<void> {
-    const response = await fetch(`${API_BASE}/books/${bookId}/start-ocr`, {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/start-ocr`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ provider: 'gemini' })
     });
     if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Editor access required");
+      }
       const errorText = await response.text();
       throw new Error(`Failed to start OCR: ${response.status} ${errorText}`);
     }
@@ -173,13 +196,16 @@ export const PersistenceService = {
 
 
   async updateBookMetadata(book_id: string, updates: Partial<Book>): Promise<void> {
-    const response = await fetch(`${API_BASE}/books/${book_id}`, {
+    const response = await authFetch(`${API_BASE}/books/${book_id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates)
     });
 
     if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Editor access required");
+      }
       throw new Error("Failed to update book metadata");
     }
   },

@@ -347,7 +347,7 @@ async def process_pdf_task(
                         {"batch_start": start, "batch_end": start + len(batch) - 1},
                     )
 
-        completed_count = len([r for r in all_pages if r.get("status") == "completed"])
+        completed_count = await db.pages.count_documents({"bookId": book_id, "status": "completed"})
         final_status = "ready" if completed_count == total_pages else "error"
 
         await db.books.update_one(

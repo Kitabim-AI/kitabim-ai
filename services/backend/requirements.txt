@@ -12,3 +12,4 @@ langchain
 langchain-core
 langchain-google-genai
 arq
+python-jose[cryptography]

@@ -28,3 +28,9 @@ data:
   QUEUE_JOB_TIMEOUT: "1800"
   QUEUE_MAX_RETRIES: "10"
   JOB_LOCK_TTL_SECONDS: "1800"
+  # Authentication settings
+  JWT_ALGORITHM: HS256
+  JWT_ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+  JWT_REFRESH_TOKEN_EXPIRE_DAYS: "7"
+  GOOGLE_REDIRECT_URI: "http://localhost:8000/api/auth/google/callback"
+  DEFAULT_USER_ROLE: "reader"

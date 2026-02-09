@@ -32,6 +32,7 @@ class Book(BaseModel):
     uploadDate: datetime
     lastUpdated: Optional[datetime] = None
     coverUrl: Optional[str] = None
+    visibility: str = "private"
     processingStep: Optional[str] = "ocr"
     categories: List[str] = Field(default_factory=list)
     errors: List[ErrorEvent] = Field(default_factory=list)

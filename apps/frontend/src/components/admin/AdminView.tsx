@@ -45,6 +45,8 @@ interface AdminViewProps {
   tempVolume: string;
   setTempVolume: (val: string) => void;
   handleSaveVolume: (bookId: string, volume: string) => void;
+
+  onToggleVisibility: (bookId: string, currentVisibility: string) => void;
 }
 
 const TagEditor: React.FC<{
@@ -151,6 +153,8 @@ const TagEditor: React.FC<{
   );
 };
 
+import { Globe, Shield } from 'lucide-react';
+
 export const AdminView: React.FC<AdminViewProps> = ({
   books,
   isCheckingGlobal,
@@ -171,7 +175,8 @@ export const AdminView: React.FC<AdminViewProps> = ({
   editingBookCategoriesId, setEditingBookCategoriesId, editingCategoriesList, setEditingCategoriesList, tempCategories, setTempCategories, handleSaveCategories,
   editingBookAuthorId, setEditingBookAuthorId, tempAuthor, setTempAuthor, handleSaveAuthor,
   editingBookTitleId, setEditingBookTitleId, tempTitle, setTempTitle, handleSaveTitle,
-  editingBookVolumeId, setEditingBookVolumeId, tempVolume, setTempVolume, handleSaveVolume
+  editingBookVolumeId, setEditingBookVolumeId, tempVolume, setTempVolume, handleSaveVolume,
+  onToggleVisibility
 }) => {
   return (
     <div className="space-y-6">
@@ -351,7 +356,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                       <div
                         onClick={() => {
                           setEditingBookAuthorId(book.id);
-                          setTempAuthor(book.author || '');
+                          setTempAuthor(book.author && book.author !== 'Unknown Author' ? book.author : '');
                         }}
                         className="cursor-pointer group/author min-h-[24px] flex items-center hover:bg-slate-50 p-1 rounded-md transition-colors"
                       >
@@ -449,6 +454,16 @@ export const AdminView: React.FC<AdminViewProps> = ({
                         title={book.status === 'pending' ? 'NO CONTENT' : 'VIEW'}
                       >
                         <BookOpen size={14} className="stroke-[2.5]" />
+                      </button>
+                      <button
+                        onClick={() => onToggleVisibility(book.id, book.visibility || 'public')}
+                        className={`p-2 rounded-lg transition-all shadow-sm ${book.visibility === 'private'
+                          ? 'bg-slate-100 text-slate-500 hover:bg-slate-600 hover:text-white'
+                          : 'bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white'
+                          } active:scale-95 shadow-blue-100/50`}
+                        title={book.visibility === 'private' ? 'MAKE PUBLIC' : 'MAKE PRIVATE'}
+                      >
+                        {book.visibility === 'private' ? <Shield size={14} className="stroke-[2.5]" /> : <Globe size={14} className="stroke-[2.5]" />}
                       </button>
                       <>
 

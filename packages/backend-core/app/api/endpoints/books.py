@@ -8,19 +8,67 @@ from datetime import datetime, timedelta
 from typing import Optional, List
 
 from bson import ObjectId
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from pymongo import UpdateOne
 from app.core.config import settings
 from app.db.mongodb import db_manager
 from app.models.schemas import Book, PaginatedBooks, ExtractionResult
+from app.models.user import User
 from app.queue import enqueue_pdf_processing
 from app.services.spell_check_service import spell_check_service
+from app.auth.dependencies import (
+    get_current_user,
+    get_current_user_optional,
+    require_admin,
+    require_editor,
+    require_reader,
+)
 import logging
 from app.utils.markdown import normalize_markdown
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+async def check_book_access_for_guest(book: dict, user: Optional[User]) -> bool:
+    """
+    Check if a guest (unauthenticated user) can access a book.
+    
+    Guests can only access books that are:
+    1. status = 'ready' AND
+    2. visibility = 'public' (defaults to 'public' for legacy books without visibility field)
+    
+    Args:
+        book: The book document from the database.
+        user: The current user (None for guests).
+        
+    Returns:
+        True if access is allowed, False otherwise.
+    """
+    # Authenticated users can access all books
+    if user is not None:
+        return True
+    
+    # Guests: check status and visibility
+    status = book.get("status")
+    visibility = book.get("visibility", "public")  # Default to public for legacy books
+    
+    return status == "ready" and visibility == "public"
+
+
+def get_guest_filter() -> dict:
+    """
+    Get MongoDB query filter for guest access.
+    Returns filter that only matches public, ready books.
+    """
+    return {
+        "status": "ready",
+        "$or": [
+            {"visibility": "public"},
+            {"visibility": {"$exists": False}},  # Legacy books default to public
+        ]
+    }
 
 
 @router.get("/", response_model=PaginatedBooks)
@@ -31,11 +79,15 @@ async def get_books(
     sortBy: str = "title",
     order: int = 1,
     groupByWork: bool = False,
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     db = db_manager.db
     skip = (page - 1) * pageSize
 
+    # Base query - guests can only see public ready books
     query = {}
+    if current_user is None:
+        query = get_guest_filter()
     # Cleanup stale processing books
     # 1. Books with an expired lock
     # 2. Books in 'processing' state without a lock field that haven't been updated in 2 hours
@@ -64,14 +116,19 @@ async def get_books(
         }
     )
 
+    # Add search filter
     if q:
-        query = {
+        search_filter = {
             "$or": [
                 {"title": {"$regex": q, "$options": "i"}},
                 {"author": {"$regex": q, "$options": "i"}},
             ]
         }
-
+        if query:
+            # Merge with existing guest filter
+            query = {"$and": [query, search_filter]}
+        else:
+            query = search_filter
     total = await db.books.count_documents(query)
     total_ready = await db.books.count_documents({"status": "ready"})
 
@@ -231,10 +288,18 @@ async def get_books(
 
 
 @router.get("/{book_id}", response_model=Book)
-async def get_book(book_id: str, initial_pages: int = 10000):
+async def get_book(
+    book_id: str,
+    initial_pages: int = 10000,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     db = db_manager.db
     book = await db.books.find_one({"id": book_id}, {"previousResults": 0})
     if book:
+        # Check guest access
+        if not await check_book_access_for_guest(book, current_user):
+            raise HTTPException(status_code=403, detail="Access denied")
+        
         if "_id" in book and "id" not in book:
             book["id"] = str(book["_id"])
         
@@ -248,15 +313,20 @@ async def get_book(book_id: str, initial_pages: int = 10000):
 
 
 @router.get("/{book_id}/content")
-async def get_book_content(book_id: str):
+async def get_book_content(
+    book_id: str,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     db = db_manager.db
-    # Verify book exists
-    book = await db.books.find_one({"id": book_id}, {"_id": 1})
+    # Verify book exists and check access
+    book = await db.books.find_one({"id": book_id})
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
+    
+    if not await check_book_access_for_guest(book, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
         
     # Aggregate ALL pages from the pages collection
-    # This avoids relying on the potentially stale or deprecated book.content field
     pages = await db.pages.find({"bookId": book_id}).sort("pageNumber", 1).to_list(10000)
     logger.info(f"DEBUG: Found {len(pages)} pages for book {book_id}")
     
@@ -272,12 +342,20 @@ async def get_book_content(book_id: str):
 
 
 @router.get("/{book_id}/pages", response_model=List[ExtractionResult])
-async def get_book_pages(book_id: str, skip: int = 0, limit: int = 20):
+async def get_book_pages(
+    book_id: str,
+    skip: int = 0,
+    limit: int = 20,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     db = db_manager.db
-    # Verify book exists first (optional, but good for 404s)
-    book = await db.books.find_one({"id": book_id}, {"_id": 1})
+    # Verify book exists and check access
+    book = await db.books.find_one({"id": book_id})
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
+    
+    if not await check_book_access_for_guest(book, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
 
     cursor = db.pages.find({"bookId": book_id}, {"embedding": 0}).sort("pageNumber", 1).skip(skip).limit(limit)
     pages = await cursor.to_list(limit)
@@ -285,16 +363,25 @@ async def get_book_pages(book_id: str, skip: int = 0, limit: int = 20):
 
 
 @router.get("/hash/{content_hash}", response_model=Book)
-async def get_book_by_hash(content_hash: str):
+async def get_book_by_hash(
+    content_hash: str,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     db = db_manager.db
     book = await db.books.find_one({"contentHash": content_hash})
     if book:
+        if not await check_book_access_for_guest(book, current_user):
+            raise HTTPException(status_code=403, detail="Access denied")
         return book
     raise HTTPException(status_code=404, detail="Book not found")
 
 
 @router.post("/upload")
-async def upload_pdf(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+async def upload_pdf(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    current_user: User = Depends(require_editor),
+):
     db = db_manager.db
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
@@ -330,13 +417,14 @@ async def upload_pdf(background_tasks: BackgroundTasks, file: UploadFile = File(
         "id": book_id,
         "contentHash": content_hash,
         "title": file.filename.replace(".pdf", ""),
-        "author": "Unknown Author",
+        "author": "",
         "volume": None,
         "totalPages": 0,
         "status": "pending",
         "uploadDate": now,
         "lastUpdated": now,
         "categories": [],
+        "visibility": "private",
         "processingStep": "ocr",
         "ocrProvider": None,
     }
@@ -347,7 +435,12 @@ async def upload_pdf(background_tasks: BackgroundTasks, file: UploadFile = File(
 
 
 @router.post("/{book_id}/start-ocr")
-async def start_ocr(book_id: str, payload: dict, background_tasks: BackgroundTasks):
+async def start_ocr(
+    book_id: str,
+    payload: dict,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(require_editor),
+):
     db = db_manager.db
     provider = "gemini"
 
@@ -390,6 +483,7 @@ async def retry_failed_ocr(
     book_id: str,
     background_tasks: BackgroundTasks,
     payload: Optional[dict] = None,
+    current_user: User = Depends(require_editor),
 ):
     db = db_manager.db
     book = await db.books.find_one({"id": book_id})
@@ -466,7 +560,11 @@ async def retry_failed_ocr(
 
 
 @router.post("/{book_id}/reprocess")
-async def reprocess_book(book_id: str, background_tasks: BackgroundTasks):
+async def reprocess_book(
+    book_id: str,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(require_editor),
+):
     db = db_manager.db
     book = await db.books.find_one({"id": book_id})
     if not book:
@@ -488,7 +586,11 @@ async def reprocess_book(book_id: str, background_tasks: BackgroundTasks):
 
 
 @router.post("/{book_id}/reindex")
-async def reindex_book(book_id: str, background_tasks: BackgroundTasks):
+async def reindex_book(
+    book_id: str,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(require_editor),
+):
     db = db_manager.db
     book = await db.books.find_one({"id": book_id})
     if not book:
@@ -517,7 +619,12 @@ async def reindex_book(book_id: str, background_tasks: BackgroundTasks):
 
 
 @router.post("/{book_id}/pages/{page_num}/reset")
-async def reset_page(book_id: str, page_num: int, background_tasks: BackgroundTasks):
+async def reset_page(
+    book_id: str,
+    page_num: int,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(require_editor),
+):
     db = db_manager.db
     await db.pages.update_one(
         {"bookId": book_id, "pageNumber": page_num},
@@ -540,7 +647,13 @@ async def reset_page(book_id: str, page_num: int, background_tasks: BackgroundTa
 
 
 @router.post("/{book_id}/pages/{page_num}/update")
-async def update_page_text(book_id: str, page_num: int, payload: dict, background_tasks: BackgroundTasks):
+async def update_page_text(
+    book_id: str,
+    page_num: int,
+    payload: dict,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(require_editor),
+):
     db = db_manager.db
     new_text = normalize_markdown(payload.get("text", ""))
     await db.pages.update_one(
@@ -562,7 +675,11 @@ async def update_page_text(book_id: str, page_num: int, payload: dict, backgroun
 
 
 @router.post("/")
-async def create_book(book: Book, background_tasks: BackgroundTasks):
+async def create_book(
+    book: Book,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(require_editor),
+):
     db = db_manager.db
     book_dict = book.dict()
     book_id = book_dict.get("id")
@@ -602,7 +719,12 @@ async def create_book(book: Book, background_tasks: BackgroundTasks):
 
 
 @router.put("/{book_id}")
-async def update_book_details(book_id: str, book_update: dict, background_tasks: BackgroundTasks):
+async def update_book_details(
+    book_id: str,
+    book_update: dict,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(require_editor),
+):
     db = db_manager.db
     book_update.pop("uploadDate", None)
     book_update.pop("content", None)
@@ -651,11 +773,17 @@ async def update_book_details(book_id: str, book_update: dict, background_tasks:
 
 
 @router.delete("/{book_id}")
-async def delete_book(book_id: str):
+async def delete_book(
+    book_id: str,
+    current_user: User = Depends(require_admin),
+):
     db = db_manager.db
     file_path = settings.uploads_dir / f"{book_id}.pdf"
     if file_path.exists():
         os.remove(file_path)
+    
+    # Also delete associated pages
+    await db.pages.delete_many({"bookId": book_id})
 
     query = {"$or": [{"id": book_id}]}
     if len(book_id) == 24:
@@ -671,7 +799,11 @@ async def delete_book(book_id: str):
 
 
 @router.post("/upload-cover")
-async def upload_cover(title: str = Form(...), file: UploadFile = File(...)):
+async def upload_cover(
+    title: str = Form(...),
+    file: UploadFile = File(...),
+    current_user: User = Depends(require_editor),
+):
     from PIL import Image
 
     db = db_manager.db
@@ -710,7 +842,10 @@ async def upload_cover(title: str = Form(...), file: UploadFile = File(...)):
 
 
 @router.post("/{book_id}/spell-check")
-async def check_book_spelling(book_id: str):
+async def check_book_spelling(
+    book_id: str,
+    current_user: User = Depends(require_editor),
+):
     db = db_manager.db
     try:
         results = await spell_check_service.check_book(book_id, db)
@@ -735,7 +870,11 @@ async def check_book_spelling(book_id: str):
 
 
 @router.post("/{book_id}/pages/{page_num}/spell-check")
-async def check_page_spelling(book_id: str, page_num: int):
+async def check_page_spelling(
+    book_id: str,
+    page_num: int,
+    current_user: User = Depends(require_editor),
+):
     db = db_manager.db
     page_result = await db.pages.find_one({"bookId": book_id, "pageNumber": page_num})
     if not page_result:
@@ -770,6 +909,7 @@ async def apply_spelling_corrections(
     page_num: int,
     payload: dict,
     background_tasks: BackgroundTasks,
+    current_user: User = Depends(require_editor),
 ):
     db = db_manager.db
     corrections = payload.get("corrections", [])

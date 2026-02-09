@@ -8,18 +8,28 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.endpoints import ai, books, chat
+from app.api.endpoints import ai, auth, books, chat, users
 from app.core.config import settings
 from app.db.mongodb import db_manager
 from app.queue import enqueue_pdf_processing
 from app.langchain import configure_langchain
 from app.utils.observability import configure_logging, log_json, request_id_var
+from app.auth.jwt_handler import validate_jwt_secret
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging()
     configure_langchain()
+    
+    # Validate JWT secret key at startup
+    logger = logging.getLogger("app.startup")
+    try:
+        validate_jwt_secret()
+    except ValueError as e:
+        log_json(logger, logging.WARNING, "JWT secret validation warning", error=str(e))
+        log_json(logger, logging.WARNING, "Authentication features will not work properly")
+    
     await db_manager.connect_to_storage()
 
     db = db_manager.db
@@ -119,6 +129,8 @@ app.add_middleware(
 
 app.mount("/api/covers", StaticFiles(directory=str(settings.covers_dir)), name="covers")
 
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(books.router, prefix="/api/books", tags=["books"])
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])

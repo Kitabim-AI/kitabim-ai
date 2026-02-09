@@ -25,6 +25,7 @@ export interface Book {
   uploadDate: Date;
   lastUpdated: Date | null;
   coverUrl?: string;
+  visibility?: 'public' | 'private';
   processingStep?: 'ocr' | 'rag';
   categories?: string[];
   tags?: string[];

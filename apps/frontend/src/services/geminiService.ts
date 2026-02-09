@@ -1,14 +1,19 @@
 
+import { authFetch } from './authService';
+
 const API_BASE = '/api';
 
 export const extractUyghurText = async (base64Image: string, retries = 5): Promise<string> => {
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
-      const response = await fetch(`${API_BASE}/ai/ocr/`, {
+      const response = await authFetch(`${API_BASE}/ai/ocr/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageBase64: base64Image })
       });
+      if (response.status === 403) {
+        throw new Error('Permission denied: Editor access required for OCR');
+      }
       if (!response.ok) throw new Error(`OCR request failed: ${response.status}`);
       const data = await response.json();
       return data.text || '';
@@ -29,12 +34,18 @@ export const extractUyghurText = async (base64Image: string, retries = 5): Promi
 
 export const chatWithBook = async (question: string, bookId: string, currentPage?: number, history: { role: string, text: string }[] = []): Promise<string> => {
   try {
-    const response = await fetch(`${API_BASE}/chat/`, {
+    const response = await authFetch(`${API_BASE}/chat/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bookId, question, currentPage, history })
     });
 
+    if (response.status === 401) {
+      return "سوئالغا جاۋاب بېرىش ئۈچۈن تىزىملىتىڭ.";
+    }
+    if (response.status === 403) {
+      return "بۇ ئىقتىدارنى ئىشلىتىشكە ھوقۇقىڭىز يوق.";
+    }
     if (!response.ok) throw new Error("Chat request failed");
     const data = await response.json();
     return data.answer;

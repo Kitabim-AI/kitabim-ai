@@ -4,14 +4,16 @@ import base64
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.core.config import settings
 from app.core.prompts import OCR_PROMPT
+from app.models.user import User
 from app.langchain.models import generate_text_with_image
 from app.utils.observability import log_json
 from app.utils.text import clean_uyghur_text
+from app.auth.dependencies import require_editor
 
 router = APIRouter()
 logger = logging.getLogger("app.ai")
@@ -34,7 +36,10 @@ def _decode_base64_image(data: str) -> bytes:
 
 
 @router.post("/ocr", response_model=OcrResponse)
-async def ocr_image(req: OcrRequest):
+async def ocr_image(
+    req: OcrRequest,
+    current_user: User = Depends(require_editor),
+):
     if not settings.gemini_api_key:
         raise HTTPException(status_code=500, detail="Gemini API key not configured")
 

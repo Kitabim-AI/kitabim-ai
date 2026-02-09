@@ -55,6 +55,22 @@ class MongoDB:
         await safe_create_index(pages, [("bookId", 1)])
         await safe_create_index(pages, [("status", 1)])
 
+        # Users collection indexes
+        users = self.db.users
+        await safe_create_index(users, [("email", 1)], unique=True)
+        await safe_create_index(users, [("provider", 1), ("provider_id", 1)], unique=True)
+        await safe_create_index(users, [("role", 1)])
+
+        # Refresh tokens collection indexes
+        refresh_tokens = self.db.refresh_tokens
+        await safe_create_index(refresh_tokens, [("user_id", 1)])
+        await safe_create_index(refresh_tokens, [("jti", 1)], unique=True)
+        # TTL index to auto-delete expired tokens
+        await safe_create_index(refresh_tokens, [("expires_at", 1)], expireAfterSeconds=0)
+
+        # Book visibility index for guest access filtering
+        await safe_create_index(books, [("status", 1), ("visibility", 1)])
+
 
 db_manager = MongoDB()
 

@@ -362,7 +362,7 @@ export const useBookActions = (
 
   const handleSaveAuthor = async (bookId: string, author: string, setEditingId: any, setTempAuthor: any) => {
     try {
-      const trimmedAuthor = author.trim() || 'Unknown Author';
+      const trimmedAuthor = author.trim();
       await PersistenceService.updateBookMetadata(bookId, { author: trimmedAuthor });
       setBooks(prev => prev.map(b => b.id === bookId ? { ...b, author: trimmedAuthor } : b));
       setEditingId(null);
@@ -408,6 +408,22 @@ export const useBookActions = (
     }
   };
 
+  const handleToggleVisibility = async (bookId: string, currentVisibility: string) => {
+    try {
+      const newVisibility = currentVisibility === 'public' ? 'private' : 'public';
+      await PersistenceService.updateBookMetadata(bookId, { visibility: newVisibility });
+      setBooks(prev => prev.map(b => b.id === bookId ? { ...b, visibility: newVisibility } : b));
+    } catch (e) {
+      console.error("Failed to toggle visibility", e);
+      setModal({
+        isOpen: true,
+        title: "Visibility Error",
+        message: "Failed to update book visibility. Please try again.",
+        type: 'alert'
+      });
+    }
+  };
+
   return {
     isCheckingGlobal,
     handleFileUpload,
@@ -424,5 +440,6 @@ export const useBookActions = (
     handleSaveAuthor,
     handleSaveTitle,
     handleSaveVolume,
+    handleToggleVisibility,
   };
 };

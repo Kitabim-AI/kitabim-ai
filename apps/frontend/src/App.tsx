@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/layout/Navbar';
 import { LibraryView } from './components/library/LibraryView';
 import { AdminView } from './components/admin/AdminView';
+import { AdminTabs } from './components/admin/AdminTabs';
 import { ReaderView } from './components/reader/ReaderView';
 import { ChatInterface } from './components/chat/ChatInterface';
 import { Modal } from './components/common/Modal';
@@ -94,6 +95,7 @@ const App: React.FC = () => {
     handleSaveAuthor,
     handleSaveTitle,
     handleSaveVolume,
+    handleToggleVisibility,
   } = useBookActions(refreshLibrary, setBooks, setSelectedBook, setView, setModal);
 
   // Sync selectedBook with fresh data from the books list
@@ -222,47 +224,52 @@ const App: React.FC = () => {
         )}
 
         {view === 'admin' && (
-          <AdminView
-            books={sortedBooks}
-            isCheckingGlobal={isCheckingGlobal}
-            sortConfig={sortConfig}
-            toggleSort={toggleSort}
-            page={page}
-            pageSize={pageSize}
-            totalBooks={totalBooks}
-            onPageChange={setPage}
-            onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
-            onOpenReader={(book) => openReader(book, setEditContent, setChatMessages, setCurrentPage)}
-            onStartOcr={handleStartOcr}
-            onRetryFailedOcr={handleRetryFailedOcr}
+          <AdminTabs
+            bookManagementPanel={
+              <AdminView
+                books={sortedBooks}
+                isCheckingGlobal={isCheckingGlobal}
+                sortConfig={sortConfig}
+                toggleSort={toggleSort}
+                page={page}
+                pageSize={pageSize}
+                totalBooks={totalBooks}
+                onPageChange={setPage}
+                onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+                onOpenReader={(book) => openReader(book, setEditContent, setChatMessages, setCurrentPage)}
+                onStartOcr={handleStartOcr}
+                onRetryFailedOcr={handleRetryFailedOcr}
 
-            onReindex={handleReindexBook}
-            onDeleteBook={(id) => handleDeleteBook(id, selectedBook?.id)}
-            editingBookCategoriesId={editingBookCategoriesId}
-            setEditingBookCategoriesId={setEditingBookCategoriesId}
-            editingCategoriesList={editingCategoriesList}
-            setEditingCategoriesList={setEditingCategoriesList}
-            tempCategories={tempCategories}
-            setTempCategories={setTempCategories}
-            handleSaveCategories={(id, cats) => handleSaveCategories(id, cats, setEditingBookCategoriesId, setEditingCategoriesList)}
+                onReindex={handleReindexBook}
+                onDeleteBook={(id) => handleDeleteBook(id, selectedBook?.id)}
+                editingBookCategoriesId={editingBookCategoriesId}
+                setEditingBookCategoriesId={setEditingBookCategoriesId}
+                editingCategoriesList={editingCategoriesList}
+                setEditingCategoriesList={setEditingCategoriesList}
+                tempCategories={tempCategories}
+                setTempCategories={setTempCategories}
+                handleSaveCategories={(id, cats) => handleSaveCategories(id, cats, setEditingBookCategoriesId, setEditingCategoriesList)}
 
-            editingBookAuthorId={editingBookAuthorId}
-            setEditingBookAuthorId={setEditingBookAuthorId}
-            tempAuthor={tempAuthor}
-            setTempAuthor={setTempAuthor}
-            handleSaveAuthor={(id, author) => handleSaveAuthor(id, author, setEditingBookAuthorId, setTempAuthor)}
+                editingBookAuthorId={editingBookAuthorId}
+                setEditingBookAuthorId={setEditingBookAuthorId}
+                tempAuthor={tempAuthor}
+                setTempAuthor={setTempAuthor}
+                handleSaveAuthor={(id, author) => handleSaveAuthor(id, author, setEditingBookAuthorId, setTempAuthor)}
 
-            editingBookTitleId={editingBookTitleId}
-            setEditingBookTitleId={setEditingBookTitleId}
-            tempTitle={tempTitle}
-            setTempTitle={setTempTitle}
-            handleSaveTitle={(id, title) => handleSaveTitle(id, title, setEditingBookTitleId, setTempTitle)}
+                editingBookTitleId={editingBookTitleId}
+                setEditingBookTitleId={setEditingBookTitleId}
+                tempTitle={tempTitle}
+                setTempTitle={setTempTitle}
+                handleSaveTitle={(id, title) => handleSaveTitle(id, title, setEditingBookTitleId, setTempTitle)}
 
-            editingBookVolumeId={editingBookVolumeId}
-            setEditingBookVolumeId={setEditingBookVolumeId}
-            tempVolume={tempVolume}
-            setTempVolume={setTempVolume}
-            handleSaveVolume={(id, volume) => handleSaveVolume(id, volume, setEditingBookVolumeId, setTempVolume)}
+                editingBookVolumeId={editingBookVolumeId}
+                setEditingBookVolumeId={setEditingBookVolumeId}
+                tempVolume={tempVolume}
+                setTempVolume={setTempVolume}
+                handleSaveVolume={(id, volume) => handleSaveVolume(id, volume, setEditingBookVolumeId, setTempVolume)}
+                onToggleVisibility={handleToggleVisibility}
+              />
+            }
           />
         )}
 

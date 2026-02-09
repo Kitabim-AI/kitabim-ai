@@ -63,6 +63,21 @@ class Settings:
     queue_max_retries: int = int(os.getenv("QUEUE_MAX_RETRIES", "3"))
     job_lock_ttl_seconds: int = int(os.getenv("JOB_LOCK_TTL_SECONDS", "7200"))
 
+    # Authentication / JWT
+    jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "")
+    jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
+    jwt_access_token_expire_minutes: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+    jwt_refresh_token_expire_days: int = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+
+    # Google OAuth
+    google_client_id: str = os.getenv("GOOGLE_CLIENT_ID", "")
+    google_client_secret: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
+    google_redirect_uri: str = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/auth/google/callback")
+
+    # Auth Behavior
+    default_user_role: str = os.getenv("DEFAULT_USER_ROLE", "reader")
+    admin_emails: str = os.getenv("ADMIN_EMAILS", "")  # Comma-separated list of admin emails
+
 
 settings = Settings()
 
