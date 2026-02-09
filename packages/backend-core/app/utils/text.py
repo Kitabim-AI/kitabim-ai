@@ -63,3 +63,28 @@ def clean_uyghur_text(text: str) -> str:
         cleaned_blocks.append(result_block)
 
     return "\n\n".join(cleaned_blocks)
+
+
+def generate_uyghur_regex(q: str) -> str:
+    """
+    Generate a regex that handles common Uyghur character variants
+    (like the multiple ways to encode 'ئ').
+    """
+    if not q:
+        return ""
+    
+    # 1. Escape regex special characters
+    res = re.escape(q)
+    
+    # 2. Handle 'ئ' (U+0626) and 'ئ' (U+064A + U+0654)
+    # The user might type either, and the DB might contain either.
+    # We replace any form of hemza-carrier with a group that matches both.
+    hemza_variants = [
+        "\u0626",          # ئ (Standard)
+        "\u064A\u0654",    # ئ (Decomposed)
+    ]
+    
+    for variant in hemza_variants:
+        res = res.replace(re.escape(variant), f"({'|'.join(hemza_variants)})")
+        
+    return res

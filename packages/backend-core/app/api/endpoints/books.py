@@ -25,6 +25,7 @@ from app.auth.dependencies import (
 )
 import logging
 from app.utils.markdown import normalize_markdown
+from app.utils.text import generate_uyghur_regex
 
 logger = logging.getLogger(__name__)
 
@@ -118,11 +119,12 @@ async def get_books(
 
     # Add search filter
     if q:
+        normalized_q = generate_uyghur_regex(q)
         search_filter = {
             "$or": [
-                {"title": {"$regex": q, "$options": "i"}},
-                {"author": {"$regex": q, "$options": "i"}},
-                {"categories": {"$regex": q, "$options": "i"}},
+                {"title": {"$regex": normalized_q, "$options": "i"}},
+                {"author": {"$regex": normalized_q, "$options": "i"}},
+                {"categories": {"$regex": normalized_q, "$options": "i"}},
             ]
         }
         if query:
@@ -288,6 +290,72 @@ async def get_books(
     }
 
 
+@router.get("/suggest")
+async def suggest_books(
+    q: str = "",
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    """
+    Provide autocomplete suggestions for book titles, authors, and categories.
+    """
+    if not q or len(q) < 2:
+        return {"suggestions": []}
+
+    db = db_manager.db
+    query = {}
+    if current_user is None:
+        query = get_guest_filter()
+    
+    # Define search filter for suggestions
+    normalized_q = generate_uyghur_regex(q)
+    search_filter = {
+        "$or": [
+            {"title": {"$regex": normalized_q, "$options": "i"}},
+            {"author": {"$regex": normalized_q, "$options": "i"}},
+            {"categories": {"$regex": normalized_q, "$options": "i"}},
+        ]
+    }
+    
+    if query:
+        query = {"$and": [query, search_filter]}
+    else:
+        query = search_filter
+
+    # Find matching books
+    cursor = db.books.find(query, {"title": 1, "author": 1, "categories": 1}).limit(10)
+    books = await cursor.to_list(10)
+    
+    suggestions = []
+    seen = set()
+    
+    # We use regex for matching because Uyghur characters have multiple encodings
+    search_re = re.compile(normalized_q, re.IGNORECASE)
+    
+    for book in books:
+        title = book.get("title")
+        author = book.get("author")
+        categories = book.get("categories", [])
+        
+        if title and search_re.search(title) and title not in seen:
+            suggestions.append({"text": title, "type": "title"})
+            seen.add(title)
+        
+        if author and search_re.search(author) and author not in seen:
+            suggestions.append({"text": author, "type": "author"})
+            seen.add(author)
+            
+        for cat in categories:
+            if cat and search_re.search(cat) and cat not in seen:
+                suggestions.append({"text": cat, "type": "category"})
+                seen.add(cat)
+                
+    # Sort suggestions: titles first, then authors, then categories
+    type_priority = {"title": 0, "author": 1, "category": 2}
+    suggestions.sort(key=lambda x: type_priority.get(x["type"], 3))
+    
+    return {"suggestions": suggestions[:10]}
+
+
 @router.get("/{book_id}", response_model=Book)
 async def get_book(
     book_id: str,
@@ -362,67 +430,6 @@ async def get_book_pages(
     pages = await cursor.to_list(limit)
     return pages
 
-
-@router.get("/suggest")
-async def suggest_books(
-    q: str = "",
-    current_user: Optional[User] = Depends(get_current_user_optional),
-):
-    """
-    Provide autocomplete suggestions for book titles, authors, and categories.
-    """
-    if not q or len(q) < 2:
-        return {"suggestions": []}
-
-    db = db_manager.db
-    query = {}
-    if current_user is None:
-        query = get_guest_filter()
-    
-    # Define search filter for suggestions
-    search_filter = {
-        "$or": [
-            {"title": {"$regex": q, "$options": "i"}},
-            {"author": {"$regex": q, "$options": "i"}},
-            {"categories": {"$regex": q, "$options": "i"}},
-        ]
-    }
-    
-    if query:
-        query = {"$and": [query, search_filter]}
-    else:
-        query = search_filter
-
-    # Find matching books
-    cursor = db.books.find(query, {"title": 1, "author": 1, "categories": 1}).limit(10)
-    books = await cursor.to_list(10)
-    
-    suggestions = []
-    seen = set()
-    
-    for book in books:
-        title = book.get("title")
-        author = book.get("author")
-        categories = book.get("categories", [])
-        
-        if title and q.lower() in title.lower() and title not in seen:
-            suggestions.append({"text": title, "type": "title"})
-            seen.add(title)
-        
-        if author and q.lower() in author.lower() and author not in seen:
-            suggestions.append({"text": author, "type": "author"})
-            seen.add(author)
-            
-        for cat in categories:
-            if cat and q.lower() in cat.lower() and cat not in seen:
-                suggestions.append({"text": cat, "type": "category"})
-                seen.add(cat)
-                
-    # Sort suggestions: titles first, then authors, then categories
-    type_priority = {"title": 0, "author": 1, "category": 2}
-    suggestions.sort(key=lambda x: type_priority.get(x["type"], 3))
-    
-    return {"suggestions": suggestions[:10]}
 
 
 @router.get("/hash/{content_hash}", response_model=Book)

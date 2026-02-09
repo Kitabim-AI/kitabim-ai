@@ -70,7 +70,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
 
       <div className="flex items-center gap-4">
-        {view !== 'home' && view !== 'library' && (
+        {view !== 'home' && (
           <div className="relative hidden sm:block">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
             <input
