@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/layout/Navbar';
+import { HomeView } from './components/library/HomeView';
 import { LibraryView } from './components/library/LibraryView';
 import { AdminView } from './components/admin/AdminView';
 import { AdminTabs } from './components/admin/AdminTabs';
@@ -14,7 +15,7 @@ import { PersistenceService } from './services/persistenceService';
 import { Book } from '@shared/types';
 
 const App: React.FC = () => {
-  const [view, setView] = useState<'library' | 'admin' | 'reader' | 'global-chat'>('library');
+  const [view, setView] = useState<'home' | 'library' | 'admin' | 'reader' | 'global-chat'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -208,6 +209,20 @@ const App: React.FC = () => {
               <span className="text-sm font-bold text-indigo-600 uppercase tracking-widest animate-pulse">Loading Library</span>
             </div>
           </div>
+        )}
+
+        {view === 'home' && (
+          <HomeView
+            books={sortedBooks}
+            isInitialLoading={isLoading}
+            isLoadingMore={isLoadingMoreShelf}
+            hasMore={hasMoreShelf}
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            onBookClick={(book) => openReader(book, setEditContent, setChatMessages, setCurrentPage)}
+            loaderRef={loaderRef}
+            loadMore={loadMoreShelf}
+          />
         )}
 
         {view === 'library' && (

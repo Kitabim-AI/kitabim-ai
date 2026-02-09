@@ -122,6 +122,7 @@ async def get_books(
             "$or": [
                 {"title": {"$regex": q, "$options": "i"}},
                 {"author": {"$regex": q, "$options": "i"}},
+                {"categories": {"$regex": q, "$options": "i"}},
             ]
         }
         if query:
@@ -360,6 +361,68 @@ async def get_book_pages(
     cursor = db.pages.find({"bookId": book_id}, {"embedding": 0}).sort("pageNumber", 1).skip(skip).limit(limit)
     pages = await cursor.to_list(limit)
     return pages
+
+
+@router.get("/suggest")
+async def suggest_books(
+    q: str = "",
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    """
+    Provide autocomplete suggestions for book titles, authors, and categories.
+    """
+    if not q or len(q) < 2:
+        return {"suggestions": []}
+
+    db = db_manager.db
+    query = {}
+    if current_user is None:
+        query = get_guest_filter()
+    
+    # Define search filter for suggestions
+    search_filter = {
+        "$or": [
+            {"title": {"$regex": q, "$options": "i"}},
+            {"author": {"$regex": q, "$options": "i"}},
+            {"categories": {"$regex": q, "$options": "i"}},
+        ]
+    }
+    
+    if query:
+        query = {"$and": [query, search_filter]}
+    else:
+        query = search_filter
+
+    # Find matching books
+    cursor = db.books.find(query, {"title": 1, "author": 1, "categories": 1}).limit(10)
+    books = await cursor.to_list(10)
+    
+    suggestions = []
+    seen = set()
+    
+    for book in books:
+        title = book.get("title")
+        author = book.get("author")
+        categories = book.get("categories", [])
+        
+        if title and q.lower() in title.lower() and title not in seen:
+            suggestions.append({"text": title, "type": "title"})
+            seen.add(title)
+        
+        if author and q.lower() in author.lower() and author not in seen:
+            suggestions.append({"text": author, "type": "author"})
+            seen.add(author)
+            
+        for cat in categories:
+            if cat and q.lower() in cat.lower() and cat not in seen:
+                suggestions.append({"text": cat, "type": "category"})
+                seen.add(cat)
+                
+    # Sort suggestions: titles first, then authors, then categories
+    type_priority = {"title": 0, "author": 1, "category": 2}
+    suggestions.sort(key=lambda x: type_priority.get(x["type"], 3))
+    
+    return {"suggestions": suggestions[:10]}
 
 
 @router.get("/hash/{content_hash}", response_model=Book)

@@ -213,5 +213,17 @@ export const PersistenceService = {
   async updateBookTags(bookId: string, tags: string[]): Promise<void> {
     // Legacy support or specific tag update
     return this.updateBookMetadata(bookId, { tags });
+  },
+
+  async getSuggestions(q: string): Promise<any[]> {
+    try {
+      const response = await authFetch(`${API_BASE}/books/suggest?q=${encodeURIComponent(q)}`);
+      if (!response.ok) return [];
+      const data = await response.json();
+      return data.suggestions || [];
+    } catch (error) {
+      console.error("Failed to fetch suggestions", error);
+      return [];
+    }
   }
 };
