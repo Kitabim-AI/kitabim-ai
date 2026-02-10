@@ -18,6 +18,8 @@ class ExtractionResult(BaseModel):
     status: str
     isVerified: bool = False
     error: Optional[str] = None
+    lastUpdated: Optional[datetime] = None
+    updatedBy: Optional[str] = None
 
 
 class Book(BaseModel):
@@ -31,6 +33,8 @@ class Book(BaseModel):
     status: str
     uploadDate: datetime
     lastUpdated: Optional[datetime] = None
+    updatedBy: Optional[str] = None
+    createdBy: Optional[str] = None
     coverUrl: Optional[str] = None
     visibility: str = "private"
     processingStep: Optional[str] = "ocr"

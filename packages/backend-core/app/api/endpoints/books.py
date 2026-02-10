@@ -582,6 +582,8 @@ async def upload_pdf(
         "status": "pending",
         "uploadDate": now,
         "lastUpdated": now,
+        "createdBy": current_user.email,
+        "updatedBy": current_user.email,
         "categories": [],
         "visibility": "private",
         "processingStep": "ocr",
@@ -619,6 +621,7 @@ async def start_ocr(
         "processingStep": "ocr",
         "ocrProvider": provider,
         "lastUpdated": datetime.utcnow(),
+        "updatedBy": current_user.email,
     }
 
     # CLEAR OLD DATA
@@ -678,6 +681,7 @@ async def retry_failed_ocr(
                     "processingStep": "ocr",
                     "ocrProvider": provider,
                     "lastUpdated": datetime.utcnow(),
+                    "updatedBy": current_user.email,
                 }
             },
         )
@@ -695,6 +699,7 @@ async def retry_failed_ocr(
                 "processingStep": "ocr",
                 "ocrProvider": provider,
                 "lastUpdated": datetime.utcnow(),
+                "updatedBy": current_user.email,
             }
         },
     )
@@ -707,7 +712,8 @@ async def retry_failed_ocr(
                 "text": "",
                 "error": None,
                 "isVerified": False,
-                "lastUpdated": datetime.utcnow()
+                "lastUpdated": datetime.utcnow(),
+                "updatedBy": current_user.email
             }
         }
     )
@@ -738,7 +744,7 @@ async def reprocess_book(
 
     await db.books.update_one(
         {"id": book_id},
-        {"$set": {"status": "processing", "lastUpdated": datetime.utcnow()}},
+        {"$set": {"status": "processing", "lastUpdated": datetime.utcnow(), "updatedBy": current_user.email}},
     )
     await enqueue_pdf_processing(book_id, reason="reprocess", background_tasks=background_tasks)
     return {"status": "reprocessing_started"}
@@ -770,7 +776,7 @@ async def reindex_book(
 
     await db.books.update_one(
         {"id": book_id},
-        {"$set": {"status": "processing", "lastUpdated": datetime.utcnow()}},
+        {"$set": {"status": "processing", "lastUpdated": datetime.utcnow(), "updatedBy": current_user.email}},
     )
     
     await enqueue_pdf_processing(book_id, reason="reindex", background_tasks=background_tasks)
@@ -793,13 +799,14 @@ async def reset_page(
                 "text": "",
                 "isVerified": False,
                 "lastUpdated": datetime.utcnow(),
+                "updatedBy": current_user.email,
             },
             "$unset": {"embedding": ""}
         },
     )
     await db.books.update_one(
         {"id": book_id},
-        {"$set": {"status": "processing", "lastUpdated": datetime.utcnow()}},
+        {"$set": {"status": "processing", "lastUpdated": datetime.utcnow(), "updatedBy": current_user.email}},
     )
     await enqueue_pdf_processing(book_id, reason="page_reset", background_tasks=background_tasks)
     return {"status": "page_reset_started"}
@@ -823,12 +830,13 @@ async def update_page_text(
                 "status": "completed",
                 "isVerified": True,
                 "lastUpdated": datetime.utcnow(),
+                "updatedBy": current_user.email,
                 "isIndexed": False
             },
             "$unset": {"embedding": ""},
         },
     )
-    await db.books.update_one({"id": book_id}, {"$set": {"lastUpdated": datetime.utcnow()}})
+    await db.books.update_one({"id": book_id}, {"$set": {"lastUpdated": datetime.utcnow(), "updatedBy": current_user.email}})
     await enqueue_pdf_processing(book_id, reason="page_update", background_tasks=background_tasks)
     return {"status": "page_updated", "requires_rag": True}
 
@@ -860,7 +868,8 @@ async def create_book(
                 "status": r.get("status", "completed"),
                 "isVerified": r.get("isVerified", False),
                 "isIndexed": False, # Force re-indexing
-                "lastUpdated": datetime.utcnow()
+                "lastUpdated": datetime.utcnow(),
+                "updatedBy": current_user.email
             }
             pages_ops.append(
                 UpdateOne(
@@ -872,7 +881,17 @@ async def create_book(
         if pages_ops:
             await db.pages.bulk_write(pages_ops)
 
-    await db.books.update_one({"id": book_id}, {"$set": book_dict}, upsert=True)
+    book_dict["updatedBy"] = current_user.email
+    # Only set createdBy if it doesn't exist yet (for creation/upsert)
+    # We can check if book exists or just use $setOnInsert
+    await db.books.update_one(
+        {"id": book_id}, 
+        {
+            "$set": book_dict,
+            "$setOnInsert": {"createdBy": current_user.email, "uploadDate": datetime.utcnow()}
+        }, 
+        upsert=True
+    )
     await enqueue_pdf_processing(book_id, reason="create_book", background_tasks=background_tasks)
     return {"status": "success"}
 
@@ -902,7 +921,8 @@ async def update_book_details(
                     "status": result.get("status"),
                     "isVerified": result.get("isVerified", False),
                     "isIndexed": False, # Force re-indexing for RAG
-                    "lastUpdated": datetime.utcnow()
+                    "lastUpdated": datetime.utcnow(),
+                    "updatedBy": current_user.email
                 }
                 pages_ops.append(
                     UpdateOne(
@@ -923,6 +943,8 @@ async def update_book_details(
             pass
 
     book_update.pop("pages", None)
+    book_update["lastUpdated"] = datetime.utcnow()
+    book_update["updatedBy"] = current_user.email
     result = await db.books.update_one(query, {"$set": book_update})
     if result.matched_count:
         if has_page_updates:
@@ -989,7 +1011,7 @@ async def upload_cover(
     cover_url = f"/api/covers/{book_id}.jpg"
     await db.books.update_one(
         {"id": book_id},
-        {"$set": {"coverUrl": cover_url, "lastUpdated": datetime.utcnow()}},
+        {"$set": {"coverUrl": cover_url, "lastUpdated": datetime.utcnow(), "updatedBy": current_user.email}},
     )
 
     return {
@@ -1076,7 +1098,7 @@ async def apply_spelling_corrections(
         raise HTTPException(status_code=400, detail="No corrections provided")
 
     try:
-        success = await spell_check_service.apply_corrections(book_id, page_num, corrections, db)
+        success = await spell_check_service.apply_corrections(book_id, page_num, corrections, db, user_email=current_user.email)
         if success:
             await enqueue_pdf_processing(book_id, reason="spell_apply", background_tasks=background_tasks)
             return {

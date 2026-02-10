@@ -86,6 +86,7 @@ class SpellCheckService:
         page_number: int,
         corrections: List[Dict],
         db,
+        user_email: Optional[str] = None
     ) -> bool:
         page_rec = await db.pages.find_one({"bookId": book_id, "pageNumber": page_number})
         if not page_rec:
@@ -101,26 +102,32 @@ class SpellCheckService:
 
         new_text = normalize_markdown(page_text)
         
+        page_update = {
+            "text": new_text,
+            "status": "completed",
+            "isVerified": True,
+            "lastUpdated": datetime.utcnow()
+        }
+        if user_email:
+            page_update["updatedBy"] = user_email
+
         await db.pages.update_one(
             {"bookId": book_id, "pageNumber": page_number},
             {
-                "$set": {
-                    "text": new_text,
-                    "status": "completed",
-                    "isVerified": True,
-                    "lastUpdated": datetime.utcnow()
-                },
+                "$set": page_update,
                 "$unset": {"embedding": ""}
             }
         )
 
+        book_update = {
+            "lastUpdated": datetime.utcnow(),
+        }
+        if user_email:
+            book_update["updatedBy"] = user_email
+
         await db.books.update_one(
             {"id": book_id},
-            {
-                "$set": {
-                    "lastUpdated": datetime.utcnow(),
-                }
-            },
+            {"$set": book_update},
         )
         return True
 

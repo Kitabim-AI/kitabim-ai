@@ -164,6 +164,26 @@ export const PersistenceService = {
     }
   },
 
+  async updatePage(bookId: string, pageNum: number, text: string): Promise<void> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/pages/${pageNum}/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
+    if (!response.ok) {
+      throw new Error("Failed to update page text");
+    }
+  },
+
+  async resetPage(bookId: string, pageNum: number): Promise<void> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/pages/${pageNum}/reset`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      throw new Error("Failed to reset page");
+    }
+  },
+
   async retryFailedOcr(bookId: string): Promise<void> {
     const response = await authFetch(`${API_BASE}/books/${bookId}/retry-ocr`, {
       method: 'POST',

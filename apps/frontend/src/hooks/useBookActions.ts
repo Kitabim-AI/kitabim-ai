@@ -164,7 +164,7 @@ export const useBookActions = (
     });
 
     try {
-      await fetch(`/api/books/${bookId}/pages/${pageNum}/reset/`, { method: 'POST' });
+      await PersistenceService.resetPage(bookId, pageNum);
       refreshLibrary();
     } catch (err) {
       if (previousSelected) setSelectedBook(previousSelected);
@@ -208,11 +208,7 @@ export const useBookActions = (
 
   const handleUpdatePage = async (bookId: string, pageNum: number, newText: string, setEditingPageNum: any) => {
     try {
-      await fetch(`/api/books/${bookId}/pages/${pageNum}/update/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: newText })
-      });
+      await PersistenceService.updatePage(bookId, pageNum, newText);
       setEditingPageNum(null);
       setSelectedBook(prev => {
         if (!prev || prev.id !== bookId) return prev;
@@ -225,6 +221,12 @@ export const useBookActions = (
       refreshLibrary();
     } catch (err) {
       console.error("Failed to update page", err);
+      setModal({
+        isOpen: true,
+        title: "Update Error",
+        message: "Failed to save page changes. Please try again.",
+        type: 'alert'
+      });
     }
   };
 
