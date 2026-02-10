@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Book } from '@shared/types';
 import { PersistenceService } from '../services/persistenceService';
+import { useNotification } from '../context/NotificationContext';
 
 export const useBookActions = (
   refreshLibrary: () => Promise<void>,
@@ -9,6 +10,7 @@ export const useBookActions = (
   setView: (view: any) => void,
   setModal: (modal: any) => void
 ) => {
+  const { addNotification } = useNotification();
   const [isCheckingGlobal, setIsCheckingGlobal] = useState(false);
   const cancelledBooks = useRef<Set<string>>(new Set());
 
@@ -23,6 +25,7 @@ export const useBookActions = (
       await PersistenceService.uploadPdf(file);
       await refreshLibrary();
       setIsCheckingGlobal(false);
+      addNotification("Document uploaded successfully.", "success");
     } catch (err) {
       setIsCheckingGlobal(false);
       const errorMsg = err instanceof Error ? err.message : "An unknown error occurred.";
@@ -48,7 +51,9 @@ export const useBookActions = (
           await PersistenceService.startOcr(bookId);
           await refreshLibrary();
           setModal((prev: any) => ({ ...prev, isOpen: false }));
+          addNotification("OCR process started successfully.", "success");
         } catch (err) {
+          addNotification("Failed to start OCR process.", "error");
           setModal({
             isOpen: true,
             title: "Process Error",
@@ -194,6 +199,7 @@ export const useBookActions = (
           setBooks(prev => prev.map(b => b.id === bookId ? { ...b, status: 'processing', processingStep: 'rag' } : b));
           await refreshLibrary();
           setModal((prev: any) => ({ ...prev, isOpen: false }));
+          addNotification("Book re-indexing started.", "success");
         } catch (err) {
           setModal({
             isOpen: true,
@@ -219,6 +225,7 @@ export const useBookActions = (
         };
       });
       refreshLibrary();
+      addNotification(`Page ${pageNum} updated.`, "success");
     } catch (err) {
       console.error("Failed to update page", err);
       setModal({
@@ -306,6 +313,7 @@ export const useBookActions = (
       setSelectedBook(updatedBook);
       await refreshLibrary();
       setIsEditing(false);
+      addNotification("Global corrections saved.", "success");
     } catch (err) {
       console.error("Failed to save global corrections", err);
       setModal({
@@ -333,6 +341,7 @@ export const useBookActions = (
           setView('library');
         }
         setModal((prev: any) => ({ ...prev, isOpen: false }));
+        addNotification("Book deleted successfully.", "success");
       }
     });
   };
@@ -344,8 +353,10 @@ export const useBookActions = (
       setBooks(prev => prev.map(b => b.id === bookId ? { ...b, tags } : b));
       setEditingBookTagsId(null);
       setEditingTagsList([]);
+      addNotification("Tags updated successfully.", "success");
     } catch (e) {
       console.error("Failed to save tags", e);
+      addNotification("Failed to update tags.", "error");
     }
   };
 
@@ -357,8 +368,10 @@ export const useBookActions = (
       setBooks(prev => prev.map(b => b.id === bookId ? { ...b, categories } : b));
       setEditingId(null);
       setEditingList([]);
+      addNotification("Categories updated successfully.", "success");
     } catch (e) {
       console.error("Failed to save categories", e);
+      addNotification("Failed to update categories.", "error");
     }
   };
 
@@ -369,8 +382,10 @@ export const useBookActions = (
       setBooks(prev => prev.map(b => b.id === bookId ? { ...b, author: trimmedAuthor } : b));
       setEditingId(null);
       setTempAuthor('');
+      addNotification("Author updated successfully.", "success");
     } catch (e) {
       console.error("Failed to save author", e);
+      addNotification("Failed to update author.", "error");
     }
   };
 
@@ -382,8 +397,10 @@ export const useBookActions = (
       setBooks(prev => prev.map(b => b.id === bookId ? { ...b, title: trimmedTitle } : b));
       setEditingId(null);
       setTempTitle('');
+      addNotification("Title updated successfully.", "success");
     } catch (e) {
       console.error("Failed to save title", e);
+      addNotification("Failed to update title.", "error");
     }
   };
 
@@ -405,8 +422,10 @@ export const useBookActions = (
       setBooks(prev => prev.map(b => b.id === bookId ? { ...b, volume } : b));
       setEditingId(null);
       setTempVolume('');
+      addNotification("Volume updated successfully.", "success");
     } catch (e) {
       console.error("Failed to save volume", e);
+      addNotification("Failed to update volume.", "error");
     }
   };
 
@@ -415,6 +434,7 @@ export const useBookActions = (
       const newVisibility = currentVisibility === 'public' ? 'private' : 'public';
       await PersistenceService.updateBookMetadata(bookId, { visibility: newVisibility });
       setBooks(prev => prev.map(b => b.id === bookId ? { ...b, visibility: newVisibility } : b));
+      addNotification(`Book made ${newVisibility}.`, "success");
     } catch (e) {
       console.error("Failed to toggle visibility", e);
       setModal({

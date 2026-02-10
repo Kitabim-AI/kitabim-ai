@@ -1,7 +1,8 @@
 import React from 'react';
-import { Database, ChevronUp, ChevronDown, Tag, X, Save, Trash2, BookType, User, Hash, BookOpen, Cpu, ScanText, History, RotateCcw, RefreshCw } from 'lucide-react';
+import { Database, ChevronUp, ChevronDown, Tag, X, Save, Trash2, BookType, User, Hash, BookOpen, Cpu, ScanText, History, RotateCcw, RefreshCw, MoreVertical } from 'lucide-react';
 import { Book } from '@shared/types';
 import { Pagination } from '../common/Pagination';
+import { NotificationContainer } from '../common/NotificationContainer';
 
 interface AdminViewProps {
   books: Book[];
@@ -154,6 +155,7 @@ const TagEditor: React.FC<{
 };
 
 import { Globe, Shield } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
 
 export const AdminView: React.FC<AdminViewProps> = ({
   books,
@@ -178,13 +180,28 @@ export const AdminView: React.FC<AdminViewProps> = ({
   editingBookVolumeId, setEditingBookVolumeId, tempVolume, setTempVolume, handleSaveVolume,
   onToggleVisibility
 }) => {
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setActiveMenuId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   return (
     <div className="space-y-6">
       <header>
         <h2 className="text-2xl font-bold text-slate-800">Kitabim Processing Pipeline</h2>
         <p className="text-slate-500">Managing global document indexing and OCR extraction.</p>
-        <p className="text-xs text-slate-400 mt-1">Uploads stay pending until you start Gemini OCR.</p>
+        <p className="text-xs text-slate-400 mt-1">Uploads stay pending until you start OCR.</p>
       </header>
+
+      <NotificationContainer />
 
       {isCheckingGlobal && (
         <div className="bg-indigo-50 border border-indigo-100 p-8 rounded-2xl flex flex-col items-center justify-center text-center animate-pulse">
@@ -214,7 +231,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                 <th className="px-6 py-4 w-48">Author</th>
                 <th className="px-6 py-4 w-40">Categories</th>
                 <th className="px-6 py-4">Pipeline</th>
-                <th className="px-6 py-4">Action</th>
+                <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -440,103 +457,117 @@ export const AdminView: React.FC<AdminViewProps> = ({
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
+                  <td className="px-6 py-4 text-right">
+                    <div className="relative inline-block text-left" ref={activeMenuId === book.id ? menuRef : null}>
                       <button
-                        onClick={() => {
-                          if (book.status !== 'pending') onOpenReader(book);
-                        }}
-                        disabled={book.status === 'pending'}
-                        className={`p-2 rounded-lg transition-all shadow-sm ${book.status === 'pending'
-                          ? 'bg-slate-50 text-slate-300 cursor-not-allowed opacity-60'
-                          : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white active:scale-95 shadow-emerald-100/50'
-                          }`}
-                        title={book.status === 'pending' ? 'NO CONTENT' : 'VIEW'}
+                        onClick={() => setActiveMenuId(activeMenuId === book.id ? null : book.id)}
+                        className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-slate-600"
                       >
-                        <BookOpen size={14} className="stroke-[2.5]" />
+                        <MoreVertical size={18} />
                       </button>
-                      <button
-                        onClick={() => onToggleVisibility(book.id, book.visibility || 'public')}
-                        className={`p-2 rounded-lg transition-all shadow-sm ${book.visibility === 'private'
-                          ? 'bg-slate-100 text-slate-500 hover:bg-slate-600 hover:text-white'
-                          : 'bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white'
-                          } active:scale-95 shadow-blue-100/50`}
-                        title={book.visibility === 'private' ? 'MAKE PUBLIC' : 'MAKE PRIVATE'}
-                      >
-                        {book.visibility === 'private' ? <Shield size={14} className="stroke-[2.5]" /> : <Globe size={14} className="stroke-[2.5]" />}
-                      </button>
-                      <>
 
-                        {(() => {
-                          const isStale = book.status === 'processing' && book.processingLockExpiresAt && new Date(book.processingLockExpiresAt) < new Date();
-                          const isActuallyProcessing = book.status === 'processing' && !isStale;
+                      {activeMenuId === book.id && (
+                        <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden py-1">
+                          {/* View Book */}
+                          <button
+                            onClick={() => {
+                              if (book.status !== 'pending') onOpenReader(book);
+                              setActiveMenuId(null);
+                            }}
+                            disabled={book.status === 'pending'}
+                            className={`w-full flex items-center gap-3 px-4 py-2 text-xs font-medium transition-colors ${book.status === 'pending'
+                              ? 'text-slate-300 cursor-not-allowed'
+                              : 'text-slate-700 hover:bg-slate-50'
+                              }`}
+                          >
+                            <BookOpen size={14} className="stroke-[2.5]" />
+                            View Book
+                          </button>
 
-                          const hasFailedPages = (book.errorCount ?? 0) > 0 || book.pages?.some(r => r.status === 'error');
-                          const isReady = book.status === 'ready';
+                          {/* Visibility toggle */}
+                          <button
+                            onClick={() => {
+                              onToggleVisibility(book.id, book.visibility || 'public');
+                              setActiveMenuId(null);
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                          >
+                            {book.visibility === 'private' ? (
+                              <><Shield size={14} className="stroke-[2.5]" /> Make Public</>
+                            ) : (
+                              <><Globe size={14} className="stroke-[2.5]" /> Make Private</>
+                            )}
+                          </button>
 
-                          // Retry is available if we have errors/failures and are not currently processing (or if processing is stale)
-                          const canRetry = (Boolean(hasFailedPages) || book.status === 'error' || isStale) && !isActuallyProcessing;
+                          {/* Pipeline Actions */}
+                          {(() => {
+                            const isStale = book.status === 'processing' && book.processingLockExpiresAt && new Date(book.processingLockExpiresAt) < new Date();
+                            const isActuallyProcessing = book.status === 'processing' && !isStale;
+                            const hasFailedPages = (book.errorCount ?? 0) > 0 || book.pages?.some(r => r.status === 'error');
+                            const isReady = book.status === 'ready';
+                            const canRetry = (Boolean(hasFailedPages) || book.status === 'error' || isStale) && !isActuallyProcessing;
+                            const canStartOcr = !isActuallyProcessing && !canRetry && !isReady;
+                            const canReindex = book.status === 'ready';
 
-                          // Start OCR (Reset) is available only if we are NOT processing AND NOT in a state where Retry is preferred AND NOT Ready
-                          const canStartOcr = !isActuallyProcessing && !canRetry && !isReady;
+                            return (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    if (canStartOcr) onStartOcr(book.id);
+                                    setActiveMenuId(null);
+                                  }}
+                                  disabled={!canStartOcr}
+                                  className={`w-full flex items-center gap-3 px-4 py-2 text-xs font-medium transition-colors ${canStartOcr ? 'text-indigo-600 hover:bg-indigo-50' : 'text-slate-300 cursor-not-allowed'
+                                    }`}
+                                >
+                                  <ScanText size={14} className="stroke-[2.5]" />
+                                  Start OCR
+                                </button>
 
-                          return (
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => {
-                                  if (canStartOcr) onStartOcr(book.id);
-                                }}
-                                disabled={!canStartOcr}
-                                className={`p-2 rounded-lg transition-all shadow-sm shadow-indigo-100/50 ${canStartOcr
-                                  ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white active:scale-95'
-                                  : 'bg-indigo-50 text-indigo-200 cursor-not-allowed opacity-60'
-                                  }`}
-                                title={canStartOcr ? 'START GEMINI OCR' : (canRetry ? 'USE RETRY INSTEAD' : (isReady ? 'ALREADY COMPLETED' : 'OCR IN PROGRESS'))}
-                              >
-                                <ScanText size={14} className="stroke-[2.5]" />
-                              </button>
-                              <button
-                                onClick={() => {
-                                  if (canRetry) onRetryFailedOcr(book);
-                                }}
-                                disabled={!canRetry}
-                                className={`p-2 rounded-lg transition-all shadow-sm shadow-amber-100/50 ${canRetry
-                                  ? 'bg-amber-50 text-amber-700 hover:bg-amber-500 hover:text-white active:scale-95'
-                                  : 'bg-amber-50 text-amber-200 cursor-not-allowed opacity-60'
-                                  }`}
-                                title={canRetry ? 'RETRY FAILED PAGES (RESUME)' : 'NO FAILED PAGES'}
-                              >
-                                <RotateCcw size={12} className="stroke-[2.5]" />
-                              </button>
-                            </div>
-                          );
-                        })()}
-                        {(() => {
-                          const canReindex = book.status === 'ready';
-                          return (
-                            <button
-                              onClick={() => {
-                                if (canReindex) onReindex(book.id);
-                              }}
-                              disabled={!canReindex}
-                              className={`p-2 rounded-lg transition-all shadow-sm shadow-blue-100/50 ${canReindex
-                                ? 'bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white active:scale-95'
-                                : 'bg-blue-50 text-blue-200 cursor-not-allowed opacity-60'
-                                }`}
-                              title={canReindex ? 'RE-INDEX (SEMANTIC CHUNKING)' : 'PROCESSING'}
-                            >
-                              <RefreshCw size={14} className="stroke-[2.5]" />
-                            </button>
-                          );
-                        })()}
-                      </>
-                      <button
-                        onClick={() => onDeleteBook(book.id)}
-                        className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all active:scale-95 shadow-sm shadow-red-100/50"
-                        title="DELETE"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                                <button
+                                  onClick={() => {
+                                    if (canRetry) onRetryFailedOcr(book);
+                                    setActiveMenuId(null);
+                                  }}
+                                  disabled={!canRetry}
+                                  className={`w-full flex items-center gap-3 px-4 py-2 text-xs font-medium transition-colors ${canRetry ? 'text-amber-700 hover:bg-amber-50' : 'text-slate-300 cursor-not-allowed'
+                                    }`}
+                                >
+                                  <RotateCcw size={14} className="stroke-[2.5]" />
+                                  Retry Failed Pages
+                                </button>
+
+                                <button
+                                  onClick={() => {
+                                    if (canReindex) onReindex(book.id);
+                                    setActiveMenuId(null);
+                                  }}
+                                  disabled={!canReindex}
+                                  className={`w-full flex items-center gap-3 px-4 py-2 text-xs font-medium transition-colors ${canReindex ? 'text-blue-600 hover:bg-blue-50' : 'text-slate-300 cursor-not-allowed'
+                                    }`}
+                                >
+                                  <RefreshCw size={14} className="stroke-[2.5]" />
+                                  Re-index Book
+                                </button>
+                              </>
+                            );
+                          })()}
+
+                          <div className="h-px bg-slate-100 my-1" />
+
+                          {/* Delete */}
+                          <button
+                            onClick={() => {
+                              onDeleteBook(book.id);
+                              setActiveMenuId(null);
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-2 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"
+                          >
+                            <Trash2 size={14} />
+                            Delete Book
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </td>
                 </tr>
