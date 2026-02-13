@@ -227,9 +227,9 @@ export const AdminView: React.FC<AdminViewProps> = ({
                     </div>
                   </div>
                 </th>
-                <th className="px-6 py-4 w-28">Volume</th>
-                <th className="px-6 py-4 w-48">Author</th>
-                <th className="px-6 py-4 w-40">Categories</th>
+                <th className="px-6 py-4 w-15">Volume</th>
+                <th className="px-6 py-4 w-40">Author</th>
+                <th className="px-6 py-4 w-41">Categories</th>
                 <th className="px-6 py-4">Pipeline</th>
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
@@ -278,7 +278,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                           }}
                           className="cursor-pointer group/title min-h-[24px] flex flex-col justify-center hover:bg-slate-50 p-1 rounded-md transition-colors"
                         >
-                          <span className="font-bold text-slate-900 text-sm truncate max-w-[200px] group-hover/title:text-indigo-600">
+                          <span className="font-bold text-slate-900 text-sm group-hover/title:text-indigo-600">
                             {book.title}
                           </span>
                           <span className="text-[10px] text-slate-400 mt-0.5">
