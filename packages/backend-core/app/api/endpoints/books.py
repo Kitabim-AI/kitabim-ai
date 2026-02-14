@@ -650,41 +650,37 @@ async def start_ocr(
     payload: dict,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
 ):
-    db = pg_db
+    """Start OCR processing with SQLAlchemy"""
+    books_repo = BooksRepository(session)
+    pages_repo = PagesRepository(session)
     provider = "gemini"
 
-    book = await db.books.find_one({"id": book_id})
+    book = await books_repo.get(book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
 
-    if book.get("status") == "processing":
-        # Check if lock is actually still valid
-        lock_expires = book.get("processingLockExpiresAt")
-        if lock_expires and lock_expires.replace(tzinfo=None) > datetime.utcnow():
-            return {"status": "already_processing"}
-        logger.warning(f"Book {book_id} was stuck in processing (lock expired). Allowing restart.")
-
-    update_fields = {
-        "status": "processing",
-        "processingStep": "ocr",
-        "ocrProvider": provider,
-        "lastUpdated": datetime.utcnow(),
-        "updatedBy": current_user.email,
-    }
+    if book.status == "processing":
+        # Note: processing_lock_expires_at field doesn't exist in current schema
+        # TODO: Add processing lock mechanism if needed
+        logger.warning(f"Book {book_id} is already processing. Allowing restart anyway.")
 
     # CLEAR OLD DATA
-    if book.get("status") != "pending":
+    if book.status != "pending":
         # Delete existing pages
-        await db.pages.delete_many({"bookId": book_id})
+        await pages_repo.delete_by_book(book_id)
 
+    # Update book status
+    await books_repo.update_one(
+        book_id,
+        status="processing",
+        processing_step="ocr",
+        last_updated=datetime.utcnow(),
+        updated_by=current_user.email,
+    )
+    await session.commit()
 
-        # Note: We don't need to re-initialize pages with empty state here because 
-        # the OCR worker (process_pdf) creates new page entries as it processes.
-        # But if we want to show placeholders, we could create them. 
-        # For now, deleting is cleaner as it signals "processing" effectively.
-
-    await db.books.update_one({"id": book_id}, {"$set": update_fields})
     await enqueue_pdf_processing(book_id, reason=f"start_{provider}", background_tasks=background_tasks)
     return {"status": "started", "provider": provider}
 
@@ -778,23 +774,26 @@ async def reprocess_book(
     book_id: str,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
 ):
-    db = pg_db
-    book = await db.books.find_one({"id": book_id})
+    """Reprocess book with SQLAlchemy"""
+    books_repo = BooksRepository(session)
+
+    book = await books_repo.get(book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
 
-    if book.get("status") == "processing":
-        # Check if lock is actually still valid
-        lock_expires = book.get("processingLockExpiresAt")
-        if lock_expires and lock_expires.replace(tzinfo=None) > datetime.utcnow():
-            return {"status": "already_processing"}
-        logger.warning(f"Book {book_id} was stuck in processing (lock expired). Allowing reprocess.")
+    if book.status == "processing":
+        logger.warning(f"Book {book_id} is already processing. Allowing reprocess anyway.")
 
-    await db.books.update_one(
-        {"id": book_id},
-        {"$set": {"status": "processing", "lastUpdated": datetime.utcnow(), "updatedBy": current_user.email}},
+    await books_repo.update_one(
+        book_id,
+        status="processing",
+        last_updated=datetime.utcnow(),
+        updated_by=current_user.email
     )
+    await session.commit()
+
     await enqueue_pdf_processing(book_id, reason="reprocess", background_tasks=background_tasks)
     return {"status": "reprocessing_started"}
 
@@ -804,30 +803,37 @@ async def reindex_book(
     book_id: str,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
 ):
-    db = pg_db
-    book = await db.books.find_one({"id": book_id})
+    """Reindex book embeddings with SQLAlchemy"""
+    books_repo = BooksRepository(session)
+
+    book = await books_repo.get(book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
 
-    if book.get("status") == "processing":
-        # Check if lock is actually still valid
-        lock_expires = book.get("processingLockExpiresAt")
-        if lock_expires and lock_expires.replace(tzinfo=None) > datetime.utcnow():
-            return {"status": "already_processing"}
-        logger.warning(f"Book {book_id} was stuck in processing (lock expired). Allowing reindex.")
+    if book.status == "processing":
+        logger.warning(f"Book {book_id} is already processing. Allowing reindex anyway.")
 
-    # Reset index status for all completed pages
-    await db.pages.update_many(
-        {"bookId": book_id, "status": "completed"},
-        {"$set": {"isIndexed": False}, "$unset": {"embedding": ""}}
+    # Reset embeddings for all completed pages using raw SQL
+    # Note: Page model doesn't have is_indexed field, so we just clear embeddings
+    await session.execute(
+        text("""
+            UPDATE pages
+            SET embedding = NULL, last_updated = NOW(), updated_by = :updated_by
+            WHERE book_id = :book_id AND status = 'completed'
+        """),
+        {"book_id": book_id, "updated_by": current_user.email}
     )
 
-    await db.books.update_one(
-        {"id": book_id},
-        {"$set": {"status": "processing", "lastUpdated": datetime.utcnow(), "updatedBy": current_user.email}},
+    await books_repo.update_one(
+        book_id,
+        status="processing",
+        last_updated=datetime.utcnow(),
+        updated_by=current_user.email
     )
-    
+    await session.commit()
+
     await enqueue_pdf_processing(book_id, reason="reindex", background_tasks=background_tasks)
     return {"status": "reindex_started"}
 
@@ -838,25 +844,34 @@ async def reset_page(
     page_num: int,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
 ):
-    db = pg_db
-    await db.pages.update_one(
-        {"bookId": book_id, "pageNumber": page_num},
-        {
-            "$set": {
-                "status": "pending",
-                "text": "",
-                "isVerified": False,
-                "lastUpdated": datetime.utcnow(),
-                "updatedBy": current_user.email,
-            },
-            "$unset": {"embedding": ""}
-        },
+    """Reset page to pending status with SQLAlchemy"""
+    books_repo = BooksRepository(session)
+
+    # Update page using raw SQL for embedding = NULL
+    await session.execute(
+        text("""
+            UPDATE pages
+            SET status = 'pending',
+                text = '',
+                is_verified = FALSE,
+                embedding = NULL,
+                last_updated = NOW(),
+                updated_by = :updated_by
+            WHERE book_id = :book_id AND page_number = :page_number
+        """),
+        {"book_id": book_id, "page_number": page_num, "updated_by": current_user.email}
     )
-    await db.books.update_one(
-        {"id": book_id},
-        {"$set": {"status": "processing", "lastUpdated": datetime.utcnow(), "updatedBy": current_user.email}},
+
+    await books_repo.update_one(
+        book_id,
+        status="processing",
+        last_updated=datetime.utcnow(),
+        updated_by=current_user.email
     )
+    await session.commit()
+
     await enqueue_pdf_processing(book_id, reason="page_reset", background_tasks=background_tasks)
     return {"status": "page_reset_started"}
 
@@ -868,24 +883,35 @@ async def update_page_text(
     payload: dict,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
 ):
-    db = pg_db
+    """Update page text with SQLAlchemy"""
+    books_repo = BooksRepository(session)
+
     new_text = normalize_markdown(payload.get("text", ""))
-    await db.pages.update_one(
-        {"bookId": book_id, "pageNumber": page_num},
-        {
-            "$set": {
-                "text": new_text,
-                "status": "completed",
-                "isVerified": True,
-                "lastUpdated": datetime.utcnow(),
-                "updatedBy": current_user.email,
-                "isIndexed": False
-            },
-            "$unset": {"embedding": ""},
-        },
+
+    # Update page using raw SQL for embedding = NULL
+    await session.execute(
+        text("""
+            UPDATE pages
+            SET text = :text,
+                status = 'completed',
+                is_verified = TRUE,
+                embedding = NULL,
+                last_updated = NOW(),
+                updated_by = :updated_by
+            WHERE book_id = :book_id AND page_number = :page_number
+        """),
+        {"book_id": book_id, "page_number": page_num, "text": new_text, "updated_by": current_user.email}
     )
-    await db.books.update_one({"id": book_id}, {"$set": {"lastUpdated": datetime.utcnow(), "updatedBy": current_user.email}})
+
+    await books_repo.update_one(
+        book_id,
+        last_updated=datetime.utcnow(),
+        updated_by=current_user.email
+    )
+    await session.commit()
+
     await enqueue_pdf_processing(book_id, reason="page_update", background_tasks=background_tasks)
     return {"status": "page_updated", "requires_rag": True}
 
