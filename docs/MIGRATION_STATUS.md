@@ -2,15 +2,19 @@
 
 **Last Updated:** 2026-02-14
 **Branch:** kitabim-db-migration
-**Overall Progress:** 40% Complete (Phases 1-2 Done)
+**Overall Progress:** 55% Complete (Phases 1-2 Done, Phase 3 In Progress)
 
 ---
 
 ## Quick Summary
 
-✅ **Foundation Complete:** SQLAlchemy models, repositories, and session management are implemented and committed.
+✅ **Foundation Complete:** SQLAlchemy models, repositories, and session management are implemented.
 
-🎯 **Next Steps:** Migrate API endpoints to use new repository layer (starting with books endpoints).
+✅ **Model Types Fixed:** Changed to String IDs to match existing MD5-based book IDs.
+
+🔄 **Endpoint Migration In Progress:** 6 of 20+ book endpoints migrated to SQLAlchemy.
+
+🎯 **Next Steps:** Complete remaining book endpoints, then migrate users/auth/chat endpoints.
 
 ---
 
@@ -20,7 +24,7 @@
 |-------|--------|----------|----------------|
 | **Phase 1: Preparation** | ✅ Complete | 3 hours | 2026-02-14 |
 | **Phase 2: Core Implementation** | ✅ Complete | 4 hours | 2026-02-14 |
-| **Phase 3: Endpoint Migration** | ⏳ Pending | Est. 8 hours | - |
+| **Phase 3: Endpoint Migration** | 🔄 In Progress | Est. 8 hours | - |
 | **Phase 4: Service Layer** | ⏳ Pending | Est. 6 hours | - |
 | **Phase 5: Cleanup** | ⏳ Pending | Est. 2 hours | - |
 
@@ -142,24 +146,46 @@ All repositories implement base CRUD + domain-specific operations:
 
 ---
 
-## ⏳ Phase 3: Endpoint Migration (PENDING)
+## 🔄 Phase 3: Endpoint Migration (IN PROGRESS)
 
-**Status:** Not started
+**Status:** 30% Complete (6/20+ endpoints migrated)
 **Estimated Duration:** 8 hours
-**Next Task:** Migrate books endpoints
+**Next Task:** Migrate remaining books endpoints
 
-### Planned Migration Order
+### Model Type Fixes (Completed)
 
-1. **Books Endpoints** (`app/api/endpoints/books.py`) - 12 endpoints
-   - [ ] GET `/api/books` - List books
-   - [ ] GET `/api/books/{id}` - Get single book
-   - [ ] POST `/api/books/upload` - Upload PDF
-   - [ ] PATCH `/api/books/{id}` - Update book
-   - [ ] DELETE `/api/books/{id}` - Delete book
-   - [ ] POST `/api/books/{id}/ocr/start` - Start OCR
-   - [ ] GET `/api/books/{id}/pages` - Get pages
-   - [ ] PATCH `/api/books/{id}/pages/{page_num}` - Update page
-   - [ ] All other book endpoints
+**Commit:** `2a70958` - "Migrate first batch of book endpoints to SQLAlchemy"
+
+- ✅ Changed `Book.id` from `UUID` to `String(64)` - matches MD5-based IDs
+- ✅ Changed `Page.book_id` and `Chunk.book_id` from `UUID` to `String(64)`
+- ✅ Changed `created_by` and `updated_by` from `UUID` to `String(255)` - stores emails
+- ✅ Updated all repository type hints to use `str` instead of `UUID`
+
+### Books Endpoints Migration Status
+
+1. **Books Endpoints** (`app/api/endpoints/books.py`) - 6/20+ endpoints
+   - [ ] GET `/api/books` - List books (COMPLEX - pagination, filtering)
+   - [x] GET `/api/books/{id}` - Get single book ✅
+   - [x] GET `/api/books/hash/{content_hash}` - Get by hash ✅
+   - [x] GET `/api/books/{id}/content` - Get full content ✅
+   - [x] GET `/api/books/{id}/pages` - Get paginated pages ✅
+   - [x] POST `/api/books/upload` - Upload PDF ✅
+   - [x] DELETE `/api/books/{id}` - Delete book ✅
+   - [ ] GET `/api/books/random-proverb` - Random proverb
+   - [ ] GET `/api/books/top-categories` - Top categories
+   - [ ] GET `/api/books/suggest` - Autocomplete suggestions
+   - [ ] POST `/api/books/{id}/start-ocr` - Start OCR
+   - [ ] POST `/api/books/{id}/retry-ocr` - Retry failed pages
+   - [ ] POST `/api/books/{id}/reprocess` - Reprocess book
+   - [ ] POST `/api/books/{id}/reindex` - Reindex embeddings
+   - [ ] POST `/api/books/{id}/pages/{page_num}/reset` - Reset page
+   - [ ] POST `/api/books/{id}/pages/{page_num}/update` - Update page text
+   - [ ] POST `/api/books/` - Create/upsert book
+   - [ ] PUT `/api/books/{id}` - Update book details
+   - [ ] POST `/api/books/upload-cover` - Upload cover image
+   - [ ] POST `/api/books/{id}/spell-check` - Check spelling
+   - [ ] POST `/api/books/{id}/pages/{page_num}/spell-check` - Check page spelling
+   - [ ] POST `/api/books/{id}/pages/{page_num}/apply-corrections` - Apply corrections
 
 2. **Users Endpoints** (`app/api/endpoints/users.py`) - 4 endpoints
    - [ ] GET `/api/users` - List users
@@ -313,6 +339,14 @@ async def get_book(
    - Added automatic camelCase conversion via alias_generator
    - Initialized SQLAlchemy in app lifespan
    - Created connection tests
+
+3. **c23c8a5** - "Add migration status documentation"
+   - Created docs/MIGRATION_STATUS.md tracking migration progress
+
+4. **2a70958** - "Migrate first batch of book endpoints to SQLAlchemy"
+   - Fixed model types (String IDs instead of UUIDs, audit fields)
+   - Migrated 6 book endpoints to use SQLAlchemy repositories
+   - All endpoints use automatic camelCase conversion via Pydantic
 
 ---
 
