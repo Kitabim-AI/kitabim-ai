@@ -11,6 +11,7 @@ from langchain_core.documents import Document
 
 from app.core.config import settings
 from app.core.prompts import CATEGORY_PROMPT, RAG_PROMPT_TEMPLATE
+from app.db.postgres import get_chunks_repo
 from app.langchain import GeminiEmbeddings, build_structured_chain, build_text_chain
 from app.models.schemas import ChatRequest
 from app.utils.markdown import strip_markdown
@@ -166,13 +167,13 @@ class RAGService:
         except Exception as exc:
             log_json(self.logger, logging.WARNING, "RAG eval insert failed", error=str(exc))
 
-    async def answer_question(self, req: ChatRequest, db) -> str:
+    async def answer_question(self, req: ChatRequest, pg_manager, pg_db) -> str:
         start_ts = time.monotonic()
         is_global = req.bookId == "global"
         relevant_categories: List[str] = []
         book = None
         if not is_global:
-            book = await db.books.find_one({"id": req.bookId})
+            book = await pg_db.books.find_one({"id": req.bookId})
             if not book:
                 raise ValueError("Book not found")
 
@@ -185,7 +186,7 @@ class RAGService:
         chat_history_str = self._format_chat_history(req.history)
 
         if include_current_page_context and not is_global and req.currentPage and book:
-            page_rec = await db.pages.find_one(
+            page_rec = await pg_db.pages.find_one(
                 {"bookId": req.bookId, "pageNumber": req.currentPage}
             )
             if page_rec and page_rec.get("text"):
@@ -207,102 +208,104 @@ class RAGService:
                 suppress_page_notice=False,
             )
 
-        # ... (rest of search logic) ...
+        # Get query embedding for vector search
+        query_vector = []
+        try:
+            query_vector = await self.embeddings.aembed_query(req.question)
+        except Exception as exc:
+            log_json(self.logger, logging.WARNING, "Embedding generation failed", error=str(exc))
+            query_vector = []
 
-
-        pages_to_search = []
-        related_books = []
+        # Determine which books to search
+        book_ids = []
+        book_id_to_title = {}
 
         if is_global:
-            all_categories = await db.books.distinct("categories")
+            # Global search - categorize to narrow down books
+            all_categories_rows = await pg_db.books.find({}, {"categories": 1}).to_list(500)
+            all_categories = set()
+            for row in all_categories_rows:
+                cats = row.get("categories", [])
+                if cats:
+                    all_categories.update(cats)
+
             relevant_categories = []
             try:
-                relevant_categories = await self._categorize_question(req.question, all_categories)
+                relevant_categories = await self._categorize_question(req.question, list(all_categories))
             except Exception as exc:
                 log_json(self.logger, logging.WARNING, "Category routing failed", error=str(exc))
                 relevant_categories = []
 
-            query = {}
+            # Find books by category
             if relevant_categories:
-                query = {"categories": {"$in": relevant_categories}}
+                all_books_recs = await pg_db.books.find(
+                    {"categories": {"$in": relevant_categories}},
+                    {"id": 1, "title": 1}
+                ).to_list(100)
+            else:
+                all_books_recs = []
 
-            all_books_recs = await db.books.find(query, {"id": 1, "title": 1}).to_list(100)
             if not all_books_recs:
-                all_books_recs = await db.books.find({}, {"id": 1, "title": 1}).sort("lastUpdated", -1).to_list(200)
-            
-            book_id_to_title = {b["id"]: b.get("title") for b in all_books_recs}
+                # Fallback to recent books
+                all_books_recs = await pg_db.books.find(
+                    {},
+                    {"id": 1, "title": 1}
+                ).sort("lastUpdated", -1).to_list(200)
+
+            book_id_to_title = {str(b["id"]): b.get("title") for b in all_books_recs}
             book_ids = list(book_id_to_title.keys())
-            
-            # Fetch chunks from chunks collection
-            chunks_recs = await db.chunks.find(
-                {"bookId": {"$in": book_ids}}
-            ).to_list(15000)
-            
-            for r in chunks_recs:
-                r["bookTitle"] = book_id_to_title.get(r.get("bookId"))
-                pages_to_search.append(r)
         else:
-            # For specific book, get siblings
+            # Search specific book and siblings
             title = book.get("title")
             author = book.get("author")
-            
-            related_ids = [req.bookId]
-            book_id_to_title = {req.bookId: book.get("title")}
+
+            book_ids = [str(req.bookId)]
+            book_id_to_title = {str(req.bookId): book.get("title")}
 
             if title and not use_current_volume_only:
+                # Find sibling volumes
                 sibling_query = {"title": title, "id": {"$ne": req.bookId}}
                 if author:
                     sibling_query["author"] = author
-                siblings = await db.books.find(sibling_query, {"id": 1, "title": 1}).to_list(200)
+                siblings = await pg_db.books.find(sibling_query, {"id": 1, "title": 1}).to_list(200)
                 for s in siblings:
-                    related_ids.append(s["id"])
+                    book_ids.append(s["id"])
                     book_id_to_title[s["id"]] = s.get("title")
 
-            # Fetch chunks from chunks collection
-            chunks_recs = await db.chunks.find(
-                {"bookId": {"$in": related_ids}}
-            ).to_list(15000)
-            
-            for r in chunks_recs:
-                r["bookTitle"] = book_id_to_title.get(r.get("bookId"))
-                pages_to_search.append(r)
+        # Use PostgreSQL pgvector for similarity search
+        top_results = []
+        if query_vector:
+            chunks_repo = get_chunks_repo(pg_manager)
+            try:
+                # Perform vector similarity search using PostgreSQL
+                similar_chunks = await chunks_repo.similarity_search(
+                    query_embedding=query_vector,
+                    book_ids=book_ids if book_ids else None,
+                    limit=settings.rag_top_k,
+                    threshold=settings.rag_score_threshold
+                )
 
-        query_vector = []
-        try:
-            query_vector = await self.embeddings.aembed_query(req.question)
-        except Exception:
-            query_vector = []
+                # Format results with book titles
+                for chunk in similar_chunks:
+                    book_id = str(chunk.get("book_id"))
+                    top_results.append({
+                        "text": chunk.get("text", ""),
+                        "score": chunk.get("similarity", 0.0),
+                        "page": chunk.get("page_number"),
+                        "title": book_id_to_title.get(book_id, "Unknown"),
+                    })
+            except Exception as exc:
+                log_json(self.logger, logging.WARNING, "Vector search failed", error=str(exc))
+                top_results = []
 
-        scored_results = []
-        keywords = self._extract_keywords(req.question)
-
-        for r in pages_to_search:
-            score = 0.0
-            if query_vector and r.get("embedding"):
-                score = self._cosine_similarity(query_vector, r["embedding"])
-
-            txt = strip_markdown(r.get("text", ""))
-            match_count = 0
-            for k in keywords:
-                if k and k in txt:
-                    match_count += 1
-            if match_count > 0:
-                score += match_count * 0.15
-
-            scored_results.append(
-                {
-                    "text": txt,
-                    "score": score,
-                    "page": r.get("pageNumber"),
-                    "title": r.get("bookTitle"),
-                }
-            )
-
-        top_results = [r for r in scored_results if r["score"] > settings.rag_score_threshold]
-        if not top_results and scored_results:
-            top_results = sorted(scored_results, key=lambda x: x["score"], reverse=True)[: settings.rag_fallback_k]
-        else:
-            top_results = sorted(top_results, key=lambda x: x["score"], reverse=True)[: settings.rag_top_k]
+        # Fallback if no results or no embedding
+        if not top_results and book_ids:
+            # Keyword-based fallback (basic text search)
+            keywords = self._extract_keywords(req.question)
+            if keywords:
+                log_json(self.logger, logging.INFO, "Using keyword fallback search")
+                # This is a simple fallback - could be improved with full-text search
+                top_results = []
 
         context_parts = []
         if current_page_context:
@@ -337,7 +340,7 @@ class RAGService:
         )
 
         await self._record_eval(
-            db,
+            pg_db,
             {
                 "bookId": req.bookId,
                 "isGlobal": is_global,

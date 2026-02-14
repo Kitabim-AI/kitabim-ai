@@ -1,0 +1,45 @@
+# Worker Deployment for background jobs
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: default
+  labels:
+    app: kitabim
+    component: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kitabim
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: kitabim
+        component: worker
+    spec:
+      containers:
+      - name: worker
+        image: kitabim-worker:local
+        imagePullPolicy: Never  # Use locally built image
+        envFrom:
+        - configMapRef:
+            name: kitabim-config
+        - secretRef:
+            name: kitabim-secrets
+        volumeMounts:
+        - name: data
+          mountPath: /app/data
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+      volumes:
+      - name: data
+        hostPath:
+          path: /Users/Omarjan/Projects/kitabim-ai/data
+          type: DirectoryOrCreate

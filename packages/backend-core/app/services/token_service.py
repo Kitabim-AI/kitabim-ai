@@ -7,7 +7,7 @@ import hashlib
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from app.db.mongodb import db_manager
+from app.db.postgres_helpers import pg_db
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ async def store_refresh_token(
         token: The raw refresh token (will be hashed).
         device_info: Optional device/browser info.
     """
-    db = db_manager.db
+    db = pg_db
     if db is None:
         logger.error("Database not initialized")
         return
@@ -74,7 +74,7 @@ async def validate_refresh_token(jti: str, token: str) -> Optional[str]:
     Returns:
         User ID if token is valid, None otherwise.
     """
-    db = db_manager.db
+    db = pg_db
     if db is None:
         return None
     
@@ -108,7 +108,7 @@ async def revoke_refresh_token(jti: str) -> bool:
     Returns:
         True if token was revoked, False if not found.
     """
-    db = db_manager.db
+    db = pg_db
     if db is None:
         return False
     
@@ -134,7 +134,7 @@ async def revoke_all_user_tokens(user_id: str) -> int:
     Returns:
         Number of tokens revoked.
     """
-    db = db_manager.db
+    db = pg_db
     if db is None:
         return 0
     
@@ -159,7 +159,7 @@ async def cleanup_expired_tokens() -> int:
     Returns:
         Number of tokens deleted.
     """
-    db = db_manager.db
+    db = pg_db
     if db is None:
         return 0
     

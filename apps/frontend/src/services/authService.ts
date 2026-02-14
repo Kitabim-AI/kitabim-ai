@@ -148,11 +148,15 @@ export const AuthService = {
       // Listen for message from popup
       const handleMessage = async (event: MessageEvent) => {
         // Allow messages from same origin OR backend origin
-        const allowedOrigins = [window.location.origin, 'http://localhost:8000'];
+        const allowedOrigins = [
+          window.location.origin,
+          'http://localhost:30080',
+          'http://localhost:30800',
+          'http://localhost:8000'
+        ];
         if (!allowedOrigins.includes(event.origin)) return;
 
         if (event.data?.type === 'OAUTH_SUCCESS') {
-          clearInterval(checkClosed);
           window.removeEventListener('message', handleMessage);
 
           const { accessToken } = event.data;
@@ -162,7 +166,6 @@ export const AuthService = {
           const user = await this.getCurrentUser();
           resolve(user);
         } else if (event.data?.type === 'OAUTH_ERROR') {
-          clearInterval(checkClosed);
           window.removeEventListener('message', handleMessage);
           reject(new Error(event.data.error));
         }
@@ -170,20 +173,9 @@ export const AuthService = {
 
       window.addEventListener('message', handleMessage);
 
-      // Check if popup was closed without completing login
-      const checkClosed = setInterval(() => {
-        try {
-          // Browser might throw or warn on this check due to COOP
-          if (popup && popup.closed) {
-            clearInterval(checkClosed);
-            window.removeEventListener('message', handleMessage);
-            resolve(null); // User closed popup
-          }
-        } catch (error) {
-          // Ignore COOP/Cross-origin errors, the message listener handles the success case
-          console.debug('Popup closed check suppressed by COOP');
-        }
-      }, 500);
+      // No setInterval check for popup.closed because COOP blocks it and spams the console.
+      // The message listener handles the success case, and if the user closes the popup,
+      // they can simply click the button again.
     });
   },
 

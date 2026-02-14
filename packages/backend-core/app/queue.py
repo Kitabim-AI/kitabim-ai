@@ -6,7 +6,8 @@ from arq import create_pool
 from arq.connections import RedisSettings
 
 from app.core.config import settings
-from app.db.mongodb import db_manager
+from app.db.postgres import db_manager
+from app.db.postgres_helpers import pg_db
 from app.jobs import create_or_reset_job, update_job_status
 from app.services.pdf_service import process_pdf_task
 from app.langchain import configure_langchain
@@ -30,7 +31,7 @@ async def enqueue_pdf_processing(
     reason: str = "requested",
     background_tasks=None,
 ) -> dict:
-    db = db_manager.db
+    db = pg_db
     job_key = f"process_pdf:{book_id}"
     job = await create_or_reset_job(db, job_key, "process_pdf", book_id, {"reason": reason})
 
@@ -56,7 +57,19 @@ async def process_pdf_job(ctx, book_id: str, job_key: Optional[str] = None):
         job_try = ctx.get("job_try", 1)
         if job_key:
             if job_try < settings.queue_max_retries:
-                await update_job_status(db_manager.db, job_key, "retrying", str(exc))
+                await update_job_status(pg_db, job_key, "retrying", str(exc))
             else:
-                await update_job_status(db_manager.db, job_key, "failed", str(exc))
+                await update_job_status(pg_db, job_key, "failed", str(exc))
         raise
+
+
+# ARQ Worker Settings
+class WorkerSettings:
+    """ARQ worker configuration"""
+    functions = [process_pdf_job]
+    redis_settings = _redis_settings()
+    on_startup = worker_startup
+    on_shutdown = worker_shutdown
+    max_jobs = settings.queue_max_jobs
+    job_timeout = settings.queue_job_timeout
+    max_tries = settings.queue_max_retries

@@ -5,10 +5,8 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 import fitz
-from pymongo import ReturnDocument
-
 from app.core.config import settings
-from app.db.mongodb import db_manager
+from app.db.postgres_helpers import pg_db
 from app.jobs import increment_attempts, update_job_status
 from app.langchain.models import GeminiEmbeddings
 from app.services.ocr_service import ocr_page
@@ -32,7 +30,9 @@ def _resolve_cover_path(book_id: str) -> Path:
 async def _acquire_lock(db, book_id: str, job_key: str | None) -> bool:
     now = datetime.utcnow()
     expires = now + timedelta(seconds=settings.job_lock_ttl_seconds)
-    result = await db.books.find_one_and_update(
+
+    # PostgreSQL: update then check (simpler than find_one_and_update)
+    result = await db.books.update_one(
         {
             "id": book_id,
             "$or": [
@@ -46,9 +46,12 @@ async def _acquire_lock(db, book_id: str, job_key: str | None) -> bool:
                 "processingLockExpiresAt": expires,
             }
         },
-        return_document=ReturnDocument.AFTER,
     )
-    return result is not None and result.get("processingLock") in {job_key, "local"}
+
+    if result.modified_count > 0:
+        book = await db.books.find_one({"id": book_id})
+        return book is not None and book.get("processingLock") in {job_key, "local"}
+    return False
 
 
 async def _release_lock(db, book_id: str, job_key: str | None) -> None:
@@ -68,7 +71,7 @@ async def process_pdf_task(
         return
 
     RUNNING_TASKS.add(book_id)
-    db = db_manager.db
+    db = pg_db
 
     try:
         if job_key:

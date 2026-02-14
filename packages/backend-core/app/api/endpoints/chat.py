@@ -1,7 +1,8 @@
 import logging
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.db.mongodb import db_manager
+from app.db.postgres import db_manager, get_chunks_repo
+from app.db.postgres_helpers import pg_db
 from app.models.schemas import ChatRequest, ChatResponse
 from app.models.user import User
 from app.services.rag_service import rag_service
@@ -18,13 +19,14 @@ async def chat_with_book_api(
     req: ChatRequest,
     current_user: User = Depends(require_reader),
 ):
-    db = db_manager.db
     try:
-        answer = await rag_service.answer_question(req, db)
+        # Use PostgreSQL for RAG - pass the db_manager for vector search
+        answer = await rag_service.answer_question(req, db_manager, pg_db)
         return {"answer": answer}
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
         log_json(logger, logging.ERROR, "Chat request failed", book_id=req.bookId, error=str(exc))
-        await record_book_error(db, req.bookId, "chat", str(exc))
+        # Record error using PostgreSQL
+        await record_book_error(pg_db, req.bookId, "chat", str(exc))
         raise HTTPException(status_code=500, detail=f"AI Assistant Error: {exc}")

@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.endpoints import ai, auth, books, chat, users
 from app.core.config import settings
-from app.db.mongodb import db_manager
+from app.db.postgres import db_manager, get_books_repo, get_pages_repo
 from app.queue import enqueue_pdf_processing
 from app.langchain import configure_langchain
 from app.utils.observability import configure_logging, log_json, request_id_var
@@ -32,32 +32,34 @@ async def lifespan(app: FastAPI):
     
     await db_manager.connect_to_storage()
 
-    db = db_manager.db
-    if db is not None:
+    if db_manager.pool is not None:
         try:
             logger = logging.getLogger("app.startup")
             log_json(logger, logging.INFO, "Checking for books needing resume or retrofitting")
-            all_books = await db.books.find().to_list(2000)
-            for book in all_books:
-                if "id" not in book:
-                    book_id = str(book.get("_id"))
-                    await db.books.update_one({"_id": book.get("_id")}, {"$set": {"id": book_id}})
-                    book["id"] = book_id
 
+            books_repo = get_books_repo(db_manager)
+            pages_repo = get_pages_repo(db_manager)
+
+            # Get all books
+            all_books = await books_repo.find_many(limit=2000, offset=0)
+
+            for book in all_books:
                 needs_resume = book.get("status") == "processing"
                 cover_file = settings.covers_dir / f"{book['id']}.jpg"
                 needs_cover = (
                     book.get("status") == "ready"
-                    and (not book.get("coverUrl") or not cover_file.exists())
+                    and (not book.get("cover_url") or not cover_file.exists())
                 )
+
                 # Check pages needing RAG (embeddings)
                 has_missing_embeddings = False
                 if book.get("status") == "ready":
-                    missing_emb_count = await db.pages.count_documents({
-                        "bookId": book["id"],
-                        "status": "completed",
-                        "embedding": {"$exists": False}
-                    })
+                    missing_emb_count = await db_manager.fetchval("""
+                        SELECT COUNT(*) FROM pages
+                        WHERE book_id = $1
+                          AND status = 'completed'
+                          AND embedding IS NULL
+                    """, book["id"])
                     has_missing_embeddings = missing_emb_count > 0
 
                 needs_rag = (
@@ -66,7 +68,7 @@ async def lifespan(app: FastAPI):
                 )
                 needs_pages = (
                     book.get("status") != "pending"
-                    and book.get("totalPages", 0) == 0
+                    and book.get("total_pages", 0) == 0
                     and (settings.uploads_dir / f"{book['id']}.pdf").exists()
                 )
 
@@ -148,10 +150,10 @@ async def health():
 
 @app.get("/ready")
 async def ready():
-    if db_manager.client is None:
+    if db_manager.pool is None:
         raise HTTPException(status_code=503, detail="Database not initialized")
     try:
-        await db_manager.client.admin.command("ping")
+        await db_manager.fetchval("SELECT 1")
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Database not ready: {exc}")
     return {"status": "ready"}

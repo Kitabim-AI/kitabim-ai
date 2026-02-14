@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 security = HTTPBearer(auto_error=False)
 
 
-from app.db.mongodb import get_db
+from app.db.postgres_helpers import get_pg_db as get_db
 
 async def get_current_user_optional(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),

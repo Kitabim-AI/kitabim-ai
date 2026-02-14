@@ -14,9 +14,9 @@ PYTHONPATH=packages/backend-core python -m arq app.worker.WorkerSettings
 
 ## Dependencies
 - Redis (required)
-- MongoDB (required)
+- PostgreSQL (required)
 - Uses the shared `data/` directory for files
 
 ## Notes
 - Queue is required; there is no local fallback.
-- Local dev uses Docker Desktop Kubernetes (see `infra/k8s/docker-desktop`).
+- Local dev uses Kubernetes (see `k8s/local`).

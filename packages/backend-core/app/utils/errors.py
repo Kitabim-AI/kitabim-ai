@@ -21,10 +21,11 @@ async def record_book_error(
         "context": context or {},
     }
 
+    # Note: $push for errors array not yet supported in PostgreSQL adapter
+    # For now, just track the last error
     await db.books.update_one(
         {"id": book_id},
         {
-            "$push": {"errors": error_event},
             "$set": {"lastError": error_event, "lastUpdated": datetime.utcnow()},
         },
     )

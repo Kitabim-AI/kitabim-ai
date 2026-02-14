@@ -13,11 +13,10 @@ PYTHONPATH=packages/backend-core uvicorn app.main:app --reload --port 8000 --app
 ```
 
 ## Dependencies
-- MongoDB (required)
+- PostgreSQL (required, host or container)
 - Redis (required, queue/worker)
-- UyghurOCR service (optional, only if `OCR_PROVIDER=local`)
 
 ## Notes
 - Do not move secrets into the frontend; backend owns all AI keys.
 - Update `README.md` and `SYSTEM_DESIGN.md` when API behavior changes.
-- Local dev uses Docker Desktop Kubernetes (see `infra/k8s/docker-desktop`).
+- Local dev uses Kubernetes (see `k8s/local`).

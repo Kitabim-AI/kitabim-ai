@@ -19,7 +19,7 @@ from app.services.user_service import (
     update_user_role,
     update_user_status,
 )
-from app.db.mongodb import db_manager
+from app.db.postgres_helpers import pg_db
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ async def list_all_users(
     
     Admin only. Returns paginated list of users with optional role filtering.
     """
-    db = db_manager.db
+    db = pg_db
     
     # Build filter
     filter_dict = {}
@@ -85,7 +85,7 @@ async def get_user(
     
     Admin only.
     """
-    db = db_manager.db
+    db = pg_db
     user = await get_user_by_id(db, user_id)
     
     if not user:
@@ -105,7 +105,7 @@ async def change_user_role(
     
     Admin only. Cannot change own role to prevent lockout.
     """
-    db = db_manager.db
+    db = pg_db
     
     # Prevent admin from changing their own role
     if user_id == current_user.id:
@@ -141,7 +141,7 @@ async def change_user_status(
     
     Admin only. Cannot disable own account.
     """
-    db = db_manager.db
+    db = pg_db
     
     # Prevent admin from disabling themselves
     if user_id == current_user.id and not status_update.is_active:

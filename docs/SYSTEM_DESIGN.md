@@ -13,7 +13,6 @@ Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered readi
 **Non‑Goals (current)**
 - Multi-tenant auth and billing
 - Fully managed cloud deployments (infrastructure currently automated via Kubernetes)
-- In-cluster database (transitioned to external/managed MongoDB and Redis)
 
 ## 3) Architecture (High-Level)
 
@@ -22,7 +21,7 @@ Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered readi
   - FastAPI application built on shared backend core
   - Orchestrates upload, OCR, embeddings, and RAG chat
   - Exposes REST endpoints for books, chat, spell‑check, AI OCR
-  - Uses MongoDB for metadata + embeddings
+  - Uses PostgreSQL for metadata + embeddings (pgvector)
 
 - **Worker (`services/worker`)**
   - ARQ worker process for background OCR/embedding/RAG jobs
@@ -47,7 +46,7 @@ flowchart LR
   FE[Frontend<br/>React/Vite] -->|/api| BE[Backend API<br/>FastAPI]
   BE -->|jobs| RQ[(Redis/ARQ)]
   RQ --> WK[Worker<br/>ARQ]
-  BE --> DB[(External MongoDB)]
+  BE --> DB[(Local host PostgreSQL)]
   WK --> DB
   BE <-->|files| DATA[(data/ volume)]
   WK <-->|files| DATA
@@ -63,8 +62,8 @@ flowchart LR
 /packages
   /shared
   /backend-core
-/infra
-  /k8s/docker-desktop
+/k8s/local
+
 /data (runtime)
 ```
 
@@ -81,16 +80,19 @@ flowchart LR
     /utils
 ```
 
-## 5) Data Model (MongoDB)
-**Books** (primary collection)
-- `id`, `contentHash`, `title`, `author`, `volume`
-- `status`, `processingStep`, `uploadDate`, `lastUpdated`
-- `pages[]` per page: `text`, `status`, `embedding`, `error`, `isVerified`
-- `errors[]`, `lastError`
-- `processingLock`, `processingLockExpiresAt` (idempotent job lock)
+## 5) Data Model (PostgreSQL)
+**Books** (primary table)
+- `id`, `content_hash`, `title`, `author`, `volume`
+- `status`, `processing_step`, `upload_date`, `last_updated`
+- `errors`, `last_error`
 
-**Jobs** (queue tracking)
-- `jobKey`, `type`, `bookId`, `status`, `attempts`, `history[]`
+**Pages** (detailed book data)
+- `book_id`, `page_number`, `text`, `status`, `error`, `is_verified`
+
+**Chunks** (semantic units for RAG)
+- `book_id`, `page_number`, `text`, `embedding` (vector type)
+
+**Users** & **Jobs** tables.
 
 **Optional**
 - `rag_evaluations` (when `RAG_EVAL_ENABLED=true`)
@@ -104,8 +106,8 @@ flowchart LR
 4. Worker (ARQ):
     - OCR pages with Gemini prompt
     - Generates embeddings
-   - Builds full text + cover image
-   - Updates status and writes to MongoDB
+    - Builds full text + cover image
+    - Updates status and writes to PostgreSQL
 
 ### B) RAG Chat
 1. Frontend sends `/api/chat` request
@@ -142,9 +144,8 @@ flowchart LR
 - Optional RAG evaluation capture (latency, scores, context size)
 
 ## 10) Deployment (Local)
-- **Docker Desktop Kubernetes**: supported local dev environment; manifests in `/infra/k8s/docker-desktop`
-- **Note**: Docker Compose is not supported for local development; use Docker Desktop Kubernetes.
-- **Manual Run (optional)**: run Redis, backend, worker, frontend for debugging (requires access to managed/external MongoDB)
+- **Kubernetes**: supported local dev environment (Docker Desktop, minikube, or kind); manifests in `/k8s/local`
+- **Manual Run (optional)**: run Redis, backend, worker, frontend for debugging (expects PostgreSQL on host)
 
 ## 11) Security & Secrets
 - Gemini API key stored in backend only
@@ -157,9 +158,9 @@ flowchart LR
 - Pluggable storage abstraction (future S3/MinIO)
 
 ## 13) Risks & Future Improvements
-- Embeddings stored in MongoDB may become large at scale
+- Embeddings stored in PostgreSQL (pgvector) may become large at scale
 - OCR quality depends on Gemini model; costs scale with volume
-- Consider dedicated vector database integration for faster retrieval if metadata search gets slow
+- Vector search performance optimized with HNSW indexes in PostgreSQL
 - Add auth, user profiles, and multi‑tenant isolation
 
 ## 14) Open Questions

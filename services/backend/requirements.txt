@@ -13,3 +13,6 @@ langchain-core
 langchain-google-genai
 arq
 python-jose[cryptography]
+asyncpg==0.31.0
+pgvector==0.4.2
+tqdm==4.66.1

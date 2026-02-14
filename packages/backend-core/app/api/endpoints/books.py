@@ -8,11 +8,10 @@ import re
 from datetime import datetime, timedelta
 from typing import Optional, List
 
-from bson import ObjectId
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
-from pymongo import UpdateOne
 from app.core.config import settings
-from app.db.mongodb import db_manager
+from app.db.postgres import db_manager
+from app.db.postgres_helpers import pg_db, pg_find, pg_count, pg_update_many
 from app.models.schemas import Book, PaginatedBooks, ExtractionResult
 from app.models.user import User
 from app.queue import enqueue_pdf_processing
@@ -84,40 +83,17 @@ async def get_books(
     groupByWork: bool = False,
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
-    db = db_manager.db
+    db = pg_db
     skip = (page - 1) * pageSize
 
     # Base query - guests can only see public ready books
     query = {}
     if current_user is None:
         query = get_guest_filter()
-    # Cleanup stale processing books
-    # 1. Books with an expired lock
-    # 2. Books in 'processing' state without a lock field that haven't been updated in 2 hours
-    stale_threshold = datetime.utcnow() - timedelta(seconds=settings.queue_job_timeout)
-    await db.books.update_many(
-        {
-            "status": "processing",
-            "$or": [
-                {"processingLockExpiresAt": {"$lt": datetime.utcnow()}},
-                {
-                    "processingLockExpiresAt": {"$exists": False},
-                    "lastUpdated": {"$lt": stale_threshold}
-                }
-            ]
-        },
-        {
-            "$set": {
-                "status": "error",
-                "lastError": {
-                    "ts": datetime.utcnow(),
-                    "kind": "timeout",
-                    "message": "Processing timed out (stale state detected)"
-                }
-            },
-            "$unset": {"processingLock": "", "processingLockExpiresAt": ""}
-        }
-    )
+    # TODO: Re-enable stale processing cleanup after schema is complete
+    # Cleanup stale processing books - TEMPORARILY DISABLED
+    # stale_threshold = datetime.utcnow() - timedelta(seconds=settings.queue_job_timeout)
+    # await db.books.update_many(...)
 
     # Add category filter (exact match)
     if category:
@@ -166,30 +142,41 @@ async def get_books(
         return datetime.min
 
     if groupByWork and sortBy == "uploadDate":
-        pipeline = [
-            {"$match": query},
-            {"$sort": {"uploadDate": order, "_id": -1}},
-            {"$lookup": {
-                "from": "pages",
-                "localField": "id",
-                "foreignField": "bookId",
-                "as": "pageStats",
-                "pipeline": [
-                    {"$group": {
-                        "_id": "$status",
-                        "count": {"$sum": 1}
-                    }}
-                ]
-            }},
-            {"$project": {
-                "content": 0,
-                "pages": 0,
-                "previousResults": 0,
-                "embedding": 0
-            }}
-        ]
+        # PostgreSQL: Replace aggregation with direct queries
+        from app.db.postgres import db_manager as pg_manager
 
-        all_books = await db.books.aggregate(pipeline).to_list(None)
+        # Get all matching books sorted by upload_date
+        all_books = await db.books.find(query, projection).sort("uploadDate", order).to_list(None)
+
+        # Get page stats for all books in one query
+        if all_books:
+            book_ids = [b["id"] for b in all_books]
+
+            # SQL query to get page stats grouped by book_id and status
+            stats_query = """
+                SELECT book_id, status, COUNT(*) as count
+                FROM pages
+                WHERE book_id = ANY($1)
+                GROUP BY book_id, status
+            """
+            stats_rows = await pg_manager.fetch(stats_query, book_ids)
+
+            # Build stats lookup: {book_id: {status: count}}
+            stats_by_book = {}
+            for row in stats_rows:
+                book_id = row['book_id']
+                status = row['status']
+                count = row['count']
+                if book_id not in stats_by_book:
+                    stats_by_book[book_id] = {}
+                stats_by_book[book_id][status] = count
+
+            # Attach stats to books
+            for b in all_books:
+                book_stats = stats_by_book.get(b["id"], {})
+                b["pageStats"] = [{"_id": status, "count": cnt} for status, cnt in book_stats.items()]
+        else:
+            all_books = []
 
         work_groups = {}
         no_work_books = []
@@ -247,49 +234,45 @@ async def get_books(
             "pageSize": pageSize,
         }
 
-    pipeline = [
-        {"$match": query},
-        {"$sort": {sortBy: order, "_id": -1}},
-        {"$skip": skip},
-        {"$limit": pageSize},
-        {"$lookup": {
-            "from": "pages",
-            "localField": "id",
-            "foreignField": "bookId",
-            "as": "pageStats",
-            "pipeline": [
-                {"$group": {
-                    "_id": "$status",
-                    "count": {"$sum": 1}
-                }}
-            ]
-        }},
-        {"$project": {
-            "content": 0,
-            "pages": 0,
-            "previousResults": 0,
-            "embedding": 0
-        }}
-    ]
+    # PostgreSQL: Replace aggregation with direct queries
+    from app.db.postgres import db_manager as pg_manager
 
-    cursor = db.books.aggregate(pipeline)
-    books_list = await cursor.to_list(pageSize)
+    # Get paginated books
+    books_list = await db.books.find(query, projection).sort(sortBy, order).skip(skip).limit(pageSize).to_list(pageSize)
 
-    formatted = []
-    for b in books_list:
-        if "_id" in b and "id" not in b:
-            b["id"] = str(b["_id"])
-        
-        # Extract stats from aggregation
-        stats = {s["_id"]: s["count"] for s in b.get("pageStats", [])}
-        b["completedCount"] = stats.get("completed", 0)
-        b["errorCount"] = stats.get("error", 0)
-        
-        # Ensure results is an empty list if not provided
-        if "pages" not in b:
-            b["pages"] = []
-            
-        formatted.append(b)
+    # Get page stats for these books
+    if books_list:
+        book_ids = [b["id"] for b in books_list]
+
+        # SQL query to get page stats grouped by book_id and status
+        stats_query = """
+            SELECT book_id, status, COUNT(*) as count
+            FROM pages
+            WHERE book_id = ANY($1)
+            GROUP BY book_id, status
+        """
+        stats_rows = await pg_manager.fetch(stats_query, book_ids)
+
+        # Build stats lookup: {book_id: {status: count}}
+        stats_by_book = {}
+        for row in stats_rows:
+            book_id = row['book_id']
+            status = row['status']
+            count = row['count']
+            if book_id not in stats_by_book:
+                stats_by_book[book_id] = {}
+            stats_by_book[book_id][status] = count
+
+        # Attach stats to books
+        for b in books_list:
+            book_stats = stats_by_book.get(b["id"], {})
+            stats = {status: cnt for status, cnt in book_stats.items()}
+            b["completedCount"] = stats.get("completed", 0)
+            b["errorCount"] = stats.get("error", 0)
+            if "pages" not in b:
+                b["pages"] = []
+
+    formatted = books_list
 
     return {
         "books": formatted,
@@ -305,7 +288,7 @@ async def get_random_proverb():
     """
     Fetch a random proverb from the proverbs collection containing specific keywords.
     """
-    db = db_manager.db
+    db = pg_db
     keywords = ["كىتاب", "بىلىم", "ئەقىل", "پاراسەت"]
     
     # Create regexes for keywords to handle multi-encoding
@@ -315,15 +298,18 @@ async def get_random_proverb():
         regex_queries.append({"text": {"$regex": pattern, "$options": "i"}})
     
     query = {"$or": regex_queries}
-    
-    # Use $sample to get a random record from matches
-    pipeline = [
-        {"$match": query},
-        {"$sample": {"size": 1}}
-    ]
-    
-    cursor = db.proverbs.aggregate(pipeline)
-    proverbs = await cursor.to_list(1)
+
+    # PostgreSQL: Get count then random offset
+    from app.db.postgres import db_manager as pg_manager
+    import random
+
+    total = await db.proverbs.count_documents(query)
+    if total > 0:
+        # Get a random record using OFFSET
+        random_offset = random.randint(0, total - 1)
+        proverbs = await db.proverbs.find(query).skip(random_offset).limit(1).to_list(1)
+    else:
+        proverbs = []
     
     if proverbs:
         p = proverbs[0]
@@ -349,34 +335,35 @@ async def get_top_categories(
     Get the most popular categories from books.
     Returns categories sorted by frequency.
     """
-    db = db_manager.db
+    db = pg_db
     
     # Build base query for guest access
     query = {}
     if current_user is None:
         query = get_guest_filter()
     
-    # Aggregate to unwind categories and count them
-    pipeline = [
-        {"$match": query},
-        {"$unwind": "$categories"},
-        {"$group": {
-            "_id": "$categories",
-            "count": {"$sum": 1}
-        }},
-        {"$sort": {"count": -1}},
-        {"$limit": limit},
-        {"$project": {
-            "category": "$_id",
-            "count": 1,
-            "_id": 0
-        }}
-    ]
-    
-    cursor = db.books.aggregate(pipeline)
-    categories = await cursor.to_list(limit)
-    
-    return {"categories": [c["category"] for c in categories]}
+    # PostgreSQL: Unnest categories array and count
+    from app.db.postgres import db_manager as pg_manager
+    from app.db.postgres_helpers import PGQueryBuilder
+
+    # Build WHERE clause for the query
+    where_clause, params, _ = PGQueryBuilder.build_filter_clause(query, "books")
+
+    # SQL to unnest categories and count
+    sql = f"""
+        SELECT category, COUNT(*) as count
+        FROM books,
+        UNNEST(categories) AS category
+        WHERE {where_clause}
+        GROUP BY category
+        ORDER BY count DESC
+        LIMIT {limit}
+    """
+
+    rows = await pg_manager.fetch(sql, *params)
+    categories = [row['category'] for row in rows]
+
+    return {"categories": categories}
 
 
 @router.get("/suggest")
@@ -390,7 +377,7 @@ async def suggest_books(
     if not q or len(q) < 2:
         return {"suggestions": []}
 
-    db = db_manager.db
+    db = pg_db
     query = {}
     if current_user is None:
         query = get_guest_filter()
@@ -451,7 +438,7 @@ async def get_book(
     initial_pages: int = 10000,
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
-    db = db_manager.db
+    db = pg_db
     book = await db.books.find_one({"id": book_id}, {"previousResults": 0})
     if book:
         # Check guest access
@@ -475,7 +462,7 @@ async def get_book_content(
     book_id: str,
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
-    db = db_manager.db
+    db = pg_db
     # Verify book exists and check access
     book = await db.books.find_one({"id": book_id})
     if not book:
@@ -506,7 +493,7 @@ async def get_book_pages(
     limit: int = 20,
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
-    db = db_manager.db
+    db = pg_db
     # Verify book exists and check access
     book = await db.books.find_one({"id": book_id})
     if not book:
@@ -526,7 +513,7 @@ async def get_book_by_hash(
     content_hash: str,
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
-    db = db_manager.db
+    db = pg_db
     book = await db.books.find_one({"contentHash": content_hash})
     if book:
         if not await check_book_access_for_guest(book, current_user):
@@ -541,7 +528,7 @@ async def upload_pdf(
     file: UploadFile = File(...),
     current_user: User = Depends(require_editor),
 ):
-    db = db_manager.db
+    db = pg_db
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
 
@@ -602,7 +589,7 @@ async def start_ocr(
     background_tasks: BackgroundTasks,
     current_user: User = Depends(require_editor),
 ):
-    db = db_manager.db
+    db = pg_db
     provider = "gemini"
 
     book = await db.books.find_one({"id": book_id})
@@ -647,7 +634,7 @@ async def retry_failed_ocr(
     payload: Optional[dict] = None,
     current_user: User = Depends(require_editor),
 ):
-    db = db_manager.db
+    db = pg_db
     book = await db.books.find_one({"id": book_id})
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
@@ -730,7 +717,7 @@ async def reprocess_book(
     background_tasks: BackgroundTasks,
     current_user: User = Depends(require_editor),
 ):
-    db = db_manager.db
+    db = pg_db
     book = await db.books.find_one({"id": book_id})
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
@@ -756,7 +743,7 @@ async def reindex_book(
     background_tasks: BackgroundTasks,
     current_user: User = Depends(require_editor),
 ):
-    db = db_manager.db
+    db = pg_db
     book = await db.books.find_one({"id": book_id})
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
@@ -790,7 +777,7 @@ async def reset_page(
     background_tasks: BackgroundTasks,
     current_user: User = Depends(require_editor),
 ):
-    db = db_manager.db
+    db = pg_db
     await db.pages.update_one(
         {"bookId": book_id, "pageNumber": page_num},
         {
@@ -820,7 +807,7 @@ async def update_page_text(
     background_tasks: BackgroundTasks,
     current_user: User = Depends(require_editor),
 ):
-    db = db_manager.db
+    db = pg_db
     new_text = normalize_markdown(payload.get("text", ""))
     await db.pages.update_one(
         {"bookId": book_id, "pageNumber": page_num},
@@ -847,7 +834,7 @@ async def create_book(
     background_tasks: BackgroundTasks,
     current_user: User = Depends(require_editor),
 ):
-    db = db_manager.db
+    db = pg_db
     book_dict = book.dict()
     book_id = book_dict.get("id")
     
@@ -858,7 +845,7 @@ async def create_book(
     
     # Sync results to pages collection if they exist
     if pages_input:
-        pages_ops = []
+        # PostgreSQL: Replace bulk_write with individual upserts
         for r in pages_input:
             page_text = normalize_markdown(r.get("text") or "")
             page_update = {
@@ -871,15 +858,11 @@ async def create_book(
                 "lastUpdated": datetime.utcnow(),
                 "updatedBy": current_user.email
             }
-            pages_ops.append(
-                UpdateOne(
-                    {"bookId": book_id, "pageNumber": r["pageNumber"]},
-                    {"$set": page_update},
-                    upsert=True
-                )
+            await db.pages.update_one(
+                {"bookId": book_id, "pageNumber": r["pageNumber"]},
+                {"$set": page_update},
+                upsert=True
             )
-        if pages_ops:
-            await db.pages.bulk_write(pages_ops)
 
     book_dict["updatedBy"] = current_user.email
     # Only set createdBy if it doesn't exist yet (for creation/upsert)
@@ -903,7 +886,7 @@ async def update_book_details(
     background_tasks: BackgroundTasks,
     current_user: User = Depends(require_editor),
 ):
-    db = db_manager.db
+    db = pg_db
     book_update.pop("uploadDate", None)
     book_update.pop("content", None)
     has_page_updates = False
@@ -924,23 +907,22 @@ async def update_book_details(
                     "lastUpdated": datetime.utcnow(),
                     "updatedBy": current_user.email
                 }
-                pages_ops.append(
-                    UpdateOne(
-                        {"bookId": book_id, "pageNumber": result["pageNumber"]},
-                        {"$set": page_update},
-                        upsert=True
-                    )
-                )
-        
-        if pages_ops:
-            await db.pages.bulk_write(pages_ops)
+                pages_ops.append({
+                    "filter": {"bookId": book_id, "pageNumber": result["pageNumber"]},
+                    "update": {"$set": page_update}
+                })
 
-    query = {"$or": [{"id": book_id}]}
-    if len(book_id) == 24:
-        try:
-            query["$or"].append({"_id": ObjectId(book_id)})
-        except Exception:
-            pass
+        # PostgreSQL: Replace bulk_write with individual upserts
+        if pages_ops:
+            for op in pages_ops:
+                await db.pages.update_one(
+                    op["filter"],
+                    op["update"],
+                    upsert=True
+                )
+
+    # PostgreSQL: No need for ObjectId fallback
+    query = {"id": book_id}
 
     book_update.pop("pages", None)
     book_update["lastUpdated"] = datetime.utcnow()
@@ -958,7 +940,7 @@ async def delete_book(
     book_id: str,
     current_user: User = Depends(require_admin),
 ):
-    db = db_manager.db
+    db = pg_db
     file_path = settings.uploads_dir / f"{book_id}.pdf"
     if file_path.exists():
         os.remove(file_path)
@@ -966,12 +948,8 @@ async def delete_book(
     # Also delete associated pages
     await db.pages.delete_many({"bookId": book_id})
 
-    query = {"$or": [{"id": book_id}]}
-    if len(book_id) == 24:
-        try:
-            query["$or"].append({"_id": ObjectId(book_id)})
-        except Exception:
-            pass
+    # PostgreSQL: No need for ObjectId fallback
+    query = {"id": book_id}
 
     result = await db.books.delete_one(query)
     if result.deleted_count:
@@ -987,12 +965,12 @@ async def upload_cover(
 ):
     from PIL import Image
 
-    db = db_manager.db
+    db = pg_db
     book = await db.books.find_one({"title": {"$regex": title, "$options": "i"}})
     if not book:
         raise HTTPException(status_code=404, detail=f"Book with title '{title}' not found")
 
-    book_id = book.get("id") or str(book.get("_id"))
+    book_id = book.get("id")
 
     allowed_types = ["image/png", "image/jpeg", "image/jpg", "image/webp"]
     if file.content_type not in allowed_types:
@@ -1027,7 +1005,7 @@ async def check_book_spelling(
     book_id: str,
     current_user: User = Depends(require_editor),
 ):
-    db = db_manager.db
+    db = pg_db
     try:
         results = await spell_check_service.check_book(book_id, db)
         return {
@@ -1056,7 +1034,7 @@ async def check_page_spelling(
     page_num: int,
     current_user: User = Depends(require_editor),
 ):
-    db = db_manager.db
+    db = pg_db
     page_result = await db.pages.find_one({"bookId": book_id, "pageNumber": page_num})
     if not page_result:
         raise HTTPException(status_code=404, detail=f"Page {page_num} not found")
@@ -1092,7 +1070,7 @@ async def apply_spelling_corrections(
     background_tasks: BackgroundTasks,
     current_user: User = Depends(require_editor),
 ):
-    db = db_manager.db
+    db = pg_db
     corrections = payload.get("corrections", [])
     if not corrections:
         raise HTTPException(status_code=400, detail="No corrections provided")

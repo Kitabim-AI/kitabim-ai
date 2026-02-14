@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request, Cookie
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app.db.mongodb import get_db
+from app.db.postgres_helpers import get_pg_db as get_db
 
 from app.auth.dependencies import get_current_user, get_current_user_optional
 from app.auth.jwt_handler import (
@@ -95,7 +95,7 @@ async def google_login(response: Response):
     
     # Set secure cookie with state (for validation on callback)
     response = RedirectResponse(url=auth_url, status_code=status.HTTP_302_FOUND)
-    response.headers["Cross-Origin-Opener-Policy"] = "unsafe-none"
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
     response.set_cookie(
         key=OAUTH_STATE_COOKIE,
         value=oauth_state.to_cookie_value(),
@@ -397,7 +397,7 @@ def _success_response(access_token: str, refresh_token: str) -> HTMLResponse:
     """
     
     response = HTMLResponse(content=html)
-    response.headers["Cross-Origin-Opener-Policy"] = "unsafe-none"
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
     
     # Set refresh token as httpOnly cookie
     response.set_cookie(
@@ -489,5 +489,5 @@ def _error_response(message: str) -> HTMLResponse:
     return HTMLResponse(
         content=html, 
         status_code=400,
-        headers={"Cross-Origin-Opener-Policy": "unsafe-none"}
+        headers={"Cross-Origin-Opener-Policy": "same-origin-allow-popups"}
     )

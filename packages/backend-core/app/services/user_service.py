@@ -7,7 +7,6 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from app.db.mongodb import db_manager
 from app.models.user import User, UserRole, UserCreate
 
 logger = logging.getLogger(__name__)
@@ -173,26 +172,34 @@ async def list_users(db, page: int = 1, page_size: int = 20, filter_dict: dict =
     
     total = await db.users.count_documents(query)
     cursor = db.users.find(query).skip(skip).limit(page_size).sort("created_at", -1)
-    
-    users = []
-    async for doc in cursor:
-        users.append(_doc_to_user(doc))
-    
+
+    docs = await cursor.to_list(page_size)
+    users = [_doc_to_user(doc) for doc in docs]
+
     return users, total
 
 
 def _doc_to_user(doc: dict) -> User:
     """Convert a MongoDB document to a User object."""
-    return User(
-        id=doc["id"],
-        email=doc["email"],
-        display_name=doc["display_name"],
-        avatar_url=doc.get("avatar_url"),
-        role=UserRole(doc["role"]),
-        provider=doc["provider"],
-        provider_id=doc["provider_id"],
-        created_at=doc["created_at"],
-        updated_at=doc["updated_at"],
-        last_login_at=doc.get("last_login_at"),
-        is_active=doc.get("is_active", True),
-    )
+    try:
+        # Handle both snake_case and camelCase for compatibility during migration
+        display_name = doc.get("display_name") or doc.get("displayName") or ""
+        provider_id = doc.get("provider_id") or doc.get("providerId") or ""
+        role_val = doc.get("role")
+        
+        return User(
+            id=str(doc["id"]),
+            email=doc["email"],
+            display_name=display_name,
+            avatar_url=doc.get("avatar_url") or doc.get("avatarUrl"),
+            role=UserRole(role_val) if role_val else UserRole.READER,
+            provider=doc.get("provider", "google"),
+            provider_id=provider_id,
+            created_at=doc.get("created_at") or doc.get("createdAt") or datetime.now(timezone.utc),
+            updated_at=doc.get("updated_at") or doc.get("updatedAt") or datetime.now(timezone.utc),
+            last_login_at=doc.get("last_login_at") or doc.get("lastLoginAt"),
+            is_active=doc.get("is_active", True),
+        )
+    except KeyError as e:
+        logger.error(f"Failed to convert doc to User: {e}. Keys present: {list(doc.keys())}")
+        raise

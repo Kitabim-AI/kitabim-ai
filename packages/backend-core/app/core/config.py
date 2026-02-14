@@ -27,6 +27,7 @@ class Settings:
     # Database
     mongodb_url: str = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
     database_name: str = os.getenv("MONGODB_DATABASE", "kitabim_ai_db")
+    database_url: str | None = os.getenv("DATABASE_URL")  # PostgreSQL connection string
 
     # Directories
     data_dir: Path = Path(os.getenv("DATA_DIR", str(REPO_ROOT / "data")))
