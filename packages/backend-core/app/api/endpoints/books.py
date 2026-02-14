@@ -1108,7 +1108,11 @@ async def upload_cover(
 async def check_book_spelling(
     book_id: str,
     current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
 ):
+    """Check spelling for all pages with SQLAlchemy"""
+    # Note: spell_check_service still uses pg_db internally
+    # TODO: Update spell_check_service to use SQLAlchemy
     db = pg_db
     try:
         results = await spell_check_service.check_book(book_id, db)
@@ -1137,13 +1141,16 @@ async def check_page_spelling(
     book_id: str,
     page_num: int,
     current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
 ):
-    db = pg_db
-    page_result = await db.pages.find_one({"bookId": book_id, "pageNumber": page_num})
-    if not page_result:
+    """Check spelling for a single page with SQLAlchemy"""
+    pages_repo = PagesRepository(session)
+
+    page = await pages_repo.find_one(book_id, page_num)
+    if not page:
         raise HTTPException(status_code=404, detail=f"Page {page_num} not found")
 
-    page_text = page_result.get("text", "")
+    page_text = page.text or ""
     if not page_text:
         return {
             "bookId": book_id,
@@ -1173,7 +1180,11 @@ async def apply_spelling_corrections(
     payload: dict,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
 ):
+    """Apply spelling corrections with SQLAlchemy"""
+    # Note: spell_check_service still uses pg_db internally
+    # TODO: Update spell_check_service to use SQLAlchemy
     db = pg_db
     corrections = payload.get("corrections", [])
     if not corrections:
