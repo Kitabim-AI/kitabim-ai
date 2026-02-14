@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from typing import List, Optional
-from uuid import UUID
 
 from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -85,7 +84,7 @@ class BooksRepository(BaseRepository[Book]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_with_page_stats(self, book_id: UUID) -> Optional[dict]:
+    async def get_with_page_stats(self, book_id: str) -> Optional[dict]:
         """
         Get book with aggregated page statistics.
 

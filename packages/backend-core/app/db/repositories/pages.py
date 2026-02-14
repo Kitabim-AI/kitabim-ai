@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from typing import List, Optional
-from uuid import UUID
 
 from sqlalchemy import select, delete, func
 from sqlalchemy.dialects.postgresql import insert
@@ -19,7 +18,7 @@ class PagesRepository(BaseRepository[Page]):
 
     async def find_by_book(
         self,
-        book_id: UUID,
+        book_id: str,
         skip: int = 0,
         limit: int = 10000
     ) -> List[Page]:
@@ -36,7 +35,7 @@ class PagesRepository(BaseRepository[Page]):
 
     async def find_one(
         self,
-        book_id: UUID,
+        book_id: str,
         page_number: int
     ) -> Optional[Page]:
         """Find a specific page by book ID and page number"""
@@ -76,7 +75,7 @@ class PagesRepository(BaseRepository[Page]):
 
     async def update_status(
         self,
-        book_id: UUID,
+        book_id: str,
         page_number: int,
         status: str,
         error: Optional[str] = None
@@ -103,7 +102,7 @@ class PagesRepository(BaseRepository[Page]):
 
     async def update_many_status(
         self,
-        book_id: UUID,
+        book_id: str,
         page_numbers: List[int],
         status: str
     ) -> int:
@@ -122,14 +121,14 @@ class PagesRepository(BaseRepository[Page]):
         await self.session.flush()
         return result.rowcount
 
-    async def delete_by_book(self, book_id: UUID) -> int:
+    async def delete_by_book(self, book_id: str) -> int:
         """Delete all pages for a book"""
         stmt = delete(Page).where(Page.book_id == book_id)
         result = await self.session.execute(stmt)
         await self.session.flush()
         return result.rowcount
 
-    async def count_by_book(self, book_id: UUID, status: Optional[str] = None) -> int:
+    async def count_by_book(self, book_id: str, status: Optional[str] = None) -> int:
         """Count pages for a book, optionally filtered by status"""
         stmt = select(func.count()).select_from(Page).where(Page.book_id == book_id)
 

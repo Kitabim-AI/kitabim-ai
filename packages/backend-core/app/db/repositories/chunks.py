@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from typing import List, Optional
-from uuid import UUID
 
 from sqlalchemy import select, delete, text
 from sqlalchemy.dialects.postgresql import insert
@@ -43,14 +42,14 @@ class ChunksRepository(BaseRepository[Chunk]):
         await self.session.execute(stmt)
         await self.session.flush()
 
-    async def delete_by_book(self, book_id: UUID) -> int:
+    async def delete_by_book(self, book_id: str) -> int:
         """Delete all chunks for a book"""
         stmt = delete(Chunk).where(Chunk.book_id == book_id)
         result = await self.session.execute(stmt)
         await self.session.flush()
         return result.rowcount
 
-    async def delete_by_page(self, book_id: UUID, page_number: int) -> int:
+    async def delete_by_page(self, book_id: str, page_number: int) -> int:
         """Delete chunks for a specific page"""
         stmt = delete(Chunk).where(
             Chunk.book_id == book_id,
@@ -60,7 +59,7 @@ class ChunksRepository(BaseRepository[Chunk]):
         await self.session.flush()
         return result.rowcount
 
-    async def find_by_book(self, book_id: UUID, limit: int = 10000) -> List[Chunk]:
+    async def find_by_book(self, book_id: str, limit: int = 10000) -> List[Chunk]:
         """Find all chunks for a book"""
         stmt = (
             select(Chunk)
@@ -74,7 +73,7 @@ class ChunksRepository(BaseRepository[Chunk]):
     async def similarity_search(
         self,
         query_embedding: List[float],
-        book_ids: Optional[List[UUID]] = None,
+        book_ids: Optional[List[str]] = None,
         limit: int = 12,
         threshold: float = 0.35
     ) -> List[dict]:

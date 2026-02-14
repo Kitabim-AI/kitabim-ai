@@ -23,12 +23,11 @@ class Book(Base):
     """Book model with full metadata and processing status"""
     __tablename__ = "books"
 
-    # Primary key
-    id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
+    # Primary key - using String to match existing MD5-based IDs
+    id: Mapped[str] = mapped_column(
+        String(64),
         primary_key=True,
-        default=uuid4,
-        server_default=text("uuid_generate_v4()")
+        nullable=False
     )
 
     # Required fields
@@ -93,8 +92,8 @@ class Book(Base):
         server_default=func.now(),
         nullable=False
     )
-    updated_by: Mapped[Optional[UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
-    created_by: Mapped[Optional[UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     # Relationships
     pages: Mapped[List["Page"]] = relationship(
@@ -126,8 +125,8 @@ class Page(Base):
     __tablename__ = "pages"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    book_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
+    book_id: Mapped[str] = mapped_column(
+        String(64),
         ForeignKey("books.id", ondelete="CASCADE"),
         index=True,
         nullable=False
@@ -157,7 +156,7 @@ class Page(Base):
         server_default=func.now(),
         nullable=False
     )
-    updated_by: Mapped[Optional[UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     # Relationships
     book: Mapped["Book"] = relationship("Book", back_populates="pages")
@@ -176,8 +175,8 @@ class Chunk(Base):
     __tablename__ = "chunks"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    book_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
+    book_id: Mapped[str] = mapped_column(
+        String(64),
         ForeignKey("books.id", ondelete="CASCADE"),
         index=True,
         nullable=False

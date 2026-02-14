@@ -9,9 +9,13 @@ from datetime import datetime, timedelta
 from typing import Optional, List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.db.postgres import db_manager
 from app.db.postgres_helpers import pg_db, pg_find, pg_count, pg_update_many
+from app.db.session import get_session
+from app.db.repositories.books import BooksRepository
+from app.db.repositories.pages import PagesRepository
 from app.models.schemas import Book, PaginatedBooks, ExtractionResult
 from app.models.user import User
 from app.queue import enqueue_pdf_processing
@@ -437,52 +441,75 @@ async def get_book(
     book_id: str,
     initial_pages: int = 10000,
     current_user: Optional[User] = Depends(get_current_user_optional),
+    session: AsyncSession = Depends(get_session),
 ):
-    db = pg_db
-    book = await db.books.find_one({"id": book_id}, {"previousResults": 0})
-    if book:
-        # Check guest access
-        if not await check_book_access_for_guest(book, current_user):
-            raise HTTPException(status_code=403, detail="Access denied")
-        
-        if "_id" in book and "id" not in book:
-            book["id"] = str(book["_id"])
-        
-        # Return only the initial batch of pages
-        cursor = db.pages.find({"bookId": book_id}, {"embedding": 0}).sort("pageNumber", 1).limit(initial_pages)
-        pages = await cursor.to_list(initial_pages)
-        book["pages"] = pages
-        
-        return book
-    raise HTTPException(status_code=404, detail="Book not found")
+    """Get a single book by ID with SQLAlchemy"""
+    books_repo = BooksRepository(session)
+    pages_repo = PagesRepository(session)
+
+    # Get book from SQLAlchemy
+    book_model = await books_repo.get(book_id)
+    if not book_model:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    # Convert to dict for access check (legacy function expects dict)
+    book_dict = {
+        "id": str(book_model.id),
+        "status": book_model.status,
+        "visibility": book_model.visibility,
+    }
+
+    # Check guest access
+    if not await check_book_access_for_guest(book_dict, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Get pages using repository
+    pages_list = await pages_repo.find_by_book(book_id, limit=initial_pages)
+
+    # Convert SQLAlchemy models to Pydantic (automatic camelCase conversion)
+    book_response = Book.model_validate(book_model)
+
+    # Add pages as ExtractionResult models
+    book_response.pages = [ExtractionResult.model_validate(p) for p in pages_list]
+
+    return book_response
 
 
 @router.get("/{book_id}/content")
 async def get_book_content(
     book_id: str,
     current_user: Optional[User] = Depends(get_current_user_optional),
+    session: AsyncSession = Depends(get_session),
 ):
-    db = pg_db
+    """Get full book content with SQLAlchemy"""
+    books_repo = BooksRepository(session)
+    pages_repo = PagesRepository(session)
+
     # Verify book exists and check access
-    book = await db.books.find_one({"id": book_id})
-    if not book:
+    book_model = await books_repo.get(book_id)
+    if not book_model:
         raise HTTPException(status_code=404, detail="Book not found")
-    
-    if not await check_book_access_for_guest(book, current_user):
+
+    # Convert to dict for access check
+    book_dict = {
+        "id": str(book_model.id),
+        "status": book_model.status,
+        "visibility": book_model.visibility,
+    }
+
+    if not await check_book_access_for_guest(book_dict, current_user):
         raise HTTPException(status_code=403, detail="Access denied")
-        
-    # Aggregate ALL pages from the pages collection
-    pages = await db.pages.find({"bookId": book_id}).sort("pageNumber", 1).to_list(10000)
+
+    # Get all pages using repository
+    pages = await pages_repo.find_by_book(book_id, limit=10000)
     logger.info(f"DEBUG: Found {len(pages)} pages for book {book_id}")
-    
+
     content_blocks = []
     for p in pages:
-        page_num = p.get("pageNumber")
-        text = p.get("text", "")
-        content_blocks.append(f"[[PAGE {page_num}]]\n{text}")
-        
+        content_blocks.append(f"[[PAGE {p.page_number}]]\n{p.text or ''}")
+
     full_text = "\n\n".join(content_blocks)
-    
+
     return {"content": full_text.strip()}
 
 
@@ -492,19 +519,32 @@ async def get_book_pages(
     skip: int = 0,
     limit: int = 20,
     current_user: Optional[User] = Depends(get_current_user_optional),
+    session: AsyncSession = Depends(get_session),
 ):
-    db = pg_db
+    """Get paginated book pages with SQLAlchemy"""
+    books_repo = BooksRepository(session)
+    pages_repo = PagesRepository(session)
+
     # Verify book exists and check access
-    book = await db.books.find_one({"id": book_id})
-    if not book:
+    book_model = await books_repo.get(book_id)
+    if not book_model:
         raise HTTPException(status_code=404, detail="Book not found")
-    
-    if not await check_book_access_for_guest(book, current_user):
+
+    # Convert to dict for access check
+    book_dict = {
+        "id": str(book_model.id),
+        "status": book_model.status,
+        "visibility": book_model.visibility,
+    }
+
+    if not await check_book_access_for_guest(book_dict, current_user):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    cursor = db.pages.find({"bookId": book_id}, {"embedding": 0}).sort("pageNumber", 1).skip(skip).limit(limit)
-    pages = await cursor.to_list(limit)
-    return pages
+    # Get pages with pagination
+    pages = await pages_repo.find_by_book(book_id, skip=skip, limit=limit)
+
+    # Convert to Pydantic with automatic camelCase
+    return [ExtractionResult.model_validate(p) for p in pages]
 
 
 
@@ -512,14 +552,29 @@ async def get_book_pages(
 async def get_book_by_hash(
     content_hash: str,
     current_user: Optional[User] = Depends(get_current_user_optional),
+    session: AsyncSession = Depends(get_session),
 ):
-    db = pg_db
-    book = await db.books.find_one({"contentHash": content_hash})
-    if book:
-        if not await check_book_access_for_guest(book, current_user):
-            raise HTTPException(status_code=403, detail="Access denied")
-        return book
-    raise HTTPException(status_code=404, detail="Book not found")
+    """Get book by content hash with SQLAlchemy"""
+    books_repo = BooksRepository(session)
+
+    # Use repository method to find by hash
+    book_model = await books_repo.find_by_hash(content_hash)
+    if not book_model:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    # Convert to dict for access check (legacy function expects dict)
+    book_dict = {
+        "id": str(book_model.id),
+        "status": book_model.status,
+        "visibility": book_model.visibility,
+    }
+
+    # Check guest access
+    if not await check_book_access_for_guest(book_dict, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Convert to Pydantic with automatic camelCase
+    return Book.model_validate(book_model)
 
 
 @router.post("/upload")
@@ -527,8 +582,11 @@ async def upload_pdf(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
 ):
-    db = pg_db
+    """Upload PDF with SQLAlchemy"""
+    books_repo = BooksRepository(session)
+
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
 
@@ -545,10 +603,12 @@ async def upload_pdf(
                 handle.write(chunk)
 
         content_hash = hasher.hexdigest()
-        existing = await db.books.find_one({"contentHash": content_hash})
+
+        # Check for existing book by hash
+        existing = await books_repo.find_by_hash(content_hash)
         if existing:
             temp_path.unlink(missing_ok=True)
-            return {"bookId": existing.get("id"), "status": "existing"}
+            return {"bookId": str(existing.id), "status": "existing"}
 
         book_id = hashlib.md5(f"{file.filename}{datetime.utcnow()}".encode()).hexdigest()[:12]
         file_path = settings.uploads_dir / f"{book_id}.pdf"
@@ -559,25 +619,27 @@ async def upload_pdf(
         raise
 
     now = datetime.utcnow()
-    new_book = {
-        "id": book_id,
-        "contentHash": content_hash,
-        "title": file.filename.replace(".pdf", ""),
-        "author": "",
-        "volume": None,
-        "totalPages": 0,
-        "status": "pending",
-        "uploadDate": now,
-        "lastUpdated": now,
-        "createdBy": current_user.email,
-        "updatedBy": current_user.email,
-        "categories": [],
-        "visibility": "private",
-        "processingStep": "ocr",
-        "ocrProvider": None,
-    }
 
-    await db.books.insert_one(new_book)
+    # Create book using repository
+    new_book = await books_repo.create(
+        id=book_id,
+        content_hash=content_hash,
+        title=file.filename.replace(".pdf", ""),
+        author="",
+        volume=None,
+        total_pages=0,
+        status="pending",
+        upload_date=now,
+        last_updated=now,
+        created_by=current_user.email,
+        updated_by=current_user.email,
+        categories=[],
+        visibility="private",
+        processing_step="ocr",
+        ocr_provider=None,
+    )
+
+    await session.commit()
 
     return {"bookId": book_id, "status": "uploaded"}
 
@@ -939,20 +1001,25 @@ async def update_book_details(
 async def delete_book(
     book_id: str,
     current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
 ):
-    db = pg_db
+    """Delete book with SQLAlchemy"""
+    books_repo = BooksRepository(session)
+    pages_repo = PagesRepository(session)
+
+    # Delete PDF file
     file_path = settings.uploads_dir / f"{book_id}.pdf"
     if file_path.exists():
         os.remove(file_path)
-    
-    # Also delete associated pages
-    await db.pages.delete_many({"bookId": book_id})
 
-    # PostgreSQL: No need for ObjectId fallback
-    query = {"id": book_id}
+    # Delete associated pages first
+    await pages_repo.delete_by_book(book_id)
 
-    result = await db.books.delete_one(query)
-    if result.deleted_count:
+    # Delete book
+    deleted = await books_repo.delete_one(book_id)
+    await session.commit()
+
+    if deleted:
         return {"status": "deleted"}
     raise HTTPException(status_code=404, detail="Book not found")
 
