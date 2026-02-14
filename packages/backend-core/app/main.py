@@ -10,7 +10,8 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.endpoints import ai, auth, books, chat, users
 from app.core.config import settings
-from app.db.postgres import db_manager, get_books_repo, get_pages_repo
+from app.db.session import init_db, close_db  # SQLAlchemy session management
+from app.db.postgres import db_manager, get_books_repo, get_pages_repo  # Keep for startup tasks (TODO: migrate)
 from app.queue import enqueue_pdf_processing
 from app.langchain import configure_langchain
 from app.utils.observability import configure_logging, log_json, request_id_var
@@ -29,7 +30,12 @@ async def lifespan(app: FastAPI):
     except ValueError as e:
         log_json(logger, logging.WARNING, "JWT secret validation warning", error=str(e))
         log_json(logger, logging.WARNING, "Authentication features will not work properly")
-    
+
+    # Initialize SQLAlchemy (replaces db_manager.connect_to_storage())
+    await init_db()
+
+    # TODO: Temporarily keep old db_manager for startup tasks
+    # This will be removed once endpoints are migrated to SQLAlchemy
     await db_manager.connect_to_storage()
 
     if db_manager.pool is not None:
@@ -87,7 +93,9 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    await db_manager.close_storage()
+    # Cleanup both old and new database connections
+    await db_manager.close_storage()  # TODO: Remove after full migration
+    await close_db()  # SQLAlchemy cleanup
 
 
 app = FastAPI(title=settings.project_name, lifespan=lifespan)
