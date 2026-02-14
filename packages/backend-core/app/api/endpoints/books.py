@@ -1055,15 +1055,23 @@ async def upload_cover(
     title: str = Form(...),
     file: UploadFile = File(...),
     current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
 ):
+    """Upload book cover with SQLAlchemy"""
     from PIL import Image
+    from sqlalchemy import select
 
-    db = pg_db
-    book = await db.books.find_one({"title": {"$regex": title, "$options": "i"}})
+    books_repo = BooksRepository(session)
+
+    # Find book by title (case-insensitive search)
+    stmt = select(Book).where(Book.title.ilike(f"%{title}%"))
+    result = await session.execute(stmt)
+    book = result.scalar_one_or_none()
+
     if not book:
         raise HTTPException(status_code=404, detail=f"Book with title '{title}' not found")
 
-    book_id = book.get("id")
+    book_id = book.id
 
     allowed_types = ["image/png", "image/jpeg", "image/jpg", "image/webp"]
     if file.content_type not in allowed_types:
@@ -1080,15 +1088,18 @@ async def upload_cover(
         raise HTTPException(status_code=500, detail=f"Failed to process image: {exc}")
 
     cover_url = f"/api/covers/{book_id}.jpg"
-    await db.books.update_one(
-        {"id": book_id},
-        {"$set": {"coverUrl": cover_url, "lastUpdated": datetime.utcnow(), "updatedBy": current_user.email}},
+    await books_repo.update_one(
+        book_id,
+        cover_url=cover_url,
+        last_updated=datetime.utcnow(),
+        updated_by=current_user.email
     )
+    await session.commit()
 
     return {
         "status": "success",
         "bookId": book_id,
-        "title": book.get("title"),
+        "title": book.title,
         "coverUrl": cover_url,
     }
 
