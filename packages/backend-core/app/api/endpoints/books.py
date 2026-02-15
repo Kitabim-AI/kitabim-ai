@@ -644,6 +644,7 @@ async def get_book_content(
         content_blocks.append(f"[[PAGE {p.page_number}]]\n{p.text or ''}")
 
     full_text = "\n\n".join(content_blocks)
+    logger.info(f"DEBUG: Returning full content for book {book_id}, length={len(full_text)}")
 
     return {"content": full_text.strip()}
 
@@ -876,7 +877,7 @@ async def retry_failed_ocr(
         updated_by=current_user.email,
     )
 
-    # Reset failed pages to pending using raw SQL for embedding = NULL
+    # Reset failed pages to pending using raw SQL for is_indexed = FALSE
     await session.execute(
         text("""
             UPDATE pages
@@ -951,12 +952,12 @@ async def reindex_book(
     if book.status == "processing":
         logger.warning(f"Book {book_id} is already processing. Allowing reindex anyway.")
 
-    # Reset embeddings for all completed pages using raw SQL
-    # Note: Page model doesn't have is_indexed field, so we just clear embeddings
+    # Reset indexing status for all completed pages using raw SQL
+    # Note: Page model now uses is_indexed field instead of embedding
     await session.execute(
         text("""
             UPDATE pages
-            SET embedding = NULL, last_updated = NOW(), updated_by = :updated_by
+            SET is_indexed = FALSE, last_updated = NOW(), updated_by = :updated_by
             WHERE book_id = :book_id AND status = 'completed'
         """),
         {"book_id": book_id, "updated_by": current_user.email}
@@ -985,14 +986,14 @@ async def reset_page(
     """Reset page to pending status with SQLAlchemy"""
     books_repo = BooksRepository(session)
 
-    # Update page using raw SQL for embedding = NULL
+    # Update page using raw SQL for is_indexed = FALSE
     await session.execute(
         text("""
             UPDATE pages
             SET status = 'pending',
                 text = '',
                 is_verified = FALSE,
-                embedding = NULL,
+                is_indexed = FALSE,
                 last_updated = NOW(),
                 updated_by = :updated_by
             WHERE book_id = :book_id AND page_number = :page_number
@@ -1026,14 +1027,14 @@ async def update_page_text(
 
     new_text = normalize_markdown(payload.get("text", ""))
 
-    # Update page using raw SQL for embedding = NULL
+    # Update page using raw SQL for is_indexed = FALSE
     await session.execute(
         text("""
             UPDATE pages
             SET text = :text,
                 status = 'completed',
                 is_verified = TRUE,
-                embedding = NULL,
+                is_indexed = FALSE,
                 last_updated = NOW(),
                 updated_by = :updated_by
             WHERE book_id = :book_id AND page_number = :page_number
@@ -1139,15 +1140,21 @@ async def update_book_details(
             if "pageNumber" in result or "page_number" in result:
                 has_page_updates = True
                 page_number = result.get("pageNumber") or result.get("page_number")
+                new_text = result.get("text")
 
-                # Use raw SQL to update page with embedding = NULL
+                # Only set is_indexed = FALSE if text actually changed
+                # This optimizes reindexing to only process modified pages
                 await session.execute(
                     text("""
                         UPDATE pages
                         SET text = COALESCE(:text, text),
                             status = COALESCE(:status, status),
                             is_verified = COALESCE(:is_verified, is_verified),
-                            embedding = NULL,
+                            is_indexed = CASE
+                                WHEN :text IS NOT NULL AND text IS DISTINCT FROM :text
+                                THEN FALSE
+                                ELSE is_indexed
+                            END,
                             last_updated = :last_updated,
                             updated_by = :updated_by
                         WHERE book_id = :book_id AND page_number = :page_number
@@ -1155,7 +1162,7 @@ async def update_book_details(
                     {
                         "book_id": book_id,
                         "page_number": page_number,
-                        "text": result.get("text"),
+                        "text": new_text,
                         "status": result.get("status"),
                         "is_verified": result.get("isVerified") or result.get("is_verified"),
                         "last_updated": datetime.utcnow(),

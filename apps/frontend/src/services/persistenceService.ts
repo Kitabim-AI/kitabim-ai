@@ -12,7 +12,7 @@ export const PersistenceService = {
       const data = await response.json();
       return data.content || "";
     } catch (error) {
-      console.error("Failed to fetch book content", error);
+      console.error("Failed to fetch book content:", error);
       return "";
     }
   },

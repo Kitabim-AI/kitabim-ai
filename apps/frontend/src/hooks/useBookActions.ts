@@ -253,6 +253,7 @@ export const useBookActions = (
       setView('reader');
       setCurrentPage(1);
     } catch (err) {
+      console.error("Error opening reader:", err);
       setModal({
         isOpen: true,
         title: "Load Error",

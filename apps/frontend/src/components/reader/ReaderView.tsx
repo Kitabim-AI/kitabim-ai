@@ -67,12 +67,14 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
 }) => {
   const pageTextAreaRef = useRef<HTMLTextAreaElement>(null);
   const globalTextAreaRef = useRef<HTMLTextAreaElement>(null);
+
   const [shouldRunSpellCheck, setShouldRunSpellCheck] = React.useState(false);
   const [loadedPages, setLoadedPages] = React.useState<any[]>(selectedBook.pages || []);
   const [isLoadingMore, setIsLoadingMore] = React.useState(false);
   const [hasMorePages, setHasMorePages] = React.useState(true);
   const observerTarget = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const [isFetchingContent, setIsFetchingContent] = React.useState(false);
 
   useEffect(() => {
     // Initial sync
@@ -135,7 +137,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   useEffect(() => {
     if (selectedBook.pages && selectedBook.pages.length > 0) {
       setLoadedPages(prev => {
-        const prevMap = new Map(prev.map(p => [p.pageNumber, p]));
+        const prevMap = new Map<number, any>(prev.map(p => [p.pageNumber, p]));
         let hasChanges = false;
 
         selectedBook.pages.forEach(p => {
@@ -161,7 +163,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
             } else {
               // For non-editing pages, sync everything from parent
               if (existing.text !== p.text || existing.isVerified !== p.isVerified ||
-                  existing.status !== p.status || existing.error !== p.error) {
+                existing.status !== p.status || existing.error !== p.error) {
                 prevMap.set(p.pageNumber, p);
                 hasChanges = true;
                 console.log('[ReaderView] Synced page from parent:', p.pageNumber);
@@ -198,6 +200,23 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
     }
   }, [editingPageNum, shouldRunSpellCheck, tempPageText]);
 
+  // Fetch full content when entering global edit mode if not already loaded
+  const handleEnterGlobalEdit = async () => {
+    setIsEditing(true);
+
+    if (!editContent && !isFetchingContent) {
+      setIsFetchingContent(true);
+      try {
+        const content = await PersistenceService.getBookContent(selectedBook.id);
+        setEditContent(content);
+      } catch (err) {
+        console.error("Failed to fetch full book content:", err);
+      } finally {
+        setIsFetchingContent(false);
+      }
+    }
+  };
+
   return (
     <div className="h-[calc(100vh-140px)] flex gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex-grow bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col overflow-hidden">
@@ -218,7 +237,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
             <div className="flex items-center gap-3">
               {!isEditing ? (
                 <button
-                  onClick={() => setIsEditing(true)}
+                  onClick={handleEnterGlobalEdit}
                   className="flex items-center gap-1.5 px-5 py-[10px] bg-indigo-50 text-indigo-600 text-[11px] font-black rounded-xl hover:bg-indigo-600 hover:text-white transition-all active:scale-95 shadow-sm shadow-indigo-100/50 uppercase tracking-tight"
                 >
                   <Edit3 size={16} className="stroke-[3]" /> EDIT BOOK
@@ -274,14 +293,25 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
 
         <div className={`flex-grow ${isEditing ? 'p-6 flex flex-col' : 'p-10 overflow-y-auto'} bg-[url('https://www.transparenttextures.com/patterns/paper-fibers.png')]`}>
           {isEditing ? (
-            <textarea
-              ref={globalTextAreaRef}
-              value={editContent}
-              onChange={(e) => setEditContent(e.target.value)}
-              className="flex-grow w-full p-6 uyghur-text border border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none resize-none bg-white shadow-inner overflow-y-auto"
-              style={{ fontSize: `${fontSize}px` }}
-              dir="rtl"
-            />
+            <div className="flex-grow flex flex-col relative">
+              {isFetchingContent && (
+                <div className="absolute inset-0 bg-white/50 backdrop-blur-sm z-20 flex items-center justify-center">
+                  <div className="flex flex-col items-center gap-3">
+                    <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
+                    <span className="text-sm font-bold text-indigo-600 uppercase tracking-widest animate-pulse">Loading Full Content...</span>
+                  </div>
+                </div>
+              )}
+              <textarea
+                ref={globalTextAreaRef}
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                className="flex-grow w-full p-8 uyghur-text border-2 border-indigo-100 rounded-2xl focus:ring-8 focus:ring-indigo-500/5 focus:border-indigo-400 outline-none resize-none bg-white shadow-inner overflow-y-auto leading-relaxed text-slate-900"
+                style={{ fontSize: `${fontSize}px`, minHeight: '500px' }}
+                dir="rtl"
+                placeholder={isFetchingContent ? "" : "Loading full book content..."}
+              />
+            </div>
           ) : (
             <div className="max-w-3xl mx-auto space-y-12 pb-32">
               {[...loadedPages]
@@ -345,9 +375,27 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                             <RotateCcw size={10} className="stroke-[3]" /> RE-OCR PAGE
                           </button>
                           <button
-                            onClick={() => {
+                            onClick={async () => {
+                              console.log(`[ReaderView] Clicked EDIT PAGE for page ${page.pageNumber}`);
                               setEditingPageNum(page.pageNumber);
-                              setTempPageText(page.text || '');
+                              const currentText = page.text || '';
+                              setTempPageText(currentText);
+
+                              // Fallback: If text is missing but page is completed, try fetching it
+                              if (!currentText && page.status === 'completed') {
+                                console.log(`[ReaderView] Page ${page.pageNumber} text is empty but marked completed. Fetching fallback...`);
+                                try {
+                                  const freshPages = await PersistenceService.getBookPages(selectedBook.id, page.pageNumber - 1, 1);
+                                  console.log(`[ReaderView] Fallback fetch result for page ${page.pageNumber}:`, freshPages);
+                                  if (freshPages.length > 0 && freshPages[0].text) {
+                                    setTempPageText(freshPages[0].text);
+                                  } else {
+                                    console.warn(`[ReaderView] Fallback fetch returned no text for page ${page.pageNumber}`);
+                                  }
+                                } catch (err) {
+                                  console.error(`[ReaderView] ERROR in fallback fetch for page ${page.pageNumber}:`, err);
+                                }
+                              }
                             }}
                             className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white rounded-lg text-[9px] font-black transition-all active:scale-95 shadow-sm shadow-indigo-100/50"
                           >
