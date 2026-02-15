@@ -10,6 +10,7 @@ httpx
 pillow
 langchain
 langchain-core
+langchain-community
 langchain-google-genai
 arq
 python-jose[cryptography]
@@ -19,3 +20,4 @@ tqdm==4.66.1
 sqlalchemy[asyncio]==2.0.36
 alembic==1.14.0
 greenlet==3.1.1
+flashrank==0.2.9

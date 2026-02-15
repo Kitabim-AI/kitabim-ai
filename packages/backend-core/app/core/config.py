@@ -45,6 +45,8 @@ class Settings:
     rag_top_k: int = int(os.getenv("RAG_TOP_K", "12"))
     rag_fallback_k: int = int(os.getenv("RAG_FALLBACK_K", "8"))
     rag_max_chars_per_book: int = int(os.getenv("RAG_MAX_CHARS_PER_BOOK", "4000"))
+    rag_rerank_enabled: bool = os.getenv("RAG_RERANK_ENABLED", "false").lower() == "true"
+    rag_rerank_top_n: int = int(os.getenv("RAG_RERANK_TOP_N", "5"))
 
     # LangChain / Observability
     langchain_cache_enabled: bool = os.getenv("LANGCHAIN_CACHE", "false").lower() == "true"

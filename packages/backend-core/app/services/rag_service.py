@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
 from langchain_core.output_parsers import PydanticOutputParser
@@ -18,6 +18,14 @@ from app.utils.markdown import strip_markdown
 from app.utils.observability import log_json
 import logging
 import time
+
+# Import reranker
+try:
+    from langchain_community.document_compressors import FlashrankRerank
+    FLASHRANK_AVAILABLE = True
+except ImportError:
+    FLASHRANK_AVAILABLE = False
+    logging.warning("FlashrankRerank not available. Install langchain-community and flashrank to enable reranking.")
 
 
 class CategoryResponse(BaseModel):
@@ -40,6 +48,16 @@ class RAGService:
             run_name="rag_chain",
         )
         self.logger = logging.getLogger("app.rag")
+
+        # Initialize reranker if enabled and available
+        self.reranker: Optional[FlashrankRerank] = None
+        if settings.rag_rerank_enabled and FLASHRANK_AVAILABLE:
+            try:
+                self.reranker = FlashrankRerank(top_n=settings.rag_rerank_top_n)
+                log_json(self.logger, logging.INFO, "Flashrank reranker initialized", top_n=settings.rag_rerank_top_n)
+            except Exception as exc:
+                log_json(self.logger, logging.WARNING, "Failed to initialize reranker", error=str(exc))
+                self.reranker = None
 
     @staticmethod
     def _is_current_volume_query(question: str) -> bool:
@@ -349,6 +367,76 @@ class RAGService:
                 log_json(self.logger, logging.INFO, "Using keyword fallback search")
                 # TODO: Implement full-text search fallback in Postgres
                 top_results = []
+
+        # Apply reranking if enabled and we have results
+        if self.reranker and top_results and len(top_results) > 1:
+            try:
+                rerank_start = time.monotonic()
+                log_json(
+                    self.logger,
+                    logging.INFO,
+                    "Starting reranking",
+                    candidate_count=len(top_results),
+                    timestamp=datetime.utcnow().isoformat()
+                )
+
+                # Store original vector scores for logging
+                original_scores = [r.get("score", 0.0) for r in top_results]
+                original_order = [i for i in range(len(top_results))]
+
+                # Convert to Documents for reranking
+                docs_for_rerank = [
+                    Document(
+                        page_content=r["text"],
+                        metadata={
+                            "title": r.get("title", "Unknown"),
+                            "volume": r.get("volume"),
+                            "page": r.get("page"),
+                            "vector_score": r.get("score", 0.0),
+                            "original_index": i
+                        }
+                    ) for i, r in enumerate(top_results)
+                ]
+
+                # Apply reranking
+                reranked_docs = await self.reranker.acompress_documents(docs_for_rerank, req.question)
+
+                rerank_end = time.monotonic()
+                rerank_duration_ms = int((rerank_end - rerank_start) * 1000)
+
+                # Rebuild top_results from reranked documents
+                reranked_results = []
+                for doc in reranked_docs:
+                    original_idx = doc.metadata.get("original_index", 0)
+                    reranked_results.append({
+                        "text": doc.page_content,
+                        "score": doc.metadata.get("vector_score", 0.0),
+                        "page": doc.metadata.get("page"),
+                        "title": doc.metadata.get("title", "Unknown"),
+                        "volume": doc.metadata.get("volume"),
+                    })
+
+                # Log reranking impact
+                if reranked_results:
+                    reranked_indices = [
+                        top_results.index(next(r for r in top_results if r["text"] == rr["text"]))
+                        for rr in reranked_results
+                    ]
+                    log_json(
+                        self.logger,
+                        logging.INFO,
+                        "Reranking completed",
+                        original_count=len(top_results),
+                        reranked_count=len(reranked_results),
+                        original_top_3=original_order[:3],
+                        reranked_top_3=reranked_indices[:3] if len(reranked_indices) >= 3 else reranked_indices,
+                        duration_ms=rerank_duration_ms,
+                        timestamp=datetime.utcnow().isoformat()
+                    )
+                    top_results = reranked_results
+
+            except Exception as exc:
+                log_json(self.logger, logging.WARNING, "Reranking failed, using original order", error=str(exc))
 
         context_parts = []
         if current_page_context:
