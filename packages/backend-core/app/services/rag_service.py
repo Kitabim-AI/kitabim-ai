@@ -80,11 +80,12 @@ class RAGService:
         return (
             "Instructions:\n"
             "1. Primary Goal: Answer the user's question based on the provided context.\n"
-            "2. If the context contains the information, cite the book title and page number.\n"
-            "3. If the context is marked as 'NO RELEVANT DOCUMENTS FOUND' or does not contain the answer:\n"
+            "2. If the context contains the information, ALWAYS cite the source clearly including book title, volume number (if present), and page number.\n"
+            "3. Format citations in Uyghur. Example: (فلانى كىتاب، 1-توم، 25-بەت)\n"
+            "4. If the context is marked as 'NO RELEVANT DOCUMENTS FOUND' or does not contain the answer:\n"
             "   - Politely explain that you couldn't find a specific match in the indexed books.\n"
             "   - If it's a general question or greeting, respond naturally but maintain your persona as a librarian advisor.\n"
-            "4. Respond ONLY in professional Uyghur (Arabic script)."
+            "5. Respond ONLY in professional Uyghur (Arabic script)."
             + extra_rules
         )
 
@@ -93,10 +94,18 @@ class RAGService:
     @staticmethod
     def _format_document(doc: Document) -> str:
         title = doc.metadata.get("title", "Unknown")
+        volume = doc.metadata.get("volume")
         page = doc.metadata.get("page")
-        if page is None:
-            return f"Book: {title}:\n{doc.page_content}"
-        return f"Book: {title}, Page {page}:\n{doc.page_content}"
+
+        # Build a clear source header for the LLM
+        source_parts = [f"Book: {title}"]
+        if volume is not None:
+            source_parts.append(f"Volume: {volume}")
+        if page is not None:
+            source_parts.append(f"Page: {page}")
+        
+        header = ", ".join(source_parts)
+        return f"[{header}]\n{doc.page_content}"
 
     @staticmethod
     def _cosine_similarity(v1: List[float], v2: List[float]) -> float:
@@ -215,9 +224,11 @@ class RAGService:
             page_rec = await pages_repo.find_one(req.book_id, req.current_page)
             if page_rec and page_rec.text:
                 page_text = strip_markdown(page_rec.text or "")
+                # Format with volume if available
+                volume_info = f", Volume {book.volume}" if book.volume is not None else ""
                 current_page_context = (
                     "CURRENT PAGE (THE USER IS LOOKING AT THIS NOW) - "
-                    f"Book: {book.title or 'Unknown'}, Page {req.current_page}:\n"
+                    f"Book: {book.title or 'Unknown'}{volume_info}, Page {req.current_page}:\n"
                     f"{page_text}"
                 )
 
@@ -317,14 +328,14 @@ class RAGService:
                     threshold=settings.rag_score_threshold
                 )
 
-                # Format results with book titles
+                # Format results with book titles and volume
                 for chunk in similar_chunks:
-                    b_id = chunk.get("book_id")
                     top_results.append({
                         "text": chunk.get("text", ""),
                         "score": chunk.get("similarity", 0.0),
                         "page": chunk.get("page_number"),
-                        "title": book_id_to_title.get(b_id, "Unknown"),
+                        "title": chunk.get("title", "Unknown"),
+                        "volume": chunk.get("volume"),
                     })
             except Exception as exc:
                 log_json(self.logger, logging.WARNING, "Vector search failed", error=str(exc))
@@ -350,7 +361,11 @@ class RAGService:
                 documents.append(
                     Document(
                         page_content=r["text"],
-                        metadata={"title": title, "page": r.get("page")},
+                        metadata={
+                            "title": title,
+                            "volume": r.get("volume"),
+                            "page": r.get("page")
+                        },
                     )
                 )
 

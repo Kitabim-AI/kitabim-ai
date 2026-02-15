@@ -6,7 +6,6 @@ from arq import create_pool
 from arq.connections import RedisSettings
 
 from app.core.config import settings
-from app.db.postgres import db_manager
 from app.db import session as db_session  # Import module to access global dynamically
 from app.db.session import init_db, close_db
 from app.db.repositories.jobs import JobsRepository
@@ -56,12 +55,9 @@ async def worker_startup(ctx):
     configure_langchain()
     # Initialize SQLAlchemy (PostgreSQL)
     await init_db()
-    # TODO: Legacy db_manager (remove after full migration)
-    await db_manager.connect_to_storage()
 
 
 async def worker_shutdown(ctx):
-    await db_manager.close_storage()
     await close_db()
 
 

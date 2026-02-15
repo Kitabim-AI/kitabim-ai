@@ -147,11 +147,6 @@ class Page(Base):
         index=True,
         nullable=False
     )
-    embedding: Mapped[Optional[List[float]]] = mapped_column(
-        Vector(768),  # pgvector type for 768-dimensional embeddings
-        nullable=True
-    )
-
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     ocr_provider: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)

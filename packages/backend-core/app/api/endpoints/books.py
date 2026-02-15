@@ -771,7 +771,6 @@ async def upload_pdf(
         categories=[],
         visibility="private",
         processing_step="ocr",
-        ocr_provider=None,
     )
 
     await session.commit()
@@ -885,7 +884,7 @@ async def retry_failed_ocr(
                 text = '',
                 error = NULL,
                 is_verified = FALSE,
-                embedding = NULL,
+                is_indexed = FALSE,
                 last_updated = :last_updated,
                 updated_by = :updated_by
             WHERE book_id = :book_id AND page_number = ANY(:page_numbers)

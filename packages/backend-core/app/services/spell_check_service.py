@@ -120,7 +120,7 @@ class SpellCheckService:
                 SET text = :text,
                     status = 'completed',
                     is_verified = TRUE,
-                    embedding = NULL,
+                    is_indexed = FALSE,
                     last_updated = :now,
                     updated_by = :updated_by
                 WHERE book_id = :book_id AND page_number = :page_number

@@ -93,25 +93,29 @@ class ChunksRepository(BaseRepository[Chunk]):
             threshold: Minimum similarity score (0.0-1.0)
 
         Returns:
-            List of dicts with book_id, page_number, text, and similarity score
+            List of dicts with book_id, page_number, text, similarity, title, and volume
         """
         # Convert embedding to PostgreSQL array format
         embedding_str = str(query_embedding)
 
         # Build query with or without book_ids filter
         # Use CAST() instead of :: to avoid conflicts with SQLAlchemy parameter binding
+        # JOIN with books table to get title and volume
         if book_ids:
             query = text("""
                 SELECT
-                    book_id,
-                    page_number,
-                    chunk_index,
-                    text,
-                    1 - (embedding <=> CAST(:embedding AS vector)) AS similarity
-                FROM chunks
-                WHERE book_id = ANY(:book_ids)
-                  AND embedding IS NOT NULL
-                  AND 1 - (embedding <=> CAST(:embedding AS vector)) > :threshold
+                    c.book_id,
+                    c.page_number,
+                    c.chunk_index,
+                    c.text,
+                    b.title,
+                    b.volume,
+                    1 - (c.embedding <=> CAST(:embedding AS vector)) AS similarity
+                FROM chunks c
+                JOIN books b ON c.book_id = b.id
+                WHERE c.book_id = ANY(:book_ids)
+                  AND c.embedding IS NOT NULL
+                  AND 1 - (c.embedding <=> CAST(:embedding AS vector)) > :threshold
                 ORDER BY similarity DESC
                 LIMIT :limit
             """)
@@ -124,14 +128,17 @@ class ChunksRepository(BaseRepository[Chunk]):
         else:
             query = text("""
                 SELECT
-                    book_id,
-                    page_number,
-                    chunk_index,
-                    text,
-                    1 - (embedding <=> CAST(:embedding AS vector)) AS similarity
-                FROM chunks
-                WHERE embedding IS NOT NULL
-                  AND 1 - (embedding <=> CAST(:embedding AS vector)) > :threshold
+                    c.book_id,
+                    c.page_number,
+                    c.chunk_index,
+                    c.text,
+                    b.title,
+                    b.volume,
+                    1 - (c.embedding <=> CAST(:embedding AS vector)) AS similarity
+                FROM chunks c
+                JOIN books b ON c.book_id = b.id
+                WHERE c.embedding IS NOT NULL
+                  AND 1 - (c.embedding <=> CAST(:embedding AS vector)) > :threshold
                 ORDER BY similarity DESC
                 LIMIT :limit
             """)
@@ -150,6 +157,8 @@ class ChunksRepository(BaseRepository[Chunk]):
                 "page_number": row.page_number,
                 "chunk_index": row.chunk_index,
                 "text": row.text,
+                "title": row.title,
+                "volume": row.volume,
                 "similarity": float(row.similarity),
             }
             for row in rows

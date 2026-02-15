@@ -69,7 +69,7 @@ async def lifespan(app: FastAPI):
                         and_(
                             Page.book_id == book.id,
                             Page.status == 'completed',
-                            Page.embedding == None
+                            Page.is_indexed == False
                         )
                     )
                     res = await session.execute(stmt)

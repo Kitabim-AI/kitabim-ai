@@ -59,7 +59,6 @@ class PagesRepository(BaseRepository[Page]):
             set_={
                 "text": stmt.excluded.text,
                 "status": stmt.excluded.status,
-                "embedding": stmt.excluded.embedding,
                 "is_verified": stmt.excluded.is_verified,
                 "error": stmt.excluded.error,
                 "ocr_provider": stmt.excluded.ocr_provider,

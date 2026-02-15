@@ -72,6 +72,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   const [isLoadingMore, setIsLoadingMore] = React.useState(false);
   const [hasMorePages, setHasMorePages] = React.useState(true);
   const observerTarget = useRef<HTMLDivElement>(null);
+  const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
   useEffect(() => {
     // Initial sync
@@ -130,9 +131,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   }, [fetchMorePages]);
 
 
-  // Also update loadedPages if selectedBook updates (e.g. from polling in App.tsx) - but be careful not to overwrite fetched pages if App.tsx doesn't have them all
-  // Actually, App.tsx polling might overwrite 'pages' with just the initial set if we aren't careful.
-  // We need to merge polling updates into our local state.
+  // Sync changes from parent, but preserve text for currently editing page
   useEffect(() => {
     if (selectedBook.pages && selectedBook.pages.length > 0) {
       setLoadedPages(prev => {
@@ -141,10 +140,33 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
 
         selectedBook.pages.forEach(p => {
           const existing = prevMap.get(p.pageNumber);
-          // Check if content or status changed and update if so
-          if (!existing || existing.status !== p.status || existing.text !== p.text || existing.error !== p.error) {
+
+          if (!existing) {
+            // New page - add it
             prevMap.set(p.pageNumber, p);
             hasChanges = true;
+            console.log('[ReaderView] Added new page:', p.pageNumber);
+          } else {
+            // If this page is currently being edited, only sync status/error to preserve unsaved edits
+            // Otherwise, sync everything including text
+            const isCurrentlyEditing = editingPageNum !== null && Number(p.pageNumber) === Number(editingPageNum);
+
+            if (isCurrentlyEditing) {
+              // Preserve local text and isVerified for the page being edited
+              if (existing.status !== p.status || existing.error !== p.error) {
+                prevMap.set(p.pageNumber, { ...existing, status: p.status, error: p.error });
+                hasChanges = true;
+                console.log('[ReaderView] Updated status for editing page:', p.pageNumber);
+              }
+            } else {
+              // For non-editing pages, sync everything from parent
+              if (existing.text !== p.text || existing.isVerified !== p.isVerified ||
+                  existing.status !== p.status || existing.error !== p.error) {
+                prevMap.set(p.pageNumber, p);
+                hasChanges = true;
+                console.log('[ReaderView] Synced page from parent:', p.pageNumber);
+              }
+            }
           }
         });
 
@@ -154,7 +176,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
         return prev;
       });
     }
-  }, [selectedBook.pages]);
+  }, [selectedBook.pages, editingPageNum]);
 
 
   const {
@@ -272,6 +294,13 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                 .map((page) => (
                   <div
                     key={page.pageNumber}
+                    ref={(el) => {
+                      if (el) {
+                        pageRefs.current.set(page.pageNumber, el);
+                      } else {
+                        pageRefs.current.delete(page.pageNumber);
+                      }
+                    }}
                     onMouseEnter={() => setCurrentPage(page.pageNumber)}
                     className={`group relative p-8 rounded-2xl transition-all duration-300 ${currentPage === page.pageNumber ? 'bg-white shadow-xl ring-1 ring-indigo-100 scale-[1.02]' : 'bg-transparent opacity-80'}`}
                   >
@@ -364,10 +393,30 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                         <div className="flex items-center gap-3 mt-2">
                           <button
                             onClick={() => {
-                              onUpdatePage(selectedBook.id, page.pageNumber, tempPageText);
+                              const pageNum = page.pageNumber;
+
+                              // Update local state immediately for instant feedback
+                              setLoadedPages(prev => prev.map(p =>
+                                p.pageNumber === pageNum
+                                  ? { ...p, text: tempPageText, isVerified: true }
+                                  : p
+                              ));
+
+                              // Update backend
+                              onUpdatePage(selectedBook.id, pageNum, tempPageText);
+
+                              // Reset spell check
                               resetSpellCheck();
+
+                              // Scroll to the saved page after a brief delay to ensure re-render
+                              setTimeout(() => {
+                                const pageElement = pageRefs.current.get(pageNum);
+                                if (pageElement) {
+                                  pageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                }
+                              }, 200);
                             }}
-                            className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-black hover:bg-indigo-700 transition-all active:scale-95 flex items-center gap-2 shadow-lg shadow-indigo-100/50"
+                            className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-black hover:bg-emerald-700 transition-all active:scale-95 flex items-center gap-2 shadow-lg shadow-emerald-100/50"
                           >
                             <Save size={14} className="stroke-[3]" /> SAVE & VERIFY PAGE
                           </button>
@@ -390,6 +439,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                         </div>
                       ) : (
                         <MarkdownContent
+                          key={`page-${page.pageNumber}-${page.isVerified ? 'verified' : 'unverified'}-${(page.text || '').length}`}
                           content={page.text || "..."}
                           className="uyghur-text text-slate-800"
                           style={{ fontSize: `${fontSize}px` }}
