@@ -7,11 +7,14 @@ from arq.connections import RedisSettings
 
 from app.core.config import settings
 from app.db.postgres import db_manager
-from app.db.postgres_helpers import pg_db
-from app.jobs import create_or_reset_job, update_job_status
+from app.db import session as db_session  # Import module to access global dynamically
+from app.db.session import init_db, close_db
+from app.db.repositories.jobs import JobsRepository
+from app.db.repositories.books import BooksRepository
 from app.services.pdf_service import process_pdf_task
 from app.langchain import configure_langchain
 from app.utils.observability import configure_logging
+
 _POOL = None
 
 
@@ -31,9 +34,17 @@ async def enqueue_pdf_processing(
     reason: str = "requested",
     background_tasks=None,
 ) -> dict:
-    db = pg_db
     job_key = f"process_pdf:{book_id}"
-    job = await create_or_reset_job(db, job_key, "process_pdf", book_id, {"reason": reason})
+
+    # Check if session factory is initialized
+    if db_session.async_session_factory is None:
+        raise RuntimeError("Database not initialized. async_session_factory is None.")
+
+    # Use a fresh session to create/reset the job
+    async with db_session.async_session_factory() as session:
+        repo = JobsRepository(session)
+        await repo.create_or_reset(job_key, "process_pdf", book_id, {"reason": reason})
+        await session.commit()
 
     redis = await _get_pool()
     await redis.enqueue_job("process_pdf_job", book_id=book_id, job_key=job_key)
@@ -43,11 +54,15 @@ async def enqueue_pdf_processing(
 async def worker_startup(ctx):
     configure_logging()
     configure_langchain()
+    # Initialize SQLAlchemy (PostgreSQL)
+    await init_db()
+    # TODO: Legacy db_manager (remove after full migration)
     await db_manager.connect_to_storage()
 
 
 async def worker_shutdown(ctx):
     await db_manager.close_storage()
+    await close_db()
 
 
 async def process_pdf_job(ctx, book_id: str, job_key: Optional[str] = None):
@@ -56,10 +71,14 @@ async def process_pdf_job(ctx, book_id: str, job_key: Optional[str] = None):
     except Exception as exc:
         job_try = ctx.get("job_try", 1)
         if job_key:
-            if job_try < settings.queue_max_retries:
-                await update_job_status(pg_db, job_key, "retrying", str(exc))
-            else:
-                await update_job_status(pg_db, job_key, "failed", str(exc))
+            # Use fresh session for status update
+            async with db_session.async_session_factory() as session:
+                repo = JobsRepository(session)
+                if job_try < settings.queue_max_retries:
+                    await repo.update_status(job_key, "retrying", str(exc))
+                else:
+                    await repo.update_status(job_key, "failed", str(exc))
+                await session.commit()
         raise
 
 

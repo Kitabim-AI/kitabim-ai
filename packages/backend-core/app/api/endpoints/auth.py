@@ -8,7 +8,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request, Cookie
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app.db.postgres_helpers import get_pg_db as get_db
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.db.session import get_session
 
 from app.auth.dependencies import get_current_user, get_current_user_optional
 from app.auth.jwt_handler import (
@@ -114,22 +115,13 @@ async def google_callback(
     code: Optional[str] = None,
     state: Optional[str] = None,
     error: Optional[str] = None,
-    db = Depends(get_db),
+    session: AsyncSession = Depends(get_session),
 ):
     """
     Handle Google OAuth callback.
     
     Exchanges code for tokens, creates/updates user, and returns
     an HTML page that posts the access token to the opener window.
-    
-    Args:
-        code: Authorization code from Google.
-        state: State parameter for CSRF verification.
-        error: Error message if OAuth failed.
-        
-    Returns:
-        HTML page with postMessage script for popup flow,
-        or redirect with tokens for direct navigation.
     """
     # Handle OAuth errors
     if error:
@@ -164,11 +156,11 @@ async def google_callback(
             return _error_response("Email not verified with Google")
         
         # Check if user exists with this provider
-        user = await get_user_by_provider(db, "google", google_user.id)
+        user = await get_user_by_provider(session, "google", google_user.id)
         
         if not user:
             # Check if email exists with different provider (no auto-linking)
-            existing_user = await get_user_by_email(db, google_user.email)
+            existing_user = await get_user_by_email(session, google_user.email)
             if existing_user:
                 return _error_response(
                     "An account with this email already exists. "
@@ -180,7 +172,7 @@ async def google_callback(
             
             # Create new user
             user = await create_user(
-                db=db,
+                session=session,
                 email=google_user.email,
                 display_name=google_user.name,
                 provider="google",
@@ -191,7 +183,7 @@ async def google_callback(
             logger.info(f"Created new user from Google OAuth: {user.id} ({user.email})")
         else:
             # Update last login and avatar
-            await update_user_login(db, user.id, google_user.picture)
+            await update_user_login(session, user.id, google_user.picture)
             logger.info(f"User logged in via Google OAuth: {user.id} ({user.email})")
         
         # Check if user is active
@@ -204,7 +196,10 @@ async def google_callback(
         
         # Store refresh token
         user_agent = request.headers.get("User-Agent", "unknown")
-        await store_refresh_token(user.id, jti, refresh_token, user_agent[:200])
+        await store_refresh_token(session, user.id, jti, refresh_token, user_agent[:200])
+        
+        # Commit changes
+        await session.commit()
         
         # Return HTML that posts token to opener (popup flow)
         return _success_response(access_token, refresh_token)
@@ -218,16 +213,10 @@ async def google_callback(
 async def refresh_access_token(
     request: Request,
     refresh_token: Optional[str] = Cookie(None, alias=REFRESH_TOKEN_COOKIE),
-    db = Depends(get_db),
+    session: AsyncSession = Depends(get_session),
 ):
     """
     Refresh an access token using a valid refresh token.
-    
-    Args:
-        refresh_token: Refresh token from cookie.
-        
-    Returns:
-        New access token.
     """
     if not refresh_token:
         raise HTTPException(
@@ -248,7 +237,7 @@ async def refresh_access_token(
             )
         
         # Validate token is not revoked
-        validated_user_id = await validate_refresh_token(jti, refresh_token)
+        validated_user_id = await validate_refresh_token(session, jti, refresh_token)
         if not validated_user_id or validated_user_id != user_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -257,7 +246,7 @@ async def refresh_access_token(
         
         # Get fresh user data
         from app.services.user_service import get_user_by_id
-        user = await get_user_by_id(db, user_id)
+        user = await get_user_by_id(session, user_id)
         
         if not user or not user.is_active:
             raise HTTPException(
@@ -288,21 +277,18 @@ async def logout(
     request: Request,
     current_user: User = Depends(get_current_user),
     refresh_token: Optional[str] = Cookie(None, alias=REFRESH_TOKEN_COOKIE),
+    session: AsyncSession = Depends(get_session),
 ):
     """
     Logout the current user.
-    
-    Revokes the current refresh token and clears cookies.
-    
-    Returns:
-        Success message.
     """
     if refresh_token:
         try:
             payload = decode_jwt(refresh_token, expected_type="refresh")
             jti = payload.get("jti")
             if jti:
-                await revoke_refresh_token(jti)
+                await revoke_refresh_token(session, jti)
+                await session.commit()
         except (TokenExpiredError, TokenInvalidError):
             # Token invalid, but still clear cookies
             pass
@@ -378,18 +364,36 @@ def _success_response(access_token: str, refresh_token: str) -> HTMLResponse:
         </div>
         <script>
             const accessToken = "{access_token}";
-            
+
             // Try to post to opener (popup flow)
-            if (window.opener) {{
-                window.opener.postMessage({{
-                    type: 'OAUTH_SUCCESS',
-                    accessToken: accessToken
-                }}, '*');
-                window.close();
+            if (window.opener && !window.opener.closed) {{
+                try {{
+                    window.opener.postMessage({{
+                        type: 'OAUTH_SUCCESS',
+                        accessToken: accessToken
+                    }}, '*');
+                    setTimeout(() => window.close(), 100);
+                }} catch (err) {{
+                    console.error('Failed to post message:', err);
+                    // Fallback: store token and show success message
+                    localStorage.setItem('kitabim_access_token', accessToken);
+                    document.querySelector('.container p').textContent =
+                        'Login successful! Please close this window and refresh the main page.';
+                }}
             }} else {{
-                // Direct navigation flow - store token and redirect
+                // No opener - store token in localStorage and show instructions
                 localStorage.setItem('kitabim_access_token', accessToken);
-                window.location.href = '/';
+                document.querySelector('.container h2').textContent = 'Login Successful!';
+                document.querySelector('.container p').innerHTML =
+                    'Please close this window and <strong>refresh the main page</strong> to continue.';
+                // Add a close button
+                const closeBtn = document.createElement('button');
+                closeBtn.textContent = 'Close Window';
+                closeBtn.style.cssText = 'margin-top: 1rem; padding: 0.5rem 1.5rem; background: white; color: #667eea; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;';
+                closeBtn.onclick = () => window.close();
+                document.querySelector('.container').appendChild(closeBtn);
+                // Remove spinner
+                document.querySelector('.spinner').style.display = 'none';
             }}
         </script>
     </body>
@@ -475,11 +479,17 @@ def _error_response(message: str) -> HTMLResponse:
         </div>
         <script>
             // Notify opener of error
-            if (window.opener) {{
-                window.opener.postMessage({{
-                    type: 'OAUTH_ERROR',
-                    error: "{message}"
-                }}, '*');
+            if (window.opener && !window.opener.closed) {{
+                try {{
+                    window.opener.postMessage({{
+                        type: 'OAUTH_ERROR',
+                        error: "{message}"
+                    }}, '*');
+                    // Auto-close after a short delay
+                    setTimeout(() => window.close(), 2000);
+                }} catch (err) {{
+                    console.error('Failed to post error message:', err);
+                }}
             }}
         </script>
     </body>

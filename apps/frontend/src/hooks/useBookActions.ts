@@ -224,7 +224,8 @@ export const useBookActions = (
           lastUpdated: new Date()
         };
       });
-      refreshLibrary();
+      // Don't call refreshLibrary() here - it can race with polling and overwrite our update
+      // The polling in App.tsx will sync the data within a few seconds
       addNotification(`Page ${pageNum} updated.`, "success");
     } catch (err) {
       console.error("Failed to update page", err);
@@ -242,10 +243,12 @@ export const useBookActions = (
       const fullBook = await PersistenceService.getBookById(book.id);
       if (!fullBook) throw new Error("Could not load book content");
 
-      const content = await PersistenceService.getBookContent(book.id);
+      // We do NOT fetch the full content string here.
+      // The ReaderView will fetch pages for reading,
+      // and only fetch full content if/when the user clicks "Edit Book".
 
       setSelectedBook(fullBook);
-      setEditContent(content || '');
+      setEditContent(''); // Intentionally empty to start fast
       setChatMessages([]);
       setView('reader');
       setCurrentPage(1);

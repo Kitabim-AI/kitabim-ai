@@ -140,7 +140,9 @@ const App: React.FC = () => {
     const hasProcessingPage = selectedBook?.pages?.some(
       r => r.status === 'pending' || r.status === 'processing'
     );
-    const shouldPoll = view === 'reader' && selectedBook && (selectedBook.status === 'processing' || hasProcessingPage);
+    // Poll only on admin page to show real-time OCR progress
+    // Disabled on reader page to prevent overwriting manual edits
+    const shouldPoll = view === 'admin' && selectedBook && (selectedBook.status === 'processing' || hasProcessingPage);
 
     if (!shouldPoll) return;
 

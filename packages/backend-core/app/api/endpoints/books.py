@@ -12,8 +12,6 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
-from app.db.postgres import db_manager
-from app.db.postgres_helpers import pg_db, pg_find, pg_count, pg_update_many
 from app.db.session import get_session
 from app.db.repositories.books import BooksRepository
 from app.db.repositories.pages import PagesRepository
@@ -90,239 +88,302 @@ async def get_books(
     session: AsyncSession = Depends(get_session),
 ):
     """Get paginated books list with SQLAlchemy"""
-    from sqlalchemy import select, func, or_, and_
-    from app.db.models import Book, Page
+    from sqlalchemy import select, func, or_, and_, desc, asc, any_
+    from app.db.models import Book as BookDB
+    from app.db.models import Page as PageDB
+    from app.models.schemas import Book as BookSchema, ExtractionResult
 
     skip = (page - 1) * pageSize
 
     # Build base query conditions
     conditions = []
+    
+    import logging
+    logger = logging.getLogger("app.api.books")
+    logger.info(f"Search request: q={repr(q)}, category={repr(category)}, groupByWork={groupByWork}")
 
-    # Guest filter - guests can only see public ready books
+    # Guest access restriction
     if current_user is None:
-        conditions.extend([
-            Book.status == "ready",
-            or_(
-                Book.visibility == "public",
-                Book.visibility.is_(None)
-            )
-        ])
+        conditions.append(BookDB.status == "ready")
+        conditions.append(or_(BookDB.visibility == "public", BookDB.visibility == None))
 
     # Category filter
     if category:
-        normalized_category = generate_uyghur_regex(category)
-        # Use PostgreSQL regex for array search
-        conditions.append(
-            func.array_to_string(Book.categories, ',').op("~*")(normalized_category)
-        )
+        conditions.append(category == any_(BookDB.categories))
+
     # Search filter
-    elif q:
-        normalized_q = generate_uyghur_regex(q)
+    if q:
+        if '\u0626' in q:
+            q_alt = q.replace('\u0626', '\u064A\u0654')
+        elif '\u064A\u0654' in q:
+            q_alt = q.replace('\u064A\u0654', '\u0626')
+        else:
+            q_alt = q
+        
         search_filter = or_(
-            Book.title.op("~*")(normalized_q),
-            Book.author.op("~*")(normalized_q),
-            func.array_to_string(Book.categories, ',').op("~*")(normalized_q)
+            BookDB.title.ilike(f"%{q}%"),
+            BookDB.author.ilike(f"%{q}%"),
+            BookDB.title.ilike(f"%{q_alt}%"),
+            BookDB.author.ilike(f"%{q_alt}%"),
+            q == any_(BookDB.categories),
+            q_alt == any_(BookDB.categories)
         )
         conditions.append(search_filter)
+        logger.info(f"Applied search filter: q={repr(q)}, q_alt={repr(q_alt)}")
 
-    # Build count queries
-    count_stmt = select(func.count()).select_from(Book)
+    # Base query for counting
+    total_stmt = select(func.count(BookDB.id))
     if conditions:
-        count_stmt = count_stmt.where(and_(*conditions))
+        total_stmt = total_stmt.where(and_(*conditions))
+    
+    total_res = await session.execute(total_stmt)
+    total = total_res.scalar() or 0
 
-    total_result = await session.execute(count_stmt)
-    total = total_result.scalar_one()
+    # Query for total ready (publicly accessible) books
+    if groupByWork:
+        # For grouped view, count unique (title, author, volume) combinations
+        subq_conditions = [
+            BookDB.status == "ready",
+            or_(BookDB.visibility == "public", BookDB.visibility == None)
+        ]
+        # Append search/category filters to the ready count too
+        if category:
+            subq_conditions.append(category == any_(BookDB.categories))
+        if q:
+             if '\u0626' in q:
+                q_alt = q.replace('\u0626', '\u064A\u0654')
+             elif '\u064A\u0654' in q:
+                q_alt = q.replace('\u064A\u0654', '\u0626')
+             else:
+                q_alt = q
+                
+             subq_conditions.append(or_(
+                BookDB.title.ilike(f"%{q}%"),
+                BookDB.author.ilike(f"%{q}%"),
+                BookDB.title.ilike(f"%{q_alt}%"),
+                BookDB.author.ilike(f"%{q_alt}%"),
+                q == any_(BookDB.categories),
+                q_alt == any_(BookDB.categories)
+             ))
 
-    # Count total ready books
-    ready_count_stmt = select(func.count()).select_from(Book).where(Book.status == "ready")
-    ready_result = await session.execute(ready_count_stmt)
-    total_ready = ready_result.scalar_one()
+        subq = (
+            select(BookDB.title, BookDB.author, BookDB.volume)
+            .where(and_(*subq_conditions))
+            .group_by(BookDB.title, BookDB.author, BookDB.volume)
+            .subquery()
+        )
+        ready_stmt = select(func.count()).select_from(subq)
+    else:
+        ready_stmt = select(func.count(BookDB.id)).where(
+            and_(
+                BookDB.status == "ready",
+                or_(BookDB.visibility == "public", BookDB.visibility == None)
+            )
+        )
+    ready_res = await session.execute(ready_stmt)
+    total_ready = ready_res.scalar() or 0
+    logger.info(f"Total ready count: {total_ready}")
 
-    # Map sortBy parameter (camelCase) to model field (snake_case)
-    sort_field_map = {
-        "title": "title",
-        "author": "author",
-        "uploadDate": "upload_date",
-        "lastUpdated": "last_updated",
-        "status": "status",
-    }
-    sort_field = sort_field_map.get(sortBy, "title")
-
-    def parse_date(val):
-        if val is None:
-            return datetime.min
-        if isinstance(val, datetime):
-            return val.replace(tzinfo=None) if val.tzinfo else val
-        if isinstance(val, str):
-            try:
-                parsed = datetime.fromisoformat(val.replace("Z", "+00:00"))
-                return parsed.replace(tzinfo=None) if parsed.tzinfo else parsed
-            except Exception:
-                return datetime.min
-        return datetime.min
-
-    if groupByWork and sortBy == "uploadDate":
+    if groupByWork:
         # Get ALL matching books for grouping
-        stmt = select(Book)
+        stmt = select(BookDB)
         if conditions:
             stmt = stmt.where(and_(*conditions))
-
-        # Sort by upload_date
+        
+        # Sort by upload_date for work grouping
         if order == -1:
-            stmt = stmt.order_by(Book.upload_date.desc())
+            stmt = stmt.order_by(BookDB.upload_date.desc())
         else:
-            stmt = stmt.order_by(Book.upload_date.asc())
+            stmt = stmt.order_by(BookDB.upload_date.asc())
 
         result = await session.execute(stmt)
-        all_books_models = list(result.scalars().all())
+        all_books_models = result.scalars().all()
 
-        # Get page stats for all books
-        if all_books_models:
-            book_ids = [b.id for b in all_books_models]
-
-            stats_stmt = select(
-                Page.book_id,
-                Page.status,
-                func.count().label("count")
-            ).where(
-                Page.book_id.in_(book_ids)
-            ).group_by(Page.book_id, Page.status)
-
-            stats_result = await session.execute(stats_stmt)
-            stats_rows = stats_result.fetchall()
-
-            # Build stats lookup
-            stats_by_book = {}
-            for row in stats_rows:
-                book_id = row.book_id
-                status = row.status
-                count = row.count
-                if book_id not in stats_by_book:
-                    stats_by_book[book_id] = {}
-                stats_by_book[book_id][status] = count
-
-            # Convert to dict format for grouping logic
-            all_books = []
-            for b in all_books_models:
-                book_dict = Book.model_validate(b).model_dump()
-                book_stats = stats_by_book.get(b.id, {})
-                book_dict["pageStats"] = [{"_id": status, "count": cnt} for status, cnt in book_stats.items()]
-                all_books.append(book_dict)
-        else:
-            all_books = []
-
-        # Group by work
+        # Group by work (title and author)
         work_groups = {}
         no_work_books = []
-        work_priority = {}
-
-        for b in all_books:
-            stats = {s["_id"]: s["count"] for s in b.get("pageStats", [])}
-            b["completedCount"] = stats.get("completed", 0)
-            b["errorCount"] = stats.get("error", 0)
-            if "pages" not in b:
-                b["pages"] = []
-
-            book_title = b.get("title")
-            book_author = b.get("author") or ""
-            book_date = parse_date(b.get("uploadDate"))
-
+        
+        for b in all_books_models:
+            book_title = b.title
+            book_author = b.author or ""
+            
             if book_title:
-                work_key = (book_title, book_author)
+                # Include volume in work_key to treat different volumes as separate works for deduplication
+                work_key = (book_title, book_author, b.volume)
                 if work_key not in work_groups:
                     work_groups[work_key] = []
-                    work_priority[work_key] = book_date
                 work_groups[work_key].append(b)
-                current_priority = work_priority[work_key]
-                if (order == -1 and book_date > current_priority) or (order == 1 and book_date < current_priority):
-                    work_priority[work_key] = book_date
             else:
                 no_work_books.append(b)
 
-        for work_key in work_groups:
-            work_groups[work_key].sort(key=lambda x: parse_date(x.get("uploadDate")), reverse=(order == -1))
+        # Build list of works (using newest/oldest book as representative)
+        works_list = []
+        import json
+        for work_key, volumes in work_groups.items():
+            rep = volumes[0]
+            # Parse last_error from JSON string if needed
+            last_error_obj = None
+            if rep.last_error:
+                if isinstance(rep.last_error, str):
+                    try:
+                        last_error_obj = json.loads(rep.last_error)
+                    except:
+                        last_error_obj = None
+                else:
+                    last_error_obj = rep.last_error
 
-        sortable_items = []
-        for work_key, books_in_work in work_groups.items():
-            sortable_items.append((work_priority[work_key], True, work_key, books_in_work))
+            # Convert ORM object to dict to avoid lazy loading issues
+            rep_dict = {
+                "id": rep.id,
+                "content_hash": rep.content_hash,
+                "title": rep.title,
+                "author": rep.author or "",
+                "volume": rep.volume,
+                "total_pages": sum(v.total_pages for v in volumes),  # Sum all volumes
+                "pages": [],  # We don't load pages in this endpoint
+                "status": rep.status,
+                "upload_date": rep.upload_date,
+                "last_updated": rep.last_updated,
+                "updated_by": rep.updated_by,
+                "created_by": rep.created_by,
+                "cover_url": rep.cover_url,
+                "visibility": rep.visibility,
+                "processing_step": rep.processing_step,
+                "categories": rep.categories,
+                "last_error": last_error_obj,
+                "completed_count": 0,
+                "error_count": 0,
+            }
+            work_dict = BookSchema.model_validate(rep_dict).model_dump()
+            # In a real grouped scenario, we'd have a separate 'Work' schema
+            works_list.append(work_dict)
 
-        for book in no_work_books:
-            sortable_items.append((parse_date(book.get("uploadDate")), False, None, [book]))
+        for b in no_work_books:
+            # Parse last_error from JSON string if needed
+            b_last_error_obj = None
+            if b.last_error:
+                if isinstance(b.last_error, str):
+                    try:
+                        b_last_error_obj = json.loads(b.last_error)
+                    except:
+                        b_last_error_obj = None
+                else:
+                    b_last_error_obj = b.last_error
 
-        sortable_items.sort(key=lambda x: x[0], reverse=(order == -1))
+            # Convert ORM object to dict to avoid lazy loading issues
+            b_dict = {
+                "id": b.id,
+                "content_hash": b.content_hash,
+                "title": b.title,
+                "author": b.author or "",
+                "volume": b.volume,
+                "total_pages": b.total_pages,
+                "pages": [],  # We don't load pages in this endpoint
+                "status": b.status,
+                "upload_date": b.upload_date,
+                "last_updated": b.last_updated,
+                "updated_by": b.updated_by,
+                "created_by": b.created_by,
+                "cover_url": b.cover_url,
+                "visibility": b.visibility,
+                "processing_step": b.processing_step,
+                "categories": b.categories,
+                "last_error": b_last_error_obj,
+                "completed_count": 0,
+                "error_count": 0,
+            }
+            works_list.append(BookSchema.model_validate(b_dict).model_dump())
 
-        ordered_books = []
-        for _, _, _, books_in_group in sortable_items:
-            ordered_books.extend(books_in_group)
-
-        paginated_books = ordered_books[skip : skip + pageSize]
-        return {
-            "books": paginated_books,
-            "total": total,
-            "totalReady": total_ready,
-            "page": page,
-            "pageSize": pageSize,
-        }
-
-    # Normal pagination (no grouping)
-    stmt = select(Book)
-    if conditions:
-        stmt = stmt.where(and_(*conditions))
-
-    # Sort
-    if hasattr(Book, sort_field):
-        order_col = getattr(Book, sort_field)
-        if order == -1:
-            stmt = stmt.order_by(order_col.desc())
-        else:
-            stmt = stmt.order_by(order_col.asc())
-
-    # Paginate
-    stmt = stmt.offset(skip).limit(pageSize)
-
-    result = await session.execute(stmt)
-    books_models = list(result.scalars().all())
-
-    # Get page stats
-    if books_models:
-        book_ids = [b.id for b in books_models]
-
-        stats_stmt = select(
-            Page.book_id,
-            Page.status,
-            func.count().label("count")
-        ).where(
-            Page.book_id.in_(book_ids)
-        ).group_by(Page.book_id, Page.status)
-
-        stats_result = await session.execute(stats_stmt)
-        stats_rows = stats_result.fetchall()
-
-        # Build stats lookup
-        stats_by_book = {}
-        for row in stats_rows:
-            book_id = row.book_id
-            status = row.status
-            count = row.count
-            if book_id not in stats_by_book:
-                stats_by_book[book_id] = {}
-            stats_by_book[book_id][status] = count
-
-        # Convert to dict and attach stats
-        books_list = []
-        for b in books_models:
-            book_dict = Book.model_validate(b).model_dump()
-            book_stats = stats_by_book.get(b.id, {})
-            book_dict["completedCount"] = book_stats.get("completed", 0)
-            book_dict["errorCount"] = book_stats.get("error", 0)
-            if "pages" not in book_dict:
-                book_dict["pages"] = []
-            books_list.append(book_dict)
+        # Paginate results
+        paged_results = works_list[skip : skip + pageSize]
+        books_data = [BookSchema.model_validate(w) for w in paged_results]
+        total = len(works_list)
     else:
-        books_list = []
+        # Standard flat list query
+        stmt = select(BookDB)
+        if conditions:
+            stmt = stmt.where(and_(*conditions))
+        
+        # Mapping sorting
+        sort_map = {
+            "title": BookDB.title,
+            "author": BookDB.author,
+            "uploadDate": BookDB.upload_date,
+            "lastUpdated": BookDB.last_updated
+        }
+        sort_col = sort_map.get(sortBy, BookDB.upload_date)
+        if order == -1:
+            stmt = stmt.order_by(sort_col.desc())
+        else:
+            stmt = stmt.order_by(sort_col.asc())
+
+        stmt = stmt.offset(skip).limit(pageSize)
+        result = await session.execute(stmt)
+        books_objs = result.scalars().all()
+
+        # Get page stats for these books
+        book_ids = [str(b.id) for b in books_objs]
+        stats_by_book = {}
+        if book_ids:
+            stats_stmt = select(
+                PageDB.book_id,
+                PageDB.status,
+                func.count().label("count")
+            ).where(
+                PageDB.book_id.in_(book_ids)
+            ).group_by(PageDB.book_id, PageDB.status)
+
+            stats_result = await session.execute(stats_stmt)
+            for row in stats_result.fetchall():
+                if row.book_id not in stats_by_book:
+                    stats_by_book[row.book_id] = {}
+                stats_by_book[row.book_id][row.status] = row.count
+
+        books_data = []
+        import json
+        for b in books_objs:
+            # Parse last_error from JSON string if needed
+            last_error_obj = None
+            if b.last_error:
+                if isinstance(b.last_error, str):
+                    try:
+                        last_error_obj = json.loads(b.last_error)
+                    except:
+                        last_error_obj = None
+                else:
+                    last_error_obj = b.last_error
+
+            # Create dict from ORM object, excluding lazy-loaded pages relationship
+            b_dict = {
+                "id": b.id,
+                "content_hash": b.content_hash,
+                "title": b.title,
+                "author": b.author or "",
+                "volume": b.volume,
+                "total_pages": b.total_pages,
+                "pages": [],  # We don't load pages in this endpoint
+                "status": b.status,
+                "upload_date": b.upload_date,
+                "last_updated": b.last_updated,
+                "updated_by": b.updated_by,
+                "created_by": b.created_by,
+                "cover_url": b.cover_url,
+                "visibility": b.visibility,
+                "processing_step": b.processing_step,
+                "categories": b.categories,
+                "errors": b.errors,
+                "last_error": last_error_obj,
+                "completed_count": 0,
+                "error_count": 0,
+            }
+            s_data = BookSchema.model_validate(b_dict)
+            b_stats = stats_by_book.get(str(b.id), {})
+            s_data.completed_count = b_stats.get("completed", 0)
+            s_data.error_count = b_stats.get("error", 0)
+            books_data.append(s_data)
 
     return {
-        "books": books_list,
+        "books": books_data,
         "total": total,
         "totalReady": total_ready,
         "page": page,
@@ -330,42 +391,33 @@ async def get_books(
     }
 
 
+
 @router.get("/random-proverb")
-async def get_random_proverb():
-    """
-    Fetch a random proverb from the proverbs collection containing specific keywords.
-    """
-    db = pg_db
+async def get_random_proverb(
+    session: AsyncSession = Depends(get_session),
+):
+    """Fetch a random proverb with SQLAlchemy"""
+    from app.db.repositories.proverbs import ProverbsRepository
+
+    proverbs_repo = ProverbsRepository(session)
     keywords = ["كىتاب", "بىلىم", "ئەقىل", "پاراسەت"]
-    
-    # Create regexes for keywords to handle multi-encoding
-    regex_queries = []
-    for k in keywords:
-        pattern = generate_uyghur_regex(k)
-        regex_queries.append({"text": {"$regex": pattern, "$options": "i"}})
-    
-    query = {"$or": regex_queries}
 
-    # PostgreSQL: Get count then random offset
-    from app.db.postgres import db_manager as pg_manager
-    import random
+    # Build regex pattern for all keywords (OR condition)
+    # Pattern: (keyword1|keyword2|keyword3|keyword4)
+    patterns = [generate_uyghur_regex(k) for k in keywords]
+    combined_pattern = "(" + "|".join(patterns) + ")"
 
-    total = await db.proverbs.count_documents(query)
-    if total > 0:
-        # Get a random record using OFFSET
-        random_offset = random.randint(0, total - 1)
-        proverbs = await db.proverbs.find(query).skip(random_offset).limit(1).to_list(1)
-    else:
-        proverbs = []
-    
-    if proverbs:
-        p = proverbs[0]
+    # Get random proverb matching any of the keywords
+    proverb = await proverbs_repo.get_random_proverb(text_pattern=combined_pattern)
+
+    if proverb:
         return {
-            "text": p.get("text"),
-            "volume": p.get("volume"),
-            "pageNumber": p.get("pageNumber")
+            "text": proverb.text,
+            "volume": proverb.volume,
+            "pageNumber": proverb.page_number
         }
-    
+
+    # Fallback if no proverbs found
     return {
         "text": "كىتاب — بىلىم بۇلىقى.",
         "volume": 1,
@@ -487,13 +539,11 @@ async def suggest_books(
 @router.get("/{book_id}", response_model=Book)
 async def get_book(
     book_id: str,
-    initial_pages: int = 10000,
     current_user: Optional[User] = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_session),
 ):
-    """Get a single book by ID with SQLAlchemy"""
+    """Get a single book by ID with SQLAlchemy - returns metadata only, no pages"""
     books_repo = BooksRepository(session)
-    pages_repo = PagesRepository(session)
 
     # Get book from SQLAlchemy
     book_model = await books_repo.get(book_id)
@@ -511,14 +561,51 @@ async def get_book(
     if not await check_book_access_for_guest(book_dict, current_user):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    # Get pages using repository
-    pages_list = await pages_repo.find_by_book(book_id, limit=initial_pages)
+    # No longer fetch pages here - frontend fetches them via /pages endpoint
+    # This saves a wasteful DB query for up to 10,000 rows we were discarding
+
+    # Parse last_error from JSON string if needed
+    import json
+    last_error_obj = None
+    if book_model.last_error:
+        if isinstance(book_model.last_error, str):
+            try:
+                last_error_obj = json.loads(book_model.last_error)
+            except:
+                last_error_obj = None
+        else:
+            last_error_obj = book_model.last_error
+
+    # Create a dict with only metadata
+    book_dict = {
+        "id": book_model.id,
+        "content_hash": book_model.content_hash,
+        "title": book_model.title,
+        "author": book_model.author or "",
+        "volume": book_model.volume,
+        "total_pages": book_model.total_pages,
+        "pages": [],  # Empty list as we don't load pages here anymore
+        "status": book_model.status,
+        "upload_date": book_model.upload_date,
+        "last_updated": book_model.last_updated,
+        "updated_by": book_model.updated_by,
+        "created_by": book_model.created_by,
+        "cover_url": book_model.cover_url,
+        "visibility": book_model.visibility,
+        "processing_step": book_model.processing_step,
+        "categories": book_model.categories,
+        # "errors": book_model.errors, # Removed in previous step
+        "last_error": last_error_obj,
+        "completed_count": 0,
+        "error_count": 0,
+    }
 
     # Convert SQLAlchemy models to Pydantic (automatic camelCase conversion)
-    book_response = Book.model_validate(book_model)
+    book_response = Book.model_validate(book_dict)
 
-    # Add pages as ExtractionResult models
-    book_response.pages = [ExtractionResult.model_validate(p) for p in pages_list]
+    # We intentionally return empty pages here. The frontend should fetch content 
+    # via the /content endpoint or paginated API.
+    book_response.pages = []
 
     return book_response
 
@@ -771,7 +858,6 @@ async def retry_failed_ocr(
             book_id,
             status="processing",
             processing_step="ocr",
-            ocr_provider=provider,
             last_updated=datetime.utcnow(),
             updated_by=current_user.email,
         )
@@ -787,7 +873,6 @@ async def retry_failed_ocr(
         book_id,
         status="processing",
         processing_step="ocr",
-        ocr_provider=provider,
         last_updated=datetime.utcnow(),
         updated_by=current_user.email,
     )
@@ -1138,11 +1223,12 @@ async def upload_cover(
     """Upload book cover with SQLAlchemy"""
     from PIL import Image
     from sqlalchemy import select
+    from app.db.models import Book as BookDB
 
     books_repo = BooksRepository(session)
 
     # Find book by title (case-insensitive search)
-    stmt = select(Book).where(Book.title.ilike(f"%{title}%"))
+    stmt = select(BookDB).where(BookDB.title.ilike(f"%{title}%"))
     result = await session.execute(stmt)
     book = result.scalar_one_or_none()
 
@@ -1188,12 +1274,8 @@ async def check_book_spelling(
     current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
-    """Check spelling for all pages with SQLAlchemy"""
-    # Note: spell_check_service still uses pg_db internally
-    # TODO: Update spell_check_service to use SQLAlchemy
-    db = pg_db
     try:
-        results = await spell_check_service.check_book(book_id, db)
+        results = await spell_check_service.check_book(book_id, session)
         return {
             "bookId": book_id,
             "status": "success",
@@ -1260,17 +1342,11 @@ async def apply_spelling_corrections(
     current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
-    """Apply spelling corrections with SQLAlchemy"""
-    # Note: spell_check_service still uses pg_db internally
-    # TODO: Update spell_check_service to use SQLAlchemy
-    db = pg_db
     corrections = payload.get("corrections", [])
-    if not corrections:
-        raise HTTPException(status_code=400, detail="No corrections provided")
-
     try:
-        success = await spell_check_service.apply_corrections(book_id, page_num, corrections, db, user_email=current_user.email)
+        success = await spell_check_service.apply_corrections(book_id, page_num, corrections, session, user_email=current_user.email)
         if success:
+            await session.commit()
             await enqueue_pdf_processing(book_id, reason="spell_apply", background_tasks=background_tasks)
             return {
                 "status": "success",

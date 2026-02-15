@@ -11,7 +11,7 @@ from langchain_core.documents import Document
 
 from app.core.config import settings
 from app.core.prompts import CATEGORY_PROMPT, RAG_PROMPT_TEMPLATE
-from app.db.postgres import get_chunks_repo
+
 from app.langchain import GeminiEmbeddings, build_structured_chain, build_text_chain
 from app.models.schemas import ChatRequest
 from app.utils.markdown import strip_markdown
@@ -158,22 +158,48 @@ class RAGService:
         )
         return response_text.strip() or self._build_empty_response_message()
 
-    async def _record_eval(self, db, payload: dict) -> None:
-        if not settings.rag_eval_enabled or db is None:
+    async def _record_eval(self, session, payload: dict) -> None:
+        """Record RAG evaluation metrics using SQLAlchemy"""
+        if not settings.rag_eval_enabled or session is None:
             return
-        payload["ts"] = datetime.utcnow()
         try:
-            await db.rag_evaluations.insert_one(payload)
+            from app.db.repositories.rag_evaluations import RAGEvaluationsRepository
+
+            repo = RAGEvaluationsRepository(session)
+            await repo.create_evaluation(
+                book_id=payload.get("bookId"),
+                is_global=payload.get("isGlobal", False),
+                question=payload.get("question", ""),
+                current_page=payload.get("currentPage"),
+                retrieved_count=payload.get("retrievedCount", 0),
+                context_chars=payload.get("contextChars", 0),
+                scores=payload.get("scores", []),
+                category_filter=payload.get("categoryFilter", []),
+                latency_ms=payload.get("latencyMs", 0),
+                answer_chars=payload.get("answerChars", 0),
+            )
+            await session.commit()
         except Exception as exc:
             log_json(self.logger, logging.WARNING, "RAG eval insert failed", error=str(exc))
 
-    async def answer_question(self, req: ChatRequest, pg_manager, pg_db) -> str:
+    async def answer_question(self, req: ChatRequest, session: AsyncSession) -> str:
         start_ts = time.monotonic()
-        is_global = req.bookId == "global"
+        is_global = req.book_id == "global"
         relevant_categories: List[str] = []
         book = None
+
+        from app.db.repositories.books import BooksRepository
+        from app.db.repositories.pages import PagesRepository
+        from app.db.repositories.chunks import ChunksRepository
+        from sqlalchemy import select, func, and_, or_
+        from app.db.models import Book, Page
+
+        books_repo = BooksRepository(session)
+        pages_repo = PagesRepository(session)
+        chunks_repo = ChunksRepository(session)
+
         if not is_global:
-            book = await pg_db.books.find_one({"id": req.bookId})
+            book = await books_repo.get(req.book_id)
             if not book:
                 raise ValueError("Book not found")
 
@@ -185,16 +211,13 @@ class RAGService:
         # Prepare chat history string
         chat_history_str = self._format_chat_history(req.history)
 
-        if include_current_page_context and not is_global and req.currentPage and book:
-            page_rec = await pg_db.pages.find_one(
-                {"bookId": req.bookId, "pageNumber": req.currentPage}
-            )
-            if page_rec and page_rec.get("text"):
-                # ... existing logic remains ...
-                page_text = strip_markdown(page_rec.get("text") or "")
+        if include_current_page_context and not is_global and req.current_page and book:
+            page_rec = await pages_repo.find_one(req.book_id, req.current_page)
+            if page_rec and page_rec.text:
+                page_text = strip_markdown(page_rec.text or "")
                 current_page_context = (
                     "CURRENT PAGE (THE USER IS LOOKING AT THIS NOW) - "
-                    f"Book: {book.get('title', 'Unknown')}, Page {req.currentPage}:\n"
+                    f"Book: {book.title or 'Unknown'}, Page {req.current_page}:\n"
                     f"{page_text}"
                 )
 
@@ -222,10 +245,11 @@ class RAGService:
 
         if is_global:
             # Global search - categorize to narrow down books
-            all_categories_rows = await pg_db.books.find({}, {"categories": 1}).to_list(500)
+            # Get all unique categories from books table
+            stmt = select(Book.categories).where(Book.categories != None)
+            result = await session.execute(stmt)
             all_categories = set()
-            for row in all_categories_rows:
-                cats = row.get("categories", [])
+            for cats in result.scalars().all():
                 if cats:
                     all_categories.update(cats)
 
@@ -238,44 +262,52 @@ class RAGService:
 
             # Find books by category
             if relevant_categories:
-                all_books_recs = await pg_db.books.find(
-                    {"categories": {"$in": relevant_categories}},
-                    {"id": 1, "title": 1}
-                ).to_list(100)
+                # Use overlap (&& in Postgres) for categories
+                from sqlalchemy import text
+                stmt = select(Book.id, Book.title).where(
+                    text("categories && :cats").bindparams(cats=relevant_categories)
+                ).limit(100)
+                result = await session.execute(stmt)
+                all_books_recs = result.fetchall()
             else:
                 all_books_recs = []
 
             if not all_books_recs:
                 # Fallback to recent books
-                all_books_recs = await pg_db.books.find(
-                    {},
-                    {"id": 1, "title": 1}
-                ).sort("lastUpdated", -1).to_list(200)
+                stmt = select(Book.id, Book.title).order_by(Book.last_updated.desc()).limit(200)
+                result = await session.execute(stmt)
+                all_books_recs = result.fetchall()
 
-            book_id_to_title = {str(b["id"]): b.get("title") for b in all_books_recs}
+            book_id_to_title = {str(b.id): b.title for b in all_books_recs}
             book_ids = list(book_id_to_title.keys())
         else:
             # Search specific book and siblings
-            title = book.get("title")
-            author = book.get("author")
+            title = book.title
+            author = book.author
 
-            book_ids = [str(req.bookId)]
-            book_id_to_title = {str(req.bookId): book.get("title")}
+            book_ids = [str(req.book_id)]
+            book_id_to_title = {str(req.book_id): book.title}
 
             if title and not use_current_volume_only:
                 # Find sibling volumes
-                sibling_query = {"title": title, "id": {"$ne": req.bookId}}
+                stmt = select(Book.id, Book.title).where(
+                    and_(
+                        Book.title == title,
+                        Book.id != req.book_id
+                    )
+                )
                 if author:
-                    sibling_query["author"] = author
-                siblings = await pg_db.books.find(sibling_query, {"id": 1, "title": 1}).to_list(200)
+                    stmt = stmt.where(Book.author == author)
+                
+                result = await session.execute(stmt)
+                siblings = result.fetchall()
                 for s in siblings:
-                    book_ids.append(s["id"])
-                    book_id_to_title[s["id"]] = s.get("title")
+                    book_ids.append(str(s.id))
+                    book_id_to_title[str(s.id)] = s.title
 
         # Use PostgreSQL pgvector for similarity search
         top_results = []
         if query_vector:
-            chunks_repo = get_chunks_repo(pg_manager)
             try:
                 # Perform vector similarity search using PostgreSQL
                 similar_chunks = await chunks_repo.similarity_search(
@@ -287,12 +319,12 @@ class RAGService:
 
                 # Format results with book titles
                 for chunk in similar_chunks:
-                    book_id = str(chunk.get("book_id"))
+                    b_id = chunk.get("book_id")
                     top_results.append({
                         "text": chunk.get("text", ""),
                         "score": chunk.get("similarity", 0.0),
                         "page": chunk.get("page_number"),
-                        "title": book_id_to_title.get(book_id, "Unknown"),
+                        "title": book_id_to_title.get(b_id, "Unknown"),
                     })
             except Exception as exc:
                 log_json(self.logger, logging.WARNING, "Vector search failed", error=str(exc))
@@ -304,7 +336,7 @@ class RAGService:
             keywords = self._extract_keywords(req.question)
             if keywords:
                 log_json(self.logger, logging.INFO, "Using keyword fallback search")
-                # This is a simple fallback - could be improved with full-text search
+                # TODO: Implement full-text search fallback in Postgres
                 top_results = []
 
         context_parts = []
@@ -313,7 +345,7 @@ class RAGService:
 
         documents: List[Document] = []
         for r in top_results:
-            if is_global or r["page"] != req.currentPage:
+            if is_global or r["page"] != req.current_page:
                 title = r.get("title") or "Unknown"
                 documents.append(
                     Document(
@@ -324,8 +356,6 @@ class RAGService:
 
         for doc in documents:
             context_parts.append(self._format_document(doc))
-
-
 
         context = "\n\n---\n\n".join(context_parts)
         if not context and is_global:
@@ -340,12 +370,12 @@ class RAGService:
         )
 
         await self._record_eval(
-            pg_db,
+            session,
             {
-                "bookId": req.bookId,
+                "bookId": req.book_id,
                 "isGlobal": is_global,
                 "question": req.question,
-                "currentPage": req.currentPage,
+                "currentPage": req.current_page,
                 "retrievedCount": len(top_results),
                 "contextChars": len(context),
                 "scores": [r.get("score") for r in top_results],

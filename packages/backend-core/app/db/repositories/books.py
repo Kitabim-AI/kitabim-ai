@@ -1,6 +1,7 @@
 """Books repository with SQLAlchemy"""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import List, Optional
 
 from sqlalchemy import select, func, or_, and_
@@ -130,6 +131,17 @@ class BooksRepository(BaseRepository[Book]):
 
         result = await self.session.execute(stmt)
         return result.scalar_one()
+
+    async def find_stale_processing_books(self, cutoff_time: datetime) -> List[Book]:
+        """Find books stuck in processing state since before cutoff_time"""
+        stmt = select(Book).where(
+            and_(
+                Book.status == 'processing',
+                Book.last_updated < cutoff_time
+            )
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
 
 
 def get_books_repository(session: AsyncSession) -> BooksRepository:

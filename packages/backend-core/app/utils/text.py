@@ -6,7 +6,7 @@ def clean_uyghur_text(text: str) -> str:
         return ""
 
     # Normalize common OCR character variants
-    text = text.replace("ی", "ي").replace("ه", "ە")
+    text = text.replace("ی", "ي").replace("ه", "ە").replace("\u064A\u0654", "\u0626")
 
     # 1. Join words split by hyphen/dash at line endings (standardizing line breaks)
     text = re.sub(r"(\w)[-—–_]\s*\n\s*(\w)", r"\1\2", text)

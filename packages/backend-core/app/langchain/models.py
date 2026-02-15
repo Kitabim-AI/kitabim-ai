@@ -102,6 +102,9 @@ async def _call_with_breaker(breaker: CircuitBreaker, fn, *args, **kwargs):
     except CircuitBreakerOpen as exc:
         log_json(_logger, logging.ERROR, "LLM circuit open", error=str(exc))
         raise
+    except Exception as exc:
+        log_json(_logger, logging.ERROR, "LLM call failed", error=str(exc), breaker=breaker.name)
+        raise
 
 
 async def generate_text(prompt: str, model_name: str) -> str:

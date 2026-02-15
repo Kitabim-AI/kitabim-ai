@@ -19,7 +19,8 @@ from app.services.user_service import (
     update_user_role,
     update_user_status,
 )
-from app.db.postgres_helpers import pg_db
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.db.session import get_session
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -49,14 +50,13 @@ async def list_all_users(
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     role: Optional[str] = Query(None, description="Filter by role"),
     current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
 ):
     """
     List all users with pagination.
     
     Admin only. Returns paginated list of users with optional role filtering.
     """
-    db = pg_db
-    
     # Build filter
     filter_dict = {}
     if role:
@@ -65,7 +65,7 @@ async def list_all_users(
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid role: {role}")
     
-    users, total = await list_users(db, page, page_size, filter_dict)
+    users, total = await list_users(session, page, page_size, filter_dict)
     
     return {
         "users": [UserPublic.from_user(u) for u in users],
@@ -79,14 +79,14 @@ async def list_all_users(
 async def get_user(
     user_id: str,
     current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
 ):
     """
     Get a specific user by ID.
     
     Admin only.
     """
-    db = pg_db
-    user = await get_user_by_id(db, user_id)
+    user = await get_user_by_id(session, user_id)
     
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -99,14 +99,13 @@ async def change_user_role(
     user_id: str,
     role_update: UserRoleUpdate,
     current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
 ):
     """
     Change a user's role.
     
     Admin only. Cannot change own role to prevent lockout.
     """
-    db = pg_db
-    
     # Prevent admin from changing their own role
     if user_id == current_user.id:
         raise HTTPException(
@@ -114,13 +113,15 @@ async def change_user_role(
             detail="Cannot change your own role. Ask another admin."
         )
     
-    user = await get_user_by_id(db, user_id)
+    user = await get_user_by_id(session, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    updated_user = await update_user_role(db, user_id, role_update.role)
+    updated_user = await update_user_role(session, user_id, role_update.role)
     if not updated_user:
         raise HTTPException(status_code=500, detail="Failed to update user role")
+    
+    await session.commit()
     
     logger.info(
         f"Admin {current_user.email} changed role of {updated_user.email} "
@@ -135,14 +136,13 @@ async def change_user_status(
     user_id: str,
     status_update: UserStatusUpdate,
     current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
 ):
     """
     Enable or disable a user account.
     
     Admin only. Cannot disable own account.
     """
-    db = pg_db
-    
     # Prevent admin from disabling themselves
     if user_id == current_user.id and not status_update.is_active:
         raise HTTPException(
@@ -150,13 +150,15 @@ async def change_user_status(
             detail="Cannot disable your own account."
         )
     
-    user = await get_user_by_id(db, user_id)
+    user = await get_user_by_id(session, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    updated_user = await update_user_status(db, user_id, status_update.is_active)
+    updated_user = await update_user_status(session, user_id, status_update.is_active)
     if not updated_user:
         raise HTTPException(status_code=500, detail="Failed to update user status")
+    
+    await session.commit()
     
     action = "enabled" if status_update.is_active else "disabled"
     logger.info(f"Admin {current_user.email} {action} user {updated_user.email}")

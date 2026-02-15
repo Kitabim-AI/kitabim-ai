@@ -71,7 +71,6 @@ class Book(BaseModel):
     visibility: str = "private"
     processing_step: Optional[str] = "ocr"  # DB: processing_step, API: processingStep
     categories: List[str] = Field(default_factory=list)
-    errors: List[ErrorEvent] = Field(default_factory=list)
     last_error: Optional[ErrorEvent] = None  # DB: last_error, API: lastError
     completed_count: int = 0  # DB: completed_count, API: completedCount
     error_count: int = 0  # DB: error_count, API: errorCount

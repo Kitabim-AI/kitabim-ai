@@ -24,17 +24,17 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
 
   // Helper to determine if we should use shelf-style (infinite scroll) behavior
   const isShelfView = useMemo(() => {
-    return view === 'library' || (view === 'home' && (searchQuery.trim().length > 0 || category));
+    return view === 'library' || view === 'global-chat' || (view === 'home' && (searchQuery.trim().length > 0 || category));
   }, [view, searchQuery, category]);
 
   useEffect(() => {
     sessionStorage.setItem('kitabim_sort_config', JSON.stringify(sortConfig));
   }, [sortConfig]);
 
-  // Internal Polling for Processing Books
+  // Internal Polling for Processing Books (only on admin page)
   useEffect(() => {
     const hasProcessing = books.some(b => b.status === 'processing');
-    if (hasProcessing) {
+    if (hasProcessing && view === 'admin') {
       const interval = setInterval(async () => {
         try {
           const currentSize = isShelfView ? Math.max(books.length, COLLECTION_PAGE_SIZE) : pageSize;
@@ -55,7 +55,7 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
       }, 10000);
       return () => clearInterval(interval);
     }
-  }, [books.length, books.some(b => b.status === 'processing'), isShelfView, searchQuery, sortConfig, pageSize, page, category]);
+  }, [view, books.length, books.some(b => b.status === 'processing'), isShelfView, searchQuery, sortConfig, pageSize, page, category]);
 
   const refreshLibrary = useCallback(async () => {
     setIsLoading(true);

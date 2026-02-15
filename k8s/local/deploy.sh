@@ -128,14 +128,20 @@ fi
 echo ""
 echo "☸️  Applying Kubernetes manifests..."
 
+# Create namespace if it doesn't exist
+kubectl create namespace kitabim --dry-run=client -o yaml | kubectl apply -f -
+echo "✓ Ensures namespace 'kitabim' exists"
+
 # Create Secret from .env.k8s
 kubectl create secret generic kitabim-secrets \
+    -n kitabim \
     --from-env-file=.env.k8s \
     --dry-run=client -o yaml | kubectl apply -f -
 echo "✓ Created/Updated kitabim-secrets from .env"
 
 # Create ConfigMap from .env.k8s
 kubectl create configmap kitabim-config \
+    -n kitabim \
     --from-env-file=.env.k8s \
     --dry-run=client -o yaml | kubectl apply -f -
 echo "✓ Created/Updated kitabim-config from .env"
@@ -159,18 +165,18 @@ echo "✓ Applied frontend"
 # Wait for deployments to be ready
 echo ""
 echo "⏳ Waiting for deployments to be ready..."
-kubectl wait --for=condition=available --timeout=120s deployment/redis
-kubectl wait --for=condition=available --timeout=120s deployment/backend
-kubectl wait --for=condition=available --timeout=120s deployment/worker
-kubectl wait --for=condition=available --timeout=120s deployment/frontend
+kubectl wait -n kitabim --for=condition=available --timeout=120s deployment/redis
+kubectl wait -n kitabim --for=condition=available --timeout=120s deployment/backend
+kubectl wait -n kitabim --for=condition=available --timeout=120s deployment/worker
+kubectl wait -n kitabim --for=condition=available --timeout=120s deployment/frontend
 
 echo ""
 echo "✅ Deployment complete!"
 echo ""
 echo "📊 Status:"
-kubectl get pods
+kubectl get pods -n kitabim
 echo ""
-kubectl get svc
+kubectl get svc -n kitabim
 
 echo ""
 echo "🌐 Access the application:"
@@ -187,7 +193,7 @@ fi
 
 echo ""
 echo "📝 Useful commands:"
-echo "   kubectl get pods              # View pod status"
-echo "   kubectl logs -f deployment/backend  # View backend logs"
-echo "   kubectl logs -f deployment/worker   # View worker logs"
-echo "   kubectl delete -f k8s/local/  # Delete all resources"
+echo "   kubectl get pods -n kitabim              # View pod status"
+echo "   kubectl logs -f deployment/backend -n kitabim  # View backend logs"
+echo "   kubectl logs -f deployment/worker -n kitabim   # View worker logs"
+echo "   kubectl delete -f k8s/local/              # Delete all resources"

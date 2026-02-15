@@ -95,7 +95,11 @@ class ChunksRepository(BaseRepository[Chunk]):
         Returns:
             List of dicts with book_id, page_number, text, and similarity score
         """
+        # Convert embedding to PostgreSQL array format
+        embedding_str = str(query_embedding)
+
         # Build query with or without book_ids filter
+        # Use CAST() instead of :: to avoid conflicts with SQLAlchemy parameter binding
         if book_ids:
             query = text("""
                 SELECT
@@ -103,16 +107,16 @@ class ChunksRepository(BaseRepository[Chunk]):
                     page_number,
                     chunk_index,
                     text,
-                    1 - (embedding <=> :embedding::vector) AS similarity
+                    1 - (embedding <=> CAST(:embedding AS vector)) AS similarity
                 FROM chunks
                 WHERE book_id = ANY(:book_ids)
                   AND embedding IS NOT NULL
-                  AND 1 - (embedding <=> :embedding::vector) > :threshold
+                  AND 1 - (embedding <=> CAST(:embedding AS vector)) > :threshold
                 ORDER BY similarity DESC
                 LIMIT :limit
             """)
             params = {
-                "embedding": str(query_embedding),
+                "embedding": embedding_str,
                 "book_ids": [str(bid) for bid in book_ids],
                 "threshold": threshold,
                 "limit": limit
@@ -124,15 +128,15 @@ class ChunksRepository(BaseRepository[Chunk]):
                     page_number,
                     chunk_index,
                     text,
-                    1 - (embedding <=> :embedding::vector) AS similarity
+                    1 - (embedding <=> CAST(:embedding AS vector)) AS similarity
                 FROM chunks
                 WHERE embedding IS NOT NULL
-                  AND 1 - (embedding <=> :embedding::vector) > :threshold
+                  AND 1 - (embedding <=> CAST(:embedding AS vector)) > :threshold
                 ORDER BY similarity DESC
                 LIMIT :limit
             """)
             params = {
-                "embedding": str(query_embedding),
+                "embedding": embedding_str,
                 "threshold": threshold,
                 "limit": limit
             }

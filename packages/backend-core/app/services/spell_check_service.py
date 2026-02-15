@@ -65,13 +65,18 @@ class SpellCheckService:
             checkedAt=datetime.utcnow().isoformat(),
         )
 
-    async def check_book(self, book_id: str, db) -> Dict[int, PageSpellCheck]:
-        pages_cursor = db.pages.find({"bookId": book_id, "status": "completed"})
+    async def check_book(self, book_id: str, session: AsyncSession) -> Dict[int, PageSpellCheck]:
+        from app.db.repositories.pages import PagesRepository
+        pages_repo = PagesRepository(session)
+        
+        pages = await pages_repo.find_by_book(book_id)
         
         results: Dict[int, PageSpellCheck] = {}
-        async for page_rec in pages_cursor:
-            page_num = page_rec.get("pageNumber")
-            page_text = page_rec.get("text", "")
+        for page_rec in pages:
+            if page_rec.status != "completed":
+                continue
+            page_num = page_rec.page_number
+            page_text = page_rec.text or ""
             if not page_text:
                 continue
             spell_check = await self.check_page_text(page_text, page_num)
@@ -85,14 +90,19 @@ class SpellCheckService:
         book_id: str,
         page_number: int,
         corrections: List[Dict],
-        db,
+        session: AsyncSession,
         user_email: Optional[str] = None
     ) -> bool:
-        page_rec = await db.pages.find_one({"bookId": book_id, "pageNumber": page_number})
+        from app.db.repositories.books import BooksRepository
+        from app.db.repositories.pages import PagesRepository
+        books_repo = BooksRepository(session)
+        pages_repo = PagesRepository(session)
+
+        page_rec = await pages_repo.find_one(book_id, page_number)
         if not page_rec:
             return False
 
-        page_text = page_rec.get("text", "")
+        page_text = page_rec.text or ""
         sorted_corrections = sorted(corrections, key=lambda x: x.get("position", 0), reverse=True)
         for correction in sorted_corrections:
             original = correction.get("original", "")
@@ -102,33 +112,37 @@ class SpellCheckService:
 
         new_text = normalize_markdown(page_text)
         
-        page_update = {
-            "text": new_text,
-            "status": "completed",
-            "isVerified": True,
-            "lastUpdated": datetime.utcnow()
-        }
-        if user_email:
-            page_update["updatedBy"] = user_email
-
-        await db.pages.update_one(
-            {"bookId": book_id, "pageNumber": page_number},
+        # Update page using raw SQL for embedding = NULL (consistent with books.py endpoints)
+        from sqlalchemy import text
+        await session.execute(
+            text("""
+                UPDATE pages
+                SET text = :text,
+                    status = 'completed',
+                    is_verified = TRUE,
+                    embedding = NULL,
+                    last_updated = :now,
+                    updated_by = :updated_by
+                WHERE book_id = :book_id AND page_number = :page_number
+            """),
             {
-                "$set": page_update,
-                "$unset": {"embedding": ""}
+                "text": new_text,
+                "now": datetime.utcnow(),
+                "updated_by": user_email,
+                "book_id": book_id,
+                "page_number": page_number
             }
         )
 
-        book_update = {
-            "lastUpdated": datetime.utcnow(),
-        }
-        if user_email:
-            book_update["updatedBy"] = user_email
-
-        await db.books.update_one(
-            {"id": book_id},
-            {"$set": book_update},
+        # Update book last_updated
+        await books_repo.update_one(
+            book_id,
+            last_updated=datetime.utcnow(),
+            updated_by=user_email
         )
+        
+        # Flush or commit? Usually the controller (api endpoint) handles the final commit
+        await session.flush()
         return True
 
 

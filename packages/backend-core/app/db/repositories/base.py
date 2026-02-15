@@ -22,10 +22,12 @@ class BaseRepository(Generic[ModelType]):
         self.session = session
         self.model = model
 
-    async def get(self, id: UUID | int | str) -> Optional[ModelType]:
-        """Get single record by ID"""
+    async def get(self, id: Any) -> Optional[ModelType]:
+        """Get single record by primary key"""
+        from sqlalchemy import inspect
+        pk_column = inspect(self.model).primary_key[0]
         result = await self.session.execute(
-            select(self.model).where(self.model.id == id)
+            select(self.model).where(pk_column == id)
         )
         return result.scalar_one_or_none()
 
@@ -53,11 +55,13 @@ class BaseRepository(Generic[ModelType]):
         await self.session.refresh(instance)
         return instance
 
-    async def update_one(self, id: UUID | int | str, **kwargs) -> Optional[ModelType]:
-        """Update record by ID"""
+    async def update_one(self, id: Any, **kwargs) -> Optional[ModelType]:
+        """Update record by primary key"""
+        from sqlalchemy import inspect
+        pk_column = inspect(self.model).primary_key[0]
         stmt = (
             update(self.model)
-            .where(self.model.id == id)
+            .where(pk_column == id)
             .values(**kwargs)
             .returning(self.model)
         )
@@ -65,9 +69,11 @@ class BaseRepository(Generic[ModelType]):
         await self.session.flush()
         return result.scalar_one_or_none()
 
-    async def delete_one(self, id: UUID | int | str) -> bool:
-        """Delete record by ID"""
-        stmt = delete(self.model).where(self.model.id == id)
+    async def delete_one(self, id: Any) -> bool:
+        """Delete record by primary key"""
+        from sqlalchemy import inspect
+        pk_column = inspect(self.model).primary_key[0]
+        stmt = delete(self.model).where(pk_column == id)
         result = await self.session.execute(stmt)
         await self.session.flush()
         return result.rowcount > 0
@@ -84,9 +90,11 @@ class BaseRepository(Generic[ModelType]):
         result = await self.session.execute(stmt)
         return result.scalar_one()
 
-    async def exists(self, id: UUID | int | str) -> bool:
-        """Check if record exists by ID"""
+    async def exists(self, id: Any) -> bool:
+        """Check if record exists by primary key"""
+        from sqlalchemy import inspect
+        pk_column = inspect(self.model).primary_key[0]
         result = await self.session.execute(
-            select(func.count()).select_from(self.model).where(self.model.id == id)
+            select(func.count()).select_from(self.model).where(pk_column == id)
         )
         return result.scalar_one() > 0

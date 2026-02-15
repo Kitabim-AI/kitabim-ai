@@ -145,6 +145,8 @@ export const AuthService = {
         return;
       }
 
+      let messageReceived = false;
+
       // Listen for message from popup
       const handleMessage = async (event: MessageEvent) => {
         // Allow messages from same origin OR backend origin
@@ -154,18 +156,34 @@ export const AuthService = {
           'http://localhost:30800',
           'http://localhost:8000'
         ];
-        if (!allowedOrigins.includes(event.origin)) return;
+        if (!allowedOrigins.includes(event.origin)) {
+          console.log('[OAuth] Ignored message from origin:', event.origin);
+          return;
+        }
 
         if (event.data?.type === 'OAUTH_SUCCESS') {
+          console.log('[OAuth] Received success message');
+          messageReceived = true;
           window.removeEventListener('message', handleMessage);
 
           const { accessToken } = event.data;
           setAccessToken(accessToken);
 
+          // Close popup if still open
+          try {
+            if (popup && !popup.closed) {
+              popup.close();
+            }
+          } catch (e) {
+            console.warn('[OAuth] Could not close popup:', e);
+          }
+
           // Fetch user profile
           const user = await this.getCurrentUser();
           resolve(user);
         } else if (event.data?.type === 'OAUTH_ERROR') {
+          console.log('[OAuth] Received error message');
+          messageReceived = true;
           window.removeEventListener('message', handleMessage);
           reject(new Error(event.data.error));
         }
@@ -173,9 +191,33 @@ export const AuthService = {
 
       window.addEventListener('message', handleMessage);
 
-      // No setInterval check for popup.closed because COOP blocks it and spams the console.
-      // The message listener handles the success case, and if the user closes the popup,
-      // they can simply click the button again.
+      // Check if token was set in localStorage as fallback (for when popup can't post message)
+      const checkInterval = setInterval(async () => {
+        try {
+          if (popup.closed) {
+            clearInterval(checkInterval);
+            window.removeEventListener('message', handleMessage);
+
+            if (!messageReceived) {
+              console.log('[OAuth] Popup closed, checking for localStorage token');
+              // Check if token was set via localStorage fallback
+              const token = getAccessToken();
+              if (token) {
+                const user = await this.getCurrentUser();
+                if (user) {
+                  console.log('[OAuth] Found token in localStorage, login successful');
+                  resolve(user);
+                  return;
+                }
+              }
+              reject(new Error('Login cancelled or popup closed without authentication'));
+            }
+          }
+        } catch (e) {
+          // Popup.closed can throw if popup is on different origin
+          // This is expected behavior, ignore it
+        }
+      }, 500);
     });
   },
 

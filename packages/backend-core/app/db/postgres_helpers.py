@@ -173,7 +173,7 @@ def convert_row_to_camel(row: dict, table_name: str = None) -> dict:
         return row
 
     # Fields that should be parsed from JSON strings
-    json_fields = {'errors', 'last_error', 'metadata'}
+    json_fields = {'errors', 'last_error', 'payload'}
 
     result = {}
     for k, v in row.items():

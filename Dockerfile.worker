@@ -25,4 +25,4 @@ ENV PYTHONPATH=/app/packages/backend-core:$PYTHONPATH
 WORKDIR /app/packages/backend-core
 
 # Run the worker
-CMD ["arq", "app.queue.WorkerSettings"]
+CMD ["arq", "app.worker.WorkerSettings"]

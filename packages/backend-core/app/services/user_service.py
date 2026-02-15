@@ -5,63 +5,45 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List, Tuple
 
-from app.models.user import User, UserRole, UserCreate
+from app.models.user import User, UserRole
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.db.repositories.users import UsersRepository
+from app.db.models import User as UserDB
 
 logger = logging.getLogger(__name__)
 
 
-async def get_user_by_id(db, user_id: str) -> Optional[User]:
-    """
-    Fetch a user from the database by ID.
-    """
-    if db is None:
-        logger.error("Database not initialized")
+async def get_user_by_id(session: AsyncSession, user_id: str) -> Optional[User]:
+    """Fetch a user from the database by ID."""
+    repo = UsersRepository(session)
+    user_obj = await repo.get(user_id)
+    if not user_obj:
         return None
-    
-    user_doc = await db.users.find_one({"id": user_id})
-    if not user_doc:
-        return None
-    
-    return _doc_to_user(user_doc)
+    return _model_to_user(user_obj)
 
 
-async def get_user_by_email(db, email: str) -> Optional[User]:
-    """
-    Fetch a user from the database by email.
-    """
-    if db is None:
-        logger.error("Database not initialized")
+async def get_user_by_email(session: AsyncSession, email: str) -> Optional[User]:
+    """Fetch a user from the database by email."""
+    repo = UsersRepository(session)
+    user_obj = await repo.find_by_email(email)
+    if not user_obj:
         return None
-    
-    user_doc = await db.users.find_one({"email": email.lower()})
-    if not user_doc:
-        return None
-    
-    return _doc_to_user(user_doc)
+    return _model_to_user(user_obj)
 
 
-async def get_user_by_provider(db, provider: str, provider_id: str) -> Optional[User]:
-    """
-    Fetch a user by OAuth provider and provider-specific ID.
-    """
-    if db is None:
-        logger.error("Database not initialized")
+async def get_user_by_provider(session: AsyncSession, provider: str, provider_id: str) -> Optional[User]:
+    """Fetch a user by OAuth provider and provider-specific ID."""
+    repo = UsersRepository(session)
+    user_obj = await repo.find_by_provider(provider, provider_id)
+    if not user_obj:
         return None
-    
-    user_doc = await db.users.find_one({
-        "provider": provider,
-        "provider_id": provider_id,
-    })
-    if not user_doc:
-        return None
-    
-    return _doc_to_user(user_doc)
+    return _model_to_user(user_obj)
 
 
 async def create_user(
-    db,
+    session: AsyncSession,
     email: str,
     display_name: str,
     provider: str,
@@ -69,137 +51,100 @@ async def create_user(
     role: UserRole = UserRole.READER,
     avatar_url: Optional[str] = None,
 ) -> User:
-    """
-    Create a new user in the database.
-    """
-    if db is None:
-        raise ValueError("Database not initialized")
-    
+    """Create a new user in the database."""
     now = datetime.now(timezone.utc)
-    user_id = str(uuid.uuid4())
+    user_id = uuid.uuid4()
     
-    user_doc = {
-        "id": user_id,
-        "email": email.lower(),
-        "display_name": display_name,
-        "avatar_url": avatar_url,
-        "role": role.value,
-        "provider": provider,
-        "provider_id": provider_id,
-        "created_at": now,
-        "updated_at": now,
-        "last_login_at": now,
-        "is_active": True,
-    }
+    user_obj = UserDB(
+        id=user_id,
+        email=email.lower(),
+        display_name=display_name,
+        avatar_url=avatar_url,
+        role=role.value,
+        provider=provider,
+        provider_id=provider_id,
+        created_at=now,
+        updated_at=now,
+        last_login_at=now,
+        is_active=True,
+    )
     
-    await db.users.insert_one(user_doc)
+    session.add(user_obj)
+    await session.flush()
     logger.info(f"Created new user: {user_id} ({email}) with role {role.value}")
     
-    return _doc_to_user(user_doc)
+    return _model_to_user(user_obj)
 
 
-async def update_user_login(db, user_id: str, avatar_url: Optional[str] = None) -> None:
-    """
-    Update user's last login time and optionally their avatar.
-    """
-    if db is None:
-        return
-    
-    now = datetime.now(timezone.utc)
+async def update_user_login(session: AsyncSession, user_id: str, avatar_url: Optional[str] = None) -> None:
+    """Update user's last login time and optionally their avatar."""
+    repo = UsersRepository(session)
     update_data = {
-        "last_login_at": now,
-        "updated_at": now,
+        "last_login_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
     }
-    
     if avatar_url:
         update_data["avatar_url"] = avatar_url
     
-    await db.users.update_one(
-        {"id": user_id},
-        {"$set": update_data}
-    )
+    try:
+        await repo.update_one(user_id, **update_data)
+        await session.flush()
+    except Exception as e:
+        logger.error(f"Failed to update user login: {e}")
 
 
-async def update_user_role(db, user_id: str, new_role: UserRole) -> Optional[User]:
-    """
-    Update a user's role.
-    """
-    if db is None:
+async def update_user_role(session: AsyncSession, user_id: str, new_role: UserRole) -> Optional[User]:
+    """Update a user's role."""
+    repo = UsersRepository(session)
+    from uuid import UUID
+    success = await repo.update_one(user_id, role=new_role.value, updated_at=datetime.now(timezone.utc))
+    if not success:
         return None
     
-    now = datetime.now(timezone.utc)
-    result = await db.users.update_one(
-        {"id": user_id},
-        {"$set": {"role": new_role.value, "updated_at": now}}
-    )
-    
-    if result.modified_count == 0:
+    await session.flush()
+    user_obj = await repo.get(user_id)
+    return _model_to_user(user_obj) if user_obj else None
+
+
+async def update_user_status(session: AsyncSession, user_id: str, is_active: bool) -> Optional[User]:
+    """Enable or disable a user account."""
+    repo = UsersRepository(session)
+    success = await repo.update_one(user_id, is_active=is_active, updated_at=datetime.now(timezone.utc))
+    if not success:
         return None
     
-    logger.info(f"Updated user {user_id} role to {new_role.value}")
-    return await get_user_by_id(db, user_id)
+    await session.flush()
+    user_obj = await repo.get(user_id)
+    return _model_to_user(user_obj) if user_obj else None
 
 
-async def update_user_status(db, user_id: str, is_active: bool) -> Optional[User]:
-    """
-    Enable or disable a user account.
-    """
-    if db is None:
-        return None
-    
-    now = datetime.now(timezone.utc)
-    result = await db.users.update_one(
-        {"id": user_id},
-        {"$set": {"is_active": is_active, "updated_at": now}}
-    )
-    
-    if result.modified_count == 0:
-        return None
-    
-    logger.info(f"Set user {user_id} active={is_active}")
-    return await get_user_by_id(db, user_id)
-
-
-async def list_users(db, page: int = 1, page_size: int = 20, filter_dict: dict = None) -> tuple[list[User], int]:
-    """
-    List users with pagination and filtering.
-    """
-    if db is None:
-        return [], 0
-    
+async def list_users(session: AsyncSession, page: int = 1, page_size: int = 20, filter_dict: dict = None) -> Tuple[List[User], int]:
+    """List users with pagination and filtering."""
+    repo = UsersRepository(session)
     skip = (page - 1) * page_size
-    query = filter_dict or {}
     
-    total = await db.users.count_documents(query)
-    cursor = db.users.find(query).skip(skip).limit(page_size).sort("created_at", -1)
-
-    docs = await cursor.to_list(page_size)
-    users = [_doc_to_user(doc) for doc in docs]
-
+    role = filter_dict.get("role") if filter_dict else None
+    is_active = filter_dict.get("is_active") if filter_dict else None
+    
+    users_objs = await repo.find_many(role=role, is_active=is_active, skip=skip, limit=page_size)
+    total = await repo.count_by_role(role=role)
+    
+    users = [_model_to_user(obj) for obj in users_objs]
     return users, total
 
 
-def _doc_to_user(doc: dict) -> User:
-    """Convert a MongoDB document to a User object."""
-    try:
-        # Handle both snake_case and camelCase for compatibility during migration
-        display_name = doc.get("display_name") or doc.get("displayName") or ""
-        provider_id = doc.get("provider_id") or doc.get("providerId") or ""
-        role_val = doc.get("role")
-        
-        return User(
-            id=str(doc["id"]),
-            email=doc["email"],
-            display_name=display_name,
-            avatar_url=doc.get("avatar_url") or doc.get("avatarUrl"),
-            role=UserRole(role_val) if role_val else UserRole.READER,
-            provider=doc.get("provider", "google"),
-            provider_id=provider_id,
-            created_at=doc.get("created_at") or doc.get("createdAt") or datetime.now(timezone.utc),
-            updated_at=doc.get("updated_at") or doc.get("updatedAt") or datetime.now(timezone.utc),
-            last_login_at=doc.get("last_login_at") or doc.get("lastLoginAt"),
-            is_active=doc.get("is_active", True),
-        )
-    except KeyError as e:
-        logger.error(f"Failed to convert doc to User: {e}. Keys present: {list(doc.keys())}")
-        raise
+def _model_to_user(user_obj: UserDB) -> User:
+    """Convert a SQLAlchemy User model to a Pydantic User schema."""
+    return User(
+        id=str(user_obj.id),
+        email=user_obj.email,
+        display_name=user_obj.display_name,
+        avatar_url=user_obj.avatar_url,
+        role=UserRole(user_obj.role) if user_obj.role else UserRole.READER,
+        provider=user_obj.provider or "google",
+        provider_id=user_obj.provider_id or "",
+        created_at=user_obj.created_at or datetime.now(timezone.utc),
+        updated_at=user_obj.updated_at or datetime.now(timezone.utc),
+        last_login_at=user_obj.last_login_at,
+        is_active=user_obj.is_active,
+    )

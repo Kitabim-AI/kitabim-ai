@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.endpoints import ai, auth, books, chat, users
 from app.core.config import settings
 from app.db.session import init_db, close_db  # SQLAlchemy session management
-from app.db.postgres import db_manager, get_books_repo, get_pages_repo  # Keep for startup tasks (TODO: migrate)
+
 from app.queue import enqueue_pdf_processing
 from app.langchain import configure_langchain
 from app.utils.observability import configure_logging, log_json, request_id_var
@@ -34,48 +34,56 @@ async def lifespan(app: FastAPI):
     # Initialize SQLAlchemy (replaces db_manager.connect_to_storage())
     await init_db()
 
-    # TODO: Temporarily keep old db_manager for startup tasks
-    # This will be removed once endpoints are migrated to SQLAlchemy
-    await db_manager.connect_to_storage()
+    # SQLAlchemy is already initialized above with await init_db()
+    
+    # Run startup tasks using SQLAlchemy
+    try:
+        logger = logging.getLogger("app.startup")
+        log_json(logger, logging.INFO, "Checking for books needing resume or retrofitting")
 
-    if db_manager.pool is not None:
-        try:
-            logger = logging.getLogger("app.startup")
-            log_json(logger, logging.INFO, "Checking for books needing resume or retrofitting")
+        from app.db import session as db_session
+        from app.db.repositories.books import BooksRepository
+        from app.db.repositories.pages import PagesRepository
+        from app.db.models import Page
+        from sqlalchemy import select, func, and_
 
-            books_repo = get_books_repo(db_manager)
-            pages_repo = get_pages_repo(db_manager)
+        async with db_session.async_session_factory() as session:
+            books_repo = BooksRepository(session)
+            pages_repo = PagesRepository(session)
 
-            # Get all books
-            all_books = await books_repo.find_many(limit=2000, offset=0)
+            # Get all books (using SQLAlchemy model)
+            all_books = await books_repo.get_all(limit=2000)
 
             for book in all_books:
-                needs_resume = book.get("status") == "processing"
-                cover_file = settings.covers_dir / f"{book['id']}.jpg"
+                needs_resume = book.status == "processing"
+                cover_file = settings.covers_dir / f"{book.id}.jpg"
                 needs_cover = (
-                    book.get("status") == "ready"
-                    and (not book.get("cover_url") or not cover_file.exists())
+                    book.status == "ready"
+                    and (not book.cover_url or not cover_file.exists())
                 )
 
                 # Check pages needing RAG (embeddings)
                 has_missing_embeddings = False
-                if book.get("status") == "ready":
-                    missing_emb_count = await db_manager.fetchval("""
-                        SELECT COUNT(*) FROM pages
-                        WHERE book_id = $1
-                          AND status = 'completed'
-                          AND embedding IS NULL
-                    """, book["id"])
+                if book.status == "ready":
+                    stmt = select(func.count(Page.id)).where(
+                        and_(
+                            Page.book_id == book.id,
+                            Page.status == 'completed',
+                            Page.embedding == None
+                        )
+                    )
+                    res = await session.execute(stmt)
+                    missing_emb_count = res.scalar()
                     has_missing_embeddings = missing_emb_count > 0
 
                 needs_rag = (
-                    book.get("status") == "ready"
+                    book.status == "ready"
                     and has_missing_embeddings
                 )
                 needs_pages = (
-                    book.get("status") != "pending"
-                    and book.get("total_pages", 0) == 0
-                    and (settings.uploads_dir / f"{book['id']}.pdf").exists()
+                    book.status != "pending"
+                    and book.total_pages == 0
+                    and (settings.uploads_dir / f"{book.id}.pdf").exists()
                 )
 
                 if needs_resume or needs_cover or needs_rag or needs_pages:
@@ -84,18 +92,17 @@ async def lifespan(app: FastAPI):
                         logger,
                         logging.INFO,
                         "Triggering startup task",
-                        book_id=book["id"],
+                        book_id=book.id,
                         reason=reason,
                     )
-                    asyncio.create_task(enqueue_pdf_processing(book["id"], reason="startup"))
-        except Exception as exc:
-            log_json(logger, logging.ERROR, "Startup task sweep failed", error=str(exc))
+                    asyncio.create_task(enqueue_pdf_processing(book.id, reason="startup"))
+    except Exception as exc:
+        log_json(logger, logging.ERROR, "Startup task sweep failed", error=str(exc))
 
     yield
 
-    # Cleanup both old and new database connections
-    await db_manager.close_storage()  # TODO: Remove after full migration
-    await close_db()  # SQLAlchemy cleanup
+    # Cleanup SQLAlchemy engine
+    await close_db()
 
 
 app = FastAPI(title=settings.project_name, lifespan=lifespan)
@@ -158,10 +165,12 @@ async def health():
 
 @app.get("/ready")
 async def ready():
-    if db_manager.pool is None:
-        raise HTTPException(status_code=503, detail="Database not initialized")
+    from app.db.session import get_engine
+    from sqlalchemy import text
     try:
-        await db_manager.fetchval("SELECT 1")
+        engine = get_engine()
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Database not ready: {exc}")
     return {"status": "ready"}

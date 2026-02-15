@@ -6,7 +6,7 @@ from typing import List, Optional
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
-    ARRAY, Boolean, CheckConstraint, DateTime, ForeignKey,
+    ARRAY, Boolean, CheckConstraint, DateTime, Float, ForeignKey,
     Integer, String, Text, UniqueConstraint, func, text
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
@@ -53,6 +53,11 @@ class Book(Base):
         nullable=False
     )
     processing_step: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    processing_lock: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    processing_lock_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
+    )
 
     # Arrays (PostgreSQL)
     categories: Mapped[List[str]] = mapped_column(
@@ -92,6 +97,7 @@ class Book(Base):
         server_default=func.now(),
         nullable=False
     )
+    is_indexed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     updated_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
@@ -149,6 +155,7 @@ class Page(Base):
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     ocr_provider: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    is_indexed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     last_updated: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -212,10 +219,10 @@ class User(Base):
     """User model with OAuth provider information"""
     __tablename__ = "users"
 
-    id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
+    id: Mapped[str] = mapped_column(
+        String(36),
         primary_key=True,
-        default=uuid4,
+        default=lambda: str(uuid4()),
         server_default=text("uuid_generate_v4()")
     )
 
@@ -273,14 +280,14 @@ class RefreshToken(Base):
     """Refresh token model for JWT authentication"""
     __tablename__ = "refresh_tokens"
 
-    jti: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
+    jti: Mapped[str] = mapped_column(
+        String(36),
         primary_key=True,
-        default=uuid4,
+        default=lambda: str(uuid4()),
         server_default=text("uuid_generate_v4()")
     )
-    user_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
+    user_id: Mapped[str] = mapped_column(
+        String(36),
         ForeignKey("users.id", ondelete="CASCADE"),
         index=True,
         nullable=False
@@ -291,6 +298,10 @@ class RefreshToken(Base):
         index=True,
         nullable=False
     )
+    token_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    device_info: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=func.now(),
@@ -308,7 +319,12 @@ class Job(Base):
 
     job_key: Mapped[str] = mapped_column(String(255), primary_key=True)
     status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    book_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    payload: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -322,4 +338,57 @@ class Job(Base):
         onupdate=func.now(),
         server_default=func.now(),
         nullable=False
+    )
+
+
+class Proverb(Base):
+    """Proverb model for Uyghur proverbs about knowledge and books"""
+    __tablename__ = "proverbs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    volume: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    page_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False
+    )
+
+
+class RAGEvaluation(Base):
+    """RAG evaluation model for tracking RAG query performance metrics"""
+    __tablename__ = "rag_evaluations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Query context
+    book_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    is_global: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    current_page: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    # Retrieval metrics
+    retrieved_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    context_chars: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    scores: Mapped[Optional[List[float]]] = mapped_column(ARRAY(Float), nullable=True)
+    category_filter: Mapped[List[str]] = mapped_column(
+        ARRAY(Text),
+        default=list,
+        server_default=text("'{}'")
+    )
+
+    # Performance metrics
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    answer_chars: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # Timestamp
+    ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+        index=True
     )
