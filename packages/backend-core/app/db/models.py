@@ -387,3 +387,11 @@ class RAGEvaluation(Base):
         nullable=False,
         index=True
     )
+
+
+class Word(Base):
+    """Word model for storing individual words"""
+    __tablename__ = "words"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    word: Mapped[str] = mapped_column(String(255), nullable=False)

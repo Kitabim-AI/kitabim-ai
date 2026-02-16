@@ -133,7 +133,7 @@ flowchart LR
 - Gemini provider accessed via `langchain-google-genai` wrappers (no direct SDK calls)
 
 ## 8) Reliability & Idempotency
-- Job locks stored in MongoDB prevent duplicate processing
+- Job locks stored in PostgreSQL via processing_lock field prevent duplicate processing
 - Retry policies managed by ARQ worker
 - Circuit breaker around LLM calls to avoid cascading failures
 - Processing status and errors persisted to `books` and `jobs`
@@ -154,7 +154,7 @@ flowchart LR
 
 ## 12) Scalability Considerations
 - Horizontal scaling of workers for OCR/embedding throughput
-- MongoDB indexing on key fields
+- PostgreSQL indexing on key fields
 - Pluggable storage abstraction (future S3/MinIO)
 
 ## 13) Risks & Future Improvements

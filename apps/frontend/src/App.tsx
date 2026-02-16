@@ -183,7 +183,7 @@ const App: React.FC = () => {
     const delay = shouldDelayInitialPoll() ? 1500 : 0;
     const timeout = setTimeout(() => {
       pollSelectedBook();
-      interval = setInterval(pollSelectedBook, 4000);
+      interval = setInterval(pollSelectedBook, 60000); // Poll every 60 seconds
     }, delay);
 
     return () => {

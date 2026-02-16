@@ -32,6 +32,30 @@ from app.utils.text import generate_uyghur_regex
 
 logger = logging.getLogger(__name__)
 
+
+def camel_to_snake(name: str) -> str:
+    """Convert camelCase to snake_case"""
+    # Insert underscore before uppercase letters and convert to lowercase
+    name = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
+    return re.sub('([a-z0-9])([A-Z])', r'\1_\2', name).lower()
+
+
+def convert_dict_keys_to_snake(d: dict) -> dict:
+    """Recursively convert all dict keys from camelCase to snake_case"""
+    result = {}
+    for key, value in d.items():
+        snake_key = camel_to_snake(key)
+        if isinstance(value, dict):
+            result[snake_key] = convert_dict_keys_to_snake(value)
+        elif isinstance(value, list):
+            result[snake_key] = [
+                convert_dict_keys_to_snake(item) if isinstance(item, dict) else item
+                for item in value
+            ]
+        else:
+            result[snake_key] = value
+    return result
+
 router = APIRouter()
 
 
@@ -1125,9 +1149,11 @@ async def update_book_details(
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
 
+    # Convert all camelCase keys to snake_case
+    book_update = convert_dict_keys_to_snake(book_update)
+
     # Remove fields we don't want to update
     book_update.pop("upload_date", None)
-    book_update.pop("uploadDate", None)
     book_update.pop("content", None)
 
     has_page_updates = False
@@ -1170,16 +1196,20 @@ async def update_book_details(
                     }
                 )
 
-    # Remove pages from book_update
+    # Remove pages from book_update (already processed above)
     book_update.pop("pages", None)
 
-    # Convert camelCase to snake_case for model fields
-    if "lastUpdated" in book_update:
-        book_update.pop("lastUpdated")
-    if "updatedBy" in book_update:
-        book_update.pop("updatedBy")
+    # Remove id field to avoid conflict with book_id parameter
+    book_update.pop("id", None)
 
-    # Update book
+    # Remove computed/read-only fields (already in snake_case after conversion)
+    read_only_fields = [
+        "upload_date", "created_by", "error_count", "completed_count", "last_error"
+    ]
+    for field in read_only_fields:
+        book_update.pop(field, None)
+
+    # Set system fields
     book_update["last_updated"] = datetime.utcnow()
     book_update["updated_by"] = current_user.email
 

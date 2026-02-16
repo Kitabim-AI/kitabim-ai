@@ -119,10 +119,9 @@ packages/backend-core/
     │   ├── config.py        # Environment settings
     │   └── prompts.py       # AI prompts for OCR, RAG, etc.
     ├── db/                  # Database layer
-    │   ├── mongodb.py       # MongoDB adapter (legacy/job locks)
-    │   ├── postgres.py      # PostgreSQL connection
-    │   ├── postgres_adapter.py  # Repository pattern
-    │   └── postgres_helpers.py  # Query builders
+    │   ├── postgres.py      # PostgreSQL connection and session management
+    │   ├── repositories/    # Repository pattern implementations
+    │   └── models.py        # SQLAlchemy models
     ├── langchain/           # LangChain integrations
     │   ├── chains/          # LCEL chains
     │   ├── models/          # Model adapters
@@ -712,8 +711,8 @@ python3.13 -m pytest services/backend/tests
 | `app/api/endpoints/chat.py` | RAG chat endpoint |
 | `app/services/pdf_service.py` | PDF processing orchestration |
 | `app/services/rag_service.py` | RAG retrieval and chat logic |
-| `app/db/postgres.py` | PostgreSQL connection pool |
-| `app/db/postgres_adapter.py` | Repository pattern implementation |
+| `app/db/session.py` | PostgreSQL session management |
+| `app/db/repositories/` | Repository pattern implementations |
 
 ### Frontend
 

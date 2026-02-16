@@ -25,8 +25,6 @@ class Settings:
     gemini_embedding_model: str = os.getenv("GEMINI_EMBEDDING_MODEL", "models/gemini-embedding-001")
 
     # Database
-    mongodb_url: str = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
-    database_name: str = os.getenv("MONGODB_DATABASE", "kitabim_ai_db")
     database_url: str | None = os.getenv("DATABASE_URL")  # PostgreSQL connection string
 
     # Directories

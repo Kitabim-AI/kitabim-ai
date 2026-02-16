@@ -1,6 +1,5 @@
 fastapi
 uvicorn
-motor
 pydantic
 python-multipart
 pymupdf

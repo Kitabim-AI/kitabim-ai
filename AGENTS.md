@@ -6,7 +6,7 @@ This file provides guidance for automated agents working in this repo.
 ## Repository Rules
 - Keep the monorepo structure intact.
 - Local development uses **Kubernetes (Docker Desktop, minikube, or kind)**.
-- Database: **PostgreSQL (local host)**. MongoDB is deprecated.
+- Database: **PostgreSQL (local host)**. MongoDB is removed.
 
 ## Microservices
 - Backend API: `services/backend` (FastAPI, uses `packages/backend-core`)

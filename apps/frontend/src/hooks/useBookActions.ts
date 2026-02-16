@@ -281,26 +281,17 @@ export const useBookActions = (
         });
       }
 
-      // 2. Identify changes and build updated results
-      let hasChanges = false;
-      const updatedPages = (selectedBook.pages || []).map(res => {
-        const newText = newPageMap.get(res.pageNumber);
+      // 2. Build pages array directly from parsed content
+      // This ensures ALL pages from editContent are included, not just the ones in selectedBook.pages
+      const updatedPages = Array.from(newPageMap.entries()).map(([pageNumber, text]) => ({
+        pageNumber,
+        text,
+        status: 'completed' as const,
+        isVerified: true
+      }));
 
-        // If marker exists and text is different, update
-        if (newText !== undefined && newText !== (res.text || "")) {
-          hasChanges = true;
-          return {
-            ...res,
-            text: newText,
-            status: 'completed' as const,
-            isVerified: true
-          };
-        }
-        // Otherwise keep original (avoids re-verifying or re-syncing unchanged pages)
-        return res;
-      });
-
-      if (!hasChanges) {
+      if (updatedPages.length === 0) {
+        addNotification("No pages found to save. Please try reloading the book.", "error");
         setIsEditing(false);
         return;
       }
@@ -314,6 +305,7 @@ export const useBookActions = (
       };
 
       await PersistenceService.saveBookGlobally(updatedBook);
+
       setSelectedBook(updatedBook);
       await refreshLibrary();
       setIsEditing(false);
