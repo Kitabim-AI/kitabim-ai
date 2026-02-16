@@ -14,19 +14,27 @@
     body {
       font-family: 'UKIJ Nasq', 'ALKATIP Tor', 'Noto Naskh Arabic', 'Arabic Typesetting', 'Traditional Arabic', serif;
       background: linear-gradient(135deg, #f5f7fa 0%, #e8f4f8 100%);
+      background-size: 200% 200%;
+      animation: gradientShift 15s ease infinite;
       direction: rtl;
       min-height: 100vh;
     }
 
+    @keyframes gradientShift {
+      0%, 100% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+    }
+
     /* Navigation Bar */
     .navbar {
-      background: white;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
       border-bottom: 2px solid #75C5F0;
       padding: 1rem 2rem;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      box-shadow: 0 2px 10px rgba(117, 197, 240, 0.1);
+      box-shadow: 0 4px 20px rgba(117, 197, 240, 0.15);
     }
 
     .logo {

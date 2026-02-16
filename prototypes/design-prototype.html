@@ -14,19 +14,28 @@
     body {
       font-family: 'UKIJ Nasq', 'ALKATIP Tor', 'Noto Naskh Arabic', 'Arabic Typesetting', 'Traditional Arabic', serif;
       background: linear-gradient(135deg, #f5f7fa 0%, #e8f4f8 100%);
+      background-size: 200% 200%;
+      animation: gradientShift 15s ease infinite;
       direction: rtl;
       min-height: 100vh;
     }
 
+    @keyframes gradientShift {
+      0%, 100% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+    }
+
     /* Navigation Bar */
     .navbar {
-      background: white;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
       border-bottom: 2px solid #75C5F0;
       padding: 1rem 2rem;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      box-shadow: 0 2px 10px rgba(117, 197, 240, 0.1);
+      box-shadow: 0 4px 20px rgba(117, 197, 240, 0.15);
+      transition: all 0.3s ease;
     }
 
     .logo {
@@ -34,6 +43,11 @@
       align-items: center;
       gap: 0.75rem;
       cursor: pointer;
+      transition: transform 0.3s ease;
+    }
+
+    .logo:hover {
+      transform: translateY(-2px);
     }
 
     .logo-icon {
@@ -41,12 +55,19 @@
       padding: 0.75rem;
       border-radius: 12px;
       box-shadow: 0 4px 12px rgba(117, 197, 240, 0.3);
+      transition: all 0.3s ease;
+    }
+
+    .logo:hover .logo-icon {
+      box-shadow: 0 6px 20px rgba(117, 197, 240, 0.5);
+      transform: rotate(-5deg);
     }
 
     .logo-icon svg {
       width: 28px;
       height: 28px;
       fill: white;
+      transition: transform 0.3s ease;
     }
 
     .logo-text {
@@ -71,22 +92,48 @@
       font-size: 1rem;
       font-weight: 600;
       cursor: pointer;
-      transition: all 0.3s ease;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       border: none;
       display: flex;
       align-items: center;
       gap: 0.5rem;
       color: #4a5568;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .nav-btn::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 0;
+      height: 0;
+      border-radius: 50%;
+      background: rgba(117, 197, 240, 0.1);
+      transform: translate(-50%, -50%);
+      transition: width 0.6s, height 0.6s;
+    }
+
+    .nav-btn:hover::before {
+      width: 300px;
+      height: 300px;
     }
 
     .nav-btn:hover {
       background: #e8f4f8;
       color: #75C5F0;
+      transform: translateY(-1px);
     }
 
     .nav-btn.active {
-      background: #75C5F0;
+      background: linear-gradient(135deg, #75C5F0 0%, #5AB0E5 100%);
       color: white;
+      box-shadow: 0 4px 12px rgba(117, 197, 240, 0.3);
+    }
+
+    .nav-btn.active:hover {
+      box-shadow: 0 6px 16px rgba(117, 197, 240, 0.5);
     }
 
     .add-book-btn {
@@ -98,12 +145,34 @@
       border: none;
       cursor: pointer;
       box-shadow: 0 4px 12px rgba(117, 197, 240, 0.3);
-      transition: all 0.3s ease;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .add-book-btn::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0) 100%);
+      transform: translateX(-100%);
+      transition: transform 0.6s;
+    }
+
+    .add-book-btn:hover::after {
+      transform: translateX(100%);
     }
 
     .add-book-btn:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(117, 197, 240, 0.4);
+      transform: translateY(-3px);
+      box-shadow: 0 8px 24px rgba(117, 197, 240, 0.5);
+    }
+
+    .add-book-btn:active {
+      transform: translateY(-1px);
     }
 
     /* Hero Section */
@@ -149,15 +218,16 @@
       font-size: 1.125rem;
       background: white;
       box-shadow: 0 8px 24px rgba(117, 197, 240, 0.15);
-      transition: all 0.3s ease;
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
       direction: rtl;
       text-align: right;
     }
 
     .search-box:focus {
       outline: none;
-      box-shadow: 0 12px 32px rgba(117, 197, 240, 0.25);
+      box-shadow: 0 12px 40px rgba(117, 197, 240, 0.3), 0 0 0 4px rgba(117, 197, 240, 0.1);
       border-color: #5AB0E5;
+      transform: translateY(-2px);
     }
 
     .search-btn {
@@ -199,15 +269,34 @@
       font-weight: 600;
       color: #4a5568;
       cursor: pointer;
-      transition: all 0.3s ease;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       box-shadow: 0 2px 8px rgba(117, 197, 240, 0.1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .category-tag::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #75C5F0 0%, #5AB0E5 100%);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      z-index: -1;
     }
 
     .category-tag:hover {
       border-color: #75C5F0;
-      color: #75C5F0;
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(117, 197, 240, 0.2);
+      color: white;
+      transform: translateY(-4px) scale(1.05);
+      box-shadow: 0 8px 20px rgba(117, 197, 240, 0.3);
+    }
+
+    .category-tag:hover::before {
+      opacity: 1;
     }
 
     /* Books Grid */
@@ -252,14 +341,14 @@
       border-radius: 16px;
       padding: 1.5rem;
       box-shadow: 0 4px 16px rgba(117, 197, 240, 0.1);
-      transition: all 0.3s ease;
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
       cursor: pointer;
       border: 2px solid transparent;
     }
 
     .book-card:hover {
-      transform: translateY(-8px);
-      box-shadow: 0 12px 32px rgba(117, 197, 240, 0.2);
+      transform: translateY(-12px) scale(1.02);
+      box-shadow: 0 20px 40px rgba(117, 197, 240, 0.25);
       border-color: #75C5F0;
     }
 
@@ -276,6 +365,12 @@
       font-size: 3rem;
       font-weight: bold;
       box-shadow: 0 4px 12px rgba(117, 197, 240, 0.3);
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .book-card:hover .book-cover {
+      box-shadow: 0 8px 24px rgba(117, 197, 240, 0.5);
+      transform: scale(1.05);
     }
 
     .book-title {
