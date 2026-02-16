@@ -18,6 +18,21 @@
       animation: gradientShift 15s ease infinite;
       direction: rtl;
       min-height: 100vh;
+      position: relative;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image:
+        radial-gradient(circle at 20% 50%, rgba(117, 197, 240, 0.08) 0%, transparent 50%),
+        radial-gradient(circle at 80% 80%, rgba(90, 176, 229, 0.06) 0%, transparent 50%);
+      pointer-events: none;
+      z-index: 0;
     }
 
     @keyframes gradientShift {
@@ -200,10 +215,13 @@
     /* Table Section */
     .table-section {
       background: white;
-      border-radius: 16px;
-      padding: 1.5rem;
-      box-shadow: 0 4px 16px rgba(117, 197, 240, 0.1);
+      border-radius: 20px;
+      padding: 2rem;
+      box-shadow:
+        0 2px 8px rgba(117, 197, 240, 0.08),
+        0 8px 24px rgba(117, 197, 240, 0.06);
       margin-bottom: 2rem;
+      border: 1px solid rgba(117, 197, 240, 0.1);
     }
 
     .table-header {

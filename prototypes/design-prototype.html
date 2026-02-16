@@ -18,6 +18,21 @@
       animation: gradientShift 15s ease infinite;
       direction: rtl;
       min-height: 100vh;
+      position: relative;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image:
+        radial-gradient(circle at 20% 50%, rgba(117, 197, 240, 0.08) 0%, transparent 50%),
+        radial-gradient(circle at 80% 80%, rgba(90, 176, 229, 0.06) 0%, transparent 50%);
+      pointer-events: none;
+      z-index: 0;
     }
 
     @keyframes gradientShift {
@@ -178,29 +193,43 @@
     /* Hero Section */
     .hero {
       text-align: center;
-      padding: 4rem 2rem;
+      padding: 5rem 2rem;
       max-width: 1200px;
       margin: 0 auto;
+      position: relative;
     }
 
     .hero-title {
-      font-size: 4.5rem;
-      font-weight: bold;
+      font-size: 5rem;
+      font-weight: 900;
       color: #1a1a1a;
-      margin-bottom: 1rem;
-      letter-spacing: -1px;
+      margin-bottom: 1.5rem;
+      letter-spacing: -2px;
+      text-shadow: 0 2px 4px rgba(117, 197, 240, 0.1);
+      line-height: 1.1;
     }
 
     .hero-title .ai {
-      color: #75C5F0;
+      background: linear-gradient(135deg, #75C5F0 0%, #5AB0E5 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      position: relative;
     }
 
     .hero-subtitle {
-      font-size: 1.5rem;
-      color: #75C5F0;
-      margin-bottom: 2rem;
+      font-size: 1.75rem;
+      background: linear-gradient(135deg, #75C5F0 0%, #5AB0E5 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 3rem;
       font-style: italic;
-      font-weight: 500;
+      font-weight: 600;
+      line-height: 1.6;
+      max-width: 800px;
+      margin-left: auto;
+      margin-right: auto;
     }
 
     /* Search Section */
@@ -338,18 +367,41 @@
 
     .book-card {
       background: white;
-      border-radius: 16px;
-      padding: 1.5rem;
-      box-shadow: 0 4px 16px rgba(117, 197, 240, 0.1);
+      border-radius: 20px;
+      padding: 1.75rem;
+      box-shadow:
+        0 2px 8px rgba(117, 197, 240, 0.08),
+        0 8px 24px rgba(117, 197, 240, 0.06);
       transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
       cursor: pointer;
-      border: 2px solid transparent;
+      border: 1px solid rgba(117, 197, 240, 0.1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .book-card::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(135deg, rgba(117, 197, 240, 0.03) 0%, transparent 100%);
+      opacity: 0;
+      transition: opacity 0.4s ease;
+      pointer-events: none;
+    }
+
+    .book-card:hover::after {
+      opacity: 1;
     }
 
     .book-card:hover {
-      transform: translateY(-12px) scale(1.02);
-      box-shadow: 0 20px 40px rgba(117, 197, 240, 0.25);
-      border-color: #75C5F0;
+      transform: translateY(-16px) scale(1.03);
+      box-shadow:
+        0 8px 16px rgba(117, 197, 240, 0.12),
+        0 24px 48px rgba(117, 197, 240, 0.2);
+      border-color: rgba(117, 197, 240, 0.3);
     }
 
     .book-cover {
