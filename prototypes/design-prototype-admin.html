@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="ug" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>باشقۇرۇش - Kitabim.AI</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'UKIJ Nasq', 'ALKATIP Tor', 'Noto Naskh Arabic', 'Arabic Typesetting', 'Traditional Arabic', serif;
+      background: linear-gradient(135deg, #f5f7fa 0%, #e8f4f8 100%);
+      direction: rtl;
+      min-height: 100vh;
+    }
+
+    /* Navigation Bar */
+    .navbar {
+      background: white;
+      border-bottom: 2px solid #75C5F0;
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 10px rgba(117, 197, 240, 0.1);
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      cursor: pointer;
+    }
+
+    .logo-icon {
+      background: linear-gradient(135deg, #75C5F0 0%, #5AB0E5 100%);
+      padding: 0.75rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(117, 197, 240, 0.3);
+    }
+
+    .logo-icon svg {
+      width: 28px;
+      height: 28px;
+      fill: white;
+    }
+
+    .logo-text {
+      font-size: 1.75rem;
+      font-weight: bold;
+      color: #1a1a1a;
+    }
+
+    .logo-text .ai {
+      color: #75C5F0;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .nav-btn {
+      padding: 0.75rem 1.5rem;
+      border-radius: 12px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border: none;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: #4a5568;
+    }
+
+    .nav-btn:hover {
+      background: #e8f4f8;
+      color: #75C5F0;
+    }
+
+    .nav-btn.active {
+      background: #75C5F0;
+      color: white;
+    }
+
+    .add-book-btn {
+      background: linear-gradient(135deg, #75C5F0 0%, #5AB0E5 100%);
+      color: white;
+      padding: 0.75rem 1.75rem;
+      border-radius: 12px;
+      font-weight: bold;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(117, 197, 240, 0.3);
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .add-book-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(117, 197, 240, 0.4);
+    }
+
+    /* Dashboard Container */
+    .dashboard-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    /* Stats Cards */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .stat-card {
+      background: white;
+      border-radius: 16px;
+      padding: 1.5rem;
+      box-shadow: 0 4px 16px rgba(117, 197, 240, 0.1);
+      border: 2px solid transparent;
+      transition: all 0.3s ease;
+    }
+
+    .stat-card:hover {
+      border-color: #75C5F0;
+      transform: translateY(-4px);
+    }
+
+    .stat-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .stat-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #e8f4f8;
+      color: #75C5F0;
+    }
+
+    .stat-value {
+      font-size: 2rem;
+      font-weight: bold;
+      color: #1a1a1a;
+      margin-bottom: 0.25rem;
+    }
+
+    .stat-label {
+      font-size: 0.875rem;
+      color: #94a3b8;
+      font-weight: 600;
+    }
+
+    /* Table Section */
+    .table-section {
+      background: white;
+      border-radius: 16px;
+      padding: 1.5rem;
+      box-shadow: 0 4px 16px rgba(117, 197, 240, 0.1);
+      margin-bottom: 2rem;
+    }
+
+    .table-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      padding-bottom: 1rem;
+      border-bottom: 2px solid #e8f4f8;
+    }
+
+    .table-title {
+      font-size: 1.5rem;
+      font-weight: bold;
+      color: #1a1a1a;
+    }
+
+    .table-actions {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+    }
+
+    .search-box {
+      padding: 0.625rem 1rem;
+      border: 2px solid #e8f4f8;
+      border-radius: 10px;
+      font-size: 0.875rem;
+      min-width: 250px;
+      transition: all 0.3s ease;
+      direction: rtl;
+      text-align: right;
+    }
+
+    .search-box:focus {
+      outline: none;
+      border-color: #75C5F0;
+      box-shadow: 0 0 0 3px rgba(117, 197, 240, 0.1);
+    }
+
+    .filter-btn {
+      padding: 0.625rem 1.25rem;
+      background: #e8f4f8;
+      border: 2px solid transparent;
+      border-radius: 10px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #75C5F0;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .filter-btn:hover {
+      border-color: #75C5F0;
+      background: white;
+    }
+
+    /* Table */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .data-table thead {
+      background: #f8fafc;
+    }
+
+    .data-table th {
+      padding: 1rem;
+      text-align: right;
+      font-size: 0.875rem;
+      font-weight: 700;
+      color: #4a5568;
+      border-bottom: 2px solid #e8f4f8;
+    }
+
+    .data-table td {
+      padding: 1rem;
+      text-align: right;
+      font-size: 0.9375rem;
+      color: #1a1a1a;
+      border-bottom: 1px solid #f1f5f9;
+    }
+
+    .data-table tbody tr {
+      transition: all 0.2s ease;
+    }
+
+    .data-table tbody tr:hover {
+      background: #f8fbff;
+    }
+
+    .status-badge {
+      padding: 0.375rem 0.75rem;
+      border-radius: 8px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      display: inline-block;
+    }
+
+    .status-ready {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .status-processing {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+
+    .status-pending {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .status-failed {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .action-buttons {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: flex-end;
+    }
+
+    .action-btn {
+      padding: 0.5rem;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .action-btn.edit {
+      background: #e8f4f8;
+      color: #75C5F0;
+    }
+
+    .action-btn.edit:hover {
+      background: #75C5F0;
+      color: white;
+    }
+
+    .action-btn.delete {
+      background: #fee2e2;
+      color: #dc2626;
+    }
+
+    .action-btn.delete:hover {
+      background: #dc2626;
+      color: white;
+    }
+
+    .action-btn.view {
+      background: #f1f5f9;
+      color: #64748b;
+    }
+
+    .action-btn.view:hover {
+      background: #64748b;
+      color: white;
+    }
+
+    /* Pagination */
+    .pagination {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 1.5rem;
+      padding-top: 1.5rem;
+      border-top: 2px solid #e8f4f8;
+    }
+
+    .pagination-info {
+      font-size: 0.875rem;
+      color: #64748b;
+    }
+
+    .pagination-buttons {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .page-btn {
+      padding: 0.5rem 1rem;
+      border: 2px solid #e8f4f8;
+      background: white;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #64748b;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .page-btn:hover {
+      border-color: #75C5F0;
+      color: #75C5F0;
+    }
+
+    .page-btn.active {
+      background: #75C5F0;
+      color: white;
+      border-color: #75C5F0;
+    }
+
+    .page-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Tabs */
+    .tabs-container {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 2rem;
+      border-bottom: 2px solid #e8f4f8;
+      padding-bottom: 0;
+    }
+
+    .tab-btn {
+      padding: 1rem 2rem;
+      border: none;
+      background: transparent;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #64748b;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -2px;
+    }
+
+    .tab-btn:hover {
+      color: #75C5F0;
+      background: #f8fbff;
+    }
+
+    .tab-btn.active {
+      color: #75C5F0;
+      border-bottom-color: #75C5F0;
+      background: #f8fbff;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <!-- Navigation -->
+  <nav class="navbar">
+    <div style="display: flex; align-items: center; gap: 2rem;">
+      <div class="logo">
+        <span class="logo-text">Kitabim<span class="ai">.AI</span></span>
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+          </svg>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <button class="nav-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+          </svg>
+          باش بەت
+        </button>
+        <button class="nav-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="2" y1="12" x2="22" y2="12"></line>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+          </svg>
+          ئومۇمىي كىتابخانا
+        </button>
+        <button class="nav-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+          ئومۇمىي ياردەمچى
+        </button>
+        <button class="nav-btn active">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7"></rect>
+            <rect x="14" y="3" width="7" height="7"></rect>
+            <rect x="14" y="14" width="7" height="7"></rect>
+            <rect x="3" y="14" width="7" height="7"></rect>
+          </svg>
+          باشقۇرۇش
+        </button>
+      </div>
+    </div>
+
+    <button class="add-book-btn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="17 8 12 3 7 8"></polyline>
+        <line x1="12" y1="3" x2="12" y2="15"></line>
+      </svg>
+      <span>كىتاب قوشۇش</span>
+    </button>
+  </nav>
+
+  <!-- Dashboard Container -->
+  <div class="dashboard-container">
+    <!-- Stats Cards -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-header">
+          <div class="stat-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+            </svg>
+          </div>
+        </div>
+        <div class="stat-value">234</div>
+        <div class="stat-label">جەمئىي كىتاب</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-header">
+          <div class="stat-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+            </svg>
+          </div>
+        </div>
+        <div class="stat-value">186</div>
+        <div class="stat-label">تەييار كىتاب</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-header">
+          <div class="stat-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+          </div>
+        </div>
+        <div class="stat-value">32</div>
+        <div class="stat-label">بىر تەرەپ قىلىنىۋاتىدۇ</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-header">
+          <div class="stat-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+          </div>
+        </div>
+        <div class="stat-value">48</div>
+        <div class="stat-label">ئىشلەتكۈچىلەر</div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs-container">
+      <button class="tab-btn active" onclick="switchTab('books')">كىتاب باشقۇرۇش</button>
+      <button class="tab-btn" onclick="switchTab('users')">ئىشلەتكۈچى باشقۇرۇش</button>
+    </div>
+
+    <!-- Books Table -->
+    <div id="books-tab" class="tab-content active">
+    <div class="table-section">
+      <div class="table-header">
+        <h2 class="table-title">كىتاب باشقۇرۇش</h2>
+        <div class="table-actions">
+          <input type="text" class="search-box" placeholder="كىتاب ئىزدەش...">
+          <button class="filter-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+            </svg>
+            سۈزگۈچ
+          </button>
+        </div>
+      </div>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>نامى</th>
+            <th>ئاپتور</th>
+            <th>تۈرى</th>
+            <th>بەت سانى</th>
+            <th>ھالىتى</th>
+            <th>مەشغۇلات</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ئۇيغۇر خەلق ناخشىلىرى</td>
+            <td>مەھمۇت قاشقىرى</td>
+            <td>ئەدەبىيات</td>
+            <td>124</td>
+            <td><span class="status-badge status-ready">تەييار</span></td>
+            <td>
+              <div class="action-buttons">
+                <button class="action-btn view" title="كۆرۈش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+                <button class="action-btn edit" title="تەھرىرلەش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                </button>
+                <button class="action-btn delete" title="ئۆچۈرۈش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+                </button>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td>ئۇيغۇر تىلى گرامماتىكىسى</td>
+            <td>ئابدۇۋەلى ئايۇپ</td>
+            <td>تىلشۇناسلىق</td>
+            <td>342</td>
+            <td><span class="status-badge status-processing">بىر تەرەپ قىلىنىۋاتىدۇ</span></td>
+            <td>
+              <div class="action-buttons">
+                <button class="action-btn view" title="كۆرۈش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+                <button class="action-btn edit" title="تەھرىرلەش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                </button>
+                <button class="action-btn delete" title="ئۆچۈرۈش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+                </button>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td>شەرقىي تۈركىستان تارىخى</td>
+            <td>مۇھەممەد ئىمىن بۇغرا</td>
+            <td>تارىخ</td>
+            <td>456</td>
+            <td><span class="status-badge status-ready">تەييار</span></td>
+            <td>
+              <div class="action-buttons">
+                <button class="action-btn view" title="كۆرۈش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+                <button class="action-btn edit" title="تەھرىرلەش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                </button>
+                <button class="action-btn delete" title="ئۆچۈرۈش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+                </button>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td>مۇتەپەككۇرلەر سۆزى</td>
+            <td>تۇرغۇن ئالماس</td>
+            <td>پەلسەپە</td>
+            <td>289</td>
+            <td><span class="status-badge status-pending">ساقلاۋاتىدۇ</span></td>
+            <td>
+              <div class="action-buttons">
+                <button class="action-btn view" title="كۆرۈش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+                <button class="action-btn edit" title="تەھرىرلەش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                </button>
+                <button class="action-btn delete" title="ئۆچۈرۈش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+                </button>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td>ئىسلام تەلىماتى</td>
+            <td>شىكرۇللاھ مەخدۇم</td>
+            <td>دىن ئىلمى</td>
+            <td>198</td>
+            <td><span class="status-badge status-ready">تەييار</span></td>
+            <td>
+              <div class="action-buttons">
+                <button class="action-btn view" title="كۆرۈش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+                <button class="action-btn edit" title="تەھرىرلەش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                </button>
+                <button class="action-btn delete" title="ئۆچۈرۈش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+                </button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- Pagination -->
+      <div class="pagination">
+        <div class="pagination-info">
+          234 دىن 1-10 كۆرسىتىلىۋاتىدۇ
+        </div>
+        <div class="pagination-buttons">
+          <button class="page-btn" disabled>ئالدىنقى</button>
+          <button class="page-btn active">1</button>
+          <button class="page-btn">2</button>
+          <button class="page-btn">3</button>
+          <button class="page-btn">4</button>
+          <button class="page-btn">5</button>
+          <button class="page-btn">كېيىنكى</button>
+        </div>
+      </div>
+    </div>
+    </div>
+
+    <!-- Users Table -->
+    <div id="users-tab" class="tab-content">
+    <div class="table-section">
+      <div class="table-header">
+        <h2 class="table-title">ئىشلەتكۈچى باشقۇرۇش</h2>
+        <div class="table-actions">
+          <input type="text" class="search-box" placeholder="ئىشلەتكۈچى ئىزدەش...">
+          <button class="filter-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+            </svg>
+            سۈزگۈچ
+          </button>
+        </div>
+      </div>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>ئىسىم</th>
+            <th>ئېلخەت</th>
+            <th>رولى</th>
+            <th>قوشۇلغان ۋاقىت</th>
+            <th>ھالىتى</th>
+            <th>مەشغۇلات</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ئابدۇللا يۈسۈپ</td>
+            <td>abdullah@kitabim.ai</td>
+            <td><span class="status-badge status-ready">باشقۇرغۇچى</span></td>
+            <td>2024-01-15</td>
+            <td><span class="status-badge status-ready">ئاكتىپ</span></td>
+            <td>
+              <div class="action-buttons">
+                <button class="action-btn view" title="كۆرۈش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+                <button class="action-btn edit" title="تەھرىرلەش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                </button>
+                <button class="action-btn delete" title="ئۆچۈرۈش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+                </button>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td>مەريەم ئەھمەد</td>
+            <td>maryam@kitabim.ai</td>
+            <td><span class="status-badge status-processing">تەھرىرلىگۈچى</span></td>
+            <td>2024-02-03</td>
+            <td><span class="status-badge status-ready">ئاكتىپ</span></td>
+            <td>
+              <div class="action-buttons">
+                <button class="action-btn view" title="كۆرۈش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+                <button class="action-btn edit" title="تەھرىرلەش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                </button>
+                <button class="action-btn delete" title="ئۆچۈرۈش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+                </button>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td>ئەلىجان تۇرسۇن</td>
+            <td>alijan@kitabim.ai</td>
+            <td><span class="status-badge status-processing">تەھرىرلىگۈچى</span></td>
+            <td>2024-02-10</td>
+            <td><span class="status-badge status-ready">ئاكتىپ</span></td>
+            <td>
+              <div class="action-buttons">
+                <button class="action-btn view" title="كۆرۈش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+                <button class="action-btn edit" title="تەھرىرلەش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                </button>
+                <button class="action-btn delete" title="ئۆچۈرۈش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+                </button>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td>زۇلپىيە ئابلىز</td>
+            <td>zulpiye@example.com</td>
+            <td><span class="status-badge" style="background: #f3f4f6; color: #374151;">ئوقۇغۇچى</span></td>
+            <td>2024-03-05</td>
+            <td><span class="status-badge status-ready">ئاكتىپ</span></td>
+            <td>
+              <div class="action-buttons">
+                <button class="action-btn view" title="كۆرۈش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+                <button class="action-btn edit" title="تەھرىرلەش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                </button>
+                <button class="action-btn delete" title="ئۆچۈرۈش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+                </button>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td>تۇرسۇنبەك مەھمۇت</td>
+            <td>tursun@example.com</td>
+            <td><span class="status-badge" style="background: #f3f4f6; color: #374151;">ئوقۇغۇچى</span></td>
+            <td>2024-03-12</td>
+            <td><span class="status-badge status-pending">توختىتىلغان</span></td>
+            <td>
+              <div class="action-buttons">
+                <button class="action-btn view" title="كۆرۈش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+                <button class="action-btn edit" title="تەھرىرلەش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                </button>
+                <button class="action-btn delete" title="ئۆچۈرۈش">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+                </button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- Pagination -->
+      <div class="pagination">
+        <div class="pagination-info">
+          48 دىن 1-5 كۆرسىتىلىۋاتىدۇ
+        </div>
+        <div class="pagination-buttons">
+          <button class="page-btn" disabled>ئالدىنقى</button>
+          <button class="page-btn active">1</button>
+          <button class="page-btn">2</button>
+          <button class="page-btn">3</button>
+          <button class="page-btn">كېيىنكى</button>
+        </div>
+      </div>
+    </div>
+    </div>
+  </div>
+
+  <script>
+    function switchTab(tab) {
+      // Hide all tabs
+      document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+      });
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+      });
+
+      // Show selected tab
+      if (tab === 'books') {
+        document.getElementById('books-tab').classList.add('active');
+        document.querySelectorAll('.tab-btn')[0].classList.add('active');
+      } else if (tab === 'users') {
+        document.getElementById('users-tab').classList.add('active');
+        document.querySelectorAll('.tab-btn')[1].classList.add('active');
+      }
+    }
+  </script>
+</body>
+</html>
