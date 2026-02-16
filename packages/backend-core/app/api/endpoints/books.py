@@ -85,18 +85,6 @@ async def check_book_access_for_guest(book: dict, user: Optional[User]) -> bool:
     return status == "ready" and visibility == "public"
 
 
-def get_guest_filter() -> dict:
-    """
-    Get MongoDB query filter for guest access.
-    Returns filter that only matches public, ready books.
-    """
-    return {
-        "status": "ready",
-        "$or": [
-            {"visibility": "public"},
-            {"visibility": {"$exists": False}},  # Legacy books default to public
-        ]
-    }
 
 
 @router.get("/", response_model=PaginatedBooks)

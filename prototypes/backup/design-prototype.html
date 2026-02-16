@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="ug" dir="rtl">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>كىتابىم.AI - ئۇيغۇر ئېلېكترونلۇق كىتابخانىسى</title>
+  <style>
+    :root {
+      /* Original Base Colors */
+      --primary: #75C5F0;
+      --primary-dark: #5AB0E5;
+      --primary-deep: #0284C7;
+
+      /* Modern/Clean Palette */
+      --bg-body: #F8FAFC;
+      --bg-surface: #FFFFFF;
+      --text-main: #0F172A;
+      --text-muted: #64748B;
+      --border-color: #E2E8F0;
+
+      /* Accent for 'Culture' - soft gold */
+      --accent: #F59E0B;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'UKIJ Nasq', 'ALKATIP Tor', 'Inter', system-ui, sans-serif;
+      background-color: var(--bg-body);
+      color: var(--text-main);
+      direction: rtl;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Subtle Modern Cultural Pattern Background */
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image:
+        linear-gradient(30deg, #75C5F0 12%, transparent 12.5%, transparent 87%, #75C5F0 87.5%, #75C5F0),
+        linear-gradient(150deg, #75C5F0 12%, transparent 12.5%, transparent 87%, #75C5F0 87.5%, #75C5F0),
+        linear-gradient(30deg, #75C5F0 12%, transparent 12.5%, transparent 87%, #75C5F0 87.5%, #75C5F0),
+        linear-gradient(150deg, #75C5F0 12%, transparent 12.5%, transparent 87%, #75C5F0 87.5%, #75C5F0),
+        linear-gradient(60deg, #75C5F077 25%, transparent 25.5%, transparent 75%, #75C5F077 75%, #75C5F077),
+        linear-gradient(60deg, #75C5F077 25%, transparent 25.5%, transparent 75%, #75C5F077 75%, #75C5F077);
+      background-size: 80px 140px;
+      /* background-position: 0 0, 0 0, 40px 70px, 40px 70px, 0 0, 40px 70px; */
+      opacity: 0.03;
+      z-index: -1;
+      pointer-events: none;
+    }
+
+    /* Navbar */
+    .navbar {
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border-color);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      transition: all 0.3s ease;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      cursor: pointer;
+      text-decoration: none;
+    }
+
+    .logo-icon {
+      width: 42px;
+      height: 42px;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+      color: white;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 10px rgba(117, 197, 240, 0.3);
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Subtle Eight-Point Star Overlay on Logo */
+    .logo-icon::after {
+      content: "۞";
+      position: absolute;
+      font-size: 50px;
+      opacity: 0.2;
+      color: white;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    .logo-icon svg {
+      width: 24px;
+      height: 24px;
+      fill: white;
+      position: relative;
+      z-index: 1;
+    }
+
+    .logo-text {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: var(--text-main);
+      letter-spacing: -0.5px;
+    }
+
+    .logo-text .ai {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-deep) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 0.5rem;
+      background: #F1F5F9;
+      padding: 0.3rem;
+      border-radius: 14px;
+    }
+
+    .nav-btn {
+      padding: 0.6rem 1.25rem;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.3s ease;
+    }
+
+    .nav-btn:hover {
+      color: var(--primary-deep);
+      background: rgba(255, 255, 255, 0.5);
+    }
+
+    .nav-btn.active {
+      background: white;
+      color: var(--primary-deep);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    }
+
+    .add-book-btn {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+      color: white;
+      padding: 0.75rem 1.5rem;
+      border-radius: 12px;
+      border: none;
+      font-weight: bold;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      box-shadow: 0 4px 12px rgba(117, 197, 240, 0.4);
+      transition: all 0.3s ease;
+    }
+
+    .add-book-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(117, 197, 240, 0.5);
+    }
+
+    /* Hero Section */
+    .hero {
+      text-align: center;
+      padding: 6rem 2rem 4rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-title {
+      font-size: 4rem;
+      font-weight: 900;
+      color: var(--text-main);
+      margin-bottom: 1.5rem;
+      letter-spacing: -1px;
+    }
+
+    .hero-title .highlight {
+      position: relative;
+      display: inline-block;
+      color: var(--primary-deep);
+    }
+
+    /* Decroative underline */
+    .hero-title .highlight::after {
+      content: '';
+      position: absolute;
+      bottom: 5px;
+      left: 0;
+      width: 100%;
+      height: 12px;
+      background: var(--primary);
+      opacity: 0.2;
+      border-radius: 4px;
+      z-index: -1;
+    }
+
+    .hero-subtitle {
+      font-size: 1.25rem;
+      color: var(--text-muted);
+      max-width: 600px;
+      margin: 0 auto 3rem;
+      line-height: 1.6;
+    }
+
+    /* Modern Glass Search Box */
+    .search-container {
+      max-width: 700px;
+      margin: 0 auto 4rem;
+      position: relative;
+      perspective: 1000px;
+    }
+
+    .search-box-wrapper {
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(10px);
+      padding: 0.5rem;
+      border-radius: 16px;
+      border: 1px solid var(--border-color);
+      box-shadow:
+        0 20px 25px -5px rgba(0, 0, 0, 0.05),
+        0 8px 10px -6px rgba(0, 0, 0, 0.01),
+        0 0 0 4px rgba(117, 197, 240, 0.1);
+      /* Soft glow */
+      display: flex;
+      align-items: center;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .search-box-wrapper:focus-within {
+      transform: translateY(-2px);
+      box-shadow:
+        0 25px 30px -5px rgba(117, 197, 240, 0.15),
+        0 0 0 4px rgba(117, 197, 240, 0.2);
+      border-color: var(--primary);
+    }
+
+    .search-box {
+      flex: 1;
+      padding: 1rem 1.5rem;
+      border: none;
+      background: transparent;
+      font-size: 1.1rem;
+      color: var(--text-main);
+      outline: none;
+      font-family: inherit;
+    }
+
+    .search-btn {
+      padding: 0.8rem 2rem;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .search-btn:hover {
+      box-shadow: 0 4px 12px rgba(117, 197, 240, 0.4);
+    }
+
+    /* Categories - Modern Chips */
+    .categories {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 2rem;
+    }
+
+    .category-tag {
+      padding: 0.6rem 1.5rem;
+      background: white;
+      border: 1px solid var(--border-color);
+      border-radius: 100px;
+      /* Pill shape */
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-weight: 600;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+    }
+
+    .category-tag:hover {
+      border-color: var(--primary);
+      color: var(--primary-deep);
+      background: #F0F9FF;
+      /* Very light blue */
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(117, 197, 240, 0.2);
+    }
+
+    /* Books Section */
+    .section-header {
+      max-width: 1200px;
+      margin: 0 auto 2rem;
+      padding: 0 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .section-title {
+      font-size: 2rem;
+      color: var(--text-main);
+      font-weight: 800;
+      position: relative;
+    }
+
+    .section-title::after {
+      /* Decorative dot instead of line */
+      content: '.';
+      color: var(--primary);
+      font-size: 3rem;
+      line-height: 0;
+    }
+
+    .book-count-badge {
+      background: #F0F9FF;
+      color: var(--primary-deep);
+      padding: 0.5rem 1rem;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+
+    /* Books Grid */
+    .books-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 2.5rem;
+      max-width: 1200px;
+      margin: 0 auto 6rem;
+      padding: 0 2rem;
+    }
+
+    .book-card {
+      background: white;
+      border-radius: 24px;
+      padding: 1.5rem;
+      box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.05);
+      /* Modern soft shadow */
+      border: 1px solid #F1F5F9;
+      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Cultural pattern corner decor */
+    .book-card::before {
+      content: '';
+      position: absolute;
+      top: -20px;
+      right: -20px;
+      width: 60px;
+      height: 60px;
+      background: radial-gradient(circle, var(--primary) 10%, transparent 10.5%);
+      background-size: 10px 10px;
+      opacity: 0.1;
+      border-radius: 50%;
+      transition: opacity 0.3s;
+    }
+
+    .book-card:hover {
+      transform: translateY(-10px);
+      box-shadow: 0 20px 40px -10px rgba(117, 197, 240, 0.2);
+      border-color: rgba(117, 197, 240, 0.3);
+    }
+
+    .book-card:hover::before {
+      opacity: 0.3;
+    }
+
+    .book-cover {
+      width: 100%;
+      height: 320px;
+      /* Modern gradient map for covers */
+      background: linear-gradient(135deg, #F8FAFC 0%, #E2E8F0 100%);
+      border-radius: 16px;
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      font-size: 4rem;
+      position: relative;
+      overflow: hidden;
+      box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.02);
+    }
+
+    /* Book spine effect */
+    .book-cover::after {
+      content: '';
+      position: absolute;
+      left: 10px;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: rgba(0, 0, 0, 0.05);
+      filter: blur(1px);
+    }
+
+    .book-title {
+      font-size: 1.25rem;
+      font-weight: bold;
+      color: var(--text-main);
+      margin-bottom: 0.5rem;
+      line-height: 1.4;
+    }
+
+    .book-author {
+      font-size: 0.95rem;
+      color: var(--primary);
+      margin-bottom: 1rem;
+      font-weight: 600;
+    }
+
+    .book-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      border-top: 1px dashed var(--border-color);
+      padding-top: 1rem;
+      margin-top: auto;
+    }
+
+    .book-category {
+      background: #F0F9FF;
+      color: var(--primary-deep);
+      padding: 0.3rem 0.8rem;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    /* Footer */
+    .footer {
+      background: white;
+      border-top: 1px solid var(--border-color);
+      padding: 4rem 2rem;
+      margin-top: auto;
+      text-align: center;
+    }
+
+    .footer-content {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .footer-text {
+      font-size: 1rem;
+      margin-bottom: 1rem;
+      color: var(--text-muted);
+    }
+
+    .footer-divider {
+      width: 40px;
+      height: 2px;
+      background: var(--primary);
+      margin: 1.5rem auto;
+      opacity: 0.5;
+    }
+
+    .footer-copyright {
+      font-size: 0.9rem;
+      color: #94A3B8;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Navigation -->
+  <nav class="navbar">
+    <a href="#" class="logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+        </svg>
+      </div>
+      <span class="logo-text">كىتابىم<span class="ai">.AI</span></span>
+    </a>
+
+    <div class="nav-links">
+      <button class="nav-btn active">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+        </svg>
+        باش بەت
+      </button>
+      <button class="nav-btn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="2" y1="12" x2="22" y2="12"></line>
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+        </svg>
+        ئومۇمىي كىتابخانا
+      </button>
+      <button class="nav-btn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+        ئومۇمىي ياردەمچى
+      </button>
+      <button class="nav-btn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7"></rect>
+          <rect x="14" y="3" width="7" height="7"></rect>
+          <rect x="14" y="14" width="7" height="7"></rect>
+          <rect x="3" y="14" width="7" height="7"></rect>
+        </svg>
+        باشقۇرۇش
+      </button>
+    </div>
+
+    <button class="add-book-btn">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="17 8 12 3 7 8"></polyline>
+        <line x1="12" y1="3" x2="12" y2="15"></line>
+      </svg>
+      كىتاب قوشۇش
+    </button>
+  </nav>
+
+  <!-- Hero Section -->
+  <section class="hero">
+    <h1 class="hero-title">Kitabim<span class="highlight">.AI</span></h1>
+    <p class="hero-subtitle">«ئىلىم ئۆگىنىش بولمىسا، كۆز بىلەن قاراڭغۇلۇقتا يۈرۈشكە ئوخشاش» - مۇھەممەد ئەلىي</p>
+
+    <!-- Modern Search -->
+    <div class="search-container">
+      <div class="search-box-wrapper">
+        <input type="text" class="search-box" placeholder="كىتاب نامى، ئاپتور ياكى تۈر بويىچە ئىزدەش..." />
+        <button class="search-btn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Categories -->
+    <div class="categories">
+      <div class="category-tag">تارىخ</div>
+      <div class="category-tag">ئەدەبىيات</div>
+      <div class="category-tag">پەلسەپە</div>
+      <div class="category-tag">دىن ئىلمى</div>
+      <div class="category-tag">تىلشۇناسلىق</div>
+      <div class="category-tag">ئىجتىمائىيەتشۇناسلىق</div>
+    </div>
+  </section>
+
+  <!-- Books Section -->
+  <section>
+    <div class="section-header">
+      <h2 class="section-title">يېڭى قوشۇلغان كىتابلار</h2>
+      <div class="book-count-badge">156 كىتاب</div>
+    </div>
+
+    <div class="books-grid">
+      <!-- Book Card 1 -->
+      <div class="book-card">
+        <div class="book-cover" style="color:#0EA5E9;">📖</div>
+        <h3 class="book-title">ئۇيغۇر خەلق ناخشىلىرى</h3>
+        <p class="book-author">مەھمۇت قاشقىرى</p>
+        <div class="book-meta">
+          <span>124 بەت</span>
+          <span class="book-category">ئەدەبىيات</span>
+        </div>
+      </div>
+
+      <!-- Book Card 2 -->
+      <div class="book-card">
+        <div class="book-cover" style="color:#6366F1;">📚</div>
+        <h3 class="book-title">ئۇيغۇر تىلى گرامماتىكىسى</h3>
+        <p class="book-author">ئابدۇۋەلى ئايۇپ</p>
+        <div class="book-meta">
+          <span>342 بەت</span>
+          <span class="book-category">تىلشۇناسلىق</span>
+        </div>
+      </div>
+
+      <!-- Book Card 3 -->
+      <div class="book-card">
+        <div class="book-cover" style="color:#10B981;">📜</div>
+        <h3 class="book-title">شەرقىي تۈركىستان تارىخى</h3>
+        <p class="book-author">مۇھەممەد ئىمىن بۇغرا</p>
+        <div class="book-meta">
+          <span>456 بەت</span>
+          <span class="book-category">تارىخ</span>
+        </div>
+      </div>
+
+      <!-- Book Card 4 -->
+      <div class="book-card">
+        <div class="book-cover" style="color:#EF4444;">✍️</div>
+        <h3 class="book-title">مۇتەپەككۇرلەر سۆزى</h3>
+        <p class="book-author">تۇرغۇن ئالماس</p>
+        <div class="book-meta">
+          <span>289 بەت</span>
+          <span class="book-category">پەلسەپە</span>
+        </div>
+      </div>
+
+      <!-- Book Card 5 -->
+      <div class="book-card">
+        <div class="book-cover" style="color:#8B5CF6;">🕌</div>
+        <h3 class="book-title">ئىسلام تەلىماتى</h3>
+        <p class="book-author">شىكرۇللاھ مەخدۇم</p>
+        <div class="book-meta">
+          <span>198 بەت</span>
+          <span class="book-category">دىن ئىلمى</span>
+        </div>
+      </div>
+
+      <!-- Book Card 6 -->
+      <div class="book-card">
+        <div class="book-cover" style="color:#F59E0B;">🌍</div>
+        <h3 class="book-title">ئىجتىمائىي ئىلمىيات</h3>
+        <p class="book-author">ھامىت نىياز</p>
+        <div class="book-meta">
+          <span>367 بەت</span>
+          <span class="book-category">ئىجتىمائىيەتشۇناسلىق</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-content">
+      <p class="footer-text">ئۇيغۇر ئېلېكترونلۇق كىتابخانىسى - ئىلىم ۋە مەدەنىيەت بىلەن سۈنئىي ئەقىل تېخنىكىسىنى
+        بىرلەشتۈرۈش</p>
+      <div class="footer-divider"></div>
+      <p class="footer-copyright">© 2024 كىتابىم.AI - بارلىق ھوقۇقلار ساقلانغان</p>
+    </div>
+  </footer>
+</body>
+
+</html>

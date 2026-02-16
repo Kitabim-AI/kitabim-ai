@@ -28,14 +28,14 @@ def get_database_url() -> str:
 
     PostgreSQL URLs must use postgresql+asyncpg:// driver.
     """
-    url = getattr(settings, 'database_url', None) or settings.mongodb_url
+    url = settings.database_url
+
+    if not url:
+        raise ValueError("DATABASE_URL environment variable is required")
 
     # Convert postgresql:// to postgresql+asyncpg://
     if url.startswith('postgresql://'):
         return url.replace('postgresql://', 'postgresql+asyncpg://')
-    elif url.startswith('mongodb://'):
-        # Fallback conversion for legacy config
-        return url.replace('mongodb://', 'postgresql+asyncpg://')
 
     return url
 
