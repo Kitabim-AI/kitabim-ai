@@ -3,6 +3,7 @@ import { UserService, UserPublic, PaginatedUsers } from '../../../services/userS
 import { Users } from 'lucide-react';
 import { useIsAdmin } from '../../../hooks/useAuth';
 import { useI18n } from '../../../i18n/I18nContext';
+import { UserAvatar } from '../../common/UserAvatar';
 
 interface UserRowProps {
   user: UserPublic;
@@ -30,17 +31,11 @@ const UserRow: React.FC<UserRowProps> = ({ user, onRoleChange, onStatusChange, i
     <tr className="border-b border-[#0369a1]/5 hover:bg-[#0369a1]/5 transition-colors">
       <td className="px-8 py-5">
         <div className="flex items-center gap-4">
-          {user.avatar_url ? (
-            <img
-              src={user.avatar_url}
-              alt={user.display_name}
-              className="w-10 h-10 rounded-full object-cover ring-2 ring-[#0369a1]/20"
-            />
-          ) : (
-            <div className="w-10 h-10 rounded-full bg-[#0369a1] flex items-center justify-center text-sm font-black text-white shadow-lg shadow-[#0369a1]/20">
-              {user.display_name?.charAt(0).toUpperCase() || '?'}
-            </div>
-          )}
+          <UserAvatar
+            url={user.avatar_url}
+            name={user.display_name}
+            className="w-10 h-10 rounded-full object-cover ring-2 ring-[#0369a1]/20"
+          />
           <div>
             <div className="font-black text-[#1a1a1a] text-sm">{user.display_name}</div>
             <div className="text-[14px] font-bold text-[#94a3b8] uppercase tracking-wider">{user.email}</div>

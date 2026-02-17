@@ -25,7 +25,7 @@ export const LanguageSwitcher: React.FC = () => {
           <button
             key={lang.code}
             onClick={() => setLanguage(lang.code)}
-            className={`w-full px-4 py-2.5 text-sm font-semibold transition-colors text-left ${language === lang.code
+            className={`w-full px-4 py-2.5 text-sm font-normal transition-colors text-left ${language === lang.code
               ? 'bg-[#0369a1] text-white'
               : 'text-[#1a1a1a] hover:bg-[#0369a1]/10'
               }`}

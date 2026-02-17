@@ -51,7 +51,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               }} />
             <BookOpen size={28} className="text-white relative z-10" strokeWidth={2} />
           </div>
-          <span className="font-bold text-[#1a1a1a] text-[1.75rem] tracking-tight hidden sm:block">
+          <span className="font-normal text-[#1a1a1a] text-[1.75rem] tracking-tight hidden sm:block">
             Kitabim<span className="text-[#0369a1]">.AI</span>
           </span>
         </div>
@@ -99,7 +99,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               placeholder={t('library.searchPlaceholder')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="px-12 py-2.5 bg-white/50 backdrop-blur-md border-2 border-[#0369a1]/10 rounded-2xl text-sm font-black text-[#1a1a1a] placeholder:text-slate-300 outline-none focus:border-[#0369a1] transition-all w-64 shadow-sm"
+              className="px-12 py-2.5 bg-white/50 backdrop-blur-md border-2 border-[#0369a1]/10 rounded-2xl text-sm font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none focus:border-[#0369a1] transition-all w-64 shadow-sm"
               dir="rtl"
             />
           </div>
@@ -109,7 +109,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <>
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="relative text-white px-7 py-3 rounded-xl font-bold flex items-center gap-2 transition-all duration-300 shadow-[0_4px_12px_rgba(117,197,240,0.3)] hover:shadow-[0_8px_24px_rgba(117,197,240,0.5)] hover:-translate-y-1 active:translate-y-0 overflow-hidden"
+              className="relative text-white px-7 py-3 rounded-xl font-normal flex items-center gap-2 transition-all duration-300 shadow-[0_4px_12px_rgba(117,197,240,0.3)] hover:shadow-[0_8px_24px_rgba(117,197,240,0.5)] hover:-translate-y-1 active:translate-y-0 overflow-hidden"
               style={{
                 background: 'linear-gradient(135deg, #0369a1 0%, #0284c7 100%)'
               }}
@@ -142,7 +142,7 @@ const NavButton: React.FC<{ active: boolean; onClick: () => void; icon: React.Re
 }) => (
   <button
     onClick={onClick}
-    className={`relative px-6 py-3 rounded-xl text-[1rem] font-semibold flex items-center gap-2 transition-all duration-300 overflow-hidden ${active
+    className={`relative px-6 py-3 rounded-xl text-[1rem] font-normal flex items-center gap-2 transition-all duration-300 overflow-hidden ${active
       ? 'text-white shadow-[0_4px_12px_rgba(3,105,161,0.3)]'
       : 'text-[#4a5568] hover:bg-[#0369a1]/10 hover:text-[#0369a1] hover:-translate-y-0.5'
       }`}

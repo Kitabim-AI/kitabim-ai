@@ -49,6 +49,10 @@
 }
 
 
+html {
+  direction: rtl;
+}
+
 :root {
   --primary-blue: #0369a1;
   --primary-blue-rgb: 3, 105, 161;

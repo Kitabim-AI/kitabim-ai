@@ -302,7 +302,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
 
         {/* Reading Canvas */}
         <div
-          dir="ltr"
+          dir="rtl"
           className={`flex-grow custom-scrollbar ${isEditing ? 'p-4 flex flex-col' : 'p-6 overflow-y-auto'}`}
           style={{
             background: 'linear-gradient(rgba(255,255,255,0.7), rgba(255,255,255,0.7)), url("https://www.transparenttextures.com/patterns/paper-fibers.png")'

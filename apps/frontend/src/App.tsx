@@ -197,7 +197,7 @@ const App: React.FC = () => {
   }, [view, selectedBook?.id, selectedBook?.status, selectedBook?.pages]);
 
   return (
-    <div className="min-h-screen bg-transparent flex flex-col font-sans relative overflow-hidden">
+    <div className="min-h-screen bg-transparent flex flex-col font-sans relative overflow-x-hidden" dir="rtl">
       <Navbar
         view={view}
         setView={setView}
