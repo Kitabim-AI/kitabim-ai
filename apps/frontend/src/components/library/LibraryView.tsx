@@ -1,11 +1,12 @@
 import React from 'react';
-import { Database, Zap, Library } from 'lucide-react';
+import { Database, Zap, Library, BookOpen } from 'lucide-react';
 import { Book } from '@shared/types';
 import { BookCard } from './BookCard';
 import { useI18n } from '../../i18n/I18nContext';
 
 interface LibraryViewProps {
   books: Book[];
+  totalReady: number;
   isInitialLoading: boolean;
   isLoadingMore: boolean;
   hasMore: boolean;
@@ -17,6 +18,7 @@ interface LibraryViewProps {
 
 export const LibraryView: React.FC<LibraryViewProps> = ({
   books,
+  totalReady,
   isInitialLoading,
   isLoadingMore,
   hasMore,
@@ -63,16 +65,11 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         </header>
 
         <div className="flex items-center gap-4">
-          <div className="flex flex-col items-end">
-            <div className="flex items-center gap-3 px-6 py-2.5 bg-white/60 backdrop-blur-md rounded-2xl border border-[#0369a1]/20 shadow-sm transition-all hover:bg-white">
-              <div className="relative flex items-center justify-center">
-                <div className="absolute inset-0 bg-emerald-500 rounded-full animate-ping opacity-25" />
-                <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-white" />
-              </div>
-              <span className="text-sm font-black text-[#1a1a1a]">
-                {t('library.active')} • {t('chat.libraryBookCount', { count: books.length })}
-              </span>
-            </div>
+          <div className="hidden md:flex items-center gap-3 px-6 py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner">
+            <BookOpen size={18} strokeWidth={2.5} />
+            <span className="text-sm font-normal uppercase">
+              {t('chat.libraryBookCount', { count: totalReady })}
+            </span>
           </div>
         </div>
       </div>

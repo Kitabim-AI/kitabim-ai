@@ -209,9 +209,11 @@ export const AdminView: React.FC<AdminViewProps> = ({
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 text-[14px] font-normal text-[#0369a1] bg-[#0369a1]/10 px-4 py-2 rounded-full border border-[#0369a1]/20 shadow-sm">
-          <BookIcon size={14} />
-          {t('chat.libraryBookCount', { count: totalBooks })}
+        <div className="hidden md:flex items-center gap-3 px-6 py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner">
+          <BookOpen size={18} strokeWidth={2.5} />
+          <span className="text-sm font-normal uppercase">
+            {t('chat.libraryBookCount', { count: totalBooks })}
+          </span>
         </div>
       </div>
 

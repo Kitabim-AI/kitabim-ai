@@ -251,6 +251,7 @@ const App: React.FC = () => {
         {view === 'library' && (
           <LibraryView
             books={sortedBooks}
+            totalReady={totalReady}
             isInitialLoading={isLoading}
             isLoadingMore={isLoadingMoreShelf}
             hasMore={hasMoreShelf}
