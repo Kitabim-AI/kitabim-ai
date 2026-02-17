@@ -7,6 +7,8 @@ import { AdminTabs } from './components/admin/AdminTabs';
 import { ReaderView } from './components/reader/ReaderView';
 import { ChatInterface } from './components/chat/ChatInterface';
 import { Modal } from './components/common/Modal';
+import { RefreshCw } from 'lucide-react';
+import { useI18n } from './i18n/I18nContext';
 
 import { useBooks } from './hooks/useBooks';
 import { useChat } from './hooks/useChat';
@@ -15,6 +17,7 @@ import { PersistenceService } from './services/persistenceService';
 import { Book } from '@shared/types';
 
 const App: React.FC = () => {
+  const { t } = useI18n();
   const [view, setView] = useState<'home' | 'library' | 'admin' | 'reader' | 'global-chat'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [homeSearchQuery, setHomeSearchQuery] = useState('');
@@ -50,6 +53,7 @@ const App: React.FC = () => {
     type: 'alert' | 'confirm';
     confirmText?: string;
     onConfirm?: () => void;
+    destructive?: boolean;
   }>({
     isOpen: false,
     title: '',
@@ -194,7 +198,7 @@ const App: React.FC = () => {
   }, [view, selectedBook?.id, selectedBook?.status, selectedBook?.pages]);
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
+    <div className="min-h-screen bg-transparent flex flex-col font-sans relative overflow-hidden">
       <Navbar
         view={view}
         setView={setView}
@@ -205,12 +209,17 @@ const App: React.FC = () => {
         setPage={setPage}
       />
 
-      <main className="flex-grow p-6 max-w-7xl mx-auto w-full relative">
+      <main className="flex-grow p-8 max-w-7xl mx-auto w-full relative z-10">
         {isLoading && view !== 'reader' && (
-          <div className="absolute inset-0 bg-slate-50/50 backdrop-blur-[2px] z-40 flex items-center justify-center min-h-[400px]">
-            <div className="flex flex-col items-center gap-3">
-              <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
-              <span className="text-sm font-bold text-indigo-600 uppercase tracking-widest animate-pulse">Loading Library</span>
+          <div className="absolute inset-0 bg-white/40 backdrop-blur-md z-40 flex items-center justify-center min-h-[400px] rounded-[40px]">
+            <div className="flex flex-col items-center gap-6">
+              <div className="relative">
+                <div className="w-16 h-16 border-4 border-[#e8f4f8] border-t-[#75C5F0] rounded-full animate-spin"></div>
+                <div className="absolute inset-0 flex items-center justify-center text-[#75C5F0]">
+                  <RefreshCw size={24} className="animate-pulse" />
+                </div>
+              </div>
+              <span className="text-sm font-black text-[#75C5F0] uppercase tracking-[0.3em] animate-pulse">{t('common.loadingApp')}</span>
             </div>
           </div>
         )}
@@ -345,6 +354,7 @@ const App: React.FC = () => {
           type={modal.type}
           confirmText={modal.confirmText}
           onConfirm={modal.onConfirm}
+          destructive={modal.destructive}
           onClose={() => setModal(prev => ({ ...prev, isOpen: false }))}
         />
       </main>

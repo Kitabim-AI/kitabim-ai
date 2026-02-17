@@ -1,8 +1,9 @@
-import React from 'react';
-import { Database, ChevronUp, ChevronDown, Tag, X, Save, Trash2, BookType, User, Hash, BookOpen, Cpu, ScanText, History, RotateCcw, RefreshCw, MoreVertical } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Database, ChevronUp, ChevronDown, Tag, X, Save, Trash2, BookType, User, Hash, BookOpen, Cpu, ScanText, History, RotateCcw, RefreshCw, MoreVertical, Globe, Shield } from 'lucide-react';
 import { Book } from '@shared/types';
 import { Pagination } from '../common/Pagination';
 import { NotificationContainer } from '../common/NotificationContainer';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface AdminViewProps {
   books: Book[];
@@ -64,23 +65,24 @@ const TagEditor: React.FC<{
   placeholder?: string;
   icon?: React.ReactNode;
 }> = ({ isOpen, onOpen, onClose, onSave, items, tempValue, onTempValueChange, onAddItem, onRemoveItem, existingItems, placeholder, icon }) => {
+  const { t } = useI18n();
   if (isOpen) {
     return (
-      <div className="flex flex-col gap-2 min-w-[200px]">
-        <div className="flex flex-wrap gap-1 max-w-[250px]">
+      <div className="flex flex-col gap-3 min-w-[200px]" dir="rtl">
+        <div className="flex flex-wrap gap-1.5 max-w-[250px]">
           {items.map((item, idx) => (
-            <span key={idx} className="flex items-center gap-1.5 px-2 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-bold rounded-md border border-indigo-100 group/tag">
+            <span key={idx} className="flex items-center gap-1.5 px-2.5 py-1 bg-[#0369a1]/10 text-[#0369a1] text-[14px] font-black rounded-lg border border-[#0369a1]/20 group/tag shadow-sm">
               {item}
               <button
                 onClick={() => onRemoveItem(idx)}
-                className="text-indigo-300 hover:text-red-500 transition-colors"
+                className="text-[#75C5F0]/50 hover:text-red-500 transition-colors"
               >
-                <X size={10} />
+                <X size={12} strokeWidth={3} />
               </button>
             </span>
           ))}
         </div>
-        <div className="flex gap-1.5 items-center">
+        <div className="flex gap-2 items-center">
           <input
             autoFocus
             type="text"
@@ -105,25 +107,25 @@ const TagEditor: React.FC<{
               }
             }}
             placeholder={placeholder}
-            className="px-2 py-1.5 text-xs border border-slate-200 rounded-lg bg-white flex-grow outline-none focus:ring-2 focus:ring-indigo-500/20"
+            className="px-3 py-2 text-sm border-2 border-[#0369a1]/20 rounded-xl bg-white flex-grow outline-none focus:border-[#0369a1] focus:ring-4 focus:ring-[#0369a1]/5 transition-all"
           />
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5">
             <button
               onClick={() => {
                 if (tempValue.trim()) onAddItem(tempValue.trim());
                 onSave();
               }}
-              className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm transition-all active:scale-95"
-              title="Save"
+              className="p-2.5 bg-[#0369a1] text-white rounded-xl hover:bg-[#0284c7] shadow-lg shadow-[#0369a1]/20 transition-all active:scale-95"
+              title={t('common.save')}
             >
-              <Save size={14} />
+              <Save size={16} />
             </button>
             <button
               onClick={onClose}
-              className="p-2 bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 transition-colors"
-              title="Cancel"
+              className="p-2.5 bg-slate-100 text-slate-400 rounded-xl hover:bg-slate-200 transition-all"
+              title={t('common.cancel')}
             >
-              <X size={14} />
+              <X size={16} />
             </button>
           </div>
         </div>
@@ -134,28 +136,26 @@ const TagEditor: React.FC<{
   return (
     <div
       onClick={onOpen}
-      className="cursor-pointer group/tags min-h-[24px] flex items-center hover:bg-slate-50 p-1 rounded-md transition-colors"
+      className="cursor-pointer group/tags min-h-[32px] flex items-center hover:bg-[#0369a1]/5 p-1.5 rounded-xl transition-all"
     >
       {existingItems && existingItems.length > 0 ? (
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-1.5">
           {existingItems.map((t, idx) => (
-            <span key={idx} className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-bold rounded-md border border-indigo-100 group-hover/tags:border-indigo-200">
+            <span key={idx} className="px-2.5 py-1 bg-[#0369a1]/5 text-[#0369a1] text-[14px] font-black rounded-lg border border-[#0369a1]/10 group-hover/tags:border-[#0369a1]/30 shadow-sm">
               {t}
             </span>
           ))}
         </div>
       ) : (
-        <div className="flex items-center gap-1 text-slate-300 group-hover/tags:text-indigo-400 transition-colors">
-          {icon || <Tag size={12} />}
-          <span className="text-[10px] italic">{placeholder}</span>
+        <div className="flex items-center gap-2 text-slate-300 group-hover/tags:text-[#0369a1] transition-colors px-2">
+          {icon || <Tag size={14} />}
+          <span className="text-[14px] font-bold italic">{placeholder}</span>
         </div>
       )}
     </div>
   );
 };
 
-import { Globe, Shield } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
 
 export const AdminView: React.FC<AdminViewProps> = ({
   books,
@@ -180,6 +180,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
   editingBookVolumeId, setEditingBookVolumeId, tempVolume, setTempVolume, handleSaveVolume,
   onToggleVisibility
 }) => {
+  const { t } = useI18n();
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -194,394 +195,365 @@ export const AdminView: React.FC<AdminViewProps> = ({
   }, []);
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h2 className="text-2xl font-bold text-slate-800">Kitabim Processing Pipeline</h2>
-        <p className="text-slate-500">Managing global document indexing and OCR extraction.</p>
-        <p className="text-xs text-slate-400 mt-1">Uploads stay pending until you start OCR.</p>
-      </header>
+    <div className="space-y-8 animate-fade-in">
+      <div className="flex items-center justify-between pb-6 border-b border-[#75C5F0]/20">
+        <header>
+          <h2 className="text-3xl font-black text-[#1a1a1a] flex items-center gap-3">
+            <div className="p-2 bg-[#0369a1] rounded-xl text-white shadow-lg shadow-[#0369a1]/20">
+              <Shield size={24} />
+            </div>
+            {t('admin.table.managementSystem')}
+          </h2>
+          <p className="text-[#94a3b8] font-bold mt-2">{t('admin.table.manageBooks')}</p>
+        </header>
+        <div className="flex items-center gap-2 text-[14px] font-black text-[#0369a1] bg-[#0369a1]/10 px-4 py-2 rounded-full border border-[#0369a1]/20 shadow-sm">
+          <Cpu size={14} className="animate-spin" />
+          {t('admin.table.systemActive')}
+        </div>
+      </div>
 
       <NotificationContainer />
 
       {isCheckingGlobal && (
-        <div className="bg-indigo-50 border border-indigo-100 p-8 rounded-2xl flex flex-col items-center justify-center text-center animate-pulse">
-          <Database className="w-12 h-12 text-indigo-400 mb-4 animate-bounce" />
-          <h3 className="font-bold text-indigo-900">Uploading to Server...</h3>
-          <p className="text-indigo-600 text-sm">Transferring document for background processing.</p>
+        <div className="glass-panel p-20 flex flex-col items-center justify-center text-center animate-pulse">
+          <Database className="w-16 h-16 text-[#75C5F0] mb-6 animate-bounce" />
+          <h3 className="text-xl font-black text-[#1a1a1a]">{t('common.loading')}</h3>
+          <p className="text-slate-500 font-bold">{t('admin.table.uploading')}</p>
         </div>
       )}
 
       {!isCheckingGlobal && (
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm overflow-x-auto">
-          <table className="w-full text-left min-w-[1100px]">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
-                <th
-                  className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition-colors group"
-                  onClick={() => toggleSort('title')}
-                >
-                  <div className="flex items-center gap-2">
-                    Document
-                    <div className={`transition-opacity ${sortConfig.key === 'title' ? 'opacity-100' : 'opacity-0 group-hover:opacity-50'}`}>
-                      {sortConfig.key === 'title' && sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                    </div>
-                  </div>
-                </th>
-                <th className="px-6 py-4 w-15">Volume</th>
-                <th className="px-6 py-4 w-40">Author</th>
-                <th className="px-6 py-4 w-41">Categories</th>
-                <th className="px-6 py-4">Pipeline</th>
-                <th className="px-6 py-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {books.map(book => (
-                <tr key={book.id} className="hover:bg-slate-50/50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="bg-indigo-50 p-2 rounded-lg text-indigo-600">
-                        <Database size={18} />
+        <div className="glass-panel overflow-hidden" style={{ borderRadius: '24px', padding: 0 }}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-right min-w-[1100px]" dir="rtl">
+              <thead>
+                <tr className="bg-[#0369a1]/5 border-b border-[#0369a1]/10 text-sm font-black text-[#0369a1] uppercase tracking-widest">
+                  <th
+                    className="px-8 py-5 cursor-pointer hover:bg-[#0369a1]/5 transition-colors group"
+                    onClick={() => toggleSort('title')}
+                  >
+                    <div className="flex items-center gap-2">
+                      {t('admin.table.bookName')}
+                      <div className={`transition-opacity ${sortConfig.key === 'title' ? 'opacity-100' : 'opacity-0 group-hover:opacity-50'}`}>
+                        {sortConfig.key === 'title' && sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                       </div>
-                      {editingBookTitleId === book.id ? (
-                        <div className="flex items-center gap-1.5 min-w-[200px]">
+                    </div>
+                  </th>
+                  <th className="px-8 py-5 w-24">{t('admin.table.pageCount')}</th>
+                  <th className="px-8 py-5 w-48">{t('admin.table.author')}</th>
+                  <th className="px-8 py-5 w-60">{t('admin.table.category')}</th>
+                  <th className="px-8 py-5">{t('admin.table.progress')}</th>
+                  <th className="px-8 py-5 text-left">{t('admin.table.actions')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#75C5F0]/5">
+                {books.map(book => (
+                  <tr key={book.id} className="hover:bg-[#e8f4f8]/20 transition-colors group/row">
+                    <td className="px-8 py-6">
+                      <div className="flex items-center gap-4">
+                        <div className="bg-[#0369a1]/10 p-3 rounded-xl text-[#0369a1] group-hover/row:scale-110 transition-transform">
+                          <Database size={20} />
+                        </div>
+                        {editingBookTitleId === book.id ? (
+                          <div className="flex items-center gap-2 min-w-[250px]">
+                            <input
+                              autoFocus
+                              type="text"
+                              value={tempTitle}
+                              onChange={e => setTempTitle(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') handleSaveTitle(book.id, tempTitle);
+                                if (e.key === 'Escape') setEditingBookTitleId(null);
+                              }}
+                              className="px-3 py-2 text-sm border-2 border-[#0369a1] rounded-xl bg-white w-full outline-none focus:ring-4 focus:ring-[#0369a1]/5"
+                            />
+                            <button
+                              onClick={() => handleSaveTitle(book.id, tempTitle)}
+                              className="p-2 bg-[#0369a1] text-white rounded-lg hover:bg-[#0284c7] shadow-lg transition-all active:scale-95"
+                            >
+                              <Save size={16} />
+                            </button>
+                            <button
+                              onClick={() => setEditingBookTitleId(null)}
+                              className="p-2 bg-slate-100 text-slate-400 rounded-lg hover:bg-slate-200 transition-colors"
+                            >
+                              <X size={16} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div
+                            onClick={() => {
+                              setEditingBookTitleId(book.id);
+                              setTempTitle(book.title || '');
+                            }}
+                            className="cursor-pointer group/title"
+                          >
+                            <span className="font-black text-[#1a1a1a] text-base group-hover/title:text-[#0369a1] transition-colors">
+                              {book.title}
+                            </span>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-[14px] font-bold text-slate-400">
+                                {new Date(book.uploadDate).toLocaleDateString()}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-8 py-6">
+                      {editingBookVolumeId === book.id ? (
+                        <div className="flex items-center gap-1.5 min-w-[100px]">
                           <input
                             autoFocus
-                            type="text"
-                            value={tempTitle}
-                            onChange={e => setTempTitle(e.target.value)}
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={tempVolume}
+                            onChange={e => setTempVolume(e.target.value)}
                             onKeyDown={e => {
-                              if (e.key === 'Enter') handleSaveTitle(book.id, tempTitle);
-                              if (e.key === 'Escape') setEditingBookTitleId(null);
+                              if (e.key === 'Enter') handleSaveVolume(book.id, tempVolume);
+                              if (e.key === 'Escape') setEditingBookVolumeId(null);
                             }}
-                            className="px-2 py-1 text-xs border border-slate-200 rounded-lg bg-white w-full outline-none focus:ring-2 focus:ring-indigo-500/20"
+                            className="no-spinner px-3 py-2 text-sm border-2 border-[#0369a1] rounded-xl bg-white w-full outline-none"
                           />
-                          <button
-                            onClick={() => handleSaveTitle(book.id, tempTitle)}
-                            className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm transition-all active:scale-95"
-                            title="Save"
-                          >
-                            <Save size={12} />
-                          </button>
-                          <button
-                            onClick={() => setEditingBookTitleId(null)}
-                            className="p-1.5 bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 transition-colors"
-                            title="Cancel"
-                          >
-                            <X size={12} />
-                          </button>
                         </div>
                       ) : (
                         <div
                           onClick={() => {
-                            setEditingBookTitleId(book.id);
-                            setTempTitle(book.title || '');
+                            setEditingBookVolumeId(book.id);
+                            setTempVolume(book.volume !== null && book.volume !== undefined ? String(book.volume) : '');
                           }}
-                          className="cursor-pointer group/title min-h-[24px] flex flex-col justify-center hover:bg-slate-50 p-1 rounded-md transition-colors"
+                          className="cursor-pointer p-2 hover:bg-[#0369a1]/5 rounded-xl transition-colors text-center"
                         >
-                          <span className="font-bold text-slate-900 text-sm group-hover/title:text-indigo-600">
-                            {book.title}
-                          </span>
-                          <span className="text-[10px] text-slate-400 mt-0.5">
-                            {new Date(book.uploadDate).toLocaleDateString()}
-                          </span>
+                          {book.volume !== null && book.volume !== undefined ? (
+                            <span className="text-sm font-black text-[#1a1a1a]">
+                              {t('book.volume', { volume: book.volume })}
+                            </span>
+                          ) : (
+                            <Hash size={16} className="text-slate-200 mx-auto" />
+                          )}
                         </div>
                       )}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    {editingBookVolumeId === book.id ? (
-                      <div className="flex items-center gap-1.5 min-w-[90px]">
-                        <input
-                          autoFocus
-                          type="number"
-                          min={0}
-                          step={1}
-                          value={tempVolume}
-                          onChange={e => setTempVolume(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') handleSaveVolume(book.id, tempVolume);
-                            if (e.key === 'Escape') setEditingBookVolumeId(null);
+                    </td>
+                    <td className="px-8 py-6">
+                      {editingBookAuthorId === book.id ? (
+                        <div className="flex items-center gap-1.5 min-w-[150px]">
+                          <input
+                            autoFocus
+                            type="text"
+                            value={tempAuthor}
+                            onChange={e => setTempAuthor(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') handleSaveAuthor(book.id, tempAuthor);
+                              if (e.key === 'Escape') setEditingBookAuthorId(null);
+                            }}
+                            className="px-3 py-2 text-sm border-2 border-[#0369a1] rounded-xl bg-white w-full outline-none"
+                          />
+                        </div>
+                      ) : (
+                        <div
+                          onClick={() => {
+                            setEditingBookAuthorId(book.id);
+                            setTempAuthor(book.author && book.author !== 'Unknown Author' ? book.author : '');
                           }}
-                          className="no-spinner px-2 py-1 text-xs border border-slate-200 rounded-lg bg-white w-full outline-none focus:ring-2 focus:ring-indigo-500/20"
-                        />
-                        <button
-                          onClick={() => handleSaveVolume(book.id, tempVolume)}
-                          className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm transition-all active:scale-95"
-                          title="Save"
+                          className="cursor-pointer p-2 hover:bg-[#0369a1]/5 rounded-xl transition-colors"
                         >
-                          <Save size={12} />
-                        </button>
-                        <button
-                          onClick={() => setEditingBookVolumeId(null)}
-                          className="p-1.5 bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 transition-colors"
-                          title="Cancel"
-                        >
-                          <X size={12} />
-                        </button>
-                      </div>
-                    ) : (
-                      <div
-                        onClick={() => {
-                          setEditingBookVolumeId(book.id);
-                          setTempVolume(book.volume !== null && book.volume !== undefined ? String(book.volume) : '');
+                          {book.author && book.author !== 'Unknown Author' ? (
+                            <span className="text-sm font-black text-[#1a1a1a]">
+                              {book.author}
+                            </span>
+                          ) : (
+                            <User size={16} className="text-slate-200" />
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-8 py-6">
+                      <TagEditor
+                        isOpen={editingBookCategoriesId === book.id}
+                        onOpen={() => {
+                          setEditingBookCategoriesId(book.id);
+                          setEditingCategoriesList([...(book.categories || [])]);
+                          setTempCategories('');
                         }}
-                        className="cursor-pointer group/volume min-h-[24px] flex items-center hover:bg-slate-50 p-1 rounded-md transition-colors"
-                      >
-                        {book.volume !== null && book.volume !== undefined ? (
-                          <span className="text-sm font-medium text-slate-600 group-hover/volume:text-indigo-600">
-                            {book.volume}
-                          </span>
-                        ) : (
-                          <div className="flex items-center gap-1 text-slate-300 group-hover/volume:text-indigo-400 transition-colors">
-                            <Hash size={12} />
-                            <span className="text-[10px] italic">Add volume...</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-6 py-4">
-                    {editingBookAuthorId === book.id ? (
-                      <div className="flex items-center gap-1.5 min-w-[150px]">
-                        <input
-                          autoFocus
-                          type="text"
-                          value={tempAuthor}
-                          onChange={e => setTempAuthor(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') handleSaveAuthor(book.id, tempAuthor);
-                            if (e.key === 'Escape') setEditingBookAuthorId(null);
-                          }}
-                          className="px-2 py-1 text-xs border border-slate-200 rounded-lg bg-white flex-grow outline-none focus:ring-2 focus:ring-indigo-500/20"
-                        />
-                        <button
-                          onClick={() => handleSaveAuthor(book.id, tempAuthor)}
-                          className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm transition-all active:scale-95"
-                          title="Save"
-                        >
-                          <Save size={12} />
-                        </button>
-                        <button
-                          onClick={() => setEditingBookAuthorId(null)}
-                          className="p-1.5 bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 transition-colors"
-                          title="Cancel"
-                        >
-                          <X size={12} />
-                        </button>
-                      </div>
-                    ) : (
-                      <div
-                        onClick={() => {
-                          setEditingBookAuthorId(book.id);
-                          setTempAuthor(book.author && book.author !== 'Unknown Author' ? book.author : '');
+                        onClose={() => {
+                          setEditingBookCategoriesId(null);
+                          setEditingCategoriesList([]);
                         }}
-                        className="cursor-pointer group/author min-h-[24px] flex items-center hover:bg-slate-50 p-1 rounded-md transition-colors"
-                      >
-                        {book.author && book.author !== 'Unknown Author' ? (
-                          <span className="text-sm font-medium text-slate-600 group-hover/author:text-indigo-600 truncate max-w-[180px]">
-                            {book.author}
-                          </span>
-                        ) : (
-                          <div className="flex items-center gap-1 text-slate-300 group-hover/author:text-indigo-400 transition-colors">
-                            <User size={12} />
-                            <span className="text-[10px] italic">Add author...</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-6 py-4">
-                    <TagEditor
-                      isOpen={editingBookCategoriesId === book.id}
-                      onOpen={() => {
-                        setEditingBookCategoriesId(book.id);
-                        setEditingCategoriesList([...(book.categories || [])]);
-                        setTempCategories('');
-                      }}
-                      onClose={() => {
-                        setEditingBookCategoriesId(null);
-                        setEditingCategoriesList([]);
-                      }}
-                      onSave={() => {
-                        let list = [...editingCategoriesList];
-                        if (tempCategories.trim() && !list.includes(tempCategories.trim())) list.push(tempCategories.trim());
-                        handleSaveCategories(book.id, list);
-                      }}
-                      items={editingCategoriesList}
-                      tempValue={tempCategories}
-                      onTempValueChange={setTempCategories}
-                      onAddItem={(val) => {
-                        if (val && !editingCategoriesList.includes(val)) setEditingCategoriesList(prev => [...prev, val]);
-                        setTempCategories('');
-                      }}
-                      onRemoveItem={(idx) => setEditingCategoriesList(prev => prev.filter((_, i) => i !== idx))}
-                      existingItems={book.categories || []}
-                      placeholder="Add category..."
-                      icon={<BookType size={12} />}
-                    />
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col gap-1.5 min-w-[120px]">
-                      <div className="flex items-center gap-2">
-                        <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                        onSave={() => {
+                          let list = [...editingCategoriesList];
+                          if (tempCategories.trim() && !list.includes(tempCategories.trim())) list.push(tempCategories.trim());
+                          handleSaveCategories(book.id, list);
+                        }}
+                        items={editingCategoriesList}
+                        tempValue={tempCategories}
+                        onTempValueChange={setTempCategories}
+                        onAddItem={(val) => {
+                          if (val && !editingCategoriesList.includes(val)) setEditingCategoriesList(prev => [...prev, val]);
+                          setTempCategories('');
+                        }}
+                        onRemoveItem={(idx) => setEditingCategoriesList(prev => prev.filter((_, i) => i !== idx))}
+                        existingItems={book.categories || []}
+                        placeholder={t('admin.categories.add')}
+                        icon={<BookType size={14} />}
+                      />
+                    </td>
+                    <td className="px-8 py-6">
+                      <div className="flex flex-col gap-2 min-w-[140px]">
+                        <div className="w-full bg-[#0369a1]/10 h-2 rounded-full overflow-hidden">
                           <div
                             className={`h-full transition-all duration-500 ${(() => {
                               const isStale = book.status === 'processing' && book.processingLockExpiresAt && new Date(book.processingLockExpiresAt) < new Date();
                               if (book.status === 'error' || isStale) return 'bg-red-500';
-                              if (book.status === 'ready') return 'bg-green-500';
-                              if (book.status === 'pending') return 'bg-amber-500';
-                              if (book.processingStep === 'rag') return 'bg-amber-500 animate-pulse';
-                              return 'bg-blue-500'; // processing
+                              if (book.status === 'ready') return 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]';
+                              return 'bg-[#75C5F0] animate-pulse';
                             })()}`}
                             style={{ width: `${((book.completedCount ?? book.pages.filter(r => r.status === 'completed').length) / (book.totalPages || 1)) * 100}%` }}
                           />
                         </div>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] font-bold text-slate-400">
-                          {book.completedCount ?? book.pages.filter(r => r.status === 'completed').length}/{book.totalPages || 0} pages
-                        </span>
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${(() => {
-                          const isStale = book.status === 'processing' && book.processingLockExpiresAt && new Date(book.processingLockExpiresAt) < new Date();
-                          if (isStale) return 'bg-red-100 text-red-700';
-                          return book.status === 'ready' ? 'bg-green-100 text-green-700' :
-                            book.status === 'processing' ? 'bg-blue-100 text-blue-700' :
-                              book.status === 'pending' ? 'bg-amber-100 text-amber-700' :
-                                'bg-red-100 text-red-700';
-                        })()}`}>
-                          {(() => {
+                        <div className="flex items-center justify-between">
+                          <span className="text-[14px] font-black text-slate-400">
+                            {book.completedCount ?? book.pages.filter(r => r.status === 'completed').length}/{book.totalPages || 0} {t('common.pages')}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-full text-[14px] font-black uppercase ${(() => {
                             const isStale = book.status === 'processing' && book.processingLockExpiresAt && new Date(book.processingLockExpiresAt) < new Date();
-                            return isStale ? 'TIMEOUT' : book.status;
-                          })()}
-                        </span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="relative inline-block text-left" ref={activeMenuId === book.id ? menuRef : null}>
-                      <button
-                        onClick={() => setActiveMenuId(activeMenuId === book.id ? null : book.id)}
-                        className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-slate-600"
-                      >
-                        <MoreVertical size={18} />
-                      </button>
-
-                      {activeMenuId === book.id && (
-                        <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden py-1">
-                          {/* View Book */}
-                          <button
-                            onClick={() => {
-                              if (book.status !== 'pending') onOpenReader(book);
-                              setActiveMenuId(null);
-                            }}
-                            disabled={book.status === 'pending'}
-                            className={`w-full flex items-center gap-3 px-4 py-2 text-xs font-medium transition-colors ${book.status === 'pending'
-                              ? 'text-slate-300 cursor-not-allowed'
-                              : 'text-slate-700 hover:bg-slate-50'
-                              }`}
-                          >
-                            <BookOpen size={14} className="stroke-[2.5]" />
-                            View Book
-                          </button>
-
-                          {/* Visibility toggle */}
-                          <button
-                            onClick={() => {
-                              onToggleVisibility(book.id, book.visibility || 'public');
-                              setActiveMenuId(null);
-                            }}
-                            className="w-full flex items-center gap-3 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors"
-                          >
-                            {book.visibility === 'private' ? (
-                              <><Shield size={14} className="stroke-[2.5]" /> Make Public</>
-                            ) : (
-                              <><Globe size={14} className="stroke-[2.5]" /> Make Private</>
-                            )}
-                          </button>
-
-                          {/* Pipeline Actions */}
-                          {(() => {
-                            const isStale = book.status === 'processing' && book.processingLockExpiresAt && new Date(book.processingLockExpiresAt) < new Date();
-                            const isActuallyProcessing = book.status === 'processing' && !isStale;
-                            const hasFailedPages = (book.errorCount ?? 0) > 0 || book.pages?.some(r => r.status === 'error');
-                            const isReady = book.status === 'ready';
-                            const canRetry = (Boolean(hasFailedPages) || book.status === 'error' || isStale) && !isActuallyProcessing;
-                            const canStartOcr = !isActuallyProcessing && !canRetry && !isReady;
-                            const canReindex = book.status === 'ready';
-
-                            return (
-                              <>
-                                <button
-                                  onClick={() => {
-                                    if (canStartOcr) onStartOcr(book.id);
-                                    setActiveMenuId(null);
-                                  }}
-                                  disabled={!canStartOcr}
-                                  className={`w-full flex items-center gap-3 px-4 py-2 text-xs font-medium transition-colors ${canStartOcr ? 'text-indigo-600 hover:bg-indigo-50' : 'text-slate-300 cursor-not-allowed'
-                                    }`}
-                                >
-                                  <ScanText size={14} className="stroke-[2.5]" />
-                                  Start OCR
-                                </button>
-
-                                <button
-                                  onClick={() => {
-                                    if (canRetry) onRetryFailedOcr(book);
-                                    setActiveMenuId(null);
-                                  }}
-                                  disabled={!canRetry}
-                                  className={`w-full flex items-center gap-3 px-4 py-2 text-xs font-medium transition-colors ${canRetry ? 'text-amber-700 hover:bg-amber-50' : 'text-slate-300 cursor-not-allowed'
-                                    }`}
-                                >
-                                  <RotateCcw size={14} className="stroke-[2.5]" />
-                                  Retry Failed Pages
-                                </button>
-
-                                <button
-                                  onClick={() => {
-                                    if (canReindex) onReindex(book.id);
-                                    setActiveMenuId(null);
-                                  }}
-                                  disabled={!canReindex}
-                                  className={`w-full flex items-center gap-3 px-4 py-2 text-xs font-medium transition-colors ${canReindex ? 'text-blue-600 hover:bg-blue-50' : 'text-slate-300 cursor-not-allowed'
-                                    }`}
-                                >
-                                  <RefreshCw size={14} className="stroke-[2.5]" />
-                                  Re-index Book
-                                </button>
-                              </>
-                            );
-                          })()}
-
-                          <div className="h-px bg-slate-100 my-1" />
-
-                          {/* Delete */}
-                          <button
-                            onClick={() => {
-                              onDeleteBook(book.id);
-                              setActiveMenuId(null);
-                            }}
-                            className="w-full flex items-center gap-3 px-4 py-2 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"
-                          >
-                            <Trash2 size={14} />
-                            Delete Book
-                          </button>
+                            if (isStale) return 'bg-red-50 text-red-600';
+                            return book.status === 'ready' ? 'bg-emerald-50 text-emerald-600' :
+                              book.status === 'processing' ? 'bg-[#0369a1]/10 text-[#0369a1]' :
+                                book.status === 'pending' ? 'bg-amber-50 text-amber-600' :
+                                  'bg-red-50 text-red-600';
+                          })()}`}>
+                            {(() => {
+                              const isStale = book.status === 'processing' && book.processingLockExpiresAt && new Date(book.processingLockExpiresAt) < new Date();
+                              return isStale ? 'TIMEOUT' : book.status === 'ready' ? t('admin.table.active') :
+                                book.status === 'processing' ? t('admin.table.recognizing') :
+                                  book.status === 'pending' ? t('admin.table.waiting') : t('common.error');
+                            })()}
+                          </span>
                         </div>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      </div>
+                    </td>
+                    <td className="px-8 py-6 text-left">
+                      <div className="relative inline-block" ref={activeMenuId === book.id ? menuRef : null}>
+                        <button
+                          onClick={() => setActiveMenuId(activeMenuId === book.id ? null : book.id)}
+                          className="p-3 hover:bg-[#0369a1]/10 rounded-xl transition-all text-slate-400 hover:text-[#0369a1] hover:scale-110"
+                        >
+                          <MoreVertical size={20} />
+                        </button>
 
-          <Pagination
-            page={page}
-            pageSize={pageSize}
-            totalItems={totalBooks}
-            onPageChange={onPageChange}
-            onPageSizeChange={onPageSizeChange}
-          />
+                        {activeMenuId === book.id && (
+                          <div className="absolute left-0 top-full mt-2 w-56 glass-panel shadow-2xl z-50 overflow-hidden py-2" style={{ borderRadius: '16px' }}>
+                            <button
+                              onClick={() => {
+                                if (book.status !== 'pending') onOpenReader(book);
+                                setActiveMenuId(null);
+                              }}
+                              disabled={book.status === 'pending'}
+                              className={`w-full flex items-center gap-3 px-5 py-3 text-sm font-black transition-colors ${book.status === 'pending'
+                                ? 'text-slate-300 cursor-not-allowed'
+                                : 'text-[#1a1a1a] hover:bg-[#0369a1]/10 hover:text-[#0369a1]'
+                                }`}
+                            >
+                              <BookOpen size={16} /> {t('admin.table.view')}
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                onToggleVisibility(book.id, book.visibility || 'public');
+                                setActiveMenuId(null);
+                              }}
+                              className="w-full flex items-center gap-3 px-5 py-3 text-sm font-black text-[#1a1a1a] hover:bg-[#0369a1]/10 hover:text-[#0369a1] transition-colors"
+                            >
+                              {book.visibility === 'private' ? (
+                                <><Shield size={16} /> {t('admin.table.makePublic')}</>
+                              ) : (
+                                <><Globe size={16} /> {t('admin.table.makePrivate')}</>
+                              )}
+                            </button>
+
+                            <div className="h-px bg-slate-100 my-2 mx-4" />
+
+                            {(() => {
+                              const isStale = book.status === 'processing' && book.processingLockExpiresAt && new Date(book.processingLockExpiresAt) < new Date();
+                              const isActuallyProcessing = book.status === 'processing' && !isStale;
+                              const hasFailedPages = (book.errorCount ?? 0) > 0 || book.pages?.some(r => r.status === 'error');
+                              const isReady = book.status === 'ready';
+                              const canRetry = (Boolean(hasFailedPages) || book.status === 'error' || isStale) && !isActuallyProcessing;
+                              const canStartOcr = !isActuallyProcessing && !canRetry && !isReady;
+                              const canReindex = book.status === 'ready';
+
+                              return (
+                                <>
+                                  <button
+                                    onClick={() => {
+                                      if (canStartOcr) onStartOcr(book.id);
+                                      setActiveMenuId(null);
+                                    }}
+                                    disabled={!canStartOcr}
+                                    className={`w-full flex items-center gap-3 px-5 py-3 text-sm font-black transition-colors ${canStartOcr ? 'text-[#0369a1] hover:bg-[#0369a1]/10' : 'text-slate-300 cursor-not-allowed'
+                                      }`}
+                                  >
+                                    <ScanText size={16} /> {t('admin.table.startOcr')}
+                                  </button>
+
+                                  <button
+                                    onClick={() => {
+                                      if (canRetry) onRetryFailedOcr(book);
+                                      setActiveMenuId(null);
+                                    }}
+                                    disabled={!canRetry}
+                                    className={`w-full flex items-center gap-3 px-5 py-3 text-sm font-black transition-colors ${canRetry ? 'text-amber-600 hover:bg-amber-50' : 'text-slate-300 cursor-not-allowed'
+                                      }`}
+                                  >
+                                    <RotateCcw size={16} /> {t('admin.table.retryOcr')}
+                                  </button>
+
+                                  <button
+                                    onClick={() => {
+                                      if (canReindex) onReindex(book.id);
+                                      setActiveMenuId(null);
+                                    }}
+                                    disabled={!canReindex}
+                                    className={`w-full flex items-center gap-3 px-5 py-3 text-sm font-black transition-colors ${canReindex ? 'text-blue-600 hover:bg-blue-50' : 'text-slate-300 cursor-not-allowed'
+                                      }`}
+                                  >
+                                    <RefreshCw size={16} /> {t('admin.table.reindex')}
+                                  </button>
+                                </>
+                              );
+                            })()}
+
+                            <div className="h-px bg-slate-100 my-2 mx-4" />
+
+                            <button
+                              onClick={() => {
+                                onDeleteBook(book.id);
+                                setActiveMenuId(null);
+                              }}
+                              className="w-full flex items-center gap-3 px-5 py-3 text-sm font-black text-red-600 hover:bg-red-50 transition-colors"
+                            >
+                              <Trash2 size={16} /> {t('admin.table.delete')}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="bg-[#0369a1]/5 px-8 py-5">
+            <Pagination
+              page={page}
+              pageSize={pageSize}
+              totalItems={totalBooks}
+              onPageChange={onPageChange}
+              onPageSizeChange={onPageSizeChange}
+            />
+          </div>
         </div>
       )}
     </div>

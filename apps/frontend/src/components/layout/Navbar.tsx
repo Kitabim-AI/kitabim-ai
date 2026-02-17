@@ -1,7 +1,9 @@
 import React, { useRef } from 'react';
-import { BookOpen, Globe, MessageSquare, LayoutDashboard, Search, Upload } from 'lucide-react';
+import { BookOpen, Library, MessageSquare, LayoutDashboard, Search, Upload } from 'lucide-react';
 import { AuthButton } from '../auth';
+import { LanguageSwitcher } from '../common/LanguageSwitcher';
 import { useAuth, useIsEditor } from '../../hooks/useAuth';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface NavbarProps {
   view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat';
@@ -25,70 +27,99 @@ export const Navbar: React.FC<NavbarProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { isAuthenticated } = useAuth();
   const isEditor = useIsEditor();
+  const { t } = useI18n();
 
   return (
-    <nav className="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between sticky top-0 z-50">
-      <div className="flex items-center gap-8">
-        <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('home')}>
-          <div className="bg-indigo-600 p-1.5 rounded-lg shadow-sm shadow-indigo-100">
-            <BookOpen className="text-white w-5 h-5" />
+    <nav className="px-8 py-4 flex items-center justify-between sticky top-0 z-[100] transition-all duration-300 overflow-hidden relative" dir="rtl">
+      {/* Glass Backdrop - Matching Prototype */}
+      <div className="absolute inset-0 bg-white/75 backdrop-blur-[20px] border-b border-[rgba(255,193,7,0.2)] shadow-[0_4px_30px_rgba(117,197,240,0.1),0_1px_0_rgba(255,255,255,0.8)_inset]"
+        style={{ backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)' }} />
+
+      {/* Gradient Border at Bottom - Matching Prototype */}
+      <div className="absolute -bottom-px left-0 right-0 h-px bg-gradient-to-r from-transparent via-[rgba(255,193,7,0.5)] to-transparent"
+        style={{ background: 'linear-gradient(90deg, transparent, rgba(255, 193, 7, 0.5), rgba(156, 39, 176, 0.3), transparent)' }} />
+
+      <div className="relative flex items-center gap-8">
+        <div className="flex items-center gap-3 cursor-pointer group transition-transform duration-300 hover:-translate-y-0.5" onClick={() => setView('home')}>
+          <div className="p-3 rounded-2xl shadow-[0_4px_20px_rgba(255,193,7,0.4),0_8px_40px_rgba(156,39_176,0.2),inset_0_1px_0_rgba(255,255,255,0.4)] transition-all duration-300 relative overflow-hidden group-hover:shadow-[0_6px_20px_rgba(117,197,240,0.5)] group-hover:-rotate-6"
+            style={{
+              background: 'linear-gradient(135deg, #FFD54F 0%, #FF9800 50%, #9C27B0 100%)'
+            }}>
+            <div className="absolute inset-0 opacity-30"
+              style={{
+                background: 'repeating-conic-gradient(from 0deg at 50% 50%, transparent 0deg, transparent 10deg, rgba(255, 255, 255, 0.1) 10deg, rgba(255, 255, 255, 0.1) 20deg)'
+              }} />
+            <BookOpen size={28} className="text-white relative z-10" strokeWidth={2} />
           </div>
-          <span className="font-bold text-slate-900 tracking-tight text-xl">
-            Kitabim<span className="text-indigo-600">.AI</span>
+          <span className="font-bold text-[#1a1a1a] text-[1.75rem] tracking-tight hidden sm:block">
+            Kitabim<span className="text-[#0369a1]">.AI</span>
           </span>
         </div>
-        <div className="hidden md:flex items-center gap-1">
-          <button
+
+        <div className="hidden lg:flex items-center gap-1">
+          <NavButton
+            active={view === 'home'}
             onClick={() => setView('home')}
-            className={`px-4 py-2 rounded-md text-sm font-semibold transition-colors flex items-center gap-2 ${view === 'home' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:bg-slate-50'}`}
-          >
-            <BookOpen size={18} /> Home
-          </button>
-          <button
+            icon={<Search size={18} strokeWidth={2.5} />}
+            label={t('nav.home')}
+          />
+          <NavButton
+            active={view === 'library'}
             onClick={() => setView('library')}
-            className={`px-4 py-2 rounded-md text-sm font-semibold transition-colors flex items-center gap-2 ${view === 'library' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:bg-slate-50'}`}
-          >
-            <Globe size={18} /> Global Library
-          </button>
+            icon={<Library size={18} strokeWidth={2.5} />}
+            label={t('nav.library')}
+          />
           {isAuthenticated && (
-            <button
+            <NavButton
+              active={view === 'global-chat'}
               onClick={() => { setView('global-chat'); clearChat(); }}
-              className={`px-4 py-2 rounded-md text-sm font-semibold transition-colors flex items-center gap-2 ${view === 'global-chat' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:bg-slate-50'}`}
-            >
-              <MessageSquare size={18} /> Global Assistant
-            </button>
+              icon={<MessageSquare size={18} strokeWidth={2.5} />}
+              label={t('nav.globalChat')}
+            />
           )}
           {isEditor && (
-            <button
+            <NavButton
+              active={view === 'admin'}
               onClick={() => { setView('admin'); setPage(1); }}
-              className={`px-4 py-2 rounded-md text-sm font-semibold transition-colors flex items-center gap-2 ${view === 'admin' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:bg-slate-50'}`}
-            >
-              <LayoutDashboard size={18} /> Management
-            </button>
+              icon={<LayoutDashboard size={18} strokeWidth={2.5} />}
+              label={t('nav.admin')}
+            />
           )}
         </div>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="relative flex items-center gap-4">
         {view !== 'home' && (
-          <div className="relative hidden sm:block">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+          <div className="relative hidden xl:block">
+            <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1]">
+              <Search size={18} strokeWidth={3} />
+            </div>
             <input
               type="text"
-              placeholder="Search documents..."
+              placeholder={t('library.searchPlaceholder')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-1.5 bg-slate-100 border-none rounded-full text-sm focus:ring-2 focus:ring-indigo-500 transition-all w-64"
+              className="px-12 py-2.5 bg-white/50 backdrop-blur-md border-2 border-[#0369a1]/10 rounded-2xl text-sm font-black text-[#1a1a1a] placeholder:text-slate-300 outline-none focus:border-[#0369a1] transition-all w-64 shadow-sm"
+              dir="rtl"
             />
           </div>
         )}
+
         {isEditor && (
           <>
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm font-semibold shadow-md shadow-indigo-100 flex items-center gap-2 hover:bg-indigo-700 active:scale-95 transition-transform"
+              className="relative text-white px-7 py-3 rounded-xl font-bold flex items-center gap-2 transition-all duration-300 shadow-[0_4px_12px_rgba(117,197,240,0.3)] hover:shadow-[0_8px_24px_rgba(117,197,240,0.5)] hover:-translate-y-1 active:translate-y-0 overflow-hidden"
+              style={{
+                background: 'linear-gradient(135deg, #0369a1 0%, #0284c7 100%)'
+              }}
             >
-              <Upload size={16} /> ADD BOOK
+              <span className="absolute inset-0 translate-x-[-100%] transition-transform duration-600"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0) 100%)'
+                }} />
+              <Upload size={16} strokeWidth={2} />
+              <span>{t('nav.addBook')}</span>
             </button>
             <input
               type="file"
@@ -99,8 +130,36 @@ export const Navbar: React.FC<NavbarProps> = ({
             />
           </>
         )}
+        <LanguageSwitcher />
         <AuthButton />
       </div>
     </nav>
   );
 };
+
+const NavButton: React.FC<{ active: boolean; onClick: () => void; icon: React.ReactNode; label: string }> = ({
+  active, onClick, icon, label
+}) => (
+  <button
+    onClick={onClick}
+    className={`relative px-6 py-3 rounded-xl text-[1rem] font-semibold flex items-center gap-2 transition-all duration-300 overflow-hidden ${active
+      ? 'text-white shadow-[0_4px_12px_rgba(3,105,161,0.3)]'
+      : 'text-[#4a5568] hover:bg-[#0369a1]/10 hover:text-[#0369a1] hover:-translate-y-0.5'
+      }`}
+    style={active ? {
+      background: 'linear-gradient(135deg, #0369a1 0%, #0284c7 100%)'
+    } : undefined}
+  >
+    {!active && (
+      <span className="absolute inset-0 rounded-full bg-[rgba(117,197,240,0.1)] scale-0 transition-transform duration-600"
+        style={{
+          transform: 'translate(-50%, -50%) scale(0)',
+          top: '50%',
+          left: '50%'
+        }} />
+    )}
+    <span className="relative z-10 flex items-center gap-2">
+      {icon} {label}
+    </span>
+  </button>
+);

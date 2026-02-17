@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Book } from '@shared/types';
 import { PersistenceService } from '../services/persistenceService';
 import { useNotification } from '../context/NotificationContext';
+import { useI18n } from '../i18n/I18nContext';
 
 export const useBookActions = (
   refreshLibrary: () => Promise<void>,
@@ -11,6 +12,7 @@ export const useBookActions = (
   setModal: (modal: any) => void
 ) => {
   const { addNotification } = useNotification();
+  const { t } = useI18n();
   const [isCheckingGlobal, setIsCheckingGlobal] = useState(false);
   const cancelledBooks = useRef<Set<string>>(new Set());
 
@@ -25,14 +27,14 @@ export const useBookActions = (
       await PersistenceService.uploadPdf(file);
       await refreshLibrary();
       setIsCheckingGlobal(false);
-      addNotification("Document uploaded successfully.", "success");
+      addNotification(t('common.uploadSuccess'), "success");
     } catch (err) {
       setIsCheckingGlobal(false);
       const errorMsg = err instanceof Error ? err.message : "An unknown error occurred.";
       setModal({
         isOpen: true,
-        title: "Upload Error",
-        message: `Error uploading document: ${errorMsg}`,
+        title: t('modal.uploadError.title'),
+        message: t('modal.uploadError.message', { error: errorMsg }),
         type: 'alert'
       });
     }
@@ -41,23 +43,23 @@ export const useBookActions = (
   const handleStartOcr = (bookId: string) => {
     setModal({
       isOpen: true,
-      title: "Confirm OCR Start",
-      message: `Are you sure you want to start Gemini OCR? This will analyze the document and extract text.`,
+      title: t('modal.ocrStart.title'),
+      message: t('modal.ocrStart.message'),
       type: 'confirm',
-      confirmText: "Start Processing",
+      confirmText: t('modal.ocrStart.confirm'),
       onConfirm: async () => {
         try {
           setBooks(prev => prev.map(b => b.id === bookId ? { ...b, status: 'processing', processingStep: 'ocr' } : b));
           await PersistenceService.startOcr(bookId);
           await refreshLibrary();
           setModal((prev: any) => ({ ...prev, isOpen: false }));
-          addNotification("OCR process started successfully.", "success");
+          addNotification(t('common.ocrStarted'), "success");
         } catch (err) {
-          addNotification("Failed to start OCR process.", "error");
+          addNotification(t('common.ocrStartError'), "error");
           setModal({
             isOpen: true,
-            title: "Process Error",
-            message: "Failed to start OCR. Please try again.",
+            title: t('modal.processError.title'),
+            message: t('modal.processError.message'),
             type: 'alert'
           });
         }
@@ -71,8 +73,8 @@ export const useBookActions = (
     if (!hasFailedPages && book.status !== 'error') {
       setModal({
         isOpen: true,
-        title: "No Failed Pages",
-        message: "This book has no failed OCR pages to retry.",
+        title: t('modal.noFailedPages.title'),
+        message: t('modal.noFailedPages.message'),
         type: 'alert'
       });
       return;
@@ -125,8 +127,8 @@ export const useBookActions = (
       console.error("Failed to retry OCR", err);
       setModal({
         isOpen: true,
-        title: "Retry Error",
-        message: "Failed to retry OCR for failed pages. Please try again.",
+        title: t('modal.retryError.title'),
+        message: t('modal.retryError.message'),
         type: 'alert'
       });
     }
@@ -177,8 +179,8 @@ export const useBookActions = (
       console.error("Failed to reset page", err);
       setModal({
         isOpen: true,
-        title: "Re-OCR Error",
-        message: "Failed to start re-OCR for this page. Please try again.",
+        title: t('modal.reOcrError.title'),
+        message: t('modal.reOcrError.message'),
         type: 'alert'
       });
     }
@@ -189,22 +191,22 @@ export const useBookActions = (
   const handleReindexBook = (bookId: string) => {
     setModal({
       isOpen: true,
-      title: "Confirm Re-Index",
-      message: "Are you sure you want to re-chunk and re-embed all pages in this book? This is useful for model upgrades or fixing search issues. Existing content will be preserved.",
+      title: t('modal.reindex.title'),
+      message: t('modal.reindex.message'),
       type: 'confirm',
-      confirmText: "Re-Index Book",
+      confirmText: t('modal.reindex.confirm'),
       onConfirm: async () => {
         try {
           await PersistenceService.reindexBook(bookId);
           setBooks(prev => prev.map(b => b.id === bookId ? { ...b, status: 'processing', processingStep: 'rag' } : b));
           await refreshLibrary();
           setModal((prev: any) => ({ ...prev, isOpen: false }));
-          addNotification("Book re-indexing started.", "success");
+          addNotification(t('common.reindexStarted'), "success");
         } catch (err) {
           setModal({
             isOpen: true,
-            title: "Re-Index Error",
-            message: "Failed to start re-indexing. Please try again.",
+            title: t('modal.reindexError.title'),
+            message: t('modal.reindexError.message'),
             type: 'alert'
           });
         }
@@ -224,15 +226,14 @@ export const useBookActions = (
           lastUpdated: new Date()
         };
       });
-      // Don't call refreshLibrary() here - it can race with polling and overwrite our update
       // The polling in App.tsx will sync the data within a few seconds
-      addNotification(`Page ${pageNum} updated.`, "success");
+      addNotification(t('common.pageUpdated', { pageNum }), "success");
     } catch (err) {
       console.error("Failed to update page", err);
       setModal({
         isOpen: true,
-        title: "Update Error",
-        message: "Failed to save page changes. Please try again.",
+        title: t('modal.updateError.title'),
+        message: t('modal.updateError.message'),
         type: 'alert'
       });
     }
@@ -256,8 +257,8 @@ export const useBookActions = (
       console.error("Error opening reader:", err);
       setModal({
         isOpen: true,
-        title: "Load Error",
-        message: "Failed to load book content. Please try again.",
+        title: t('modal.loadError.title'),
+        message: t('modal.loadError.message'),
         type: 'alert'
       });
     }
@@ -291,7 +292,7 @@ export const useBookActions = (
       }));
 
       if (updatedPages.length === 0) {
-        addNotification("No pages found to save. Please try reloading the book.", "error");
+        addNotification(t('common.noPagesToSave'), "error");
         setIsEditing(false);
         return;
       }
@@ -309,13 +310,13 @@ export const useBookActions = (
       setSelectedBook(updatedBook);
       await refreshLibrary();
       setIsEditing(false);
-      addNotification("Global corrections saved.", "success");
+      addNotification(t('common.saveSuccess'), "success");
     } catch (err) {
       console.error("Failed to save global corrections", err);
       setModal({
         isOpen: true,
-        title: "Save Error",
-        message: "Failed to save global changes. Please try again.",
+        title: t('modal.saveError.title'),
+        message: t('modal.saveError.message'),
         type: 'alert'
       });
     }
@@ -324,10 +325,11 @@ export const useBookActions = (
   const handleDeleteBook = (bookId: string, selectedBookId: string | undefined) => {
     setModal({
       isOpen: true,
-      title: "Confirm Deletion",
-      message: "Are you sure you want to delete this book? This will permanently remove it from the global library platform.",
+      title: t('modal.delete.title'),
+      message: t('modal.delete.message'),
       type: 'confirm',
-      confirmText: "Delete Permanently",
+      confirmText: t('modal.delete.confirm'),
+      destructive: true,
       onConfirm: async () => {
         cancelledBooks.current.add(bookId);
         await PersistenceService.deleteBook(bookId);
@@ -337,7 +339,7 @@ export const useBookActions = (
           setView('library');
         }
         setModal((prev: any) => ({ ...prev, isOpen: false }));
-        addNotification("Book deleted successfully.", "success");
+        addNotification(t('common.deleteSuccess'), "success");
       }
     });
   };
@@ -349,10 +351,10 @@ export const useBookActions = (
       setBooks(prev => prev.map(b => b.id === bookId ? { ...b, tags } : b));
       setEditingBookTagsId(null);
       setEditingTagsList([]);
-      addNotification("Tags updated successfully.", "success");
+      addNotification(t('common.tagsUpdateSuccess'), "success");
     } catch (e) {
       console.error("Failed to save tags", e);
-      addNotification("Failed to update tags.", "error");
+      addNotification(t('common.tagsUpdateError'), "error");
     }
   };
 
@@ -364,10 +366,10 @@ export const useBookActions = (
       setBooks(prev => prev.map(b => b.id === bookId ? { ...b, categories } : b));
       setEditingId(null);
       setEditingList([]);
-      addNotification("Categories updated successfully.", "success");
+      addNotification(t('common.categoriesUpdateSuccess'), "success");
     } catch (e) {
       console.error("Failed to save categories", e);
-      addNotification("Failed to update categories.", "error");
+      addNotification(t('common.categoriesUpdateError'), "error");
     }
   };
 
@@ -378,10 +380,10 @@ export const useBookActions = (
       setBooks(prev => prev.map(b => b.id === bookId ? { ...b, author: trimmedAuthor } : b));
       setEditingId(null);
       setTempAuthor('');
-      addNotification("Author updated successfully.", "success");
+      addNotification(t('common.authorUpdateSuccess'), "success");
     } catch (e) {
       console.error("Failed to save author", e);
-      addNotification("Failed to update author.", "error");
+      addNotification(t('common.authorUpdateError'), "error");
     }
   };
 
@@ -393,10 +395,10 @@ export const useBookActions = (
       setBooks(prev => prev.map(b => b.id === bookId ? { ...b, title: trimmedTitle } : b));
       setEditingId(null);
       setTempTitle('');
-      addNotification("Title updated successfully.", "success");
+      addNotification(t('common.titleUpdateSuccess'), "success");
     } catch (e) {
       console.error("Failed to save title", e);
-      addNotification("Failed to update title.", "error");
+      addNotification(t('common.titleUpdateError'), "error");
     }
   };
 
@@ -418,10 +420,10 @@ export const useBookActions = (
       setBooks(prev => prev.map(b => b.id === bookId ? { ...b, volume } : b));
       setEditingId(null);
       setTempVolume('');
-      addNotification("Volume updated successfully.", "success");
+      addNotification(t('common.volumeUpdateSuccess'), "success");
     } catch (e) {
       console.error("Failed to save volume", e);
-      addNotification("Failed to update volume.", "error");
+      addNotification(t('common.volumeUpdateError'), "error");
     }
   };
 
@@ -430,13 +432,13 @@ export const useBookActions = (
       const newVisibility = currentVisibility === 'public' ? 'private' : 'public';
       await PersistenceService.updateBookMetadata(bookId, { visibility: newVisibility });
       setBooks(prev => prev.map(b => b.id === bookId ? { ...b, visibility: newVisibility } : b));
-      addNotification(`Book made ${newVisibility}.`, "success");
+      addNotification(t('common.visibilityUpdated', { visibility: newVisibility }), "success");
     } catch (e) {
       console.error("Failed to toggle visibility", e);
       setModal({
         isOpen: true,
-        title: "Visibility Error",
-        message: "Failed to update book visibility. Please try again.",
+        title: t('modal.visibilityError.title'),
+        message: t('modal.visibilityError.message'),
         type: 'alert'
       });
     }

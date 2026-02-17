@@ -1,6 +1,6 @@
 import React from 'react';
-import { FileText, Trash2, Loader2, CheckCircle2 } from 'lucide-react';
 import { Book } from '@shared/types';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface BookCardProps {
   book: Book;
@@ -8,80 +8,68 @@ interface BookCardProps {
   onDelete?: (bookId: string) => void;
 }
 
-export const BookCard: React.FC<BookCardProps> = ({ book, onClick, onDelete }) => {
-  const titleWithVolume = book.volume !== null && book.volume !== undefined
-    ? `${book.title} (${book.volume}-قىسىم)`
+export const BookCard: React.FC<BookCardProps> = ({ book, onClick }) => {
+  const { t } = useI18n();
+  const titleWithVolume = book.volume !== null && book.volume !== undefined && book.volume !== ""
+    ? `${book.title} (${t('book.volume', { volume: book.volume })})`
     : book.title;
   const displayAuthor = book.author?.trim();
 
   return (
     <div
       onClick={() => onClick(book)}
-      className="flex flex-col gap-3 cursor-pointer group"
+      className="group relative w-full max-w-[200px] bg-white/80 backdrop-blur-[20px] rounded-3xl p-7 cursor-pointer transition-all duration-400 border border-[rgba(255,193,7,0.15)] hover:border-[rgba(255,193,7,0.3)]"
+      style={{
+        backdropFilter: 'blur(20px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+        boxShadow: '0 8px 32px rgba(255, 193, 7, 0.08), 0 2px 8px rgba(156, 39, 176, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.8)',
+        transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.transform = 'translateY(-16px) scale(1.03)';
+        e.currentTarget.style.boxShadow = '0 12px 40px rgba(255, 193, 7, 0.15), 0 8px 20px rgba(156, 39, 176, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.9)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.transform = '';
+        e.currentTarget.style.boxShadow = '0 8px 32px rgba(255, 193, 7, 0.08), 0 2px 8px rgba(156, 39, 176, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.8)';
+      }}
     >
-      <div className="book-cover aspect-[3/4] bg-slate-100 relative shadow-lg">
-        {book.coverUrl ? (
-          <img
-            src={`${book.coverUrl}?t=${book.lastUpdated ? new Date(book.lastUpdated).getTime() : ''}`}
-            alt={titleWithVolume}
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center bg-indigo-50 border-l-[6px] border-indigo-200 p-4 text-center">
-            <FileText className={`w-8 h-8 mb-2 ${book.status === 'ready' ? 'text-slate-300' : 'text-indigo-300'}`} />
-            <span className="text-[10px] font-bold text-indigo-300 break-words leading-tight uppercase opacity-50">
-              {titleWithVolume.substring(0, 20)}
-            </span>
-          </div>
-        )}
-        <div className="book-spine-line" />
-
-        {/* Hover Controls */}
-        {onDelete && (
-          <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-all transform -translate-x-2 group-hover:translate-x-0 z-20">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete(book.id);
-              }}
-              className="p-1.5 bg-white/90 hover:bg-red-500 hover:text-white text-slate-500 rounded-lg shadow-xl backdrop-blur-md transition-all"
-            >
-              <Trash2 size={14} />
-            </button>
-          </div>
-        )}
-
-        <div className="absolute top-2 right-2 flex flex-col gap-1.5 z-20">
-          {book.status !== 'ready' ? (
-            <div className="p-1.5 bg-white/90 rounded-full shadow-lg backdrop-blur-sm">
-              <Loader2 size={12} className="text-indigo-600 animate-spin" />
+      {/* Book Cover - Matching Prototype */}
+      <div className="relative w-full aspect-[5/7] mb-4 rounded-2xl overflow-hidden transition-all duration-400 group-hover:scale-105"
+        style={{
+          background: book.coverUrl ? `url(${book.coverUrl}) center/cover` : 'linear-gradient(135deg, #FFD54F 0%, #FF9800 50%, #F06292 100%)',
+          boxShadow: '0 8px 24px rgba(255, 152, 0, 0.3), inset 0 2px 0 rgba(255, 255, 255, 0.3)'
+        }}
+      >
+        {!book.coverUrl && (
+          <>
+            <div className="absolute inset-0 flex items-center justify-center text-white text-5xl font-bold">
+              📖
             </div>
-          ) : (
-            <div className="p-1.5 bg-green-500/90 text-white rounded-full shadow-lg backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-all scale-75 group-hover:scale-100">
-              <CheckCircle2 size={12} />
-            </div>
-          )}
-        </div>
-
-        {/* Quick Info Overlay on Hover */}
-        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2 pointer-events-none">
-          <span className="text-[9px] text-white font-black uppercase tracking-tighter bg-indigo-600/80 px-1.5 py-0.5 rounded">
-            {book.status === 'ready' ? 'OPEN READER' : book.status === 'pending' ? 'PENDING OCR' : 'PROCESSING'}
-          </span>
-        </div>
+            <div className="absolute inset-0"
+              style={{
+                background: 'repeating-linear-gradient(45deg, transparent, transparent 20px, rgba(255, 255, 255, 0.05) 20px, rgba(255, 255, 255, 0.05) 40px)'
+              }} />
+          </>
+        )}
       </div>
 
-      <div className="px-1 mt-1">
-        <h3 className="font-bold text-slate-900 text-sm leading-tight line-clamp-2 text-right transition-colors group-hover:text-indigo-600" dir="rtl">
+      {/* Book Info - Matching Prototype */}
+      <div className="text-right" dir="rtl">
+        <h3 className="font-bold text-[#1a1a1a] text-[1.125rem] leading-snug mb-2 line-clamp-2">
           {titleWithVolume}
         </h3>
         {displayAuthor && displayAuthor !== 'Unknown Author' && (
-          <div className="mt-1 text-right">
-            <span className="text-xs font-bold text-slate-500" dir="rtl">
-              {displayAuthor}
-            </span>
-          </div>
+          <p className="text-[0.875rem] text-[#0369a1] mb-3">
+            {displayAuthor}
+          </p>
         )}
+        <div className="flex items-center justify-between text-[0.875rem] text-[#94a3b8]">
+          <span className="bg-[#0369a1]/10 text-[#0369a1] px-3 py-1 rounded-lg font-semibold">
+            {book.category?.[0] || t('common.book')}
+          </span>
+          <span>{t('book.pagesCount', { count: book.pages?.length || 0 })}</span>
+        </div>
       </div>
     </div>
   );

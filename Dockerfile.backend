@@ -1,35 +1,48 @@
-# Backend Dockerfile for Kubernetes deployment
+# syntax=docker/dockerfile:1.4
+# Stage 1: Builder
+FROM python:3.13-slim AS builder
+
+WORKDIR /build
+
+# Install build dependencies
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+  apt-get update && apt-get install -y \
+  gcc \
+  g++
+
+# Install Python dependencies separately for better caching
+COPY services/backend/requirements.txt .
+COPY services/backend/requirements.postgres.txt .
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+  pip install --user -r requirements.txt -r requirements.postgres.txt
+
+# Stage 2: Final Image
 FROM python:3.13-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+# Install runtime dependencies
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+  apt-get update && apt-get install -y curl
+
+# Copy installed packages from builder
+COPY --from=builder /root/.local /root/.local
+ENV PATH=/root/.local/bin:$PATH
 
 # Copy backend-core package
 COPY packages/backend-core /app/packages/backend-core
 
-# Install Python dependencies
-COPY services/backend/requirements.txt /app/requirements.txt
-COPY services/backend/requirements.postgres.txt /app/requirements.postgres.txt
-
-RUN pip install --no-cache-dir -r requirements.txt -r requirements.postgres.txt
-
 # Set Python path to include backend-core
-ENV PYTHONPATH=/app/packages/backend-core:$PYTHONPATH
+# Fixed warning by setting PYTHONPATH directly
+ENV PYTHONPATH=/app/packages/backend-core
 
 WORKDIR /app/packages/backend-core
 
 # Expose port
 EXPOSE 8000
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:8000/health || exit 1
 
 # Run the application
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -5,7 +5,8 @@
 import React, { useState } from 'react';
 import { Book, Users } from 'lucide-react';
 import { useIsAdmin } from '../../hooks/useAuth';
-import { UserManagementPanel } from './users';
+import { UserManagementPanel } from './users/UserManagementPanel';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface AdminTabsProps {
   bookManagementPanel: React.ReactNode;
@@ -20,32 +21,32 @@ interface Tab {
   adminOnly?: boolean;
 }
 
-const tabs: Tab[] = [
-  { id: 'books', label: 'Books', icon: <Book size={16} /> },
-  { id: 'users', label: 'Users', icon: <Users size={16} />, adminOnly: true },
-];
-
 export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
+  const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<TabId>('books');
   const isAdmin = useIsAdmin();
 
-  // Filter tabs based on permissions
+  const tabs: Tab[] = [
+    { id: 'books', label: t('admin.bookManagement'), icon: <Book size={18} /> },
+    { id: 'users', label: t('admin.userManagement'), icon: <Users size={18} />, adminOnly: true },
+  ];
+
   const visibleTabs = tabs.filter((tab) => !tab.adminOnly || isAdmin);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 animate-fade-in" dir="rtl">
       {/* Tab Navigation */}
-      <div className="flex items-center gap-2 border-b border-slate-200">
+      <div className="flex items-center gap-4 border-b border-[#75C5F0]/10">
         {visibleTabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`
-              flex items-center gap-2 px-4 py-3 text-sm font-medium
-              border-b-2 transition-all
+              flex items-center gap-3 px-8 py-4 text-sm font-black uppercase tracking-widest
+              border-b-4 transition-all active:scale-95
               ${activeTab === tab.id
-                ? 'border-indigo-600 text-indigo-600'
-                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                ? 'border-[#75C5F0] text-[#1a1a1a]'
+                : 'border-transparent text-slate-400 hover:text-[#75C5F0] hover:border-[#75C5F0]/30'
               }
             `}
           >
@@ -56,7 +57,7 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
       </div>
 
       {/* Tab Content */}
-      <div>
+      <div className="animate-fade-in">
         {activeTab === 'books' && bookManagementPanel}
         {activeTab === 'users' && isAdmin && <UserManagementPanel />}
       </div>

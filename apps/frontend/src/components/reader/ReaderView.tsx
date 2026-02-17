@@ -1,14 +1,16 @@
 import React, { useEffect, useRef } from 'react';
 import {
   X, Type, Minus, Plus, Edit3, Save, MessageSquare,
-  RotateCcw, Wand2, ChevronRight, ChevronLeft, CheckCircle2, Loader2
+  RotateCcw, Wand2, ChevronRight, ChevronLeft, CheckCircle2, Loader2, BookOpen
 } from 'lucide-react';
 import { Book } from '@shared/types';
+import { useI18n } from '../../i18n/I18nContext';
 import { ChatInterface } from '../chat/ChatInterface';
 import { SpellCheckPanel } from '../spell-check/SpellCheckPanel';
 import { HighlightedText } from '../spell-check/HighlightedText';
 import { useSpellCheck } from '../../hooks/useSpellCheck';
 import { MarkdownContent } from '../common/MarkdownContent';
+import { GlassPanel } from '../ui/GlassPanel';
 
 interface ReaderViewProps {
   selectedBook: Book;
@@ -65,6 +67,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   chatContainerRef,
   setModal,
 }) => {
+  const { t } = useI18n();
   const pageTextAreaRef = useRef<HTMLTextAreaElement>(null);
   const globalTextAreaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -218,56 +221,63 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   };
 
   return (
-    <div className="h-[calc(100vh-140px)] flex gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex-grow bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-          <div>
-            <h2 className="font-bold text-slate-900">{selectedBook.title}</h2>
-            {selectedBook.tags && selectedBook.tags.length > 0 && (
-              <div className="flex gap-1 mt-1">
-                {selectedBook.tags.map((tag, i) => (
-                  <span key={i} className="text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-100 font-medium">
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            )}
+    <div className="h-[calc(100vh-140px)] flex gap-8 animate-fade-in py-4">
+      {/* Main Content Area */}
+      <div className="flex-grow glass-panel flex flex-col overflow-hidden" style={{ borderRadius: '32px' }}>
+        {/* Header Ribbon */}
+        <div className="px-8 py-5 border-b border-[#75C5F0]/10 flex items-center justify-between bg-white/40">
+          <div className="flex items-center gap-4">
+            <div className="p-2 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20">
+              <BookOpen size={20} />
+            </div>
+            <div>
+              <h2 className="font-black text-[#1a1a1a] text-lg">{selectedBook.title}</h2>
+              {selectedBook.tags && selectedBook.tags.length > 0 && (
+                <div className="flex gap-1.5 mt-1">
+                  {selectedBook.tags.map((tag, i) => (
+                    <span key={i} className="text-[14px] bg-[#0369a1]/10 text-[#0369a1] px-2 py-0.5 rounded-md font-bold uppercase tracking-wider">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="flex items-center gap-4">
             <div className="flex items-center gap-3">
               {!isEditing ? (
                 <button
                   onClick={handleEnterGlobalEdit}
-                  className="flex items-center gap-1.5 px-5 py-[10px] bg-indigo-50 text-indigo-600 text-[11px] font-black rounded-xl hover:bg-indigo-600 hover:text-white transition-all active:scale-95 shadow-sm shadow-indigo-100/50 uppercase tracking-tight"
+                  className="flex items-center gap-2 px-6 py-3 bg-[#0369a1] text-white text-sm font-black rounded-2xl hover:bg-[#0284c7] transition-all active:scale-95 shadow-md uppercase tracking-widest border border-[#0369a1]/20"
                 >
-                  <Edit3 size={16} className="stroke-[3]" /> EDIT BOOK
+                  <Edit3 size={16} /> {t('common.edit')}
                 </button>
               ) : (
                 <button
                   onClick={onSaveCorrections}
-                  className="flex items-center gap-1.5 px-5 py-[10px] bg-indigo-600 text-white text-[11px] font-black rounded-xl hover:bg-indigo-700 transition-all active:scale-95 shadow-md shadow-indigo-100 uppercase tracking-tight"
+                  className="flex items-center gap-2 px-6 py-3 bg-[#75C5F0] text-white text-sm font-black rounded-2xl hover:bg-[#5AB0E5] transition-all active:scale-95 shadow-lg uppercase tracking-widest"
                 >
-                  <Save size={16} className="stroke-[3]" /> UPDATE KNOWLEDGE BASE
+                  <Save size={16} /> {t('common.save')}
                 </button>
               )}
-              <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
+
+              <div className="flex items-center gap-1 bg-white/60 backdrop-blur-md border border-[#75C5F0]/20 rounded-2xl p-1.5 shadow-sm">
                 <button
-                  onClick={() => setFontSize(prev => Math.max(12, prev - 2))}
-                  className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors active:scale-90"
-                  title="Decrease Font Size"
+                  onClick={() => setFontSize(prev => Math.max(14, prev - 2))}
+                  className="p-2 hover:bg-[#e8f4f8] rounded-xl text-[#75C5F0] transition-all active:scale-90"
                 >
-                  <Minus size={14} />
+                  <Minus size={16} />
                 </button>
-                <div className="flex items-center gap-1 px-3 text-slate-400 border-x border-slate-100">
-                  <Type size={14} />
-                  <span className="text-[11px] font-bold font-mono text-slate-600">{fontSize}</span>
+                <div className="flex items-center gap-2 px-4 border-x border-[#75C5F0]/10">
+                  <Type size={16} className="text-[#94a3b8]" />
+                  <span className="text-sm font-black text-[#1a1a1a]">{fontSize}</span>
                 </div>
                 <button
                   onClick={() => setFontSize(prev => Math.min(64, prev + 2))}
-                  className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors active:scale-90"
-                  title="Increase Font Size"
+                  className="p-2 hover:bg-[#e8f4f8] rounded-xl text-[#75C5F0] transition-all active:scale-90"
                 >
-                  <Plus size={14} />
+                  <Plus size={16} />
                 </button>
               </div>
 
@@ -282,23 +292,28 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                     onClose();
                   }
                 }}
-                className="p-2 text-slate-400 hover:bg-red-50 hover:text-red-500 rounded-xl transition-all active:scale-95"
-                aria-label="Close Reader"
+                className="p-3 text-[#94a3b8] hover:bg-red-50 hover:text-red-500 rounded-2xl transition-all active:scale-95"
               >
-                <X size={20} />
+                <X size={24} />
               </button>
             </div>
           </div>
         </div>
 
-        <div className={`flex-grow ${isEditing ? 'p-6 flex flex-col' : 'p-10 overflow-y-auto'} bg-[url('https://www.transparenttextures.com/patterns/paper-fibers.png')]`}>
+        {/* Reading Canvas */}
+        <div
+          className={`flex-grow ${isEditing ? 'p-8 flex flex-col' : 'p-12 overflow-y-auto'}`}
+          style={{
+            background: 'linear-gradient(rgba(255,255,255,0.7), rgba(255,255,255,0.7)), url("https://www.transparenttextures.com/patterns/paper-fibers.png")'
+          }}
+        >
           {isEditing ? (
             <div className="flex-grow flex flex-col relative">
               {isFetchingContent && (
-                <div className="absolute inset-0 bg-white/50 backdrop-blur-sm z-20 flex items-center justify-center">
-                  <div className="flex flex-col items-center gap-3">
-                    <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
-                    <span className="text-sm font-bold text-indigo-600 uppercase tracking-widest animate-pulse">Loading Full Content...</span>
+                <div className="absolute inset-0 bg-white/60 backdrop-blur-md z-20 flex items-center justify-center rounded-3xl">
+                  <div className="flex flex-col items-center gap-4">
+                    <Loader2 className="w-10 h-10 text-[#75C5F0] animate-spin" />
+                    <span className="text-sm font-black text-[#75C5F0] uppercase tracking-widest animate-pulse">{t('common.loading')}</span>
                   </div>
                 </div>
               )}
@@ -306,17 +321,16 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                 ref={globalTextAreaRef}
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
-                className="flex-grow w-full p-8 uyghur-text border-2 border-indigo-100 rounded-2xl focus:ring-8 focus:ring-indigo-500/5 focus:border-indigo-400 outline-none resize-none bg-white shadow-inner overflow-y-auto leading-relaxed text-slate-900"
+                className="flex-grow w-full p-10 uyghur-text border-2 border-[#75C5F0]/10 rounded-3xl focus:border-[#75C5F0] outline-none resize-none bg-white shadow-inner overflow-y-auto leading-relaxed text-[#1a1a1a]"
                 style={{ fontSize: `${fontSize}px`, minHeight: '500px' }}
                 dir="rtl"
-                placeholder={isFetchingContent ? "" : "Loading full book content..."}
+                placeholder={isFetchingContent ? "" : t('common.enterContent')}
               />
             </div>
           ) : (
-            <div className="max-w-3xl mx-auto space-y-12 pb-32">
+            <div className="max-w-3xl mx-auto space-y-16 pb-40">
               {[...loadedPages]
                 .sort((a, b) => Number(a.pageNumber) - Number(b.pageNumber))
-                // Deduplicate by pageNumber just in case
                 .filter((page, index, self) =>
                   self.findIndex(p => p.pageNumber === page.pageNumber) === index
                 )
@@ -332,35 +346,39 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                       }
                     }}
                     onMouseEnter={() => setCurrentPage(page.pageNumber)}
-                    className={`group relative p-8 rounded-2xl transition-all duration-300 ${currentPage === page.pageNumber ? 'bg-white shadow-xl ring-1 ring-indigo-100 scale-[1.02]' : 'bg-transparent opacity-80'}`}
+                    className={`group relative p-10 rounded-[32px] transition-all duration-500 ${currentPage === page.pageNumber ? 'bg-white shadow-2xl ring-1 ring-[#75C5F0]/10 scale-[1.03]' : 'bg-transparent opacity-80 scale-100'}`}
                   >
-                    <div className="flex items-center justify-between border-b border-transparent group-hover:border-slate-100 pb-4 mb-6 transition-colors">
-                      <div className="flex items-center gap-3">
-                        <span className="text-[11px] font-black text-slate-400 font-mono tracking-tighter uppercase">
-                          PAGE {page.pageNumber}
+                    <div className="flex items-center justify-between pb-6 mb-8 border-b border-[#75C5F0]/5">
+                      <div className="flex items-center gap-4">
+                        <span className="text-[14px] font-black text-[#94a3b8] tracking-widest uppercase">
+                          {t('common.page')} {page.pageNumber}
                         </span>
                         {currentPage === page.pageNumber && (page.status === 'pending' || page.status === 'processing') && (
-                          <Loader2 size={12} className="text-indigo-400 animate-spin" />
+                          <div className="flex items-center gap-2 px-3 py-1 bg-[#0369a1]/10 rounded-full">
+                            <Loader2 size={12} className="text-[#0369a1] animate-spin" />
+                            <span className="text-[14px] font-black text-[#0369a1]">{t('admin.table.recognizing')}</span>
+                          </div>
                         )}
                         {page.isVerified && (
-                          <div className="flex items-center gap-1 text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full ring-1 ring-emerald-500/20 shadow-sm shadow-emerald-100/50">
-                            <CheckCircle2 size={10} className="stroke-[3]" />
-                            <span className="text-[9px] font-black tracking-tight">VERIFIED</span>
+                          <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-500/10 shadow-sm">
+                            <CheckCircle2 size={12} strokeWidth={3} />
+                            <span className="text-[14px] font-black tracking-widest uppercase">{t('reader.verified')}</span>
                           </div>
                         )}
                       </div>
 
                       {editingPageNum === null && (
-                        <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-all duration-300">
+                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300">
                           <button
                             onClick={() => {
                               if (page.isVerified) {
                                 setModal({
                                   isOpen: true,
-                                  title: "Confirm Re-OCR",
-                                  message: "This page has manual edits or verifications. Re-OCR will delete your work and replace it with fresh AI reading. Are you sure?",
+                                  title: t('reader.reprocess.title'),
+                                  message: t('reader.reprocess.message'),
                                   type: 'confirm',
-                                  confirmText: "RE-OCR anyway",
+                                  confirmText: t('reader.reprocess.confirm'),
+                                  destructive: true,
                                   onConfirm: () => {
                                     onReProcessPage(selectedBook.id, page.pageNumber);
                                     setModal((prev: any) => ({ ...prev, isOpen: false }));
@@ -370,36 +388,19 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                                 onReProcessPage(selectedBook.id, page.pageNumber);
                               }
                             }}
-                            className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white rounded-lg text-[9px] font-black transition-all active:scale-95 shadow-sm shadow-indigo-100/50"
+                            className="p-2.5 bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white rounded-xl transition-all shadow-sm"
+                            title={t('reader.reprocess.confirm')}
                           >
-                            <RotateCcw size={10} className="stroke-[3]" /> RE-OCR PAGE
+                            <RotateCcw size={16} strokeWidth={3} />
                           </button>
                           <button
-                            onClick={async () => {
-                              console.log(`[ReaderView] Clicked EDIT PAGE for page ${page.pageNumber}`);
+                            onClick={() => {
                               setEditingPageNum(page.pageNumber);
-                              const currentText = page.text || '';
-                              setTempPageText(currentText);
-
-                              // Fallback: If text is missing but page is completed, try fetching it
-                              if (!currentText && page.status === 'completed') {
-                                console.log(`[ReaderView] Page ${page.pageNumber} text is empty but marked completed. Fetching fallback...`);
-                                try {
-                                  const freshPages = await PersistenceService.getBookPages(selectedBook.id, page.pageNumber - 1, 1);
-                                  console.log(`[ReaderView] Fallback fetch result for page ${page.pageNumber}:`, freshPages);
-                                  if (freshPages.length > 0 && freshPages[0].text) {
-                                    setTempPageText(freshPages[0].text);
-                                  } else {
-                                    console.warn(`[ReaderView] Fallback fetch returned no text for page ${page.pageNumber}`);
-                                  }
-                                } catch (err) {
-                                  console.error(`[ReaderView] ERROR in fallback fetch for page ${page.pageNumber}:`, err);
-                                }
-                              }
+                              setTempPageText(page.text || '');
                             }}
-                            className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white rounded-lg text-[9px] font-black transition-all active:scale-95 shadow-sm shadow-indigo-100/50"
+                            className="flex items-center gap-2 px-4 py-2 bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white rounded-xl text-[14px] font-black transition-all active:scale-95 shadow-sm uppercase tracking-widest border border-[#0369a1]/10"
                           >
-                            <Edit3 size={10} className="stroke-[3]" /> EDIT PAGE
+                            <Edit3 size={14} strokeWidth={3} /> {t('common.edit')}
                           </button>
                           <button
                             onClick={() => {
@@ -407,19 +408,20 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                               setTempPageText(page.text || '');
                               setShouldRunSpellCheck(true);
                             }}
-                            className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white rounded-lg text-[9px] font-black transition-all active:scale-95 shadow-sm shadow-indigo-100/50"
+                            className="p-2.5 bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white rounded-xl transition-all shadow-sm"
+                            title={t('spellCheck.runCheck')}
                           >
-                            <Wand2 size={10} className="stroke-[3]" /> SPELL CHECK
+                            <Wand2 size={16} strokeWidth={3} />
                           </button>
                         </div>
                       )}
                     </div>
 
                     {Number(editingPageNum) === Number(page.pageNumber) ? (
-                      <div className="flex flex-col gap-4">
+                      <div className="flex flex-col gap-6">
                         <div className="relative w-full">
                           {spellCheckResult && spellCheckResult.corrections.length > 0 && (
-                            <div className="absolute inset-0 p-4 pointer-events-none overflow-hidden">
+                            <div className="absolute inset-0 p-6 pointer-events-none overflow-hidden">
                               <HighlightedText
                                 text={tempPageText}
                                 corrections={spellCheckResult.corrections}
@@ -433,30 +435,22 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                             ref={pageTextAreaRef}
                             value={tempPageText}
                             onChange={(e) => setTempPageText(e.target.value)}
-                            className="w-full p-4 uyghur-text border border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none resize-none bg-white/50 relative z-10 font-medium overflow-hidden leading-relaxed"
-                            style={{ fontSize: `${fontSize}px`, backgroundColor: 'transparent' }}
+                            className="w-full p-6 uyghur-text border-2 border-[#75C5F0] rounded-2xl focus:ring-8 focus:ring-[#75C5F0]/5 outline-none resize-none bg-white relative z-10 font-bold overflow-hidden leading-relaxed"
+                            style={{ fontSize: `${fontSize}px`, backgroundColor: 'white' }}
                             dir="rtl"
                           />
                         </div>
-                        <div className="flex items-center gap-3 mt-2">
+                        <div className="flex items-center gap-4 mt-2">
                           <button
                             onClick={() => {
                               const pageNum = page.pageNumber;
-
-                              // Update local state immediately for instant feedback
                               setLoadedPages(prev => prev.map(p =>
                                 p.pageNumber === pageNum
                                   ? { ...p, text: tempPageText, isVerified: true }
                                   : p
                               ));
-
-                              // Update backend
                               onUpdatePage(selectedBook.id, pageNum, tempPageText);
-
-                              // Reset spell check
                               resetSpellCheck();
-
-                              // Scroll to the saved page after a brief delay to ensure re-render
                               setTimeout(() => {
                                 const pageElement = pageRefs.current.get(pageNum);
                                 if (pageElement) {
@@ -464,32 +458,37 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                                 }
                               }, 200);
                             }}
-                            className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-black hover:bg-emerald-700 transition-all active:scale-95 flex items-center gap-2 shadow-lg shadow-emerald-100/50"
+                            className="px-8 py-3.5 bg-[#75C5F0] text-white rounded-[20px] text-sm font-black hover:bg-[#5AB0E5] transition-all active:scale-95 flex items-center gap-3 shadow-xl shadow-[#75C5F0]/20"
                           >
-                            <Save size={14} className="stroke-[3]" /> SAVE & VERIFY PAGE
+                            <Save size={18} strokeWidth={3} /> {t('common.save')}
                           </button>
                           <button
                             onClick={() => {
                               setEditingPageNum(null);
                               resetSpellCheck();
                             }}
-                            className="px-6 py-2.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-black hover:bg-slate-200 transition-all active:scale-95"
+                            className="px-8 py-3.5 bg-slate-100 text-[#94a3b8] rounded-[20px] text-sm font-black hover:bg-slate-200 transition-all active:scale-95"
                           >
-                            CANCEL
+                            {t('common.cancel')}
                           </button>
                         </div>
                       </div>
                     ) : (
                       page.status === 'pending' || page.status === 'processing' ? (
-                        <div className="flex flex-col items-center justify-center py-20 text-indigo-400">
-                          <Loader2 size={32} className="animate-spin" />
-                          <span className="mt-3 text-xs font-bold uppercase tracking-widest text-indigo-300">Processing...</span>
+                        <div className="flex flex-col items-center justify-center py-24">
+                          <div className="relative">
+                            <div className="w-16 h-16 border-4 border-[#e8f4f8] border-t-[#75C5F0] rounded-full animate-spin"></div>
+                            <div className="absolute inset-0 flex items-center justify-center text-[#75C5F0]">
+                              <RotateCcw size={20} className="animate-pulse" />
+                            </div>
+                          </div>
+                          <span className="mt-6 text-sm font-black uppercase tracking-[0.2em] text-[#94a3b8] animate-pulse">{t('reader.activeRecognizing')}</span>
                         </div>
                       ) : (
                         <MarkdownContent
                           key={`page-${page.pageNumber}-${page.isVerified ? 'verified' : 'unverified'}-${(page.text || '').length}`}
                           content={page.text || "..."}
-                          className="uyghur-text text-slate-800"
+                          className="uyghur-text text-[#1a1a1a] leading-[1.8]"
                           style={{ fontSize: `${fontSize}px` }}
                         />
                       )
@@ -499,11 +498,11 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
 
               {/* Loader Element for Intersection Observer */}
               {hasMorePages && !isEditing && (
-                <div ref={observerTarget} className="flex justify-center p-8">
+                <div ref={observerTarget} className="flex justify-center p-12">
                   {isLoadingMore && (
-                    <div className="flex flex-col items-center gap-2">
-                      <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
-                      <span className="text-xs text-indigo-400 font-medium uppercase tracking-wider">Loading more pages...</span>
+                    <div className="flex flex-col items-center gap-4">
+                      <div className="w-10 h-10 border-4 border-[#e8f4f8] border-t-[#75C5F0] rounded-full animate-spin"></div>
+                      <span className="text-[14px] text-[#94a3b8] font-black uppercase tracking-widest">{t('common.loadingMore')}</span>
                     </div>
                   )}
                 </div>
@@ -513,34 +512,40 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
         </div>
       </div>
 
-      <div className="w-[420px] flex flex-col gap-4">
+      {/* Sidebar Area */}
+      <div className="w-[420px] flex flex-col gap-6">
         {editingPageNum !== null ? (
-          <SpellCheckPanel
-            bookId={selectedBook.id}
-            pageNumber={editingPageNum}
-            pageText={tempPageText}
-            isChecking={isChecking}
-            spellCheckResult={spellCheckResult}
-            onRunSpellCheck={() => runSpellCheck(tempPageText)}
-            onApplyCorrection={(correction) => {
-              const newText = applyCorrection(correction, tempPageText);
-              setTempPageText(newText);
-            }}
-            onIgnoreCorrection={ignoreCorrection}
-            appliedCorrections={appliedCorrections}
-            ignoredCorrections={ignoredCorrections}
-          />
+          <GlassPanel className="h-full flex flex-col overflow-hidden" style={{ borderRadius: '32px', padding: '24px' }}>
+            <SpellCheckPanel
+              bookId={selectedBook.id}
+              pageNumber={editingPageNum}
+              pageText={tempPageText}
+              isChecking={isChecking}
+              spellCheckResult={spellCheckResult}
+              onRunSpellCheck={() => runSpellCheck(tempPageText)}
+              onApplyCorrection={(correction) => {
+                const newText = applyCorrection(correction, tempPageText);
+                setTempPageText(newText);
+              }}
+              onIgnoreCorrection={ignoreCorrection}
+              appliedCorrections={appliedCorrections}
+              ignoredCorrections={ignoredCorrections}
+            />
+          </GlassPanel>
         ) : (
-          <ChatInterface
-            type="book"
-            chatMessages={chatMessages}
-            chatInput={chatInput}
-            setChatInput={setChatInput}
-            onSendMessage={onSendMessage}
-            isChatting={isChatting}
-            currentPage={currentPage}
-            chatContainerRef={chatContainerRef}
-          />
+          <GlassPanel className="h-full flex flex-col overflow-hidden" style={{ borderRadius: '32px', padding: '24px' }}>
+            <ChatInterface
+              type="book"
+              chatMessages={chatMessages}
+              chatInput={chatInput}
+              setChatInput={setChatInput}
+              onSendMessage={onSendMessage}
+              isChatting={isChatting}
+              currentPage={currentPage}
+              chatContainerRef={chatContainerRef}
+              onClose={onClose}
+            />
+          </GlassPanel>
         )}
       </div>
     </div>

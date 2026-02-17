@@ -622,6 +622,32 @@ async def get_book(
     return book_response
 
 
+@router.get("/stats")
+async def get_book_stats(
+    current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    """Get book statistics for admin dashboard"""
+    repo = BooksRepository(session)
+    
+    # Count by status
+    pending = await repo.count_by_status("pending")
+    processing = await repo.count_by_status("processing")
+    completed = await repo.count_by_status("ready")
+    error = await repo.count_by_status("error")
+    
+    # Count total
+    total = pending + processing + completed + error
+    
+    return {
+      "total": total,
+      "pending": pending,
+      "processing": processing,
+      "completed": completed,
+      "error": error
+    }
+
+
 @router.get("/{book_id}/content")
 async def get_book_content(
     book_id: str,

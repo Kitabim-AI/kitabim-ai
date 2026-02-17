@@ -1,0 +1,327 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "close": "Close",
+    "search": "Search",
+    "filter": "Filter",
+    "clear": "Clear",
+    "send": "Send",
+    "yes": "Yes",
+    "no": "No",
+    "all": "All",
+    "page": "Page",
+    "pages": "Pages",
+    "book": "Book",
+    "books": "Books",
+    "total": "Total",
+    "of": "of",
+    "loadingMore": "Loading...",
+    "endOfList": "The End",
+    "systemStatus": "System Status",
+    "active": "Active",
+    "view": "View",
+    "loadingApp": "Library is loading...",
+    "uploadSuccess": "Document uploaded successfully.",
+    "ocrStarted": "OCR process started successfully.",
+    "ocrStartError": "Failed to start OCR process.",
+    "reindexStarted": "Book re-indexing started.",
+    "pageUpdated": "Page {{pageNum}} updated.",
+    "noPagesToSave": "No pages found to save. Please try reloading the book.",
+    "saveSuccess": "Global corrections saved.",
+    "deleteSuccess": "Book deleted successfully.",
+    "tagsUpdateSuccess": "Tags updated successfully.",
+    "tagsUpdateError": "Failed to update tags.",
+    "categoriesUpdateSuccess": "Categories updated successfully.",
+    "categoriesUpdateError": "Failed to update categories.",
+    "authorUpdateSuccess": "Author updated successfully.",
+    "authorUpdateError": "Failed to update author.",
+    "titleUpdateSuccess": "Title updated successfully.",
+    "titleUpdateError": "Failed to update title.",
+    "volumeUpdateSuccess": "Volume updated successfully.",
+    "volumeUpdateError": "Failed to update volume.",
+    "visibilityUpdated": "Book made {{visibility}}.",
+    "enterContent": "Enter content..."
+  },
+  "book": {
+    "volume": "Volume {{volume}}",
+    "pagesCount": "{{count}} pages"
+  },
+  "app": {
+    "name": "Kitabim.AI",
+    "tagline": "Powerful AI Library",
+    "welcome": "Welcome to Uyghur Library and Knowledge World",
+    "footer": {
+      "text": "Uyghur Electronic Library - Combining Knowledge and Culture with Artificial Intelligence",
+      "copyright": "All Rights Reserved"
+    }
+  },
+  "nav": {
+    "home": "Home",
+    "library": "Public Library",
+    "globalChat": "Global Assistant",
+    "admin": "Admin",
+    "addBook": "Add Book",
+    "switchLanguage": "Switch Language"
+  },
+  "home": {
+    "searchPlaceholder": "Search books, authors or topics...",
+    "topCategories": "Top Categories",
+    "searchResults": "Search Results",
+    "resultsFor": "Results for",
+    "totalBooks": "books"
+  },
+  "library": {
+    "title": "Public Library",
+    "subtitle": "All treasures in Kitabim system",
+    "systemStatus": "System Status",
+    "active": "Active",
+    "empty": {
+      "title": "Library is currently empty",
+      "message": "There are no books here yet. Try exploring other pages."
+    },
+    "loadingMore": "Loading more books...",
+    "searchPlaceholder": "Search books..."
+  },
+  "bookCard": {
+    "ready": "Ready",
+    "processing": "Processing",
+    "failed": "Failed",
+    "pending": "Pending",
+    "public": "Public",
+    "private": "Private",
+    "category": "Category"
+  },
+  "chat": {
+    "title": "Global Assistant",
+    "subtitle": "Ask questions about all books",
+    "globalAssistant": "Global Assistant",
+    "sidebarSubtitle": "Chat by content",
+    "pageNumber": "Page: {{page}}",
+    "allBooks": "All Books",
+    "welcome": {
+      "title": "Welcome to AI Assistant",
+      "message": "I can compare all books in the library and provide the best answer to your question"
+    },
+    "bookAssistant": "Book Assistant",
+    "bookAssistantWelcome": "Hello! I can help you with questions about this book. What would you like to ask?",
+    "you": "You",
+    "ai": "Kitabim.AI",
+    "inputPlaceholder": "Type your question here...",
+    "inputPlaceholderBook": "Type your question..."
+  },
+  "reader": {
+    "title": "Reader",
+    "close": "Close",
+    "fontSize": "Font Size",
+    "spellCheck": "Spell Check",
+    "editPage": "Edit Page",
+    "pageNumber": "Page Number",
+    "next": "Next",
+    "previous": "Previous",
+    "status": "Status",
+    "ready": "Ready",
+    "pageCount": "Page Count",
+    "category": "Category",
+    "save": "Save",
+    "cancel": "Cancel",
+    "verified": "Verified",
+    "activeRecognizing": "Actively recognizing...",
+    "reprocess": {
+      "title": "Reprocess Page",
+      "message": "This page has your edits. Reprocessing will lose them. Are you sure?",
+      "confirm": "Reprocess"
+    }
+  },
+  "admin": {
+    "title": "Administration",
+    "bookManagement": "Book Management",
+    "userManagement": "User Management",
+    "stats": {
+      "totalBooks": "Total Books",
+      "readyBooks": "Ready Books",
+      "processing": "Processing",
+      "users": "Users"
+    },
+    "table": {
+      "name": "Name",
+      "author": "Author",
+      "category": "Category",
+      "pageCount": "Page Count",
+      "status": "Status",
+      "actions": "Actions",
+      "view": "View",
+      "edit": "Edit",
+      "delete": "Delete",
+      "startOcr": "Start OCR",
+      "retryOcr": "Retry",
+      "reindex": "Reindex",
+      "showing": "Showing",
+      "email": "Email",
+      "role": "Role",
+      "joinedDate": "Joined Date",
+      "admin": "Admin",
+      "editor": "Editor",
+      "reader": "Reader",
+      "active": "Active",
+      "suspended": "Suspended",
+      "systemActive": "System Node Active",
+      "managementSystem": "Kitabim Management System",
+      "manageBooks": "Manage books and indexes",
+      "uploading": "File is being uploaded to server",
+      "bookName": "Book Name",
+      "progress": "Progress",
+      "makePublic": "Make Public",
+      "makePrivate": "Make Private",
+      "recognizing": "Recognizing",
+      "waiting": "Waiting"
+    },
+    "categories": {
+      "title": "Categories",
+      "add": "Add Category...",
+      "history": "History",
+      "literature": "Literature",
+      "philosophy": "Philosophy",
+      "religion": "Religious Studies",
+      "linguistics": "Linguistics",
+      "sociology": "Sociology"
+    },
+    "filters": {
+      "all": "All",
+      "type": "Type"
+    },
+    "users": {
+      "title": "User Management",
+      "total": "Total {{count}} users",
+      "admin": "Admin",
+      "editor": "Editor",
+      "reader": "Reader",
+      "unknown": "Unknown",
+      "active": "Active",
+      "suspended": "Suspended",
+      "allRoles": "All Roles",
+      "admins": "Admins",
+      "editors": "Editors",
+      "readers": "Readers",
+      "user": "User",
+      "role": "Role",
+      "status": "Status",
+      "joinedDate": "Joined Date",
+      "notFound": "No users found",
+      "accessRequired": "Admin access required",
+      "accessRequiredDetail": "You need admin privileges to manage users.",
+      "loadError": "Failed to load users",
+      "roleUpdateError": "Failed to update role",
+      "statusUpdateError": "Failed to update status",
+      "pagination": "Showing {{start}} to {{end}} of {{total}} users"
+    }
+  },
+  "spellCheck": {
+    "title": "Spell Check",
+    "subtitle": "AI-Powered Correction",
+    "checking": "Checking...",
+    "analyzing": "Analyzing spellings...",
+    "runCheck": "Run Spell Check",
+    "clickTip": "Click the button above to start checking",
+    "noErrors": "No errors found!",
+    "noErrorsDetail": "The text on this page looks correct.",
+    "errorsCount": "Total {{count}} errors found",
+    "confidence": "Confidence: {{percent}}%",
+    "suggestion": "Suggested Correction",
+    "ignore": "Ignore",
+    "applied": "Corrected",
+    "ignored": "Ignored",
+    "apply": "Apply"
+  },
+  "pagination": {
+    "previous": "Previous",
+    "next": "Next",
+    "showingLabel": "Show:",
+    "showing": "Showing",
+    "of": "of"
+  },
+  "suggestions": {
+    "title": "Category",
+    "author": "Author",
+    "book": "Book"
+  },
+  "notifications": {
+    "bookDeleted": "Book deleted",
+    "bookUpdated": "Book updated",
+    "ocrStarted": "OCR started",
+    "pageUpdated": "Page updated",
+    "error": "An error occurred"
+  },
+  "modal": {
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "ok": "Got it",
+    "deleteConfirm": "Are you sure you want to delete?",
+    "uploadError": {
+      "title": "Upload Error",
+      "message": "Error uploading document: {{error}}"
+    },
+    "ocrStart": {
+      "title": "Confirm OCR Start",
+      "message": "Are you sure you want to start Gemini OCR? This will analyze the document and extract text.",
+      "confirm": "Start Processing"
+    },
+    "processError": {
+      "title": "Process Error",
+      "message": "Failed to start OCR. Please try again."
+    },
+    "noFailedPages": {
+      "title": "No Failed Pages",
+      "message": "This book has no failed OCR pages to retry."
+    },
+    "retryError": {
+      "title": "Retry Error",
+      "message": "Failed to retry OCR for failed pages. Please try again."
+    },
+    "reOcrError": {
+      "title": "Re-OCR Error",
+      "message": "Failed to start re-OCR for this page. Please try again."
+    },
+    "reindex": {
+      "title": "Confirm Re-Index",
+      "message": "Are you sure you want to re-chunk and re-embed all pages in this book? This is useful for model upgrades or fixing search issues. Existing content will be preserved.",
+      "confirm": "Re-Index Book"
+    },
+    "reindexError": {
+      "title": "Re-Index Error",
+      "message": "Failed to start re-indexing. Please try again."
+    },
+    "updateError": {
+      "title": "Update Error",
+      "message": "Failed to save page changes. Please try again."
+    },
+    "loadError": {
+      "title": "Load Error",
+      "message": "Failed to load book content. Please try again."
+    },
+    "saveError": {
+      "title": "Save Error",
+      "message": "Failed to save global changes. Please try again."
+    },
+    "delete": {
+      "title": "Confirm Deletion",
+      "message": "Are you sure you want to delete this book? This will permanently remove it from the global library platform.",
+      "confirm": "Delete Permanently"
+    },
+    "visibilityError": {
+      "title": "Visibility Error",
+      "message": "Failed to update book visibility. Please try again."
+    }
+  },
+  "auth": {
+    "loginWithGoogle": "Login with Google",
+    "loggingIn": "Logging in...",
+    "logout": "Logout",
+    "yourRole": "Your Role:"
+  }
+}
