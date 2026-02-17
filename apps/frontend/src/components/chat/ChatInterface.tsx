@@ -41,7 +41,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         <div className="bg-white/60 backdrop-blur-2xl px-8 py-6 flex items-center justify-between border border-[#0369a1]/10 shadow-sm" style={{ borderRadius: '32px' }}>
           <div className="flex items-center gap-5">
             <div className="p-4 bg-[#0369a1] text-white rounded-[24px] shadow-xl shadow-[#0369a1]/20 transform rotate-3 transition-transform hover:rotate-0">
-              <Globe size={28} strokeWidth={2.5} />
+              <MessageSquare size={28} strokeWidth={2.5} />
             </div>
             <div>
               <h1 className="text-2xl font-black text-[#1a1a1a]">{t('chat.globalAssistant')}</h1>
@@ -121,24 +121,24 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         </div>
 
         {/* Input Bar */}
-        <div className="bg-white px-6 py-5 border-2 border-[#0369a1] shadow-[0_24px_64px_rgba(3,105,161,0.2)] relative transition-all focus-within:shadow-[0_24px_64px_rgba(3,105,161,0.3)]" style={{ borderRadius: '32px' }}>
-          <div className="flex gap-4 items-center">
+        <div className="bg-white/80 backdrop-blur-2xl px-2 py-2 border-2 border-[#0369a1]/10 shadow-[0_24px_64px_rgba(0,0,0,0.06)] relative transition-all focus-within:border-[#0369a1] focus-within:ring-[12px] focus-within:ring-[#0369a1]/5" style={{ borderRadius: '32px' }}>
+          <div className="flex gap-2 items-center">
             <input
               type="text"
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && !isChatting && onSendMessage()}
               placeholder={t('chat.inputPlaceholderBook')}
-              className="flex-1 bg-transparent py-2 px-4 text-xl font-black text-[#1a1a1a] placeholder:text-slate-300 outline-none uyghur-text"
+              className="flex-1 bg-transparent py-3 px-6 text-lg font-black text-[#1a1a1a] placeholder:text-slate-300 outline-none uyghur-text"
               dir="rtl"
             />
             <button
               onClick={onSendMessage}
               disabled={isChatting || !chatInput.trim()}
-              className="px-10 py-4 bg-[#0369a1] hover:bg-[#0284c7] text-white rounded-[24px] font-black flex items-center gap-4 transition-all active:scale-95 shadow-xl shadow-[#0369a1]/20 disabled:opacity-30 disabled:grayscale"
+              className="px-8 py-3 bg-[#0369a1] hover:bg-[#0284c7] text-white rounded-[24px] text-sm font-black flex items-center gap-3 transition-all active:scale-95 shadow-lg shadow-[#0369a1]/20 disabled:opacity-30 disabled:grayscale uppercase tracking-widest"
             >
               {t('common.send')}
-              <Send size={20} strokeWidth={3} />
+              <Send size={18} strokeWidth={3} />
             </button>
           </div>
         </div>
@@ -155,8 +155,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             <MessageSquare size={18} strokeWidth={2.5} />
           </div>
           <div>
-            <h3 className="font-black text-sm text-[#1a1a1a]">{t('chat.bookAssistant')}</h3>
-            <p className="text-[14px] font-black text-[#94a3b8] uppercase tracking-[0.1em]">{t('chat.sidebarSubtitle')}</p>
+            <h3 className="font-black text-sm text-[#1a1a1a]">{t('chat.bookAssistant')}{t('chat.sidebarSubtitle')}</h3>
           </div>
         </div>
         {currentPage && (

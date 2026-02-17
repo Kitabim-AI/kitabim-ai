@@ -68,7 +68,6 @@ const App: React.FC = () => {
     totalReady,
     sortedBooks,
     sortConfig,
-    toggleSort,
     refreshLibrary,
     loadMoreShelf,
     isLoading,
@@ -260,7 +259,6 @@ const App: React.FC = () => {
                 books={sortedBooks}
                 isCheckingGlobal={isCheckingGlobal}
                 sortConfig={sortConfig}
-                toggleSort={toggleSort}
                 page={page}
                 pageSize={pageSize}
                 totalBooks={totalBooks}

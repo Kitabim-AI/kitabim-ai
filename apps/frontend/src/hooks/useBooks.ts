@@ -12,24 +12,12 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
   const [shelfPage, setShelfPage] = useState(1);
   const COLLECTION_PAGE_SIZE = 40; // Increased to show more results at once
 
-  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>(() => {
-    const saved = sessionStorage.getItem('kitabim_sort_config');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (parsed.key === 'lastUpdated') return { key: 'uploadDate', direction: 'desc' };
-      return parsed;
-    }
-    return { key: 'uploadDate', direction: 'desc' };
-  });
+  const [sortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'uploadDate', direction: 'desc' });
 
   // Helper to determine if we should use shelf-style (infinite scroll) behavior
   const isShelfView = useMemo(() => {
     return view === 'library' || view === 'global-chat' || (view === 'home' && (searchQuery.trim().length > 0 || category));
   }, [view, searchQuery, category]);
-
-  useEffect(() => {
-    sessionStorage.setItem('kitabim_sort_config', JSON.stringify(sortConfig));
-  }, [sortConfig]);
 
   // Internal Polling for Processing Books (only on admin page)
   useEffect(() => {
@@ -122,13 +110,6 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
     });
   }, [books, sortConfig, isShelfView]);
 
-  const toggleSort = (key: string) => {
-    setSortConfig(prev => ({
-      key,
-      direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc'
-    }));
-  };
-
   return {
     books,
     setBooks,
@@ -138,7 +119,6 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
     setTotalReady,
     sortedBooks,
     sortConfig,
-    toggleSort,
     refreshLibrary,
     loadMoreShelf,
     isLoading,

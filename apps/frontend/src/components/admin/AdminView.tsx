@@ -9,7 +9,6 @@ interface AdminViewProps {
   books: Book[];
   isCheckingGlobal: boolean;
   sortConfig: { key: string; direction: 'asc' | 'desc' };
-  toggleSort: (key: any) => void;
   page: number;
   pageSize: number;
   totalBooks: number;
@@ -161,7 +160,6 @@ export const AdminView: React.FC<AdminViewProps> = ({
   books,
   isCheckingGlobal,
   sortConfig,
-  toggleSort,
   page,
   pageSize,
   totalBooks,
@@ -228,22 +226,14 @@ export const AdminView: React.FC<AdminViewProps> = ({
             <table className="w-full text-right min-w-[1100px]" dir="rtl">
               <thead>
                 <tr className="bg-[#0369a1]/5 border-b border-[#0369a1]/10 text-sm font-black text-[#0369a1] uppercase tracking-widest">
-                  <th
-                    className="px-8 py-5 cursor-pointer hover:bg-[#0369a1]/5 transition-colors group"
-                    onClick={() => toggleSort('title')}
-                  >
-                    <div className="flex items-center gap-2">
-                      {t('admin.table.bookName')}
-                      <div className={`transition-opacity ${sortConfig.key === 'title' ? 'opacity-100' : 'opacity-0 group-hover:opacity-50'}`}>
-                        {sortConfig.key === 'title' && sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                      </div>
-                    </div>
+                  <th className="px-8 py-5 text-right font-black">
+                    {t('admin.table.bookName')}
                   </th>
-                  <th className="px-8 py-5 w-24">{t('admin.table.pageCount')}</th>
-                  <th className="px-8 py-5 w-48">{t('admin.table.author')}</th>
-                  <th className="px-8 py-5 w-60">{t('admin.table.category')}</th>
-                  <th className="px-8 py-5">{t('admin.table.progress')}</th>
-                  <th className="px-8 py-5 text-left">{t('admin.table.actions')}</th>
+                  <th className="px-8 py-5 w-24 text-right font-black">{t('admin.table.pageCount')}</th>
+                  <th className="px-8 py-5 w-48 text-right font-black">{t('admin.table.author')}</th>
+                  <th className="px-8 py-5 w-60 text-right font-black">{t('admin.table.category')}</th>
+                  <th className="px-8 py-5 text-right font-black">{t('admin.table.progress')}</th>
+                  <th className="px-8 py-5 text-left font-black">{t('admin.table.actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#75C5F0]/5">
@@ -251,9 +241,17 @@ export const AdminView: React.FC<AdminViewProps> = ({
                   <tr key={book.id} className="hover:bg-[#e8f4f8]/20 transition-colors group/row">
                     <td className="px-8 py-6">
                       <div className="flex items-center gap-4">
-                        <div className="bg-[#0369a1]/10 p-3 rounded-xl text-[#0369a1] group-hover/row:scale-110 transition-transform">
-                          <Database size={20} />
-                        </div>
+                        <button
+                          onClick={() => onOpenReader(book)}
+                          disabled={book.status === 'pending'}
+                          className={`p-3 rounded-xl transition-all shadow-sm active:scale-90 ${book.status === 'pending'
+                            ? 'bg-slate-100 text-slate-300 cursor-not-allowed'
+                            : 'bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white group-hover/row:scale-110'
+                            }`}
+                          title={t('admin.table.view')}
+                        >
+                          <BookOpen size={20} strokeWidth={2.5} />
+                        </button>
                         {editingBookTitleId === book.id ? (
                           <div className="flex items-center gap-2 min-w-[250px]">
                             <input

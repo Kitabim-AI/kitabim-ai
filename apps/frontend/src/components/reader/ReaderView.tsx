@@ -221,7 +221,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   };
 
   return (
-    <div className="h-[calc(100vh-140px)] flex gap-8 animate-fade-in py-4">
+    <div className="h-[calc(100vh-140px)] flex gap-6 animate-fade-in py-4">
       {/* Main Content Area */}
       <div className="flex-grow glass-panel flex flex-col overflow-hidden" style={{ borderRadius: '32px' }}>
         {/* Header Ribbon */}
@@ -302,13 +302,14 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
 
         {/* Reading Canvas */}
         <div
-          className={`flex-grow ${isEditing ? 'p-8 flex flex-col' : 'p-12 overflow-y-auto'}`}
+          dir="ltr"
+          className={`flex-grow custom-scrollbar ${isEditing ? 'p-4 flex flex-col' : 'p-6 overflow-y-auto'}`}
           style={{
             background: 'linear-gradient(rgba(255,255,255,0.7), rgba(255,255,255,0.7)), url("https://www.transparenttextures.com/patterns/paper-fibers.png")'
           }}
         >
           {isEditing ? (
-            <div className="flex-grow flex flex-col relative">
+            <div className="flex-grow flex flex-col relative" dir="rtl">
               {isFetchingContent && (
                 <div className="absolute inset-0 bg-white/60 backdrop-blur-md z-20 flex items-center justify-center rounded-3xl">
                   <div className="flex flex-col items-center gap-4">
@@ -321,14 +322,14 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                 ref={globalTextAreaRef}
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
-                className="flex-grow w-full p-10 uyghur-text border-2 border-[#0369a1]/10 rounded-3xl focus:border-[#0369a1] outline-none resize-none bg-white shadow-inner overflow-y-auto leading-relaxed text-[#1a1a1a]"
+                className="flex-grow w-full p-6 uyghur-text border-2 border-[#0369a1]/10 rounded-3xl focus:border-[#0369a1] outline-none resize-none bg-white shadow-inner overflow-y-auto leading-relaxed text-[#1a1a1a]"
                 style={{ fontSize: `${fontSize}px`, minHeight: '500px' }}
                 dir="rtl"
                 placeholder={isFetchingContent ? "" : t('common.enterContent')}
               />
             </div>
           ) : (
-            <div className="max-w-3xl mx-auto space-y-16 pb-40">
+            <div className="max-w-5xl mx-auto space-y-16 pb-40 px-4" dir="rtl">
               {[...loadedPages]
                 .sort((a, b) => Number(a.pageNumber) - Number(b.pageNumber))
                 .filter((page, index, self) =>
@@ -346,7 +347,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                       }
                     }}
                     onMouseEnter={() => setCurrentPage(page.pageNumber)}
-                    className={`group relative p-10 rounded-[32px] transition-all duration-500 ${currentPage === page.pageNumber ? 'bg-white shadow-2xl ring-1 ring-[#0369a1]/10 scale-[1.03]' : 'bg-transparent opacity-80 scale-100'}`}
+                    className={`group relative p-8 rounded-[32px] transition-all duration-500 ${currentPage === page.pageNumber ? 'bg-white shadow-2xl ring-1 ring-[#0369a1]/10 scale-[1.03]' : 'bg-transparent opacity-80 scale-100'}`}
                   >
                     <div className="flex items-center justify-between pb-6 mb-8 border-b border-[#0369a1]/5">
                       <div className="flex items-center gap-4">
@@ -513,7 +514,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
       </div>
 
       {/* Sidebar Area */}
-      <div className="w-[420px] flex flex-col gap-6">
+      <div className="w-[550px] flex flex-col gap-6">
         {editingPageNum !== null ? (
           <GlassPanel className="h-full flex flex-col overflow-hidden" style={{ borderRadius: '32px', padding: '24px' }}>
             <SpellCheckPanel

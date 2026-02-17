@@ -73,10 +73,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
             {t('app.tagline')}
           </div>
           <h1
-            className="font-black text-[#1a1a1a] tracking-tighter leading-none flex items-center gap-4"
+            className="font-black text-[#1a1a1a] tracking-tight leading-none"
             style={{ fontSize: hasSearch ? '3.5rem' : '5rem' }}
           >
-            <span className="text-[#0369a1]">AI.</span>Kitabim
+            Kitabim<span className="text-[#0369a1]">.AI</span>
           </h1>
         </div>
 
