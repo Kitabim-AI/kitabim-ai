@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { UserService, UserPublic, PaginatedUsers } from '../../../services/userService';
+import { Users } from 'lucide-react';
 import { useIsAdmin } from '../../../hooks/useAuth';
 import { useI18n } from '../../../i18n/I18nContext';
 
@@ -177,13 +178,20 @@ export function UserManagementPanel() {
 
   return (
     <div className="glass-panel overflow-hidden" style={{ borderRadius: '24px', padding: 0 }} dir="rtl">
-      {/* Header */}
       <div className="px-8 py-6 border-b border-[#0369a1]/10 flex items-center justify-between bg-[#0369a1]/5">
-        <div>
-          <h2 className="text-3xl font-black text-[#1a1a1a]">{t('admin.users.title')}</h2>
-          <p className="text-[14px] font-black text-[#94a3b8] uppercase tracking-[0.2em] mt-1">
-            {t('admin.users.total', { count: total })}
-          </p>
+        <div className="flex items-center gap-4 group">
+          <div className="p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:-rotate-6">
+            <Users size={24} />
+          </div>
+          <div>
+            <h2 className="text-3xl font-black text-[#1a1a1a] tracking-tight">{t('admin.users.title')}</h2>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="w-8 h-[2px] bg-[#0369a1] rounded-full" />
+              <p className="text-[14px] font-black text-[#94a3b8] uppercase tracking-[0.2em]">
+                {t('admin.users.total', { count: total })}
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Role Filter */}
@@ -266,14 +274,14 @@ export function UserManagementPanel() {
             <button
               onClick={() => setPage((p) => p - 1)}
               disabled={page === 1}
-              className="p-2 rounded-xl bg-white/50 border border-[#0369a1]/10 hover:bg-[#0369a1]/10 hover:text-[#0369a1] disabled:opacity-20 transition-all text-[#1a1a1a] shadow-sm active:scale-95"
+              className="p-2 rounded-xl bg-white/50 border border-[#0369a1]/10 hover:bg-[#0369a1]/10 hover:text-[#0369a1] disabled:opacity-20 transition-all text-[#1a1a1a] shadow-sm active:scale-90"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M9 18l6-6-6-6" /></svg>
             </button>
             <button
               onClick={() => setPage((p) => p + 1)}
               disabled={page === totalPages}
-              className="p-2 rounded-xl bg-white/50 border border-[#0369a1]/10 hover:bg-[#0369a1]/10 hover:text-[#0369a1] disabled:opacity-20 transition-all text-[#1a1a1a] shadow-sm active:scale-95"
+              className="p-2 rounded-xl bg-white/50 border border-[#0369a1]/10 hover:bg-[#0369a1]/10 hover:text-[#0369a1] disabled:opacity-20 transition-all text-[#1a1a1a] shadow-sm active:scale-90"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M15 18l-6-6 6-6" /></svg>
             </button>

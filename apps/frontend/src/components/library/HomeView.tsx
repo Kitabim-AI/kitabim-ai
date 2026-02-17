@@ -136,7 +136,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
       {/* Results Section */}
       {hasSearch && (
-        <div className="w-full max-w-7xl px-8 pb-32">
+        <div className="w-full max-w-none px-8 pb-32">
           <div className="flex items-center justify-between mb-16 px-4">
             <div className="flex items-center gap-4">
               <button
@@ -155,7 +155,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-8 gap-y-16 justify-items-center">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-10 gap-y-16 justify-items-center">
             {books.map(book => (
               <BookCard
                 key={book.id}

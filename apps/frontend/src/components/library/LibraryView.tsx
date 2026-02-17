@@ -48,8 +48,8 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         <div className="absolute -bottom-px left-0 right-0 h-px bg-gradient-to-l from-[#0369a1]/30 via-transparent to-transparent" />
 
         <header className="space-y-4">
-          <div className="flex items-center gap-4">
-            <div className="p-3.5 bg-[#0369a1] text-white rounded-[24px] shadow-xl shadow-[#0369a1]/20 transform -rotate-3 group hover:rotate-0 transition-all duration-500">
+          <div className="flex items-center gap-4 group">
+            <div className="p-3.5 bg-[#0369a1] text-white rounded-[24px] shadow-xl shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:-rotate-6">
               <Library size={32} strokeWidth={2.5} />
             </div>
             <div>

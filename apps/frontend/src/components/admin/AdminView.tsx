@@ -195,15 +195,20 @@ export const AdminView: React.FC<AdminViewProps> = ({
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="flex items-center justify-between pb-6 border-b border-[#75C5F0]/20">
-        <header>
-          <h2 className="text-3xl font-black text-[#1a1a1a] flex items-center gap-3">
-            <div className="p-2 bg-[#0369a1] rounded-xl text-white shadow-lg shadow-[#0369a1]/20">
-              <Shield size={24} />
+        <div className="flex items-center gap-4 group">
+          <div className="p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:-rotate-6">
+            <Shield size={24} />
+          </div>
+          <div>
+            <h2 className="text-3xl font-black text-[#1a1a1a] tracking-tight">
+              {t('admin.table.managementSystem')}
+            </h2>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="w-8 h-[2px] bg-[#0369a1] rounded-full" />
+              <p className="text-[14px] font-black text-[#94a3b8] uppercase tracking-[0.2em]">{t('admin.table.manageBooks')}</p>
             </div>
-            {t('admin.table.managementSystem')}
-          </h2>
-          <p className="text-[14px] font-black text-[#94a3b8] uppercase tracking-[0.2em] mt-1">{t('admin.table.manageBooks')}</p>
-        </header>
+          </div>
+        </div>
         <div className="flex items-center gap-2 text-[14px] font-black text-[#0369a1] bg-[#0369a1]/10 px-4 py-2 rounded-full border border-[#0369a1]/20 shadow-sm">
           <Cpu size={14} className="animate-spin" />
           {t('admin.table.systemActive')}

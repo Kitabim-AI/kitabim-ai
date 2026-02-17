@@ -38,9 +38,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     return (
       <div className="h-[calc(100vh-140px)] max-w-5xl mx-auto w-full flex flex-col gap-6 animate-fade-in py-4" dir="rtl">
         {/* Chat Header */}
-        <div className="bg-white/60 backdrop-blur-2xl px-8 py-6 flex items-center justify-between border border-[#0369a1]/10 shadow-sm" style={{ borderRadius: '32px' }}>
+        <div className="bg-white/60 backdrop-blur-2xl px-8 py-6 flex items-center justify-between border border-[#0369a1]/10 shadow-sm group" style={{ borderRadius: '32px' }}>
           <div className="flex items-center gap-5">
-            <div className="p-4 bg-[#0369a1] text-white rounded-[24px] shadow-xl shadow-[#0369a1]/20 transform rotate-3 transition-transform hover:rotate-0">
+            <div className="p-4 bg-[#0369a1] text-white rounded-[24px] shadow-xl shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:-rotate-6">
               <MessageSquare size={28} strokeWidth={2.5} />
             </div>
             <div>
