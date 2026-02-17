@@ -185,9 +185,13 @@ class RAGService:
         )
         return response_text.strip() or self._build_empty_response_message()
 
-    async def _record_eval(self, session, payload: dict) -> None:
+    async def _record_eval(self, session, payload: dict, user_id: Optional[str] = None) -> None:
         """Record RAG evaluation metrics using SQLAlchemy"""
-        if not settings.rag_eval_enabled or session is None:
+        if not settings.rag_eval_enabled:
+            log_json(self.logger, logging.DEBUG, "RAG eval recording skipped: disabled in settings")
+            return
+        if session is None:
+            log_json(self.logger, logging.WARNING, "RAG eval recording skipped: session is None")
             return
         try:
             from app.db.repositories.rag_evaluations import RAGEvaluationsRepository
@@ -204,12 +208,13 @@ class RAGService:
                 category_filter=payload.get("categoryFilter", []),
                 latency_ms=payload.get("latencyMs", 0),
                 answer_chars=payload.get("answerChars", 0),
+                user_id=user_id,
             )
             await session.commit()
         except Exception as exc:
             log_json(self.logger, logging.WARNING, "RAG eval insert failed", error=str(exc))
 
-    async def answer_question(self, req: ChatRequest, session: AsyncSession) -> str:
+    async def answer_question(self, req: ChatRequest, session: AsyncSession, user_id: Optional[str] = None) -> str:
         start_ts = time.monotonic()
         is_global = req.book_id == "global"
         relevant_categories: List[str] = []
@@ -484,8 +489,9 @@ class RAGService:
                 "scores": [r.get("score") for r in top_results],
                 "categoryFilter": relevant_categories if is_global else [],
                 "latencyMs": int((time.monotonic() - start_ts) * 1000),
-                "answerChars": len(answer),
+                "answer_chars": len(answer),
             },
+            user_id=user_id,
         )
 
         return answer

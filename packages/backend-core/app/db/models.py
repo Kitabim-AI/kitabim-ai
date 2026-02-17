@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import (
     ARRAY, Boolean, CheckConstraint, DateTime, Float, ForeignKey,
-    Integer, String, Text, UniqueConstraint, func, text
+    Integer, String, Text, UniqueConstraint, func, text, Date
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -374,6 +374,12 @@ class RAGEvaluation(Base):
         default=list,
         server_default=text("'{}'")
     )
+    user_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True
+    )
 
     # Performance metrics
     latency_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -389,9 +395,51 @@ class RAGEvaluation(Base):
     )
 
 
+
 class Word(Base):
     """Word model for storing individual words"""
     __tablename__ = "words"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     word: Mapped[str] = mapped_column(String(255), nullable=False)
+
+
+class SystemConfig(Base):
+    """General system configuration entries"""
+    __tablename__ = "system_configs"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        onupdate=func.now(),
+        server_default=func.now(),
+        nullable=False
+    )
+
+
+class UserChatUsage(Base):
+    """Daily chat usage counter per user"""
+    __tablename__ = "user_chat_usage"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False
+    )
+    usage_date: Mapped[datetime.date] = mapped_column(
+        Date,
+        default=func.current_date(),
+        server_default=func.current_date(),
+        index=True,
+        nullable=False
+    )
+    count: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "usage_date", name="user_chat_usage_user_id_date_key"),
+    )

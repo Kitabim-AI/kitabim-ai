@@ -64,13 +64,14 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
         <div className="flex items-center gap-4">
           <div className="flex flex-col items-end">
-            <span className="text-[14px] font-black text-[#94a3b8] uppercase tracking-widest mb-1">{t('library.systemStatus')}</span>
             <div className="flex items-center gap-3 px-6 py-2.5 bg-white/60 backdrop-blur-md rounded-2xl border border-[#0369a1]/20 shadow-sm transition-all hover:bg-white">
               <div className="relative flex items-center justify-center">
                 <div className="absolute inset-0 bg-emerald-500 rounded-full animate-ping opacity-25" />
                 <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-white" />
               </div>
-              <span className="text-sm font-black text-[#1a1a1a]">{t('library.active')} • <span className="text-[#0369a1]">{books.length}</span> {t('common.book')}</span>
+              <span className="text-sm font-black text-[#1a1a1a]">
+                {t('library.active')} • {t('chat.libraryBookCount', { count: books.length })}
+              </span>
             </div>
           </div>
         </div>

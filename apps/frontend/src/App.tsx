@@ -83,6 +83,7 @@ const App: React.FC = () => {
     setChatInput,
     isChatting,
     handleSendMessage,
+    usageStatus,
     clearChat,
     chatContainerRef,
   } = useChat(view, selectedBook, currentPage);
@@ -333,6 +334,7 @@ const App: React.FC = () => {
             setChatInput={setChatInput}
             onSendMessage={handleSendMessage}
             isChatting={isChatting}
+            usageStatus={usageStatus}
             chatContainerRef={chatContainerRef}
             setModal={setModal}
           />
@@ -348,6 +350,7 @@ const App: React.FC = () => {
             setChatInput={setChatInput}
             onSendMessage={handleSendMessage}
             isChatting={isChatting}
+            usageStatus={usageStatus}
             onClose={() => setView(previousView)}
             chatContainerRef={chatContainerRef}
           />

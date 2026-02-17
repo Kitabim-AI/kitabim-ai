@@ -46,11 +46,34 @@ export const chatWithBook = async (question: string, bookId: string, currentPage
     if (response.status === 403) {
       return "بۇ ئىقتىدارنى ئىشلىتىشكە ھوقۇقىڭىز يوق.";
     }
-    if (!response.ok) throw new Error("Chat request failed");
+    if (response.status === 429) {
+      try {
+        const errorData = await response.json();
+        return errorData.detail || "كەچۈرۈڭ، سىستېما ئالدىراش ياكى كۈندىلىك چەكلىمىڭىز توشتى.";
+      } catch (e) {
+        return "كەچۈرۈڭ، سىستېما ئالدىراش ياكى كۈندىلىك چەكلىمىڭىز توشتى.";
+      }
+    }
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "Unknown error");
+      console.error(`Chat API error (${response.status}):`, errorText);
+      return "كەچۈرۈڭ، سىستېما خاتالىقى كۆرۈلدى (500).";
+    }
     const data = await response.json();
     return data.answer;
   } catch (err) {
     console.error("Chat Error:", err);
-    return "ئەپسۇس، جاۋاب تاپالمىدىم.";
+    return "ئەپسۇس، ئۇلىنىش خاتالىقى كۆرۈلدى. توردىن ئۈزۈلۈپ قالغان بولۇشىڭىز مۇمكىن.";
+  }
+};
+
+export const getChatUsage = async (): Promise<{ usage: number, limit: number | null, hasReachedLimit: boolean }> => {
+  try {
+    const response = await authFetch(`${API_BASE}/chat/usage`);
+    if (!response.ok) return { usage: 0, limit: null, hasReachedLimit: false };
+    return await response.json();
+  } catch (err) {
+    console.error("Chat Usage Error:", err);
+    return { usage: 0, limit: null, hasReachedLimit: false };
   }
 };

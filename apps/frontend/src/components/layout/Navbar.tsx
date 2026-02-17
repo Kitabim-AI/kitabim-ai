@@ -30,7 +30,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const { t } = useI18n();
 
   return (
-    <nav className="px-8 py-4 flex items-center justify-between sticky top-0 z-[100] transition-all duration-300 overflow-hidden relative" dir="rtl">
+    <nav className="px-8 py-4 flex items-center justify-between sticky top-0 z-[100] transition-all duration-300 relative" dir="rtl">
       {/* Glass Backdrop - Matching Prototype */}
       <div className="absolute inset-0 bg-white/75 backdrop-blur-[20px] border-b border-[rgba(255,193,7,0.2)] shadow-[0_4px_30px_rgba(117,197,240,0.1),0_1px_0_rgba(255,255,255,0.8)_inset]"
         style={{ backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)' }} />
@@ -69,14 +69,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             icon={<Library size={18} strokeWidth={2.5} />}
             label={t('nav.library')}
           />
-          {isAuthenticated && (
-            <NavButton
-              active={view === 'global-chat'}
-              onClick={() => { setView('global-chat'); clearChat(); }}
-              icon={<MessageSquare size={18} strokeWidth={2.5} />}
-              label={t('nav.globalChat')}
-            />
-          )}
+          <NavButton
+            active={view === 'global-chat'}
+            onClick={() => { setView('global-chat'); clearChat(); }}
+            icon={<MessageSquare size={18} strokeWidth={2.5} />}
+            label={t('nav.globalChat')}
+          />
           {isEditor && (
             <NavButton
               active={view === 'admin'}
@@ -130,8 +128,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             />
           </>
         )}
-        <LanguageSwitcher />
-        <AuthButton />
+        {/* <LanguageSwitcher /> */}
+        <AuthButton onLogout={() => setView('home')} />
       </div>
     </nav>
   );

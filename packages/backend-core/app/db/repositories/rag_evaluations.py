@@ -28,6 +28,7 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
         category_filter: List[str],
         latency_ms: int,
         answer_chars: int,
+        user_id: Optional[str] = None,
     ) -> RAGEvaluation:
         """Create a new RAG evaluation record"""
         evaluation = await self.create(
@@ -41,6 +42,7 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
             category_filter=category_filter,
             latency_ms=latency_ms,
             answer_chars=answer_chars,
+            user_id=user_id,
             ts=datetime.utcnow(),
         )
         return evaluation

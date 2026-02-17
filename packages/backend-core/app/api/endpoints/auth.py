@@ -96,7 +96,8 @@ async def google_login(response: Response):
     
     # Set secure cookie with state (for validation on callback)
     response = RedirectResponse(url=auth_url, status_code=status.HTTP_302_FOUND)
-    response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
+    # Removing COOP header to ensure window.opener is available across ports in dev
+    # response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
     response.set_cookie(
         key=OAUTH_STATE_COOKIE,
         value=oauth_state.to_cookie_value(),
@@ -364,44 +365,73 @@ def _success_response(access_token: str, refresh_token: str) -> HTMLResponse:
         </div>
         <script>
             const accessToken = "{access_token}";
-
-            // Try to post to opener (popup flow)
-            if (window.opener && !window.opener.closed) {{
-                try {{
-                    window.opener.postMessage({{
-                        type: 'OAUTH_SUCCESS',
-                        accessToken: accessToken
-                    }}, '*');
-                    setTimeout(() => window.close(), 100);
-                }} catch (err) {{
-                    console.error('Failed to post message:', err);
-                    // Fallback: store token and show success message
-                    localStorage.setItem('kitabim_access_token', accessToken);
-                    document.querySelector('.container p').textContent =
-                        'Login successful! Please close this window and refresh the main page.';
+            
+            function notifyAndClose() {{
+                console.log('[Kitabim Auth] Attempting to notify opener...');
+                
+                // Try to post to opener (popup flow)
+                if (window.opener && !window.opener.closed) {{
+                    try {{
+                        window.opener.postMessage({{
+                            type: 'OAUTH_SUCCESS',
+                            accessToken: accessToken
+                        }}, '*');
+                        
+                        console.log('[Kitabim Auth] Message posted, closing in 500ms...');
+                        setTimeout(() => window.close(), 500);
+                        return true;
+                    }} catch (err) {{
+                        console.error('[Kitabim Auth] Failed to post message:', err);
+                    }}
                 }}
-            }} else {{
-                // No opener - store token in localStorage and show instructions
-                localStorage.setItem('kitabim_access_token', accessToken);
-                document.querySelector('.container h2').textContent = 'Login Successful!';
-                document.querySelector('.container p').innerHTML =
-                    'Please close this window and <strong>refresh the main page</strong> to continue.';
-                // Add a close button
-                const closeBtn = document.createElement('button');
-                closeBtn.textContent = 'Close Window';
-                closeBtn.style.cssText = 'margin-top: 1rem; padding: 0.5rem 1.5rem; background: white; color: #667eea; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;';
-                closeBtn.onclick = () => window.close();
-                document.querySelector('.container').appendChild(closeBtn);
-                // Remove spinner
-                document.querySelector('.spinner').style.display = 'none';
+                return false;
             }}
+
+            // Run immediately
+            const notified = notifyAndClose();
+            
+            if (!notified) {{
+                console.log('[Kitabim Auth] Opener not found or message failed, showing fallback UI');
+                // Fallback: store token in localStorage (only works if same origin)
+                localStorage.setItem('kitabim_access_token', accessToken);
+                
+                // Update UI to be more helpful
+                const container = document.querySelector('.container');
+                const p = container.querySelector('p');
+                const h2 = container.querySelector('h2');
+                const spinner = container.querySelector('.spinner');
+                
+                h2.textContent = 'Login Successful!';
+                p.innerHTML = 'You are now signed in.<br>Please close this window and <strong>refresh the main page</strong> to continue.';
+                
+                if (spinner) spinner.style.display = 'none';
+                
+                // Add explicit close button
+                const btn = document.createElement('button');
+                btn.textContent = 'Close Window & Continue';
+                btn.style.cssText = 'margin-top: 1.5rem; padding: 0.75rem 2rem; background: white; color: #667eea; border: none; border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 1rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1); transition: transform 0.2s;';
+                btn.onmouseover = () => btn.style.transform = 'scale(1.05)';
+                btn.onmouseout = () => btn.style.transform = 'scale(1)';
+                btn.onclick = () => window.close();
+                container.appendChild(btn);
+            }}
+
+            // Also try periodically in case opener wasn't ready
+            let attempts = 0;
+            const interval = setInterval(() => {{
+                attempts++;
+                if (notifyAndClose() || attempts > 10) {{
+                    clearInterval(interval);
+                }}
+            }}, 1000);
         </script>
     </body>
     </html>
     """
     
     response = HTMLResponse(content=html)
-    response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
+    # Removing COOP header to ensure window.opener is available across ports in dev
+    # response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
     
     # Set refresh token as httpOnly cookie
     response.set_cookie(
@@ -499,5 +529,7 @@ def _error_response(message: str) -> HTMLResponse:
     return HTMLResponse(
         content=html, 
         status_code=400,
-        headers={"Cross-Origin-Opener-Policy": "same-origin-allow-popups"}
+        headers={
+            # "Cross-Origin-Opener-Policy": "same-origin-allow-popups"
+        }
     )

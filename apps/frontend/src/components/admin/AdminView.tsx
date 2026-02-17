@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Database, ChevronUp, ChevronDown, Tag, X, Save, Trash2, BookType, User, Hash, BookOpen, Cpu, ScanText, History, RotateCcw, RefreshCw, MoreVertical, Globe, Shield } from 'lucide-react';
+import { Database, ChevronUp, ChevronDown, Tag, X, Save, Trash2, BookType, Book as BookIcon, User, Hash, BookOpen, Cpu, ScanText, History, RotateCcw, RefreshCw, MoreVertical, Globe, Shield } from 'lucide-react';
 import { Book } from '@shared/types';
 import { Pagination } from '../common/Pagination';
 import { NotificationContainer } from '../common/NotificationContainer';
@@ -197,7 +197,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
       <div className="flex items-center justify-between pb-6 border-b border-[#75C5F0]/20">
         <div className="flex items-center gap-4 group">
           <div className="p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:-rotate-6">
-            <Shield size={24} />
+            <BookIcon size={24} />
           </div>
           <div>
             <h2 className="text-3xl font-normal text-[#1a1a1a]">
@@ -210,8 +210,8 @@ export const AdminView: React.FC<AdminViewProps> = ({
           </div>
         </div>
         <div className="flex items-center gap-2 text-[14px] font-normal text-[#0369a1] bg-[#0369a1]/10 px-4 py-2 rounded-full border border-[#0369a1]/20 shadow-sm">
-          <BookType size={14} />
-          {t('admin.stats.totalBooks')}: {totalBooks}
+          <BookIcon size={14} />
+          {t('chat.libraryBookCount', { count: totalBooks })}
         </div>
       </div>
 

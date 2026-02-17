@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { UserService, UserPublic, PaginatedUsers } from '../../../services/userService';
-import { Users } from 'lucide-react';
+import { Users, Filter, Check, ChevronDown } from 'lucide-react';
 import { useIsAdmin } from '../../../hooks/useAuth';
 import { useI18n } from '../../../i18n/I18nContext';
 import { UserAvatar } from '../../common/UserAvatar';
@@ -105,6 +105,18 @@ export function UserManagementPanel() {
   const [isLoading, setIsLoading] = useState(false);
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (filterRef.current && !filterRef.current.contains(event.target as Node)) {
+        setIsFilterOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const loadUsers = useCallback(async () => {
     if (!isAdmin) return;
@@ -192,20 +204,6 @@ export function UserManagementPanel() {
             <Users size={14} />
             {t('admin.users.total', { count: total })}
           </div>
-
-          <select
-            value={roleFilter}
-            onChange={(e) => {
-              setRoleFilter(e.target.value);
-              setPage(1);
-            }}
-            className="bg-white/50 backdrop-blur-md border border-[#0369a1]/20 rounded-xl px-4 py-2 text-[15px] font-normal outline-none focus:ring-4 focus:ring-[#0369a1]/5 text-[#1a1a1a] cursor-pointer hover:bg-white transition-all shadow-sm"
-          >
-            <option value="all">{t('admin.users.allRoles')}</option>
-            <option value="admin">{t('admin.users.admins')}</option>
-            <option value="editor">{t('admin.users.editors')}</option>
-            <option value="reader">{t('admin.users.readers')}</option>
-          </select>
         </div>
       </div>
 
@@ -228,7 +226,45 @@ export function UserManagementPanel() {
             <thead>
               <tr className="bg-[#0369a1]/5 text-[16px] font-normal text-[#0369a1] uppercase border-b border-[#0369a1]/10">
                 <th className="px-8 py-5 text-right font-normal">{t('admin.users.user')}</th>
-                <th className="px-8 py-5 text-right font-normal">{t('admin.users.role')}</th>
+                <th className="px-8 py-5 text-right font-normal relative">
+                  <div className="flex items-center gap-2">
+                    {t('admin.users.role')}
+                    <button
+                      onClick={() => setIsFilterOpen(!isFilterOpen)}
+                      className={`p-1.5 rounded-lg transition-all ${roleFilter !== 'all' ? 'bg-[#0369a1] text-white shadow-md' : 'hover:bg-[#0369a1]/10'}`}
+                    >
+                      <Filter size={14} strokeWidth={roleFilter !== 'all' ? 3 : 2} />
+                    </button>
+                  </div>
+
+                  {isFilterOpen && (
+                    <div
+                      ref={filterRef}
+                      className="absolute top-full right-8 mt-2 w-48 glass-panel shadow-2xl z-50 overflow-hidden py-2 border border-[#0369a1]/10"
+                      style={{ borderRadius: '16px' }}
+                    >
+                      {[
+                        { id: 'all', label: t('admin.users.allRoles') },
+                        { id: 'admin', label: t('admin.users.admins') },
+                        { id: 'editor', label: t('admin.users.editors') },
+                        { id: 'reader', label: t('admin.users.readers') }
+                      ].map((role) => (
+                        <button
+                          key={role.id}
+                          onClick={() => {
+                            setRoleFilter(role.id);
+                            setPage(1);
+                            setIsFilterOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-5 py-3 text-[14px] font-normal uppercase transition-all ${roleFilter === role.id ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
+                        >
+                          {role.label}
+                          {roleFilter === role.id && <Check size={14} strokeWidth={3} />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </th>
                 <th className="px-8 py-5 text-right font-normal">{t('admin.users.status')}</th>
                 <th className="px-8 py-5 text-right font-normal">{t('admin.users.joinedDate')}</th>
               </tr>

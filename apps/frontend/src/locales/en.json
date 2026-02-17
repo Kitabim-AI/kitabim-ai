@@ -104,6 +104,7 @@
     "sidebarSubtitle": "Chat by content",
     "pageNumber": "Page: {{page}}",
     "allBooks": "All Books",
+    "libraryBookCount": "There are {{count}} books in the library",
     "welcome": {
       "title": "Welcome to AI Assistant",
       "message": "I can compare all books in the library and provide the best answer to your question"
@@ -113,13 +114,17 @@
     "you": "You",
     "ai": "Kitabim.AI",
     "inputPlaceholder": "Type your question here...",
-    "inputPlaceholderBook": "Type your question..."
+    "inputPlaceholderBook": "Type your question...",
+    "inputPlaceholderWithLimit": "Type your question... ({{usage}}/{{limit}} used)",
+    "limitReached": "Daily chat limit reached. Please try again tomorrow.",
+    "usageInfo": "Messages used: {{usage}} of {{limit}}"
   },
   "reader": {
     "title": "Reader",
     "close": "Close",
     "fontSize": "Font Size",
     "spellCheck": "Spell Check",
+    "editBook": "Edit Book",
     "editPage": "Edit Page",
     "pageNumber": "Page Number",
     "next": "Next",
@@ -132,6 +137,7 @@
     "cancel": "Cancel",
     "verified": "Verified",
     "activeRecognizing": "Actively recognizing...",
+    "goToPage": "Go to Page {{page}}",
     "reprocess": {
       "title": "Reprocess Page",
       "message": "This page has your edits. Reprocessing will lose them. Are you sure?",

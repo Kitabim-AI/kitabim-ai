@@ -11,6 +11,7 @@ import { HighlightedText } from '../spell-check/HighlightedText';
 import { useSpellCheck } from '../../hooks/useSpellCheck';
 import { MarkdownContent } from '../common/MarkdownContent';
 import { GlassPanel } from '../ui/GlassPanel';
+import { useIsEditor, useAuth } from '../../hooks/useAuth';
 
 interface ReaderViewProps {
   selectedBook: Book;
@@ -35,6 +36,7 @@ interface ReaderViewProps {
   setChatInput: (input: string) => void;
   onSendMessage: () => void;
   isChatting: boolean;
+  usageStatus?: { usage: number, limit: number | null, hasReachedLimit: boolean } | null;
   chatContainerRef: React.RefObject<HTMLDivElement>;
   setModal: (modal: any) => void;
 }
@@ -64,12 +66,18 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   setChatInput,
   onSendMessage,
   isChatting,
+  usageStatus,
   chatContainerRef,
   setModal,
 }) => {
   const { t } = useI18n();
+  const isEditor = useIsEditor();
+  const { user, isAuthenticated } = useAuth();
+  const isGuestOrReader = !isAuthenticated || (user?.role === 'reader');
+
   const pageTextAreaRef = useRef<HTMLTextAreaElement>(null);
   const globalTextAreaRef = useRef<HTMLTextAreaElement>(null);
+  const [pageInput, setPageInput] = React.useState((currentPage || 1).toString());
 
   const [shouldRunSpellCheck, setShouldRunSpellCheck] = React.useState(false);
   const [loadedPages, setLoadedPages] = React.useState<any[]>(selectedBook.pages || []);
@@ -81,8 +89,37 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
 
   useEffect(() => {
     // Initial sync
-    setLoadedPages(selectedBook.pages || []);
-  }, [selectedBook.id]); // Only reset on book change, rely on subsequent fetch logic for updates
+    if (isGuestOrReader) {
+      setLoadedPages([]); // Start empty for restricted users to ensure they only see what we fetch
+    } else {
+      setLoadedPages(selectedBook.pages || []);
+    }
+  }, [selectedBook.id, isGuestOrReader]);
+
+  // Fetch specific page for restricted users
+  useEffect(() => {
+    if (isGuestOrReader && currentPage !== null) {
+      const fetchSpecificPage = async () => {
+        setIsLoadingMore(true);
+        try {
+          const pages = await PersistenceService.getBookPages(selectedBook.id, currentPage - 1, 1);
+          setLoadedPages(pages);
+          setPageInput(currentPage.toString());
+        } catch (err) {
+          console.error("Failed to fetch requested page", err);
+        } finally {
+          setIsLoadingMore(false);
+        }
+      };
+      fetchSpecificPage();
+    }
+  }, [selectedBook.id, currentPage, isGuestOrReader]);
+
+  useEffect(() => {
+    if (currentPage !== null) {
+      setPageInput(currentPage.toString());
+    }
+  }, [currentPage]);
 
   // Auto-resize textarea for page edit
   useEffect(() => {
@@ -93,7 +130,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   }, [tempPageText, editingPageNum]);
 
   const fetchMorePages = React.useCallback(async () => {
-    if (isLoadingMore || !hasMorePages) return;
+    if (isLoadingMore || !hasMorePages || isGuestOrReader) return;
     setIsLoadingMore(true);
 
     try {
@@ -249,20 +286,22 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
 
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-3">
-              {!isEditing ? (
-                <button
-                  onClick={handleEnterGlobalEdit}
-                  className="flex items-center gap-2 px-6 py-3 bg-[#0369a1] text-white text-sm font-normal rounded-2xl hover:bg-[#0284c7] transition-all active:scale-95 shadow-md uppercase border border-[#0369a1]/20"
-                >
-                  <Edit3 size={16} /> {t('common.edit')}
-                </button>
-              ) : (
-                <button
-                  onClick={onSaveCorrections}
-                  className="flex items-center gap-2 px-6 py-3 bg-[#0369a1] text-white text-sm font-normal rounded-2xl hover:bg-[#0284c7] transition-all active:scale-95 shadow-lg uppercase"
-                >
-                  <Save size={16} /> {t('common.save')}
-                </button>
+              {isEditor && (
+                !isEditing ? (
+                  <button
+                    onClick={handleEnterGlobalEdit}
+                    className="flex items-center gap-2 px-6 py-3 bg-[#0369a1] text-white text-sm font-normal rounded-2xl hover:bg-[#0284c7] transition-all active:scale-95 shadow-md uppercase border border-[#0369a1]/20"
+                  >
+                    <Edit3 size={16} /> {t('reader.editBook')}
+                  </button>
+                ) : (
+                  <button
+                    onClick={onSaveCorrections}
+                    className="flex items-center gap-2 px-6 py-3 bg-[#0369a1] text-white text-sm font-normal rounded-2xl hover:bg-[#0284c7] transition-all active:scale-95 shadow-lg uppercase"
+                  >
+                    <Save size={16} /> {t('common.save')}
+                  </button>
+                )
               )}
 
               <div className="flex items-center gap-1 bg-white/60 backdrop-blur-md border border-[#0369a1]/20 rounded-2xl p-1.5 shadow-sm">
@@ -283,6 +322,58 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                   <Plus size={16} />
                 </button>
               </div>
+
+              {isGuestOrReader && (
+                <div className="flex items-center gap-1 bg-white/60 backdrop-blur-md border border-[#0369a1]/20 rounded-2xl p-1.5 shadow-sm">
+                  <button
+                    onClick={() => setCurrentPage((currentPage || 1) - 1)}
+                    disabled={(currentPage || 1) <= 1}
+                    className="p-2 hover:bg-[#0369a1]/10 rounded-xl text-[#0369a1] transition-all active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed"
+                    title={t('reader.previous')}
+                  >
+                    <ChevronRight size={20} />
+                  </button>
+
+                  <div className="flex items-center gap-2 px-4 border-x border-[#0369a1]/10">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={pageInput}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '');
+                        setPageInput(val);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const val = parseInt(pageInput);
+                          if (!isNaN(val) && val >= 1 && val <= (selectedBook.totalPages || 9999)) {
+                            setCurrentPage(val);
+                          } else {
+                            setPageInput((currentPage || 1).toString());
+                          }
+                        }
+                      }}
+                      onBlur={() => {
+                        const val = parseInt(pageInput);
+                        if (isNaN(val) || val < 1 || val > (selectedBook.totalPages || 9999)) {
+                          setPageInput((currentPage || 1).toString());
+                        }
+                      }}
+                      className="w-10 text-center bg-transparent border-none focus:outline-none text-sm font-normal text-[#1a1a1a]"
+                    />
+                    <span className="text-sm font-normal text-[#94a3b8]">/ {selectedBook.totalPages || '?'}</span>
+                  </div>
+
+                  <button
+                    onClick={() => setCurrentPage((currentPage || 1) + 1)}
+                    disabled={(currentPage || 1) >= (selectedBook.totalPages || 9999)}
+                    className="p-2 hover:bg-[#0369a1]/10 rounded-xl text-[#0369a1] transition-all active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed"
+                    title={t('reader.next')}
+                  >
+                    <ChevronLeft size={20} />
+                  </button>
+                </div>
+              )}
 
               <button
                 onClick={() => {
@@ -332,13 +423,18 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
               />
             </div>
           ) : (
-            <div className="max-w-5xl mx-auto space-y-16 pb-40 px-4" dir="rtl">
+            <div className={`max-w-5xl mx-auto px-4 ${isGuestOrReader ? 'min-h-full flex flex-col justify-start pt-12 pb-20' : 'space-y-16 pb-40'}`} dir="rtl">
               {[...loadedPages]
                 .sort((a, b) => Number(a.pageNumber) - Number(b.pageNumber))
                 .filter((page, index, self) =>
                   self.findIndex(p => p.pageNumber === page.pageNumber) === index
                 )
-                .filter(page => editingPageNum === null || Number(page.pageNumber) === Number(editingPageNum))
+                .filter(page => {
+                  if (isGuestOrReader && currentPage !== null) {
+                    return Number(page.pageNumber) === Number(currentPage);
+                  }
+                  return editingPageNum === null || Number(page.pageNumber) === Number(editingPageNum);
+                })
                 .map((page) => (
                   <div
                     key={page.pageNumber}
@@ -349,13 +445,68 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                         pageRefs.current.delete(page.pageNumber);
                       }
                     }}
-                    onMouseEnter={() => setCurrentPage(page.pageNumber)}
+                    onMouseEnter={() => {
+                      if (!isGuestOrReader) {
+                        setCurrentPage(page.pageNumber);
+                      }
+                    }}
                     className={`group relative p-8 rounded-[32px] transition-all duration-500 ${currentPage === page.pageNumber ? 'bg-white shadow-2xl ring-1 ring-[#0369a1]/10 scale-[1.03]' : 'bg-transparent opacity-80 scale-100'}`}
                   >
                     <div className="flex items-center justify-between pb-6 mb-8 border-b border-[#0369a1]/5">
+                      <div className="flex items-center gap-2">
+                        {isEditor && editingPageNum === null && (
+                          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300">
+                            <button
+                              onClick={() => {
+                                if (page.isVerified) {
+                                  setModal({
+                                    isOpen: true,
+                                    title: t('reader.reprocess.title'),
+                                    message: t('reader.reprocess.message'),
+                                    type: 'confirm',
+                                    confirmText: t('reader.reprocess.confirm'),
+                                    destructive: true,
+                                    onConfirm: () => {
+                                      onReProcessPage(selectedBook.id, page.pageNumber);
+                                      setModal((prev: any) => ({ ...prev, isOpen: false }));
+                                    }
+                                  });
+                                } else {
+                                  onReProcessPage(selectedBook.id, page.pageNumber);
+                                }
+                              }}
+                              className="p-2.5 bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white rounded-xl transition-all shadow-sm"
+                              title={t('reader.reprocess.confirm')}
+                            >
+                              <RotateCcw size={16} strokeWidth={3} />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingPageNum(page.pageNumber);
+                                setTempPageText(page.text || '');
+                              }}
+                              className="flex items-center gap-2 px-4 py-2 bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white rounded-xl text-[14px] font-normal transition-all active:scale-95 shadow-sm uppercase border border-[#0369a1]/10"
+                            >
+                              <Edit3 size={14} strokeWidth={3} /> {t('reader.editPage')}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingPageNum(page.pageNumber);
+                                setTempPageText(page.text || '');
+                                setShouldRunSpellCheck(true);
+                              }}
+                              className="p-2.5 bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white rounded-xl transition-all shadow-sm"
+                              title={t('spellCheck.runCheck')}
+                            >
+                              <Wand2 size={16} strokeWidth={3} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
                       <div className="flex items-center gap-4">
                         <span className="text-[14px] font-normal text-[#94a3b8] uppercase">
-                          {t('common.page')} {page.pageNumber}
+                          {t('chat.pageNumber', { page: page.pageNumber })}
                         </span>
                         {currentPage === page.pageNumber && (page.status === 'pending' || page.status === 'processing') && (
                           <div className="flex items-center gap-2 px-3 py-1 bg-[#0369a1]/10 rounded-full">
@@ -370,55 +521,6 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                           </div>
                         )}
                       </div>
-
-                      {editingPageNum === null && (
-                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300">
-                          <button
-                            onClick={() => {
-                              if (page.isVerified) {
-                                setModal({
-                                  isOpen: true,
-                                  title: t('reader.reprocess.title'),
-                                  message: t('reader.reprocess.message'),
-                                  type: 'confirm',
-                                  confirmText: t('reader.reprocess.confirm'),
-                                  destructive: true,
-                                  onConfirm: () => {
-                                    onReProcessPage(selectedBook.id, page.pageNumber);
-                                    setModal((prev: any) => ({ ...prev, isOpen: false }));
-                                  }
-                                });
-                              } else {
-                                onReProcessPage(selectedBook.id, page.pageNumber);
-                              }
-                            }}
-                            className="p-2.5 bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white rounded-xl transition-all shadow-sm"
-                            title={t('reader.reprocess.confirm')}
-                          >
-                            <RotateCcw size={16} strokeWidth={3} />
-                          </button>
-                          <button
-                            onClick={() => {
-                              setEditingPageNum(page.pageNumber);
-                              setTempPageText(page.text || '');
-                            }}
-                            className="flex items-center gap-2 px-4 py-2 bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white rounded-xl text-[14px] font-normal transition-all active:scale-95 shadow-sm uppercase border border-[#0369a1]/10"
-                          >
-                            <Edit3 size={14} strokeWidth={3} /> {t('common.edit')}
-                          </button>
-                          <button
-                            onClick={() => {
-                              setEditingPageNum(page.pageNumber);
-                              setTempPageText(page.text || '');
-                              setShouldRunSpellCheck(true);
-                            }}
-                            className="p-2.5 bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white rounded-xl transition-all shadow-sm"
-                            title={t('spellCheck.runCheck')}
-                          >
-                            <Wand2 size={16} strokeWidth={3} />
-                          </button>
-                        </div>
-                      )}
                     </div>
 
                     {Number(editingPageNum) === Number(page.pageNumber) ? (
@@ -501,7 +603,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                 ))}
 
               {/* Loader Element for Intersection Observer */}
-              {hasMorePages && !isEditing && (
+              {hasMorePages && !isEditing && !isGuestOrReader && (
                 <div ref={observerTarget} className="flex justify-center p-12">
                   {isLoadingMore && (
                     <div className="flex flex-col items-center gap-4">
@@ -546,6 +648,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
               onSendMessage={onSendMessage}
               isChatting={isChatting}
               currentPage={currentPage}
+              usageStatus={usageStatus}
               chatContainerRef={chatContainerRef}
             />
           </GlassPanel>

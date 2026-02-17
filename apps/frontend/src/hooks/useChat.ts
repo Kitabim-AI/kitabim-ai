@@ -1,11 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { Message, Book } from '@shared/types';
-import { chatWithBook } from '../services/geminiService';
+import { chatWithBook, getChatUsage } from '../services/geminiService';
+import { useAuth } from './useAuth';
 
 export const useChat = (view: string, selectedBook: Book | null, currentPage: number | null) => {
+  const { isAuthenticated } = useAuth();
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [isChatting, setIsChatting] = useState(false);
+  const [usageStatus, setUsageStatus] = useState<{ usage: number, limit: number | null, hasReachedLimit: boolean } | null>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -18,9 +21,19 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     scrollToBottom();
   }, [chatMessages, isChatting, view]);
 
+  // Fetch usage status on mount and when messages change (after sending)
+  useEffect(() => {
+    if (isAuthenticated) {
+      getChatUsage().then(setUsageStatus);
+    } else {
+      setUsageStatus(null);
+    }
+  }, [isAuthenticated, chatMessages]);
+
   const handleSendMessage = async () => {
     if (!chatInput.trim()) return;
     if (view !== 'global-chat' && !selectedBook) return;
+    if (usageStatus?.hasReachedLimit) return;
 
     const userMsg: Message = { role: 'user', text: chatInput };
     setChatMessages(prev => [...prev, userMsg]);
@@ -53,6 +66,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     chatInput,
     setChatInput,
     isChatting,
+    usageStatus,
     handleSendMessage,
     clearChat,
     chatContainerRef,

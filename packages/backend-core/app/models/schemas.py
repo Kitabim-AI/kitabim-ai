@@ -100,3 +100,9 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     answer: str
+
+
+class ChatUsageStatus(BaseModel):
+    usage: int
+    limit: Optional[int]
+    has_reached_limit: bool
