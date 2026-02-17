@@ -38,9 +38,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     return (
       <div className="h-[calc(100vh-140px)] max-w-5xl mx-auto w-full flex flex-col gap-6 animate-fade-in py-4" dir="rtl">
         {/* Chat Header */}
-        <div className="bg-white/60 backdrop-blur-2xl px-8 py-6 flex items-center justify-between border border-[#75C5F0]/10 shadow-sm" style={{ borderRadius: '32px' }}>
+        <div className="bg-white/60 backdrop-blur-2xl px-8 py-6 flex items-center justify-between border border-[#0369a1]/10 shadow-sm" style={{ borderRadius: '32px' }}>
           <div className="flex items-center gap-5">
-            <div className="p-4 bg-[#75C5F0] text-white rounded-[24px] shadow-xl shadow-[#75C5F0]/20 transform rotate-3 transition-transform hover:rotate-0">
+            <div className="p-4 bg-[#0369a1] text-white rounded-[24px] shadow-xl shadow-[#0369a1]/20 transform rotate-3 transition-transform hover:rotate-0">
               <Globe size={28} strokeWidth={2.5} />
             </div>
             <div>
@@ -49,7 +49,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <div className="hidden md:flex items-center gap-3 px-6 py-2.5 bg-[#e8f4f8] text-[#75C5F0] rounded-2xl border border-[#75C5F0]/10 shadow-inner">
+            <div className="hidden md:flex items-center gap-3 px-6 py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner">
               <BookOpen size={18} strokeWidth={2.5} />
               <span className="text-sm font-black uppercase tracking-widest">
                 {t('chat.allBooks')} • {totalReady || books.filter(b => b.status === 'ready').length}
@@ -74,9 +74,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         >
           {chatMessages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center">
-              <div className="w-28 h-28 bg-[#e8f4f8] rounded-[40px] flex items-center justify-center mb-8 border-2 border-[#75C5F0]/10 shadow-lg relative group overflow-hidden">
-                <div className="absolute inset-0 bg-[#75C5F0]/10 animate-pulse" />
-                <MessageSquare className="text-[#75C5F0] w-14 h-14 relative z-10 transition-transform group-hover:scale-110" strokeWidth={2.5} />
+              <div className="w-28 h-28 bg-[#0369a1]/10 rounded-[40px] flex items-center justify-center mb-8 border-2 border-[#0369a1]/10 shadow-lg relative group overflow-hidden">
+                <div className="absolute inset-0 bg-[#0369a1]/10 animate-pulse" />
+                <MessageSquare className="text-[#0369a1] w-14 h-14 relative z-10 transition-transform group-hover:scale-110" strokeWidth={2.5} />
               </div>
               <h4 className="text-3xl font-black text-[#1a1a1a] mb-4 tracking-tight">{t('chat.welcome.title')}</h4>
               <p className="text-slate-500 font-bold max-w-lg leading-loose text-lg">
@@ -87,8 +87,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             chatMessages.map((msg, idx) => (
               <div key={idx} className={`flex gap-6 ${msg.role === 'user' ? 'flex-row' : 'flex-row-reverse'} items-start animate-fade-in`}>
                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transition-all transform hover:scale-110 ${msg.role === 'user'
-                  ? 'bg-white border-2 border-[#75C5F0]/10 text-[#75C5F0]'
-                  : 'bg-[#75C5F0] text-white shadow-[#75C5F0]/30'
+                  ? 'bg-white border-2 border-[#0369a1]/10 text-[#0369a1]'
+                  : 'bg-[#0369a1] text-white shadow-[#0369a1]/30'
                   }`}>
                   {msg.role === 'user' ? <User size={24} strokeWidth={2.5} /> : <Bot size={24} strokeWidth={2.5} />}
                 </div>
@@ -97,8 +97,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     {msg.role === 'user' ? t('chat.you') : t('chat.ai')}
                   </span>
                   <div className={`px-8 py-5 rounded-[28px] text-lg font-black leading-loose uyghur-text shadow-sm ${msg.role === 'user'
-                    ? 'bg-white/80 border border-[#75C5F0]/10 text-[#1a1a1a] rounded-tr-none'
-                    : 'bg-[#75C5F0] text-white rounded-tl-none shadow-xl shadow-[#75C5F0]/10'
+                    ? 'bg-white/80 border border-[#0369a1]/10 text-[#1a1a1a] rounded-tr-none'
+                    : 'bg-[#0369a1] text-white rounded-tl-none shadow-xl shadow-[#0369a1]/10'
                     }`}>
                     {msg.text}
                   </div>
@@ -108,20 +108,20 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           )}
           {isChatting && (
             <div className="flex flex-row-reverse gap-6 items-start animate-fade-in">
-              <div className="w-12 h-12 rounded-2xl bg-[#75C5F0] text-white flex items-center justify-center shadow-xl shadow-[#75C5F0]/20 animate-pulse">
+              <div className="w-12 h-12 rounded-2xl bg-[#0369a1] text-white flex items-center justify-center shadow-xl shadow-[#0369a1]/20 animate-pulse">
                 <Bot size={24} strokeWidth={2.5} />
               </div>
-              <div className="bg-[#e8f4f8] px-8 py-5 rounded-[28px] rounded-tl-none flex gap-2 items-center border border-[#75C5F0]/10 shadow-sm animate-bounce">
-                <div className="w-2 h-2 bg-[#75C5F0] rounded-full animate-bounce" />
-                <div className="w-2 h-2 bg-[#75C5F0] rounded-full animate-bounce [animation-delay:0.2s]" />
-                <div className="w-2 h-2 bg-[#75C5F0] rounded-full animate-bounce [animation-delay:0.4s]" />
+              <div className="bg-[#0369a1]/10 px-8 py-5 rounded-[28px] rounded-tl-none flex gap-2 items-center border border-[#0369a1]/10 shadow-sm animate-bounce">
+                <div className="w-2 h-2 bg-[#0369a1] rounded-full animate-bounce" />
+                <div className="w-2 h-2 bg-[#0369a1] rounded-full animate-bounce [animation-delay:0.2s]" />
+                <div className="w-2 h-2 bg-[#0369a1] rounded-full animate-bounce [animation-delay:0.4s]" />
               </div>
             </div>
           )}
         </div>
 
         {/* Input Bar */}
-        <div className="bg-white px-6 py-5 border-2 border-[#75C5F0] shadow-[0_24px_64px_rgba(117,197,240,0.2)] relative transition-all focus-within:shadow-[0_24px_64px_rgba(117,197,240,0.3)]" style={{ borderRadius: '32px' }}>
+        <div className="bg-white px-6 py-5 border-2 border-[#0369a1] shadow-[0_24px_64px_rgba(3,105,161,0.2)] relative transition-all focus-within:shadow-[0_24px_64px_rgba(3,105,161,0.3)]" style={{ borderRadius: '32px' }}>
           <div className="flex gap-4 items-center">
             <input
               type="text"
@@ -135,7 +135,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             <button
               onClick={onSendMessage}
               disabled={isChatting || !chatInput.trim()}
-              className="px-10 py-4 bg-[#75C5F0] hover:bg-[#5AB0E5] text-white rounded-[24px] font-black flex items-center gap-4 transition-all active:scale-95 shadow-xl shadow-[#75C5F0]/20 disabled:opacity-30 disabled:grayscale"
+              className="px-10 py-4 bg-[#0369a1] hover:bg-[#0284c7] text-white rounded-[24px] font-black flex items-center gap-4 transition-all active:scale-95 shadow-xl shadow-[#0369a1]/20 disabled:opacity-30 disabled:grayscale"
             >
               {t('common.send')}
               <Send size={20} strokeWidth={3} />
@@ -149,9 +149,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   // Sidebar (Reader) Chat Version
   return (
     <div className="h-full flex flex-col gap-6 animate-fade-in relative" dir="rtl">
-      <div className="bg-white/60 backdrop-blur-xl p-5 flex items-center justify-between border border-[#75C5F0]/10 shadow-sm" style={{ borderRadius: '24px' }}>
+      <div className="bg-white/60 backdrop-blur-xl p-5 flex items-center justify-between border border-[#0369a1]/10 shadow-sm" style={{ borderRadius: '24px' }}>
         <div className="flex items-center gap-4">
-          <div className="p-2.5 bg-[#75C5F0] text-white rounded-2xl shadow-lg shadow-[#75C5F0]/10">
+          <div className="p-2.5 bg-[#0369a1] text-white rounded-2xl shadow-lg shadow-[#0369a1]/10">
             <MessageSquare size={18} strokeWidth={2.5} />
           </div>
           <div>
@@ -160,7 +160,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           </div>
         </div>
         {currentPage && (
-          <div className="bg-[#e8f4f8] text-[#75C5F0] px-3 py-1 rounded-xl text-[14px] font-black border border-[#75C5F0]/10 shadow-inner">
+          <div className="bg-[#0369a1]/10 text-[#0369a1] px-3 py-1 rounded-xl text-[14px] font-black border border-[#0369a1]/10 shadow-inner">
             {t('chat.pageNumber', { page: currentPage })}
           </div>
         )}
@@ -171,8 +171,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         className="flex-grow overflow-y-auto space-y-6 px-4 custom-scrollbar-mini py-2"
       >
         {chatMessages.length === 0 && (
-          <div className="text-center py-20 px-8 bg-white/40 border-2 border-dashed border-[#75C5F0]/10 rounded-[32px] flex flex-col items-center justify-center gap-4 opacity-60">
-            <Bot size={40} className="text-[#75C5F0]" strokeWidth={1} />
+          <div className="text-center py-20 px-8 bg-white/40 border-2 border-dashed border-[#0369a1]/10 rounded-[32px] flex flex-col items-center justify-center gap-4 opacity-60">
+            <Bot size={40} className="text-[#0369a1]" strokeWidth={1} />
             <p className="text-sm text-[#1a1a1a] font-black leading-loose">
               {t('chat.bookAssistantWelcome')}
             </p>
@@ -180,14 +180,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         )}
         {chatMessages.map((msg, idx) => (
           <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row' : 'flex-row-reverse'} items-start animate-fade-in`}>
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm shadow-sm ${msg.role === 'user' ? 'bg-[#e8f4f8] text-[#75C5F0]' : 'bg-[#75C5F0] text-white'
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm shadow-sm ${msg.role === 'user' ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'bg-[#0369a1] text-white'
               }`}>
               {msg.role === 'user' ? <User size={18} strokeWidth={2.5} /> : <Bot size={18} strokeWidth={2.5} />}
             </div>
             <div className={`flex flex-col gap-1.5 max-w-[85%] ${msg.role === 'user' ? 'items-start' : 'items-end'}`}>
               <div className={`px-5 py-3.5 rounded-2xl text-sm font-black leading-relaxed shadow-sm ${msg.role === 'user'
-                ? 'bg-white/80 border border-[#75C5F0]/10 text-[#1a1a1a] rounded-tr-none'
-                : 'bg-[#75C5F0] text-white rounded-tl-none shadow-lg shadow-[#75C5F0]/5'
+                ? 'bg-white/80 border border-[#0369a1]/10 text-[#1a1a1a] rounded-tr-none'
+                : 'bg-[#0369a1] text-white rounded-tl-none shadow-lg shadow-[#0369a1]/5'
                 }`}>
                 {msg.text}
               </div>
@@ -196,14 +196,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         ))}
         {isChatting && (
           <div className="flex flex-row-reverse gap-3 items-center px-4 animate-fade-in">
-            <div className="w-1.5 h-1.5 bg-[#75C5F0] rounded-full animate-bounce" />
-            <div className="w-1.5 h-1.5 bg-[#75C5F0] rounded-full animate-bounce [animation-delay:0.2s]" />
-            <div className="w-1.5 h-1.5 bg-[#75C5F0] rounded-full animate-bounce [animation-delay:0.4s]" />
+            <div className="w-1.5 h-1.5 bg-[#0369a1] rounded-full animate-bounce" />
+            <div className="w-1.5 h-1.5 bg-[#0369a1] rounded-full animate-bounce [animation-delay:0.2s]" />
+            <div className="w-1.5 h-1.5 bg-[#0369a1] rounded-full animate-bounce [animation-delay:0.4s]" />
           </div>
         )}
       </div>
 
-      <div className="relative mt-auto p-2 bg-white/60 backdrop-blur-xl border border-[#75C5F0]/10 shadow-lg" style={{ borderRadius: '24px' }}>
+      <div className="relative mt-auto p-2 bg-white/60 backdrop-blur-xl border border-[#0369a1]/10 shadow-lg" style={{ borderRadius: '24px' }}>
         <input
           type="text"
           placeholder={t('chat.inputPlaceholderBook')}
@@ -216,7 +216,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         <button
           onClick={onSendMessage}
           disabled={isChatting || !chatInput.trim()}
-          className="absolute left-3 top-1/2 -translate-y-1/2 p-3 bg-[#75C5F0] text-white rounded-2xl shadow-lg shadow-[#75C5F0]/20 hover:scale-105 active:scale-90 transition-all disabled:opacity-30"
+          className="absolute left-3 top-1/2 -translate-y-1/2 p-3 bg-[#0369a1] text-white rounded-2xl shadow-lg shadow-[#0369a1]/20 hover:scale-105 active:scale-90 transition-all disabled:opacity-30"
         >
           <Send size={16} strokeWidth={3} />
         </button>

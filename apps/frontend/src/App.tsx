@@ -209,17 +209,17 @@ const App: React.FC = () => {
         setPage={setPage}
       />
 
-      <main className="flex-grow p-8 max-w-7xl mx-auto w-full relative z-10">
+      <main className="flex-grow p-8 max-w-[1600px] mx-auto w-full relative z-10">
         {isLoading && view !== 'reader' && (
           <div className="absolute inset-0 bg-white/40 backdrop-blur-md z-40 flex items-center justify-center min-h-[400px] rounded-[40px]">
             <div className="flex flex-col items-center gap-6">
               <div className="relative">
-                <div className="w-16 h-16 border-4 border-[#e8f4f8] border-t-[#75C5F0] rounded-full animate-spin"></div>
-                <div className="absolute inset-0 flex items-center justify-center text-[#75C5F0]">
+                <div className="w-16 h-16 border-4 border-[#0369a1]/10 border-t-[#0369a1] rounded-full animate-spin"></div>
+                <div className="absolute inset-0 flex items-center justify-center text-[#0369a1]">
                   <RefreshCw size={24} className="animate-pulse" />
                 </div>
               </div>
-              <span className="text-sm font-black text-[#75C5F0] uppercase tracking-[0.3em] animate-pulse">{t('common.loadingApp')}</span>
+              <span className="text-sm font-black text-[#0369a1] uppercase tracking-[0.3em] animate-pulse">{t('common.loadingApp')}</span>
             </div>
           </div>
         )}

@@ -36,7 +36,7 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
   return (
     <div className="space-y-8 animate-fade-in" dir="rtl">
       {/* Tab Navigation */}
-      <div className="flex items-center gap-4 border-b border-[#75C5F0]/10">
+      <div className="flex items-center gap-4 border-b border-[#0369a1]/10">
         {visibleTabs.map((tab) => (
           <button
             key={tab.id}
@@ -45,8 +45,8 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
               flex items-center gap-3 px-8 py-4 text-sm font-black uppercase tracking-widest
               border-b-4 transition-all active:scale-95
               ${activeTab === tab.id
-                ? 'border-[#75C5F0] text-[#1a1a1a]'
-                : 'border-transparent text-slate-400 hover:text-[#75C5F0] hover:border-[#75C5F0]/30'
+                ? 'border-[#0369a1] text-[#1a1a1a]'
+                : 'border-transparent text-slate-400 hover:text-[#0369a1] hover:border-[#0369a1]/30'
               }
             `}
           >

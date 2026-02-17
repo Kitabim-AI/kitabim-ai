@@ -95,7 +95,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
       {/* Search Section */}
       <div className="w-full max-w-3xl px-4 relative mb-12">
         <div className="relative group">
-          <div className="absolute inset-y-0 right-0 pr-6 flex items-center pointer-events-none text-[#94a3b8] group-focus-within:text-[#75C5F0] transition-colors z-10">
+          <div className="absolute inset-y-0 right-0 pr-6 flex items-center pointer-events-none text-[#94a3b8] group-focus-within:text-[#0369a1] transition-colors z-10">
             <Search size={22} strokeWidth={3} />
           </div>
           <input
@@ -110,7 +110,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute inset-y-0 left-8 flex items-center text-[#94a3b8] hover:text-[#75C5F0] transition-colors z-10"
+              className="absolute inset-y-0 left-6 flex items-center text-[#94a3b8] hover:text-[#0369a1] transition-colors z-10"
             >
               <X size={24} strokeWidth={3} />
             </button>
@@ -155,7 +155,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-8 gap-y-16 justify-items-center">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-8 gap-y-16 justify-items-center">
             {books.map(book => (
               <BookCard
                 key={book.id}

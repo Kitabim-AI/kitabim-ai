@@ -18,7 +18,7 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick }) => {
   return (
     <div
       onClick={() => onClick(book)}
-      className="group relative w-full max-w-[200px] bg-white/80 backdrop-blur-[20px] rounded-3xl p-7 cursor-pointer transition-all duration-400 border border-[rgba(255,193,7,0.15)] hover:border-[rgba(255,193,7,0.3)]"
+      className="group relative w-full max-w-[260px] bg-white/80 backdrop-blur-[20px] rounded-3xl p-7 cursor-pointer transition-all duration-400 border border-[rgba(255,193,7,0.15)] hover:border-[rgba(255,193,7,0.3)]"
       style={{
         backdropFilter: 'blur(20px) saturate(180%)',
         WebkitBackdropFilter: 'blur(20px) saturate(180%)',

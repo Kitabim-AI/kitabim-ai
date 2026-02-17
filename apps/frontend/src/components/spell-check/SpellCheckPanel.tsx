@@ -57,9 +57,9 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
   return (
     <div className="h-full flex flex-col gap-6 animate-fade-in relative" dir="rtl">
       {/* Header */}
-      <div className="bg-white/60 backdrop-blur-xl p-6 flex flex-col gap-5 border border-[#75C5F0]/10 shadow-sm" style={{ borderRadius: '28px' }}>
+      <div className="bg-white/60 backdrop-blur-xl p-6 flex flex-col gap-5 border border-[#0369a1]/10 shadow-sm" style={{ borderRadius: '28px' }}>
         <div className="flex items-center gap-4">
-          <div className="p-3 bg-[#e8f4f8] text-[#75C5F0] rounded-2xl shadow-xl shadow-[#75C5F0]/5">
+          <div className="p-3 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl shadow-xl shadow-[#0369a1]/5">
             <Wand2 size={24} strokeWidth={2.5} />
           </div>
           <div>
@@ -71,7 +71,7 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
         <button
           onClick={onRunSpellCheck}
           disabled={isChecking || !pageText.trim()}
-          className="w-full flex items-center justify-center gap-4 px-6 py-4 bg-[#75C5F0] text-white rounded-2xl font-black text-sm transition-all active:scale-95 shadow-xl shadow-[#75C5F0]/20 disabled:opacity-30 disabled:grayscale group"
+          className="w-full flex items-center justify-center gap-4 px-6 py-4 bg-[#0369a1] text-white rounded-2xl font-black text-sm transition-all active:scale-95 shadow-xl shadow-[#0369a1]/20 disabled:opacity-30 disabled:grayscale group"
         >
           {isChecking ? (
             <>
@@ -91,8 +91,8 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
       <div className="flex-grow overflow-y-auto space-y-6 px-2 custom-scrollbar-mini py-4">
         {!spellCheckResult && !isChecking && (
           <div className="text-center py-24 flex flex-col items-center gap-6 opacity-30 group">
-            <div className="p-8 bg-[#e8f4f8] rounded-[40px] transition-all group-hover:scale-110">
-              <Wand2 size={48} className="text-[#75C5F0]" strokeWidth={1} />
+            <div className="p-8 bg-[#0369a1]/10 rounded-[40px] transition-all group-hover:scale-110">
+              <Wand2 size={48} className="text-[#0369a1]" strokeWidth={1} />
             </div>
             <p className="text-sm font-black text-[#1a1a1a] tracking-widest uppercase">{t('spellCheck.clickTip')}</p>
           </div>
@@ -101,8 +101,8 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
         {isChecking && (
           <div className="text-center py-24 flex flex-col items-center gap-6">
             <div className="relative">
-              <div className="w-16 h-16 border-4 border-[#e8f4f8] border-t-[#75C5F0] rounded-full animate-spin"></div>
-              <div className="absolute inset-0 flex items-center justify-center text-[#75C5F0]">
+              <div className="w-16 h-16 border-4 border-[#0369a1]/10 border-t-[#0369a1] rounded-full animate-spin"></div>
+              <div className="absolute inset-0 flex items-center justify-center text-[#0369a1]">
                 <Wand2 size={24} className="animate-pulse" />
               </div>
             </div>
@@ -132,7 +132,7 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
             {pendingCorrections.map((correction, idx) => (
               <div
                 key={idx}
-                className="bg-white/80 backdrop-blur-md border border-[#75C5F0]/10 rounded-3xl p-6 space-y-5 shadow-sm hover:shadow-xl hover:shadow-[#75C5F0]/5 transition-all group animate-fade-in"
+                className="bg-white/80 backdrop-blur-md border border-[#0369a1]/10 rounded-3xl p-6 space-y-5 shadow-sm hover:shadow-xl hover:shadow-[#0369a1]/5 transition-all group animate-fade-in"
                 style={{ animationDelay: `${idx * 0.1}s` }}
               >
                 <div className="space-y-4">
@@ -147,7 +147,7 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
 
                   {correction.context && (
                     <div className="p-4 bg-[#f8fafc] rounded-2xl border border-slate-100 uyghur-text text-sm leading-loose text-slate-500 italic relative overflow-hidden">
-                      <div className="absolute top-0 right-0 w-1 h-full bg-[#75C5F0]/30" />
+                      <div className="absolute top-0 right-0 w-1 h-full bg-[#0369a1]/30" />
                       ...{correction.context}...
                     </div>
                   )}
@@ -161,7 +161,7 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
                   <span className="text-[14px] font-black text-slate-300 uppercase tracking-widest px-1">{t('spellCheck.suggestion')}</span>
                   <button
                     onClick={() => onApplyCorrection(correction)}
-                    className="flex items-center justify-between px-6 py-4 bg-[#75C5F0] text-white rounded-2xl font-black text-lg transition-all active:scale-95 shadow-lg shadow-[#75C5F0]/10 hover:shadow-xl hover:shadow-[#75C5F0]/20"
+                    className="flex items-center justify-between px-6 py-4 bg-[#0369a1] text-white rounded-2xl font-black text-lg transition-all active:scale-95 shadow-lg shadow-[#0369a1]/10 hover:shadow-xl hover:shadow-[#0369a1]/20"
                   >
                     <span className="uyghur-text">{correction.corrected}</span>
                     <Check size={20} strokeWidth={3} />
@@ -181,7 +181,7 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
       </div>
 
       {spellCheckResult && (appliedCorrections.size > 0 || ignoredCorrections.size > 0) && (
-        <div className="bg-white/40 backdrop-blur-md px-6 py-4 border border-[#75C5F0]/5 flex items-center justify-between text-[14px] font-black text-[#94a3b8] uppercase tracking-widest" style={{ borderRadius: '20px' }}>
+        <div className="bg-white/40 backdrop-blur-md px-6 py-4 border border-[#0369a1]/5 flex items-center justify-between text-[14px] font-black text-[#94a3b8] uppercase tracking-widest" style={{ borderRadius: '20px' }}>
           <span>{t('spellCheck.applied')}: <span className="text-[#1a1a1a]">{appliedCorrections.size}</span></span>
           <div className="w-1 h-1 bg-slate-200 rounded-full" />
           <span>{t('spellCheck.ignored')}: <span className="text-[#1a1a1a]">{ignoredCorrections.size}</span></span>
