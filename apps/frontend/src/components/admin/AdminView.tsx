@@ -230,7 +230,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
           <div className="overflow-x-auto">
             <table className="w-full text-right min-w-[1100px]" dir="rtl">
               <thead>
-                <tr className="bg-[#0369a1]/5 border-b border-[#0369a1]/10 text-sm font-black text-[#0369a1] uppercase tracking-widest">
+                <tr className="bg-[#0369a1]/5 border-b border-[#0369a1]/10 text-[16px] font-black text-[#0369a1] uppercase tracking-widest">
                   <th className="px-8 py-5 text-right font-black">
                     {t('admin.table.bookName')}
                   </th>
@@ -268,7 +268,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                                 if (e.key === 'Enter') handleSaveTitle(book.id, tempTitle);
                                 if (e.key === 'Escape') setEditingBookTitleId(null);
                               }}
-                              className="px-3 py-2 text-sm border-2 border-[#0369a1] rounded-xl bg-white w-full outline-none focus:ring-4 focus:ring-[#0369a1]/5"
+                              className="px-3 py-2 text-[16px] border-2 border-[#0369a1] rounded-xl bg-white w-full outline-none focus:ring-4 focus:ring-[#0369a1]/5"
                             />
                             <button
                               onClick={() => handleSaveTitle(book.id, tempTitle)}
@@ -291,7 +291,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                             }}
                             className="cursor-pointer group/title"
                           >
-                            <span className="font-black text-[#1a1a1a] text-base group-hover/title:text-[#0369a1] transition-colors">
+                            <span className="font-black text-[#1a1a1a] text-[19px] group-hover/title:text-[#0369a1] transition-colors">
                               {book.title}
                             </span>
                             <div className="flex items-center gap-2 mt-1">
@@ -317,7 +317,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                               if (e.key === 'Enter') handleSaveVolume(book.id, tempVolume);
                               if (e.key === 'Escape') setEditingBookVolumeId(null);
                             }}
-                            className="no-spinner px-3 py-2 text-sm border-2 border-[#0369a1] rounded-xl bg-white w-full outline-none"
+                            className="no-spinner px-3 py-2 text-[16px] border-2 border-[#0369a1] rounded-xl bg-white w-full outline-none"
                           />
                         </div>
                       ) : (
@@ -329,7 +329,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                           className="cursor-pointer p-2 hover:bg-[#0369a1]/5 rounded-xl transition-colors text-center"
                         >
                           {book.volume !== null && book.volume !== undefined ? (
-                            <span className="text-sm font-black text-[#1a1a1a]">
+                            <span className="text-[18px] font-black text-[#1a1a1a]">
                               {t('book.volume', { volume: book.volume })}
                             </span>
                           ) : (
@@ -350,7 +350,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                               if (e.key === 'Enter') handleSaveAuthor(book.id, tempAuthor);
                               if (e.key === 'Escape') setEditingBookAuthorId(null);
                             }}
-                            className="px-3 py-2 text-sm border-2 border-[#0369a1] rounded-xl bg-white w-full outline-none"
+                            className="px-3 py-2 text-[16px] border-2 border-[#0369a1] rounded-xl bg-white w-full outline-none"
                           />
                         </div>
                       ) : (
@@ -362,7 +362,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                           className="cursor-pointer p-2 hover:bg-[#0369a1]/5 rounded-xl transition-colors"
                         >
                           {book.author && book.author !== 'Unknown Author' ? (
-                            <span className="text-sm font-black text-[#1a1a1a]">
+                            <span className="text-[16px] font-black text-[#1a1a1a]">
                               {book.author}
                             </span>
                           ) : (
@@ -453,7 +453,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                                 setActiveMenuId(null);
                               }}
                               disabled={book.status === 'pending'}
-                              className={`w-full flex items-center gap-3 px-5 py-3 text-sm font-black transition-colors ${book.status === 'pending'
+                              className={`w-full flex items-center gap-3 px-5 py-3 text-[16px] font-black transition-colors ${book.status === 'pending'
                                 ? 'text-slate-300 cursor-not-allowed'
                                 : 'text-[#1a1a1a] hover:bg-[#0369a1]/10 hover:text-[#0369a1]'
                                 }`}
@@ -466,7 +466,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                                 onToggleVisibility(book.id, book.visibility || 'public');
                                 setActiveMenuId(null);
                               }}
-                              className="w-full flex items-center gap-3 px-5 py-3 text-sm font-black text-[#1a1a1a] hover:bg-[#0369a1]/10 hover:text-[#0369a1] transition-colors"
+                              className="w-full flex items-center gap-3 px-5 py-3 text-[16px] font-black text-[#1a1a1a] hover:bg-[#0369a1]/10 hover:text-[#0369a1] transition-colors"
                             >
                               {book.visibility === 'private' ? (
                                 <><Shield size={16} /> {t('admin.table.makePublic')}</>
@@ -494,7 +494,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                                       setActiveMenuId(null);
                                     }}
                                     disabled={!canStartOcr}
-                                    className={`w-full flex items-center gap-3 px-5 py-3 text-sm font-black transition-colors ${canStartOcr ? 'text-[#0369a1] hover:bg-[#0369a1]/10' : 'text-slate-300 cursor-not-allowed'
+                                    className={`w-full flex items-center gap-3 px-5 py-3 text-[16px] font-black transition-colors ${canStartOcr ? 'text-[#0369a1] hover:bg-[#0369a1]/10' : 'text-slate-300 cursor-not-allowed'
                                       }`}
                                   >
                                     <ScanText size={16} /> {t('admin.table.startOcr')}
@@ -506,7 +506,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                                       setActiveMenuId(null);
                                     }}
                                     disabled={!canRetry}
-                                    className={`w-full flex items-center gap-3 px-5 py-3 text-sm font-black transition-colors ${canRetry ? 'text-amber-600 hover:bg-amber-50' : 'text-slate-300 cursor-not-allowed'
+                                    className={`w-full flex items-center gap-3 px-5 py-3 text-[16px] font-black transition-colors ${canRetry ? 'text-amber-600 hover:bg-amber-50' : 'text-slate-300 cursor-not-allowed'
                                       }`}
                                   >
                                     <RotateCcw size={16} /> {t('admin.table.retryOcr')}
@@ -518,7 +518,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                                       setActiveMenuId(null);
                                     }}
                                     disabled={!canReindex}
-                                    className={`w-full flex items-center gap-3 px-5 py-3 text-sm font-black transition-colors ${canReindex ? 'text-blue-600 hover:bg-blue-50' : 'text-slate-300 cursor-not-allowed'
+                                    className={`w-full flex items-center gap-3 px-5 py-3 text-[16px] font-black transition-colors ${canReindex ? 'text-blue-600 hover:bg-blue-50' : 'text-slate-300 cursor-not-allowed'
                                       }`}
                                   >
                                     <RefreshCw size={16} /> {t('admin.table.reindex')}
@@ -534,7 +534,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                                 onDeleteBook(book.id);
                                 setActiveMenuId(null);
                               }}
-                              className="w-full flex items-center gap-3 px-5 py-3 text-sm font-black text-red-600 hover:bg-red-50 transition-colors"
+                              className="w-full flex items-center gap-3 px-5 py-3 text-[16px] font-black text-red-600 hover:bg-red-50 transition-colors"
                             >
                               <Trash2 size={16} /> {t('admin.table.delete')}
                             </button>

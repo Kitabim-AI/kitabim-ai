@@ -37,7 +37,7 @@ const UserRow: React.FC<UserRowProps> = ({ user, onRoleChange, onStatusChange, i
             className="w-10 h-10 rounded-full object-cover ring-2 ring-[#0369a1]/20"
           />
           <div>
-            <div className="font-black text-[#1a1a1a] text-sm">{user.display_name}</div>
+            <div className="font-black text-[#1a1a1a] text-[19px]">{user.display_name}</div>
             <div className="text-[14px] font-bold text-[#94a3b8] uppercase tracking-wider">{user.email}</div>
           </div>
         </div>
@@ -47,7 +47,7 @@ const UserRow: React.FC<UserRowProps> = ({ user, onRoleChange, onStatusChange, i
         <button
           onClick={() => setShowRoleDropdown(!showRoleDropdown)}
           disabled={isUpdating}
-          className={`inline-flex items-center gap-2 px-3 py-1.5 ${roleColors[user.role]?.bg || 'bg-slate-50'} ${roleColors[user.role]?.text || 'text-slate-500'} rounded-lg text-[14px] font-black uppercase tracking-wider transition-all active:scale-95 disabled:opacity-50 border border-current/10`}
+          className={`inline-flex items-center gap-2 px-3 py-1.5 ${roleColors[user.role]?.bg || 'bg-slate-50'} ${roleColors[user.role]?.text || 'text-slate-500'} rounded-lg text-[16px] font-black uppercase tracking-wider transition-all active:scale-95 disabled:opacity-50 border border-current/10`}
         >
           {roleColors[user.role]?.label || user.role}
           <svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor">
@@ -66,7 +66,7 @@ const UserRow: React.FC<UserRowProps> = ({ user, onRoleChange, onStatusChange, i
                     onRoleChange(user.id, role);
                   }
                 }}
-                className={`w-full flex items-center px-5 py-3 text-[14px] font-black uppercase tracking-wider transition-all ${role === user.role ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
+                className={`w-full flex items-center px-5 py-3 text-[16px] font-black uppercase tracking-wider transition-all ${role === user.role ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
               >
                 {roleColors[role].label}
               </button>
@@ -79,7 +79,7 @@ const UserRow: React.FC<UserRowProps> = ({ user, onRoleChange, onStatusChange, i
         <button
           onClick={() => onStatusChange(user.id, !user.is_active)}
           disabled={isUpdating}
-          className={`px-3 py-1.5 rounded-lg text-[14px] font-black uppercase tracking-wider transition-all active:scale-95 disabled:opacity-50 border ${user.is_active
+          className={`px-3 py-1.5 rounded-lg text-[16px] font-black uppercase tracking-wider transition-all active:scale-95 disabled:opacity-50 border ${user.is_active
             ? 'bg-emerald-50 text-emerald-600 border-emerald-500/10'
             : 'bg-red-50 text-red-600 border-red-500/10'}`}
         >
@@ -87,7 +87,7 @@ const UserRow: React.FC<UserRowProps> = ({ user, onRoleChange, onStatusChange, i
         </button>
       </td>
 
-      <td className="px-8 py-5 text-[14px] font-bold text-[#94a3b8]">
+      <td className="px-8 py-5 text-[16px] font-bold text-[#94a3b8]">
         {formatDate(user.created_at)}
       </td>
     </tr>
@@ -196,7 +196,7 @@ export function UserManagementPanel() {
             setRoleFilter(e.target.value);
             setPage(1);
           }}
-          className="bg-white/50 backdrop-blur-md border border-[#0369a1]/20 rounded-xl px-4 py-2 text-sm font-black outline-none focus:ring-4 focus:ring-[#0369a1]/5 text-[#1a1a1a] cursor-pointer hover:bg-white transition-all shadow-sm"
+          className="bg-white/50 backdrop-blur-md border border-[#0369a1]/20 rounded-xl px-4 py-2 text-[16px] font-black outline-none focus:ring-4 focus:ring-[#0369a1]/5 text-[#1a1a1a] cursor-pointer hover:bg-white transition-all shadow-sm"
         >
           <option value="all">{t('admin.users.allRoles')}</option>
           <option value="admin">{t('admin.users.admins')}</option>
@@ -222,7 +222,7 @@ export function UserManagementPanel() {
       <div className="overflow-x-auto">
         <table className="w-full text-right" dir="rtl">
           <thead>
-            <tr className="bg-[#0369a1]/5 text-[14px] font-black text-[#0369a1] uppercase tracking-[0.2em] border-b border-[#0369a1]/10">
+            <tr className="bg-[#0369a1]/5 text-[16px] font-black text-[#0369a1] uppercase tracking-[0.2em] border-b border-[#0369a1]/10">
               <th className="px-8 py-4">{t('admin.users.user')}</th>
               <th className="px-8 py-4">{t('admin.users.role')}</th>
               <th className="px-8 py-4">{t('admin.users.status')}</th>

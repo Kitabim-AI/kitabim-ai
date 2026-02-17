@@ -221,7 +221,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   };
 
   return (
-    <div className="h-[calc(100vh-140px)] flex gap-6 animate-fade-in py-4">
+    <div className="h-[calc(100vh-140px)] flex flex-row-reverse gap-6 animate-fade-in py-4">
       {/* Main Content Area */}
       <div className="flex-grow glass-panel flex flex-col overflow-hidden" style={{ borderRadius: '32px' }}>
         {/* Header Ribbon */}

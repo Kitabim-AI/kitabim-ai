@@ -42,7 +42,7 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`
-              flex items-center gap-3 px-8 py-4 text-sm font-black uppercase tracking-widest
+              flex items-center gap-3 px-8 py-4 text-[16px] font-black uppercase tracking-widest
               border-b-4 transition-all active:scale-95
               ${activeTab === tab.id
                 ? 'border-[#0369a1] text-[#1a1a1a]'

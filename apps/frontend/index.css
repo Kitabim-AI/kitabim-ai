@@ -9,13 +9,7 @@
 }
 
 @font-face {
-  font-family: "UKIJ Basma";
-  src: url("https://db.onlinewebfonts.com/t/a6de9c543fd24caeace53b09d3919023.woff2") format("woff2"),
-    url("https://db.onlinewebfonts.com/t/a6de9c543fd24caeace53b09d3919023.woff") format("woff");
-}
-
-@font-face {
-  font-family: "UKIJ Tuz Basma";
+  font-family: "UKIJ Basma Tuz";
   src: url("https://db.onlinewebfonts.com/t/986df8736e8a110a1fb0b3b0f4280462.woff2") format("woff2"),
     url("https://db.onlinewebfonts.com/t/986df8736e8a110a1fb0b3b0f4280462.woff") format("woff");
 }
@@ -66,9 +60,9 @@ html {
   --glass-blur: blur(20px) saturate(180%);
   --glass-border: 1px solid rgba(255, 193, 7, 0.15);
 
-  --font-uyghur: "UKIJ Tuz Basma", "UKIJ Basma", "UKIJ Nasq", "ALKATIP Tor", "Noto Naskh Arabic", "Arabic Typesetting", "Traditional Arabic", serif;
-  --font-headers: "UKIJ Tuz Basma", "UKIJ Basma", "UKIJ Nasq", "ALKATIP Tor", "Noto Naskh Arabic", "Arabic Typesetting", "Traditional Arabic", serif;
-  --font-nav: "UKIJ Tuz Tom", "UKIJ Tuz Basma", "UKIJ Basma", "UKIJ Nasq", "ALKATIP Tor", "Noto Naskh Arabic", "Arabic Typesetting", "Traditional Arabic", serif;
+  --font-uyghur: "UKIJ Basma Tuz", "ALKATIP Tor", "Noto Naskh Arabic", "Arabic Typesetting", "Traditional Arabic", serif;
+  --font-headers: "UKIJ Basma Tuz", "ALKATIP Tor", "Noto Naskh Arabic", "Arabic Typesetting", "Traditional Arabic", serif;
+  --font-nav: "UKIJ Tuz Tom", "UKIJ Basma Tuz", "ALKATIP Tor", "Noto Naskh Arabic", "Arabic Typesetting", "Traditional Arabic", serif;
 }
 
 @keyframes float {
