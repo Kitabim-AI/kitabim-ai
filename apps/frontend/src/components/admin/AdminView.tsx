@@ -202,7 +202,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
             </div>
             {t('admin.table.managementSystem')}
           </h2>
-          <p className="text-[#94a3b8] font-bold mt-2">{t('admin.table.manageBooks')}</p>
+          <p className="text-[14px] font-black text-[#94a3b8] uppercase tracking-[0.2em] mt-1">{t('admin.table.manageBooks')}</p>
         </header>
         <div className="flex items-center gap-2 text-[14px] font-black text-[#0369a1] bg-[#0369a1]/10 px-4 py-2 rounded-full border border-[#0369a1]/20 shadow-sm">
           <Cpu size={14} className="animate-spin" />

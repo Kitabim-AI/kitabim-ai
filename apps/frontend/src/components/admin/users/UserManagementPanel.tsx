@@ -180,8 +180,8 @@ export function UserManagementPanel() {
       {/* Header */}
       <div className="px-8 py-6 border-b border-[#0369a1]/10 flex items-center justify-between bg-[#0369a1]/5">
         <div>
-          <h2 className="text-lg font-black text-[#1a1a1a]">{t('admin.users.title')}</h2>
-          <p className="text-[14px] font-bold text-[#94a3b8] mt-1 uppercase tracking-widest">
+          <h2 className="text-3xl font-black text-[#1a1a1a]">{t('admin.users.title')}</h2>
+          <p className="text-[14px] font-black text-[#94a3b8] uppercase tracking-[0.2em] mt-1">
             {t('admin.users.total', { count: total })}
           </p>
         </div>

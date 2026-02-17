@@ -44,8 +44,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               <MessageSquare size={28} strokeWidth={2.5} />
             </div>
             <div>
-              <h1 className="text-2xl font-black text-[#1a1a1a]">{t('chat.globalAssistant')}</h1>
-              <p className="text-sm font-bold text-[#94a3b8] mt-1">{t('chat.subtitle')}</p>
+              <h1 className="text-3xl font-black text-[#1a1a1a]">{t('chat.globalAssistant')}</h1>
+              <p className="text-[14px] font-black text-[#94a3b8] uppercase tracking-[0.2em] mt-1">{t('chat.subtitle')}</p>
             </div>
           </div>
           <div className="flex items-center gap-4">

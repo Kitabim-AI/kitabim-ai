@@ -93,7 +93,8 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
     .map(line => line.replace(/\[(Header|Footer)\]/g, '').trim())
     .filter(line => {
       if (!line) return false;
-      return /[A-Za-z\u0600-\u06FF]/.test(line);
+      // Allow lines that contain text OR start with markdown block markers
+      return /[A-Za-z\u0600-\u06FF]/.test(line) || isBlockStart(line);
     });
   const blocks: React.ReactNode[] = [];
   let i = 0;
@@ -115,11 +116,19 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
     const headingMatch = line.trim().match(/^(#{1,6})\s+(.*)$/);
     if (headingMatch) {
       const level = headingMatch[1].length;
-      const HeadingTag = (`h${Math.min(6, level)}` as keyof JSX.IntrinsicElements);
+      const Tag: any = `h${Math.min(6, level)}`;
+
+      // Determine size based on heading level
+      const sizeClass = level === 1 ? 'text-2xl mb-6' :
+        level === 2 ? 'text-2xl mb-4' :
+          level === 3 ? 'text-xl mb-3' :
+            level === 4 ? 'text-xl mb-2' :
+              'text-lg mb-2';
+
       blocks.push(
-        <HeadingTag key={`h-${key++}`} className="font-bold tracking-tight">
+        <Tag key={`h-${key++}`} className={`font-black tracking-tight text-[#1a1a1a] ${sizeClass}`}>
           {renderInline(headingMatch[2])}
-        </HeadingTag>
+        </Tag>
       );
       i += 1;
       continue;

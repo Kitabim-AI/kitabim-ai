@@ -53,7 +53,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               <Library size={32} strokeWidth={2.5} />
             </div>
             <div>
-              <h2 className="text-4xl font-black text-[#1a1a1a] tracking-tight">{t('library.title')}</h2>
+              <h2 className="text-3xl font-black text-[#1a1a1a] tracking-tight">{t('library.title')}</h2>
               <div className="flex items-center gap-2 mt-2">
                 <span className="w-8 h-[2px] bg-[#0369a1] rounded-full" />
                 <p className="text-[14px] font-black text-[#94a3b8] uppercase tracking-[0.2em]">{t('library.subtitle')}</p>
