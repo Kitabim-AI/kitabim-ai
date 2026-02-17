@@ -19,6 +19,7 @@ import { Book } from '@shared/types';
 const App: React.FC = () => {
   const { t } = useI18n();
   const [view, setView] = useState<'home' | 'library' | 'admin' | 'reader' | 'global-chat'>('home');
+  const [previousView, setPreviousView] = useState<'home' | 'library' | 'admin' | 'global-chat'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [homeSearchQuery, setHomeSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
@@ -103,6 +104,13 @@ const App: React.FC = () => {
     handleSaveVolume,
     handleToggleVisibility,
   } = useBookActions(refreshLibrary, setBooks, setSelectedBook, setView, setModal);
+
+  const handleOpenReader = (book: Book) => {
+    if (view !== 'reader') {
+      setPreviousView(view);
+    }
+    openReader(book, setEditContent, setChatMessages, setCurrentPage);
+  };
 
   // Sync selectedBook with fresh data from the books list
   useEffect(() => {
@@ -218,7 +226,7 @@ const App: React.FC = () => {
                   <RefreshCw size={24} className="animate-pulse" />
                 </div>
               </div>
-              <span className="text-sm font-black text-[#0369a1] uppercase tracking-[0.3em] animate-pulse">{t('common.loadingApp')}</span>
+              <span className="text-sm font-normal text-[#0369a1] uppercase animate-pulse">{t('common.loadingApp')}</span>
             </div>
           </div>
         )}
@@ -233,7 +241,7 @@ const App: React.FC = () => {
             setSearchQuery={setHomeSearchQuery}
             selectedCategory={selectedCategory}
             setSelectedCategory={setSelectedCategory}
-            onBookClick={(book) => openReader(book, setEditContent, setChatMessages, setCurrentPage)}
+            onBookClick={(book) => handleOpenReader(book)}
             loaderRef={loaderRef}
             loadMore={loadMoreShelf}
           />
@@ -246,7 +254,7 @@ const App: React.FC = () => {
             isLoadingMore={isLoadingMoreShelf}
             hasMore={hasMoreShelf}
             searchQuery={searchQuery}
-            onBookClick={(book) => openReader(book, setEditContent, setChatMessages, setCurrentPage)}
+            onBookClick={(book) => handleOpenReader(book)}
             loaderRef={loaderRef}
             loadMore={loadMoreShelf}
           />
@@ -264,7 +272,7 @@ const App: React.FC = () => {
                 totalBooks={totalBooks}
                 onPageChange={setPage}
                 onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
-                onOpenReader={(book) => openReader(book, setEditContent, setChatMessages, setCurrentPage)}
+                onOpenReader={(book) => handleOpenReader(book)}
                 onStartOcr={handleStartOcr}
                 onRetryFailedOcr={handleRetryFailedOcr}
 
@@ -311,7 +319,7 @@ const App: React.FC = () => {
             onSaveCorrections={() => saveCorrections(selectedBook, editContent, setIsEditing)}
             fontSize={fontSize}
             setFontSize={setFontSize}
-            onClose={() => setView('library')}
+            onClose={() => setView(previousView)}
             onReProcessPage={handleReProcessPage}
             onUpdatePage={(id, num, text) => handleUpdatePage(id, num, text, setEditingPageNum)}
             currentPage={currentPage}
@@ -340,7 +348,7 @@ const App: React.FC = () => {
             setChatInput={setChatInput}
             onSendMessage={handleSendMessage}
             isChatting={isChatting}
-            onClose={() => setView('library')}
+            onClose={() => setView(previousView)}
             chatContainerRef={chatContainerRef}
           />
         )}

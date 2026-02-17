@@ -27,7 +27,7 @@ export const Modal: React.FC<ModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6" dir="rtl">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6" dir="rtl" lang="ug">
       <div
         className="absolute inset-0 bg-slate-900/40 backdrop-blur-md animate-fade-in"
         onClick={() => type === 'alert' && onClose()}
@@ -40,16 +40,16 @@ export const Modal: React.FC<ModalProps> = ({
             <div className={`p-3 rounded-2xl ${type === 'confirm' ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'bg-red-50 text-red-500'}`}>
               <AlertCircle size={32} strokeWidth={2.5} />
             </div>
-            <h3 className="text-2xl font-black text-[#1a1a1a]">{title}</h3>
+            <h3 className="text-2xl font-normal text-[#1a1a1a]">{title}</h3>
           </div>
-          <p className="text-[#94a3b8] font-bold leading-loose mb-10 text-lg uyghur-text">
+          <p className="text-[#94a3b8] font-normal leading-loose mb-10 text-lg uyghur-text">
             {message}
           </p>
           <div className="flex items-center gap-4">
             {type === 'confirm' && (
               <button
                 onClick={onClose}
-                className="flex-1 py-4 px-6 bg-slate-100 hover:bg-slate-200 text-[#94a3b8] font-black rounded-[20px] transition-all active:scale-95 text-sm"
+                className="flex-1 py-4 px-6 bg-slate-100 hover:bg-slate-200 text-[#94a3b8] font-normal rounded-[20px] transition-all active:scale-95 text-sm"
               >
                 {t('common.cancel')}
               </button>
@@ -62,7 +62,7 @@ export const Modal: React.FC<ModalProps> = ({
                   onClose();
                 }
               }}
-              className={`flex-1 py-4 px-6 text-white font-black rounded-[20px] transition-all shadow-xl active:scale-95 text-sm ${destructive
+              className={`flex-1 py-4 px-6 text-white font-normal rounded-[20px] transition-all shadow-xl active:scale-95 text-sm ${destructive
                 ? 'bg-red-500 hover:bg-red-600 shadow-red-200'
                 : 'bg-[#0369a1] hover:bg-[#0284c7] shadow-[#0369a1]/30'
                 }`}

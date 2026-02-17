@@ -8,7 +8,7 @@ export const NotificationContainer: React.FC = () => {
   if (notifications.length === 0) return null;
 
   return (
-    <div className="fixed top-24 right-8 z-[2000] flex flex-col gap-4 w-full max-w-sm pointer-events-none" dir="rtl">
+    <div className="fixed top-24 right-8 z-[2000] flex flex-col gap-4 w-full max-w-sm pointer-events-none" dir="rtl" lang="ug">
       {notifications.map((notification) => (
         <div
           key={notification.id}
@@ -34,7 +34,7 @@ export const NotificationContainer: React.FC = () => {
                 <AlertCircle size={24} strokeWidth={3} />
               )}
             </div>
-            <p className="text-sm font-black uyghur-text leading-relaxed">{notification.message}</p>
+            <p className="text-sm font-normal uyghur-text leading-relaxed">{notification.message}</p>
           </div>
           <button
             onClick={() => removeNotification(notification.id)}

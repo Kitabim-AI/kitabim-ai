@@ -26,7 +26,7 @@
     "systemStatus": "سىستېما ھالىتى",
     "active": "ئاكتىپ",
     "view": "كۆرۈش",
-    "loadingApp": "كىتابخانا يۈكلىنىۋاتىدۇ...",
+    "loadingApp": "كىتابخانا ئېچىلۋاتىدۇ...",
     "uploadSuccess": "ھۆججەت مۇۋەپپەقىيەتلىك يۈكلەندى.",
     "ocrStarted": "OCR جەريانى باشلاندى.",
     "ocrStartError": "OCR جەريانىنى باشلاش مەغلۇپ بولدى.",
@@ -43,13 +43,13 @@
     "authorUpdateError": "ئاپتۇرنى يېڭىلاش مەغلۇپ بولدى.",
     "titleUpdateSuccess": "نامى يېڭىلاندى.",
     "titleUpdateError": "نامىنى يېڭىلاش مەغلۇپ بولدى.",
-    "volumeUpdateSuccess": "قىسىمى يېڭىلاندى.",
-    "volumeUpdateError": "قىسىمىنى يېڭىلاش مەغلۇپ بولدى.",
+    "volumeUpdateSuccess": "توم نومۇرى يېڭىلاندى.",
+    "volumeUpdateError": "توم نومۇرىنى يېڭىلاش مەغلۇپ بولدى.",
     "visibilityUpdated": "كىتاب {{visibility}} ھالەتكە ئۆزگەرتىلدى.",
     "enterContent": "مەزمۇننى كىرگۈزۈڭ..."
   },
   "book": {
-    "volume": "{{volume}}-قىسىم",
+    "volume": "{{volume}}-توم",
     "pagesCount": "{{count}} بەت"
   },
   "app": {
@@ -110,10 +110,10 @@
     },
     "bookAssistant": "كىتابپۇرۇچ",
     "bookAssistantWelcome": "بۇ كىتاپ ھەققىدە قانداق سۇئالىڭىز بار؟",
-    "you": "كىتابخان",
+    "you": "ئوقۇرمەن",
     "ai": "كىتابپۇرۇچ",
-    "inputPlaceholder": "سۇئالىڭىزنى بۇ يەرگە يېزىڭ...",
-    "inputPlaceholderBook": "سۇئالىڭىزنى يېزىڭ..."
+    "inputPlaceholder": "سۇئالىڭىزنى بۇ يەرگە كىرگۈزۈڭ...",
+    "inputPlaceholderBook": "سۇئالىڭىزنى كىرگۈزۈڭ..."
   },
   "reader": {
     "title": "ئوقۇش",
@@ -152,7 +152,7 @@
       "name": "نامى",
       "author": "ئاپتورى",
       "category": "تۈرى",
-      "pageCount": "قىسىمى",
+      "pageCount": "تومى",
       "status": "ھالىتى",
       "actions": "مەشغۇلات",
       "view": "كۆرۈش",
@@ -167,16 +167,16 @@
       "joinedDate": "قوشۇلغان ۋاقىت",
       "admin": "باشقۇرغۇچى",
       "editor": "تەھرىرلىگۈچى",
-      "reader": "كىتابخان",
+      "reader": "ئوقۇرمەن",
       "active": "تامام",
       "suspended": "توختىتىلغان",
       "systemActive": "سىستېما ئۇزېلى ئاكتىپ",
       "managementSystem": "كىتابىمدىكى كىتابلار",
-      "manageBooks": "كىتابلارنى ۋە ئىندېكىسلاشنى باشقۇرۇش",
+      "manageBooks": "كىتابلارنى ئىندېكىسلاش ۋە باشقۇرۇش",
       "uploading": "ھۆججەت مۇلازىمېتىرغا يوللىنىۋاتىدۇ",
       "bookName": "كىتاب نامى",
       "progress": "ھالىتى",
-      "makePublic": "ئېلان قىلىش",
+      "makePublic": "ئاشكارا قىلىش",
       "makePrivate": "يوشۇرۇش",
       "recognizing": "تونۇۋاتىدۇ",
       "waiting": "كۈتۈۋاتىدۇ"

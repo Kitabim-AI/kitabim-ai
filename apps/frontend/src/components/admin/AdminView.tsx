@@ -70,7 +70,7 @@ const TagEditor: React.FC<{
       <div className="flex flex-col gap-3 min-w-[200px]" dir="rtl">
         <div className="flex flex-wrap gap-1.5 max-w-[250px]">
           {items.map((item, idx) => (
-            <span key={idx} className="flex items-center gap-1.5 px-2.5 py-1 bg-[#0369a1]/10 text-[#0369a1] text-[14px] font-black rounded-lg border border-[#0369a1]/20 group/tag shadow-sm">
+            <span key={idx} className="flex items-center gap-1.5 px-2.5 py-1 bg-[#0369a1]/10 text-[#0369a1] text-[14px] font-normal rounded-lg border border-[#0369a1]/20 group/tag shadow-sm">
               {item}
               <button
                 onClick={() => onRemoveItem(idx)}
@@ -140,7 +140,7 @@ const TagEditor: React.FC<{
       {existingItems && existingItems.length > 0 ? (
         <div className="flex flex-wrap gap-1.5">
           {existingItems.map((t, idx) => (
-            <span key={idx} className="px-2.5 py-1 bg-[#0369a1]/5 text-[#0369a1] text-[14px] font-black rounded-lg border border-[#0369a1]/10 group-hover/tags:border-[#0369a1]/30 shadow-sm">
+            <span key={idx} className="px-2.5 py-1 bg-[#0369a1]/5 text-[#0369a1] text-[14px] font-normal rounded-lg border border-[#0369a1]/10 group-hover/tags:border-[#0369a1]/30 shadow-sm">
               {t}
             </span>
           ))}
@@ -193,25 +193,25 @@ export const AdminView: React.FC<AdminViewProps> = ({
   }, []);
 
   return (
-    <div className="space-y-8 animate-fade-in">
+    <div className="space-y-8 animate-fade-in" lang="ug">
       <div className="flex items-center justify-between pb-6 border-b border-[#75C5F0]/20">
         <div className="flex items-center gap-4 group">
           <div className="p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:-rotate-6">
             <Shield size={24} />
           </div>
           <div>
-            <h2 className="text-3xl font-black text-[#1a1a1a] tracking-tight">
+            <h2 className="text-3xl font-normal text-[#1a1a1a]">
               {t('admin.table.managementSystem')}
             </h2>
             <div className="flex items-center gap-2 mt-1">
               <span className="w-8 h-[2px] bg-[#0369a1] rounded-full" />
-              <p className="text-[14px] font-black text-[#94a3b8] uppercase tracking-[0.2em]">{t('admin.table.manageBooks')}</p>
+              <p className="text-[14px] font-normal text-[#94a3b8] uppercase">{t('admin.table.manageBooks')}</p>
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 text-[14px] font-black text-[#0369a1] bg-[#0369a1]/10 px-4 py-2 rounded-full border border-[#0369a1]/20 shadow-sm">
-          <Cpu size={14} className="animate-spin" />
-          {t('admin.table.systemActive')}
+        <div className="flex items-center gap-2 text-[14px] font-normal text-[#0369a1] bg-[#0369a1]/10 px-4 py-2 rounded-full border border-[#0369a1]/20 shadow-sm">
+          <BookType size={14} />
+          {t('admin.stats.totalBooks')}: {totalBooks}
         </div>
       </div>
 
@@ -220,8 +220,8 @@ export const AdminView: React.FC<AdminViewProps> = ({
       {isCheckingGlobal && (
         <div className="glass-panel p-20 flex flex-col items-center justify-center text-center animate-pulse">
           <Database className="w-16 h-16 text-[#75C5F0] mb-6 animate-bounce" />
-          <h3 className="text-xl font-black text-[#1a1a1a]">{t('common.loading')}</h3>
-          <p className="text-slate-500 font-bold">{t('admin.table.uploading')}</p>
+          <h3 className="text-xl font-normal text-[#1a1a1a]">{t('common.loading')}</h3>
+          <p className="text-slate-500 font-normal">{t('admin.table.uploading')}</p>
         </div>
       )}
 
@@ -230,15 +230,15 @@ export const AdminView: React.FC<AdminViewProps> = ({
           <div className="overflow-x-auto">
             <table className="w-full text-right min-w-[1100px]" dir="rtl">
               <thead>
-                <tr className="bg-[#0369a1]/5 border-b border-[#0369a1]/10 text-[16px] font-black text-[#0369a1] uppercase tracking-widest">
-                  <th className="px-8 py-5 text-right font-black">
+                <tr className="bg-[#0369a1]/5 border-b border-[#0369a1]/10 text-[16px] font-normal text-[#0369a1] uppercase">
+                  <th className="px-8 py-5 text-right font-normal">
                     {t('admin.table.bookName')}
                   </th>
-                  <th className="px-8 py-5 w-24 text-right font-black">{t('admin.table.pageCount')}</th>
-                  <th className="px-8 py-5 w-48 text-right font-black">{t('admin.table.author')}</th>
-                  <th className="px-8 py-5 w-60 text-right font-black">{t('admin.table.category')}</th>
-                  <th className="px-8 py-5 text-right font-black">{t('admin.table.progress')}</th>
-                  <th className="px-8 py-5 text-left font-black">{t('admin.table.actions')}</th>
+                  <th className="px-8 py-5 w-24 text-right font-normal">{t('admin.table.pageCount')}</th>
+                  <th className="px-8 py-5 w-48 text-right font-normal">{t('admin.table.author')}</th>
+                  <th className="px-8 py-5 w-60 text-right font-normal">{t('admin.table.category')}</th>
+                  <th className="px-8 py-5 text-right font-normal">{t('admin.table.progress')}</th>
+                  <th className="px-8 py-5 text-left font-normal">{t('admin.table.actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#75C5F0]/5">
@@ -362,7 +362,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                           className="cursor-pointer p-2 hover:bg-[#0369a1]/5 rounded-xl transition-colors"
                         >
                           {book.author && book.author !== 'Unknown Author' ? (
-                            <span className="text-[16px] font-black text-[#1a1a1a]">
+                            <span className="text-[16px] font-normal text-[#1a1a1a]">
                               {book.author}
                             </span>
                           ) : (
@@ -415,10 +415,10 @@ export const AdminView: React.FC<AdminViewProps> = ({
                           />
                         </div>
                         <div className="flex items-center justify-between">
-                          <span className="text-[14px] font-black text-slate-400">
+                          <span className="text-[14px] font-normal text-slate-400">
                             {book.completedCount ?? book.pages.filter(r => r.status === 'completed').length}/{book.totalPages || 0} {t('common.pages')}
                           </span>
-                          <span className={`px-2 py-0.5 rounded-full text-[14px] font-black uppercase ${(() => {
+                          <span className={`px-2 py-0.5 rounded-full text-[14px] font-normal uppercase ${(() => {
                             const isStale = book.status === 'processing' && book.processingLockExpiresAt && new Date(book.processingLockExpiresAt) < new Date();
                             if (isStale) return 'bg-red-50 text-red-600';
                             return book.status === 'ready' ? 'bg-emerald-50 text-emerald-600' :

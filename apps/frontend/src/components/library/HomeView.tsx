@@ -65,15 +65,15 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const hasSearch = searchQuery.length > 0 || selectedCategory.length > 0;
 
   return (
-    <div className={`flex flex-col items-center transition-all duration-1000 ${hasSearch ? 'pt-6' : 'pt-20'}`} dir="rtl">
+    <div className={`flex flex-col items-center transition-all duration-1000 ${hasSearch ? 'pt-6' : 'pt-20'}`} dir="rtl" lang="ug">
       {/* Brand & Hero Section */}
       <div className={`text-center mb-10 transition-all duration-1000 ${hasSearch ? 'scale-75 opacity-70 mb-4' : 'scale-100 opacity-100'}`}>
         <div className="flex flex-col items-center gap-2 mb-6">
-          <div className="px-6 py-2 bg-[#0369a1] text-white rounded-full text-[14px] font-black uppercase tracking-[0.3em] mb-4 border border-[#0369a1]/20 shadow-[0_8px_20px_rgba(3,105,161,0.2)]">
+          <div className="px-6 py-2 bg-[#0369a1] text-white rounded-full text-[14px] font-normal uppercase mb-4 border border-[#0369a1]/20 shadow-[0_8px_20px_rgba(3,105,161,0.2)]">
             {t('app.tagline')}
           </div>
           <h1
-            className="font-black text-[#1a1a1a] tracking-tight leading-none"
+            className="font-black text-[#1a1a1a] leading-none"
             style={{ fontSize: hasSearch ? '3.5rem' : '5rem' }}
           >
             Kitabim<span className="text-[#0369a1]">.AI</span>
@@ -82,7 +82,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
         {proverb ? (
           <div className="flex flex-col items-center gap-1">
-            <p className="uyghur-text font-black text-[#1a1a1a] leading-relaxed italic max-w-3xl px-6 transition-all duration-700"
+            <p className="uyghur-text font-normal text-[#1a1a1a] leading-relaxed italic max-w-3xl px-6 transition-all duration-700"
               style={{ fontSize: hasSearch ? '1.1rem' : '1.55rem', opacity: hasSearch ? 0.6 : 1 }}>
               {proverb.text}
             </p>
@@ -101,7 +101,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
           <input
             ref={searchInputRef}
             type="text"
-            className="w-full px-16 py-5 bg-white/60 backdrop-blur-2xl border-2 border-[#0369a1]/10 rounded-[32px] text-lg font-black text-[#1a1a1a] placeholder:text-slate-300 outline-none focus:border-[#0369a1] focus:ring-[12px] focus:ring-[#0369a1]/5 transition-all shadow-[0_24px_64px_rgba(0,0,0,0.06)] uyghur-text"
+            className="w-full px-16 py-5 bg-white/60 backdrop-blur-2xl border-2 border-[#0369a1]/10 rounded-[32px] text-lg font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none focus:border-[#0369a1] focus:ring-[12px] focus:ring-[#0369a1]/5 transition-all shadow-[0_24px_64px_rgba(0,0,0,0.06)] uyghur-text"
             placeholder={t('home.searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -120,12 +120,12 @@ export const HomeView: React.FC<HomeViewProps> = ({
         {/* Categories helper */}
         {!hasSearch && topCategories.length > 0 && (
           <div className="mt-12 flex flex-wrap justify-center gap-3 px-4">
-            <span className="w-full text-center text-[14px] font-black text-[#94a3b8] uppercase tracking-[0.3em] mb-4">{t('home.topCategories')}</span>
+            <span className="w-full text-center text-[14px] font-normal text-[#94a3b8] uppercase mb-4">{t('home.topCategories')}</span>
             {topCategories.map(cat => (
               <button
                 key={cat}
                 onClick={() => handleCategoryClick(cat)}
-                className="px-6 py-2.5 bg-white/40 backdrop-blur-md border border-[#75C5F0]/10 rounded-2xl text-sm font-black text-[#1a1a1a] hover:bg-[#75C5F0] hover:text-white transition-all active:scale-95 shadow-sm hover:shadow-lg hover:shadow-[#75C5F0]/20"
+                className="px-6 py-2.5 bg-white/40 backdrop-blur-md border border-[#75C5F0]/10 rounded-2xl text-sm font-normal text-[#1a1a1a] hover:bg-[#75C5F0] hover:text-white transition-all active:scale-95 shadow-sm hover:shadow-lg hover:shadow-[#75C5F0]/20"
               >
                 {cat}
               </button>
@@ -146,11 +146,11 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 <ArrowRight size={24} strokeWidth={3} className="rotate-180" />
               </button>
               <div>
-                <h2 className="text-3xl font-black text-[#1a1a1a]">{t('home.searchResults')}</h2>
-                <p className="text-[14px] font-black text-[#94a3b8] uppercase tracking-widest mt-1">«{searchQuery || selectedCategory}» {t('home.resultsFor')}</p>
+                <h2 className="text-3xl font-normal text-[#1a1a1a]">{t('home.searchResults')}</h2>
+                <p className="text-[14px] font-normal text-[#94a3b8] uppercase mt-1">«{searchQuery || selectedCategory}» {t('home.resultsFor')}</p>
               </div>
             </div>
-            <div className="px-6 py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl text-sm font-black shadow-inner border border-[#0369a1]/5">
+            <div className="px-6 py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl text-sm font-normal shadow-inner border border-[#0369a1]/5">
               <span className="opacity-60">{t('common.total')}</span> {books.length} <span className="opacity-60">{t('home.totalBooks')}</span>
             </div>
           </div>
@@ -170,7 +170,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
               <div className="p-8 bg-[#0369a1]/10 rounded-[40px] mb-8">
                 <BookIcon className="w-20 h-20 text-[#0369a1] opacity-40" />
               </div>
-              <p className="text-[#1a1a1a] font-black text-3xl mb-4">{t('library.empty.title')}</p>
+              <p className="text-[#1a1a1a] font-normal text-3xl mb-4">{t('library.empty.title')}</p>
               <p className="text-[#94a3b8] font-bold text-lg max-w-md">{t('library.empty.message')}</p>
             </div>
           )}

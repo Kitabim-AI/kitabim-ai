@@ -221,7 +221,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   };
 
   return (
-    <div className="h-[calc(100vh-140px)] flex flex-row-reverse gap-6 animate-fade-in py-4">
+    <div className="h-[calc(100vh-140px)] flex flex-row-reverse gap-6 animate-fade-in py-4" lang="ug">
       {/* Main Content Area */}
       <div className="flex-grow glass-panel flex flex-col overflow-hidden" style={{ borderRadius: '32px' }}>
         {/* Header Ribbon */}
@@ -231,11 +231,14 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
               <BookOpen size={20} />
             </div>
             <div>
-              <h2 className="font-black text-[#1a1a1a] text-lg">{selectedBook.title}</h2>
+              <h2 className="font-normal text-[#1a1a1a] text-lg">
+                {selectedBook.title}
+                {selectedBook.volume ? ` (${t('book.volume', { volume: selectedBook.volume })})` : ''}
+              </h2>
               {selectedBook.tags && selectedBook.tags.length > 0 && (
                 <div className="flex gap-1.5 mt-1">
                   {selectedBook.tags.map((tag, i) => (
-                    <span key={i} className="text-[14px] bg-[#0369a1]/10 text-[#0369a1] px-2 py-0.5 rounded-md font-bold uppercase tracking-wider">
+                    <span key={i} className="text-[14px] bg-[#0369a1]/10 text-[#0369a1] px-2 py-0.5 rounded-md font-normal uppercase">
                       {tag}
                     </span>
                   ))}
@@ -249,14 +252,14 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
               {!isEditing ? (
                 <button
                   onClick={handleEnterGlobalEdit}
-                  className="flex items-center gap-2 px-6 py-3 bg-[#0369a1] text-white text-sm font-black rounded-2xl hover:bg-[#0284c7] transition-all active:scale-95 shadow-md uppercase tracking-widest border border-[#0369a1]/20"
+                  className="flex items-center gap-2 px-6 py-3 bg-[#0369a1] text-white text-sm font-normal rounded-2xl hover:bg-[#0284c7] transition-all active:scale-95 shadow-md uppercase border border-[#0369a1]/20"
                 >
                   <Edit3 size={16} /> {t('common.edit')}
                 </button>
               ) : (
                 <button
                   onClick={onSaveCorrections}
-                  className="flex items-center gap-2 px-6 py-3 bg-[#0369a1] text-white text-sm font-black rounded-2xl hover:bg-[#0284c7] transition-all active:scale-95 shadow-lg uppercase tracking-widest"
+                  className="flex items-center gap-2 px-6 py-3 bg-[#0369a1] text-white text-sm font-normal rounded-2xl hover:bg-[#0284c7] transition-all active:scale-95 shadow-lg uppercase"
                 >
                   <Save size={16} /> {t('common.save')}
                 </button>
@@ -271,7 +274,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                 </button>
                 <div className="flex items-center gap-2 px-4 border-x border-[#0369a1]/10">
                   <Type size={16} className="text-[#94a3b8]" />
-                  <span className="text-sm font-black text-[#1a1a1a]">{fontSize}</span>
+                  <span className="text-sm font-normal text-[#1a1a1a]">{fontSize}</span>
                 </div>
                 <button
                   onClick={() => setFontSize(prev => Math.min(64, prev + 2))}
@@ -351,19 +354,19 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                   >
                     <div className="flex items-center justify-between pb-6 mb-8 border-b border-[#0369a1]/5">
                       <div className="flex items-center gap-4">
-                        <span className="text-[14px] font-black text-[#94a3b8] tracking-widest uppercase">
+                        <span className="text-[14px] font-normal text-[#94a3b8] uppercase">
                           {t('common.page')} {page.pageNumber}
                         </span>
                         {currentPage === page.pageNumber && (page.status === 'pending' || page.status === 'processing') && (
                           <div className="flex items-center gap-2 px-3 py-1 bg-[#0369a1]/10 rounded-full">
                             <Loader2 size={12} className="text-[#0369a1] animate-spin" />
-                            <span className="text-[14px] font-black text-[#0369a1]">{t('admin.table.recognizing')}</span>
+                            <span className="text-[14px] font-normal text-[#0369a1]">{t('admin.table.recognizing')}</span>
                           </div>
                         )}
                         {page.isVerified && (
                           <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-500/10 shadow-sm">
                             <CheckCircle2 size={12} strokeWidth={3} />
-                            <span className="text-[14px] font-black tracking-widest uppercase">{t('reader.verified')}</span>
+                            <span className="text-[14px] font-normal uppercase">{t('reader.verified')}</span>
                           </div>
                         )}
                       </div>
@@ -399,7 +402,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                               setEditingPageNum(page.pageNumber);
                               setTempPageText(page.text || '');
                             }}
-                            className="flex items-center gap-2 px-4 py-2 bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white rounded-xl text-[14px] font-black transition-all active:scale-95 shadow-sm uppercase tracking-widest border border-[#0369a1]/10"
+                            className="flex items-center gap-2 px-4 py-2 bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white rounded-xl text-[14px] font-normal transition-all active:scale-95 shadow-sm uppercase border border-[#0369a1]/10"
                           >
                             <Edit3 size={14} strokeWidth={3} /> {t('common.edit')}
                           </button>
@@ -459,7 +462,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                                 }
                               }, 200);
                             }}
-                            className="px-8 py-3.5 bg-[#0369a1] text-white rounded-[20px] text-sm font-black hover:bg-[#0284c7] transition-all active:scale-95 flex items-center gap-3 shadow-xl shadow-[#0369a1]/20"
+                            className="px-8 py-3.5 bg-[#0369a1] text-white rounded-[20px] text-sm font-normal hover:bg-[#0284c7] transition-all active:scale-95 flex items-center gap-3 shadow-xl shadow-[#0369a1]/20"
                           >
                             <Save size={18} strokeWidth={3} /> {t('common.save')}
                           </button>
@@ -468,7 +471,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                               setEditingPageNum(null);
                               resetSpellCheck();
                             }}
-                            className="px-8 py-3.5 bg-slate-100 text-[#94a3b8] rounded-[20px] text-sm font-black hover:bg-slate-200 transition-all active:scale-95"
+                            className="px-8 py-3.5 bg-slate-100 text-[#94a3b8] rounded-[20px] text-sm font-normal hover:bg-slate-200 transition-all active:scale-95"
                           >
                             {t('common.cancel')}
                           </button>
@@ -483,7 +486,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                               <RotateCcw size={20} className="animate-pulse" />
                             </div>
                           </div>
-                          <span className="mt-6 text-sm font-black uppercase tracking-[0.2em] text-[#94a3b8] animate-pulse">{t('reader.activeRecognizing')}</span>
+                          <span className="mt-6 text-sm font-normal uppercase text-[#94a3b8] animate-pulse">{t('reader.activeRecognizing')}</span>
                         </div>
                       ) : (
                         <MarkdownContent
@@ -503,7 +506,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
                   {isLoadingMore && (
                     <div className="flex flex-col items-center gap-4">
                       <div className="w-10 h-10 border-4 border-[#0369a1]/10 border-t-[#0369a1] rounded-full animate-spin"></div>
-                      <span className="text-[14px] text-[#94a3b8] font-black uppercase tracking-widest">{t('common.loadingMore')}</span>
+                      <span className="text-[14px] text-[#94a3b8] font-normal uppercase">{t('common.loadingMore')}</span>
                     </div>
                   )}
                 </div>
@@ -544,7 +547,6 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
               isChatting={isChatting}
               currentPage={currentPage}
               chatContainerRef={chatContainerRef}
-              onClose={onClose}
             />
           </GlassPanel>
         )}

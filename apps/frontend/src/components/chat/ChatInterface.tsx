@@ -36,22 +36,22 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
   if (isGlobal) {
     return (
-      <div className="h-[calc(100vh-140px)] max-w-5xl mx-auto w-full flex flex-col gap-6 animate-fade-in py-4" dir="rtl">
+      <div className="h-[calc(100vh-140px)] max-w-5xl mx-auto w-full flex flex-col gap-6 animate-fade-in py-4" dir="rtl" lang="ug">
         {/* Chat Header */}
-        <div className="bg-white/60 backdrop-blur-2xl px-8 py-6 flex items-center justify-between border border-[#0369a1]/10 shadow-sm group" style={{ borderRadius: '32px' }}>
+        <div className="bg-white/60 backdrop-blur-2xl px-8 py-4 flex items-center justify-between border border-[#0369a1]/10 shadow-sm group" style={{ borderRadius: '32px' }}>
           <div className="flex items-center gap-5">
-            <div className="p-4 bg-[#0369a1] text-white rounded-[24px] shadow-xl shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:-rotate-6">
-              <MessageSquare size={28} strokeWidth={2.5} />
+            <div className="p-3 bg-[#0369a1] text-white rounded-[24px] shadow-xl shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:-rotate-6">
+              <MessageSquare size={24} strokeWidth={2.5} />
             </div>
             <div>
-              <h1 className="text-3xl font-black text-[#1a1a1a]">{t('chat.globalAssistant')}</h1>
-              <p className="text-[14px] font-black text-[#94a3b8] uppercase tracking-[0.2em] mt-1">{t('chat.subtitle')}</p>
+              <h1 className="text-2xl font-normal text-[#1a1a1a]">{t('chat.globalAssistant')}</h1>
+              <p className="text-[14px] font-normal text-[#94a3b8] uppercase mt-1">{t('chat.subtitle')}</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
             <div className="hidden md:flex items-center gap-3 px-6 py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner">
               <BookOpen size={18} strokeWidth={2.5} />
-              <span className="text-sm font-black uppercase tracking-widest">
+              <span className="text-sm font-normal uppercase">
                 {t('chat.allBooks')} • {totalReady || books.filter(b => b.status === 'ready').length}
               </span>
             </div>
@@ -78,8 +78,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 <div className="absolute inset-0 bg-[#0369a1]/10 animate-pulse" />
                 <MessageSquare className="text-[#0369a1] w-14 h-14 relative z-10 transition-transform group-hover:scale-110" strokeWidth={2.5} />
               </div>
-              <h4 className="text-3xl font-black text-[#1a1a1a] mb-4 tracking-tight">{t('chat.welcome.title')}</h4>
-              <p className="text-slate-500 font-bold max-w-lg leading-loose text-lg">
+              <h4 className="text-2xl font-normal text-[#1a1a1a] mb-4">{t('chat.welcome.title')}</h4>
+              <p className="text-slate-500 font-normal max-w-lg leading-loose text-base">
                 {t('chat.welcome.message')}
               </p>
             </div>
@@ -93,10 +93,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   {msg.role === 'user' ? <User size={24} strokeWidth={2.5} /> : <Bot size={24} strokeWidth={2.5} />}
                 </div>
                 <div className={`flex flex-col gap-2 max-w-[80%] ${msg.role === 'user' ? 'items-start' : 'items-end'}`}>
-                  <span className="text-[14px] font-black text-[#94a3b8] uppercase tracking-[0.2em] px-2">
+                  <span className="text-[14px] font-normal text-[#94a3b8] uppercase px-2">
                     {msg.role === 'user' ? t('chat.you') : t('chat.ai')}
                   </span>
-                  <div className={`px-8 py-5 rounded-[28px] text-lg font-black leading-loose uyghur-text shadow-sm ${msg.role === 'user'
+                  <div className={`px-8 py-5 rounded-[28px] text-lg font-normal leading-loose uyghur-text shadow-sm ${msg.role === 'user'
                     ? 'bg-white/80 border border-[#0369a1]/10 text-[#1a1a1a] rounded-tr-none'
                     : 'bg-[#0369a1] text-white rounded-tl-none shadow-xl shadow-[#0369a1]/10'
                     }`}>
@@ -129,13 +129,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && !isChatting && onSendMessage()}
               placeholder={t('chat.inputPlaceholderBook')}
-              className="flex-1 bg-transparent py-3 px-6 text-lg font-black text-[#1a1a1a] placeholder:text-slate-300 outline-none uyghur-text"
+              className="flex-1 bg-transparent py-3 px-6 text-lg font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none uyghur-text"
               dir="rtl"
             />
             <button
               onClick={onSendMessage}
               disabled={isChatting || !chatInput.trim()}
-              className="px-8 py-3 bg-[#0369a1] hover:bg-[#0284c7] text-white rounded-[24px] text-sm font-black flex items-center gap-3 transition-all active:scale-95 shadow-lg shadow-[#0369a1]/20 disabled:opacity-30 disabled:grayscale uppercase tracking-widest"
+              className="px-8 py-3 bg-[#0369a1] hover:bg-[#0284c7] text-white rounded-[24px] text-sm font-normal flex items-center gap-3 transition-all active:scale-95 shadow-lg shadow-[#0369a1]/20 disabled:opacity-30 disabled:grayscale uppercase"
             >
               {t('common.send')}
               <Send size={18} strokeWidth={3} />
@@ -148,18 +148,18 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
   // Sidebar (Reader) Chat Version
   return (
-    <div className="h-full flex flex-col gap-6 animate-fade-in relative" dir="rtl">
+    <div className="h-full flex flex-col gap-6 animate-fade-in relative" dir="rtl" lang="ug">
       <div className="bg-white/60 backdrop-blur-xl p-5 flex items-center justify-between border border-[#0369a1]/10 shadow-sm" style={{ borderRadius: '24px' }}>
         <div className="flex items-center gap-4">
           <div className="p-2.5 bg-[#0369a1] text-white rounded-2xl shadow-lg shadow-[#0369a1]/10">
             <MessageSquare size={18} strokeWidth={2.5} />
           </div>
           <div>
-            <h3 className="font-black text-sm text-[#1a1a1a]">{t('chat.bookAssistant')}{t('chat.sidebarSubtitle')}</h3>
+            <h3 className="font-normal text-sm text-[#1a1a1a]">{t('chat.bookAssistant')}{t('chat.sidebarSubtitle')}</h3>
           </div>
         </div>
         {currentPage && (
-          <div className="bg-[#0369a1]/10 text-[#0369a1] px-3 py-1 rounded-xl text-[14px] font-black border border-[#0369a1]/10 shadow-inner">
+          <div className="bg-[#0369a1]/10 text-[#0369a1] px-3 py-1 rounded-xl text-[14px] font-normal border border-[#0369a1]/10 shadow-inner">
             {t('chat.pageNumber', { page: currentPage })}
           </div>
         )}
@@ -172,7 +172,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         {chatMessages.length === 0 && (
           <div className="text-center py-20 px-8 bg-white/40 border-2 border-dashed border-[#0369a1]/10 rounded-[32px] flex flex-col items-center justify-center gap-4 opacity-60">
             <Bot size={40} className="text-[#0369a1]" strokeWidth={1} />
-            <p className="text-sm text-[#1a1a1a] font-black leading-loose">
+            <p className="text-sm text-[#1a1a1a] font-normal leading-loose">
               {t('chat.bookAssistantWelcome')}
             </p>
           </div>
@@ -184,7 +184,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               {msg.role === 'user' ? <User size={18} strokeWidth={2.5} /> : <Bot size={18} strokeWidth={2.5} />}
             </div>
             <div className={`flex flex-col gap-1.5 max-w-[85%] ${msg.role === 'user' ? 'items-start' : 'items-end'}`}>
-              <div className={`px-5 py-3.5 rounded-2xl text-sm font-black leading-relaxed shadow-sm ${msg.role === 'user'
+              <div className={`px-5 py-3.5 rounded-2xl text-sm font-normal leading-relaxed shadow-sm ${msg.role === 'user'
                 ? 'bg-white/80 border border-[#0369a1]/10 text-[#1a1a1a] rounded-tr-none'
                 : 'bg-[#0369a1] text-white rounded-tl-none shadow-lg shadow-[#0369a1]/5'
                 }`}>
@@ -209,7 +209,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           value={chatInput}
           onChange={(e) => setChatInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && !isChatting && onSendMessage()}
-          className="w-full bg-transparent border-none py-3 pl-12 pr-4 text-sm font-black text-[#1a1a1a] placeholder:text-slate-300 outline-none uyghur-text"
+          className="w-full bg-transparent border-none py-3 pl-12 pr-4 text-sm font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none uyghur-text"
           dir="rtl"
         />
         <button

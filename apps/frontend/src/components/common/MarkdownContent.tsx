@@ -126,7 +126,7 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
               'text-lg mb-2';
 
       blocks.push(
-        <Tag key={`h-${key++}`} className={`font-black tracking-tight text-[#1a1a1a] ${sizeClass}`}>
+        <Tag key={`h-${key++}`} className={`font-normal text-[#1a1a1a] ${sizeClass}`}>
           {renderInline(headingMatch[2])}
         </Tag>
       );
@@ -226,7 +226,7 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
 
   const containerClass = [className, 'space-y-4'].filter(Boolean).join(' ');
   return (
-    <div className={containerClass} style={style} dir="rtl">
+    <div className={containerClass} style={style} dir="rtl" lang="ug">
       {blocks}
     </div>
   );

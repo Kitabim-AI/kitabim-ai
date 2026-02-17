@@ -126,7 +126,8 @@ h4,
 h5,
 h6 {
   font-family: var(--font-headers) !important;
-  font-weight: bold !important;
+  font-weight: normal !important;
+  letter-spacing: normal !important;
 }
 
 nav *,
@@ -197,6 +198,10 @@ body::after {
   font-family: var(--font-uyghur);
   direction: rtl;
   line-height: 1.8;
+  text-rendering: optimizeLegibility;
+  font-variant-ligatures: common-ligatures;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Custom Scrollbars */

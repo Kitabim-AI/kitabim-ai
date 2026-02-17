@@ -65,8 +65,8 @@ export function UserMenu() {
         className={`flex items-center gap-3 px-2 py-2 pr-4 bg-white/60 backdrop-blur-md border border-[#0369a1]/10 rounded-2xl transition-all hover:bg-white hover:shadow-xl hover:shadow-[#0369a1]/10 group ${isOpen ? 'ring-4 ring-[#0369a1]/5 border-[#0369a1]/30' : ''}`}
       >
         <div className="flex flex-col items-end mr-3 hidden sm:flex">
-          <span className="text-sm font-normal text-[#1a1a1a] tracking-tight">{user.displayName}</span>
-          <span className="text-[14px] font-normal text-[#94a3b8] uppercase tracking-widest">{currentRole.label}</span>
+          <span className="text-sm font-normal text-[#1a1a1a]">{user.displayName}</span>
+          <span className="text-[14px] font-normal text-[#94a3b8] uppercase">{currentRole.label}</span>
         </div>
 
         <div className="relative">
@@ -99,7 +99,7 @@ export function UserMenu() {
           </div>
 
           <div className="space-y-1">
-            <div className="px-4 py-3 flex items-center gap-3 text-sm font-normal text-[#94a3b8] uppercase tracking-widest border-b border-[#0369a1]/5 mb-1">
+            <div className="px-4 py-3 flex items-center gap-3 text-sm font-normal text-[#94a3b8] uppercase border-b border-[#0369a1]/5 mb-1">
               {t('auth.yourRole')} <span className={`px-2 py-0.5 rounded-lg ${currentRole.color} text-white`}>{currentRole.label}</span>
             </div>
 
@@ -131,7 +131,7 @@ export function AuthButton() {
     return (
       <div className="flex items-center gap-2 px-6 py-2.5 bg-white/40 backdrop-blur-md rounded-2xl border border-[#0369a1]/10 animate-pulse">
         <div className="w-4 h-4 bg-[#0369a1]/30 rounded-full animate-bounce" />
-        <span className="text-sm font-normal text-[#0369a1]/50 tracking-widest uppercase">{t('common.loading')}</span>
+        <span className="text-sm font-normal text-[#0369a1]/50 uppercase">{t('common.loading')}</span>
       </div>
     );
   }

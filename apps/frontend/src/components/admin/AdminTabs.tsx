@@ -34,7 +34,7 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
   const visibleTabs = tabs.filter((tab) => !tab.adminOnly || isAdmin);
 
   return (
-    <div className="space-y-8 animate-fade-in" dir="rtl">
+    <div className="space-y-8 animate-fade-in" dir="rtl" lang="ug">
       {/* Tab Navigation */}
       <div className="flex items-center gap-4 border-b border-[#0369a1]/10">
         {visibleTabs.map((tab) => (
@@ -42,7 +42,7 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`
-              flex items-center gap-3 px-8 py-4 text-[16px] font-black uppercase tracking-widest
+              flex items-center gap-3 px-8 py-4 text-[16px] font-normal uppercase
               border-b-4 transition-all active:scale-95
               ${activeTab === tab.id
                 ? 'border-[#0369a1] text-[#1a1a1a]'
