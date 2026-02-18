@@ -39,8 +39,19 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [view, setView] = useState<'home' | 'library' | 'admin' | 'reader' | 'global-chat'>('home');
+  const [view, setViewInternal] = useState<'home' | 'library' | 'admin' | 'reader' | 'global-chat'>('home');
   const [previousView, setPreviousView] = useState<'home' | 'library' | 'admin' | 'global-chat'>('home');
+
+  const setView = (newView: 'home' | 'library' | 'admin' | 'reader' | 'global-chat') => {
+    if (newView !== view) {
+      // Only set previousView if the current view is not 'reader'
+      // This ensures we always return to a main navigation view
+      if (view !== 'reader') {
+        setPreviousView(view);
+      }
+      setViewInternal(newView);
+    }
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [homeSearchQuery, setHomeSearchQuery] = useState('');
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);

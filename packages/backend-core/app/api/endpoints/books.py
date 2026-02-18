@@ -836,6 +836,7 @@ async def upload_pdf(
         id=book_id,
         content_hash=content_hash,
         title=file.filename.replace(".pdf", ""),
+        file_name=file.filename,
         author="",
         volume=None,
         total_pages=0,

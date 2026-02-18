@@ -98,6 +98,7 @@ class Book(Base):
         nullable=False
     )
     is_indexed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    file_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     updated_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 

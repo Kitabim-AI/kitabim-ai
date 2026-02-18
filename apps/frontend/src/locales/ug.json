@@ -71,7 +71,7 @@
     "switchLanguage": "تىل ئالماشتۇرۇش"
   },
   "home": {
-    "searchPlaceholder": "كىتاب، ئاپتور ياكى تۈرلەر بويىچە ئىزدەڭ...",
+    "searchPlaceholder": "كىتاب نامى، ئاپتورى ياكى تۈرلەر بويىچە ئىزدەڭ...",
     "topCategories": "ئەڭ كۆپ كۆرۈلگەن تۈرلەر",
     "searchResults": "ئىزدەش نەتىجىسى",
     "resultsFor": "ئۈچۈن تېپىلغانلار",
@@ -91,11 +91,11 @@
   },
   "bookCard": {
     "ready": "تامام",
-    "processing": "بىر تەرەپ قىلىنىۋاتىدۇ",
+    "processing": "بىر تەرەپ قىلىۋاتىدۇ",
     "failed": "خاتالىق",
     "pending": "ساقلاۋاتىدۇ",
-    "public": "ئاممىۋى",
-    "private": "شەخسىي",
+    "public": "ئاشكارا",
+    "private": "يوشۇرۇن",
     "category": "تۈر"
   },
   "chat": {

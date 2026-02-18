@@ -74,6 +74,7 @@ class Book(BaseModel):
     last_error: Optional[ErrorEvent] = None  # DB: last_error, API: lastError
     completed_count: int = 0  # DB: completed_count, API: completedCount
     error_count: int = 0  # DB: error_count, API: errorCount
+    file_name: Optional[str] = None  # Original uploaded filename
 
 
 class PaginatedBooks(BaseModel):
