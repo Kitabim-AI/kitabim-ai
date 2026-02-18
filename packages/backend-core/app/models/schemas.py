@@ -77,11 +77,16 @@ class Book(BaseModel):
 
 
 class PaginatedBooks(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        from_attributes=True
+    )
     books: List[Book]
     total: int
-    totalReady: int
+    total_ready: int
     page: int
-    pageSize: int
+    page_size: int
 
 
 class ChatRequest(BaseModel):

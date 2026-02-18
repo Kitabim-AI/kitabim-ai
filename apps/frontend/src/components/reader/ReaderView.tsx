@@ -207,8 +207,15 @@ export const ReaderView: React.FC = () => {
     bookActions.saveCorrections(selectedBook, editContent, setIsEditing);
   };
 
-  const handleUpdatePage = (id: string, num: number, text: string) => {
-    bookActions.handleUpdatePage(id, num, text, setEditingPageNum);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleUpdatePage = async (id: string, num: number, text: string) => {
+    setIsSaving(true);
+    try {
+      await bookActions.handleUpdatePage(id, num, text, setEditingPageNum);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -247,9 +254,9 @@ export const ReaderView: React.FC = () => {
             {isGuestOrReader && (
               <div className="flex items-center gap-1 bg-white/60 border border-[#0369a1]/20 rounded-2xl p-1 shadow-sm">
                 <button onClick={() => setCurrentPage((currentPage || 1) - 1)} disabled={(currentPage || 1) <= 1} className="p-2 hover:bg-[#0369a1]/10 rounded-xl disabled:opacity-30"><ChevronRight size={18} /></button>
-                <input type="text" value={pageInput} onChange={(e) => setPageInput(e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => { if (e.key === 'Enter') { const v = parseInt(pageInput); if (v >= 1 && v <= (selectedBook.totalPages || 9999)) setCurrentPage(v); else setPageInput((currentPage || 1).toString()); } }} className="w-10 text-center bg-transparent text-sm" />
-                <span className="text-sm text-[#94a3b8]">/ {selectedBook.totalPages || '?'}</span>
-                <button onClick={() => setCurrentPage((currentPage || 1) + 1)} disabled={(currentPage || 1) >= (selectedBook.totalPages || 9999)} className="p-2 hover:bg-[#0369a1]/10 rounded-xl disabled:opacity-30"><ChevronLeft size={18} /></button>
+                <input type="text" value={pageInput} onChange={(e) => setPageInput(e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => { if (e.key === 'Enter') { const v = parseInt(pageInput); if (v >= 1 && v <= (selectedBook.totalPages || (selectedBook as any).total_pages || 9999)) setCurrentPage(v); else setPageInput((currentPage || 1).toString()); } }} className="w-10 text-center bg-transparent text-sm" />
+                <span className="text-sm text-[#94a3b8]">/ {selectedBook.totalPages || (selectedBook as any).total_pages || '?'}</span>
+                <button onClick={() => setCurrentPage((currentPage || 1) + 1)} disabled={(currentPage || 1) >= (selectedBook.totalPages || (selectedBook as any).total_pages || 9999)} className="p-2 hover:bg-[#0369a1]/10 rounded-xl disabled:opacity-30"><ChevronLeft size={18} /></button>
               </div>
             )}
 
@@ -286,6 +293,7 @@ export const ReaderView: React.FC = () => {
                     onCancel={() => setEditingPageNum(null)}
                     spellCheckResult={spellCheckResult}
                     isLoading={page.status === 'processing' || page.status === 'pending'}
+                    isSaving={isSaving}
                   />
                 ))}
               {!isEditing && !isGuestOrReader && hasMorePages && <div ref={observerTarget} className="h-20 flex items-center justify-center">{isLoadingMore && <Loader2 className="animate-spin text-[#0369a1]" />}</div>}

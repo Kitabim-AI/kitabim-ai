@@ -81,7 +81,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const chat = useChat(view, selectedBook, currentPage);
 
-  const bookActions = useBookActions(refreshLibrary, setBooks, setSelectedBook, setView, setModal);
+  const bookActions = useBookActions(
+    refreshLibrary,
+    setBooks,
+    setSelectedBook,
+    setView,
+    setModal,
+    chat.setChatMessages,
+    setCurrentPage
+  );
 
   const value = {
     view,

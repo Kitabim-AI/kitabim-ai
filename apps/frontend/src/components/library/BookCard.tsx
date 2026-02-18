@@ -45,10 +45,18 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick }) => {
         )}
 
         <div className="flex items-center justify-between text-xs text-[#64748b] pt-2 border-t border-[#0369a1]/5">
-          <span className="bg-[#0369a1]/5 text-[#0369a1] px-2.5 py-1 rounded-lg font-bold">
-            {book.category?.[0] || t('common.book')}
-          </span>
-          <span className="font-semibold">{t('book.pagesCount', { count: book.pages?.length || 0 })}</span>
+          <div className="flex items-center gap-2">
+            <span className="bg-[#0369a1]/5 text-[#0369a1] px-2.5 py-1 rounded-lg font-bold">
+              {book.category?.[0] || t('common.book')}
+            </span>
+            {book.status && book.status !== 'ready' && (
+              <span className={`px-2 py-1 rounded-lg font-bold uppercase text-[10px] ${book.status === 'error' ? 'bg-red-50 text-red-500' : 'bg-amber-50 text-amber-500'
+                }`}>
+                {t(`bookCard.${book.status}`) || book.status}
+              </span>
+            )}
+          </div>
+          <span className="font-semibold">{t('book.pagesCount', { count: book.totalPages || (book as any).total_pages || 0 })}</span>
         </div>
       </div>
     </div>

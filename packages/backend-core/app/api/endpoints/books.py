@@ -211,6 +211,24 @@ async def get_books(
         result = await session.execute(stmt)
         all_books_models = result.scalars().all()
 
+        # Get page stats for these books
+        book_ids = [str(b.id) for b in all_books_models]
+        stats_by_book = {}
+        if book_ids:
+            stats_stmt = select(
+                PageDB.book_id,
+                PageDB.status,
+                func.count().label("count")
+            ).where(
+                PageDB.book_id.in_(book_ids)
+            ).group_by(PageDB.book_id, PageDB.status)
+
+            stats_result = await session.execute(stats_stmt)
+            for row in stats_result.fetchall():
+                if row.book_id not in stats_by_book:
+                    stats_by_book[row.book_id] = {}
+                stats_by_book[row.book_id][row.status] = row.count
+
         # Group by work (title and author)
         work_groups = {}
         no_work_books = []
@@ -244,15 +262,23 @@ async def get_books(
                 else:
                     last_error_obj = rep.last_error
 
-            # Convert ORM object to dict to avoid lazy loading issues
+            # Calculate total stats for the work group
+            group_completed = 0
+            group_error = 0
+            for v in volumes:
+                v_stats = stats_by_book.get(str(v.id), {})
+                group_completed += v_stats.get("completed", 0)
+                group_error += v_stats.get("error", 0)
+
+            # Convert ORM object to dict
             rep_dict = {
                 "id": rep.id,
                 "content_hash": rep.content_hash,
                 "title": rep.title,
                 "author": rep.author or "",
                 "volume": rep.volume,
-                "total_pages": sum(v.total_pages for v in volumes),  # Sum all volumes
-                "pages": [],  # We don't load pages in this endpoint
+                "total_pages": sum(v.total_pages or 0 for v in volumes),
+                "pages": [],
                 "status": rep.status,
                 "upload_date": rep.upload_date,
                 "last_updated": rep.last_updated,
@@ -263,12 +289,10 @@ async def get_books(
                 "processing_step": rep.processing_step,
                 "categories": rep.categories,
                 "last_error": last_error_obj,
-                "completed_count": 0,
-                "error_count": 0,
+                "completed_count": group_completed,
+                "error_count": group_error,
             }
-            work_dict = BookSchema.model_validate(rep_dict).model_dump()
-            # In a real grouped scenario, we'd have a separate 'Work' schema
-            works_list.append(work_dict)
+            works_list.append(BookSchema.model_validate(rep_dict))
 
         for b in no_work_books:
             # Parse last_error from JSON string if needed
@@ -282,15 +306,16 @@ async def get_books(
                 else:
                     b_last_error_obj = b.last_error
 
-            # Convert ORM object to dict to avoid lazy loading issues
+            b_stats = stats_by_book.get(str(b.id), {})
+            # Convert ORM object to dict
             b_dict = {
                 "id": b.id,
                 "content_hash": b.content_hash,
                 "title": b.title,
                 "author": b.author or "",
                 "volume": b.volume,
-                "total_pages": b.total_pages,
-                "pages": [],  # We don't load pages in this endpoint
+                "total_pages": b.total_pages or 0,
+                "pages": [],
                 "status": b.status,
                 "upload_date": b.upload_date,
                 "last_updated": b.last_updated,
@@ -300,15 +325,15 @@ async def get_books(
                 "visibility": b.visibility,
                 "processing_step": b.processing_step,
                 "categories": b.categories,
+                "errors": b.errors,
                 "last_error": b_last_error_obj,
-                "completed_count": 0,
-                "error_count": 0,
+                "completed_count": b_stats.get("completed", 0),
+                "error_count": b_stats.get("error", 0),
             }
-            works_list.append(BookSchema.model_validate(b_dict).model_dump())
+            works_list.append(BookSchema.model_validate(b_dict))
 
         # Paginate results
-        paged_results = works_list[skip : skip + pageSize]
-        books_data = [BookSchema.model_validate(w) for w in paged_results]
+        books_data = works_list[skip : skip + pageSize]
         total = len(works_list)
     else:
         # Standard flat list query
@@ -397,9 +422,9 @@ async def get_books(
     return {
         "books": books_data,
         "total": total,
-        "totalReady": total_ready,
+        "total_ready": total_ready,
         "page": page,
-        "pageSize": pageSize,
+        "page_size": pageSize,
     }
 
 
@@ -555,6 +580,8 @@ async def get_book(
     session: AsyncSession = Depends(get_session),
 ):
     """Get a single book by ID with SQLAlchemy - returns metadata only, no pages"""
+    from sqlalchemy import select, func
+    from app.db.models import Page as PageDB
     books_repo = BooksRepository(session)
 
     # Get book from SQLAlchemy
@@ -588,6 +615,17 @@ async def get_book(
         else:
             last_error_obj = book_model.last_error
 
+    # Get page stats for this book
+    stats_stmt = select(
+        PageDB.status,
+        func.count().label("count")
+    ).where(
+        PageDB.book_id == book_id
+    ).group_by(PageDB.status)
+
+    stats_result = await session.execute(stats_stmt)
+    stats = {row.status: row.count for row in stats_result.fetchall()}
+
     # Create a dict with only metadata
     book_dict = {
         "id": book_model.id,
@@ -595,7 +633,7 @@ async def get_book(
         "title": book_model.title,
         "author": book_model.author or "",
         "volume": book_model.volume,
-        "total_pages": book_model.total_pages,
+        "total_pages": book_model.total_pages or 0,
         "pages": [],  # Empty list as we don't load pages here anymore
         "status": book_model.status,
         "upload_date": book_model.upload_date,
@@ -606,10 +644,9 @@ async def get_book(
         "visibility": book_model.visibility,
         "processing_step": book_model.processing_step,
         "categories": book_model.categories,
-        # "errors": book_model.errors, # Removed in previous step
         "last_error": last_error_obj,
-        "completed_count": 0,
-        "error_count": 0,
+        "completed_count": stats.get("completed", 0),
+        "error_count": stats.get("error", 0),
     }
 
     # Convert SQLAlchemy models to Pydantic (automatic camelCase conversion)

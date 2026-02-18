@@ -105,7 +105,7 @@ export const AdminView: React.FC = () => {
               <thead>
                 <tr className="bg-[#0369a1]/5 border-b border-[#0369a1]/10 text-[14px] md:text-[16px] font-normal text-[#0369a1] uppercase">
                   <th className="px-6 py-5 text-right font-normal">{t('admin.table.bookName')}</th>
-                  <th className="px-6 py-5 w-24 text-right font-normal">{t('admin.table.pageCount')}</th>
+                  <th className="px-6 py-5 w-24 text-right font-normal">{t('book.volumeLabel') || t('admin.table.pageCount')}</th>
                   <th className="px-6 py-5 w-48 text-right font-normal">{t('admin.table.author')}</th>
                   <th className="px-6 py-5 w-60 text-right font-normal">{t('admin.table.category')}</th>
                   <th className="px-6 py-5 text-right font-normal">{t('admin.table.progress')}</th>
@@ -209,8 +209,14 @@ export const AdminView: React.FC = () => {
                       <div className="flex flex-col gap-2 min-w-[120px]">
                         <ProgressBar book={book} />
                         <div className="flex justify-between text-[12px] text-slate-400">
-                          <span>{book.completedCount || book.pages.filter(p => p.status === 'completed').length}/{book.totalPages}</span>
-                          <span className="uppercase">{book.status}</span>
+                          <span>
+                            {(book.completedCount !== undefined ? book.completedCount : (book as any).completed_count) || (book.pages?.filter(p => p.status === 'completed').length) || 0}
+                            /
+                            {book.totalPages || (book as any).total_pages || 0}
+                          </span>
+                          <span className={`${book.status === 'error' ? 'text-red-500 font-bold' : ''} uppercase`}>
+                            {t(`bookCard.${book.status}`) || book.status}
+                          </span>
                         </div>
                       </div>
                     </td>

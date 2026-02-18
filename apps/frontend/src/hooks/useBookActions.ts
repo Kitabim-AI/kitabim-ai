@@ -9,7 +9,9 @@ export const useBookActions = (
   setBooks: (books: Book[] | ((prev: Book[]) => Book[])) => void,
   setSelectedBook: (book: Book | null | ((prev: Book | null) => Book | null)) => void,
   setView: (view: any) => void,
-  setModal: (modal: any) => void
+  setModal: (modal: any) => void,
+  setChatMessages: (messages: any[]) => void,
+  setCurrentPage: (page: number) => void
 ) => {
   const { addNotification } = useNotification();
   const { t } = useI18n();
@@ -217,16 +219,36 @@ export const useBookActions = (
   const handleUpdatePage = async (bookId: string, pageNum: number, newText: string, setEditingPageNum: any) => {
     try {
       await PersistenceService.updatePage(bookId, pageNum, newText);
-      setEditingPageNum(null);
+
       setSelectedBook(prev => {
         if (!prev || prev.id !== bookId) return prev;
+
+        const existingPages = prev.pages || [];
+        const pageExists = existingPages.some(r => r.pageNumber === pageNum);
+
+        let newPages;
+        if (pageExists) {
+          newPages = existingPages.map(r =>
+            r.pageNumber === pageNum ? { ...r, text: newText, isVerified: true, status: 'completed' } : r
+          );
+        } else {
+          newPages = [...existingPages, {
+            pageNumber: pageNum,
+            text: newText,
+            isVerified: true,
+            status: 'completed'
+          }].sort((a, b) => a.pageNumber - b.pageNumber);
+        }
+
         return {
           ...prev,
-          pages: (prev.pages || []).map(r => r.pageNumber === pageNum ? { ...r, text: newText, isVerified: true } : r),
+          pages: newPages as any,
           lastUpdated: new Date()
         };
       });
-      // The polling in App.tsx will sync the data within a few seconds
+
+      setEditingPageNum(null);
+      await refreshLibrary();
       addNotification(t('common.pageUpdated', { pageNum }), "success");
     } catch (err) {
       console.error("Failed to update page", err);
@@ -239,17 +261,15 @@ export const useBookActions = (
     }
   };
 
-  const openReader = async (book: Book, setEditContent: any, setChatMessages: any, setCurrentPage: any) => {
+  const openReader = async (book: Book) => {
     try {
       const fullBook = await PersistenceService.getBookById(book.id);
       if (!fullBook) throw new Error("Could not load book content");
 
-      // We do NOT fetch the full content string here.
-      // The ReaderView will fetch pages for reading,
-      // and only fetch full content if/when the user clicks "Edit Book".
+      // Ensure pages is an array
+      if (!fullBook.pages) fullBook.pages = [];
 
       setSelectedBook(fullBook);
-      setEditContent(''); // Intentionally empty to start fast
       setChatMessages([]);
       setView('reader');
       setCurrentPage(1);
