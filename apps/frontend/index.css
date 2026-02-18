@@ -257,3 +257,7 @@ body::after {
   background: rgba(3, 105, 161, 0.2);
   color: #1a1a1a;
 }
+
+.paper-background {
+  background: linear-gradient(rgba(255,255,255,0.7), rgba(255,255,255,0.7)), url("https://www.transparenttextures.com/patterns/paper-fibers.png");
+}

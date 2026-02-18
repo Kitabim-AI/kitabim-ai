@@ -76,7 +76,7 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
     setIsLoadingMoreShelf(true);
     const nextPage = shelfPage + 1;
     try {
-      const response = await PersistenceService.getGlobalLibrary(nextPage, COLLECTION_PAGE_SIZE, searchQuery, 'uploadDate', -1, true);
+      const response = await PersistenceService.getGlobalLibrary(nextPage, COLLECTION_PAGE_SIZE, searchQuery, 'uploadDate', -1, true, category);
       if (response.books.length > 0) {
         setBooks(prev => {
           const existingIds = prev.map(b => b.id);

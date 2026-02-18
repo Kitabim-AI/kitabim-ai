@@ -1,33 +1,16 @@
 import React, { useRef } from 'react';
 import { BookOpen, Library, MessageSquare, LayoutDashboard, Search, Upload } from 'lucide-react';
 import { AuthButton } from '../auth';
-import { LanguageSwitcher } from '../common/LanguageSwitcher';
 import { useAuth, useIsEditor } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
+import { useAppContext } from '../../context/AppContext';
 
-interface NavbarProps {
-  view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat';
-  setView: (view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat') => void;
-  searchQuery: string;
-  setSearchQuery: (query: string) => void;
-  onFileUpload: (event: React.ChangeEvent<HTMLInputElement>) => void;
-  clearChat: () => void;
-  setPage: (page: number) => void;
-}
-
-export const Navbar: React.FC<NavbarProps> = ({
-  view,
-  setView,
-  searchQuery,
-  setSearchQuery,
-  onFileUpload,
-  clearChat,
-  setPage,
-}) => {
+export const Navbar: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { isAuthenticated } = useAuth();
   const isEditor = useIsEditor();
   const { t } = useI18n();
+  const { view, setView, searchQuery, setSearchQuery, bookActions, chat, setPage } = useAppContext();
 
   return (
     <nav className="px-8 py-4 flex items-center justify-between sticky top-0 z-[100] transition-all duration-300 relative" dir="rtl">
@@ -71,7 +54,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           />
           <NavButton
             active={view === 'global-chat'}
-            onClick={() => { setView('global-chat'); clearChat(); }}
+            onClick={() => { setView('global-chat'); chat.clearChat(); }}
             icon={<MessageSquare size={18} strokeWidth={2.5} />}
             label={t('nav.globalChat')}
           />
@@ -122,13 +105,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             <input
               type="file"
               ref={fileInputRef}
-              onChange={onFileUpload}
+              onChange={bookActions.handleFileUpload}
               accept="application/pdf"
               className="hidden"
             />
           </>
         )}
-        {/* <LanguageSwitcher /> */}
         <AuthButton onLogout={() => setView('home')} />
       </div>
     </nav>
