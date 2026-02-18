@@ -81,7 +81,7 @@ export function UserMenu({ onLogout }: { onLogout?: () => void }) {
       >
         <div className="flex flex-col items-end mr-3 hidden sm:flex">
           <span className="text-sm font-normal text-[#1a1a1a]">{user.displayName}</span>
-          <span className="text-[12px] font-normal text-[#FF9800] uppercase tracking-wider">{currentRole.label}</span>
+          <span className="text-[12px] font-normal text-[#FF9800] uppercase">{currentRole.label}</span>
         </div>
 
         <div className="relative">

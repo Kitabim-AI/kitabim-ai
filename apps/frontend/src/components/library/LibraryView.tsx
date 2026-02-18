@@ -42,10 +42,10 @@ export const LibraryView: React.FC = () => {
               <Library size={32} strokeWidth={2.5} />
             </div>
             <div>
-              <h2 className="text-3xl font-black text-[#1a1a1a] tracking-tight">{t('library.title')}</h2>
+              <h2 className="text-3xl font-black text-[#1a1a1a]">{t('library.title')}</h2>
               <div className="flex items-center gap-2 mt-2">
                 <span className="w-8 h-[2px] bg-[#0369a1] rounded-full" />
-                <p className="text-[14px] font-black text-[#94a3b8] uppercase tracking-[0.2em]">{t('library.subtitle')}</p>
+                <p className="text-[14px] font-black text-[#94a3b8] uppercase">{t('library.subtitle')}</p>
               </div>
             </div>
           </div>
@@ -92,7 +92,7 @@ export const LibraryView: React.FC = () => {
         ) : !hasMore && books.length > 0 && (
           <div className="flex flex-col items-center gap-4 opacity-30">
             <div className="w-16 h-[1px] bg-[#94a3b8]" />
-            <p className="text-[12px] font-black text-[#94a3b8] uppercase tracking-[0.5em]">{t('common.endOfList')}</p>
+            <p className="text-[12px] font-black text-[#94a3b8] uppercase">{t('common.endOfList')}</p>
             <div className="w-16 h-[2px] bg-[#94a3b8]" />
           </div>
         )}
