@@ -326,6 +326,7 @@ export const ReaderView: React.FC = () => {
               setChatInput={chat.setChatInput}
               onSendMessage={chat.handleSendMessage}
               isChatting={chat.isChatting}
+              streamingMessage={chat.streamingMessage}
               currentPage={currentPage}
               usageStatus={chat.usageStatus}
               chatContainerRef={chat.chatContainerRef}

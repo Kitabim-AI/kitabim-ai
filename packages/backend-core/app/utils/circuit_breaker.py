@@ -17,6 +17,7 @@ class CircuitBreakerConfig:
     failure_threshold: int = 5
     recovery_timeout: float = 30.0
     half_open_max_calls: int = 1
+    cooling_period: float = 0.0  # Grace period after initialization (seconds)
 
 
 class CircuitBreaker:
@@ -28,10 +29,18 @@ class CircuitBreaker:
         self._opened_at = 0.0
         self._half_open_in_flight = 0
         self._lock = asyncio.Lock()
+        self._initialized_at = time.monotonic()  # Track when circuit breaker was created
 
     @property
     def is_open(self) -> bool:
         return self._state == "open"
+
+    def _in_cooling_period(self) -> bool:
+        """Check if we're still in the cooling/grace period after initialization."""
+        if self.config.cooling_period <= 0:
+            return False
+        elapsed = time.monotonic() - self._initialized_at
+        return elapsed < self.config.cooling_period
 
     async def _allow_call(self) -> bool:
         now = time.monotonic()
@@ -59,6 +68,10 @@ class CircuitBreaker:
 
     async def _on_failure(self) -> None:
         async with self._lock:
+            # Skip failure tracking during cooling period
+            if self._in_cooling_period():
+                return
+
             self._failure_count += 1
             if self._state == "half_open" or self._failure_count >= self.config.failure_threshold:
                 self._state = "open"

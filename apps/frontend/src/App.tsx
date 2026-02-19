@@ -79,6 +79,7 @@ const AppContent: React.FC = () => {
           setChatInput={chat.setChatInput}
           onSendMessage={chat.handleSendMessage}
           isChatting={chat.isChatting}
+          streamingMessage={chat.streamingMessage}
           usageStatus={chat.usageStatus}
           onClose={() => setView(previousView)}
           chatContainerRef={chat.chatContainerRef}

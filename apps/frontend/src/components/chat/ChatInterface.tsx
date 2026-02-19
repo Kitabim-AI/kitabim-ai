@@ -5,6 +5,7 @@ import { GlassPanel } from '../ui/GlassPanel';
 import { useI18n } from '../../i18n/I18nContext';
 import { useAuth } from '../../hooks/useAuth';
 import { LoginButton } from '../auth/AuthButton';
+import { MarkdownContent } from '../common/MarkdownContent';
 
 interface ChatInterfaceProps {
   type: 'book' | 'global';
@@ -15,6 +16,7 @@ interface ChatInterfaceProps {
   setChatInput: (input: string) => void;
   onSendMessage: () => void;
   isChatting: boolean;
+  streamingMessage?: string;
   currentPage?: number | null;
   onClose?: () => void;
   chatContainerRef: React.RefObject<HTMLDivElement>;
@@ -30,6 +32,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   setChatInput,
   onSendMessage,
   isChatting,
+  streamingMessage = '',
   currentPage,
   onClose,
   chatContainerRef,
@@ -105,13 +108,39 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     ? 'bg-white/80 border border-[#0369a1]/10 text-[#1a1a1a] rounded-tr-none'
                     : 'bg-[#0369a1] text-white rounded-tl-none shadow-xl shadow-[#0369a1]/10'
                     }`}>
-                    {msg.text}
+                    {msg.role === 'user' ? (
+                      msg.text
+                    ) : (
+                      <MarkdownContent
+                        content={msg.text}
+                        className="text-white [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white"
+                      />
+                    )}
                   </div>
                 </div>
               </div>
             ))
           )}
-          {isChatting && (
+          {streamingMessage && (
+            <div className="flex flex-row-reverse gap-6 items-start animate-fade-in">
+              <div className="w-12 h-12 rounded-2xl bg-[#0369a1] text-white flex items-center justify-center shadow-xl shadow-[#0369a1]/20">
+                <Bot size={24} strokeWidth={2.5} />
+              </div>
+              <div className="flex flex-col gap-2 max-w-[80%] items-end">
+                <span className="text-[14px] font-normal text-[#94a3b8] uppercase px-2">
+                  {t('chat.ai')}
+                </span>
+                <div className="px-8 py-5 rounded-[28px] rounded-tl-none text-lg font-normal leading-loose uyghur-text shadow-xl shadow-[#0369a1]/10 bg-[#0369a1] text-white">
+                  <MarkdownContent
+                    content={streamingMessage}
+                    className="text-white [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white"
+                  />
+                  <span className="inline-block w-[2px] h-5 bg-white/70 ml-1 animate-pulse" />
+                </div>
+              </div>
+            </div>
+          )}
+          {isChatting && !streamingMessage && (
             <div className="flex flex-row-reverse gap-6 items-start animate-fade-in">
               <div className="w-12 h-12 rounded-2xl bg-[#0369a1] text-white flex items-center justify-center shadow-xl shadow-[#0369a1]/20 animate-pulse">
                 <Bot size={24} strokeWidth={2.5} />
@@ -218,12 +247,35 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 ? 'bg-white/80 border border-[#0369a1]/10 text-[#1a1a1a] rounded-tr-none'
                 : 'bg-[#0369a1] text-white rounded-tl-none shadow-lg shadow-[#0369a1]/5'
                 }`}>
-                {msg.text}
+                {msg.role === 'user' ? (
+                  msg.text
+                ) : (
+                  <MarkdownContent
+                    content={msg.text}
+                    className="text-white [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white"
+                  />
+                )}
               </div>
             </div>
           </div>
         ))}
-        {isChatting && (
+        {streamingMessage && (
+          <div className="flex gap-3 flex-row-reverse items-start animate-fade-in">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm shadow-sm bg-[#0369a1] text-white">
+              <Bot size={18} strokeWidth={2.5} />
+            </div>
+            <div className="flex flex-col gap-1.5 max-w-[85%] items-end">
+              <div className="px-5 py-3.5 rounded-2xl text-sm font-normal leading-relaxed shadow-lg shadow-[#0369a1]/5 bg-[#0369a1] text-white rounded-tl-none">
+                <MarkdownContent
+                  content={streamingMessage}
+                  className="text-white [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white"
+                />
+                <span className="inline-block w-[2px] h-4 bg-white/70 ml-1 animate-pulse" />
+              </div>
+            </div>
+          </div>
+        )}
+        {isChatting && !streamingMessage && (
           <div className="flex flex-row-reverse gap-3 items-center px-4 animate-fade-in">
             <div className="w-1.5 h-1.5 bg-[#0369a1] rounded-full animate-bounce" />
             <div className="w-1.5 h-1.5 bg-[#0369a1] rounded-full animate-bounce [animation-delay:0.2s]" />

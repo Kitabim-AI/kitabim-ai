@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Message, Book } from '@shared/types';
-import { chatWithBook, getChatUsage } from '../services/geminiService';
+import { chatWithBook, chatWithBookStream, getChatUsage } from '../services/geminiService';
 import { useAuth } from './useAuth';
 
 export const useChat = (view: string, selectedBook: Book | null, currentPage: number | null) => {
@@ -8,8 +8,15 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [isChatting, setIsChatting] = useState(false);
+  const [streamingMessage, setStreamingMessage] = useState('');
+  const streamingMessageRef = useRef('');
   const [usageStatus, setUsageStatus] = useState<{ usage: number, limit: number | null, hasReachedLimit: boolean } | null>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    streamingMessageRef.current = streamingMessage;
+  }, [streamingMessage]);
 
   const scrollToBottom = () => {
     if (chatContainerRef.current) {
@@ -19,7 +26,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
 
   useEffect(() => {
     scrollToBottom();
-  }, [chatMessages, isChatting, view]);
+  }, [chatMessages, isChatting, view, streamingMessage]);
 
   // Fetch usage status on mount and when messages change (after sending)
   useEffect(() => {
@@ -39,21 +46,39 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     setChatMessages(prev => [...prev, userMsg]);
     setChatInput('');
     setIsChatting(true);
+    setStreamingMessage('');
 
     try {
       const bookId = (view === 'global-chat') ? 'global' : selectedBook!.id;
       const historyToSend = [...chatMessages, userMsg];
 
-      const aiResponse = await chatWithBook(
+      await chatWithBookStream(
         userMsg.text,
         bookId,
         view === 'reader' ? (currentPage || undefined) : undefined,
-        historyToSend
+        historyToSend,
+        // onChunk
+        (chunk: string) => {
+          setStreamingMessage(prev => prev + chunk);
+        },
+        // onComplete
+        () => {
+          // Use ref to get the latest value
+          const finalMessage = streamingMessageRef.current;
+          setChatMessages(prev => [...prev, { role: 'model', text: finalMessage }]);
+          setStreamingMessage('');
+          setIsChatting(false);
+        },
+        // onError
+        (error: string) => {
+          setChatMessages(prev => [...prev, { role: 'model', text: error }]);
+          setStreamingMessage('');
+          setIsChatting(false);
+        }
       );
-      setChatMessages(prev => [...prev, { role: 'model', text: aiResponse }]);
     } catch (err) {
       setChatMessages(prev => [...prev, { role: 'model', text: "كەچۈرۈڭ، جاۋاب بېرەلمىدىم." }]);
-    } finally {
+      setStreamingMessage('');
       setIsChatting(false);
     }
   };
@@ -66,6 +91,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     chatInput,
     setChatInput,
     isChatting,
+    streamingMessage,
     usageStatus,
     handleSendMessage,
     clearChat,

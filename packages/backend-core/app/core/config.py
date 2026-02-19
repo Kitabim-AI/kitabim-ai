@@ -64,6 +64,7 @@ class Settings:
     llm_cb_failure_threshold: int = int(os.getenv("LLM_CB_FAILURE_THRESHOLD", "5"))
     llm_cb_recovery_seconds: int = int(os.getenv("LLM_CB_RECOVERY_SECONDS", "30"))
     llm_cb_half_open_max_calls: int = int(os.getenv("LLM_CB_HALF_OPEN_MAX_CALLS", "1"))
+    llm_cb_cooling_period: int = int(os.getenv("LLM_CB_COOLING_PERIOD", "60"))  # Grace period after service restart (seconds)
 
     # Queue / Workers
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
