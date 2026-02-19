@@ -100,13 +100,16 @@ export function UserManagementPanel() {
   const [users, setUsers] = useState<UserPublic[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [pageSize] = useState(10);
+  const [pageSize] = useState(20);
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
+  const loaderRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -118,25 +121,60 @@ export function UserManagementPanel() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const loadUsers = useCallback(async () => {
+  const loadUsers = useCallback(async (isInitial: boolean = false) => {
     if (!isAdmin) return;
+    if (!isInitial && (isLoading || isLoadingMore || !hasMore)) return;
 
-    setIsLoading(true);
+    if (isInitial) {
+      setIsLoading(true);
+      setPage(1);
+    } else {
+      setIsLoadingMore(true);
+    }
+
     setError(null);
     try {
-      const data = await UserService.listUsers(page, pageSize, roleFilter);
-      setUsers(data.users);
+      const nextPage = isInitial ? 1 : page + 1;
+      const data = await UserService.listUsers(nextPage, pageSize, roleFilter);
+
+      if (isInitial) {
+        setUsers(data.users);
+      } else {
+        setUsers(prev => {
+          const existingIds = prev.map(u => u.id);
+          const newUsers = data.users.filter(u => !existingIds.includes(u.id));
+          return [...prev, ...newUsers];
+        });
+        setPage(nextPage);
+      }
+
       setTotal(data.total);
+      setHasMore(data.users.length === pageSize && (isInitial ? data.users.length : users.length + data.users.length) < data.total);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('admin.users.loadError'));
     } finally {
       setIsLoading(false);
+      setIsLoadingMore(false);
     }
-  }, [isAdmin, page, pageSize, roleFilter]);
+  }, [isAdmin, page, pageSize, roleFilter, isLoading, isLoadingMore, hasMore, users.length]);
 
   useEffect(() => {
-    loadUsers();
-  }, [loadUsers]);
+    loadUsers(true);
+  }, [isAdmin, roleFilter]); // Reload on filter change
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !isLoading && !isLoadingMore && hasMore) {
+          loadUsers(false);
+        }
+      },
+      { threshold: 0.1, rootMargin: '200px' }
+    );
+
+    if (loaderRef.current) observer.observe(loaderRef.current);
+    return () => observer.disconnect();
+  }, [loadUsers, isLoading, isLoadingMore, hasMore]);
 
   const handleRoleChange = async (userId: string, newRole: 'admin' | 'editor' | 'reader') => {
     setIsUpdating(userId);
@@ -165,8 +203,6 @@ export function UserManagementPanel() {
       setIsUpdating(null);
     }
   };
-
-  const totalPages = Math.ceil(total / pageSize);
 
   if (!isAdmin) {
     return (
@@ -253,7 +289,6 @@ export function UserManagementPanel() {
                           key={role.id}
                           onClick={() => {
                             setRoleFilter(role.id);
-                            setPage(1);
                             setIsFilterOpen(false);
                           }}
                           className={`w-full flex items-center justify-between px-5 py-3 text-[14px] font-normal uppercase transition-all ${roleFilter === role.id ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
@@ -270,7 +305,7 @@ export function UserManagementPanel() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#0369a1]/5">
-              {isLoading ? (
+              {isLoading && users.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="py-20 text-center">
                     <div className="w-10 h-10 border-4 border-[#0369a1]/5 border-t-[#0369a1] rounded-full animate-spin mx-auto"></div>
@@ -295,34 +330,21 @@ export function UserManagementPanel() {
           </table>
         </div>
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="px-8 py-5 border-t border-[#0369a1]/10 flex items-center justify-between bg-[#0369a1]/5">
-            <div className="text-[14px] font-normal text-slate-400 uppercase">
-              {t('admin.users.pagination', {
-                total: total,
-                start: (page - 1) * pageSize + 1,
-                end: Math.min(page * pageSize, total)
-              })}
+        {/* Infinite Scroll Trigger */}
+        <div ref={loaderRef} className="px-8 py-8 border-t border-[#0369a1]/10 flex flex-col items-center justify-center bg-[#0369a1]/5 gap-4">
+          {isLoadingMore ? (
+            <div className="flex flex-col items-center gap-3 animate-fade-in">
+              <div className="w-8 h-8 border-3 border-[#0369a1]/10 border-t-[#0369a1] rounded-full animate-spin"></div>
+              <span className="text-[10px] font-black text-[#0369a1] uppercase animate-pulse">{t('common.loadingMore')}</span>
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setPage((p) => p - 1)}
-                disabled={page === 1}
-                className="p-2 rounded-xl bg-white/50 border border-[#0369a1]/10 hover:bg-[#0369a1]/10 hover:text-[#0369a1] disabled:opacity-20 transition-all text-[#1a1a1a] shadow-sm active:scale-90"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M9 18l6-6-6-6" /></svg>
-              </button>
-              <button
-                onClick={() => setPage((p) => p + 1)}
-                disabled={page === totalPages}
-                className="p-2 rounded-xl bg-white/50 border border-[#0369a1]/10 hover:bg-[#0369a1]/10 hover:text-[#0369a1] disabled:opacity-20 transition-all text-[#1a1a1a] shadow-sm active:scale-90"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M15 18l-6-6 6-6" /></svg>
-              </button>
+          ) : !hasMore && users.length > 0 && (
+            <div className="flex flex-col items-center gap-3 opacity-30">
+              <div className="w-12 h-[1px] bg-[#94a3b8]" />
+              <p className="text-[10px] font-black text-[#94a3b8] uppercase">{t('common.endOfList')}</p>
+              <div className="w-12 h-[2px] bg-[#94a3b8]" />
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

@@ -10,18 +10,33 @@ import { ActionMenu } from './ActionMenu';
 
 export const AdminView: React.FC = () => {
   const {
-    sortedBooks: books,
+    books,
     totalBooks,
-    page,
-    pageSize,
-    setPage,
-    setPageSize,
-    bookActions
+    bookActions,
+    loaderRef,
+    isLoadingMoreShelf: isLoadingMore,
+    hasMoreShelf: hasMore,
+    loadMoreShelf: loadMore,
+    isLoading: isInitialLoading
   } = useAppContext();
   const { t } = useI18n();
 
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !isInitialLoading && hasMore && !isLoadingMore) {
+          loadMore();
+        }
+      },
+      { threshold: 0.1, rootMargin: '200px' }
+    );
+
+    if (loaderRef.current) observer.observe(loaderRef.current);
+    return () => observer.disconnect();
+  }, [hasMore, isLoadingMore, loadMore, loaderRef, isInitialLoading]);
 
   // Local editing state
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
@@ -90,7 +105,7 @@ export const AdminView: React.FC = () => {
 
       <NotificationContainer />
 
-      {bookActions.isCheckingGlobal && (
+      {(bookActions.isCheckingGlobal || isInitialLoading) && books.length === 0 && (
         <div className="glass-panel p-20 flex flex-col items-center justify-center text-center animate-pulse">
           <Database className="w-16 h-16 text-[#75C5F0] mb-6 animate-bounce" />
           <h3 className="text-xl font-normal text-[#1a1a1a]">{t('common.loading')}</h3>
@@ -98,7 +113,7 @@ export const AdminView: React.FC = () => {
         </div>
       )}
 
-      {!bookActions.isCheckingGlobal && (
+      {(!bookActions.isCheckingGlobal && (!isInitialLoading || books.length > 0)) && (
         <div className="glass-panel overflow-hidden rounded-[24px] p-0 shadow-xl border border-[#0369a1]/10">
           <div className="overflow-x-auto custom-scrollbar">
             <table className="w-full text-right min-w-[1000px]" dir="rtl">
@@ -231,8 +246,19 @@ export const AdminView: React.FC = () => {
               </tbody>
             </table>
           </div>
-          <div className="bg-[#0369a1]/5 px-6 py-4">
-            <Pagination page={page} pageSize={pageSize} totalItems={totalBooks} onPageChange={setPage} onPageSizeChange={setPageSize} />
+          <div ref={loaderRef as any} className="bg-[#0369a1]/5 px-6 py-8 flex flex-col items-center justify-center gap-4">
+            {isLoadingMore ? (
+              <div className="flex flex-col items-center gap-3 animate-fade-in">
+                <div className="w-8 h-8 border-3 border-[#0369a1]/10 border-t-[#0369a1] rounded-full animate-spin"></div>
+                <span className="text-[10px] font-black text-[#0369a1] uppercase animate-pulse">{t('common.loadingMore')}</span>
+              </div>
+            ) : !hasMore && books.length > 0 && (
+              <div className="flex flex-col items-center gap-3 opacity-30">
+                <div className="w-12 h-[1px] bg-[#94a3b8]" />
+                <p className="text-[10px] font-black text-[#94a3b8] uppercase">{t('common.endOfList')}</p>
+                <div className="w-12 h-[2px] bg-[#94a3b8]" />
+              </div>
+            )}
           </div>
         </div>
       )}

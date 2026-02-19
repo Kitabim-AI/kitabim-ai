@@ -93,6 +93,15 @@ class JobsRepository(BaseRepository[Job]):
         await self.session.execute(stmt)
         await self.session.flush()
 
+    async def count_active(self) -> int:
+        """Count jobs with status 'queued' or 'running'"""
+        result = await self.session.execute(
+            select(func.count(Job.id)).where(
+                Job.status.in_(["queued", "running"])
+            )
+        )
+        return result.scalar() or 0
+
 
 def get_jobs_repository(session: AsyncSession) -> JobsRepository:
     """Factory function for dependency injection"""

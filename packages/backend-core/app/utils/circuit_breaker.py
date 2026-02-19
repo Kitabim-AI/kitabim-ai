@@ -29,6 +29,10 @@ class CircuitBreaker:
         self._half_open_in_flight = 0
         self._lock = asyncio.Lock()
 
+    @property
+    def is_open(self) -> bool:
+        return self._state == "open"
+
     async def _allow_call(self) -> bool:
         now = time.monotonic()
         async with self._lock:

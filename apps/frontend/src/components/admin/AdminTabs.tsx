@@ -3,16 +3,17 @@
  */
 
 import React, { useState } from 'react';
-import { Book, Users } from 'lucide-react';
+import { Book, Users, Settings } from 'lucide-react';
 import { useIsAdmin } from '../../hooks/useAuth';
 import { UserManagementPanel } from './users/UserManagementPanel';
+import { SystemConfigPanel } from './config/SystemConfigPanel';
 import { useI18n } from '../../i18n/I18nContext';
 
 interface AdminTabsProps {
   bookManagementPanel: React.ReactNode;
 }
 
-type TabId = 'books' | 'users';
+type TabId = 'books' | 'users' | 'config';
 
 interface Tab {
   id: TabId;
@@ -29,6 +30,7 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
   const tabs: Tab[] = [
     { id: 'books', label: t('admin.bookManagement'), icon: <Book size={18} /> },
     { id: 'users', label: t('admin.userManagement'), icon: <Users size={18} />, adminOnly: true },
+    { id: 'config', label: t('admin.systemConfigLabel'), icon: <Settings size={18} />, adminOnly: true },
   ];
 
   const visibleTabs = tabs.filter((tab) => !tab.adminOnly || isAdmin);
@@ -60,6 +62,7 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
       <div className="animate-fade-in">
         {activeTab === 'books' && bookManagementPanel}
         {activeTab === 'users' && isAdmin && <UserManagementPanel />}
+        {activeTab === 'config' && isAdmin && <SystemConfigPanel />}
       </div>
     </div>
   );

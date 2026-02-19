@@ -30,9 +30,7 @@ class SystemConfigsRepository(BaseRepository[SystemConfig]):
             await self.session.commit()
             return config
         
-        new_config = SystemConfig(key=key, value=value, description=description)
-        await self.create(new_config)
-        return new_config
+        return await self.create(key=key, value=value, description=description)
 
 
 def get_system_configs_repository(session: AsyncSession) -> SystemConfigsRepository:

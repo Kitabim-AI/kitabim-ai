@@ -23,6 +23,13 @@ class BooksRepository(BaseRepository[Book]):
         )
         return result.scalar_one_or_none()
 
+    async def find_by_filename(self, file_name: str) -> Optional[Book]:
+        """Find book by file name"""
+        result = await self.session.execute(
+            select(Book).where(Book.file_name == file_name)
+        )
+        return result.scalar_one_or_none()
+
     async def find_many(
         self,
         status: Optional[str] = None,
@@ -137,6 +144,17 @@ class BooksRepository(BaseRepository[Book]):
         stmt = select(Book).where(
             and_(
                 Book.status == 'processing',
+                Book.last_updated < cutoff_time
+            )
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def find_stale_pending_books(self, cutoff_time: datetime) -> List[Book]:
+        """Find books stuck in pending state since before cutoff_time"""
+        stmt = select(Book).where(
+            and_(
+                Book.status == 'pending',
                 Book.last_updated < cutoff_time
             )
         )

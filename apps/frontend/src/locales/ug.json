@@ -149,6 +149,7 @@
     "title": "باشقۇرۇش",
     "bookManagement": "كىتاب باشقۇرۇش",
     "userManagement": "ئابونت باشقۇرۇش",
+    "systemConfigLabel": "سىستېما سەپلىمىسى",
     "stats": {
       "totalBooks": "جەمئىي كىتاب",
       "readyBooks": "تەييار كىتاب",
@@ -226,6 +227,18 @@
       "roleUpdateError": "رولىنى ئۆزگەرتىش مەغلۇپ بولدى",
       "statusUpdateError": "ھالىتىنى ئۆزگەرتىش مەغلۇپ بولدى",
       "pagination": "جەمئىي {{total}} ئىچىدىن {{start}} تىن {{end}} غىچە"
+    },
+    "systemConfig": {
+      "title": "سىستېما سەپلىمىسى",
+      "subtitle": "سىستېما تەڭشەكلىرىنى باشقۇرۇش",
+      "add": "سەپلىمە قوشۇش",
+      "createNew": "يېڭى سەپلىمە قۇرۇش",
+      "key": "كۇنۇپكا",
+      "value": "قىممىتى",
+      "description": "چۈشەندۈرۈش",
+      "actions": "مەشغۇلات",
+      "empty": "سەپلىمە تېپىلمىدى",
+      "emptyDescription": "تۇنجى سەپلىمىڭىزنى قۇرۇپ باشلاڭ"
     }
   },
   "spellCheck": {

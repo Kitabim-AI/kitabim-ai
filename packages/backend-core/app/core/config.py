@@ -57,6 +57,9 @@ class Settings:
     langchain_project: str | None = os.getenv("LANGCHAIN_PROJECT")
     rag_eval_enabled: bool = os.getenv("RAG_EVAL_ENABLED", "false").lower() == "true"
 
+    # Logging
+    log_level: str = os.getenv("LOG_LEVEL", "DEBUG")  # DEBUG, INFO, WARNING, ERROR
+
     # LLM Circuit Breaker
     llm_cb_failure_threshold: int = int(os.getenv("LLM_CB_FAILURE_THRESHOLD", "5"))
     llm_cb_recovery_seconds: int = int(os.getenv("LLM_CB_RECOVERY_SECONDS", "30"))

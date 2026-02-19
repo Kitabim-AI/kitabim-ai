@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from arq import create_pool
+from arq import create_pool, cron
 from arq.connections import RedisSettings
 
 from app.core.config import settings
@@ -12,7 +12,11 @@ from app.db.repositories.jobs import JobsRepository
 from app.db.repositories.books import BooksRepository
 from app.services.pdf_service import process_pdf_task
 from app.langchain import configure_langchain
-from app.utils.observability import configure_logging
+from app.utils.observability import configure_logging, log_json
+from app.services.discovery_service import DiscoveryService
+import logging
+
+logger = logging.getLogger("app.queue")
 
 _POOL = None
 
@@ -26,6 +30,17 @@ async def _get_pool():
     if _POOL is None:
         _POOL = await create_pool(_redis_settings())
     return _POOL
+
+
+async def trigger_discovery_check():
+    """Triggered after job completion to check for new books"""
+    async with db_session.async_session_factory() as session:
+        discovery = DiscoveryService(session)
+        try:
+            result = await discovery.sync_gcs_books(force=False)
+            log_json(logger, logging.INFO, "Post-job discovery check", **result)
+        except Exception as e:
+            log_json(logger, logging.WARNING, "Discovery check failed", error=str(e))
 
 
 async def enqueue_pdf_processing(
@@ -51,7 +66,9 @@ async def enqueue_pdf_processing(
 
 
 async def worker_startup(ctx):
-    configure_logging()
+    # Configure logging level from environment
+    log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
+    configure_logging(level=log_level)
     configure_langchain()
     # Initialize SQLAlchemy (PostgreSQL)
     await init_db()
@@ -64,6 +81,10 @@ async def worker_shutdown(ctx):
 async def process_pdf_job(ctx, book_id: str, job_key: Optional[str] = None):
     try:
         await process_pdf_task(book_id, job_key, raise_on_error=True)
+
+        # Trigger next discovery after successful completion
+        await trigger_discovery_check()
+
     except Exception as exc:
         job_try = ctx.get("job_try", 1)
         if job_key:
@@ -78,13 +99,17 @@ async def process_pdf_job(ctx, book_id: str, job_key: Optional[str] = None):
         raise
 
 
-# ARQ Worker Settings
-class WorkerSettings:
-    """ARQ worker configuration"""
-    functions = [process_pdf_job]
-    redis_settings = _redis_settings()
-    on_startup = worker_startup
-    on_shutdown = worker_shutdown
-    max_jobs = settings.queue_max_jobs
-    job_timeout = settings.queue_job_timeout
-    max_tries = settings.queue_max_retries
+async def scheduled_gcs_sync(ctx):
+    """Scheduled cron job to discover books in GCS"""
+    async with db_session.async_session_factory() as session:
+        discovery = DiscoveryService(session)
+        try:
+            result = await discovery.sync_gcs_books()
+            log_json(logger, logging.INFO, "Auto GCS sync finished", **result)
+        except Exception as e:
+            log_json(logger, logging.ERROR, "Auto GCS sync failed", error=str(e))
+            raise
+
+
+# ARQ Worker Settings (Deprecated in favor of app.worker)
+# The worker now uses app.worker.WorkerSettings

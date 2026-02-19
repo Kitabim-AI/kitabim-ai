@@ -148,6 +148,7 @@
     "title": "Administration",
     "bookManagement": "Book Management",
     "userManagement": "User Management",
+    "systemConfigLabel": "System Config",
     "stats": {
       "totalBooks": "Total Books",
       "readyBooks": "Ready Books",
@@ -225,6 +226,18 @@
       "roleUpdateError": "Failed to update role",
       "statusUpdateError": "Failed to update status",
       "pagination": "Showing {{start}} to {{end}} of {{total}} users"
+    },
+    "systemConfig": {
+      "title": "System Configuration",
+      "subtitle": "Manage system settings",
+      "add": "Add Configuration",
+      "createNew": "Create New Configuration",
+      "key": "Key",
+      "value": "Value",
+      "description": "Description",
+      "actions": "Actions",
+      "empty": "No configurations found",
+      "emptyDescription": "Create your first system configuration to get started"
     }
   },
   "spellCheck": {

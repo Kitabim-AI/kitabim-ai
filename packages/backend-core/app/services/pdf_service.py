@@ -14,7 +14,9 @@ from app.db.repositories.jobs import JobsRepository
 from app.db.models import Book, Page, Chunk
 from sqlalchemy import update, or_, and_, delete, select
 
-from app.langchain.models import GeminiEmbeddings
+from app.langchain.models import GeminiEmbeddings, is_llm_available, update_breaker_config
+from app.db.repositories.system_configs import SystemConfigsRepository
+from app.utils.circuit_breaker import CircuitBreakerOpen
 from app.services.ocr_service import ocr_page
 from app.services.chunking_service import chunking_service
 from app.utils.errors import record_book_error
@@ -86,8 +88,37 @@ async def process_pdf_task(
         books_repo = BooksRepository(session)
         pages_repo = PagesRepository(session)
         jobs_repo = JobsRepository(session)
+        configs_repo = SystemConfigsRepository(session)
         
         try:
+            # Refresh Circuit Breaker Configs
+            try:
+                cb_threshold = await configs_repo.get_value("llm_cb_failure_threshold")
+                cb_timeout = await configs_repo.get_value("llm_cb_recovery_seconds")
+                
+                if cb_threshold and cb_timeout:
+                    update_breaker_config(
+                        failure_threshold=int(cb_threshold),
+                        recovery_timeout=float(cb_timeout)
+                    )
+                else:
+                    # Seed defaults if missing
+                    if not cb_threshold:
+                        await configs_repo.set_value(
+                            "llm_cb_failure_threshold", 
+                            str(settings.llm_cb_failure_threshold),
+                            "Number of consecutive failures before opening circuit breaker"
+                        )
+                    if not cb_timeout:
+                        await configs_repo.set_value(
+                            "llm_cb_recovery_seconds", 
+                            str(settings.llm_cb_recovery_seconds),
+                            "Seconds to wait before attempting recovery (half-open)"
+                        )
+                    await session.commit()
+            except Exception as e:
+                log_json(logger, logging.WARNING, "Failed to update circuit breaker config", error=str(e))
+
             if job_key:
                 await jobs_repo.increment_attempts(job_key)
                 await jobs_repo.update_status(job_key, "running")
@@ -101,23 +132,40 @@ async def process_pdf_task(
                     await session.commit()
                 return
 
+            if not is_llm_available():
+                log_json(logger, logging.WARNING, "LLM circuit breaker open, skipping task to save bandwidth", book_id=book_id)
+                if job_key:
+                    await jobs_repo.update_status(job_key, "skipped", "LLM Circuit Breaker Open")
+                await _release_lock(session, book_id, job_key)
+                await session.commit()
+                return
+
             remote_path = f"uploads/{book_id}.pdf"
             file_path = settings.uploads_dir / f"{book_id}.pdf"
-            
-            if not file_path.exists():
-                log_json(logger, logging.INFO, "PDF missing locally, attempting download from storage", book_id=book_id)
-                try:
-                    await storage.download_file(remote_path, file_path)
-                except Exception as exc:
-                    log_json(logger, logging.ERROR, "PDF file missing in storage", book_id=book_id, error=str(exc))
-                    await books_repo.update_one(book_id, status="error")
-                    await record_book_error(session, book_id, "processing", "PDF file missing in storage", {"error": str(exc)})
-                    if job_key:
-                        await jobs_repo.update_status(job_key, "failed", "PDF file missing in storage")
-                    await session.commit()
-                    return
 
-            doc = fitz.open(file_path)
+            # Download if missing or corrupted (handles TOCTOU race condition)
+            try:
+                if not file_path.exists():
+                    log_json(logger, logging.DEBUG, "PDF missing locally, downloading from storage", book_id=book_id)
+                    await storage.download_file(remote_path, file_path)
+
+                # Try to open - if corrupted or deleted, re-download once
+                try:
+                    doc = fitz.open(file_path)
+                except Exception as open_error:
+                    log_json(logger, logging.WARNING, "Local file corrupted or missing, re-downloading",
+                             book_id=book_id, error=str(open_error))
+                    await storage.download_file(remote_path, file_path)
+                    doc = fitz.open(file_path)  # If this fails, let it raise
+
+            except Exception as exc:
+                log_json(logger, logging.ERROR, "Failed to obtain PDF file", book_id=book_id, error=str(exc))
+                await books_repo.update_one(book_id, status="error")
+                await record_book_error(session, book_id, "processing", "Failed to obtain PDF file", {"error": str(exc)})
+                if job_key:
+                    await jobs_repo.update_status(job_key, "failed", "Failed to obtain PDF file")
+                await session.commit()
+                return
             total_pages = doc.page_count
 
             book = await books_repo.get(book_id)
@@ -193,9 +241,16 @@ async def process_pdf_task(
                 pass
             else:
                 semaphore = asyncio.Semaphore(settings.max_parallel_pages)
+                cancelled = False
 
                 async def process_page(page_num: int) -> None:
+                    nonlocal cancelled
+                    if cancelled:
+                        return
+
                     async with semaphore:
+                        if cancelled:
+                            return
                         # Each page process might need its own session to be safe with concurrency
                         # but we can also use the same session if we flush.
                         # However, for parallel processing with asyncio.gather, we should be careful.
@@ -220,6 +275,17 @@ async def process_pdf_task(
                                 page_error: str | None = None
 
                                 if not already_ocr:
+                                    # Check circuit breaker before each OCR call
+                                    if not is_llm_available():
+                                        log_json(
+                                            logger,
+                                            logging.WARNING,
+                                            "Circuit breaker opened during processing, stopping OCR",
+                                            book_id=book_id,
+                                            page_num=page_num
+                                        )
+                                        raise CircuitBreakerOpen("LLM circuit breaker opened during processing")
+
                                     page_obj = doc.load_page(page_num - 1)
                                     try:
                                         page_text = await ocr_page(
@@ -263,15 +329,14 @@ async def process_pdf_task(
                                     )
                                 )
                                 await page_session.commit()
-                                
-                                if success:
-                                    log_json(
-                                        logger,
-                                        logging.INFO,
-                                        "OCR page completed",
-                                        book_id=book_id,
-                                        page_num=page_num,
-                                    )
+                            except CircuitBreakerOpen:
+                                log_json(
+                                    logger,
+                                    logging.WARNING,
+                                    "OCR circuit open, stopping further pages for this book",
+                                    book_id=book_id,
+                                )
+                                cancelled = True
                             except Exception as exc:
                                 log_json(
                                     logger,
@@ -309,92 +374,121 @@ async def process_pdf_task(
             pages_to_embed = result_embed.scalars().all()
 
             if pages_to_embed:
-                embedder = GeminiEmbeddings()
-                batch_size = 20  # Reduced to avoid rate limits and timeouts
-                for start in range(0, len(pages_to_embed), batch_size):
-                    await asyncio.sleep(1.0)  # Rate limiting
-                    batch = pages_to_embed[start : start + batch_size]
-                    pairs = []
-                    for r in batch:
-                        text_content = strip_markdown(r.text or "").strip()
-                        if text_content:
-                            pairs.append((r, text_content))
-                    if not pairs:
-                        continue
+                # Check circuit breaker before starting embeddings
+                if not is_llm_available():
+                    log_json(
+                        logger,
+                        logging.WARNING,
+                        "Circuit breaker open, skipping embeddings for this run",
+                        book_id=book_id
+                    )
+                    # Leave pages unindexed, will be picked up next time
+                else:
+                    embedder = GeminiEmbeddings()
+                    batch_size = 20  # Reduced to avoid rate limits and timeouts
+                    for start in range(0, len(pages_to_embed), batch_size):
+                        # Check circuit breaker before each batch
+                        if not is_llm_available():
+                            log_json(
+                                logger,
+                                logging.WARNING,
+                                "Circuit breaker opened during embeddings, stopping",
+                                book_id=book_id,
+                                batch_start=start
+                            )
+                            break  # Exit embedding loop
 
-                    try:
-                        # Flatten all chunks from the batch
-                        all_chunks_text = []
-                        page_chunk_counts = [] # Keep track of how many chunks each page has
-
-                        for r, text_content in pairs:
-                            chunks = chunking_service.split_text(text_content)
-                            if not chunks:
-                                chunks = [text_content] if text_content else []
-                            
-                            all_chunks_text.extend(chunks)
-                            page_chunk_counts.append(len(chunks))
-
-                        if not all_chunks_text:
+                        await asyncio.sleep(1.0)  # Rate limiting
+                        batch = pages_to_embed[start : start + batch_size]
+                        pairs = []
+                        for r in batch:
+                            text_content = strip_markdown(r.text or "").strip()
+                            if text_content:
+                                pairs.append((r, text_content))
+                        if not pairs:
                             continue
 
-                        all_embeddings = await embedder.aembed_documents(all_chunks_text)
+                        try:
+                            # Flatten all chunks from the batch
+                            all_chunks_text = []
+                            page_chunk_counts = [] # Keep track of how many chunks each page has
 
-                        # Distribute embeddings back to pages and save chunks
-                        current_embed_idx = 0
-                        
-                        for i, (r, original_text) in enumerate(pairs):
-                            count = page_chunk_counts[i]
-                            if count == 0:
-                                # Just mark indexed
-                                r.is_indexed = True
+                            for r, text_content in pairs:
+                                chunks = chunking_service.split_text(text_content)
+                                if not chunks:
+                                    chunks = [text_content] if text_content else []
+
+                                all_chunks_text.extend(chunks)
+                                page_chunk_counts.append(len(chunks))
+
+                            if not all_chunks_text:
                                 continue
 
-                            page_chunks = all_chunks_text[current_embed_idx : current_embed_idx + count]
-                            page_vectors = all_embeddings[current_embed_idx : current_embed_idx + count]
-                            current_embed_idx += count
+                            all_embeddings = await embedder.aembed_documents(all_chunks_text)
 
-                            # Clean up old chunks for this page
-                            await session.execute(
-                                delete(Chunk).where(and_(Chunk.book_id == book_id, Chunk.page_number == r.page_number))
-                            )
-                            
-                            # Insert new chunks
-                            for chunk_idx, (txt, vec) in enumerate(zip(page_chunks, page_vectors)):
-                                new_chunk = Chunk(
-                                    book_id=book_id,
-                                    page_number=r.page_number,
-                                    chunk_index=chunk_idx,
-                                    text=txt,
-                                    embedding=vec,
-                                    created_at=datetime.utcnow()
+                            # Distribute embeddings back to pages and save chunks
+                            current_embed_idx = 0
+
+                            for i, (r, original_text) in enumerate(pairs):
+                                count = page_chunk_counts[i]
+                                if count == 0:
+                                    # Just mark indexed
+                                    r.is_indexed = True
+                                    continue
+
+                                page_chunks = all_chunks_text[current_embed_idx : current_embed_idx + count]
+                                page_vectors = all_embeddings[current_embed_idx : current_embed_idx + count]
+                                current_embed_idx += count
+
+                                # Clean up old chunks for this page
+                                await session.execute(
+                                    delete(Chunk).where(and_(Chunk.book_id == book_id, Chunk.page_number == r.page_number))
                                 )
-                                session.add(new_chunk)
 
-                            # Update page status
-                            r.is_indexed = True
-                            r.last_updated = datetime.utcnow()
-                        
-                        await session.commit()
-                        
-                    except Exception as exc:
-                        log_json(
-                            logger,
-                            logging.ERROR,
-                            "Embedding batch failed",
-                            book_id=book_id,
-                            batch_start=start,
-                            batch_end=start + len(batch) - 1,
-                            error=str(exc),
-                        )
-                        await record_book_error(
-                            session,
-                            book_id,
-                            "embedding",
-                            str(exc),
-                            {"batch_start": start, "batch_end": start + len(batch) - 1},
-                        )
-                        await session.commit()
+                                # Insert new chunks
+                                for chunk_idx, (txt, vec) in enumerate(zip(page_chunks, page_vectors)):
+                                    new_chunk = Chunk(
+                                        book_id=book_id,
+                                        page_number=r.page_number,
+                                        chunk_index=chunk_idx,
+                                        text=txt,
+                                        embedding=vec,
+                                        created_at=datetime.utcnow()
+                                    )
+                                    session.add(new_chunk)
+
+                                # Update page status
+                                r.is_indexed = True
+                                r.last_updated = datetime.utcnow()
+
+                            await session.commit()
+
+                        except CircuitBreakerOpen:
+                            log_json(
+                                logger,
+                                logging.WARNING,
+                                "Embedding circuit open, stopping further batches for this book",
+                                book_id=book_id,
+                            )
+                            break
+                        except Exception as exc:
+                            log_json(
+                                logger,
+                                logging.ERROR,
+                                "Embedding batch failed",
+                                book_id=book_id,
+                                batch_start=start,
+                                batch_end=start + len(batch) - 1,
+                                error=str(exc),
+                            )
+                            await record_book_error(
+                                session,
+                                book_id,
+                                "embedding",
+                                str(exc),
+                                {"batch_start": start, "batch_end": start + len(batch) - 1},
+                            )
+                            await session.commit()
 
             # Final check - aggregate page stats
             stats = await pages_repo.count_by_book(book_id, status="completed")
@@ -416,7 +510,7 @@ async def process_pdf_task(
                         file_path.unlink()
                     if cover_path.exists():
                         cover_path.unlink()
-                    log_json(logger, logging.INFO, "Auto-cleaned local files after GCS migration", book_id=book_id)
+                    log_json(logger, logging.DEBUG, "Auto-cleaned local files after GCS migration", book_id=book_id)
                 except Exception as e:
                     log_json(logger, logging.WARNING, "Auto-cleanup failed", book_id=book_id, error=str(e))
 
@@ -429,11 +523,20 @@ async def process_pdf_task(
 
         except Exception as exc:
             log_json(logger, logging.ERROR, "Processing task failed", book_id=book_id, error=str(exc))
-            await books_repo.update_one(book_id, status="error")
-            await record_book_error(session, book_id, "processing", str(exc))
-            if job_key:
-                await jobs_repo.update_status(job_key, "failed", str(exc))
-            await session.commit()
+            try:
+                await session.rollback()
+            except Exception:
+                pass
+
+            try:
+                await books_repo.update_one(book_id, status="error")
+                await record_book_error(session, book_id, "processing", str(exc))
+                if job_key:
+                    await jobs_repo.update_status(job_key, "failed", str(exc))
+                await session.commit()
+            except Exception as e:
+                log_json(logger, logging.ERROR, "Failed to record error state", book_id=book_id, error=str(e))
+
             if raise_on_error:
                 raise
         finally:

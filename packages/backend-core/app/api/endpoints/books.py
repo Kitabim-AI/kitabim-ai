@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.db.session import get_session
 from app.db.repositories.books import BooksRepository
 from app.db.repositories.pages import PagesRepository
+from app.services.discovery_service import DiscoveryService
 from app.models.schemas import Book, PaginatedBooks, ExtractionResult
 from app.models.user import User
 from app.queue import enqueue_pdf_processing
@@ -1287,15 +1288,39 @@ async def delete_book(
     books_repo = BooksRepository(session)
     pages_repo = PagesRepository(session)
 
-    # Delete PDF file
+    # Get book record to access original filename
+    book = await books_repo.get(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    # Delete local PDF file (if exists)
     file_path = settings.uploads_dir / f"{book_id}.pdf"
     if file_path.exists():
         os.remove(file_path)
 
+    # Delete from GCS storage
+    try:
+        # Delete standardized PDF file
+        await storage.delete_file(f"uploads/{book_id}.pdf")
+        logger.info(f"Deleted standardized file from GCS: uploads/{book_id}.pdf")
+
+        # Delete original file if it had a non-standard name
+        if book.file_name and book.file_name != f"{book_id}.pdf":
+            await storage.delete_file(f"uploads/{book.file_name}")
+            logger.info(f"Deleted original file from GCS: uploads/{book.file_name}")
+
+        # Delete cover file
+        await storage.delete_file(f"covers/{book_id}.jpg")
+        logger.info(f"Deleted cover from GCS: covers/{book_id}.jpg")
+
+    except Exception as e:
+        # Log but don't fail the deletion if GCS cleanup fails
+        logger.warning(f"Failed to delete some GCS files for book {book_id}: {str(e)}")
+
     # Delete associated pages first
     await pages_repo.delete_by_book(book_id)
 
-    # Delete book
+    # Delete book from database
     deleted = await books_repo.delete_one(book_id)
     await session.commit()
 
@@ -1451,3 +1476,18 @@ async def apply_spelling_corrections(
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to apply corrections: {exc}")
+
+
+@router.post("/storage/sync")
+async def sync_gcs_storage(
+    force: bool = False,
+    current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    """Manually trigger GCS book discovery sync"""
+    discovery = DiscoveryService(session)
+    try:
+        result = await discovery.sync_gcs_books(force=force)
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"GCS sync failed: {exc}")

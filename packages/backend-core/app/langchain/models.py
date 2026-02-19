@@ -25,6 +25,10 @@ _TEXT_BREAKER = CircuitBreaker(
         half_open_max_calls=settings.llm_cb_half_open_max_calls,
     ),
 )
+
+
+
+
 _EMBED_BREAKER = CircuitBreaker(
     "llm_embed",
     CircuitBreakerConfig(
@@ -33,6 +37,20 @@ _EMBED_BREAKER = CircuitBreaker(
         half_open_max_calls=settings.llm_cb_half_open_max_calls,
     ),
 )
+
+
+def is_llm_available() -> bool:
+    """Check if the LLM circuit breakers are available."""
+    return _TEXT_BREAKER._state != "open" and _EMBED_BREAKER._state != "open"
+
+def update_breaker_config(failure_threshold: int | None = None, recovery_timeout: float | None = None) -> None:
+    """Update defaults for both circuit breakers."""
+    for breaker in [_TEXT_BREAKER, _EMBED_BREAKER]:
+        if failure_threshold is not None:
+            breaker.config.failure_threshold = failure_threshold
+        if recovery_timeout is not None:
+            breaker.config.recovery_timeout = recovery_timeout
+
 _CHAT_MODEL_CACHE: dict[str, ChatGoogleGenerativeAI] = {}
 
 

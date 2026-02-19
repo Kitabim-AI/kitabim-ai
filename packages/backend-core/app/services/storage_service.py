@@ -40,6 +40,11 @@ class StorageProvider(ABC):
         """Check if a file exists in storage"""
         pass
 
+    @abstractmethod
+    async def list_files(self, prefix: str) -> list[str]:
+        """List files in storage matching a prefix"""
+        pass
+
 
 class FileSystemStorageProvider(StorageProvider):
     """Legacy storage provider using local filesystem"""
@@ -77,6 +82,17 @@ class FileSystemStorageProvider(StorageProvider):
     def exists(self, remote_path: str) -> bool:
         return self._get_full_path(remote_path).exists()
 
+    async def list_files(self, prefix: str) -> list[str]:
+        base_path = self._get_full_path(prefix)
+        if not base_path.exists():
+            return []
+        
+        results = []
+        for p in base_path.glob("**/*"):
+            if p.is_file():
+                results.append(str(p.relative_to(self.base_dir)))
+        return results
+
 
 class GCSStorageProvider(StorageProvider):
     """Google Cloud Storage provider with dual bucket support"""
@@ -100,7 +116,7 @@ class GCSStorageProvider(StorageProvider):
         bucket, bucket_name, final_path = self._get_bucket_and_path(remote_path)
         blob = bucket.blob(final_path)
         blob.upload_from_filename(str(local_path))
-        log_json(logger, logging.INFO, "File uploaded to GCS", bucket=bucket_name, path=final_path)
+        log_json(logger, logging.DEBUG, "File uploaded to GCS", bucket=bucket_name, path=final_path)
         return remote_path
 
     async def download_file(self, remote_path: str, local_path: Path) -> None:
@@ -108,14 +124,14 @@ class GCSStorageProvider(StorageProvider):
         blob = bucket.blob(final_path)
         local_path.parent.mkdir(parents=True, exist_ok=True)
         blob.download_to_filename(str(local_path))
-        log_json(logger, logging.INFO, "File downloaded from GCS", bucket=bucket_name, path=final_path)
+        log_json(logger, logging.DEBUG, "File downloaded from GCS", bucket=bucket_name, path=final_path)
 
     async def delete_file(self, remote_path: str) -> None:
         bucket, bucket_name, final_path = self._get_bucket_and_path(remote_path)
         blob = bucket.blob(final_path)
         if blob.exists():
             blob.delete()
-            log_json(logger, logging.INFO, "File deleted from GCS", bucket=bucket_name, path=final_path)
+            log_json(logger, logging.DEBUG, "File deleted from GCS", bucket=bucket_name, path=final_path)
 
     def get_public_url(self, remote_path: str) -> str:
         bucket, bucket_name, final_path = self._get_bucket_and_path(remote_path)
@@ -129,6 +145,11 @@ class GCSStorageProvider(StorageProvider):
         bucket, _, final_path = self._get_bucket_and_path(remote_path)
         blob = bucket.blob(final_path)
         return blob.exists()
+
+    async def list_files(self, prefix: str) -> list[str]:
+        bucket, _, final_prefix = self._get_bucket_and_path(prefix)
+        blobs = self.client.list_blobs(bucket, prefix=final_prefix)
+        return [blob.name for blob in blobs]
 
 
 def get_storage_provider() -> StorageProvider:
