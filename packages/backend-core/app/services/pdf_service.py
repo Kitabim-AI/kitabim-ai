@@ -294,6 +294,14 @@ async def process_pdf_task(
                                             page_num,
                                         )
                                         success = True
+                                        log_json(
+                                            logger,
+                                            logging.INFO,
+                                            "OCR completed for page",
+                                            book_id=book_id,
+                                            page_num=page_num,
+                                            len=len(page_text) if page_text else 0
+                                        )
                                     except Exception as exc:
                                         log_json(
                                             logger,

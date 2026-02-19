@@ -13,6 +13,7 @@ import { useIsEditor, useAuth } from '../../hooks/useAuth';
 import { useAppContext } from '../../context/AppContext';
 import { PersistenceService } from '../../services/persistenceService';
 import { PageItem } from './PageItem';
+import VirtualScrollReader from './VirtualScrollReader';
 
 export const ReaderView: React.FC = () => {
   const {
@@ -251,14 +252,6 @@ export const ReaderView: React.FC = () => {
               <button onClick={() => setFontSize(prev => Math.min(64, prev + 2))} className="p-2 hover:bg-[#0369a1]/10 rounded-xl text-[#0369a1] transition-all"><Plus size={16} /></button>
             </div>
 
-            {isGuestOrReader && (
-              <div className="flex items-center gap-1 bg-white/60 border border-[#0369a1]/20 rounded-2xl p-1 shadow-sm">
-                <button onClick={() => setCurrentPage((currentPage || 1) - 1)} disabled={(currentPage || 1) <= 1} className="p-2 hover:bg-[#0369a1]/10 rounded-xl disabled:opacity-30"><ChevronRight size={18} /></button>
-                <input type="text" value={pageInput} onChange={(e) => setPageInput(e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => { if (e.key === 'Enter') { const v = parseInt(pageInput); if (v >= 1 && v <= (selectedBook.totalPages || (selectedBook as any).total_pages || 9999)) setCurrentPage(v); else setPageInput((currentPage || 1).toString()); } }} className="w-10 text-center bg-transparent text-sm" />
-                <span className="text-sm text-[#94a3b8]">/ {selectedBook.totalPages || (selectedBook as any).total_pages || '?'}</span>
-                <button onClick={() => setCurrentPage((currentPage || 1) + 1)} disabled={(currentPage || 1) >= (selectedBook.totalPages || (selectedBook as any).total_pages || 9999)} className="p-2 hover:bg-[#0369a1]/10 rounded-xl disabled:opacity-30"><ChevronLeft size={18} /></button>
-              </div>
-            )}
 
             <button onClick={() => isEditing ? setIsEditing(false) : (editingPageNum !== null ? setEditingPageNum(null) : onClose())} className="p-2.5 text-[#94a3b8] hover:bg-red-50 hover:text-red-500 rounded-2xl transition-all"><X size={20} /></button>
           </div>
@@ -271,6 +264,13 @@ export const ReaderView: React.FC = () => {
               {isFetchingContent && <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-20 flex items-center justify-center"><Loader2 className="w-8 h-8 text-[#0369a1] animate-spin" /></div>}
               <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} className="w-full h-full p-6 uyghur-text border-2 border-[#0369a1]/10 rounded-3xl outline-none resize-none bg-white shadow-inner" style={{ fontSize: `${fontSize}px` }} placeholder={t('common.enterContent')} />
             </div>
+          ) : isGuestOrReader ? (
+            <VirtualScrollReader
+              bookId={selectedBook.id}
+              totalPages={selectedBook.totalPages || (selectedBook as any).total_pages || 0}
+              fontSize={fontSize}
+              initialPage={currentPage || 1}
+            />
           ) : (
             <div className={`max-w-4xl mx-auto ${isGuestOrReader ? 'pt-8' : 'space-y-16 pb-40'}`}>
               {[...loadedPages]

@@ -132,7 +132,9 @@ async def generate_text(prompt: str, model_name: str) -> str:
         return await llm.ainvoke(prompt)
 
     response = await _call_with_breaker(_TEXT_BREAKER, _call)
-    return _extract_message_text(response)
+    text = _extract_message_text(response)
+    log_json(_logger, logging.INFO, "LLM response received", text_length=len(text) if text else 0)
+    return text
 
 
 async def generate_text_with_image(prompt: str, image_bytes: bytes, model_name: str) -> str:
@@ -148,7 +150,9 @@ async def generate_text_with_image(prompt: str, image_bytes: bytes, model_name: 
         return await llm.ainvoke([message])
 
     response = await _call_with_breaker(_TEXT_BREAKER, _call)
-    return _extract_message_text(response)
+    text = _extract_message_text(response)
+    log_json(_logger, logging.INFO, "LLM response received", text_length=len(text) if text else 0)
+    return text
 
 
 def _normalize_prompt_value(value) -> str:
