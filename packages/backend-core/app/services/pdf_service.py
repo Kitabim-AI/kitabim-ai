@@ -20,6 +20,7 @@ from app.services.chunking_service import chunking_service
 from app.utils.errors import record_book_error
 from app.utils.markdown import normalize_markdown, strip_markdown
 from app.utils.observability import log_json
+from app.services.storage_service import storage
 
 RUNNING_TASKS: set[str] = set()
 logger = logging.getLogger("app.pdf")
@@ -100,15 +101,21 @@ async def process_pdf_task(
                     await session.commit()
                 return
 
-            file_path = _resolve_pdf_path(book_id)
+            remote_path = f"uploads/{book_id}.pdf"
+            file_path = settings.uploads_dir / f"{book_id}.pdf"
+            
             if not file_path.exists():
-                log_json(logger, logging.ERROR, "PDF file missing", book_id=book_id, path=str(file_path))
-                await books_repo.update_one(book_id, status="error")
-                await record_book_error(session, book_id, "processing", "PDF file missing", {"path": str(file_path)})
-                if job_key:
-                    await jobs_repo.update_status(job_key, "failed", "PDF file missing")
-                await session.commit()
-                return
+                log_json(logger, logging.INFO, "PDF missing locally, attempting download from storage", book_id=book_id)
+                try:
+                    await storage.download_file(remote_path, file_path)
+                except Exception as exc:
+                    log_json(logger, logging.ERROR, "PDF file missing in storage", book_id=book_id, error=str(exc))
+                    await books_repo.update_one(book_id, status="error")
+                    await record_book_error(session, book_id, "processing", "PDF file missing in storage", {"error": str(exc)})
+                    if job_key:
+                        await jobs_repo.update_status(job_key, "failed", "PDF file missing in storage")
+                    await session.commit()
+                    return
 
             doc = fitz.open(file_path)
             total_pages = doc.page_count
@@ -148,6 +155,7 @@ async def process_pdf_task(
                     first_page = doc.load_page(0)
                     pix = first_page.get_pixmap(matrix=fitz.Matrix(0.5, 0.5))
                     pix.save(str(cover_path))
+                    await storage.upload_file(cover_path, f"covers/{book_id}.jpg")
                     await books_repo.update_one(
                         book_id,
                         cover_url=f"/api/covers/{book_id}.jpg"
@@ -400,6 +408,18 @@ async def process_pdf_task(
             await session.commit()
             
             log_json(logger, logging.INFO, "Book processing finished", book_id=book_id, status=final_status)
+            
+            # Auto-cleanup: If using GCS and processing was successful, delete local copies
+            if final_status == "ready" and settings.storage_backend == "gcs":
+                try:
+                    if file_path.exists():
+                        file_path.unlink()
+                    if cover_path.exists():
+                        cover_path.unlink()
+                    log_json(logger, logging.INFO, "Auto-cleaned local files after GCS migration", book_id=book_id)
+                except Exception as e:
+                    log_json(logger, logging.WARNING, "Auto-cleanup failed", book_id=book_id, error=str(e))
+
             if job_key:
                 if final_status == "ready":
                     await jobs_repo.update_status(job_key, "succeeded")

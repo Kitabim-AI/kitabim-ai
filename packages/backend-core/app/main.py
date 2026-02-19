@@ -144,6 +144,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from app.services.storage_service import storage
+from fastapi.responses import RedirectResponse, FileResponse
+
+@app.get("/api/covers/{book_id}.jpg")
+async def get_cover(book_id: str):
+    local_path = settings.covers_dir / f"{book_id}.jpg"
+    if local_path.exists():
+        return FileResponse(local_path)
+    
+    # Try storage
+    remote_path = f"covers/{book_id}.jpg"
+    if storage.exists(remote_path):
+        # We can either download and serve, or redirect to GCS
+        if settings.storage_backend == "gcs":
+            return RedirectResponse(storage.get_public_url(remote_path))
+        else:
+            await storage.download_file(remote_path, local_path)
+            return FileResponse(local_path)
+    
+    raise HTTPException(status_code=404, detail="Cover not found")
+
+# Keep the mount for legacy/local if needed, but the route above takes precedence
 app.mount("/api/covers", StaticFiles(directory=str(settings.covers_dir)), name="covers")
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])

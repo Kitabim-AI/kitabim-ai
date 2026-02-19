@@ -27,6 +27,11 @@ class Settings:
     # Database
     database_url: str | None = os.getenv("DATABASE_URL")  # PostgreSQL connection string
 
+    # Storage
+    storage_backend: str = os.getenv("STORAGE_BACKEND", "local")
+    gcs_data_bucket: str | None = os.getenv("GCS_DATA_BUCKET")
+    gcs_media_bucket: str | None = os.getenv("GCS_MEDIA_BUCKET")
+
     # Directories
     data_dir: Path = Path(os.getenv("DATA_DIR", str(REPO_ROOT / "data")))
     uploads_dir: Path = data_dir / "uploads"

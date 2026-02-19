@@ -47,19 +47,21 @@ flowchart LR
   RQ --> WK[Worker<br/>ARQ]
   BE --> DB[(PostgreSQL)]
   WK --> DB
-  BE <-->|files| DATA[(data/ volume)]
-  WK <-->|files| DATA
+  BE <-->|PDF/Covers| GCS[(Google Cloud Storage)]
+  WK <-->|PDF/Covers| GCS
+  BE -.->|Processing Cache| DATA[(Local data/)]
+  WK -.->|Processing Cache| DATA
 ```
 
 ## Core Features
 
+- **GCS Dual-Bucket Storage**: Private bucket for PDFs, Public-CDN bucket for covers.
+- **Auto-Cleanup**: Local storage is used as a high-speed processing cache and automatically cleared after cloud sync.
 - **SHA-256 deduplication** to avoid re-processing identical PDFs.
 - **Gemini OCR pipeline** with resumable tasks, cover extraction, and batch embeddings.
-- **Manual OCR start**: uploads are stored as pending; start OCR from the Management page.
 - **RAG chat** per book or global, with work-aware context and citations by page.
 - **Spell check & correction workflow** for OCR cleanup and embedding regeneration.
-- **Admin tools** for reprocessing, deletion, author/volume/category edits, and cover uploads.
-- **RTL reader** with inline page editing and page-level reprocess.
+- **RTL reader** with direct GCS cover serving and inline page editing.
 
 ## Local Development (Docker Desktop Kubernetes)
 

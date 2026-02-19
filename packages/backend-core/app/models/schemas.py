@@ -75,6 +75,7 @@ class Book(BaseModel):
     completed_count: int = 0  # DB: completed_count, API: completedCount
     error_count: int = 0  # DB: error_count, API: errorCount
     file_name: Optional[str] = None  # Original uploaded filename
+    source: Optional[str] = None  # Document source (e.g., 'upload', 'gcs')
 
 
 class PaginatedBooks(BaseModel):

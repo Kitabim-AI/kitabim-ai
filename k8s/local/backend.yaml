@@ -34,6 +34,12 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /app/data
+            - name: gcs-key
+              mountPath: /etc/gcs
+              readOnly: true
+          env:
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /etc/gcs/key.json
           resources:
             requests:
               memory: "512Mi"
@@ -60,6 +66,10 @@ spec:
           hostPath:
             path: /Users/Omarjan/Projects/kitabim-ai/data
             type: DirectoryOrCreate
+        - name: gcs-key
+          secret:
+            secretName: kitabim-gcs-key
+            optional: true
 ---
 apiVersion: v1
 kind: Service

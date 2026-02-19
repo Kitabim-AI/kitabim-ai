@@ -109,7 +109,20 @@ This works for:
 **Secrets** (`secrets.yaml`):
 - `GEMINI_API_KEY` - Required for AI features
 - `JWT_SECRET_KEY` - Required for authentication
-- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` - Optional OAuth
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` - Google OAuth credentials
+- `STORAGE_BACKEND` - Set to `gcs` to enable Google Cloud Storage
+- `GCS_DATA_BUCKET` - Private bucket for PDF files (e.g., `ai-kitabim-prod-data-bkt`)
+- `GCS_MEDIA_BUCKET` - Public bucket for cover images (e.g., `ai-kitabim-prod-media-bkt`)
+
+### Google Cloud Storage Authentication
+
+For local Kubernetes to access GCS, you need to provide a Service Account key:
+
+1.  **Create Buckets**: Create two buckets (e.g., `ai-kitabim-prod-data-bkt` and `ai-kitabim-prod-media-bkt`). 
+    - Set the **Media Bucket** to Public (`allUsers` as `Storage Object Viewer`).
+2.  **Create Service Account**: Create a Service Account with **Storage Object User** access.
+3.  **Download JSON Key**: Save as `gcs-key.json` in the root of the project.
+4.  **Deploy**: `deploy.sh` will create the `kitabim-gcs-key` secret and mount it to pods.
 
 **ConfigMap** (`configmap.yaml`):
 - Database, Redis, and service URLs

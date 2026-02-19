@@ -32,13 +32,13 @@ Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered readi
   - Uses backend APIs; no secrets in browser
   - Proxy `/api` to backend in dev
 
-### Supporting Components
-- **Redis + ARQ Queue**
-  - Required for background processing
-  - Idempotent PDF processing via job locks + retries
-- **Shared Data Volume**
-  - `data/uploads` for PDFs
-  - `data/covers` for cover images
+- **Google Cloud Storage (GCS)**
+  - Dual-bucket architecture for security and performance.
+  - Private bucket for original PDFs.
+  - Public bucket (CDN-enabled) for book covers.
+- **Shared Data Volume (Processing Cache)**
+  - Local disk used as high-speed transient storage during OCR/indexing.
+  - Auto-cleaned after successful GCS upload/processing.
 
 ### Architecture Diagram
 ```mermaid
@@ -48,8 +48,10 @@ flowchart LR
   RQ --> WK[Worker<br/>ARQ]
   BE --> DB[(Local host PostgreSQL)]
   WK --> DB
-  BE <-->|files| DATA[(data/ volume)]
-  WK <-->|files| DATA
+  BE <-->|PDF/Covers| GCS[(Google Cloud Storage)]
+  WK <-->|PDF/Covers| GCS
+  BE -.->|Processing Cache| DATA[(Local data/)]
+  WK -.->|Processing Cache| DATA
 ```
 
 ## 4) Monorepo Structure
@@ -101,13 +103,16 @@ flowchart LR
 
 ### A) PDF Upload & Processing
 1. Frontend uploads PDF to `/api/books/upload`
-2. Backend stores file in `data/uploads`
-3. Backend enqueues job (`process_pdf`) via Redis
+2. Backend streams file to **Private GCS Bucket** and deletes local temp file.
+3. Backend enqueues job (`process_pdf`) via Redis.
 4. Worker (ARQ):
-    - OCR pages with Gemini prompt
-    - Generates embeddings
-    - Builds full text + cover image
-    - Updates status and writes to PostgreSQL
+    - Downloads PDF from GCS to local processing cache.
+    - OCRs pages with Gemini prompt.
+    - Generates embeddings.
+    - Builds full text + cover image.
+    - Uploads cover image to **Public GCS Media Bucket**.
+    - Updates status and writes to PostgreSQL.
+    - **Auto-cleans local files** (PDF and Cover) once processing is successful.
 
 ### B) RAG Chat
 1. Frontend sends `/api/chat` request
@@ -154,8 +159,9 @@ flowchart LR
 
 ## 12) Scalability Considerations
 - Horizontal scaling of workers for OCR/embedding throughput
+- Cloud-native object storage (GCS) for infinite file storage scalability
+- CDN delivery of media assets via public GCS buckets
 - PostgreSQL indexing on key fields
-- Pluggable storage abstraction (future S3/MinIO)
 
 ## 13) Risks & Future Improvements
 - Embeddings stored in PostgreSQL (pgvector) may become large at scale
@@ -164,6 +170,5 @@ flowchart LR
 - Add auth, user profiles, and multi‑tenant isolation
 
 ## 14) Open Questions
-- Should storage be migrated to object storage (S3/MinIO)?
 - Do we need per‑user collections or workspaces?
 - How should long‑term RAG evaluation be surfaced in UI?

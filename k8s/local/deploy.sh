@@ -146,6 +146,15 @@ kubectl create configmap kitabim-config \
     --dry-run=client -o yaml | kubectl apply -f -
 echo "✓ Created/Updated kitabim-config from .env"
 
+# Create GCS key secret if file exists
+if [ -f gcs-key.json ]; then
+    kubectl create secret generic kitabim-gcs-key \
+        -n kitabim \
+        --from-file=key.json=gcs-key.json \
+        --dry-run=client -o yaml | kubectl apply -f -
+    echo "✓ Created/Updated kitabim-gcs-key from gcs-key.json"
+fi
+
 # Clean up temp file
 rm .env.k8s
 

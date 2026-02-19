@@ -19,6 +19,7 @@ from app.models.schemas import Book, PaginatedBooks, ExtractionResult
 from app.models.user import User
 from app.queue import enqueue_pdf_processing
 from app.services.spell_check_service import spell_check_service
+from app.services.storage_service import storage
 from app.auth.dependencies import (
     get_current_user,
     get_current_user_optional,
@@ -822,8 +823,9 @@ async def upload_pdf(
             return {"bookId": str(existing.id), "status": "existing"}
 
         book_id = hashlib.md5(f"{file.filename}{datetime.utcnow()}".encode()).hexdigest()[:12]
-        file_path = settings.uploads_dir / f"{book_id}.pdf"
-        os.replace(temp_path, file_path)
+        remote_path = f"uploads/{book_id}.pdf"
+        await storage.upload_file(temp_path, remote_path)
+        temp_path.unlink(missing_ok=True)
     except Exception:
         if temp_path.exists():
             temp_path.unlink(missing_ok=True)
@@ -848,6 +850,7 @@ async def upload_pdf(
         categories=[],
         visibility="private",
         processing_step="ocr",
+        source="upload",
     )
 
     await session.commit()

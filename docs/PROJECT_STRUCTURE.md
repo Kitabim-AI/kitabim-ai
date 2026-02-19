@@ -50,9 +50,9 @@ kitabim-ai/
 ├── k8s/                  # Kubernetes manifests
 │   └── local/           # Local development k8s config
 ├── scripts/             # Utility scripts and migrations
-├── data/                # Runtime data (gitignored)
-│   ├── uploads/        # Original PDF files
-│   └── covers/         # Extracted book covers
+├── data/                # Processing Cache (gitignored)
+│   ├── uploads/        # Transient PDF storage during OCR
+│   └── covers/         # Transient cover storage
 └── docs/               # Documentation
 ```
 
@@ -264,6 +264,7 @@ docs/
 | AI Platform | Google Gemini | OCR and chat LLM |
 | AI Framework | LangChain | AI orchestration |
 | PDF Processing | PyMuPDF (fitz) | PDF parsing and rendering |
+| Storage | Google Cloud Storage | Cloud-native artifact storage |
 | HTTP Client | httpx | Async HTTP requests |
 
 ### Infrastructure
@@ -396,7 +397,7 @@ docs/
    ↓
 7. Worker (ARQ):
    - Fetches job from Redis
-   - Opens PDF from data/uploads/
+   - Downloads PDF from **Private GCS Bucket** to data/uploads/
    - For each page:
      * Renders page to image
      * Calls Gemini OCR API
@@ -406,8 +407,9 @@ docs/
      * Chunks text semantically
      * Generates embeddings via Gemini
      * Saves chunks to PostgreSQL
-     * Extracts cover image to data/covers/
+     * Uploads cover image to **Public GCS Media Bucket**
      * Updates book status to 'ready'
+     * **Auto-cleans local data/ folder** (PDF and Cover)
    ↓
 8. Frontend polls /api/books/{id} for status
    ↓
@@ -647,12 +649,12 @@ python3.13 -m pytest services/backend/tests
 │  │       │             │              │               │ │
 │  │       └─────────────┼──────────────┘               │ │
 │  │                     │                              │ │
-│  │                ┌────▼─────┐                        │ │
-│  │                │  Redis   │                        │ │
-│  │                │  :6379   │                        │ │
-│  │                └──────────┘                        │ │
+│  │                ┌────▼─────┐          ┌───────┐     │ │
+│  │                │  Redis   │          │  GCS  │     │ │
+│  │                │  :6379   │          │CloudSt│     │ │
+│  │                └──────────┘          └───────┘     │ │
 │  │                                                     │ │
-│  │  Volume Mount: /app/data → host data/             │ │
+│  │  Volume Cache: /app/data → host data/               │ │
 │  └─────────────────────────────────────────────────────┘ │
 │                                                          │
 │  Container connects to host PostgreSQL via              │
@@ -675,8 +677,8 @@ python3.13 -m pytest services/backend/tests
 ### Key Characteristics
 
 - **Stateless Services**: Backend, worker, frontend are stateless (can scale horizontally)
-- **Stateful Data**: PostgreSQL on host (not containerized for dev simplicity)
-- **Shared Volume**: `data/` directory mounted to all services that need file access
+- **Stateful Data**: PostgreSQL on host; files in Google Cloud Storage (GCS)
+- **Shared Cache**: `data/` directory mounted for transient, high-speed file processing
 - **Service Discovery**: Kubernetes DNS (e.g., `redis:6379`, `backend:8000`)
 - **Load Balancing**: Kubernetes service layer (though only 1 replica in dev)
 
@@ -762,4 +764,4 @@ All services communicate via well-defined interfaces (REST API, Redis queue, Pos
 
 ---
 
-*Last Updated: 2026-02-14*
+*Last Updated: 2026-02-19*

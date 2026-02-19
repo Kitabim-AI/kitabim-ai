@@ -20,3 +20,4 @@ sqlalchemy[asyncio]==2.0.36
 alembic==1.14.0
 greenlet==3.1.1
 flashrank==0.2.9
+google-cloud-storage

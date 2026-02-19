@@ -38,6 +38,8 @@ ENV/
 .env.test.local
 .env.production.local
 *.env
+gcs-key.json
+*.json.bak
 infra/k8s/docker-desktop/secret.yaml
 
 # Logs
