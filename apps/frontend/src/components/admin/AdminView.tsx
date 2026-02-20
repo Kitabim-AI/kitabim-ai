@@ -269,7 +269,7 @@ export const AdminView: React.FC = () => {
                             <>
                               <button
                                 onClick={() => handleEditRow(book)}
-                                className="p-2 bg-[#0369a1]/10 text-[#0369a1] rounded-xl hover:bg-[#0369a1] hover:text-white transition-all opacity-0 group-hover/row:opacity-100"
+                                className="p-2 bg-[#0369a1]/10 text-[#0369a1] rounded-xl hover:bg-[#0369a1] hover:text-white transition-all"
                                 title={t('common.edit')}
                               >
                                 <Edit2 size={18} />
