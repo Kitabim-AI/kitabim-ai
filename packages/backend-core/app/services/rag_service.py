@@ -105,9 +105,9 @@ class RAGService:
             "   - Use **bold** for emphasis on key terms or important information\n"
             "   - Use bullet points (- ) for lists when presenting multiple items\n"
             "   - Use > for direct quotations from the source text\n"
-            "3. If the context contains the information, ALWAYS cite the source clearly including book title, volume number (if present), and page number.\n"
+            "3. If the context contains the information, ALWAYS cite the source clearly including book title, author, volume number (if present), and page number.\n"
             "4. Format citations in Uyghur as a markdown link. The link URL MUST be in the format 'ref:book_id:page_number'.\n"
-            "   Example: **مەنبە:** [فلانى كىتاب، 1-توم، 25-بەت](ref:BOOK_ID_HERE:25)\n"
+            "   Example: **مەنبە:** [فلانى كىتاب (فلانى ئاپتور)، 1-توم، 25-بەت](ref:BOOK_ID_HERE:25)\n"
             "5. Replace BOOK_ID_HERE with the actual ID provided in the context header for that document. **Citations must be placed immediately after the relevant sentence or paragraph they support. NEVER group all citations at the end of your response.**\n"
             "6. If the context is marked as 'NO RELEVANT DOCUMENTS FOUND' or does not contain the answer:\n"
             "   - Politely explain that you couldn't find a specific match in the indexed books.\n"
@@ -122,12 +122,13 @@ class RAGService:
     @staticmethod
     def _format_document(doc: Document) -> str:
         title = doc.metadata.get("title", "Unknown")
+        author = doc.metadata.get("author", "Unknown")
         volume = doc.metadata.get("volume")
         page = doc.metadata.get("page")
         book_id = doc.metadata.get("book_id", "unknown")
 
         # Build a clear source header for the LLM
-        source_parts = [f"BookID: {book_id}", f"Book: {title}"]
+        source_parts = [f"BookID: {book_id}", f"Book: {title}", f"Author: {author}"]
         if volume is not None:
             source_parts.append(f"Volume: {volume}")
         if page is not None:
@@ -416,6 +417,7 @@ class RAGService:
                         "page": chunk.get("page_number"),
                         "title": chunk.get("title", "Unknown"),
                         "volume": chunk.get("volume"),
+                        "author": chunk.get("author", "Unknown"),
                         "book_id": chunk.get("book_id"),
                     })
             except Exception as exc:
@@ -478,6 +480,7 @@ class RAGService:
                         "page": doc.metadata.get("page"),
                         "title": doc.metadata.get("title", "Unknown"),
                         "volume": doc.metadata.get("volume"),
+                        "author": doc.metadata.get("author", "Unknown"),
                         "book_id": doc.metadata.get("book_id"),
                     })
 
@@ -517,6 +520,7 @@ class RAGService:
                         metadata={
                             "title": title,
                             "volume": r.get("volume"),
+                            "author": r.get("author", "Unknown"),
                             "page": r.get("page"),
                             "book_id": r.get("book_id")
                         },
@@ -702,6 +706,7 @@ class RAGService:
                         "page": chunk.get("page_number"),
                         "title": chunk.get("title", "Unknown"),
                         "volume": chunk.get("volume"),
+                        "author": chunk.get("author", "Unknown"),
                         "book_id": chunk.get("book_id"),
                     })
             except Exception as exc:
@@ -758,6 +763,7 @@ class RAGService:
                         "page": doc.metadata.get("page"),
                         "title": doc.metadata.get("title", "Unknown"),
                         "volume": doc.metadata.get("volume"),
+                        "author": doc.metadata.get("author", "Unknown"),
                         "book_id": doc.metadata.get("book_id"),
                     })
 
@@ -796,6 +802,7 @@ class RAGService:
                         metadata={
                             "title": title,
                             "volume": r.get("volume"),
+                            "author": r.get("author", "Unknown"),
                             "page": r.get("page"),
                             "book_id": r.get("book_id")
                         },

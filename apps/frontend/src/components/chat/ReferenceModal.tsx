@@ -59,21 +59,24 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
               <BookOpen size={28} strokeWidth={2.5} />
             </div>
             <div>
-              <h3 className="text-2xl font-normal text-[#1a1a1a] mb-2 leading-tight">
-                {loading ? t('common.loading') : (bookData?.title || t('chat.referenceTitle'))}
+              <h3 className="text-2xl font-normal text-[#1a1a1a] mb-2 leading-tight flex items-center flex-wrap gap-2">
+                {loading ? t('common.loading') : (
+                  <>
+                    <span>{bookData?.title || t('chat.referenceTitle')}</span>
+                    {bookData?.author && (
+                      <span className="text-lg text-slate-400 font-normal">
+                        ({bookData.author})
+                      </span>
+                    )}
+                  </>
+                )}
               </h3>
               <div className="flex items-center gap-4 text-[#94a3b8] text-sm font-normal uppercase tracking-wider">
                 <span className="flex items-center gap-1.5 px-3 py-1 bg-[#0369a1]/10 text-[#0369a1] rounded-full">
                   {t('chat.pageNumber', { page: pageNumber })}
                 </span>
-                {bookData?.author && (
-                  <span className="flex items-center gap-1.5">
-                    <User size={14} />
-                    {bookData.author}
-                  </span>
-                )}
                 {bookData?.volume && (
-                  <span className="flex items-center gap-1.5">
+                  <span className="flex items-center gap-1.5 px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-xs">
                     {t('common.volume')}: {bookData.volume}
                   </span>
                 )}

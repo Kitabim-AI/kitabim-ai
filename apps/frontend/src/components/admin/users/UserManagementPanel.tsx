@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { UserService, UserPublic } from '../../../services/userService';
-import { Users, Filter, Check, Search, X, Edit2, RotateCcw, Loader2 } from 'lucide-react';
+import { Users, Filter, Check, Search, X, Edit2, Save, Loader2 } from 'lucide-react';
 import { useIsAdmin, useAuth } from '../../../hooks/useAuth';
 import { useI18n } from '../../../i18n/I18nContext';
 import { UserAvatar } from '../../common/UserAvatar';
@@ -157,10 +157,10 @@ const UserRow: React.FC<UserRowProps> = ({
               <button
                 onClick={onSave}
                 disabled={isSaving}
-                className="p-2 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 hover:scale-110 active:scale-90 transition-all disabled:opacity-50"
+                className="p-2.5 bg-[#0369a1] text-white rounded-xl hover:bg-[#0369a1]/90 transition-all shadow-lg shadow-[#0369a1]/10 disabled:opacity-50"
                 title={t('common.save')}
               >
-                {isSaving ? <Loader2 size={20} className="animate-spin" /> : <Check size={20} strokeWidth={3} />}
+                {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
               </button>
               <button
                 onClick={onCancel}
@@ -168,18 +168,17 @@ const UserRow: React.FC<UserRowProps> = ({
                 className="p-2 bg-slate-100 text-slate-400 rounded-xl hover:bg-slate-200 active:scale-90 transition-all disabled:opacity-50"
                 title={t('common.cancel')}
               >
-                <RotateCcw size={20} />
+                <X size={20} />
               </button>
             </>
           ) : (
             <button
               onClick={onEdit}
               disabled={isOwnRecord}
-              className={`p-2 rounded-xl transition-all ${
-                isOwnRecord
-                  ? 'bg-slate-100 text-slate-300 cursor-not-allowed'
-                  : 'bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white'
-              }`}
+              className={`p-2 rounded-xl transition-all ${isOwnRecord
+                ? 'bg-slate-100 text-slate-300 cursor-not-allowed'
+                : 'bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white'
+                }`}
               title={isOwnRecord ? t('admin.users.cannotEditSelf') : t('common.edit')}
             >
               <Edit2 size={18} />

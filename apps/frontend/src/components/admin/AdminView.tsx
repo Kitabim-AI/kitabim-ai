@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Database, Book as BookIcon, User, Hash, BookOpen, MoreVertical, Save, X, Edit2, Check, RotateCcw } from 'lucide-react';
+import { Database, Book as BookIcon, User, Hash, BookOpen, MoreVertical, Save, X, Edit2, Check, Globe, Shield } from 'lucide-react';
 import { Pagination } from '../common/Pagination';
 import { NotificationContainer } from '../common/NotificationContainer';
 import { useI18n } from '../../i18n/I18nContext';
@@ -186,10 +186,22 @@ export const AdminView: React.FC = () => {
                               />
                             </div>
                           ) : (
-                            <div className="group/title">
-                              <span className="font-black text-[#1a1a1a] text-[18px] transition-colors">{book.title}</span>
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (book.status !== 'pending' && !isEditing) {
+                                  bookActions.openReader(book);
+                                }
+                              }}
+                              className={`text-right group/title transition-all duration-300 block ${book.status !== 'pending' && !isEditing ? 'cursor-pointer hover:translate-x-[-4px]' : 'cursor-default'}`}
+                              disabled={book.status === 'pending' || isEditing}
+                            >
+                              <span className={`font-black text-[18px] transition-colors block ${book.status !== 'pending' && !isEditing ? 'text-[#1a1a1a] group-hover/title:text-[#0369a1]' : 'text-slate-400'}`}>
+                                {book.title}
+                              </span>
                               <div className="text-[12px] font-bold text-slate-400 mt-0.5">{new Date(book.uploadDate).toLocaleDateString()}</div>
-                            </div>
+                            </button>
                           )}
                         </div>
                       </td>
@@ -263,17 +275,17 @@ export const AdminView: React.FC = () => {
                             <div className="flex items-center gap-2">
                               <button
                                 onClick={() => handleSaveRow(book.id)}
-                                className="p-2 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 hover:scale-110 active:scale-90 transition-all"
+                                className="p-2.5 bg-[#0369a1] text-white rounded-xl hover:bg-[#0369a1]/90 transition-all shadow-lg shadow-[#0369a1]/10"
                                 title={t('common.save')}
                               >
-                                <Check size={20} strokeWidth={3} />
+                                <Save size={18} />
                               </button>
                               <button
                                 onClick={handleCancelEdit}
                                 className="p-2 bg-slate-100 text-slate-400 rounded-xl hover:bg-slate-200 active:scale-90 transition-all"
                                 title={t('common.cancel')}
                               >
-                                <RotateCcw size={20} />
+                                <X size={20} />
                               </button>
                             </div>
                           ) : (
@@ -284,6 +296,16 @@ export const AdminView: React.FC = () => {
                                 title={t('common.edit')}
                               >
                                 <Edit2 size={18} />
+                              </button>
+                              <button
+                                onClick={() => bookActions.handleToggleVisibility(book.id, book.visibility || 'public')}
+                                className={`p-2 rounded-xl transition-all ${book.visibility === 'private'
+                                  ? 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                                  : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-500 hover:text-white'
+                                  }`}
+                                title={book.visibility === 'private' ? t('admin.table.makePublic') : t('admin.table.makePrivate')}
+                              >
+                                {book.visibility === 'private' ? <Shield size={18} /> : <Globe size={18} />}
                               </button>
                               <div className="relative" ref={activeMenuId === book.id ? menuRef : null}>
                                 <button

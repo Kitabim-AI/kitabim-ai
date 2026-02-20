@@ -119,6 +119,22 @@ async def process_pdf_task(
             except Exception as e:
                 log_json(logger, logging.WARNING, "Failed to update circuit breaker config", error=str(e))
 
+            # Check if book is already in "ready" status - skip if so
+            book = await books_repo.get(book_id)
+            if not book:
+                log_json(logger, logging.WARNING, "Book not found", book_id=book_id)
+                if job_key:
+                    await jobs_repo.update_status(job_key, "failed", "Book not found")
+                    await session.commit()
+                return
+
+            if book.status == "ready":
+                log_json(logger, logging.INFO, "Book already processed, skipping", book_id=book_id, status=book.status)
+                if job_key:
+                    await jobs_repo.update_status(job_key, "skipped", "Book already in ready status")
+                    await session.commit()
+                return
+
             if job_key:
                 await jobs_repo.increment_attempts(job_key)
                 await jobs_repo.update_status(job_key, "running")

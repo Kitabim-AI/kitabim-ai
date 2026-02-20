@@ -110,6 +110,7 @@ class ChunksRepository(BaseRepository[Chunk]):
                     c.text,
                     b.title,
                     b.volume,
+                    b.author,
                     1 - (c.embedding <=> CAST(:embedding AS vector)) AS similarity
                 FROM chunks c
                 JOIN books b ON c.book_id = b.id
@@ -134,6 +135,7 @@ class ChunksRepository(BaseRepository[Chunk]):
                     c.text,
                     b.title,
                     b.volume,
+                    b.author,
                     1 - (c.embedding <=> CAST(:embedding AS vector)) AS similarity
                 FROM chunks c
                 JOIN books b ON c.book_id = b.id
@@ -159,6 +161,7 @@ class ChunksRepository(BaseRepository[Chunk]):
                 "text": row.text,
                 "title": row.title,
                 "volume": row.volume,
+                "author": row.author,
                 "similarity": float(row.similarity),
             }
             for row in rows

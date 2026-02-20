@@ -390,12 +390,12 @@ export function SystemConfigPanel() {
                 <label className="block text-sm font-normal text-[#94a3b8] px-1 uppercase tracking-wider">
                   {t('admin.systemConfig.description')}
                 </label>
-                <textarea
+                <input
+                  type="text"
                   value={newDescription}
                   onChange={(e) => setNewDescription(e.target.value)}
                   placeholder="Describe the purpose of this configuration..."
-                  rows={3}
-                  className="w-full px-5 py-4 border-2 border-slate-100 rounded-2xl bg-slate-50/50 outline-none focus:ring-4 focus:ring-[#0369a1]/10 focus:border-[#0369a1] transition-all resize-none text-left"
+                  className="w-full px-5 py-4 border-2 border-slate-100 rounded-2xl bg-slate-50/50 outline-none focus:ring-4 focus:ring-[#0369a1]/10 focus:border-[#0369a1] transition-all text-left"
                 />
               </div>
             </div>
@@ -437,7 +437,7 @@ export function SystemConfigPanel() {
                   <th className="px-6 py-5 font-normal w-1/4 text-start">{t('admin.systemConfig.key')}</th>
                   <th className="px-6 py-5 font-normal w-1/4 text-start">{t('admin.systemConfig.value')}</th>
                   <th className="px-6 py-5 font-normal w-1/3 text-start">{t('admin.systemConfig.description')}</th>
-                  <th className="px-6 py-5 font-normal w-1/6 text-start">{t('admin.systemConfig.actions')}</th>
+                  <th className="px-6 py-5 font-normal w-1/6 text-left">{t('admin.systemConfig.actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#75C5F0]/5">
@@ -462,11 +462,11 @@ export function SystemConfigPanel() {
                     </td>
                     <td className="px-6 py-6">
                       {editingKey === config.key ? (
-                        <textarea
+                        <input
+                          type="text"
                           value={editDescription}
                           onChange={(e) => setEditDescription(e.target.value)}
-                          rows={2}
-                          className="w-full px-3 py-2 border-2 border-[#0369a1] rounded-xl bg-white outline-none resize-none text-left"
+                          className="w-full px-3 py-2 border-2 border-[#0369a1] rounded-xl bg-white outline-none text-left"
                         />
                       ) : (
                         <span className="text-sm text-[#94a3b8]">
@@ -475,7 +475,7 @@ export function SystemConfigPanel() {
                       )}
                     </td>
                     <td className="px-6 py-6">
-                      <div className="flex items-center justify-start gap-2">
+                      <div className="flex items-center justify-end gap-2">
                         {editingKey === config.key ? (
                           <>
                             <button

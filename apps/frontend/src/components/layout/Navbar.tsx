@@ -10,7 +10,7 @@ export const Navbar: React.FC = () => {
   const { isAuthenticated } = useAuth();
   const isEditor = useIsEditor();
   const { t } = useI18n();
-  const { view, setView, searchQuery, setSearchQuery, bookActions, chat, setPage } = useAppContext();
+  const { view, setView, searchQuery, setSearchQuery, homeSearchQuery, setHomeSearchQuery, bookActions, chat, setPage } = useAppContext();
 
   return (
     <nav className="px-8 py-4 flex items-center justify-between sticky top-0 z-[100] transition-all duration-300 relative" dir="rtl">
@@ -70,7 +70,7 @@ export const Navbar: React.FC = () => {
       </div>
 
       <div className="relative flex items-center gap-4">
-        {view !== 'home' && (
+        {(view !== 'home' || homeSearchQuery.length > 0) && (
           <div className="relative hidden xl:block">
             <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1]">
               <Search size={18} strokeWidth={3} />
@@ -78,8 +78,8 @@ export const Navbar: React.FC = () => {
             <input
               type="text"
               placeholder={t('library.searchPlaceholder')}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={view === 'home' ? homeSearchQuery : searchQuery}
+              onChange={(e) => view === 'home' ? setHomeSearchQuery(e.target.value) : setSearchQuery(e.target.value)}
               className="px-12 py-2.5 bg-white/50 backdrop-blur-md border-2 border-[#0369a1]/10 rounded-2xl text-sm font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none focus:border-[#0369a1] transition-all w-64 shadow-sm"
               dir="rtl"
             />
