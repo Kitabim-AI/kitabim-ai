@@ -100,14 +100,34 @@ const UserRow: React.FC<UserRowProps> = ({
 
       <td className="px-8 py-5">
         {isEditing ? (
-          <button
-            onClick={() => onStatusChange(!currentStatus)}
-            className={`inline-block px-3 py-1.5 rounded-lg text-[14px] font-normal uppercase border-2 transition-all ${currentStatus
-              ? 'bg-emerald-50 text-emerald-600 border-emerald-500'
-              : 'bg-red-50 text-red-600 border-red-500'}`}
-          >
-            {currentStatus ? t('admin.users.active') : t('admin.users.suspended')}
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => onStatusChange(true)}
+              className={`relative px-4 py-2 rounded-xl text-[13px] font-normal uppercase transition-all ${
+                currentStatus
+                  ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/30'
+                  : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+              }`}
+            >
+              {currentStatus && (
+                <span className="absolute -top-1 -right-1 w-3 h-3 bg-white rounded-full border-2 border-emerald-500"></span>
+              )}
+              {t('admin.users.active')}
+            </button>
+            <button
+              onClick={() => onStatusChange(false)}
+              className={`relative px-4 py-2 rounded-xl text-[13px] font-normal uppercase transition-all ${
+                !currentStatus
+                  ? 'bg-red-500 text-white shadow-md shadow-red-500/30'
+                  : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+              }`}
+            >
+              {!currentStatus && (
+                <span className="absolute -top-1 -right-1 w-3 h-3 bg-white rounded-full border-2 border-red-500"></span>
+              )}
+              {t('admin.users.suspended')}
+            </button>
+          </div>
         ) : (
           <span className={`inline-block px-3 py-1.5 rounded-lg text-[14px] font-normal uppercase border ${currentStatus
             ? 'bg-emerald-50 text-emerald-600 border-emerald-500/10'
@@ -146,7 +166,7 @@ const UserRow: React.FC<UserRowProps> = ({
           ) : (
             <button
               onClick={onEdit}
-              className="p-2 bg-[#0369a1]/10 text-[#0369a1] rounded-xl hover:bg-[#0369a1] hover:text-white transition-all opacity-0 group-hover/row:opacity-100"
+              className="p-2 bg-[#0369a1]/10 text-[#0369a1] rounded-xl hover:bg-[#0369a1] hover:text-white transition-all"
               title={t('common.edit')}
             >
               <Edit2 size={18} />
