@@ -27,6 +27,7 @@
     "systemStatus": "سىستېما ھالىتى",
     "active": "ئاكتىپ",
     "view": "كۆرۈش",
+    "add": "قوشۇش",
     "loadingApp": "كىتابخانا ئېچىلۋاتىدۇ...",
     "uploadSuccess": "ھۆججەت مۇۋەپپەقىيەتلىك يۈكلەندى.",
     "ocrStarted": "OCR جەريانى باشلاندى.",
@@ -195,6 +196,7 @@
     "categories": {
       "title": "تۈرلەر",
       "add": "تۈرلەش ...",
+      "existingCategories": "مەۋجۇت تۈرلەر",
       "history": "تارىخ",
       "literature": "ئەدەبىيات",
       "philosophy": "پەلسەپە",

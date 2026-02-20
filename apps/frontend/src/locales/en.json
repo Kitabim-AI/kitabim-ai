@@ -27,6 +27,7 @@
     "systemStatus": "System Status",
     "active": "Active",
     "view": "View",
+    "add": "Add",
     "loadingApp": "Library is loading...",
     "uploadSuccess": "Document uploaded successfully.",
     "ocrStarted": "OCR process started successfully.",
@@ -194,6 +195,7 @@
     "categories": {
       "title": "Categories",
       "add": "Add Category...",
+      "existingCategories": "Existing Categories",
       "history": "History",
       "literature": "Literature",
       "philosophy": "Philosophy",
