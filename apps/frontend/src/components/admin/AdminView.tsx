@@ -69,8 +69,8 @@ export const AdminView: React.FC = () => {
     });
   };
 
-  const handleSaveRow = async (id: string) => {
-    if (!editData) return;
+  const handleSaveRow = async (id: string | null) => {
+    if (!id || !editData) return;
 
     const volumeValue = editData.volume.toString().trim();
     let volume: number | null = null;
@@ -79,11 +79,20 @@ export const AdminView: React.FC = () => {
       if (isNaN(volume)) volume = null;
     }
 
+    // Capture the latest temp category and existing categories
+    const currentTemp = editData.tempCategory.trim();
+    const currentCategories = [...editData.categories];
+
+    // Add pending category if there's text in the input and it's not already added
+    if (currentTemp && !currentCategories.includes(currentTemp)) {
+      currentCategories.push(currentTemp);
+    }
+
     const success = await bookActions.handleSaveBookRow(id, {
-      title: editData.title,
-      author: editData.author,
+      title: editData.title.trim(),
+      author: editData.author.trim(),
       volume,
-      categories: editData.categories
+      categories: currentCategories
     });
 
     if (success) {
@@ -190,6 +199,7 @@ export const AdminView: React.FC = () => {
                             type="number"
                             value={editData?.volume}
                             onChange={e => setEditData(prev => prev ? { ...prev, volume: e.target.value } : null)}
+                            onKeyDown={e => e.key === 'Enter' && handleSaveRow(book.id)}
                             className="no-spinner px-3 py-2 border-2 border-[#0369a1] rounded-xl bg-white w-20 outline-none text-center font-black"
                           />
                         ) : (
@@ -204,6 +214,7 @@ export const AdminView: React.FC = () => {
                             type="text"
                             value={editData?.author}
                             onChange={e => setEditData(prev => prev ? { ...prev, author: e.target.value } : null)}
+                            onKeyDown={e => e.key === 'Enter' && handleSaveRow(book.id)}
                             className="px-4 py-2 border-2 border-[#0369a1] rounded-xl bg-white w-full outline-none font-normal"
                             placeholder={t('admin.table.author')}
                           />
@@ -216,7 +227,7 @@ export const AdminView: React.FC = () => {
                       <td className="px-6 py-6">
                         <TagEditor
                           isOpen={isEditing}
-                          onSave={() => { }}
+                          onSave={() => handleSaveRow(book.id)}
                           items={editData?.categories || []}
                           tempValue={editData?.tempCategory || ''}
                           onTempValueChange={(val) => setEditData(prev => prev ? { ...prev, tempCategory: val } : null)}

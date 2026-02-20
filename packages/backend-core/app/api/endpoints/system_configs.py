@@ -95,7 +95,7 @@ async def create_config(
     if existing:
         raise HTTPException(
             status_code=400,
-            detail=f"Config key '{data.key}' already exists"
+            detail=t("errors.config_already_exists", key=data.key)
         )
 
     config = await repo.create(
@@ -125,7 +125,7 @@ async def update_config(
 
     config = await repo.get(key)
     if not config:
-        raise HTTPException(status_code=404, detail=f"Config key '{key}' not found")
+        raise HTTPException(status_code=404, detail=t("errors.config_not_found", key=key))
 
     config.value = data.value
     if data.description is not None:

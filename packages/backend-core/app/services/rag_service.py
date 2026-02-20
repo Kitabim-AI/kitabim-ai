@@ -16,6 +16,7 @@ from app.langchain import GeminiEmbeddings, build_structured_chain, build_text_c
 from app.models.schemas import ChatRequest
 from app.utils.markdown import strip_markdown
 from app.utils.observability import log_json
+from app.core.i18n import t
 import logging
 import time
 
@@ -77,10 +78,7 @@ class RAGService:
 
     @staticmethod
     def _build_empty_response_message() -> str:
-        return (
-            "سېستىما ھازىر ئالدىراش ياكى سوئالىڭىزغا ئالاقىدار مەزمۇن تېپىلمىدى. "
-            "سوئالىڭىزنى قايتا تەپسىلى ۋە ئېنىق قىلىپ سىناپ بېقىڭ."
-        )
+        return t("errors.chat_no_context")
 
     @staticmethod
     def _build_instructions(strict_no_answer: bool, suppress_page_notice: bool) -> str:
@@ -88,7 +86,7 @@ class RAGService:
             return (
                 "Instructions:\n"
                 "1. Primary Goal: Answer the user's question ONLY based on the provided context.\n"
-                "2. If the answer is NOT in the context, respond with exactly: جاۋاب تېپىلمىدى\n"
+                "2. If the answer is NOT in the context, respond with exactly: " + t("errors.chat_no_answer") + "\n"
                 "3. Format your response in markdown:\n"
                 "   - Use double newlines (\\n\\n) to separate paragraphs for better readability\n"
                 "   - Use **bold** for emphasis on key terms\n"
@@ -292,7 +290,7 @@ class RAGService:
         if not is_global:
             book = await books_repo.get(req.book_id)
             if not book:
-                raise ValueError("Book not found")
+                raise ValueError(t("errors.book_not_found"))
 
         use_current_volume_only = self._is_current_volume_query(req.question)
         include_current_page_context = self._is_current_page_query(req.question)
@@ -581,7 +579,7 @@ class RAGService:
         if not is_global:
             book = await books_repo.get(req.book_id)
             if not book:
-                raise ValueError("Book not found")
+                raise ValueError(t("errors.book_not_found"))
 
         use_current_volume_only = self._is_current_volume_query(req.question)
         include_current_page_context = self._is_current_page_query(req.question)

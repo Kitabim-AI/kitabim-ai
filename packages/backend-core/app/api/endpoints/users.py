@@ -133,7 +133,7 @@ async def change_user_role(
     
     updated_user = await update_user_role(session, user_id, role_update.role)
     if not updated_user:
-        raise HTTPException(status_code=500, detail=t("errors.failed_to_update_user_role"))
+        raise HTTPException(status_code=500, detail=t("errors.failed_update_role"))
     
     await session.commit()
     
@@ -170,7 +170,7 @@ async def change_user_status(
     
     updated_user = await update_user_status(session, user_id, status_update.is_active)
     if not updated_user:
-        raise HTTPException(status_code=500, detail=t("errors.failed_to_update_user_status"))
+        raise HTTPException(status_code=500, detail=t("errors.failed_update_status"))
     
     await session.commit()
     

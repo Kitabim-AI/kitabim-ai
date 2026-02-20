@@ -174,7 +174,7 @@ async def get_cover(book_id: str):
             await storage.download_file(remote_path, local_path)
             return FileResponse(local_path)
     
-    raise HTTPException(status_code=404, detail="Cover not found")
+    raise HTTPException(status_code=404, detail=t("errors.cover_not_found"))
 
 # Keep the mount for legacy/local if needed, but the route above takes precedence
 app.mount("/api/covers", StaticFiles(directory=str(settings.covers_dir)), name="covers")

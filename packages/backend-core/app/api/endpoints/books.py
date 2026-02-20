@@ -600,7 +600,7 @@ async def get_book(
 
     # Check guest access
     if not await check_book_access_for_guest(book_dict, current_user):
-        raise HTTPException(status_code=403, detail="Access denied")
+        raise HTTPException(status_code=403, detail=t("errors.unauthorized_access"))
 
     # No longer fetch pages here - frontend fetches them via /pages endpoint
     # This saves a wasteful DB query for up to 10,000 rows we were discarding
@@ -710,7 +710,7 @@ async def get_book_content(
     }
 
     if not await check_book_access_for_guest(book_dict, current_user):
-        raise HTTPException(status_code=403, detail="Access denied")
+        raise HTTPException(status_code=403, detail=t("errors.unauthorized_access"))
 
     # Get all pages using repository
     pages = await pages_repo.find_by_book(book_id, limit=10000)
@@ -750,7 +750,7 @@ async def get_book_page(
     }
 
     if not await check_book_access_for_guest(book_dict, current_user):
-        raise HTTPException(status_code=403, detail="Access denied")
+        raise HTTPException(status_code=403, detail=t("errors.unauthorized_access"))
 
     # Get page by number
     page = await pages_repo.find_one(book_id, page_num)
@@ -786,7 +786,7 @@ async def get_book_pages(
     }
 
     if not await check_book_access_for_guest(book_dict, current_user):
-        raise HTTPException(status_code=403, detail="Access denied")
+        raise HTTPException(status_code=403, detail=t("errors.unauthorized_access"))
 
     # Get pages with pagination
     pages = await pages_repo.find_by_book(book_id, skip=skip, limit=limit)
@@ -819,7 +819,7 @@ async def get_book_by_hash(
 
     # Check guest access
     if not await check_book_access_for_guest(book_dict, current_user):
-        raise HTTPException(status_code=403, detail="Access denied")
+        raise HTTPException(status_code=403, detail=t("errors.unauthorized_access"))
 
     # Convert to Pydantic with automatic camelCase
     return Book.model_validate(book_model)
@@ -836,7 +836,7 @@ async def upload_pdf(
     books_repo = BooksRepository(session)
 
     if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+        raise HTTPException(status_code=400, detail=t("errors.invalid_file_type", allowed=".pdf"))
 
     temp_path = settings.uploads_dir / f".upload_{uuid.uuid4().hex}.pdf"
     hasher = hashlib.sha256()
@@ -1505,13 +1505,13 @@ async def apply_spelling_corrections(
                 "bookId": book_id,
                 "pageNumber": page_num,
                 "correctionsApplied": len(corrections),
-                "message": t("messages.corrections_applied_embeddings_regenerated"),
+                "message": t("messages.corrections_applied"),
             }
-        raise HTTPException(status_code=404, detail="Book or page not found")
+        raise HTTPException(status_code=404, detail=t("errors.book_or_page_not_found"))
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to apply corrections: {exc}")
+        raise HTTPException(status_code=500, detail=t("errors.apply_corrections_failed", error=str(exc)))
 
 
 @router.post("/storage/sync")
@@ -1526,4 +1526,4 @@ async def sync_gcs_storage(
         result = await discovery.sync_gcs_books(force=force)
         return result
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"GCS sync failed: {exc}")
+        raise HTTPException(status_code=500, detail=t("errors.gcs_sync_failed", error=str(exc)))

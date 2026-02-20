@@ -148,7 +148,7 @@ async def google_callback(
         google_access_token = token_response.get("access_token")
         
         if not google_access_token:
-            return _error_response(t("errors.no_access_token_in_response"))
+            return _error_response(t("errors.no_access_token"))
         
         # Get user info from Google
         google_user = await get_google_user_info(google_access_token)
@@ -165,7 +165,7 @@ async def google_callback(
             existing_user = await get_user_by_email(session, google_user.email)
             if existing_user:
                 return _error_response(
-                    t("errors.email_already_exists_with_other_provider")
+                    t("errors.email_already_exists")
                 )
             
             # Determine role based on admin emails
@@ -222,7 +222,7 @@ async def refresh_access_token(
     if not refresh_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Refresh token required",
+            detail=t("errors.refresh_token_required"),
         )
     
     try:
@@ -234,7 +234,7 @@ async def refresh_access_token(
         if not jti or not user_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid refresh token",
+                detail=t("errors.invalid_refresh_token"),
             )
         
         # Validate token is not revoked
@@ -242,7 +242,7 @@ async def refresh_access_token(
         if not validated_user_id or validated_user_id != user_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Refresh token is invalid or revoked",
+                detail=t("errors.refresh_token_revoked"),
             )
         
         # Get fresh user data
@@ -252,7 +252,7 @@ async def refresh_access_token(
         if not user or not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found or inactive",
+                detail=t("errors.user_not_found_inactive"),
             )
         
         # Generate new access token
@@ -263,7 +263,7 @@ async def refresh_access_token(
     except TokenExpiredError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Refresh token has expired",
+            detail=t("errors.refresh_token_expired"),
         )
     except TokenInvalidError as e:
         raise HTTPException(

@@ -47,7 +47,7 @@ async def ocr_image(
     try:
         img_bytes = _decode_base64_image(req.imageBase64)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=t("invalid_base64_image", error=str(exc)))
+        raise HTTPException(status_code=400, detail=t("errors.ai.invalid_base64_image", error=str(exc)))
 
     try:
         text = await generate_text_with_image(
@@ -58,4 +58,4 @@ async def ocr_image(
         return {"text": clean_uyghur_text(text or "")}
     except Exception as exc:
         log_json(logger, logging.ERROR, "OCR image failed", error=str(exc))
-        raise HTTPException(status_code=500, detail=t("ocr_failed", error=str(exc)))
+        raise HTTPException(status_code=500, detail=t("errors.ai.ocr_failed", error=str(exc)))
