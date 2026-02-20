@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 
@@ -19,7 +19,7 @@ async def record_book_error(
         return
 
     error_event_json = {
-        "ts": datetime.utcnow().isoformat(),
+        "ts": datetime.now(timezone.utc).isoformat(),
         "kind": kind,
         "message": message,
         "context": context or {},
@@ -33,6 +33,6 @@ async def record_book_error(
         # Note: 'errors' is a JSONB array in the model
         # For now, we just keep the last error message in last_error field
         # TODO: Implement proper error history in JSONB array if needed
-        last_updated=datetime.utcnow(),
+        last_updated=datetime.now(timezone.utc),
     )
     await session.flush()

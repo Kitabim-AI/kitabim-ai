@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import fitz
 from app.core.config import settings
@@ -37,7 +37,7 @@ def _resolve_cover_path(book_id: str) -> Path:
 
 
 async def _acquire_lock(session: AsyncSession, book_id: str, job_key: str | None) -> bool:
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     expires = now + timedelta(seconds=settings.job_lock_ttl_seconds)
     lock_val = job_key or "local"
 
@@ -223,7 +223,7 @@ async def process_pdf_task(
                             "status": "pending",
                             "is_verified": False,
                             "text": "",
-                            "last_updated": datetime.utcnow(),
+                            "last_updated": datetime.now(timezone.utc),
                         }
                         # Use upsert to avoid duplicates if re-running
                         await pages_repo.upsert(page_data)
@@ -232,7 +232,7 @@ async def process_pdf_task(
                     book_id,
                     total_pages=total_pages,
                     status="processing",
-                    last_updated=datetime.utcnow(),
+                    last_updated=datetime.now(timezone.utc),
                 )
 
             cover_path = _resolve_cover_path(book_id)
@@ -370,7 +370,7 @@ async def process_pdf_task(
                                         text=page_text,
                                         status="completed" if success else "error",
                                         error=page_error,
-                                        last_updated=datetime.utcnow(),
+                                        last_updated=datetime.now(timezone.utc),
                                         # embedding=None # Clear embedding if text changed
                                     )
                                 )
@@ -499,13 +499,13 @@ async def process_pdf_task(
                                         chunk_index=chunk_idx,
                                         text=txt,
                                         embedding=vec,
-                                        created_at=datetime.utcnow()
+                                        created_at=datetime.now(timezone.utc)
                                     )
                                     session.add(new_chunk)
 
                                 # Update page status
                                 r.is_indexed = True
-                                r.last_updated = datetime.utcnow()
+                                r.last_updated = datetime.now(timezone.utc)
 
                             await session.commit()
 
@@ -568,7 +568,7 @@ async def process_pdf_task(
             await books_repo.update_one(
                 book_id,
                 status=final_status,
-                last_updated=datetime.utcnow(),
+                last_updated=datetime.now(timezone.utc),
             )
             await session.commit()
             

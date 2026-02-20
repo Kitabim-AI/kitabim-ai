@@ -1,7 +1,7 @@
 import hashlib
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -102,7 +102,7 @@ class DiscoveryService:
                 
                 # It's a truly new book!
                 # Generate a unique ID (MD5 of filename + current time for uniqueness)
-                book_id = hashlib.md5(f"{file_name}{datetime.utcnow()}".encode()).hexdigest()[:12]
+                book_id = hashlib.md5(f"{file_name}{datetime.now(timezone.utc)}".encode()).hexdigest()[:12]
                 
                 # If the remote filename isn't the standard ID-style, we might want to rename it in GCS
                 # but for simplicity now, we just link to the existing path.
@@ -121,7 +121,7 @@ class DiscoveryService:
                         log_json(logger, logging.WARNING, "Failed to delete original file",
                                  path=remote_path, error=str(e))
                 
-                now = datetime.utcnow()
+                now = datetime.now(timezone.utc)
                 try:
                     await self.books_repo.create(
                         id=book_id,
@@ -151,7 +151,7 @@ class DiscoveryService:
                 temp_path.unlink(missing_ok=True)
 
         # 5. Update last sync time
-        await self.configs_repo.set_value("gcs_last_sync_at", datetime.utcnow().isoformat())
+        await self.configs_repo.set_value("gcs_last_sync_at", datetime.now(timezone.utc).isoformat())
         await self.session.commit()
 
         # 6. Auto-trigger OCR if enabled
@@ -190,7 +190,7 @@ class DiscoveryService:
         if last_sync is None:
             await self.configs_repo.set_value(
                 "gcs_last_sync_at",
-                datetime.utcnow().isoformat(),
+                datetime.now(timezone.utc).isoformat(),
                 "Timestamp of the last GCS bucket scan (used for rate limiting)"
             )
             log_json(logger, logging.INFO, "Initialized gcs_last_sync_at with current timestamp")
@@ -224,4 +224,4 @@ class DiscoveryService:
         except ValueError:
             return True
             
-        return datetime.utcnow() > last_sync + timedelta(minutes=interval)
+        return datetime.now(timezone.utc) > last_sync + timedelta(minutes=interval)

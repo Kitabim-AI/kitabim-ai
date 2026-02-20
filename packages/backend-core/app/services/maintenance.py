@@ -22,22 +22,17 @@ async def rescue_stale_jobs(ctx):
     buffer_seconds = 300
     cutoff_time = datetime.now(timezone.utc) - timedelta(seconds=timeout_seconds + buffer_seconds)
 
-    # Provide timezone-naive datetime if DB expects it (SQLAlchemy usually deals with naive UTC or timezone-aware depending on config)
-    # Assuming the DB stores timestamps as timezone-naive UTC (common in this codebase based on previous files)
-    cutoff_time_naive = cutoff_time.replace(tzinfo=None)
-
     async with db_session.async_session_factory() as session:
         books_repo = BooksRepository(session)
         jobs_repo = JobsRepository(session)
 
         # Find stale "processing" books
-        stale_processing = await books_repo.find_stale_processing_books(cutoff_time_naive)
+        stale_processing = await books_repo.find_stale_processing_books(cutoff_time)
 
         # Find stale "pending" books (e.g., skipped due to circuit breaker)
         # Use a shorter timeout for pending books (30 minutes)
         pending_cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
-        pending_cutoff_naive = pending_cutoff.replace(tzinfo=None)
-        stale_pending = await books_repo.find_stale_pending_books(pending_cutoff_naive)
+        stale_pending = await books_repo.find_stale_pending_books(pending_cutoff)
 
         stale_books = stale_processing + stale_pending
 

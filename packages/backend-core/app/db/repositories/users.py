@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -70,7 +70,7 @@ class UsersRepository(BaseRepository[User]):
 
     async def update_last_login(self, user_id: UUID) -> None:
         """Update user's last login timestamp"""
-        await self.update_one(user_id, last_login_at=datetime.utcnow())
+        await self.update_one(user_id, last_login_at=datetime.now(timezone.utc))
 
     async def count_by_role(self, role: Optional[str] = None, is_active: Optional[bool] = None, search: Optional[str] = None) -> int:
         """Count users, optionally filtered by role, active status, and search query"""
@@ -123,7 +123,7 @@ class RefreshTokensRepository(BaseRepository[RefreshToken]):
     async def delete_expired(self) -> int:
         """Delete all expired refresh tokens"""
         from sqlalchemy import delete
-        stmt = delete(RefreshToken).where(RefreshToken.expires_at < datetime.utcnow())
+        stmt = delete(RefreshToken).where(RefreshToken.expires_at < datetime.now(timezone.utc))
         result = await self.session.execute(stmt)
         await self.session.flush()
         return result.rowcount

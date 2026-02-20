@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,7 +31,7 @@ class JobsRepository(BaseRepository[Job]):
         metadata: Optional[dict] = None
     ) -> Job:
         """Create a new job or reset an existing failed/completed job"""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         existing = await self.get_by_key(job_key)
 
         if existing:
@@ -74,7 +74,7 @@ class JobsRepository(BaseRepository[Job]):
             .values(
                 status=status,
                 last_error=error,
-                updated_at=datetime.utcnow()
+                updated_at=datetime.now(timezone.utc)
             )
         )
         await self.session.execute(stmt)
@@ -87,7 +87,7 @@ class JobsRepository(BaseRepository[Job]):
             .where(Job.job_key == job_key)
             .values(
                 attempts=Job.attempts + 1,
-                updated_at=datetime.utcnow()
+                updated_at=datetime.now(timezone.utc)
             )
         )
         await self.session.execute(stmt)

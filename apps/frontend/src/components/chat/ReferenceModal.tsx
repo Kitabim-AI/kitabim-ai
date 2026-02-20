@@ -77,7 +77,7 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
                 </span>
                 {bookData?.volume && (
                   <span className="flex items-center gap-1.5 px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-xs">
-                    {t('common.volume')}: {bookData.volume}
+                    {t('book.volume', { volume: bookData.volume })}
                   </span>
                 )}
               </div>

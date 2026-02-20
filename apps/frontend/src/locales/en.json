@@ -1,5 +1,6 @@
 {
   "common": {
+    "volume": "Volume",
     "loading": "Loading...",
     "error": "Error",
     "success": "Success",
@@ -96,6 +97,7 @@
     "failed": "Failed",
     "pending": "Pending",
     "completed": "Completed",
+    "error": "Error",
     "public": "Public",
     "private": "Private",
     "category": "Category"

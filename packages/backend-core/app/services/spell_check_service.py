@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 import logging
@@ -62,7 +62,7 @@ class SpellCheckService:
             pageNumber=page_number,
             corrections=corrections,
             totalIssues=len(corrections),
-            checkedAt=datetime.utcnow().isoformat(),
+            checkedAt=datetime.now(timezone.utc).isoformat(),
         )
 
     async def check_book(self, book_id: str, session: AsyncSession) -> Dict[int, PageSpellCheck]:
@@ -127,7 +127,7 @@ class SpellCheckService:
             """),
             {
                 "text": new_text,
-                "now": datetime.utcnow(),
+                "now": datetime.now(timezone.utc),
                 "updated_by": user_email,
                 "book_id": book_id,
                 "page_number": page_number
@@ -137,7 +137,7 @@ class SpellCheckService:
         # Update book last_updated
         await books_repo.update_one(
             book_id,
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(timezone.utc),
             updated_by=user_email
         )
         

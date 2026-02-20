@@ -1,5 +1,6 @@
 {
   "common": {
+    "volume": "توم",
     "loading": "سەل تەخىر قىلىڭ...",
     "error": "خاتالىق",
     "success": "مۇۋەپپەقىيەت",
@@ -92,11 +93,12 @@
     "searchPlaceholder": "كىتاب ئىزدەش..."
   },
   "bookCard": {
-    "ready": "تامام",
+    "ready": "پۈتتى",
     "processing": "بىر تەرەپ قىلىۋاتىدۇ",
-    "failed": "خاتالىق",
+    "failed": "مەغلۇپ بولدى",
     "pending": "ساقلاۋاتىدۇ",
     "completed": "OCR تاماملاندى",
+    "error": "خاتالىق كۆرۈلدى",
     "public": "ئاشكارا",
     "private": "يوشۇرۇن",
     "category": "تۈر"

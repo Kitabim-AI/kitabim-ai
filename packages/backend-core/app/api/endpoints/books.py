@@ -5,7 +5,7 @@ import uuid
 import os
 import io
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
@@ -858,7 +858,7 @@ async def upload_pdf(
             temp_path.unlink(missing_ok=True)
             return {"bookId": str(existing.id), "status": "existing"}
 
-        book_id = hashlib.md5(f"{file.filename}{datetime.utcnow()}".encode()).hexdigest()[:12]
+        book_id = hashlib.md5(f"{file.filename}{datetime.now(timezone.utc)}".encode()).hexdigest()[:12]
         remote_path = f"uploads/{book_id}.pdf"
         await storage.upload_file(temp_path, remote_path)
         temp_path.unlink(missing_ok=True)
@@ -867,7 +867,7 @@ async def upload_pdf(
             temp_path.unlink(missing_ok=True)
         raise
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # Create book using repository
     new_book = await books_repo.create(
@@ -926,7 +926,7 @@ async def start_ocr(
         book_id,
         status="processing",
         processing_step="ocr",
-        last_updated=datetime.utcnow(),
+        last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email,
     )
     await session.commit()
@@ -973,7 +973,7 @@ async def retry_failed_ocr(
             book_id,
             status="processing",
             processing_step="ocr",
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(timezone.utc),
             updated_by=current_user.email,
         )
         await session.commit()
@@ -988,7 +988,7 @@ async def retry_failed_ocr(
         book_id,
         status="processing",
         processing_step="ocr",
-        last_updated=datetime.utcnow(),
+        last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email,
     )
 
@@ -1008,7 +1008,7 @@ async def retry_failed_ocr(
         {
             "book_id": book_id,
             "page_numbers": failed_pages,
-            "last_updated": datetime.utcnow(),
+            "last_updated": datetime.now(timezone.utc),
             "updated_by": current_user.email
         }
     )
@@ -1041,7 +1041,7 @@ async def reprocess_book(
     await books_repo.update_one(
         book_id,
         status="processing",
-        last_updated=datetime.utcnow(),
+        last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email
     )
     await session.commit()
@@ -1081,7 +1081,7 @@ async def reindex_book(
     await books_repo.update_one(
         book_id,
         status="processing",
-        last_updated=datetime.utcnow(),
+        last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email
     )
     await session.commit()
@@ -1119,7 +1119,7 @@ async def reset_page(
     await books_repo.update_one(
         book_id,
         status="processing",
-        last_updated=datetime.utcnow(),
+        last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email
     )
     await session.commit()
@@ -1159,7 +1159,7 @@ async def update_page_text(
 
     await books_repo.update_one(
         book_id,
-        last_updated=datetime.utcnow(),
+        last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email
     )
     await session.commit()
@@ -1208,14 +1208,14 @@ async def create_book(
     if existing_book:
         # Update existing book
         book_dict["updated_by"] = current_user.email
-        book_dict["last_updated"] = datetime.utcnow()
+        book_dict["last_updated"] = datetime.now(timezone.utc)
         await books_repo.update_one(book_id, **book_dict)
     else:
         # Create new book
         book_dict["created_by"] = current_user.email
         book_dict["updated_by"] = current_user.email
-        book_dict["upload_date"] = datetime.utcnow()
-        book_dict["last_updated"] = datetime.utcnow()
+        book_dict["upload_date"] = datetime.now(timezone.utc)
+        book_dict["last_updated"] = datetime.now(timezone.utc)
         await books_repo.create(**book_dict)
 
     await session.commit()
@@ -1282,7 +1282,7 @@ async def update_book_details(
                         "text": new_text,
                         "status": result.get("status"),
                         "is_verified": result.get("isVerified") or result.get("is_verified"),
-                        "last_updated": datetime.utcnow(),
+                        "last_updated": datetime.now(timezone.utc),
                         "updated_by": current_user.email,
                     }
                 )
@@ -1301,7 +1301,7 @@ async def update_book_details(
         book_update.pop(field, None)
 
     # Set system fields
-    book_update["last_updated"] = datetime.utcnow()
+    book_update["last_updated"] = datetime.now(timezone.utc)
     book_update["updated_by"] = current_user.email
 
     await books_repo.update_one(book_id, **book_update)
@@ -1407,7 +1407,7 @@ async def upload_cover(
     await books_repo.update_one(
         book_id,
         cover_url=cover_url,
-        last_updated=datetime.utcnow(),
+        last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email
     )
     await session.commit()
