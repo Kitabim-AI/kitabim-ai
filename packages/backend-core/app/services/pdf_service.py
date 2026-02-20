@@ -12,7 +12,7 @@ from app.db.repositories.books import BooksRepository
 from app.db.repositories.pages import PagesRepository
 from app.db.repositories.jobs import JobsRepository
 from app.db.models import Book, Page, Chunk
-from sqlalchemy import update, or_, and_, delete, select
+from sqlalchemy import update, or_, and_, delete, select, func
 
 from app.langchain.models import GeminiEmbeddings, is_llm_available, update_breaker_config
 from app.db.repositories.system_configs import SystemConfigsRepository
@@ -91,11 +91,33 @@ async def process_pdf_task(
         configs_repo = SystemConfigsRepository(session)
         
         try:
+            # Check if PDF processing is enabled
+            try:
+                pdf_enabled = await configs_repo.get_value("pdf_processing_enabled")
+                if pdf_enabled is None:
+                    # Seed default if missing
+                    await configs_repo.set_value(
+                        "pdf_processing_enabled",
+                        "true",
+                        "Enable or disable PDF processing system-wide (true/false)"
+                    )
+                    await session.commit()
+                    pdf_enabled = "true"
+
+                if pdf_enabled.lower() in ("false", "0", "no", "disabled"):
+                    log_json(logger, logging.INFO, "PDF processing disabled by system config", book_id=book_id)
+                    if job_key:
+                        await jobs_repo.update_status(job_key, "skipped", "PDF processing is disabled")
+                        await session.commit()
+                    return
+            except Exception as e:
+                log_json(logger, logging.WARNING, "Failed to check PDF processing config", error=str(e))
+
             # Refresh Circuit Breaker Configs
             try:
                 cb_threshold = await configs_repo.get_value("llm_cb_failure_threshold")
                 cb_timeout = await configs_repo.get_value("llm_cb_recovery_seconds")
-                
+
                 if cb_threshold and cb_timeout:
                     update_breaker_config(
                         failure_threshold=int(cb_threshold),
@@ -105,13 +127,13 @@ async def process_pdf_task(
                     # Seed defaults if missing
                     if not cb_threshold:
                         await configs_repo.set_value(
-                            "llm_cb_failure_threshold", 
+                            "llm_cb_failure_threshold",
                             str(settings.llm_cb_failure_threshold),
                             "Number of consecutive failures before opening circuit breaker"
                         )
                     if not cb_timeout:
                         await configs_repo.set_value(
-                            "llm_cb_recovery_seconds", 
+                            "llm_cb_recovery_seconds",
                             str(settings.llm_cb_recovery_seconds),
                             "Seconds to wait before attempting recovery (half-open)"
                         )
@@ -515,8 +537,33 @@ async def process_pdf_task(
                             await session.commit()
 
             # Final check - aggregate page stats
-            stats = await pages_repo.count_by_book(book_id, status="completed")
-            final_status = "ready" if stats == total_pages else "error"
+            completed_count = await pages_repo.count_by_book(book_id, status="completed")
+
+            # Count indexed pages
+            indexed_stmt = select(func.count()).select_from(Page).where(
+                and_(Page.book_id == book_id, Page.is_indexed == True)
+            )
+            indexed_result = await session.execute(indexed_stmt)
+            indexed_count = indexed_result.scalar()
+
+            # Determine final status
+            if completed_count == total_pages and indexed_count == total_pages:
+                final_status = "ready"  # Fully processed and searchable
+            elif completed_count == total_pages:
+                final_status = "completed"  # OCR done, but not fully indexed
+            else:
+                final_status = "error"  # OCR incomplete
+
+            log_json(
+                logger,
+                logging.INFO,
+                "Determining final book status",
+                book_id=book_id,
+                total_pages=total_pages,
+                completed_pages=completed_count,
+                indexed_pages=indexed_count,
+                final_status=final_status
+            )
 
             await books_repo.update_one(
                 book_id,

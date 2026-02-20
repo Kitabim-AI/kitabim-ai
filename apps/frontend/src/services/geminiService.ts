@@ -74,13 +74,15 @@ export const chatWithBookStream = async (
   history: { role: string; text: string }[],
   onChunk: (chunk: string) => void,
   onComplete: () => void,
-  onError: (error: string) => void
+  onError: (error: string) => void,
+  signal?: AbortSignal
 ): Promise<void> => {
   try {
     const response = await authFetch(`${API_BASE}/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bookId, question, currentPage, history }),
+      signal,
     });
 
     if (response.status === 401) {
@@ -112,6 +114,11 @@ export const chatWithBookStream = async (
 
     while (true) {
       const { done, value } = await reader.read();
+
+      if (signal?.aborted) {
+        await reader.cancel();
+        return;
+      }
 
       if (done) {
         break;

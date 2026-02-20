@@ -96,6 +96,7 @@
     "processing": "بىر تەرەپ قىلىۋاتىدۇ",
     "failed": "خاتالىق",
     "pending": "ساقلاۋاتىدۇ",
+    "completed": "OCR تاماملاندى",
     "public": "ئاشكارا",
     "private": "يوشۇرۇن",
     "category": "تۈر"
@@ -155,10 +156,20 @@
     "userManagement": "ئابونت باشقۇرۇش",
     "systemConfigLabel": "سىستېما سەپلىمىسى",
     "stats": {
+      "title": "سىستېما ستاتىستىكىسى",
       "totalBooks": "جەمئىي كىتاب",
       "readyBooks": "تەييار كىتاب",
       "processing": "بىر تەرەپ قىلىنىۋاتىدۇ",
-      "users": "ئابونتلار"
+      "users": "ئابونتلار",
+      "ready": "تەييار",
+      "completed": "تاماملاندى",
+      "error": "خاتا",
+      "pending": "ساقلاۋاتىدۇ",
+      "booksByStatus": "كىتاب ستاتىستىكىسى",
+      "pageStats": "بەت ستاتىستىكىسى",
+      "totalPages": "جەمئىي بەت",
+      "indexedPages": "ئىندېكىسلانغان بەتلەر",
+      "unindexedPages": "ئىندېكىسلانمىغان بەتلەر"
     },
     "table": {
       "name": "نامى",

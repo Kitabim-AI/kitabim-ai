@@ -73,6 +73,14 @@ async def worker_startup(ctx):
     # Initialize SQLAlchemy (PostgreSQL)
     await init_db()
 
+    # Seed system configurations
+    try:
+        from app.db.seeds import seed_system_configs
+        async with db_session.async_session_factory() as session:
+            await seed_system_configs(session)
+    except Exception as exc:
+        log_json(logger, logging.ERROR, "Worker system config seeding failed", error=str(exc))
+
 
 async def worker_shutdown(ctx):
     await close_db()

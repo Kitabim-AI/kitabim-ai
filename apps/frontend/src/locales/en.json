@@ -95,6 +95,7 @@
     "processing": "Processing",
     "failed": "Failed",
     "pending": "Pending",
+    "completed": "Completed",
     "public": "Public",
     "private": "Private",
     "category": "Category"
@@ -154,10 +155,20 @@
     "userManagement": "User Management",
     "systemConfigLabel": "System Config",
     "stats": {
+      "title": "System Statistics",
       "totalBooks": "Total Books",
       "readyBooks": "Ready Books",
       "processing": "Processing",
-      "users": "Users"
+      "users": "Users",
+      "ready": "Ready",
+      "completed": "Completed",
+      "error": "Error",
+      "pending": "Pending",
+      "booksByStatus": "Books by Status",
+      "pageStats": "Page Statistics",
+      "totalPages": "Total Pages",
+      "indexedPages": "Indexed Pages",
+      "unindexedPages": "Unindexed Pages"
     },
     "table": {
       "name": "Name",

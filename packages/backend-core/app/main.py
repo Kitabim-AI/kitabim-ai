@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.endpoints import ai, auth, books, chat, users, system_configs
+from app.api.endpoints import ai, auth, books, chat, users, system_configs, stats
 from app.core.config import settings
 from app.db.session import init_db, close_db  # SQLAlchemy session management
 from app.core.i18n import I18n, set_current_lang
@@ -36,7 +36,15 @@ async def lifespan(app: FastAPI):
     # Initialize SQLAlchemy (replaces db_manager.connect_to_storage())
     await init_db()
 
-    # SQLAlchemy is already initialized above with await init_db()
+    # Seed system configurations
+    try:
+        from app.db.seeds import seed_system_configs
+        from app.db import session as db_session
+        async with db_session.async_session_factory() as session:
+            await seed_system_configs(session)
+    except Exception as exc:
+        logger = logging.getLogger("app.startup")
+        log_json(logger, logging.ERROR, "System config seeding failed", error=str(exc))
     
     # Run startup tasks using SQLAlchemy
     try:
@@ -185,6 +193,7 @@ app.include_router(books.router, prefix="/api/books", tags=["books"])
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(system_configs.router, prefix="/api/system-configs", tags=["system-configs"])
+app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 
 
 @app.get("/")

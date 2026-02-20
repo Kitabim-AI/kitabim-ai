@@ -12,6 +12,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
   const streamingMessageRef = useRef('');
   const [usageStatus, setUsageStatus] = useState<{ usage: number, limit: number | null, hasReachedLimit: boolean } | null>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -37,6 +38,33 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     }
   }, [isAuthenticated, chatMessages]);
 
+  const abortOngoingChat = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsChatting(false);
+    setStreamingMessage('');
+  };
+
+  // Terminate chat if context changes (view, book, or page unmounts/switches)
+  useEffect(() => {
+    abortOngoingChat();
+    // Also clear messages if we switch major views (e.g. from global to reader)
+    if (view !== 'reader') {
+      clearChat();
+    }
+  }, [view, selectedBook?.id, currentPage]);
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
   const handleSendMessage = async () => {
     if (!chatInput.trim()) return;
     if (view !== 'global-chat' && !selectedBook) return;
@@ -45,6 +73,13 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     const userMsg: Message = { role: 'user', text: chatInput };
     setChatMessages(prev => [...prev, userMsg]);
     setChatInput('');
+
+    // Abort any existing chat before starting new one
+    abortOngoingChat();
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setIsChatting(true);
     setStreamingMessage('');
 
@@ -71,15 +106,25 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
         },
         // onError
         (error: string) => {
+          // If aborted, don't show error
+          if (controller.signal.aborted) return;
+
           setChatMessages(prev => [...prev, { role: 'model', text: error }]);
           setStreamingMessage('');
           setIsChatting(false);
-        }
+        },
+        controller.signal
       );
-    } catch (err) {
+    } catch (err: any) {
+      if (err.name === 'AbortError') return;
+
       setChatMessages(prev => [...prev, { role: 'model', text: "كەچۈرۈڭ، جاۋاب بېرەلمىدىم." }]);
       setStreamingMessage('');
       setIsChatting(false);
+    } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
     }
   };
 
