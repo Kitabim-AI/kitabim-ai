@@ -134,7 +134,23 @@ export const TagEditor: React.FC<TagEditorProps & { hideActions?: boolean }> = (
 
             {!hideActions && (
               <>
-                <button onClick={() => { if (tempValue.trim()) handleAddTag(tempValue); onSave(); }} className="p-1.5 bg-[#0369a1] text-white rounded-lg hover:bg-[#0284c7]"><Save size={14} /></button>
+                <button
+                  onClick={() => {
+                    // Add pending tag if there's text in the input
+                    if (tempValue.trim() && !items.includes(tempValue.trim())) {
+                      onAddItem(tempValue.trim());
+                    }
+                    // Clear the input
+                    onTempValueChange('');
+                    // Close suggestions
+                    setShowSuggestions(false);
+                    // Then save
+                    onSave();
+                  }}
+                  className="p-1.5 bg-[#0369a1] text-white rounded-lg hover:bg-[#0284c7]"
+                >
+                  <Save size={14} />
+                </button>
                 <button onClick={onClose} className="p-1.5 bg-slate-100 text-slate-400 rounded-lg"><X size={14} /></button>
               </>
             )}
