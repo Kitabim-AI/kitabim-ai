@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { UserService, UserPublic, PaginatedUsers } from '../../../services/userService';
-import { Users, Filter, Check, ChevronDown } from 'lucide-react';
+import { Users, Filter, Check, ChevronDown, Search, X, Ban, CheckCircle2 } from 'lucide-react';
 import { useIsAdmin } from '../../../hooks/useAuth';
 import { useI18n } from '../../../i18n/I18nContext';
 import { UserAvatar } from '../../common/UserAvatar';
@@ -28,7 +28,7 @@ const UserRow: React.FC<UserRowProps> = ({ user, onRoleChange, onStatusChange, i
   };
 
   return (
-    <tr className="border-b border-[#0369a1]/5 hover:bg-[#0369a1]/5 transition-colors">
+    <tr className="border-b border-[#0369a1]/5 hover:bg-[#0369a1]/5 transition-colors group/row">
       <td className="px-8 py-5">
         <div className="flex items-center gap-4">
           <UserAvatar
@@ -76,19 +76,31 @@ const UserRow: React.FC<UserRowProps> = ({ user, onRoleChange, onStatusChange, i
       </td>
 
       <td className="px-8 py-5">
-        <button
-          onClick={() => onStatusChange(user.id, !user.is_active)}
-          disabled={isUpdating}
-          className={`px-3 py-1.5 rounded-lg text-[14px] font-normal uppercase transition-all active:scale-95 disabled:opacity-50 border ${user.is_active
-            ? 'bg-emerald-50 text-emerald-600 border-emerald-500/10'
-            : 'bg-red-50 text-red-600 border-red-500/10'}`}
+        <span className={`inline-block px-3 py-1.5 rounded-lg text-[14px] font-normal uppercase border ${user.is_active
+          ? 'bg-emerald-50 text-emerald-600 border-emerald-500/10'
+          : 'bg-red-50 text-red-600 border-red-500/10'}`}
         >
           {user.is_active ? t('admin.users.active') : t('admin.users.suspended')}
-        </button>
+        </span>
       </td>
 
       <td className="px-8 py-5 text-[16px] font-bold text-[#94a3b8]">
         {formatDate(user.created_at)}
+      </td>
+
+      <td className="px-8 py-5 text-left">
+        <div className="flex items-center justify-end gap-2">
+          <button
+            onClick={() => onStatusChange(user.id, !user.is_active)}
+            disabled={isUpdating}
+            className={`p-2 rounded-xl transition-all opacity-0 group-hover/row:opacity-100 ${user.is_active
+              ? 'bg-red-50 text-red-500 hover:bg-red-500 hover:text-white'
+              : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white'}`}
+            title={user.is_active ? t('admin.users.disable') : t('admin.users.enable')}
+          >
+            {user.is_active ? <Ban size={18} /> : <CheckCircle2 size={18} />}
+          </button>
+        </div>
       </td>
     </tr>
   );
@@ -102,6 +114,8 @@ export function UserManagementPanel() {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
   const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -110,6 +124,14 @@ export function UserManagementPanel() {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
   const loaderRef = useRef<HTMLDivElement>(null);
+
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -135,7 +157,7 @@ export function UserManagementPanel() {
     setError(null);
     try {
       const nextPage = isInitial ? 1 : page + 1;
-      const data = await UserService.listUsers(nextPage, pageSize, roleFilter);
+      const data = await UserService.listUsers(nextPage, pageSize, roleFilter, debouncedSearch);
 
       if (isInitial) {
         setUsers(data.users);
@@ -156,11 +178,11 @@ export function UserManagementPanel() {
       setIsLoading(false);
       setIsLoadingMore(false);
     }
-  }, [isAdmin, page, pageSize, roleFilter, isLoading, isLoadingMore, hasMore, users.length]);
+  }, [isAdmin, page, pageSize, roleFilter, debouncedSearch, isLoading, isLoadingMore, hasMore, users.length]);
 
   useEffect(() => {
     loadUsers(true);
-  }, [isAdmin, roleFilter]); // Reload on filter change
+  }, [isAdmin, roleFilter, debouncedSearch]); // Reload on filter or search change
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -235,11 +257,34 @@ export function UserManagementPanel() {
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 text-[14px] font-normal text-[#0369a1] bg-[#0369a1]/10 px-4 py-2 rounded-full border border-[#0369a1]/20 shadow-sm">
-            <Users size={14} />
-            {t('admin.users.total', { count: total })}
+      </div>
+
+      {/* Search and Filters Bar */}
+      <div className="flex flex-col md:flex-row gap-4">
+        <div className="relative flex-1 group">
+          <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none text-[#94a3b8] group-focus-within:text-[#0369a1] transition-colors">
+            <Search size={18} />
           </div>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={t('admin.users.searchPlaceholder') || "ئابونتلارنى ئىزدەش (نامى ياكى ئېلخەت)..."}
+            className="w-full pr-12 pl-4 py-3 bg-white border-2 border-[#0369a1]/10 rounded-2xl outline-none focus:border-[#0369a1] focus:ring-4 focus:ring-[#0369a1]/10 transition-all uyghur-text-small shadow-sm"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute inset-y-0 left-4 flex items-center text-[#94a3b8] hover:text-[#0369a1] transition-colors"
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 text-[14px] font-normal text-[#0369a1] bg-[#0369a1]/10 px-4 py-2 rounded-full border border-[#0369a1]/20 shadow-sm whitespace-nowrap">
+          <Users size={14} />
+          {t('admin.users.total', { count: total })}
         </div>
       </div>
 
@@ -302,18 +347,19 @@ export function UserManagementPanel() {
                 </th>
                 <th className="px-8 py-5 text-right font-normal">{t('admin.users.status')}</th>
                 <th className="px-8 py-5 text-right font-normal">{t('admin.users.joinedDate')}</th>
+                <th className="px-8 py-5 text-left font-normal">{t('admin.table.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#0369a1]/5">
               {isLoading && users.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="py-20 text-center">
+                  <td colSpan={5} className="py-20 text-center">
                     <div className="w-10 h-10 border-4 border-[#0369a1]/5 border-t-[#0369a1] rounded-full animate-spin mx-auto"></div>
                   </td>
                 </tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="py-20 text-center font-bold text-[#94a3b8]">{t('admin.users.notFound')}</td>
+                  <td colSpan={5} className="py-20 text-center font-bold text-[#94a3b8]">{t('admin.users.notFound')}</td>
                 </tr>
               ) : (
                 users.map((user) => (

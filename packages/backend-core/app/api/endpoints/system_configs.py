@@ -139,20 +139,3 @@ async def update_config(
     )
 
 
-@router.delete("/{key}")
-async def delete_config(
-    key: str,
-    current_user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_session),
-):
-    """Delete a system configuration (admin only)"""
-    repo = SystemConfigsRepository(session)
-
-    config = await repo.get(key)
-    if not config:
-        raise HTTPException(status_code=404, detail=f"Config key '{key}' not found")
-
-    await repo.delete_one(key)
-    await session.commit()
-
-    return {"status": "deleted", "key": key}

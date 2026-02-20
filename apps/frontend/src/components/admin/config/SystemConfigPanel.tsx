@@ -3,7 +3,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Settings, Plus, Save, X, Trash2, Edit2, RefreshCw } from 'lucide-react';
+import { Settings, Plus, Save, X, Edit2, RefreshCw } from 'lucide-react';
 import { authFetch } from '../../../services/authService';
 import { useI18n } from '../../../i18n/I18nContext';
 
@@ -102,21 +102,6 @@ export function SystemConfigPanel() {
     }
   };
 
-  const handleDelete = async (key: string) => {
-    if (!confirm(`Are you sure you want to delete the configuration "${key}"?`)) return;
-
-    try {
-      const response = await authFetch(`/api/system-configs/${key}`, {
-        method: 'DELETE',
-      });
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
-      await loadConfigs();
-    } catch (err: any) {
-      alert(err.message || 'Failed to delete configuration');
-    }
-  };
 
   const startEdit = (config: SystemConfig) => {
     setEditingKey(config.key);
@@ -153,7 +138,7 @@ export function SystemConfigPanel() {
         <div className="flex items-center gap-3">
           <button
             onClick={loadConfigs}
-            className="flex items-center gap-2 px-4 py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-xl border border-[#0369a1]/10 hover:bg-[#0369a1] hover:text-white transition-all"
+            className="flex items-center gap-2 px-4 py-2.5 bg-white text-[#0369a1] rounded-xl border border-[#0369a1]/20 hover:border-[#0369a1] transition-all shadow-sm"
           >
             <RefreshCw size={16} />
             <span className="text-sm font-normal">{t('common.refresh')}</span>
@@ -183,56 +168,29 @@ export function SystemConfigPanel() {
         </div>
       )}
 
-      {/* Create Form */}
+      {/* Create Modal */}
       {isCreating && (
-        <div className="glass-panel p-6 rounded-[24px] border border-[#0369a1]/10 shadow-xl">
-          <h3 className="text-lg font-normal text-[#1a1a1a] mb-4">{t('admin.systemConfig.createNew')}</h3>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-normal text-[#94a3b8] mb-2">
-                {t('admin.systemConfig.key')} <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={newKey}
-                onChange={(e) => setNewKey(e.target.value)}
-                placeholder="e.g., llm_cb_failure_threshold"
-                className="w-full px-4 py-3 border-2 border-[#0369a1]/20 rounded-xl bg-white outline-none focus:ring-4 focus:ring-[#0369a1]/10 focus:border-[#0369a1]"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-normal text-[#94a3b8] mb-2">
-                {t('admin.systemConfig.value')} <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={newValue}
-                onChange={(e) => setNewValue(e.target.value)}
-                placeholder="e.g., 5"
-                className="w-full px-4 py-3 border-2 border-[#0369a1]/20 rounded-xl bg-white outline-none focus:ring-4 focus:ring-[#0369a1]/10 focus:border-[#0369a1]"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-normal text-[#94a3b8] mb-2">
-                {t('admin.systemConfig.description')}
-              </label>
-              <textarea
-                value={newDescription}
-                onChange={(e) => setNewDescription(e.target.value)}
-                placeholder="Description..."
-                rows={2}
-                className="w-full px-4 py-3 border-2 border-[#0369a1]/20 rounded-xl bg-white outline-none focus:ring-4 focus:ring-[#0369a1]/10 focus:border-[#0369a1] resize-none"
-              />
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={handleCreate}
-                disabled={!newKey.trim() || !newValue.trim()}
-                className="flex items-center gap-2 px-6 py-3 bg-[#0369a1] text-white rounded-xl hover:bg-[#0369a1]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-              >
-                <Save size={16} />
-                {t('common.save')}
-              </button>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-300">
+          <div
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            onClick={() => {
+              setIsCreating(false);
+              setNewKey('');
+              setNewValue('');
+              setNewDescription('');
+            }}
+          />
+          <div className="relative w-full max-w-2xl bg-white/90 backdrop-blur-xl rounded-[32px] border border-white/20 shadow-2xl shadow-slate-900/20 overflow-hidden animate-in zoom-in-95 duration-300">
+            {/* Modal Header */}
+            <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-[#0369a1]/5 to-transparent">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20">
+                  <Plus size={20} />
+                </div>
+                <h3 className="text-xl font-normal text-[#1a1a1a]">
+                  {t('admin.systemConfig.createNew')}
+                </h3>
+              </div>
               <button
                 onClick={() => {
                   setIsCreating(false);
@@ -240,10 +198,75 @@ export function SystemConfigPanel() {
                   setNewValue('');
                   setNewDescription('');
                 }}
-                className="flex items-center gap-2 px-6 py-3 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 transition-all"
+                className="p-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-400 hover:text-slate-600"
               >
-                <X size={16} />
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-8 space-y-6">
+              <div className="space-y-2">
+                <label className="block text-sm font-normal text-[#94a3b8] px-1 uppercase tracking-wider">
+                  {t('admin.systemConfig.key')} <span className="text-red-500 font-bold">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newKey}
+                  onChange={(e) => setNewKey(e.target.value)}
+                  placeholder="e.g., llm_cb_failure_threshold"
+                  className="w-full px-5 py-4 border-2 border-slate-100 rounded-2xl bg-slate-50/50 outline-none focus:ring-4 focus:ring-[#0369a1]/10 focus:border-[#0369a1] transition-all text-left font-mono"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-normal text-[#94a3b8] px-1 uppercase tracking-wider">
+                  {t('admin.systemConfig.value')} <span className="text-red-500 font-bold">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newValue}
+                  onChange={(e) => setNewValue(e.target.value)}
+                  placeholder="e.g., 5"
+                  className="w-full px-5 py-4 border-2 border-slate-100 rounded-2xl bg-slate-50/50 outline-none focus:ring-4 focus:ring-[#0369a1]/10 focus:border-[#0369a1] transition-all text-left"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-normal text-[#94a3b8] px-1 uppercase tracking-wider">
+                  {t('admin.systemConfig.description')}
+                </label>
+                <textarea
+                  value={newDescription}
+                  onChange={(e) => setNewDescription(e.target.value)}
+                  placeholder="Describe the purpose of this configuration..."
+                  rows={3}
+                  className="w-full px-5 py-4 border-2 border-slate-100 rounded-2xl bg-slate-50/50 outline-none focus:ring-4 focus:ring-[#0369a1]/10 focus:border-[#0369a1] transition-all resize-none text-left"
+                />
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-8 py-6 bg-slate-50/80 border-t border-slate-100 flex items-center justify-end gap-3">
+              <button
+                onClick={() => {
+                  setIsCreating(false);
+                  setNewKey('');
+                  setNewValue('');
+                  setNewDescription('');
+                }}
+                className="flex items-center gap-2 px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-all font-normal shadow-sm"
+              >
+                <X size={18} />
                 {t('common.cancel')}
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={!newKey.trim() || !newValue.trim()}
+                className="flex items-center gap-2 px-8 py-3 bg-[#0369a1] text-white rounded-xl hover:bg-[#0369a1]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-normal shadow-lg shadow-[#0369a1]/20 transform active:scale-95"
+              >
+                <Save size={18} />
+                {t('common.save')}
               </button>
             </div>
           </div>
@@ -254,13 +277,13 @@ export function SystemConfigPanel() {
       {!isLoading && configs.length > 0 && (
         <div className="glass-panel overflow-hidden rounded-[24px] p-0 shadow-xl border border-[#0369a1]/10">
           <div className="overflow-x-auto custom-scrollbar">
-            <table className="w-full text-left min-w-[800px]">
+            <table className="w-full text-start min-w-[800px]">
               <thead>
                 <tr className="bg-[#0369a1]/5 border-b border-[#0369a1]/10 text-[14px] md:text-[16px] font-normal text-[#0369a1] uppercase">
-                  <th className="px-6 py-5 font-normal w-1/4">{t('admin.systemConfig.key')}</th>
-                  <th className="px-6 py-5 font-normal w-1/4">{t('admin.systemConfig.value')}</th>
-                  <th className="px-6 py-5 font-normal w-1/3">{t('admin.systemConfig.description')}</th>
-                  <th className="px-6 py-5 font-normal w-1/6">{t('admin.systemConfig.actions')}</th>
+                  <th className="px-6 py-5 font-normal w-1/4 text-start">{t('admin.systemConfig.key')}</th>
+                  <th className="px-6 py-5 font-normal w-1/4 text-start">{t('admin.systemConfig.value')}</th>
+                  <th className="px-6 py-5 font-normal w-1/3 text-start">{t('admin.systemConfig.description')}</th>
+                  <th className="px-6 py-5 font-normal w-1/6 text-start">{t('admin.systemConfig.actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#75C5F0]/5">
@@ -277,7 +300,7 @@ export function SystemConfigPanel() {
                           type="text"
                           value={editValue}
                           onChange={(e) => setEditValue(e.target.value)}
-                          className="w-full px-3 py-2 border-2 border-[#0369a1] rounded-xl bg-white outline-none"
+                          className="w-full px-3 py-2 border-2 border-[#0369a1] rounded-xl bg-white outline-none text-left"
                         />
                       ) : (
                         <span className="font-normal text-[#1a1a1a]">{config.value}</span>
@@ -289,7 +312,7 @@ export function SystemConfigPanel() {
                           value={editDescription}
                           onChange={(e) => setEditDescription(e.target.value)}
                           rows={2}
-                          className="w-full px-3 py-2 border-2 border-[#0369a1] rounded-xl bg-white outline-none resize-none"
+                          className="w-full px-3 py-2 border-2 border-[#0369a1] rounded-xl bg-white outline-none resize-none text-left"
                         />
                       ) : (
                         <span className="text-sm text-[#94a3b8]">
@@ -298,41 +321,34 @@ export function SystemConfigPanel() {
                       )}
                     </td>
                     <td className="px-6 py-6">
-                      {editingKey === config.key ? (
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleUpdate(config.key)}
-                            className="p-2 bg-[#0369a1] text-white rounded-lg hover:bg-[#0369a1]/90 transition-all"
-                            title={t('common.save')}
-                          >
-                            <Save size={16} />
-                          </button>
-                          <button
-                            onClick={cancelEdit}
-                            className="p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-all"
-                            title={t('common.cancel')}
-                          >
-                            <X size={16} />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex gap-2">
+                      <div className="flex items-center justify-start gap-2">
+                        {editingKey === config.key ? (
+                          <>
+                            <button
+                              onClick={() => handleUpdate(config.key)}
+                              className="p-2.5 bg-[#0369a1] text-white rounded-xl hover:bg-[#0369a1]/90 transition-all shadow-lg shadow-[#0369a1]/10"
+                              title={t('common.save')}
+                            >
+                              <Save size={18} />
+                            </button>
+                            <button
+                              onClick={cancelEdit}
+                              className="p-2.5 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 transition-all"
+                              title={t('common.cancel')}
+                            >
+                              <X size={18} />
+                            </button>
+                          </>
+                        ) : (
                           <button
                             onClick={() => startEdit(config)}
-                            className="p-2 bg-[#0369a1]/10 text-[#0369a1] rounded-lg hover:bg-[#0369a1] hover:text-white transition-all"
+                            className="p-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-xl hover:bg-[#0369a1] hover:text-white transition-all border border-[#0369a1]/5 hover:shadow-lg hover:shadow-[#0369a1]/20"
                             title={t('common.edit')}
                           >
-                            <Edit2 size={16} />
+                            <Edit2 size={18} />
                           </button>
-                          <button
-                            onClick={() => handleDelete(config.key)}
-                            className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-600 hover:text-white transition-all"
-                            title={t('common.delete')}
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

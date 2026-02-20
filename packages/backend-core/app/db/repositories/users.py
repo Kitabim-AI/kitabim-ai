@@ -38,6 +38,7 @@ class UsersRepository(BaseRepository[User]):
         self,
         role: Optional[str] = None,
         is_active: Optional[bool] = None,
+        search: Optional[str] = None,
         skip: int = 0,
         limit: int = 100
     ) -> List[User]:
@@ -49,6 +50,14 @@ class UsersRepository(BaseRepository[User]):
             conditions.append(User.role == role)
         if is_active is not None:
             conditions.append(User.is_active == is_active)
+
+        if search:
+            search_pattern = f"%{search.lower()}%"
+            from sqlalchemy import or_
+            conditions.append(or_(
+                func.lower(User.email).like(search_pattern),
+                func.lower(User.display_name).like(search_pattern)
+            ))
 
         if conditions:
             from sqlalchemy import and_
@@ -63,14 +72,26 @@ class UsersRepository(BaseRepository[User]):
         """Update user's last login timestamp"""
         await self.update_one(user_id, last_login_at=datetime.utcnow())
 
-    async def count_by_role(self, role: Optional[str] = None) -> int:
-        """Count users, optionally filtered by role"""
+    async def count_by_role(self, role: Optional[str] = None, search: Optional[str] = None) -> int:
+        """Count users, optionally filtered by role and search query"""
+        stmt = select(func.count()).select_from(User)
+        conditions = []
         if role:
-            return await self.count(role=role)
-        else:
-            stmt = select(func.count()).select_from(User)
-            result = await self.session.execute(stmt)
-            return result.scalar_one()
+            conditions.append(User.role == role)
+        if search:
+            search_pattern = f"%{search.lower()}%"
+            from sqlalchemy import or_
+            conditions.append(or_(
+                func.lower(User.email).like(search_pattern),
+                func.lower(User.display_name).like(search_pattern)
+            ))
+        
+        if conditions:
+            from sqlalchemy import and_
+            stmt = stmt.where(and_(*conditions))
+            
+        result = await self.session.execute(stmt)
+        return result.scalar_one()
 
 
 class RefreshTokensRepository(BaseRepository[RefreshToken]):

@@ -49,6 +49,7 @@ async def list_all_users(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     role: Optional[str] = Query(None, description="Filter by role"),
+    search: Optional[str] = Query(None, description="Search by name or email"),
     current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
@@ -64,6 +65,9 @@ async def list_all_users(
             filter_dict["role"] = UserRole(role)
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid role: {role}")
+    
+    if search:
+        filter_dict["search"] = search
     
     users, total = await list_users(session, page, page_size, filter_dict)
     
@@ -147,7 +151,7 @@ async def change_user_status(
     if user_id == current_user.id and not status_update.is_active:
         raise HTTPException(
             status_code=400,
-            detail="Cannot disable your own account."
+            detail="ئۆزىڭىزنىڭ ھالىتىنى ئۆزگەرتەلمەيسىز"
         )
     
     user = await get_user_by_id(session, user_id)

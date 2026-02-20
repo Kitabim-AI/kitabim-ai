@@ -52,6 +52,7 @@ export const ReaderView: React.FC = () => {
   const globalTextAreaRef = useRef<HTMLTextAreaElement>(null);
   const observerTarget = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const mainScrollRef = useRef<HTMLDivElement>(null);
 
   const onClose = () => setView(previousView);
 
@@ -234,6 +235,11 @@ export const ReaderView: React.FC = () => {
                 {selectedBook.title}
                 {selectedBook.volume ? ` (${t('book.volume', { volume: selectedBook.volume })})` : ''}
               </h2>
+              {selectedBook.author && (
+                <p className="text-sm text-[#64748b] mt-0.5">
+                  {selectedBook.author}
+                </p>
+              )}
             </div>
           </div>
 
@@ -258,7 +264,7 @@ export const ReaderView: React.FC = () => {
         </div>
 
         {/* Reading Canvas */}
-        <div dir="rtl" className={`flex-grow overflow-y-auto custom-scrollbar paper-background ${isEditing ? 'p-4' : 'p-6'}`}>
+        <div ref={mainScrollRef} dir="rtl" className={`flex-grow overflow-y-auto custom-scrollbar paper-background ${isEditing ? 'p-4' : 'p-6'}`}>
           {isEditing ? (
             <div className="h-full relative">
               {isFetchingContent && <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-20 flex items-center justify-center"><Loader2 className="w-8 h-8 text-[#0369a1] animate-spin" /></div>}
@@ -270,6 +276,8 @@ export const ReaderView: React.FC = () => {
               totalPages={selectedBook.totalPages || (selectedBook as any).total_pages || 0}
               fontSize={fontSize}
               initialPage={currentPage || 1}
+              onPageChange={setCurrentPage}
+              scrollParentRef={mainScrollRef}
             />
           ) : (
             <div className={`max-w-4xl mx-auto ${isGuestOrReader ? 'pt-8' : 'space-y-16 pb-40'}`}>

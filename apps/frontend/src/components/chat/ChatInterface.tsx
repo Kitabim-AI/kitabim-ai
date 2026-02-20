@@ -6,6 +6,7 @@ import { useI18n } from '../../i18n/I18nContext';
 import { useAuth } from '../../hooks/useAuth';
 import { LoginButton } from '../auth/AuthButton';
 import { MarkdownContent } from '../common/MarkdownContent';
+import { ReferenceModal } from './ReferenceModal';
 
 interface ChatInterfaceProps {
   type: 'book' | 'global';
@@ -41,6 +42,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const { t } = useI18n();
   const { isAuthenticated } = useAuth();
   const isGlobal = type === 'global';
+  const [selectedReference, setSelectedReference] = React.useState<{ bookId: string; pageNum: number } | null>(null);
+
+  const handleReferenceClick = (bookId: string, pageNum: number) => {
+    setSelectedReference({ bookId, pageNum });
+  };
 
   if (isGlobal) {
     return (
@@ -113,7 +119,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     ) : (
                       <MarkdownContent
                         content={msg.text}
-                        className="text-white [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white"
+                        onReferenceClick={handleReferenceClick}
+                        className="text-white [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white [&_a]:text-blue-100 [&_button]:text-blue-100 [&_a]:decoration-blue-100/50 [&_button]:decoration-blue-100/50"
                       />
                     )}
                   </div>
@@ -133,7 +140,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 <div className="px-8 py-5 rounded-[28px] rounded-tl-none text-lg font-normal leading-loose uyghur-text shadow-xl shadow-[#0369a1]/10 bg-[#0369a1] text-white">
                   <MarkdownContent
                     content={streamingMessage}
-                    className="text-white [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white"
+                    onReferenceClick={handleReferenceClick}
+                    className="text-white [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white [&_a]:text-blue-100 [&_button]:text-blue-100 [&_a]:decoration-blue-100/50 [&_button]:decoration-blue-100/50"
                   />
                   <span className="inline-block w-[2px] h-5 bg-white/70 ml-1 animate-pulse" />
                 </div>
@@ -201,6 +209,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             </div>
           )}
         </div>
+        {selectedReference && (
+          <ReferenceModal
+            isOpen={!!selectedReference}
+            onClose={() => setSelectedReference(null)}
+            bookId={selectedReference.bookId}
+            pageNumber={selectedReference.pageNum}
+          />
+        )}
       </div>
     );
   }
@@ -252,7 +268,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 ) : (
                   <MarkdownContent
                     content={msg.text}
-                    className="text-white [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white"
+                    onReferenceClick={handleReferenceClick}
+                    className="text-white [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white [&_a]:text-blue-100 [&_button]:text-blue-100 [&_a]:decoration-blue-100/50 [&_button]:decoration-blue-100/50"
                   />
                 )}
               </div>
@@ -268,7 +285,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               <div className="px-5 py-3.5 rounded-2xl text-sm font-normal leading-relaxed shadow-lg shadow-[#0369a1]/5 bg-[#0369a1] text-white rounded-tl-none">
                 <MarkdownContent
                   content={streamingMessage}
-                  className="text-white [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white"
+                  onReferenceClick={handleReferenceClick}
+                  className="text-white [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white [&_a]:text-blue-100 [&_button]:text-blue-100 [&_a]:decoration-blue-100/50 [&_button]:decoration-blue-100/50"
                 />
                 <span className="inline-block w-[2px] h-4 bg-white/70 ml-1 animate-pulse" />
               </div>
@@ -324,6 +342,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           </div>
         )}
       </div>
+      {selectedReference && (
+        <ReferenceModal
+          isOpen={!!selectedReference}
+          onClose={() => setSelectedReference(null)}
+          bookId={selectedReference.bookId}
+          pageNumber={selectedReference.pageNum}
+        />
+      )}
     </div>
   );
 };

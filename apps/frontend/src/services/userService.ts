@@ -30,11 +30,15 @@ export const UserService = {
   async listUsers(
     page: number = 1,
     pageSize: number = 20,
-    roleFilter?: string
+    roleFilter?: string,
+    search?: string
   ): Promise<PaginatedUsers> {
     let url = `${API_BASE}/?page=${page}&page_size=${pageSize}`;
     if (roleFilter && roleFilter !== 'all') {
       url += `&role=${roleFilter}`;
+    }
+    if (search) {
+      url += `&search=${encodeURIComponent(search)}`;
     }
 
     const response = await authFetch(url);

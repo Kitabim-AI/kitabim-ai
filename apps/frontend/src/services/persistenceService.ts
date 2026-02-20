@@ -99,6 +99,17 @@ export const PersistenceService = {
     }
   },
 
+  async getPage(bookId: string, pageNum: number): Promise<any | null> {
+    try {
+      const response = await authFetch(`${API_BASE}/books/${bookId}/pages/${pageNum}`);
+      if (!response.ok) throw new Error("Failed to fetch page");
+      return await response.json();
+    } catch (error) {
+      console.error("Failed to fetch page", error);
+      return null;
+    }
+  },
+
   async deleteBook(bookId: string): Promise<void> {
     try {
       const response = await authFetch(`${API_BASE}/books/${bookId}`, {

@@ -96,7 +96,7 @@ class JobsRepository(BaseRepository[Job]):
     async def count_active(self) -> int:
         """Count jobs with status 'queued' or 'running'"""
         result = await self.session.execute(
-            select(func.count(Job.id)).where(
+            select(func.count(Job.job_key)).where(
                 Job.status.in_(["queued", "running"])
             )
         )

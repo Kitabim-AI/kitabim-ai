@@ -125,9 +125,10 @@ async def list_users(session: AsyncSession, page: int = 1, page_size: int = 20, 
     
     role = filter_dict.get("role") if filter_dict else None
     is_active = filter_dict.get("is_active") if filter_dict else None
+    search = filter_dict.get("search") if filter_dict else None
     
-    users_objs = await repo.find_many(role=role, is_active=is_active, skip=skip, limit=page_size)
-    total = await repo.count_by_role(role=role)
+    users_objs = await repo.find_many(role=role, is_active=is_active, search=search, skip=skip, limit=page_size)
+    total = await repo.count_by_role(role=role, search=search)
     
     users = [_model_to_user(obj) for obj in users_objs]
     return users, total

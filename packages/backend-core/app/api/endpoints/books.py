@@ -726,6 +726,41 @@ async def get_book_content(
     return {"content": full_text.strip()}
 
 
+@router.get("/{book_id}/pages/{page_num}", response_model=ExtractionResult)
+async def get_book_page(
+    book_id: str,
+    page_num: int,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    session: AsyncSession = Depends(get_session),
+):
+    """Get a specific book page by page number with SQLAlchemy"""
+    books_repo = BooksRepository(session)
+    pages_repo = PagesRepository(session)
+
+    # Verify book exists and check access
+    book_model = await books_repo.get(book_id)
+    if not book_model:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    # Convert to dict for access check
+    book_dict = {
+        "id": str(book_model.id),
+        "status": book_model.status,
+        "visibility": book_model.visibility,
+    }
+
+    if not await check_book_access_for_guest(book_dict, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Get page by number
+    page = await pages_repo.find_one(book_id, page_num)
+    if not page:
+        raise HTTPException(status_code=404, detail="Page not found")
+
+    # Convert to Pydantic with automatic camelCase
+    return ExtractionResult.model_validate(page)
+
+
 @router.get("/{book_id}/pages", response_model=List[ExtractionResult])
 async def get_book_pages(
     book_id: str,

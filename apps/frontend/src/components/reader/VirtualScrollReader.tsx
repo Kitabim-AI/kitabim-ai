@@ -2,66 +2,52 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Loader2 } from 'lucide-react';
 import { PageItem } from './PageItem';
 import { PersistenceService } from '../../services/persistenceService';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface VirtualScrollReaderProps {
   bookId: string;
   totalPages: number;
   fontSize: number;
   initialPage?: number;
+  onPageChange?: (page: number) => void;
+  scrollParentRef?: React.RefObject<HTMLDivElement>;
 }
 
 const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
   bookId,
   totalPages,
   fontSize,
-  initialPage = 1
+  initialPage = 1,
+  onPageChange,
+  scrollParentRef
 }) => {
+  const { t } = useI18n();
   const [pages, setPages] = useState<Map<number, any>>(new Map());
   const [currentCenterPage, setCurrentCenterPage] = useState(initialPage);
   const [loadingPages, setLoadingPages] = useState<Set<number>>(new Set());
 
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const lastFetchTimeRef = useRef<Map<number, number>>(new Map());
+  const lastSyncTimeRef = useRef<number>(0);
+  const isInitialMount = useRef(true);
+  const isProgrammaticScroll = useRef(false);
 
-  const RATE_LIMIT_MS = 500; // Min time between requests for same page
+  const RATE_LIMIT_MS = 300;
 
-  // Calculate which pages should be in the window
-  const getPageWindow = useCallback((centerPage: number) => {
-    const start = Math.max(1, centerPage - 2);
-    const end = Math.min(totalPages, centerPage + 2);
-    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
-  }, [totalPages]);
-
-  // Rate-limited page fetch
   const fetchPage = useCallback(async (pageNumber: number) => {
     const now = Date.now();
     const lastFetch = lastFetchTimeRef.current.get(pageNumber) || 0;
 
-    if (now - lastFetch < RATE_LIMIT_MS) {
-      return; // Rate limit
-    }
-
-    if (loadingPages.has(pageNumber) || pages.has(pageNumber)) {
-      return; // Already loading or loaded
-    }
+    if (now - lastFetch < RATE_LIMIT_MS) return;
+    if (loadingPages.has(pageNumber) || pages.has(pageNumber)) return;
 
     setLoadingPages(prev => new Set(prev).add(pageNumber));
     lastFetchTimeRef.current.set(pageNumber, now);
 
     try {
-      const result = await PersistenceService.getBookPages(
-        bookId,
-        pageNumber - 1,
-        1
-      );
-
+      const result = await PersistenceService.getBookPages(bookId, pageNumber - 1, 1);
       if (result && result.length > 0) {
-        setPages(prev => {
-          const newPages = new Map(prev);
-          newPages.set(pageNumber, result[0]);
-          return newPages;
-        });
+        setPages(prev => new Map(prev).set(pageNumber, result[0]));
       }
     } catch (error) {
       console.error(`Failed to fetch page ${pageNumber}:`, error);
@@ -74,52 +60,31 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
     }
   }, [bookId, pages, loadingPages]);
 
-  // Load pages in the current window
-  const loadWindowPages = useCallback(async (centerPage: number) => {
-    const windowPages = getPageWindow(centerPage);
-
-    for (const pageNum of windowPages) {
-      if (!pages.has(pageNum) && !loadingPages.has(pageNum)) {
-        await fetchPage(pageNum);
-      }
-    }
-  }, [getPageWindow, pages, loadingPages, fetchPage]);
-
-  // Cleanup pages outside the window
-  const cleanupOutsideWindow = useCallback((centerPage: number) => {
-    const windowPages = new Set(getPageWindow(centerPage));
-
-    setPages(prev => {
-      const newPages = new Map();
-      for (const [pageNum, page] of prev.entries()) {
-        if (windowPages.has(pageNum)) {
-          newPages.set(pageNum, page);
-        }
-      }
-      return newPages;
-    });
-
-    // Cleanup refs
-    for (const [pageNum] of pageRefs.current.entries()) {
-      if (!windowPages.has(pageNum)) {
-        pageRefs.current.delete(pageNum);
-      }
-    }
-  }, [getPageWindow]);
-
-  // Intersection observer for detecting which page is centered
+  // Handle intersection for page detection AND lazy loading
   useEffect(() => {
     const options = {
-      root: null, // Use viewport since parent handles scrolling
-      rootMargin: '-20% 0px -20% 0px', // Center detection zone
-      threshold: [0, 0.25, 0.5, 0.75, 1]
+      root: scrollParentRef?.current || null,
+      rootMargin: '1000px 0px 1000px 0px', // Large margin for proactive loading
+      threshold: 0
     };
 
-    const callback = (entries: IntersectionObserverEntry[]) => {
-      let mostVisiblePage = currentCenterPage;
+    // We use two observers: one for loading (wide margin) and one for center detection (narrow margin)
+    const loadObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const pageNum = parseInt(entry.target.getAttribute('data-page-number') || '0');
+          if (pageNum > 0) fetchPage(pageNum);
+        }
+      });
+    }, options);
+
+    const centerObserver = new IntersectionObserver((entries) => {
+      if (isProgrammaticScroll.current) return;
+
+      let mostVisiblePage = -1;
       let maxRatio = 0;
 
-      for (const entry of entries) {
+      entries.forEach(entry => {
         if (entry.isIntersecting && entry.intersectionRatio > maxRatio) {
           const pageNum = parseInt(entry.target.getAttribute('data-page-number') || '0');
           if (pageNum > 0) {
@@ -127,110 +92,88 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
             mostVisiblePage = pageNum;
           }
         }
-      }
+      });
 
-      if (maxRatio > 0) {
+      if (mostVisiblePage !== -1 && mostVisiblePage !== currentCenterPage) {
         setCurrentCenterPage(mostVisiblePage);
+        const now = Date.now();
+        if (now - lastSyncTimeRef.current > 1000) {
+          onPageChange?.(mostVisiblePage);
+          lastSyncTimeRef.current = now;
+        }
       }
-    };
+    }, {
+      root: scrollParentRef?.current || null,
+      rootMargin: '-45% 0px -45% 0px',
+      threshold: [0, 0.5, 1]
+    });
 
-    const observer = new IntersectionObserver(callback, options);
-
-    // Observe all page elements
-    pageRefs.current.forEach((element) => {
-      if (element) {
-        observer.observe(element);
+    const currentRefs = pageRefs.current;
+    currentRefs.forEach(el => {
+      if (el) {
+        loadObserver.observe(el);
+        centerObserver.observe(el);
       }
     });
 
-    return () => observer.disconnect();
-  }, [pages, currentCenterPage]);
+    return () => {
+      loadObserver.disconnect();
+      centerObserver.disconnect();
+    };
+  }, [totalPages, scrollParentRef, onPageChange, fetchPage, currentCenterPage]);
 
-  // Load pages when center page changes
+  // Handle initialPage changes (Jump support)
   useEffect(() => {
-    loadWindowPages(currentCenterPage);
-  }, [currentCenterPage, loadWindowPages]);
+    if (isInitialMount.current || initialPage !== currentCenterPage) {
+      const target = pageRefs.current.get(initialPage);
+      if (target) {
+        isProgrammaticScroll.current = true;
+        target.scrollIntoView({ behavior: isInitialMount.current ? 'auto' : 'smooth', block: 'start' });
+        setCurrentCenterPage(initialPage);
 
-  // Cleanup old pages
-  useEffect(() => {
-    cleanupOutsideWindow(currentCenterPage);
-  }, [currentCenterPage, cleanupOutsideWindow]);
-
-  // Initial load
-  useEffect(() => {
-    loadWindowPages(initialPage);
-  }, []);
-
-  // Preload adjacent pages
-  useEffect(() => {
-    const windowPages = getPageWindow(currentCenterPage);
-    const minPage = Math.min(...windowPages);
-    const maxPage = Math.max(...windowPages);
-
-    // Preload previous page
-    if (minPage > 1 && !pages.has(minPage - 1) && !loadingPages.has(minPage - 1)) {
-      fetchPage(minPage - 1);
+        // Reset the flag after scroll animation
+        setTimeout(() => {
+          isProgrammaticScroll.current = false;
+        }, 1000);
+      }
+      isInitialMount.current = false;
     }
+  }, [initialPage]);
 
-    // Preload next page
-    if (maxPage < totalPages && !pages.has(maxPage + 1) && !loadingPages.has(maxPage + 1)) {
-      fetchPage(maxPage + 1);
-    }
-  }, [currentCenterPage, getPageWindow, totalPages, pages, loadingPages, fetchPage]);
-
-  const setPageRef = useCallback((pageNumber: number) => (el: HTMLDivElement | null) => {
-    if (el) {
-      pageRefs.current.set(pageNumber, el);
-    } else {
-      pageRefs.current.delete(pageNumber);
-    }
-  }, []);
-
-  const windowPages = getPageWindow(currentCenterPage);
+  const allPageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
 
   return (
-    <div
-      ref={scrollContainerRef}
-      className="max-w-4xl mx-auto select-none"
-      onContextMenu={(e) => e.preventDefault()}
-    >
+    <div className="max-w-4xl mx-auto select-none" onContextMenu={(e) => e.preventDefault()}>
       {/* Page indicator */}
-      <div className="sticky top-0 z-[1000] bg-white/90 backdrop-blur-sm p-2 mb-4 text-center rounded-lg shadow-sm border border-slate-100">
-        <p className="text-sm text-slate-500 font-normal">
-          Page {currentCenterPage} of {totalPages}
-        </p>
+      <div className="sticky top-0 z-[1000] bg-white/90 backdrop-blur-md p-4 mb-8 text-center rounded-2xl shadow-lg border border-[#0369a1]/10 flex items-center justify-center gap-4 transition-all hover:bg-white">
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-black text-[#0369a1] bg-[#0369a1]/10 px-4 py-1.5 rounded-xl uppercase tracking-wider">
+            {t('chat.pageNumber', { page: currentCenterPage })}
+          </span>
+          <span className="text-xs text-slate-400 font-bold uppercase tracking-widest">/ {totalPages}</span>
+        </div>
       </div>
 
-      <div className="space-y-8">
-        {/* Render pages in window */}
-        {windowPages.map(pageNum => {
+      <div className="space-y-16 pb-64">
+        {allPageNumbers.map(pageNum => {
           const page = pages.get(pageNum);
-          const isLoadingThisPage = loadingPages.has(pageNum);
-
           return (
             <div
-              key={pageNum}
-              ref={setPageRef(pageNum)}
+              key={`page-${pageNum}`}
+              ref={el => { if (el) pageRefs.current.set(pageNum, el); else pageRefs.current.delete(pageNum); }}
               data-page-number={pageNum}
-              className="mb-8 min-h-[400px] scroll-mt-20"
+              className="scroll-mt-32 min-h-[300px]"
             >
-              {isLoadingThisPage && (
-                <div className="flex justify-center items-center min-h-[400px]">
-                  <Loader2 className="animate-spin text-[#0369a1]" size={32} />
-                </div>
-              )}
-
-              {!isLoadingThisPage && page && (
+              {page ? (
                 <PageItem
-                  key={`page-${pageNum}`}
                   page={page}
                   fontSize={fontSize}
                   isActive={pageNum === currentCenterPage}
                   isEditing={false}
-                  onSetActive={() => setCurrentCenterPage(pageNum)}
-                  onEdit={() => { }} // Readers can't edit
-                  onReprocess={() => { }} // Readers can't reprocess
-                  onSpellCheck={() => { }} // Readers can't spell check
+                  onSetActive={() => { }}
+                  onEdit={() => { }}
+                  onReprocess={() => { }}
+                  onSpellCheck={() => { }}
                   tempText=""
                   onTempTextChange={() => { }}
                   onSave={() => { }}
@@ -239,25 +182,17 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
                   isLoading={false}
                   isSaving={false}
                 />
-              )}
-
-              {!isLoadingThisPage && !page && (
-                <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                  <p className="text-slate-400 font-normal">
-                    Page {pageNum} could not be loaded
+              ) : (
+                <div className="flex flex-col items-center justify-center min-h-[400px] bg-white/30 rounded-[32px] border border-dashed border-[#0369a1]/10 animate-pulse">
+                  <Loader2 className="animate-spin text-[#0369a1]/20 mb-4" size={32} />
+                  <p className="text-[10px] text-slate-300 font-black uppercase tracking-[0.2em]">
+                    {t('admin.table.loading')} {pageNum}
                   </p>
                 </div>
               )}
             </div>
           );
         })}
-
-        {/* Loading indicator at bottom */}
-        {loadingPages.size > 0 && (
-          <div className="flex justify-center p-4">
-            <Loader2 className="animate-spin text-[#0369a1]" size={20} />
-          </div>
-        )}
       </div>
     </div>
   );

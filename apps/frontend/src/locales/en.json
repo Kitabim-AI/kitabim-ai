@@ -19,6 +19,7 @@
     "pages": "Pages",
     "book": "Book",
     "books": "Books",
+    "refresh": "Refresh",
     "total": "Total",
     "of": "of",
     "loadingMore": "Loading...",
@@ -117,7 +118,9 @@
     "inputPlaceholderBook": "Type your question...",
     "inputPlaceholderWithLimit": "Type your question... ({{usage}}/{{limit}} used)",
     "limitReached": "Daily chat limit reached. Please try again tomorrow.",
-    "usageInfo": "Messages used: {{usage}} of {{limit}}"
+    "usageInfo": "Messages used: {{usage}} of {{limit}}",
+    "referenceTitle": "Reference Content",
+    "noContentFound": "No content found."
   },
   "reader": {
     "title": "Reader",
@@ -225,7 +228,10 @@
       "loadError": "Failed to load users",
       "roleUpdateError": "Failed to update role",
       "statusUpdateError": "Failed to update status",
-      "pagination": "Showing {{start}} to {{end}} of {{total}} users"
+      "pagination": "Showing {{start}} to {{end}} of {{total}} users",
+      "searchPlaceholder": "Search users (name or email)...",
+      "disable": "Disable User",
+      "enable": "Enable User"
     },
     "systemConfig": {
       "title": "System Configuration",

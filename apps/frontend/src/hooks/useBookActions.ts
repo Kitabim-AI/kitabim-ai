@@ -447,6 +447,27 @@ export const useBookActions = (
     }
   };
 
+  const handleSaveBookRow = async (
+    bookId: string,
+    data: {
+      title?: string;
+      author?: string;
+      volume?: number | null;
+      categories?: string[];
+    }
+  ) => {
+    try {
+      await PersistenceService.updateBookMetadata(bookId, data);
+      setBooks(prev => prev.map(b => b.id === bookId ? { ...b, ...data } : b));
+      addNotification(t('common.saveSuccess'), "success");
+      return true;
+    } catch (err) {
+      console.error("Failed to save book metadata", err);
+      addNotification(t('common.error'), "error");
+      return false;
+    }
+  };
+
   const handleToggleVisibility = async (bookId: string, currentVisibility: string) => {
     try {
       const newVisibility = currentVisibility === 'public' ? 'private' : 'public';
@@ -480,6 +501,7 @@ export const useBookActions = (
     handleSaveAuthor,
     handleSaveTitle,
     handleSaveVolume,
+    handleSaveBookRow,
     handleToggleVisibility,
   };
 };

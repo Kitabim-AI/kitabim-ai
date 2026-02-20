@@ -4,21 +4,26 @@ type MarkdownContentProps = {
   content: string;
   className?: string;
   style?: React.CSSProperties;
+  onReferenceClick?: (bookId: string, pageNum: number) => void;
 };
 
-const splitInline = (text: string, regex: RegExp, render: (value: string, key: number) => React.ReactNode) => {
+const splitInline = (text: string, regex: RegExp, render: (match: string, group1: string, group2: string | undefined, key: number) => React.ReactNode) => {
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
   let matchIndex = 0;
-  text.replace(regex, (match, group, offset) => {
+
+  const matches = Array.from(text.matchAll(new RegExp(regex, 'g')));
+
+  for (const match of matches) {
+    const offset = match.index!;
     if (offset > lastIndex) {
       parts.push(text.slice(lastIndex, offset));
     }
-    parts.push(render(group, matchIndex));
+    parts.push(render(match[0], match[1], match[2], matchIndex));
     matchIndex += 1;
-    lastIndex = offset + match.length;
-    return match;
-  });
+    lastIndex = offset + match[0].length;
+  }
+
   if (lastIndex < text.length) {
     parts.push(text.slice(lastIndex));
   }
@@ -28,36 +33,77 @@ const splitInline = (text: string, regex: RegExp, render: (value: string, key: n
 const applyInline = (
   nodes: React.ReactNode[],
   regex: RegExp,
-  render: (value: string, key: number) => React.ReactNode
+  render: (match: string, group1: string, group2: string | undefined, key: number) => React.ReactNode
 ) => nodes.flatMap(node => (typeof node === 'string' ? splitInline(node, regex, render) : [node]));
 
-const renderInline = (text: string) => {
+const renderInline = (text: string, onReferenceClick?: (bookId: string, pageNum: number) => void) => {
   let nodes: React.ReactNode[] = [text];
-  nodes = applyInline(nodes, /`([^`]+)`/g, (value, key) => (
+
+  // Handle markdown links: [text](url)
+  nodes = applyInline(nodes, /\[([^\]]+)\]\(([^)]+)\)/, (match, text, url, key) => {
+    if (url?.startsWith('ref:')) {
+      const parts = url.split(':');
+      const bookId = parts[1];
+      const pageNum = parseInt(parts[2], 10);
+
+      return (
+        <button
+          key={`ref-${key}`}
+          onClick={(e) => {
+            e.preventDefault();
+            console.log('Reference clicked:', { bookId, pageNum });
+            if (onReferenceClick && bookId && !isNaN(pageNum)) {
+              onReferenceClick(bookId, pageNum);
+            }
+          }}
+          className="text-inherit hover:opacity-70 underline decoration-dotted underline-offset-4 font-normal transition-all"
+        >
+          {text}
+        </button>
+      );
+    }
+
+    return (
+      <a
+        key={`link-${key}`}
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-inherit hover:opacity-70 underline transition-all"
+      >
+        {text}
+      </a>
+    );
+  });
+
+  nodes = applyInline(nodes, /`([^`]+)`/, (match, value, _g2, key) => (
     <code key={`code-${key}`} className="px-1 rounded bg-slate-100 text-slate-700 font-mono text-[0.95em]">
       {value}
     </code>
   ));
-  nodes = applyInline(nodes, /\*\*([^*]+)\*\*/g, (value, key) => (
+
+  nodes = applyInline(nodes, /\*\*([^*]+)\*\*/, (match, value, _g2, key) => (
     <strong key={`bold-${key}`} className="font-bold">
       {value}
     </strong>
   ));
-  nodes = applyInline(nodes, /\*([^*]+)\*/g, (value, key) => (
+
+  nodes = applyInline(nodes, /\*([^*]+)\*/, (match, value, _g2, key) => (
     <em key={`italic-${key}`} className="italic">
       {value}
     </em>
   ));
+
   return nodes;
 };
 
-const renderParagraph = (text: string, key: string) => {
+const renderParagraph = (text: string, key: string, onReferenceClick?: (bookId: string, pageNum: number) => void) => {
   const lines = text.split('\n');
   return (
     <p key={key} className="leading-relaxed">
       {lines.map((line, idx) => (
         <React.Fragment key={`${key}-line-${idx}`}>
-          {renderInline(line)}
+          {renderInline(line, onReferenceClick)}
           {idx < lines.length - 1 ? <br /> : null}
         </React.Fragment>
       ))}
@@ -86,7 +132,7 @@ const isTocLine = (line: string) => dotLeaderPattern.test(line);
 const isBlockStart = (line: string) =>
   isHr(line) || isHeading(line) || isQuote(line) || isOrderedList(line) || isUnorderedList(line) || isTocLine(line);
 
-export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, className, style }) => {
+export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, className, style, onReferenceClick }) => {
   const normalized = (content || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const lines = normalized
     .split('\n')
@@ -127,7 +173,7 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
 
       blocks.push(
         <Tag key={`h-${key++}`} className={`font-normal text-[#1a1a1a] ${sizeClass}`}>
-          {renderInline(headingMatch[2])}
+          {renderInline(headingMatch[2], onReferenceClick)}
         </Tag>
       );
       i += 1;
@@ -143,7 +189,7 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
       const quoteText = quoteLines.join('\n');
       blocks.push(
         <blockquote key={`quote-${key++}`} className="border-r-2 border-slate-200 pr-4 text-slate-600">
-          {renderParagraph(quoteText, `quote-${key}`)}
+          {renderParagraph(quoteText, `quote-${key}`, onReferenceClick)}
         </blockquote>
       );
       continue;
@@ -191,7 +237,7 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
       blocks.push(
         <ol key={`ol-${key++}`} className="list-decimal pr-6 space-y-1">
           {items.map((item, idx) => (
-            <li key={`ol-${key}-item-${idx}`}>{renderInline(item)}</li>
+            <li key={`ol-${key}-item-${idx}`}>{renderInline(item, onReferenceClick)}</li>
           ))}
         </ol>
       );
@@ -207,7 +253,7 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
       blocks.push(
         <ul key={`ul-${key++}`} className="list-disc pr-6 space-y-1">
           {items.map((item, idx) => (
-            <li key={`ul-${key}-item-${idx}`}>{renderInline(item)}</li>
+            <li key={`ul-${key}-item-${idx}`}>{renderInline(item, onReferenceClick)}</li>
           ))}
         </ul>
       );
@@ -220,7 +266,7 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
       i += 1;
     }
     if (paragraphLines.length) {
-      blocks.push(renderParagraph(paragraphLines.join('\n'), `p-${key++}`));
+      blocks.push(renderParagraph(paragraphLines.join('\n'), `p-${key++}`, onReferenceClick));
     }
   }
 
