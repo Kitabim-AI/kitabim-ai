@@ -1,0 +1,37 @@
+{
+  "errors": {
+    "cannot_disable_self": "Cannot disable your own account.",
+    "oauth_not_configured": "Google OAuth is not configured",
+    "google_login_failed": "Google login failed: {error}",
+    "missing_oauth_params": "Missing code or state parameter",
+    "oauth_cookie_missing": "OAuth state cookie missing",
+    "invalid_oauth_state": "Invalid OAuth state - possible CSRF attack",
+    "no_access_token": "No access token in response",
+    "email_not_verified": "Email not verified with Google",
+    "email_already_exists": "An account with this email already exists. Please sign in with your original provider.",
+    "account_disabled": "Your account has been disabled",
+    "refresh_token_required": "Refresh token required",
+    "invalid_refresh_token": "Invalid refresh token",
+    "refresh_token_revoked": "Refresh token is invalid or revoked",
+    "user_not_found_inactive": "User not found or inactive",
+    "refresh_token_expired": "Refresh token has expired",
+    "book_not_found": "Book not found",
+    "page_not_found": "Page not found",
+    "unauthorized_access": "Unauthorized access",
+    "feature_restricted": "This feature is restricted to registered users only",
+    "daily_limit_reached": "Sorry, you have reached your daily chat limit. Please try again tomorrow.",
+    "system_busy": "Sorry, the system is currently busy. Please try again in a moment.",
+    "system_busy_generic": "The system is currently busy, please try again in a moment.",
+    "config_not_found": "Config key '{key}' not found",
+    "config_already_exists": "Config key '{key}' already exists",
+    "ai": {
+      "gemini_busy": "Oops, the book service is a bit busy. Would you like to try again in a moment?",
+      "gemini_api_key_missing": "Gemini API key not configured",
+      "invalid_base64_image": "Invalid base64 image: {error}",
+      "ocr_failed": "OCR failed: {error}"
+    }
+  },
+  "messages": {
+    "logged_out": "Logged out successfully"
+  }
+}

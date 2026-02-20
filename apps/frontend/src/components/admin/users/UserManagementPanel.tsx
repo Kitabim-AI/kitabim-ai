@@ -32,11 +32,17 @@ const UserRow: React.FC<UserRowProps> = ({
 }) => {
   const { t } = useI18n();
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
+  const [showStatusDropdown, setShowStatusDropdown] = useState(false);
 
   const roleColors: Record<string, { bg: string; text: string; label: string }> = {
     admin: { bg: 'bg-red-50', text: 'text-red-600', label: t('admin.users.admin') },
     editor: { bg: 'bg-blue-50', text: 'text-blue-600', label: t('admin.users.editor') },
     reader: { bg: 'bg-emerald-50', text: 'text-emerald-600', label: t('admin.users.reader') },
+  };
+
+  const statusColors: Record<string, { bg: string; text: string; label: string }> = {
+    active: { bg: 'bg-emerald-50', text: 'text-emerald-600', label: t('admin.users.active') },
+    inactive: { bg: 'bg-red-50', text: 'text-red-600', label: t('admin.users.suspended') },
   };
 
   const formatDate = (dateString?: string) => {
@@ -100,42 +106,42 @@ const UserRow: React.FC<UserRowProps> = ({
         )}
       </td>
 
-      <td className="px-8 py-5">
+      <td className="px-8 py-5 relative">
         {isEditing ? (
-          <div className="flex gap-2">
+          <div>
             <button
-              onClick={() => onStatusChange(true)}
-              className={`relative px-4 py-2 rounded-xl text-[13px] font-normal uppercase transition-all ${
-                currentStatus
-                  ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/30'
-                  : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
-              }`}
+              onClick={() => setShowStatusDropdown(!showStatusDropdown)}
+              className={`inline-flex items-center gap-2 px-3 py-1.5 ${statusColors[currentStatus ? 'active' : 'inactive']?.bg || 'bg-slate-50'} ${statusColors[currentStatus ? 'active' : 'inactive']?.text || 'text-slate-500'} rounded-lg text-[14px] font-normal uppercase transition-all active:scale-95 border-2 border-[#0369a1]`}
             >
-              {currentStatus && (
-                <span className="absolute -top-1 -right-1 w-3 h-3 bg-white rounded-full border-2 border-emerald-500"></span>
-              )}
-              {t('admin.users.active')}
+              {statusColors[currentStatus ? 'active' : 'inactive']?.label || (currentStatus ? t('admin.users.active') : t('admin.users.suspended'))}
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor">
+                <path d="M6 8L2 4h8L6 8z" />
+              </svg>
             </button>
-            <button
-              onClick={() => onStatusChange(false)}
-              className={`relative px-4 py-2 rounded-xl text-[13px] font-normal uppercase transition-all ${
-                !currentStatus
-                  ? 'bg-red-500 text-white shadow-md shadow-red-500/30'
-                  : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
-              }`}
-            >
-              {!currentStatus && (
-                <span className="absolute -top-1 -right-1 w-3 h-3 bg-white rounded-full border-2 border-red-500"></span>
-              )}
-              {t('admin.users.suspended')}
-            </button>
+
+            {showStatusDropdown && (
+              <div className="absolute top-full right-8 mt-2 w-48 glass-panel shadow-2xl z-50 overflow-hidden py-2" style={{ borderRadius: '16px' }}>
+                {([
+                  { value: true, key: 'active' },
+                  { value: false, key: 'inactive' }
+                ] as const).map((status) => (
+                  <button
+                    key={status.key}
+                    onClick={() => {
+                      setShowStatusDropdown(false);
+                      onStatusChange(status.value);
+                    }}
+                    className={`w-full flex items-center px-5 py-3 text-[14px] font-normal uppercase transition-all ${status.value === currentStatus ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
+                  >
+                    {statusColors[status.key].label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
-          <span className={`inline-block px-3 py-1.5 rounded-lg text-[14px] font-normal uppercase border ${currentStatus
-            ? 'bg-emerald-50 text-emerald-600 border-emerald-500/10'
-            : 'bg-red-50 text-red-600 border-red-500/10'}`}
-          >
-            {currentStatus ? t('admin.users.active') : t('admin.users.suspended')}
+          <span className={`inline-flex items-center gap-2 px-3 py-1.5 ${statusColors[currentStatus ? 'active' : 'inactive']?.bg || 'bg-slate-50'} ${statusColors[currentStatus ? 'active' : 'inactive']?.text || 'text-slate-500'} rounded-lg text-[14px] font-normal uppercase border border-current/10`}>
+            {statusColors[currentStatus ? 'active' : 'inactive']?.label || (currentStatus ? t('admin.users.active') : t('admin.users.suspended'))}
           </span>
         )}
       </td>
@@ -194,14 +200,17 @@ export function UserManagementPanel() {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
   const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const filterRef = useRef<HTMLDivElement>(null);
+  const [isRoleFilterOpen, setIsRoleFilterOpen] = useState(false);
+  const [isStatusFilterOpen, setIsStatusFilterOpen] = useState(false);
+  const roleFilterRef = useRef<HTMLDivElement>(null);
+  const statusFilterRef = useRef<HTMLDivElement>(null);
   const loaderRef = useRef<HTMLDivElement>(null);
 
   // Edit state
@@ -219,8 +228,11 @@ export function UserManagementPanel() {
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (filterRef.current && !filterRef.current.contains(event.target as Node)) {
-        setIsFilterOpen(false);
+      if (roleFilterRef.current && !roleFilterRef.current.contains(event.target as Node)) {
+        setIsRoleFilterOpen(false);
+      }
+      if (statusFilterRef.current && !statusFilterRef.current.contains(event.target as Node)) {
+        setIsStatusFilterOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -241,7 +253,7 @@ export function UserManagementPanel() {
     setError(null);
     try {
       const nextPage = isInitial ? 1 : page + 1;
-      const data = await UserService.listUsers(nextPage, pageSize, roleFilter, debouncedSearch);
+      const data = await UserService.listUsers(nextPage, pageSize, roleFilter, statusFilter, debouncedSearch);
 
       if (isInitial) {
         setUsers(data.users);
@@ -262,11 +274,11 @@ export function UserManagementPanel() {
       setIsLoading(false);
       setIsLoadingMore(false);
     }
-  }, [isAdmin, page, pageSize, roleFilter, debouncedSearch, isLoading, isLoadingMore, hasMore, users.length]);
+  }, [isAdmin, page, pageSize, roleFilter, statusFilter, debouncedSearch, isLoading, isLoadingMore, hasMore, users.length]);
 
   useEffect(() => {
     loadUsers(true);
-  }, [isAdmin, roleFilter, debouncedSearch]); // Reload on filter or search change
+  }, [isAdmin, roleFilter, statusFilter, debouncedSearch]); // Reload on filter or search change
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -409,16 +421,16 @@ export function UserManagementPanel() {
                   <div className="flex items-center gap-2">
                     {t('admin.users.role')}
                     <button
-                      onClick={() => setIsFilterOpen(!isFilterOpen)}
+                      onClick={() => setIsRoleFilterOpen(!isRoleFilterOpen)}
                       className={`p-1.5 rounded-lg transition-all ${roleFilter !== 'all' ? 'bg-[#0369a1] text-white shadow-md' : 'hover:bg-[#0369a1]/10'}`}
                     >
                       <Filter size={14} strokeWidth={roleFilter !== 'all' ? 3 : 2} />
                     </button>
                   </div>
 
-                  {isFilterOpen && (
+                  {isRoleFilterOpen && (
                     <div
-                      ref={filterRef}
+                      ref={roleFilterRef}
                       className="absolute top-full right-8 mt-2 w-48 glass-panel shadow-2xl z-50 overflow-hidden py-2 border border-[#0369a1]/10"
                       style={{ borderRadius: '16px' }}
                     >
@@ -432,7 +444,7 @@ export function UserManagementPanel() {
                           key={role.id}
                           onClick={() => {
                             setRoleFilter(role.id);
-                            setIsFilterOpen(false);
+                            setIsRoleFilterOpen(false);
                           }}
                           className={`w-full flex items-center justify-between px-5 py-3 text-[14px] font-normal uppercase transition-all ${roleFilter === role.id ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
                         >
@@ -443,7 +455,43 @@ export function UserManagementPanel() {
                     </div>
                   )}
                 </th>
-                <th className="px-8 py-5 text-right font-normal">{t('admin.users.status')}</th>
+                <th className="px-8 py-5 text-right font-normal relative">
+                  <div className="flex items-center gap-2">
+                    {t('admin.users.status')}
+                    <button
+                      onClick={() => setIsStatusFilterOpen(!isStatusFilterOpen)}
+                      className={`p-1.5 rounded-lg transition-all ${statusFilter !== 'all' ? 'bg-[#0369a1] text-white shadow-md' : 'hover:bg-[#0369a1]/10'}`}
+                    >
+                      <Filter size={14} strokeWidth={statusFilter !== 'all' ? 3 : 2} />
+                    </button>
+                  </div>
+
+                  {isStatusFilterOpen && (
+                    <div
+                      ref={statusFilterRef}
+                      className="absolute top-full right-8 mt-2 w-48 glass-panel shadow-2xl z-50 overflow-hidden py-2 border border-[#0369a1]/10"
+                      style={{ borderRadius: '16px' }}
+                    >
+                      {[
+                        { id: 'all', label: t('admin.users.allStatuses') },
+                        { id: 'active', label: t('admin.users.active') },
+                        { id: 'inactive', label: t('admin.users.suspended') }
+                      ].map((status) => (
+                        <button
+                          key={status.id}
+                          onClick={() => {
+                            setStatusFilter(status.id);
+                            setIsStatusFilterOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-5 py-3 text-[14px] font-normal uppercase transition-all ${statusFilter === status.id ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
+                        >
+                          {status.label}
+                          {statusFilter === status.id && <Check size={14} strokeWidth={3} />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </th>
                 <th className="px-8 py-5 text-right font-normal">{t('admin.users.joinedDate')}</th>
                 <th className="px-8 py-5 text-left font-normal">{t('admin.table.actions')}</th>
               </tr>

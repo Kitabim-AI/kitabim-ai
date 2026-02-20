@@ -14,6 +14,7 @@ from app.langchain.models import generate_text_with_image
 from app.utils.observability import log_json
 from app.utils.text import clean_uyghur_text
 from app.auth.dependencies import require_editor
+from app.core.i18n import t
 
 router = APIRouter()
 logger = logging.getLogger("app.ai")
@@ -41,12 +42,12 @@ async def ocr_image(
     current_user: User = Depends(require_editor),
 ):
     if not settings.gemini_api_key:
-        raise HTTPException(status_code=500, detail="Gemini API key not configured")
+        raise HTTPException(status_code=500, detail=t("errors.ai.gemini_api_key_missing"))
 
     try:
         img_bytes = _decode_base64_image(req.imageBase64)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid base64 image: {exc}")
+        raise HTTPException(status_code=400, detail=t("invalid_base64_image", error=str(exc)))
 
     try:
         text = await generate_text_with_image(
@@ -57,4 +58,4 @@ async def ocr_image(
         return {"text": clean_uyghur_text(text or "")}
     except Exception as exc:
         log_json(logger, logging.ERROR, "OCR image failed", error=str(exc))
-        raise HTTPException(status_code=500, detail=f"OCR failed: {exc}")
+        raise HTTPException(status_code=500, detail=t("ocr_failed", error=str(exc)))

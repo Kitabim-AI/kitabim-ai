@@ -13,6 +13,7 @@ from app.services.chat_limit_service import chat_limit_service
 from app.utils.errors import record_book_error
 from app.utils.observability import log_json
 from app.auth.dependencies import require_reader
+from app.core.i18n import t
 
 router = APIRouter()
 logger = logging.getLogger("app.chat")
@@ -39,45 +40,45 @@ async def chat_with_book_api(
     usage_status = await chat_limit_service.get_user_usage_status(current_user, session)
     if usage_status["has_reached_limit"]:
         log_json(
-            logger, 
-            logging.WARNING, 
-            "Chat limit reached for user", 
-            user_id=current_user.id, 
+            logger,
+            logging.WARNING,
+            "Chat limit reached for user",
+            user_id=current_user.id,
             role=current_user.role,
             usage=usage_status["usage"],
             limit=usage_status["limit"]
         )
         raise HTTPException(
-            status_code=429, 
-            detail="كەچۈرۈڭ، سىزنىڭ كۈندىلىك پاراڭلىشىش چەكلىمىڭىز توشتى. ئەتە قايتا سىناپ بېقىڭ." # Daily limit reached Uyghur
+            status_code=429,
+            detail=t("errors.daily_limit_reached")
         )
 
     try:
         # 2. Process chat request
         answer = await rag_service.answer_question(req, session, user_id=current_user.id)
-        
+
         # 3. Increment usage on successful answer
         await chat_limit_service.increment_usage(current_user, session)
-        
+
         return {"answer": answer}
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
         error_str = str(exc)
         log_json(logger, logging.ERROR, "Chat request failed", book_id=req.book_id, error=error_str)
-        
+
         # Check for 429 RESOURCE_EXHAUSTED from Google/Gemini
         if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
             raise HTTPException(
-                status_code=429, 
-                detail="كەچۈرۈڭ، نۆۋەتتە سىستېما ئالدىراش، سەل تۇرۇپ قايتا سىناپ بېقىڭ." # System busy (Quota)
+                status_code=429,
+                detail=t("errors.system_busy")
             )
-            
+
         # Record error using SQLAlchemy
         await record_book_error(session, req.book_id, "chat", error_str)
         raise HTTPException(
-            status_code=500, 
-            detail="سېستىما ھازىر ئالدىراش، سەل توختاپ سىناپ بېقىڭ."
+            status_code=500,
+            detail=t("errors.system_busy_generic")
         )
 
 
@@ -104,7 +105,7 @@ async def chat_with_book_stream(
         )
 
         async def error_stream():
-            yield f'data: {json.dumps({"error": "كەچۈرۈڭ، سىزنىڭ كۈندىلىك پاراڭلىشىش چەكلىمىڭىز توشتى. ئەتە قايتا سىناپ بېقىڭ."})}\n\n'
+            yield f'data: {json.dumps({"error": t("errors.daily_limit_reached")})}\n\n'
 
         return StreamingResponse(error_stream(), media_type="text/event-stream")
 
@@ -127,7 +128,7 @@ async def chat_with_book_stream(
             log_json(logger, logging.ERROR, "Stream failed", book_id=req.book_id, error=error_str)
 
             # Check for rate limit errors from Gemini
-            error_msg = "ئاپلا، كىتاپپۇرۇچ ئالدىراشكەن، سەل تۇرۇپ سىناپ باقامسىز؟"
+            error_msg = t("errors.system_busy_generic")
 
             yield f'data: {json.dumps({"error": error_msg})}\n\n'
             await record_book_error(session, req.book_id, "chat_stream", error_str)

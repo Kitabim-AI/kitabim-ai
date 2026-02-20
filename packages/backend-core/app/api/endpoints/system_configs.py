@@ -12,6 +12,7 @@ from app.db.models import SystemConfig
 from app.db.repositories.system_configs import SystemConfigsRepository
 from app.auth.dependencies import require_admin
 from app.models.user import User
+from app.core.i18n import t
 
 router = APIRouter()
 
@@ -69,7 +70,8 @@ async def get_config(
     config = await repo.get(key)
 
     if not config:
-        raise HTTPException(status_code=404, detail=f"Config key '{key}' not found")
+        raise HTTPException(status_code=404, detail=t("errors.config_not_found", key=key))
+
 
     return SystemConfigResponse(
         key=config.key,
@@ -137,5 +139,3 @@ async def update_config(
         description=config.description,
         updated_at=config.updated_at.isoformat()
     )
-
-

@@ -215,6 +215,7 @@
       "active": "Active",
       "suspended": "Suspended",
       "allRoles": "All Roles",
+      "allStatuses": "All Statuses",
       "admins": "Admins",
       "editors": "Editors",
       "readers": "Readers",

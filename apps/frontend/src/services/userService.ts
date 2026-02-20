@@ -31,11 +31,15 @@ export const UserService = {
     page: number = 1,
     pageSize: number = 20,
     roleFilter?: string,
+    statusFilter?: string,
     search?: string
   ): Promise<PaginatedUsers> {
     let url = `${API_BASE}/?page=${page}&page_size=${pageSize}`;
     if (roleFilter && roleFilter !== 'all') {
       url += `&role=${roleFilter}`;
+    }
+    if (statusFilter && statusFilter !== 'all') {
+      url += `&status=${statusFilter}`;
     }
     if (search) {
       url += `&search=${encodeURIComponent(search)}`;

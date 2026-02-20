@@ -589,7 +589,7 @@ async def get_book(
     # Get book from SQLAlchemy
     book_model = await books_repo.get(book_id)
     if not book_model:
-        raise HTTPException(status_code=404, detail="Book not found")
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
     # Convert to dict for access check (legacy function expects dict)
     book_dict = {
@@ -700,7 +700,7 @@ async def get_book_content(
     # Verify book exists and check access
     book_model = await books_repo.get(book_id)
     if not book_model:
-        raise HTTPException(status_code=404, detail="Book not found")
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
     # Convert to dict for access check
     book_dict = {
@@ -740,7 +740,7 @@ async def get_book_page(
     # Verify book exists and check access
     book_model = await books_repo.get(book_id)
     if not book_model:
-        raise HTTPException(status_code=404, detail="Book not found")
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
     # Convert to dict for access check
     book_dict = {
@@ -755,7 +755,7 @@ async def get_book_page(
     # Get page by number
     page = await pages_repo.find_one(book_id, page_num)
     if not page:
-        raise HTTPException(status_code=404, detail="Page not found")
+        raise HTTPException(status_code=404, detail=t("errors.page_not_found"))
 
     # Convert to Pydantic with automatic camelCase
     return ExtractionResult.model_validate(page)
@@ -776,7 +776,7 @@ async def get_book_pages(
     # Verify book exists and check access
     book_model = await books_repo.get(book_id)
     if not book_model:
-        raise HTTPException(status_code=404, detail="Book not found")
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
     # Convert to dict for access check
     book_dict = {
@@ -808,7 +808,7 @@ async def get_book_by_hash(
     # Use repository method to find by hash
     book_model = await books_repo.find_by_hash(content_hash)
     if not book_model:
-        raise HTTPException(status_code=404, detail="Book not found")
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
     # Convert to dict for access check (legacy function expects dict)
     book_dict = {
@@ -909,7 +909,7 @@ async def start_ocr(
 
     book = await books_repo.get(book_id)
     if not book:
-        raise HTTPException(status_code=404, detail="Book not found")
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
     if book.status == "processing":
         # Note: processing_lock_expires_at field doesn't exist in current schema
@@ -951,7 +951,7 @@ async def retry_failed_ocr(
 
     book = await books_repo.get(book_id)
     if not book:
-        raise HTTPException(status_code=404, detail="Book not found")
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
     if book.status == "processing":
         # Note: processing_lock_expires_at field doesn't exist in current schema
@@ -1033,7 +1033,7 @@ async def reprocess_book(
 
     book = await books_repo.get(book_id)
     if not book:
-        raise HTTPException(status_code=404, detail="Book not found")
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
     if book.status == "processing":
         logger.warning(f"Book {book_id} is already processing. Allowing reprocess anyway.")
@@ -1062,7 +1062,7 @@ async def reindex_book(
 
     book = await books_repo.get(book_id)
     if not book:
-        raise HTTPException(status_code=404, detail="Book not found")
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
     if book.status == "processing":
         logger.warning(f"Book {book_id} is already processing. Allowing reindex anyway.")
@@ -1238,7 +1238,7 @@ async def update_book_details(
     # Verify book exists
     book = await books_repo.get(book_id)
     if not book:
-        raise HTTPException(status_code=404, detail="Book not found")
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
     # Convert all camelCase keys to snake_case
     book_update = convert_dict_keys_to_snake(book_update)
@@ -1326,7 +1326,7 @@ async def delete_book(
     # Get book record to access original filename
     book = await books_repo.get(book_id)
     if not book:
-        raise HTTPException(status_code=404, detail="Book not found")
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
     # Delete local PDF file (if exists)
     file_path = settings.uploads_dir / f"{book_id}.pdf"
@@ -1361,7 +1361,7 @@ async def delete_book(
 
     if deleted:
         return {"status": "deleted"}
-    raise HTTPException(status_code=404, detail="Book not found")
+    raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
 
 @router.post("/upload-cover")
@@ -1375,6 +1375,7 @@ async def upload_cover(
     from PIL import Image
     from sqlalchemy import select
     from app.db.models import Book as BookDB
+    from app.core.i18n import t
 
     books_repo = BooksRepository(session)
 

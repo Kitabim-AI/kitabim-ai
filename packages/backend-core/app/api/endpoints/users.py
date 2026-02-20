@@ -8,7 +8,7 @@ import logging
 from typing import Optional, List
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
 from app.auth.dependencies import require_admin, get_current_user
@@ -21,6 +21,7 @@ from app.services.user_service import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_session
+from app.core.i18n import t
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -49,14 +50,15 @@ async def list_all_users(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     role: Optional[str] = Query(None, description="Filter by role"),
+    status: Optional[str] = Query(None, description="Filter by status (active/inactive)"),
     search: Optional[str] = Query(None, description="Search by name or email"),
     current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
     """
     List all users with pagination.
-    
-    Admin only. Returns paginated list of users with optional role filtering.
+
+    Admin only. Returns paginated list of users with optional role and status filtering.
     """
     # Build filter
     filter_dict = {}
@@ -65,12 +67,20 @@ async def list_all_users(
             filter_dict["role"] = UserRole(role)
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid role: {role}")
-    
+
+    if status:
+        if status == "active":
+            filter_dict["is_active"] = True
+        elif status == "inactive":
+            filter_dict["is_active"] = False
+        else:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {status}. Use 'active' or 'inactive'")
+
     if search:
         filter_dict["search"] = search
-    
+
     users, total = await list_users(session, page, page_size, filter_dict)
-    
+
     return {
         "users": [UserPublic.from_user(u) for u in users],
         "total": total,
@@ -151,7 +161,7 @@ async def change_user_status(
     if user_id == current_user.id and not status_update.is_active:
         raise HTTPException(
             status_code=400,
-            detail="ئۆزىڭىزنىڭ ھالىتىنى ئۆزگەرتەلمەيسىز"
+            detail=t("errors.cannot_disable_self")
         )
     
     user = await get_user_by_id(session, user_id)

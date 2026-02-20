@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.endpoints import ai, auth, books, chat, users, system_configs
 from app.core.config import settings
 from app.db.session import init_db, close_db  # SQLAlchemy session management
+from app.core.i18n import I18n, set_current_lang
 
 from app.queue import enqueue_pdf_processing
 from app.langchain import configure_langchain
@@ -22,6 +23,7 @@ from app.auth.jwt_handler import validate_jwt_secret
 async def lifespan(app: FastAPI):
     configure_logging()
     configure_langchain()
+    I18n.load_translations()
     
     # Validate JWT secret key at startup
     logger = logging.getLogger("app.startup")
@@ -135,6 +137,15 @@ async def add_request_id(request: Request, call_next):
                 status_code=response.status_code,
             )
         request_id_var.reset(token)
+
+@app.middleware("http")
+async def add_language_header(request: Request, call_next):
+    lang = request.headers.get("Accept-Language", "ug").split(",")[0].split("-")[0]
+    if lang not in ["ug", "en"]:
+        lang = "ug"
+    set_current_lang(lang)
+    response = await call_next(request)
+    return response
 
 app.add_middleware(
     CORSMiddleware,

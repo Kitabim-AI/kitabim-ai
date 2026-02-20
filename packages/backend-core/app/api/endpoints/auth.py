@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_session
 
 from app.auth.dependencies import get_current_user, get_current_user_optional
+from app.core.i18n import t
 from app.auth.jwt_handler import (
     create_access_token,
     create_refresh_token,
@@ -85,7 +86,7 @@ async def google_login(response: Response):
     if not validate_oauth_config():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Google OAuth is not configured",
+            detail=t("errors.oauth_not_configured"),
         )
     
     # Generate state and nonce for CSRF protection
@@ -127,19 +128,19 @@ async def google_callback(
     # Handle OAuth errors
     if error:
         logger.warning(f"OAuth error from Google: {error}")
-        return _error_response(f"Google login failed: {error}")
+        return _error_response(t("errors.google_login_failed", error=error))
     
     if not code or not state:
-        return _error_response("Missing code or state parameter")
+        return _error_response(t("errors.missing_oauth_params"))
     
     # Validate state from cookie
     state_cookie = request.cookies.get(OAUTH_STATE_COOKIE)
     if not state_cookie:
-        return _error_response("OAuth state cookie missing")
+        return _error_response(t("errors.oauth_cookie_missing"))
     
     saved_state = OAuthState.from_cookie_value(state_cookie)
     if not saved_state or saved_state.state != state:
-        return _error_response("Invalid OAuth state - possible CSRF attack")
+        return _error_response(t("errors.invalid_oauth_state"))
     
     try:
         # Exchange code for tokens
@@ -147,14 +148,14 @@ async def google_callback(
         google_access_token = token_response.get("access_token")
         
         if not google_access_token:
-            return _error_response("No access token in response")
+            return _error_response(t("errors.no_access_token_in_response"))
         
         # Get user info from Google
         google_user = await get_google_user_info(google_access_token)
         
         # Check if email is verified
         if not google_user.verified_email:
-            return _error_response("Email not verified with Google")
+            return _error_response(t("errors.email_not_verified"))
         
         # Check if user exists with this provider
         user = await get_user_by_provider(session, "google", google_user.id)
@@ -164,8 +165,7 @@ async def google_callback(
             existing_user = await get_user_by_email(session, google_user.email)
             if existing_user:
                 return _error_response(
-                    "An account with this email already exists. "
-                    "Please sign in with your original provider."
+                    t("errors.email_already_exists_with_other_provider")
                 )
             
             # Determine role based on admin emails
@@ -189,7 +189,7 @@ async def google_callback(
         
         # Check if user is active
         if not user.is_active:
-            return _error_response("Your account has been disabled")
+            return _error_response(t("errors.account_disabled"))
         
         # Generate tokens
         access_token = create_access_token(user)
@@ -207,7 +207,7 @@ async def google_callback(
         
     except Exception as e:
         logger.exception(f"OAuth callback error: {e}")
-        return _error_response(f"Authentication failed: {str(e)}")
+        return _error_response(t("errors.google_login_failed", error=str(e)))
 
 
 @router.post("/refresh")
@@ -298,7 +298,7 @@ async def logout(
     response.delete_cookie(REFRESH_TOKEN_COOKIE)
     response.delete_cookie(OAUTH_STATE_COOKIE)
     
-    return {"message": "Logged out successfully"}
+    return {"message": t("messages.logged_out")}
 
 
 @router.get("/health")
