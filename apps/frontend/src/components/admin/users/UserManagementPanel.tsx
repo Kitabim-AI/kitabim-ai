@@ -1,18 +1,33 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { UserService, UserPublic, PaginatedUsers } from '../../../services/userService';
-import { Users, Filter, Check, ChevronDown, Search, X, Ban, CheckCircle2 } from 'lucide-react';
+import { UserService, UserPublic } from '../../../services/userService';
+import { Users, Filter, Check, Search, X, Edit2, RotateCcw } from 'lucide-react';
 import { useIsAdmin } from '../../../hooks/useAuth';
 import { useI18n } from '../../../i18n/I18nContext';
 import { UserAvatar } from '../../common/UserAvatar';
 
 interface UserRowProps {
   user: UserPublic;
-  onRoleChange: (userId: string, newRole: 'admin' | 'editor' | 'reader') => Promise<void>;
-  onStatusChange: (userId: string, isActive: boolean) => Promise<void>;
-  isUpdating: boolean;
+  isEditing: boolean;
+  editData: { role: 'admin' | 'editor' | 'reader'; isActive: boolean } | null;
+  onEdit: () => void;
+  onSave: () => void;
+  onCancel: () => void;
+  onRoleChange: (role: 'admin' | 'editor' | 'reader') => void;
+  onStatusChange: (isActive: boolean) => void;
+  isSaving: boolean;
 }
 
-const UserRow: React.FC<UserRowProps> = ({ user, onRoleChange, onStatusChange, isUpdating }) => {
+const UserRow: React.FC<UserRowProps> = ({
+  user,
+  isEditing,
+  editData,
+  onEdit,
+  onSave,
+  onCancel,
+  onRoleChange,
+  onStatusChange,
+  isSaving
+}) => {
   const { t } = useI18n();
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
 
@@ -27,8 +42,11 @@ const UserRow: React.FC<UserRowProps> = ({ user, onRoleChange, onStatusChange, i
     return new Date(dateString).toLocaleDateString();
   };
 
+  const currentRole = isEditing && editData ? editData.role : user.role;
+  const currentStatus = isEditing && editData ? editData.isActive : user.is_active;
+
   return (
-    <tr className="border-b border-[#0369a1]/5 hover:bg-[#0369a1]/5 transition-colors group/row">
+    <tr className={`border-b border-[#0369a1]/5 hover:bg-[#0369a1]/5 transition-colors group/row ${isEditing ? 'bg-[#0369a1]/5' : ''}`}>
       <td className="px-8 py-5">
         <div className="flex items-center gap-4">
           <UserAvatar
@@ -44,44 +62,60 @@ const UserRow: React.FC<UserRowProps> = ({ user, onRoleChange, onStatusChange, i
       </td>
 
       <td className="px-8 py-5 relative">
-        <button
-          onClick={() => setShowRoleDropdown(!showRoleDropdown)}
-          disabled={isUpdating}
-          className={`inline-flex items-center gap-2 px-3 py-1.5 ${roleColors[user.role]?.bg || 'bg-slate-50'} ${roleColors[user.role]?.text || 'text-slate-500'} rounded-lg text-[14px] font-normal uppercase transition-all active:scale-95 disabled:opacity-50 border border-current/10`}
-        >
-          {roleColors[user.role]?.label || user.role}
-          <svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor">
-            <path d="M6 8L2 4h8L6 8z" />
-          </svg>
-        </button>
+        {isEditing ? (
+          <div>
+            <button
+              onClick={() => setShowRoleDropdown(!showRoleDropdown)}
+              className={`inline-flex items-center gap-2 px-3 py-1.5 ${roleColors[currentRole]?.bg || 'bg-slate-50'} ${roleColors[currentRole]?.text || 'text-slate-500'} rounded-lg text-[14px] font-normal uppercase transition-all active:scale-95 border-2 border-[#0369a1]`}
+            >
+              {roleColors[currentRole]?.label || currentRole}
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor">
+                <path d="M6 8L2 4h8L6 8z" />
+              </svg>
+            </button>
 
-        {showRoleDropdown && (
-          <div className="absolute top-full right-8 mt-2 w-48 glass-panel shadow-2xl z-50 overflow-hidden py-2" style={{ borderRadius: '16px' }}>
-            {(['admin', 'editor', 'reader'] as const).map((role) => (
-              <button
-                key={role}
-                onClick={() => {
-                  setShowRoleDropdown(false);
-                  if (role !== user.role) {
-                    onRoleChange(user.id, role);
-                  }
-                }}
-                className={`w-full flex items-center px-5 py-3 text-[14px] font-normal uppercase transition-all ${role === user.role ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
-              >
-                {roleColors[role].label}
-              </button>
-            ))}
+            {showRoleDropdown && (
+              <div className="absolute top-full right-8 mt-2 w-48 glass-panel shadow-2xl z-50 overflow-hidden py-2" style={{ borderRadius: '16px' }}>
+                {(['admin', 'editor', 'reader'] as const).map((role) => (
+                  <button
+                    key={role}
+                    onClick={() => {
+                      setShowRoleDropdown(false);
+                      onRoleChange(role);
+                    }}
+                    className={`w-full flex items-center px-5 py-3 text-[14px] font-normal uppercase transition-all ${role === currentRole ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
+                  >
+                    {roleColors[role].label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
+        ) : (
+          <span className={`inline-flex items-center gap-2 px-3 py-1.5 ${roleColors[currentRole]?.bg || 'bg-slate-50'} ${roleColors[currentRole]?.text || 'text-slate-500'} rounded-lg text-[14px] font-normal uppercase border border-current/10`}>
+            {roleColors[currentRole]?.label || currentRole}
+          </span>
         )}
       </td>
 
       <td className="px-8 py-5">
-        <span className={`inline-block px-3 py-1.5 rounded-lg text-[14px] font-normal uppercase border ${user.is_active
-          ? 'bg-emerald-50 text-emerald-600 border-emerald-500/10'
-          : 'bg-red-50 text-red-600 border-red-500/10'}`}
-        >
-          {user.is_active ? t('admin.users.active') : t('admin.users.suspended')}
-        </span>
+        {isEditing ? (
+          <button
+            onClick={() => onStatusChange(!currentStatus)}
+            className={`inline-block px-3 py-1.5 rounded-lg text-[14px] font-normal uppercase border-2 transition-all ${currentStatus
+              ? 'bg-emerald-50 text-emerald-600 border-emerald-500'
+              : 'bg-red-50 text-red-600 border-red-500'}`}
+          >
+            {currentStatus ? t('admin.users.active') : t('admin.users.suspended')}
+          </button>
+        ) : (
+          <span className={`inline-block px-3 py-1.5 rounded-lg text-[14px] font-normal uppercase border ${currentStatus
+            ? 'bg-emerald-50 text-emerald-600 border-emerald-500/10'
+            : 'bg-red-50 text-red-600 border-red-500/10'}`}
+          >
+            {currentStatus ? t('admin.users.active') : t('admin.users.suspended')}
+          </span>
+        )}
       </td>
 
       <td className="px-8 py-5 text-[16px] font-bold text-[#94a3b8]">
@@ -90,16 +124,34 @@ const UserRow: React.FC<UserRowProps> = ({ user, onRoleChange, onStatusChange, i
 
       <td className="px-8 py-5 text-left">
         <div className="flex items-center justify-end gap-2">
-          <button
-            onClick={() => onStatusChange(user.id, !user.is_active)}
-            disabled={isUpdating}
-            className={`p-2 rounded-xl transition-all opacity-0 group-hover/row:opacity-100 ${user.is_active
-              ? 'bg-red-50 text-red-500 hover:bg-red-500 hover:text-white'
-              : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white'}`}
-            title={user.is_active ? t('admin.users.disable') : t('admin.users.enable')}
-          >
-            {user.is_active ? <Ban size={18} /> : <CheckCircle2 size={18} />}
-          </button>
+          {isEditing ? (
+            <>
+              <button
+                onClick={onSave}
+                disabled={isSaving}
+                className="p-2 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 hover:scale-110 active:scale-90 transition-all disabled:opacity-50"
+                title={t('common.save')}
+              >
+                <Check size={20} strokeWidth={3} />
+              </button>
+              <button
+                onClick={onCancel}
+                disabled={isSaving}
+                className="p-2 bg-slate-100 text-slate-400 rounded-xl hover:bg-slate-200 active:scale-90 transition-all disabled:opacity-50"
+                title={t('common.cancel')}
+              >
+                <RotateCcw size={20} />
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={onEdit}
+              className="p-2 bg-[#0369a1]/10 text-[#0369a1] rounded-xl hover:bg-[#0369a1] hover:text-white transition-all opacity-0 group-hover/row:opacity-100"
+              title={t('common.edit')}
+            >
+              <Edit2 size={18} />
+            </button>
+          )}
         </div>
       </td>
     </tr>
@@ -119,11 +171,15 @@ export function UserManagementPanel() {
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [isUpdating, setIsUpdating] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
   const loaderRef = useRef<HTMLDivElement>(null);
+
+  // Edit state
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editData, setEditData] = useState<{ role: 'admin' | 'editor' | 'reader'; isActive: boolean } | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Debounce search input
   useEffect(() => {
@@ -198,32 +254,46 @@ export function UserManagementPanel() {
     return () => observer.disconnect();
   }, [loadUsers, isLoading, isLoadingMore, hasMore]);
 
-  const handleRoleChange = async (userId: string, newRole: 'admin' | 'editor' | 'reader') => {
-    setIsUpdating(userId);
-    try {
-      const updatedUser = await UserService.changeUserRole(userId, newRole);
-      setUsers((prev) =>
-        prev.map((u) => (u.id === userId ? { ...u, role: updatedUser.role } : u))
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('admin.users.roleUpdateError'));
-    } finally {
-      setIsUpdating(null);
-    }
+  const handleEdit = (user: UserPublic) => {
+    setEditingUserId(user.id);
+    setEditData({
+      role: user.role,
+      isActive: user.is_active
+    });
   };
 
-  const handleStatusChange = async (userId: string, isActive: boolean) => {
-    setIsUpdating(userId);
+  const handleSave = async (userId: string) => {
+    if (!editData) return;
+
+    setIsSaving(true);
     try {
-      const updatedUser = await UserService.changeUserStatus(userId, isActive);
-      setUsers((prev) =>
-        prev.map((u) => (u.id === userId ? { ...u, is_active: updatedUser.is_active } : u))
-      );
+      const user = users.find(u => u.id === userId);
+      if (!user) return;
+
+      // Update role if changed
+      if (editData.role !== user.role) {
+        const updatedUser = await UserService.changeUserRole(userId, editData.role);
+        setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: updatedUser.role } : u));
+      }
+
+      // Update status if changed
+      if (editData.isActive !== user.is_active) {
+        const updatedUser = await UserService.changeUserStatus(userId, editData.isActive);
+        setUsers(prev => prev.map(u => u.id === userId ? { ...u, is_active: updatedUser.is_active } : u));
+      }
+
+      setEditingUserId(null);
+      setEditData(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('admin.users.statusUpdateError'));
     } finally {
-      setIsUpdating(null);
+      setIsSaving(false);
     }
+  };
+
+  const handleCancel = () => {
+    setEditingUserId(null);
+    setEditData(null);
   };
 
   if (!isAdmin) {
@@ -366,9 +436,14 @@ export function UserManagementPanel() {
                   <UserRow
                     key={user.id}
                     user={user}
-                    onRoleChange={handleRoleChange}
-                    onStatusChange={handleStatusChange}
-                    isUpdating={isUpdating === user.id}
+                    isEditing={editingUserId === user.id}
+                    editData={editingUserId === user.id ? editData : null}
+                    onEdit={() => handleEdit(user)}
+                    onSave={() => handleSave(user.id)}
+                    onCancel={handleCancel}
+                    onRoleChange={(role) => setEditData(prev => prev ? { ...prev, role } : null)}
+                    onStatusChange={(isActive) => setEditData(prev => prev ? { ...prev, isActive } : null)}
+                    isSaving={isSaving}
                   />
                 ))
               )}
