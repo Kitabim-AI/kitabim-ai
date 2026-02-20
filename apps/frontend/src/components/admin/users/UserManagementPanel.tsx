@@ -411,14 +411,14 @@ export function UserManagementPanel() {
         </div>
       )}
 
-      <div className="glass-panel overflow-hidden" style={{ borderRadius: '24px', padding: 0 }}>
-        <div className="overflow-x-auto">
+      <div className="glass-panel" style={{ borderRadius: '24px', padding: 0, overflow: 'visible' }}>
+        <div className="overflow-x-auto" style={{ borderRadius: '24px', overflow: 'hidden' }}>
           <table className="w-full text-right" dir="rtl">
             <thead>
               <tr className="bg-[#0369a1]/5 text-[16px] font-normal text-[#0369a1] uppercase border-b border-[#0369a1]/10">
                 <th className="px-8 py-5 text-right font-normal">{t('admin.users.user')}</th>
-                <th className="px-8 py-5 text-right font-normal relative">
-                  <div className="flex items-center gap-2">
+                <th className="px-8 py-5 text-right font-normal">
+                  <div className="flex items-center gap-2 relative">
                     {t('admin.users.role')}
                     <button
                       onClick={() => setIsRoleFilterOpen(!isRoleFilterOpen)}
@@ -426,37 +426,37 @@ export function UserManagementPanel() {
                     >
                       <Filter size={14} strokeWidth={roleFilter !== 'all' ? 3 : 2} />
                     </button>
-                  </div>
 
-                  {isRoleFilterOpen && (
-                    <div
-                      ref={roleFilterRef}
-                      className="absolute top-full right-8 mt-2 w-48 glass-panel shadow-2xl z-50 overflow-hidden py-2 border border-[#0369a1]/10"
-                      style={{ borderRadius: '16px' }}
-                    >
-                      {[
-                        { id: 'all', label: t('admin.users.allRoles') },
-                        { id: 'admin', label: t('admin.users.admins') },
-                        { id: 'editor', label: t('admin.users.editors') },
-                        { id: 'reader', label: t('admin.users.readers') }
-                      ].map((role) => (
-                        <button
-                          key={role.id}
-                          onClick={() => {
-                            setRoleFilter(role.id);
-                            setIsRoleFilterOpen(false);
-                          }}
-                          className={`w-full flex items-center justify-between px-5 py-3 text-[14px] font-normal uppercase transition-all ${roleFilter === role.id ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
-                        >
-                          {role.label}
-                          {roleFilter === role.id && <Check size={14} strokeWidth={3} />}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                    {isRoleFilterOpen && (
+                      <div
+                        ref={roleFilterRef}
+                        className="absolute top-full left-0 mt-2 w-48 glass-panel shadow-2xl z-[100] overflow-hidden py-2 border border-[#0369a1]/10"
+                        style={{ borderRadius: '16px' }}
+                      >
+                        {[
+                          { id: 'all', label: t('admin.users.allRoles') },
+                          { id: 'admin', label: t('admin.users.admins') },
+                          { id: 'editor', label: t('admin.users.editors') },
+                          { id: 'reader', label: t('admin.users.readers') }
+                        ].map((role) => (
+                          <button
+                            key={role.id}
+                            onClick={() => {
+                              setRoleFilter(role.id);
+                              setIsRoleFilterOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between px-5 py-3 text-[14px] font-normal uppercase transition-all ${roleFilter === role.id ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
+                          >
+                            {role.label}
+                            {roleFilter === role.id && <Check size={14} strokeWidth={3} />}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </th>
-                <th className="px-8 py-5 text-right font-normal relative">
-                  <div className="flex items-center gap-2">
+                <th className="px-8 py-5 text-right font-normal">
+                  <div className="flex items-center gap-2 relative">
                     {t('admin.users.status')}
                     <button
                       onClick={() => setIsStatusFilterOpen(!isStatusFilterOpen)}
@@ -464,33 +464,33 @@ export function UserManagementPanel() {
                     >
                       <Filter size={14} strokeWidth={statusFilter !== 'all' ? 3 : 2} />
                     </button>
-                  </div>
 
-                  {isStatusFilterOpen && (
-                    <div
-                      ref={statusFilterRef}
-                      className="absolute top-full right-8 mt-2 w-48 glass-panel shadow-2xl z-50 overflow-hidden py-2 border border-[#0369a1]/10"
-                      style={{ borderRadius: '16px' }}
-                    >
-                      {[
-                        { id: 'all', label: t('admin.users.allStatuses') },
-                        { id: 'active', label: t('admin.users.active') },
-                        { id: 'inactive', label: t('admin.users.suspended') }
-                      ].map((status) => (
-                        <button
-                          key={status.id}
-                          onClick={() => {
-                            setStatusFilter(status.id);
-                            setIsStatusFilterOpen(false);
-                          }}
-                          className={`w-full flex items-center justify-between px-5 py-3 text-[14px] font-normal uppercase transition-all ${statusFilter === status.id ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
-                        >
-                          {status.label}
-                          {statusFilter === status.id && <Check size={14} strokeWidth={3} />}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                    {isStatusFilterOpen && (
+                      <div
+                        ref={statusFilterRef}
+                        className="absolute top-full left-0 mt-2 w-48 glass-panel shadow-2xl z-[100] overflow-hidden py-2 border border-[#0369a1]/10"
+                        style={{ borderRadius: '16px' }}
+                      >
+                        {[
+                          { id: 'all', label: t('admin.users.allStatuses') },
+                          { id: 'active', label: t('admin.users.active') },
+                          { id: 'inactive', label: t('admin.users.suspended') }
+                        ].map((status) => (
+                          <button
+                            key={status.id}
+                            onClick={() => {
+                              setStatusFilter(status.id);
+                              setIsStatusFilterOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between px-5 py-3 text-[14px] font-normal uppercase transition-all ${statusFilter === status.id ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
+                          >
+                            {status.label}
+                            {statusFilter === status.id && <Check size={14} strokeWidth={3} />}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </th>
                 <th className="px-8 py-5 text-right font-normal">{t('admin.users.joinedDate')}</th>
                 <th className="px-8 py-5 text-left font-normal">{t('admin.table.actions')}</th>
