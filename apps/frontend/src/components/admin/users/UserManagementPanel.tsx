@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { UserService, UserPublic } from '../../../services/userService';
-import { Users, Filter, Check, Search, X, Edit2, RotateCcw } from 'lucide-react';
-import { useIsAdmin } from '../../../hooks/useAuth';
+import { Users, Filter, Check, Search, X, Edit2, RotateCcw, Loader2 } from 'lucide-react';
+import { useIsAdmin, useAuth } from '../../../hooks/useAuth';
 import { useI18n } from '../../../i18n/I18nContext';
 import { UserAvatar } from '../../common/UserAvatar';
 
@@ -15,6 +15,7 @@ interface UserRowProps {
   onRoleChange: (role: 'admin' | 'editor' | 'reader') => void;
   onStatusChange: (isActive: boolean) => void;
   isSaving: boolean;
+  isOwnRecord: boolean;
 }
 
 const UserRow: React.FC<UserRowProps> = ({
@@ -26,7 +27,8 @@ const UserRow: React.FC<UserRowProps> = ({
   onCancel,
   onRoleChange,
   onStatusChange,
-  isSaving
+  isSaving,
+  isOwnRecord
 }) => {
   const { t } = useI18n();
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
@@ -152,7 +154,7 @@ const UserRow: React.FC<UserRowProps> = ({
                 className="p-2 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 hover:scale-110 active:scale-90 transition-all disabled:opacity-50"
                 title={t('common.save')}
               >
-                <Check size={20} strokeWidth={3} />
+                {isSaving ? <Loader2 size={20} className="animate-spin" /> : <Check size={20} strokeWidth={3} />}
               </button>
               <button
                 onClick={onCancel}
@@ -166,8 +168,13 @@ const UserRow: React.FC<UserRowProps> = ({
           ) : (
             <button
               onClick={onEdit}
-              className="p-2 bg-[#0369a1]/10 text-[#0369a1] rounded-xl hover:bg-[#0369a1] hover:text-white transition-all"
-              title={t('common.edit')}
+              disabled={isOwnRecord}
+              className={`p-2 rounded-xl transition-all ${
+                isOwnRecord
+                  ? 'bg-slate-100 text-slate-300 cursor-not-allowed'
+                  : 'bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white'
+              }`}
+              title={isOwnRecord ? t('admin.users.cannotEditSelf') : t('common.edit')}
             >
               <Edit2 size={18} />
             </button>
@@ -181,6 +188,7 @@ const UserRow: React.FC<UserRowProps> = ({
 export function UserManagementPanel() {
   const { t } = useI18n();
   const isAdmin = useIsAdmin();
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<UserPublic[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -464,6 +472,7 @@ export function UserManagementPanel() {
                     onRoleChange={(role) => setEditData(prev => prev ? { ...prev, role } : null)}
                     onStatusChange={(isActive) => setEditData(prev => prev ? { ...prev, isActive } : null)}
                     isSaving={isSaving}
+                    isOwnRecord={currentUser?.id === user.id}
                   />
                 ))
               )}

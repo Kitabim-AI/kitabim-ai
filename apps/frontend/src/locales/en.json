@@ -231,7 +231,8 @@
       "pagination": "Showing {{start}} to {{end}} of {{total}} users",
       "searchPlaceholder": "Search users (name or email)...",
       "disable": "Disable User",
-      "enable": "Enable User"
+      "enable": "Enable User",
+      "cannotEditSelf": "Cannot edit your own account"
     },
     "systemConfig": {
       "title": "System Configuration",
