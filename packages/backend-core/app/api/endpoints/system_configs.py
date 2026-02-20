@@ -13,6 +13,11 @@ from app.db.repositories.system_configs import SystemConfigsRepository
 from app.auth.dependencies import require_admin
 from app.models.user import User
 from app.core.i18n import t
+from app.langchain.models import (
+    get_circuit_breaker_status,
+    reset_circuit_breakers,
+    force_open_circuit_breakers,
+)
 
 router = APIRouter()
 
@@ -139,3 +144,27 @@ async def update_config(
         description=config.description,
         updated_at=config.updated_at.isoformat()
     )
+
+
+@router.get("/circuit-breaker/status")
+async def get_circuit_breaker_status_endpoint(
+    current_user: User = Depends(require_admin),
+):
+    """Get circuit breaker status (admin only)"""
+    return get_circuit_breaker_status()
+
+
+@router.post("/circuit-breaker/reset")
+async def reset_circuit_breaker_endpoint(
+    current_user: User = Depends(require_admin),
+):
+    """Manually reset (close) circuit breakers (admin only)"""
+    return reset_circuit_breakers()
+
+
+@router.post("/circuit-breaker/open")
+async def force_open_circuit_breaker_endpoint(
+    current_user: User = Depends(require_admin),
+):
+    """Manually open circuit breakers (admin only)"""
+    return force_open_circuit_breakers()

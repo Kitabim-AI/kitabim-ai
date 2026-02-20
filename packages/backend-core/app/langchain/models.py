@@ -53,6 +53,52 @@ def update_breaker_config(failure_threshold: int | None = None, recovery_timeout
         if recovery_timeout is not None:
             breaker.config.recovery_timeout = recovery_timeout
 
+
+def reset_circuit_breakers() -> dict:
+    """Manually reset (close) both circuit breakers. Admin control."""
+    import time
+    for breaker in [_TEXT_BREAKER, _EMBED_BREAKER]:
+        breaker._state = "closed"
+        breaker._failure_count = 0
+        breaker._opened_at = 0.0
+        breaker._half_open_in_flight = 0
+
+    return get_circuit_breaker_status()
+
+
+def force_open_circuit_breakers() -> dict:
+    """Manually open both circuit breakers. Admin control."""
+    import time
+    for breaker in [_TEXT_BREAKER, _EMBED_BREAKER]:
+        breaker._state = "open"
+        breaker._opened_at = time.monotonic()
+        breaker._half_open_in_flight = 0
+
+    return get_circuit_breaker_status()
+
+
+def get_circuit_breaker_status() -> dict:
+    """Get current status of circuit breakers."""
+    import time
+    now = time.monotonic()
+
+    def breaker_info(breaker):
+        time_since_opened = int(now - breaker._opened_at) if breaker._opened_at > 0 else 0
+        return {
+            "state": breaker._state,
+            "failure_count": breaker._failure_count,
+            "time_since_opened_seconds": time_since_opened if breaker._state == "open" else 0,
+            "recovery_timeout": breaker.config.recovery_timeout,
+            "failure_threshold": breaker.config.failure_threshold,
+        }
+
+    return {
+        "text_breaker": breaker_info(_TEXT_BREAKER),
+        "embed_breaker": breaker_info(_EMBED_BREAKER),
+        "overall_available": is_llm_available(),
+    }
+
+
 _CHAT_MODEL_CACHE: dict[str, ChatGoogleGenerativeAI] = {}
 
 

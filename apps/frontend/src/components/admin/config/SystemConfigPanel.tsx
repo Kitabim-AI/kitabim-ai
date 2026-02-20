@@ -14,11 +14,33 @@ interface SystemConfig {
   updated_at: string;
 }
 
+interface CircuitBreakerStatus {
+  text_breaker: {
+    state: string;
+    failure_count: number;
+    time_since_opened_seconds: number;
+    recovery_timeout: number;
+    failure_threshold: number;
+  };
+  embed_breaker: {
+    state: string;
+    failure_count: number;
+    time_since_opened_seconds: number;
+    recovery_timeout: number;
+    failure_threshold: number;
+  };
+  overall_available: boolean;
+}
+
 export function SystemConfigPanel() {
   const { t } = useI18n();
   const [configs, setConfigs] = useState<SystemConfig[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Circuit Breaker states
+  const [cbStatus, setCbStatus] = useState<CircuitBreakerStatus | null>(null);
+  const [cbLoading, setCbLoading] = useState(false);
 
   // Editing states
   const [editingKey, setEditingKey] = useState<string | null>(null);
@@ -48,8 +70,64 @@ export function SystemConfigPanel() {
     }
   };
 
+  const loadCircuitBreakerStatus = async () => {
+    try {
+      setCbLoading(true);
+      const response = await authFetch('/api/system-configs/circuit-breaker/status');
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${await response.text()}`);
+      }
+      const data = await response.json();
+      setCbStatus(data);
+    } catch (err: any) {
+      console.error('Failed to load circuit breaker status:', err);
+    } finally {
+      setCbLoading(false);
+    }
+  };
+
+  const resetCircuitBreaker = async () => {
+    try {
+      setCbLoading(true);
+      const response = await authFetch('/api/system-configs/circuit-breaker/reset', {
+        method: 'POST',
+      });
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${await response.text()}`);
+      }
+      const data = await response.json();
+      setCbStatus(data);
+    } catch (err: any) {
+      alert(err.message || 'Failed to reset circuit breaker');
+    } finally {
+      setCbLoading(false);
+    }
+  };
+
+  const forceOpenCircuitBreaker = async () => {
+    if (!confirm('Are you sure you want to manually open the circuit breaker? This will stop all LLM processing.')) {
+      return;
+    }
+    try {
+      setCbLoading(true);
+      const response = await authFetch('/api/system-configs/circuit-breaker/open', {
+        method: 'POST',
+      });
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${await response.text()}`);
+      }
+      const data = await response.json();
+      setCbStatus(data);
+    } catch (err: any) {
+      alert(err.message || 'Failed to open circuit breaker');
+    } finally {
+      setCbLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadConfigs();
+    loadCircuitBreakerStatus();
   }, []);
 
   const handleCreate = async () => {
@@ -157,6 +235,82 @@ export function SystemConfigPanel() {
       {error && (
         <div className="glass-panel p-4 bg-red-50 border-2 border-red-200 rounded-xl">
           <p className="text-red-600 font-normal">{error}</p>
+        </div>
+      )}
+
+      {/* Circuit Breaker Control Panel */}
+      {cbStatus && (
+        <div className="glass-panel p-6 rounded-[24px] shadow-xl border border-[#0369a1]/10">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20">
+                <Settings size={20} />
+              </div>
+              <h3 className="text-xl font-normal text-[#1a1a1a]">Circuit Breaker Status</h3>
+            </div>
+            <button
+              onClick={loadCircuitBreakerStatus}
+              disabled={cbLoading}
+              className="flex items-center gap-2 px-4 py-2 bg-white text-[#0369a1] rounded-xl border border-[#0369a1]/20 hover:border-[#0369a1] transition-all shadow-sm disabled:opacity-50"
+            >
+              <RefreshCw size={16} className={cbLoading ? 'animate-spin' : ''} />
+              <span className="text-sm">Refresh</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            {/* Overall Status */}
+            <div className={`p-4 rounded-2xl border-2 ${cbStatus.overall_available ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+              <div className="text-sm text-slate-600 mb-1 uppercase tracking-wider">Overall Status</div>
+              <div className={`text-2xl font-normal ${cbStatus.overall_available ? 'text-green-600' : 'text-red-600'}`}>
+                {cbStatus.overall_available ? '✓ Available' : '✗ Unavailable'}
+              </div>
+            </div>
+
+            {/* Text Breaker */}
+            <div className={`p-4 rounded-2xl border-2 ${cbStatus.text_breaker.state === 'closed' ? 'bg-green-50 border-green-200' : cbStatus.text_breaker.state === 'open' ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}`}>
+              <div className="text-sm text-slate-600 mb-1 uppercase tracking-wider">Text LLM</div>
+              <div className="text-xl font-normal text-slate-800 capitalize">{cbStatus.text_breaker.state}</div>
+              <div className="text-xs text-slate-500 mt-2">
+                Failures: {cbStatus.text_breaker.failure_count}/{cbStatus.text_breaker.failure_threshold}
+                {cbStatus.text_breaker.state === 'open' && (
+                  <> • Opens for {cbStatus.text_breaker.recovery_timeout}s</>
+                )}
+              </div>
+            </div>
+
+            {/* Embed Breaker */}
+            <div className={`p-4 rounded-2xl border-2 ${cbStatus.embed_breaker.state === 'closed' ? 'bg-green-50 border-green-200' : cbStatus.embed_breaker.state === 'open' ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}`}>
+              <div className="text-sm text-slate-600 mb-1 uppercase tracking-wider">Embeddings</div>
+              <div className="text-xl font-normal text-slate-800 capitalize">{cbStatus.embed_breaker.state}</div>
+              <div className="text-xs text-slate-500 mt-2">
+                Failures: {cbStatus.embed_breaker.failure_count}/{cbStatus.embed_breaker.failure_threshold}
+                {cbStatus.embed_breaker.state === 'open' && (
+                  <> • Opened for {cbStatus.embed_breaker.time_since_opened_seconds}s</>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Control Buttons */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={resetCircuitBreaker}
+              disabled={cbLoading || cbStatus.overall_available}
+              className="flex items-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all shadow-lg shadow-green-600/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-600"
+            >
+              <RefreshCw size={16} />
+              <span className="text-sm font-normal">Reset (Close) Circuit Breaker</span>
+            </button>
+            <button
+              onClick={forceOpenCircuitBreaker}
+              disabled={cbLoading || !cbStatus.overall_available}
+              className="flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all shadow-lg shadow-red-600/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-red-600"
+            >
+              <X size={16} />
+              <span className="text-sm font-normal">Force Open (Stop Processing)</span>
+            </button>
+          </div>
         </div>
       )}
 
