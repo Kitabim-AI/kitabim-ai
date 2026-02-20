@@ -24,6 +24,21 @@
     "system_busy_generic": "The system is currently busy, please try again in a moment.",
     "config_not_found": "Config key '{key}' not found",
     "config_already_exists": "Config key '{key}' already exists",
+    "book_title_not_found": "Book with title '{title}' not found",
+    "invalid_file_type": "Invalid file type. Allowed: {allowed}",
+    "image_process_failed": "Failed to process image: {error}",
+    "spell_check_failed": "Spell check failed: {error}",
+    "page_not_found_with_num": "Page {page_num} not found",
+    "no_text_to_check": "Page has no text to check",
+    "apply_corrections_failed": "Failed to apply corrections: {error}",
+    "book_or_page_not_found": "Book or page not found",
+    "gcs_sync_failed": "GCS sync failed: {error}",
+    "invalid_role": "Invalid role: {role}",
+    "invalid_status": "Invalid status: {status}. Use 'active' or 'inactive'",
+    "user_not_found": "User not found",
+    "cannot_change_own_role": "Cannot change your own role. Ask another admin.",
+    "failed_update_role": "Failed to update user role",
+    "failed_update_status": "Failed to update user status",
     "ai": {
       "gemini_busy": "Oops, the book service is a bit busy. Would you like to try again in a moment?",
       "gemini_api_key_missing": "Gemini API key not configured",
@@ -32,6 +47,7 @@
     }
   },
   "messages": {
-    "logged_out": "Logged out successfully"
+    "logged_out": "Logged out successfully",
+    "corrections_applied": "Corrections applied successfully. Embeddings will be regenerated."
   }
 }

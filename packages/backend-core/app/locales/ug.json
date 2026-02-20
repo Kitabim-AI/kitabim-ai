@@ -24,6 +24,21 @@
     "system_busy_generic": "سېستىما ھازىر ئالدىراش، سەل تۇرۇپ سىناپ بېڭى.",
     "config_not_found": "سەپلىمە ئاچقۇچى '{key}' تېپىلمىدى",
     "config_already_exists": "سەپلىمە ئاچقۇچى '{key}' ئالدىن مەۋجۇت",
+    "book_title_not_found": "'{title}' سەرلەۋھىلىك كىتاب تېپىلمىدى",
+    "invalid_file_type": "ئىناۋەتسىز ھۆججەت تىپى. رۇخسەت قىلىنىدىغانلىرى: {allowed}",
+    "image_process_failed": "رەسىم بىر تەرەپ قىلىش مەغلۇپ بولدى: {error}",
+    "spell_check_failed": "ئىملا تەكشۈرۈش مەغلۇپ بولدى: {error}",
+    "page_not_found_with_num": "{page_num}-بەت تېپىلمىدى",
+    "no_text_to_check": "تەكشۈرگۈدەك تېكىست يوق",
+    "apply_corrections_failed": "تۈزىتىشلەرنى قوللىنىش مەغلۇپ بولدى: {error}",
+    "book_or_page_not_found": "كىتاب ياكى بەت تېپىلمىدى",
+    "gcs_sync_failed": "GCS ماسقەدەملەش مەغلۇپ بولدى: {error}",
+    "invalid_role": "ئىناۋەتسىز رول: {role}",
+    "invalid_status": "ئىناۋەتلىك بولمىغان ھالەت: {status}. 'active' ياكى 'inactive' نى ئىشلىتىڭ",
+    "user_not_found": "ئىشلەتكۈچى تېپىلمىدى",
+    "cannot_change_own_role": "ئۆزىڭىزنىڭ رولىنى ئۆزگەرتەلمەيسىز. باشقا باشقۇرغۇچىدىن تەلەپ قىلىڭ.",
+    "failed_update_role": "ئىشلەتكۈچى رولىنى يېڭىلاش مەغلۇپ بولدى",
+    "failed_update_status": "ئىشلەتكۈچى ھالىتىنى يېڭىلاش مەغلۇپ بولدى",
     "ai": {
       "gemini_busy": "ئاپلا، كىتاپپۇرۇچ ئالدىراشكەن، سەل تۇرۇپ سىناپ باقامسىز؟",
       "gemini_api_key_missing": "Gemini API ئاچقۇچى سەپلەنمىگەن",
@@ -32,6 +47,7 @@
     }
   },
   "messages": {
-    "logged_out": "مۇۋەپپەقىيەتلىك چېكىندىڭىز"
+    "logged_out": "مۇۋەپپەقىيەتلىك چېكىندىڭىز",
+    "corrections_applied": "تۈزىتىشلەر مۇۋەپپەقىيەتلىك قوللىنىلدى. كىتاب قايتا بىر تەرەپ قىلىنىدۇ."
   }
 }

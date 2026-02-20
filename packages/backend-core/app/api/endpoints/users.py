@@ -66,7 +66,7 @@ async def list_all_users(
         try:
             filter_dict["role"] = UserRole(role)
         except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid role: {role}")
+            raise HTTPException(status_code=400, detail=t("errors.invalid_role", role=role))
 
     if status:
         if status == "active":
@@ -74,7 +74,7 @@ async def list_all_users(
         elif status == "inactive":
             filter_dict["is_active"] = False
         else:
-            raise HTTPException(status_code=400, detail=f"Invalid status: {status}. Use 'active' or 'inactive'")
+            raise HTTPException(status_code=400, detail=t("errors.invalid_status", status=status))
 
     if search:
         filter_dict["search"] = search
@@ -103,7 +103,7 @@ async def get_user(
     user = await get_user_by_id(session, user_id)
     
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail=t("errors.user_not_found"))
     
     return UserPublic.from_user(user)
 
@@ -124,16 +124,16 @@ async def change_user_role(
     if user_id == current_user.id:
         raise HTTPException(
             status_code=400,
-            detail="Cannot change your own role. Ask another admin."
+            detail=t("errors.cannot_change_own_role")
         )
     
     user = await get_user_by_id(session, user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail=t("errors.user_not_found"))
     
     updated_user = await update_user_role(session, user_id, role_update.role)
     if not updated_user:
-        raise HTTPException(status_code=500, detail="Failed to update user role")
+        raise HTTPException(status_code=500, detail=t("errors.failed_to_update_user_role"))
     
     await session.commit()
     
@@ -166,11 +166,11 @@ async def change_user_status(
     
     user = await get_user_by_id(session, user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail=t("errors.user_not_found"))
     
     updated_user = await update_user_status(session, user_id, status_update.is_active)
     if not updated_user:
-        raise HTTPException(status_code=500, detail="Failed to update user status")
+        raise HTTPException(status_code=500, detail=t("errors.failed_to_update_user_status"))
     
     await session.commit()
     

@@ -69,9 +69,9 @@ const UserRow: React.FC<UserRowProps> = ({
         </div>
       </td>
 
-      <td className="px-8 py-5 relative">
+      <td className="px-8 py-5">
         {isEditing ? (
-          <div>
+          <div className="relative">
             <button
               onClick={() => setShowRoleDropdown(!showRoleDropdown)}
               className={`inline-flex items-center gap-2 px-3 py-1.5 ${roleColors[currentRole]?.bg || 'bg-slate-50'} ${roleColors[currentRole]?.text || 'text-slate-500'} rounded-lg text-[14px] font-normal uppercase transition-all active:scale-95 border-2 border-[#0369a1]`}
@@ -83,7 +83,7 @@ const UserRow: React.FC<UserRowProps> = ({
             </button>
 
             {showRoleDropdown && (
-              <div className="absolute top-full right-8 mt-2 w-48 glass-panel shadow-2xl z-50 overflow-hidden py-2" style={{ borderRadius: '16px' }}>
+              <div className="absolute top-full left-0 mt-2 w-48 glass-panel shadow-2xl z-[100] overflow-hidden py-2" style={{ borderRadius: '16px' }}>
                 {(['admin', 'editor', 'reader'] as const).map((role) => (
                   <button
                     key={role}

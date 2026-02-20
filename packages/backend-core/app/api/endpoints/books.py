@@ -1385,13 +1385,13 @@ async def upload_cover(
     book = result.scalar_one_or_none()
 
     if not book:
-        raise HTTPException(status_code=404, detail=f"Book with title '{title}' not found")
+        raise HTTPException(status_code=404, detail=t("errors.book_title_not_found", title=title))
 
     book_id = book.id
 
     allowed_types = ["image/png", "image/jpeg", "image/jpg", "image/webp"]
     if file.content_type not in allowed_types:
-        raise HTTPException(status_code=400, detail=f"Invalid file type. Allowed: {allowed_types}")
+        raise HTTPException(status_code=400, detail=t("errors.invalid_file_type", allowed=", ".join(allowed_types)))
 
     try:
         image_data = await file.read()
@@ -1401,7 +1401,7 @@ async def upload_cover(
         cover_path = settings.covers_dir / f"{book_id}.jpg"
         img.save(cover_path, "JPEG", quality=90)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to process image: {exc}")
+        raise HTTPException(status_code=500, detail=t("errors.image_process_failed", error=str(exc)))
 
     cover_url = f"/api/covers/{book_id}.jpg"
     await books_repo.update_one(
@@ -1445,7 +1445,7 @@ async def check_book_spelling(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Spell check failed: {exc}")
+        raise HTTPException(status_code=500, detail=t("errors.spell_check_failed", error=str(exc)))
 
 
 @router.post("/{book_id}/pages/{page_num}/spell-check")
@@ -1460,7 +1460,7 @@ async def check_page_spelling(
 
     page = await pages_repo.find_one(book_id, page_num)
     if not page:
-        raise HTTPException(status_code=404, detail=f"Page {page_num} not found")
+        raise HTTPException(status_code=404, detail=t("errors.page_not_found", page_num=page_num))
 
     page_text = page.text or ""
     if not page_text:
@@ -1469,7 +1469,7 @@ async def check_page_spelling(
             "pageNumber": page_num,
             "corrections": [],
             "totalIssues": 0,
-            "message": "Page has no text to check",
+            "message": t("messages.no_text_to_check"),
         }
 
     try:
@@ -1482,7 +1482,7 @@ async def check_page_spelling(
             "checkedAt": spell_check.checkedAt,
         }
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Spell check failed: {exc}")
+        raise HTTPException(status_code=500, detail=t("errors.spell_check_failed", error=str(exc)))
 
 
 @router.post("/{book_id}/pages/{page_num}/apply-corrections")
@@ -1505,7 +1505,7 @@ async def apply_spelling_corrections(
                 "bookId": book_id,
                 "pageNumber": page_num,
                 "correctionsApplied": len(corrections),
-                "message": "Corrections applied successfully. Embeddings will be regenerated.",
+                "message": t("messages.corrections_applied_embeddings_regenerated"),
             }
         raise HTTPException(status_code=404, detail="Book or page not found")
     except HTTPException:
