@@ -253,7 +253,7 @@ export function SystemConfigPanel() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             {/* Overall Status */}
             <div className={`p-4 rounded-2xl border-2 ${cbStatus.overall_available ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-              <div className="text-sm text-slate-600 mb-1 uppercase tracking-wider">{t('admin.systemConfig.circuitBreaker.overallStatus')}</div>
+              <div className="text-sm text-slate-600 mb-1">{t('admin.systemConfig.circuitBreaker.overallStatus')}</div>
               <div className={`text-2xl font-normal ${cbStatus.overall_available ? 'text-green-600' : 'text-red-600'}`}>
                 {cbStatus.overall_available ? `✓ ${t('admin.systemConfig.circuitBreaker.available')}` : `✗ ${t('admin.systemConfig.circuitBreaker.unavailable')}`}
               </div>
@@ -261,8 +261,8 @@ export function SystemConfigPanel() {
 
             {/* Text Breaker */}
             <div className={`p-4 rounded-2xl border-2 ${cbStatus.text_breaker.state === 'closed' ? 'bg-green-50 border-green-200' : cbStatus.text_breaker.state === 'open' ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}`}>
-              <div className="text-sm text-slate-600 mb-1 uppercase tracking-wider">{t('admin.systemConfig.circuitBreaker.textLlm')}</div>
-              <div className="text-xl font-normal text-slate-800 capitalize">{cbStatus.text_breaker.state}</div>
+              <div className="text-sm text-slate-600 mb-1">{t('admin.systemConfig.circuitBreaker.textLlm')}</div>
+              <div className="text-xl font-normal text-slate-800">{t(`admin.systemConfig.circuitBreaker.states.${cbStatus.text_breaker.state}` as any)}</div>
               <div className="text-xs text-slate-500 mt-2">
                 {t('admin.systemConfig.circuitBreaker.failures')}: {cbStatus.text_breaker.failure_count}/{cbStatus.text_breaker.failure_threshold}
                 {cbStatus.text_breaker.state === 'open' && (
@@ -273,8 +273,8 @@ export function SystemConfigPanel() {
 
             {/* Embed Breaker */}
             <div className={`p-4 rounded-2xl border-2 ${cbStatus.embed_breaker.state === 'closed' ? 'bg-green-50 border-green-200' : cbStatus.embed_breaker.state === 'open' ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}`}>
-              <div className="text-sm text-slate-600 mb-1 uppercase tracking-wider">{t('admin.systemConfig.circuitBreaker.embeddings')}</div>
-              <div className="text-xl font-normal text-slate-800 capitalize">{cbStatus.embed_breaker.state}</div>
+              <div className="text-sm text-slate-600 mb-1">{t('admin.systemConfig.circuitBreaker.embeddings')}</div>
+              <div className="text-xl font-normal text-slate-800">{t(`admin.systemConfig.circuitBreaker.states.${cbStatus.embed_breaker.state}` as any)}</div>
               <div className="text-xs text-slate-500 mt-2">
                 {t('admin.systemConfig.circuitBreaker.failures')}: {cbStatus.embed_breaker.failure_count}/{cbStatus.embed_breaker.failure_threshold}
                 {cbStatus.embed_breaker.state === 'open' && (

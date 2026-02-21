@@ -151,9 +151,9 @@ async def process_pdf_task(
                 return
 
             if book.status == "ready":
-                log_json(logger, logging.INFO, "Book already processed, skipping", book_id=book_id, status=book.status)
+                log_json(logger, logging.INFO, "Book already processed, marking job as succeeded", book_id=book_id, status=book.status)
                 if job_key:
-                    await jobs_repo.update_status(job_key, "skipped", "Book already in ready status")
+                    await jobs_repo.update_status(job_key, "succeeded", "Book already in ready status")
                     await session.commit()
                 return
 
@@ -508,6 +508,15 @@ async def process_pdf_task(
                                 r.last_updated = datetime.now(timezone.utc)
 
                             await session.commit()
+
+                            log_json(
+                                logger,
+                                logging.INFO,
+                                "Embedding batch completed",
+                                book_id=book_id,
+                                pages_indexed=len(batch),
+                                batch_range=f"{start}-{start + len(batch) - 1}"
+                            )
 
                         except CircuitBreakerOpen:
                             log_json(

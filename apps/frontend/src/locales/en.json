@@ -5,6 +5,7 @@
     "loading": "Loading...",
     "error": "Error",
     "success": "Success",
+    "noData": "No data available",
     "save": "Save",
     "cancel": "Cancel",
     "delete": "Delete",
@@ -171,7 +172,12 @@
       "pageStats": "Page Statistics",
       "totalPages": "Total Pages",
       "indexedPages": "Indexed Pages",
-      "unindexedPages": "Unindexed Pages"
+      "unindexedPages": "Unindexed Pages",
+      "jobStats": "Job Statistics",
+      "totalJobs": "Total Jobs",
+      "jobSucceeded": "Succeeded",
+      "jobFailed": "Failed",
+      "jobSkipped": "Skipped"
     },
     "table": {
       "name": "Name",
@@ -274,7 +280,12 @@
         "openedFor": "Opened for",
         "reset": "Reset (Close) Circuit Breaker",
         "forceOpen": "Force Open (Stop Processing)",
-        "confirmForceOpen": "Are you sure you want to manually open the circuit breaker? This will stop all LLM processing."
+        "confirmForceOpen": "Are you sure you want to manually open the circuit breaker? This will stop all LLM processing.",
+        "states": {
+          "closed": "Closed",
+          "open": "Open",
+          "half_open": "Half-Open"
+        }
       }
     }
   },

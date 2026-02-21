@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 
 from app.db.session import get_session
-from app.db.models import Book, Page
+from app.db.models import Book, Page, Job
 from app.auth.dependencies import require_admin
 
 router = APIRouter()
@@ -15,6 +15,16 @@ router = APIRouter()
 
 class BookStatusCount(BaseModel):
     status: str
+    count: int
+
+
+class JobStatusCount(BaseModel):
+    status: str
+    count: int
+
+
+class JobTypeCount(BaseModel):
+    type: str
     count: int
 
 
@@ -29,6 +39,8 @@ class SystemStats(BaseModel):
     total_books: int
     books_by_status: list[BookStatusCount]
     page_stats: PageStats
+    jobs_by_status: list[JobStatusCount]
+    jobs_by_type: list[JobTypeCount]
 
 
 @router.get("/", response_model=SystemStats)
@@ -69,6 +81,30 @@ async def get_system_stats(
     unindexed_pages = total_pages - indexed_pages
     percentage_indexed = (indexed_pages / total_pages * 100) if total_pages > 0 else 0.0
 
+    # Count jobs by status
+    jobs_by_status_stmt = (
+        select(Job.status, func.count(Job.job_key))
+        .group_by(Job.status)
+        .order_by(func.count(Job.job_key).desc())
+    )
+    jobs_by_status_result = await session.execute(jobs_by_status_stmt)
+    jobs_by_status = [
+        JobStatusCount(status=status or "unknown", count=count)
+        for status, count in jobs_by_status_result.all()
+    ]
+
+    # Count jobs by type
+    jobs_by_type_stmt = (
+        select(Job.type, func.count(Job.job_key))
+        .group_by(Job.type)
+        .order_by(func.count(Job.job_key).desc())
+    )
+    jobs_by_type_result = await session.execute(jobs_by_type_stmt)
+    jobs_by_type = [
+        JobTypeCount(type=job_type or "unknown", count=count)
+        for job_type, count in jobs_by_type_result.all()
+    ]
+
     return SystemStats(
         total_books=total_books,
         books_by_status=books_by_status,
@@ -77,5 +113,7 @@ async def get_system_stats(
             indexed=indexed_pages,
             unindexed=unindexed_pages,
             percentage_indexed=round(percentage_indexed, 2)
-        )
+        ),
+        jobs_by_status=jobs_by_status,
+        jobs_by_type=jobs_by_type
     )

@@ -12,15 +12,15 @@ rebuild_component() {
 
   case $comp in
     backend)
-      docker build -f Dockerfile.backend -t kitabim-backend:local -q .
+      docker build -f Dockerfile.backend -t kitabim-backend:latest -q .
       kubectl rollout restart deployment/backend -n kitabim
       ;;
     worker)
-      docker build -f Dockerfile.worker -t kitabim-worker:local -q .
+      docker build -f Dockerfile.worker -t kitabim-worker:latest -q .
       kubectl rollout restart deployment/worker -n kitabim
       ;;
     frontend)
-      docker build -f apps/frontend/Dockerfile -t kitabim-frontend:local -q .
+      docker build -f apps/frontend/Dockerfile -t kitabim-frontend:latest -q .
       kubectl rollout restart deployment/frontend -n kitabim
       ;;
     *)
