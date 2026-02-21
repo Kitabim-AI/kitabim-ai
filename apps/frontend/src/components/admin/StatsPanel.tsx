@@ -172,77 +172,77 @@ export const StatsPanel: React.FC = () => {
       {/* Stats Grid */}
       <div className="glass-panel overflow-hidden rounded-[24px] p-8 shadow-xl border border-[#0369a1]/10">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Books by Status */}
-        <div className="space-y-3">
-          <h4 className="text-sm font-normal text-[#94a3b8] uppercase tracking-wider px-1">
-            {t('admin.stats.booksByStatus') || 'Books by Status'}
-          </h4>
-          <div className="space-y-2">
-            {stats.books_by_status.map((item) => (
-              <div
-                key={item.status}
-                className={`flex items-center justify-between p-3 rounded-xl border-2 ${getStatusColor(item.status)}`}
-              >
-                <div className="flex items-center gap-2">
-                  {getStatusIcon(item.status)}
-                  <span className="font-normal">{getStatusLabel(item.status)}</span>
-                </div>
-                <span className="font-bold text-lg">{item.count.toLocaleString()}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Page Statistics */}
-        <div className="space-y-3">
-          <h4 className="text-sm font-normal text-[#94a3b8] uppercase tracking-wider px-1">
-            {t('admin.stats.pageStats') || 'Page Statistics'}
-          </h4>
+          {/* Books by Status */}
           <div className="space-y-3">
-            <div className="p-4 bg-slate-50 border-2 border-slate-200 rounded-xl">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm text-slate-600">
-                  {t('admin.stats.totalPages') || 'Total Pages'}
-                </span>
-                <span className="text-2xl font-bold text-slate-800">
-                  {stats.page_stats.total.toLocaleString()}
-                </span>
-              </div>
-            </div>
-
-            <div className="p-4 bg-green-50 border-2 border-green-200 rounded-xl">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-green-700">
-                  {t('admin.stats.indexedPages') || 'Indexed Pages'}
-                </span>
-                <span className="text-2xl font-bold text-green-700">
-                  {stats.page_stats.indexed.toLocaleString()}
-                </span>
-              </div>
-              <div className="w-full bg-green-200 rounded-full h-2 overflow-hidden">
+            <h4 className="text-sm font-normal text-[#94a3b8] uppercase tracking-wider px-1">
+              {t('admin.stats.booksByStatus') || 'Books by Status'}
+            </h4>
+            <div className="space-y-2">
+              {stats.books_by_status.map((item) => (
                 <div
-                  className="bg-green-600 h-full rounded-full transition-all duration-500"
-                  style={{ width: `${stats.page_stats.percentage_indexed}%` }}
-                />
-              </div>
-              <div className="text-xs text-green-600 mt-1 text-right">
-                {stats.page_stats.percentage_indexed.toFixed(2)}%
-              </div>
+                  key={item.status}
+                  className={`flex items-center justify-between p-3 rounded-xl border-2 ${getStatusColor(item.status)}`}
+                >
+                  <div className="flex items-center gap-2">
+                    {getStatusIcon(item.status)}
+                    <span className="font-normal">{getStatusLabel(item.status)}</span>
+                  </div>
+                  <span className="font-bold text-lg">{item.count.toLocaleString()}</span>
+                </div>
+              ))}
             </div>
+          </div>
 
-            <div className="p-4 bg-orange-50 border-2 border-orange-200 rounded-xl">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-orange-700">
-                  {t('admin.stats.unindexedPages') || 'Unindexed Pages'}
-                </span>
-                <span className="text-2xl font-bold text-orange-700">
-                  {stats.page_stats.unindexed.toLocaleString()}
-                </span>
+          {/* Page Statistics */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-normal text-[#94a3b8] uppercase tracking-wider px-1">
+              {t('admin.stats.pageStats') || 'Page Statistics'}
+            </h4>
+            <div className="space-y-3">
+              <div className="p-4 bg-slate-50 border-2 border-slate-200 rounded-xl">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm text-slate-600">
+                    {t('admin.stats.totalPages') || 'Total Pages'}
+                  </span>
+                  <span className="text-2xl font-bold text-slate-800">
+                    {stats.page_stats.total.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-4 bg-green-50 border-2 border-green-200 rounded-xl">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-green-700">
+                    {t('admin.stats.indexedPages') || 'Indexed Pages'}
+                  </span>
+                  <span className="text-2xl font-bold text-green-700">
+                    {stats.page_stats.indexed.toLocaleString()}
+                  </span>
+                </div>
+                <div className="w-full bg-green-200 rounded-full h-2 overflow-hidden">
+                  <div
+                    className="bg-green-600 h-full rounded-full transition-all duration-500"
+                    style={{ width: `${stats.page_stats.percentage_indexed}%` }}
+                  />
+                </div>
+                <div className="text-xs text-green-600 mt-1 text-right">
+                  {stats.page_stats.percentage_indexed.toFixed(2)}%
+                </div>
+              </div>
+
+              <div className="p-4 bg-orange-50 border-2 border-orange-200 rounded-xl">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-orange-700">
+                    {t('admin.stats.unindexedPages') || 'Unindexed Pages'}
+                  </span>
+                  <span className="text-2xl font-bold text-orange-700">
+                    {stats.page_stats.unindexed.toLocaleString()}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
       </div>
     </div>
   );

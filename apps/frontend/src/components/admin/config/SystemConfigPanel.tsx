@@ -105,7 +105,7 @@ export function SystemConfigPanel() {
   };
 
   const forceOpenCircuitBreaker = async () => {
-    if (!confirm('Are you sure you want to manually open the circuit breaker? This will stop all LLM processing.')) {
+    if (!confirm(t('admin.systemConfig.circuitBreaker.confirmForceOpen'))) {
       return;
     }
     try {
@@ -246,47 +246,39 @@ export function SystemConfigPanel() {
               <div className="p-2.5 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20">
                 <Settings size={20} />
               </div>
-              <h3 className="text-xl font-normal text-[#1a1a1a]">Circuit Breaker Status</h3>
+              <h3 className="text-xl font-normal text-[#1a1a1a]">{t('admin.systemConfig.circuitBreaker.title')}</h3>
             </div>
-            <button
-              onClick={loadCircuitBreakerStatus}
-              disabled={cbLoading}
-              className="flex items-center gap-2 px-4 py-2 bg-white text-[#0369a1] rounded-xl border border-[#0369a1]/20 hover:border-[#0369a1] transition-all shadow-sm disabled:opacity-50"
-            >
-              <RefreshCw size={16} className={cbLoading ? 'animate-spin' : ''} />
-              <span className="text-sm">Refresh</span>
-            </button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             {/* Overall Status */}
             <div className={`p-4 rounded-2xl border-2 ${cbStatus.overall_available ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-              <div className="text-sm text-slate-600 mb-1 uppercase tracking-wider">Overall Status</div>
+              <div className="text-sm text-slate-600 mb-1 uppercase tracking-wider">{t('admin.systemConfig.circuitBreaker.overallStatus')}</div>
               <div className={`text-2xl font-normal ${cbStatus.overall_available ? 'text-green-600' : 'text-red-600'}`}>
-                {cbStatus.overall_available ? '✓ Available' : '✗ Unavailable'}
+                {cbStatus.overall_available ? `✓ ${t('admin.systemConfig.circuitBreaker.available')}` : `✗ ${t('admin.systemConfig.circuitBreaker.unavailable')}`}
               </div>
             </div>
 
             {/* Text Breaker */}
             <div className={`p-4 rounded-2xl border-2 ${cbStatus.text_breaker.state === 'closed' ? 'bg-green-50 border-green-200' : cbStatus.text_breaker.state === 'open' ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}`}>
-              <div className="text-sm text-slate-600 mb-1 uppercase tracking-wider">Text LLM</div>
+              <div className="text-sm text-slate-600 mb-1 uppercase tracking-wider">{t('admin.systemConfig.circuitBreaker.textLlm')}</div>
               <div className="text-xl font-normal text-slate-800 capitalize">{cbStatus.text_breaker.state}</div>
               <div className="text-xs text-slate-500 mt-2">
-                Failures: {cbStatus.text_breaker.failure_count}/{cbStatus.text_breaker.failure_threshold}
+                {t('admin.systemConfig.circuitBreaker.failures')}: {cbStatus.text_breaker.failure_count}/{cbStatus.text_breaker.failure_threshold}
                 {cbStatus.text_breaker.state === 'open' && (
-                  <> • Opens for {cbStatus.text_breaker.recovery_timeout}s</>
+                  <> • {t('admin.systemConfig.circuitBreaker.opensFor')} {cbStatus.text_breaker.recovery_timeout}s</>
                 )}
               </div>
             </div>
 
             {/* Embed Breaker */}
             <div className={`p-4 rounded-2xl border-2 ${cbStatus.embed_breaker.state === 'closed' ? 'bg-green-50 border-green-200' : cbStatus.embed_breaker.state === 'open' ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}`}>
-              <div className="text-sm text-slate-600 mb-1 uppercase tracking-wider">Embeddings</div>
+              <div className="text-sm text-slate-600 mb-1 uppercase tracking-wider">{t('admin.systemConfig.circuitBreaker.embeddings')}</div>
               <div className="text-xl font-normal text-slate-800 capitalize">{cbStatus.embed_breaker.state}</div>
               <div className="text-xs text-slate-500 mt-2">
-                Failures: {cbStatus.embed_breaker.failure_count}/{cbStatus.embed_breaker.failure_threshold}
+                {t('admin.systemConfig.circuitBreaker.failures')}: {cbStatus.embed_breaker.failure_count}/{cbStatus.embed_breaker.failure_threshold}
                 {cbStatus.embed_breaker.state === 'open' && (
-                  <> • Opened for {cbStatus.embed_breaker.time_since_opened_seconds}s</>
+                  <> • {t('admin.systemConfig.circuitBreaker.openedFor')} {cbStatus.embed_breaker.time_since_opened_seconds}s</>
                 )}
               </div>
             </div>
@@ -300,7 +292,7 @@ export function SystemConfigPanel() {
               className="flex items-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all shadow-lg shadow-green-600/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-600"
             >
               <RefreshCw size={16} />
-              <span className="text-sm font-normal">Reset (Close) Circuit Breaker</span>
+              <span className="text-sm font-normal">{t('admin.systemConfig.circuitBreaker.reset')}</span>
             </button>
             <button
               onClick={forceOpenCircuitBreaker}
@@ -308,7 +300,7 @@ export function SystemConfigPanel() {
               className="flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all shadow-lg shadow-red-600/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-red-600"
             >
               <X size={16} />
-              <span className="text-sm font-normal">Force Open (Stop Processing)</span>
+              <span className="text-sm font-normal">{t('admin.systemConfig.circuitBreaker.forceOpen')}</span>
             </button>
           </div>
         </div>

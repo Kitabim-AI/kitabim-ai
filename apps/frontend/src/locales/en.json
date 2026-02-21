@@ -1,6 +1,7 @@
 {
   "common": {
     "volume": "Volume",
+    "lastUpdated": "Last Updated",
     "loading": "Loading...",
     "error": "Error",
     "success": "Success",
@@ -260,7 +261,21 @@
       "description": "Description",
       "actions": "Actions",
       "empty": "No configurations found",
-      "emptyDescription": "Create your first system configuration to get started"
+      "emptyDescription": "Create your first system configuration to get started",
+      "circuitBreaker": {
+        "title": "Circuit Breaker Status",
+        "overallStatus": "Overall Status",
+        "available": "Available",
+        "unavailable": "Unavailable",
+        "textLlm": "Text LLM",
+        "embeddings": "Embeddings",
+        "failures": "Failures",
+        "opensFor": "Opens for",
+        "openedFor": "Opened for",
+        "reset": "Reset (Close) Circuit Breaker",
+        "forceOpen": "Force Open (Stop Processing)",
+        "confirmForceOpen": "Are you sure you want to manually open the circuit breaker? This will stop all LLM processing."
+      }
     }
   },
   "spellCheck": {

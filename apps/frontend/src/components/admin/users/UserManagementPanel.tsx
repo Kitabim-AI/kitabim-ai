@@ -361,7 +361,7 @@ export function UserManagementPanel() {
             <h2 className="text-3xl font-normal text-[#1a1a1a]">{t('admin.users.title')}</h2>
             <div className="flex items-center gap-2 mt-1">
               <span className="w-8 h-[2px] bg-[#0369a1] rounded-full" />
-              <p className="text-[14px] font-normal text-[#94a3b8] uppercase">{t('admin.userManagement')}</p>
+              <p className="text-[14px] font-normal text-[#94a3b8] uppercase">{t('admin.users.subtitle')}</p>
             </div>
           </div>
         </div>

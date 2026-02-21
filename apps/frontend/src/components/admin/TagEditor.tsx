@@ -76,20 +76,10 @@ export const TagEditor: React.FC<TagEditorProps & { hideActions?: boolean }> = (
 
   if (isOpen) {
     return (
-      <div className="flex flex-col gap-2 min-w-[180px]" dir="rtl">
-        {/* Current tags */}
-        <div className="flex flex-wrap gap-1">
-          {items.map((item: string, idx: number) => (
-            <span key={idx} className="flex items-center gap-1 px-2 py-0.5 bg-[#0369a1]/10 text-[#0369a1] text-[13px] rounded-md border border-[#0369a1]/20">
-              {item}
-              <button onClick={() => onRemoveItem(idx)} className="hover:text-red-500"><X size={10} /></button>
-            </span>
-          ))}
-        </div>
-
+      <div className="flex flex-col gap-2 w-full" dir="rtl">
         {/* Input with + button */}
-        <div className="relative">
-          <div className="flex gap-1 items-center">
+        <div className="relative w-full">
+          <div className="relative flex items-center w-full">
             <input
               ref={inputRef}
               autoFocus
@@ -118,43 +108,40 @@ export const TagEditor: React.FC<TagEditorProps & { hideActions?: boolean }> = (
                 }
               }}
               onFocus={() => setShowSuggestions(true)}
-              className="px-2 py-1 text-sm border border-[#0369a1]/20 rounded-lg bg-white flex-grow outline-none"
+              className="px-4 py-2 text-[16px] border-2 border-[#0369a1] rounded-xl bg-white w-full outline-none focus:ring-4 focus:ring-[#0369a1]/10 transition-all font-normal text-right pl-12"
+              dir="rtl"
               placeholder={placeholder}
             />
 
-            {/* Add button */}
+            {/* Add button - Positioned absolutely inside the input area */}
             <button
               onClick={() => handleAddTag(tempValue)}
               disabled={!tempValue.trim()}
-              className="p-1.5 bg-[#0369a1]/10 text-[#0369a1] rounded-lg hover:bg-[#0369a1] hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-[#0369a1]/10 disabled:hover:text-[#0369a1]"
+              className="absolute left-2 p-1.5 bg-[#0369a1]/10 text-[#0369a1] rounded-lg hover:bg-[#0369a1] hover:text-white transition-all disabled:opacity-0 disabled:pointer-events-none"
               title={t('common.add') || 'Add'}
             >
-              <Plus size={14} strokeWidth={2.5} />
+              <Plus size={18} strokeWidth={2.5} />
             </button>
-
-            {!hideActions && (
-              <>
-                <button
-                  onClick={() => {
-                    // Add pending tag if there's text in the input
-                    if (tempValue.trim() && !items.includes(tempValue.trim())) {
-                      onAddItem(tempValue.trim());
-                    }
-                    // Clear the input
-                    onTempValueChange('');
-                    // Close suggestions
-                    setShowSuggestions(false);
-                    // Then save
-                    onSave();
-                  }}
-                  className="p-1.5 bg-[#0369a1] text-white rounded-lg hover:bg-[#0284c7]"
-                >
-                  <Save size={14} />
-                </button>
-                <button onClick={onClose} className="p-1.5 bg-slate-100 text-slate-400 rounded-lg"><X size={14} /></button>
-              </>
-            )}
           </div>
+
+          {!hideActions && (
+            <div className="flex gap-1 mt-2 justify-end">
+              <button
+                onClick={() => {
+                  if (tempValue.trim() && !items.includes(tempValue.trim())) {
+                    onAddItem(tempValue.trim());
+                  }
+                  onTempValueChange('');
+                  setShowSuggestions(false);
+                  onSave();
+                }}
+                className="p-2 bg-[#0369a1] text-white rounded-xl hover:bg-[#0284c7]"
+              >
+                <Save size={16} />
+              </button>
+              <button onClick={onClose} className="p-2 bg-slate-100 text-slate-400 rounded-xl"><X size={16} /></button>
+            </div>
+          )}
 
           {/* Autocomplete dropdown */}
           {showSuggestions && suggestions.length > 0 && (
@@ -168,7 +155,7 @@ export const TagEditor: React.FC<TagEditorProps & { hideActions?: boolean }> = (
                   <button
                     key={idx}
                     onClick={() => handleAddTag(suggestion)}
-                    className="w-full text-left px-3 py-2 text-[13px] text-[#1a1a1a] hover:bg-[#0369a1]/10 transition-all flex items-center gap-2"
+                    className="w-full text-right px-3 py-2 text-[13px] text-[#1a1a1a] hover:bg-[#0369a1]/10 transition-all flex items-center gap-2"
                   >
                     <Tag size={12} className="text-[#0369a1]" />
                     {suggestion}
@@ -177,6 +164,16 @@ export const TagEditor: React.FC<TagEditorProps & { hideActions?: boolean }> = (
               </div>
             </div>
           )}
+        </div>
+
+        {/* Current tags */}
+        <div className="flex flex-wrap gap-1">
+          {items.map((item: string, idx: number) => (
+            <span key={idx} className="flex items-center gap-1 px-2 py-0.5 bg-[#0369a1]/10 text-[#0369a1] text-[13px] rounded-md border border-[#0369a1]/20">
+              {item}
+              <button onClick={() => onRemoveItem(idx)} className="hover:text-red-500"><X size={10} /></button>
+            </span>
+          ))}
         </div>
 
         {/* Quick-add existing categories (when not searching) */}

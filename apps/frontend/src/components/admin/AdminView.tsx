@@ -160,7 +160,7 @@ export const AdminView: React.FC = () => {
                   const isEditing = editingId === book.id;
                   return (
                     <tr key={book.id} className={`hover:bg-[#e8f4f8]/20 transition-colors group/row ${isEditing ? 'bg-[#0369a1]/5' : ''}`}>
-                      <td className="px-6 py-6 font-uyghur">
+                      <td className={`px-6 py-6 font-uyghur ${isEditing ? 'align-top' : ''}`}>
                         <div className="flex items-center gap-4">
                           <button
                             onClick={() => bookActions.openReader(book)}
@@ -205,7 +205,7 @@ export const AdminView: React.FC = () => {
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-6 text-center">
+                      <td className={`px-6 py-6 text-center ${isEditing ? 'align-top' : ''}`}>
                         {isEditing ? (
                           <input
                             type="number"
@@ -220,14 +220,14 @@ export const AdminView: React.FC = () => {
                           </div>
                         )}
                       </td>
-                      <td className="px-6 py-6">
+                      <td className={`px-6 py-6 ${isEditing ? 'align-top' : ''}`}>
                         {isEditing ? (
                           <input
                             type="text"
                             value={editData?.author}
                             onChange={e => setEditData(prev => prev ? { ...prev, author: e.target.value } : null)}
                             onKeyDown={e => e.key === 'Enter' && handleSaveRow(book.id)}
-                            className="px-4 py-2 border-2 border-[#0369a1] rounded-xl bg-white w-full outline-none font-normal"
+                            className="px-4 py-2 text-[16px] border-2 border-[#0369a1] rounded-xl bg-white w-full outline-none font-normal"
                             placeholder={t('admin.table.author')}
                           />
                         ) : (
@@ -236,7 +236,7 @@ export const AdminView: React.FC = () => {
                           </div>
                         )}
                       </td>
-                      <td className="px-6 py-6">
+                      <td className={`px-6 py-6 ${isEditing ? 'align-top' : ''}`}>
                         <TagEditor
                           isOpen={isEditing}
                           onSave={() => handleSaveRow(book.id)}
@@ -254,7 +254,7 @@ export const AdminView: React.FC = () => {
                           hideActions={true}
                         />
                       </td>
-                      <td className="px-6 py-6">
+                      <td className={`px-6 py-6 ${isEditing ? 'align-top' : ''}`}>
                         <div className="flex flex-col gap-2 min-w-[120px]">
                           <ProgressBar book={book} />
                           <div className="flex justify-between text-[12px] text-slate-400">
@@ -269,7 +269,7 @@ export const AdminView: React.FC = () => {
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-6 text-left">
+                      <td className={`px-6 py-6 text-left ${isEditing ? 'align-top' : ''}`}>
                         <div className="flex items-center justify-end gap-2">
                           {isEditing ? (
                             <div className="flex items-center gap-2">
@@ -289,7 +289,7 @@ export const AdminView: React.FC = () => {
                               </button>
                             </div>
                           ) : (
-                            <>
+                            <div className="flex items-center gap-2">
                               <button
                                 onClick={() => handleEditRow(book)}
                                 className="p-2 bg-[#0369a1]/10 text-[#0369a1] rounded-xl hover:bg-[#0369a1] hover:text-white transition-all"
@@ -307,17 +307,17 @@ export const AdminView: React.FC = () => {
                               >
                                 {book.visibility === 'private' ? <Shield size={18} /> : <Globe size={18} />}
                               </button>
-                              <div className="relative" ref={activeMenuId === book.id ? menuRef : null}>
-                                <button
-                                  onClick={() => setActiveMenuId(activeMenuId === book.id ? null : book.id)}
-                                  className="p-2 hover:bg-[#0369a1]/10 rounded-xl text-slate-400 transition-all"
-                                >
-                                  <MoreVertical size={20} />
-                                </button>
-                                {activeMenuId === book.id && <ActionMenu book={book} close={() => setActiveMenuId(null)} />}
-                              </div>
-                            </>
+                            </div>
                           )}
+                          <div className="relative" ref={activeMenuId === book.id ? menuRef : null}>
+                            <button
+                              onClick={() => setActiveMenuId(activeMenuId === book.id ? null : book.id)}
+                              className={`p-2 hover:bg-[#0369a1]/10 rounded-xl transition-all ${activeMenuId === book.id ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-slate-400'}`}
+                            >
+                              <MoreVertical size={20} />
+                            </button>
+                            {activeMenuId === book.id && <ActionMenu book={book} close={() => setActiveMenuId(null)} />}
+                          </div>
                         </div>
                       </td>
                     </tr>

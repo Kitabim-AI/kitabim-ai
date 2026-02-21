@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, BookOpen, Clock, User, HardDrive, Loader2 } from 'lucide-react';
 import { PersistenceService } from '../../services/persistenceService';
 import { MarkdownContent } from '../common/MarkdownContent';
@@ -41,8 +42,8 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 md:p-8" dir="rtl" lang="ug">
+  const modalContent = (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 md:p-8" dir="rtl" lang="ug">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-slate-900/60 backdrop-blur-xl animate-fade-in transition-all duration-500"
@@ -59,7 +60,7 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
               <BookOpen size={28} strokeWidth={2.5} />
             </div>
             <div>
-              <h3 className="text-2xl font-normal text-[#1a1a1a] mb-2 leading-tight flex items-center flex-wrap gap-2">
+              <h3 className="text-2xl font-normal text-[#1a1a1a] mb-2 leading-tight flex items-center flex-wrap gap-2 text-right">
                 {loading ? t('common.loading') : (
                   <>
                     <span>{bookData?.title || t('chat.referenceTitle')}</span>
@@ -136,4 +137,6 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 };

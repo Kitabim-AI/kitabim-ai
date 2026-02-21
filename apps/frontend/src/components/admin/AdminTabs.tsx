@@ -29,10 +29,10 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
   const isAdmin = useIsAdmin();
 
   const tabs: Tab[] = [
-    { id: 'books', label: t('admin.bookManagement'), icon: <Book size={18} /> },
-    { id: 'stats', label: t('admin.stats.title') || 'Statistics', icon: <BarChart3 size={18} />, adminOnly: true },
-    { id: 'users', label: t('admin.userManagement'), icon: <Users size={18} />, adminOnly: true },
-    { id: 'config', label: t('admin.systemConfigLabel'), icon: <Settings size={18} />, adminOnly: true },
+    { id: 'books', label: t('admin.booksLabel'), icon: <Book size={18} /> },
+    { id: 'users', label: t('admin.usersLabel'), icon: <Users size={18} />, adminOnly: true },
+    { id: 'stats', label: t('admin.statsLabel') || 'Statistics', icon: <BarChart3 size={18} />, adminOnly: true },
+    { id: 'config', label: t('admin.configLabel'), icon: <Settings size={18} />, adminOnly: true },
   ];
 
   const visibleTabs = tabs.filter((tab) => !tab.adminOnly || isAdmin);
@@ -40,22 +40,29 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
   return (
     <div className="space-y-8 animate-fade-in" dir="rtl" lang="ug">
       {/* Tab Navigation */}
-      <div className="flex items-center gap-4 border-b border-[#0369a1]/10">
+      <div className="flex items-end border-b border-[#0369a1]/20 px-4 -mb-px">
         {visibleTabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`
-              flex items-center gap-3 px-8 py-4 text-[16px] font-normal uppercase
-              border-b-4 transition-all active:scale-95
+              flex items-center gap-3 px-8 py-3.5 transition-all duration-300 relative
+              rounded-t-[18px] text-[15px] font-normal
               ${activeTab === tab.id
-                ? 'border-[#0369a1] text-[#1a1a1a]'
-                : 'border-transparent text-slate-400 hover:text-[#0369a1] hover:border-[#0369a1]/30'
+                ? 'bg-white text-[#0369a1] border-x border-t border-[#0369a1]/20 -mb-[1px] shadow-[0_-4px_12px_-4px_rgba(3,105,161,0.08)] z-10'
+                : 'text-slate-500 hover:text-[#0369a1] hover:bg-[#0369a1]/5'
               }
             `}
           >
-            {tab.icon}
-            {tab.label}
+            <span className={`transition-all duration-300 ${activeTab === tab.id ? 'scale-110' : 'opacity-60'}`}>
+              {tab.icon}
+            </span>
+            <span className={`transition-all duration-200 ${activeTab === tab.id ? 'font-bold' : ''}`}>
+              {tab.label}
+            </span>
+            {activeTab === tab.id && (
+              <div className="absolute -bottom-[1px] left-0 right-0 h-[2px] bg-white z-20" />
+            )}
           </button>
         ))}
       </div>
@@ -63,8 +70,8 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
       {/* Tab Content */}
       <div className="animate-fade-in">
         {activeTab === 'books' && bookManagementPanel}
-        {activeTab === 'stats' && isAdmin && <StatsPanel />}
         {activeTab === 'users' && isAdmin && <UserManagementPanel />}
+        {activeTab === 'stats' && isAdmin && <StatsPanel />}
         {activeTab === 'config' && isAdmin && <SystemConfigPanel />}
       </div>
     </div>
