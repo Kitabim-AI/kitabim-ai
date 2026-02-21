@@ -151,7 +151,7 @@ async def get_circuit_breaker_status_endpoint(
     current_user: User = Depends(require_admin),
 ):
     """Get circuit breaker status (admin only)"""
-    return get_circuit_breaker_status()
+    return await get_circuit_breaker_status()
 
 
 @router.post("/circuit-breaker/reset")
@@ -159,7 +159,7 @@ async def reset_circuit_breaker_endpoint(
     current_user: User = Depends(require_admin),
 ):
     """Manually reset (close) circuit breakers (admin only)"""
-    return reset_circuit_breakers()
+    return await reset_circuit_breakers()
 
 
 @router.post("/circuit-breaker/open")
@@ -167,4 +167,4 @@ async def force_open_circuit_breaker_endpoint(
     current_user: User = Depends(require_admin),
 ):
     """Manually open circuit breakers (admin only)"""
-    return force_open_circuit_breakers()
+    return await force_open_circuit_breakers()

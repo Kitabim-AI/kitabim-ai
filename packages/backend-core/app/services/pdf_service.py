@@ -170,7 +170,7 @@ async def process_pdf_task(
                     await session.commit()
                 return
 
-            if not is_llm_available():
+            if not await is_llm_available():
                 log_json(logger, logging.WARNING, "LLM circuit breaker open, skipping task to save bandwidth", book_id=book_id)
                 if job_key:
                     await jobs_repo.update_status(job_key, "skipped", "LLM Circuit Breaker Open")
@@ -314,7 +314,7 @@ async def process_pdf_task(
 
                                 if not already_ocr:
                                     # Check circuit breaker before each OCR call
-                                    if not is_llm_available():
+                                    if not await is_llm_available():
                                         log_json(
                                             logger,
                                             logging.WARNING,
@@ -421,7 +421,7 @@ async def process_pdf_task(
 
             if pages_to_embed:
                 # Check circuit breaker before starting embeddings
-                if not is_llm_available():
+                if not await is_llm_available():
                     log_json(
                         logger,
                         logging.WARNING,
@@ -434,7 +434,7 @@ async def process_pdf_task(
                     batch_size = 20  # Reduced to avoid rate limits and timeouts
                     for start in range(0, len(pages_to_embed), batch_size):
                         # Check circuit breaker before each batch
-                        if not is_llm_available():
+                        if not await is_llm_available():
                             log_json(
                                 logger,
                                 logging.WARNING,

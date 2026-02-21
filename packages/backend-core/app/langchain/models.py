@@ -41,9 +41,11 @@ _EMBED_BREAKER = CircuitBreaker(
 )
 
 
-def is_llm_available() -> bool:
+async def is_llm_available() -> bool:
     """Check if the LLM circuit breakers are available."""
-    return _TEXT_BREAKER._state != "open" and _EMBED_BREAKER._state != "open"
+    text_open = await _TEXT_BREAKER.is_open()
+    embed_open = await _EMBED_BREAKER.is_open()
+    return not text_open and not embed_open
 
 def update_breaker_config(failure_threshold: int | None = None, recovery_timeout: float | None = None) -> None:
     """Update defaults for both circuit breakers."""
@@ -54,48 +56,31 @@ def update_breaker_config(failure_threshold: int | None = None, recovery_timeout
             breaker.config.recovery_timeout = recovery_timeout
 
 
-def reset_circuit_breakers() -> dict:
+async def reset_circuit_breakers() -> dict:
     """Manually reset (close) both circuit breakers. Admin control."""
-    import time
     for breaker in [_TEXT_BREAKER, _EMBED_BREAKER]:
-        breaker._state = "closed"
-        breaker._failure_count = 0
-        breaker._opened_at = 0.0
-        breaker._half_open_in_flight = 0
+        await breaker.reset()
 
-    return get_circuit_breaker_status()
+    return await get_circuit_breaker_status()
 
 
-def force_open_circuit_breakers() -> dict:
+async def force_open_circuit_breakers() -> dict:
     """Manually open both circuit breakers. Admin control."""
-    import time
     for breaker in [_TEXT_BREAKER, _EMBED_BREAKER]:
-        breaker._state = "open"
-        breaker._opened_at = time.monotonic()
-        breaker._half_open_in_flight = 0
+        await breaker.force_open()
 
-    return get_circuit_breaker_status()
+    return await get_circuit_breaker_status()
 
 
-def get_circuit_breaker_status() -> dict:
+async def get_circuit_breaker_status() -> dict:
     """Get current status of circuit breakers."""
-    import time
-    now = time.monotonic()
-
-    def breaker_info(breaker):
-        time_since_opened = int(now - breaker._opened_at) if breaker._opened_at > 0 else 0
-        return {
-            "state": breaker._state,
-            "failure_count": breaker._failure_count,
-            "time_since_opened_seconds": time_since_opened if breaker._state == "open" else 0,
-            "recovery_timeout": breaker.config.recovery_timeout,
-            "failure_threshold": breaker.config.failure_threshold,
-        }
+    text_info = await _TEXT_BREAKER.get_info()
+    embed_info = await _EMBED_BREAKER.get_info()
 
     return {
-        "text_breaker": breaker_info(_TEXT_BREAKER),
-        "embed_breaker": breaker_info(_EMBED_BREAKER),
-        "overall_available": is_llm_available(),
+        "text_breaker": text_info,
+        "embed_breaker": embed_info,
+        "overall_available": await is_llm_available(),
     }
 
 

@@ -22,6 +22,7 @@ This file provides guidance for automated agents working in this repo.
 - Build images, then apply manifests in `k8s/local/`.
 - The application connects to PostgreSQL on your local host via `host.docker.internal:5432`.
 - See `KUBERNETES_DEPLOYMENT.md` for the current quickstart commands and ports.
+- **CRITICAL DEPLOYMENT RULE**: Do not rely on local dev servers (like `npm run dev`) for final change application. You MUST always deploy all code changes to Kubernetes to ensure they are available in the cluster. Run `./rebuild-and-restart.sh [frontend|backend|worker|all]` to rebuild the Docker image and restart the Kubernetes deployment after modifying files.
 
 ## Code Conventions
 - Backend/worker code lives in `packages/backend-core/app`.

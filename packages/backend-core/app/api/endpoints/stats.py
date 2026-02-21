@@ -33,6 +33,13 @@ class PageStats(BaseModel):
     indexed: int
     unindexed: int
     percentage_indexed: float
+    error: int = 0
+    pages_by_status: list["PageStatusCount"] = []
+
+
+class PageStatusCount(BaseModel):
+    status: str
+    count: int
 
 
 class SystemStats(BaseModel):
@@ -77,6 +84,23 @@ async def get_system_stats(
     indexed_pages_result = await session.execute(indexed_pages_stmt)
     indexed_pages = indexed_pages_result.scalar() or 0
 
+    # Count error pages
+    error_pages_stmt = select(func.count()).select_from(Page).where(Page.status == "error")
+    error_pages_result = await session.execute(error_pages_stmt)
+    error_pages = error_pages_result.scalar() or 0
+
+    # Pages by status
+    pages_by_status_stmt = (
+        select(Page.status, func.count(Page.id))
+        .group_by(Page.status)
+        .order_by(func.count(Page.id).desc())
+    )
+    pages_by_status_result = await session.execute(pages_by_status_stmt)
+    pages_by_status = [
+        PageStatusCount(status=status or "unknown", count=count)
+        for status, count in pages_by_status_result.all()
+    ]
+
     # Calculate unindexed and percentage
     unindexed_pages = total_pages - indexed_pages
     percentage_indexed = (indexed_pages / total_pages * 100) if total_pages > 0 else 0.0
@@ -112,7 +136,9 @@ async def get_system_stats(
             total=total_pages,
             indexed=indexed_pages,
             unindexed=unindexed_pages,
-            percentage_indexed=round(percentage_indexed, 2)
+            percentage_indexed=round(percentage_indexed, 2),
+            error=error_pages,
+            pages_by_status=pages_by_status
         ),
         jobs_by_status=jobs_by_status,
         jobs_by_type=jobs_by_type

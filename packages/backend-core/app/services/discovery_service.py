@@ -41,7 +41,7 @@ class DiscoveryService:
 
         # 2. Check circuit breaker (unless forced)
         if not force:
-            if not is_llm_available():
+            if not await is_llm_available():
                 return {"status": "skipped", "reason": "Circuit breaker open"}
 
         # 3. Check if sync is due (unless forced)
