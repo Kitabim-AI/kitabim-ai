@@ -221,6 +221,9 @@ class DiscoveryService:
             
         try:
             last_sync = datetime.fromisoformat(last_sync_str)
+            # Handle naive datetime if timezone info is missing in the string
+            if last_sync.tzinfo is None:
+                last_sync = last_sync.replace(tzinfo=timezone.utc)
         except ValueError:
             return True
             
