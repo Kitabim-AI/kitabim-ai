@@ -72,7 +72,7 @@ class Book(BaseModel):
     processing_step: Optional[str] = "ocr"  # DB: processing_step, API: processingStep
     categories: List[str] = Field(default_factory=list)
     last_error: Optional[ErrorEvent] = None  # DB: last_error, API: lastError
-    completed_count: int = 0  # DB: completed_count, API: completedCount
+    ocr_done_count: int = 0  # DB: ocr_done_count, API: ocrDoneCount
     error_count: int = 0  # DB: error_count, API: errorCount
     file_name: Optional[str] = None  # Original uploaded filename
     source: Optional[str] = None  # Document source (e.g., 'upload', 'gcs')

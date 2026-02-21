@@ -2,7 +2,7 @@
 export interface ExtractionResult {
   pageNumber: number;
   text?: string;
-  status: 'pending' | 'processing' | 'completed' | 'error';
+  status: 'pending' | 'ocr_processing' | 'ocr_done' | 'indexing' | 'indexed' | 'error';
   error?: string;
 }
 
@@ -21,7 +21,7 @@ export interface Book {
   volume?: number | null;
   totalPages: number;
   pages: ExtractionResult[];
-  status: 'uploading' | 'pending' | 'processing' | 'ready' | 'error';
+  status: 'uploading' | 'pending' | 'ocr_processing' | 'ocr_done' | 'indexing' | 'ready' | 'error';
   uploadDate: Date;
   lastUpdated: Date | null;
   coverUrl?: string;
@@ -31,7 +31,7 @@ export interface Book {
   tags?: string[];
   errors?: ErrorEvent[];
   lastError?: ErrorEvent | null;
-  completedCount?: number;
+  ocrDoneCount?: number;
   errorCount?: number;
   processingLockExpiresAt?: Date | string | null;
 }

@@ -73,7 +73,7 @@ class SpellCheckService:
         
         results: Dict[int, PageSpellCheck] = {}
         for page_rec in pages:
-            if page_rec.status != "completed":
+            if page_rec.status != "ocr_done":
                 continue
             page_num = page_rec.page_number
             page_text = page_rec.text or ""
@@ -118,7 +118,7 @@ class SpellCheckService:
             text("""
                 UPDATE pages
                 SET text = :text,
-                    status = 'completed',
+                    status = 'ocr_done',
                     is_verified = TRUE,
                     is_indexed = FALSE,
                     last_updated = :now,

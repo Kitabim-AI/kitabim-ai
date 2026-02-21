@@ -8,6 +8,18 @@ import { TagEditor } from './TagEditor';
 import { ProgressBar } from './ProgressBar';
 import { ActionMenu } from './ActionMenu';
 
+const getStatusTextColor = (status: string) => {
+  switch (status.toLowerCase()) {
+    case 'ready': return 'text-emerald-600 font-bold';
+    case 'ocr_done': return 'text-indigo-600 font-bold';
+    case 'indexing': return 'text-purple-600 font-bold';
+    case 'ocr_processing': return 'text-blue-600 font-bold';
+    case 'error': return 'text-red-500 font-bold';
+    case 'pending': return 'text-amber-600 font-bold';
+    default: return 'text-slate-400';
+  }
+};
+
 export const AdminView: React.FC = () => {
   const {
     books,
@@ -259,11 +271,11 @@ export const AdminView: React.FC = () => {
                           <ProgressBar book={book} />
                           <div className="flex justify-between text-[12px] text-slate-400">
                             <span>
-                              {(book.completedCount !== undefined ? book.completedCount : (book as any).completed_count) || (book.pages?.filter(p => p.status === 'completed').length) || 0}
+                              {(book.ocrDoneCount !== undefined ? book.ocrDoneCount : (book as any).ocr_done_count) || (book.pages?.filter(p => p.status === 'ocr_done' || p.status === 'indexed').length) || 0}
                               /
                               {book.totalPages || (book as any).total_pages || 0}
                             </span>
-                            <span className={`${book.status === 'error' ? 'text-red-500 font-bold' : ''} uppercase`}>
+                            <span className={`${getStatusTextColor(book.status)} uppercase`}>
                               {t(`bookCard.${book.status}`) || book.status}
                             </span>
                           </div>

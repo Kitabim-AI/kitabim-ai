@@ -76,15 +76,36 @@ class BooksRepository(BaseRepository[Book]):
             stmt = stmt.where(and_(*conditions))
 
         # Sorting
-        if hasattr(Book, sort_by):
+        if sort_by == "upload_date":
+            # Enhanced sorting: Group by (title, author) but sort groups by latest arrival,
+            # and then sort volumes within each group.
+            # This uses a window function to find the max upload date for each 'Work' (Series)
+            series_latest = func.max(Book.upload_date).over(partition_by=[Book.title, Book.author])
+            
+            if sort_order.upper() == "DESC":
+                stmt = stmt.order_by(
+                    series_latest.desc(), 
+                    Book.title.asc(), 
+                    Book.author.asc(),
+                    Book.volume.asc().nulls_first()
+                )
+            else:
+                stmt = stmt.order_by(
+                    series_latest.asc(), 
+                    Book.title.asc(), 
+                    Book.author.asc(),
+                    Book.volume.asc().nulls_first()
+                )
+        elif hasattr(Book, sort_by):
             order_col = getattr(Book, sort_by)
             if sort_order.upper() == "DESC":
                 stmt = stmt.order_by(order_col.desc())
             else:
                 stmt = stmt.order_by(order_col.asc())
         else:
-            # Default fallback
-            stmt = stmt.order_by(Book.upload_date.desc())
+            # Default fallback (same as upload_date enhanced)
+            series_latest = func.max(Book.upload_date).over(partition_by=[Book.title, Book.author])
+            stmt = stmt.order_by(series_latest.desc(), Book.title.asc(), Book.author.asc(), Book.volume.asc().nulls_first())
 
         # Pagination
         stmt = stmt.offset(skip).limit(limit)
@@ -119,10 +140,10 @@ class BooksRepository(BaseRepository[Book]):
         return {
             "book": book,
             "page_stats": stats,
-            "completed_count": stats.get("completed", 0),
+            "ocr_done_count": stats.get("ocr_done", 0) + stats.get("indexed", 0) + stats.get("indexing", 0),
             "error_count": stats.get("error", 0),
             "pending_count": stats.get("pending", 0),
-            "processing_count": stats.get("processing", 0),
+            "ocr_processing_count": stats.get("ocr_processing", 0),
         }
 
     async def count_by_status(self, status: str) -> int:
@@ -143,7 +164,7 @@ class BooksRepository(BaseRepository[Book]):
         """Find books stuck in processing state since before cutoff_time"""
         stmt = select(Book).where(
             and_(
-                Book.status == 'processing',
+                Book.status == 'ocr_processing',
                 Book.last_updated < cutoff_time
             )
         )

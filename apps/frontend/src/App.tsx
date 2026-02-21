@@ -24,11 +24,12 @@ const AppContent: React.FC = () => {
 
   // Polling for processing books
   useEffect(() => {
+    const isProcessing = (s?: string) => s === 'ocr_processing' || s === 'indexing' || s === 'ocr_done';
     const hasProcessing = selectedBook?.pages?.some(
-      r => r.status === 'pending' || r.status === 'processing'
+      r => r.status === 'pending' || isProcessing(r.status)
     );
-    // Poll only on admin page to show real-time OCR progress
-    const shouldPoll = view === 'admin' && selectedBook && (selectedBook.status === 'processing' || hasProcessing);
+    // Poll only on admin page to show real-time OCR/Indexing progress
+    const shouldPoll = view === 'admin' && selectedBook && (isProcessing(selectedBook.status) || hasProcessing);
 
     if (!shouldPoll) return;
 

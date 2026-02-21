@@ -12,8 +12,8 @@ const mockBooks: Book[] = [
     volume: 1,
     totalPages: 5,
     pages: [
-      { pageNumber: 1, status: 'completed' },
-      { pageNumber: 2, status: 'completed' }
+      { pageNumber: 1, status: 'ocr_done' },
+      { pageNumber: 2, status: 'ocr_done' }
     ],
     status: 'ready',
     uploadDate: new Date(),
@@ -29,7 +29,7 @@ const mockBooksEmpty: Book[] = [
     title: 'Empty Book',
     author: 'Unknown Author',
     totalPages: 1,
-    pages: [{ pageNumber: 1, status: 'completed' }],
+    pages: [{ pageNumber: 1, status: 'ocr_done' }],
     status: 'ready',
     uploadDate: new Date(),
     lastUpdated: new Date(),
@@ -158,7 +158,7 @@ test('AdminView edits title and author', () => {
 });
 
 test('AdminView disables start OCR when processing', () => {
-  const processingBook: Book = { ...mockBooks[0], status: 'processing' };
+  const processingBook: Book = { ...mockBooks[0], status: 'ocr_processing' };
 
   render(
     <AdminView

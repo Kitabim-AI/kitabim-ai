@@ -80,7 +80,7 @@ class Book(Base):
     last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Counts
-    completed_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    ocr_done_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     error_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     # Timestamps & audit
@@ -118,7 +118,7 @@ class Book(Base):
     # Constraints
     __table_args__ = (
         CheckConstraint(
-            "status IN ('pending', 'processing', 'ready', 'error')",
+            "status IN ('uploading', 'pending', 'ocr_processing', 'ocr_done', 'indexing', 'ready', 'error')",
             name="books_status_check"
         ),
         CheckConstraint(
@@ -168,7 +168,7 @@ class Page(Base):
     __table_args__ = (
         UniqueConstraint("book_id", "page_number", name="pages_book_id_page_number_key"),
         CheckConstraint(
-            "status IN ('pending', 'processing', 'completed', 'error')",
+            "status IN ('pending', 'ocr_processing', 'ocr_done', 'indexing', 'indexed', 'error')",
             name="pages_status_check"
         ),
     )

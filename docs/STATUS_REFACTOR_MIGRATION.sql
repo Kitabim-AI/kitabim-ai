@@ -78,7 +78,7 @@ SELECT
 
 -- Verify constraints
 SELECT 'Verify constraints:' as info;
-SELECT conname, consrc
+SELECT conname, pg_get_constraintdef(oid) as constraint_def
 FROM pg_constraint
 WHERE conrelid IN ('books'::regclass, 'pages'::regclass)
   AND conname LIKE '%status_check';

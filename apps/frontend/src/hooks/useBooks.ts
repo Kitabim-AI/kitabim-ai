@@ -21,7 +21,8 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
 
   // Internal Polling for Processing Books (only on admin page)
   useEffect(() => {
-    const hasProcessing = books.some(b => b.status === 'processing');
+    const isProcessing = (s: string) => s === 'ocr_processing' || s === 'indexing' || s === 'ocr_done';
+    const hasProcessing = books.some(b => isProcessing(b.status));
     if (hasProcessing && view === 'admin') {
       const interval = setInterval(async () => {
         try {
@@ -43,7 +44,7 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
       }, 10000);
       return () => clearInterval(interval);
     }
-  }, [view, books.length, books.some(b => b.status === 'processing'), isShelfView, searchQuery, sortConfig, pageSize, page, category]);
+  }, [view, books.length, books.some(b => b.status === 'ocr_processing' || b.status === 'indexing' || b.status === 'ocr_done'), isShelfView, searchQuery, sortConfig, pageSize, page, category]);
 
   const refreshLibrary = useCallback(async () => {
     setIsLoading(true);

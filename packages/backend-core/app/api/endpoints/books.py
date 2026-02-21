@@ -204,11 +204,25 @@ async def get_books(
         if conditions:
             stmt = stmt.where(and_(*conditions))
         
-        # Sort by upload_date for work grouping
+        # Enhanced sorting: Group by (title, author) but sort groups by latest arrival,
+        # and then sort volumes within each group.
+        # This uses a window function to find the max upload date for each 'Work' (Series)
+        series_latest = func.max(BookDB.upload_date).over(partition_by=[BookDB.title, BookDB.author])
+        
         if order == -1:
-            stmt = stmt.order_by(BookDB.upload_date.desc())
+            stmt = stmt.order_by(
+                series_latest.desc(), 
+                BookDB.title.asc(), 
+                BookDB.author.asc(),
+                BookDB.volume.asc().nulls_first()
+            )
         else:
-            stmt = stmt.order_by(BookDB.upload_date.asc())
+            stmt = stmt.order_by(
+                series_latest.asc(), 
+                BookDB.title.asc(), 
+                BookDB.author.asc(),
+                BookDB.volume.asc().nulls_first()
+            )
 
         result = await session.execute(stmt)
         all_books_models = result.scalars().all()
@@ -265,12 +279,8 @@ async def get_books(
                     last_error_obj = rep.last_error
 
             # Calculate total stats for the work group
-            group_completed = 0
-            group_error = 0
-            for v in volumes:
-                v_stats = stats_by_book.get(str(v.id), {})
-                group_completed += v_stats.get("completed", 0)
-                group_error += v_stats.get("error", 0)
+            group_ocr_done = sum(v.ocr_done_count or 0 for v in volumes)
+            group_error = sum(v.error_count or 0 for v in volumes)
 
             # Convert ORM object to dict
             rep_dict = {
@@ -291,7 +301,7 @@ async def get_books(
                 "processing_step": rep.processing_step,
                 "categories": rep.categories,
                 "last_error": last_error_obj,
-                "completed_count": group_completed,
+                "ocr_done_count": group_ocr_done,
                 "error_count": group_error,
             }
             works_list.append(BookSchema.model_validate(rep_dict))
@@ -329,8 +339,8 @@ async def get_books(
                 "categories": b.categories,
                 "errors": b.errors,
                 "last_error": b_last_error_obj,
-                "completed_count": b_stats.get("completed", 0),
-                "error_count": b_stats.get("error", 0),
+                "ocr_done_count": b.ocr_done_count or 0,
+                "error_count": b.error_count or 0,
             }
             works_list.append(BookSchema.model_validate(b_dict))
 
@@ -344,17 +354,34 @@ async def get_books(
             stmt = stmt.where(and_(*conditions))
         
         # Mapping sorting
-        sort_map = {
-            "title": BookDB.title,
-            "author": BookDB.author,
-            "uploadDate": BookDB.upload_date,
-            "lastUpdated": BookDB.last_updated
-        }
-        sort_col = sort_map.get(sortBy, BookDB.upload_date)
-        if order == -1:
-            stmt = stmt.order_by(sort_col.desc())
+        if sortBy == "uploadDate":
+            # Enhanced sorting: Keep series together
+            series_latest = func.max(BookDB.upload_date).over(partition_by=[BookDB.title, BookDB.author])
+            if order == -1:
+                stmt = stmt.order_by(
+                    series_latest.desc(), 
+                    BookDB.title.asc(), 
+                    BookDB.author.asc(),
+                    BookDB.volume.asc().nulls_first()
+                )
+            else:
+                stmt = stmt.order_by(
+                    series_latest.asc(), 
+                    BookDB.title.asc(), 
+                    BookDB.author.asc(),
+                    BookDB.volume.asc().nulls_first()
+                )
         else:
-            stmt = stmt.order_by(sort_col.asc())
+            sort_map = {
+                "title": BookDB.title,
+                "author": BookDB.author,
+                "lastUpdated": BookDB.last_updated
+            }
+            sort_col = sort_map.get(sortBy, BookDB.upload_date)
+            if order == -1:
+                stmt = stmt.order_by(sort_col.desc())
+            else:
+                stmt = stmt.order_by(sort_col.asc())
 
         stmt = stmt.offset(skip).limit(pageSize)
         result = await session.execute(stmt)
@@ -412,13 +439,10 @@ async def get_books(
                 "categories": b.categories,
                 "errors": b.errors,
                 "last_error": last_error_obj,
-                "completed_count": 0,
-                "error_count": 0,
+                "ocr_done_count": b.ocr_done_count or 0,
+                "error_count": b.error_count or 0,
             }
             s_data = BookSchema.model_validate(b_dict)
-            b_stats = stats_by_book.get(str(b.id), {})
-            s_data.completed_count = b_stats.get("completed", 0)
-            s_data.error_count = b_stats.get("error", 0)
             books_data.append(s_data)
 
     return {
@@ -647,8 +671,8 @@ async def get_book(
         "processing_step": book_model.processing_step,
         "categories": book_model.categories,
         "last_error": last_error_obj,
-        "completed_count": stats.get("completed", 0),
-        "error_count": stats.get("error", 0),
+        "ocr_done_count": book_model.ocr_done_count or 0,
+        "error_count": book_model.error_count or 0,
     }
 
     # Convert SQLAlchemy models to Pydantic (automatic camelCase conversion)
@@ -1073,7 +1097,7 @@ async def reindex_book(
         text("""
             UPDATE pages
             SET is_indexed = FALSE, last_updated = NOW(), updated_by = :updated_by
-            WHERE book_id = :book_id AND status = 'completed'
+            WHERE book_id = :book_id AND status = 'ocr_done'
         """),
         {"book_id": book_id, "updated_by": current_user.email}
     )
@@ -1147,7 +1171,7 @@ async def update_page_text(
         text("""
             UPDATE pages
             SET text = :text,
-                status = 'completed',
+                status = 'ocr_done',
                 is_verified = TRUE,
                 is_indexed = FALSE,
                 last_updated = NOW(),
@@ -1195,7 +1219,7 @@ async def create_book(
                 "book_id": book_id,
                 "page_number": r.get("page_number"),
                 "text": page_text,
-                "status": r.get("status", "completed"),
+                "status": r.get("status", "ocr_done"),
                 "is_verified": r.get("is_verified", False),
                 "updated_by": current_user.email,
             }

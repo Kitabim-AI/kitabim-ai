@@ -49,7 +49,7 @@ test('BookCard handles delete event', () => {
 });
 
 test('BookCard shows processing state', () => {
-  const processingBook: Book = { ...mockBook, status: 'processing' };
+  const processingBook: Book = { ...mockBook, status: 'ocr_processing' };
   render(<BookCard book={processingBook} onClick={vi.fn()} onDelete={vi.fn()} />);
 
   expect(screen.getAllByText('PROCESSING').length).toBeGreaterThan(0);

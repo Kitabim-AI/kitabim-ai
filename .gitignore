@@ -4,7 +4,7 @@ node_modules/
 /.next/
 /out/
 /build/
-
+/backups/
 # Python
 __pycache__/
 *.py[cod]

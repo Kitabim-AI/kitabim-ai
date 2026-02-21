@@ -8,6 +8,18 @@ interface BookCardProps {
   onDelete?: (bookId: string) => void;
 }
 
+const getStatusStyles = (status: string) => {
+  switch (status.toLowerCase()) {
+    case 'ready': return 'bg-emerald-50 text-emerald-600';
+    case 'ocr_done': return 'bg-indigo-50 text-indigo-600';
+    case 'indexing': return 'bg-violet-50 text-violet-600';
+    case 'ocr_processing': return 'bg-blue-50 text-blue-600';
+    case 'error': return 'bg-red-50 text-red-500';
+    case 'pending': return 'bg-amber-50 text-amber-600';
+    default: return 'bg-slate-50 text-slate-500';
+  }
+};
+
 export const BookCard: React.FC<BookCardProps> = ({ book, onClick }) => {
   const { t } = useI18n();
   const titleWithVolume = book.volume !== null && book.volume !== undefined && book.volume !== ""
@@ -50,8 +62,7 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick }) => {
               {book.category?.[0] || t('common.book')}
             </span>
             {book.status && book.status !== 'ready' && (
-              <span className={`px-2 py-1 rounded-lg font-bold uppercase text-[10px] ${book.status === 'error' ? 'bg-red-50 text-red-500' : 'bg-amber-50 text-amber-500'
-                }`}>
+              <span className={`px-2 py-1 rounded-lg font-bold uppercase text-[10px] ${getStatusStyles(book.status)}`}>
                 {t(`bookCard.${book.status}`) || book.status}
               </span>
             )}

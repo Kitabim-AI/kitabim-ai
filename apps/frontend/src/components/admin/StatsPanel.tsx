@@ -28,10 +28,11 @@ interface SystemStats {
 // ---- Styling helpers ----
 const STATUS_STYLES: Record<string, { bg: string; border: string; text: string; bar: string }> = {
   ready: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', bar: 'bg-green-500' },
-  completed: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', bar: 'bg-green-500' },
+  ocr_done: { bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-700', bar: 'bg-indigo-500' },
   succeeded: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', bar: 'bg-green-500' },
   indexed: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', bar: 'bg-green-500' },
-  processing: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', bar: 'bg-blue-500' },
+  indexing: { bg: 'bg-violet-50', border: 'border-violet-200', text: 'text-violet-700', bar: 'bg-violet-500' },
+  ocr_processing: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', bar: 'bg-blue-500' },
   running: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', bar: 'bg-blue-500' },
   queued: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', bar: 'bg-blue-500' },
   pending: { bg: 'bg-yellow-50', border: 'border-yellow-200', text: 'text-yellow-700', bar: 'bg-yellow-500' },
@@ -51,10 +52,11 @@ function getStyle(status: string) {
 function StatusIcon({ status }: { status: string }) {
   switch (status.toLowerCase()) {
     case 'ready':
-    case 'completed':
+    case 'ocr_done':
     case 'succeeded':
       return <CheckCircle size={14} />;
-    case 'processing':
+    case 'ocr_processing':
+    case 'indexing':
     case 'running':
       return <Loader size={14} className="animate-spin" />;
     case 'retrying':
@@ -174,16 +176,19 @@ export const StatsPanel: React.FC = () => {
   // Label maps
   const bookStatusLabel: Record<string, string> = {
     ready: t('admin.stats.ready') || 'Ready',
-    completed: t('admin.stats.completed') || 'Completed',
-    processing: t('admin.stats.bookProcessing') || 'Processing',
+    ocr_done: t('admin.stats.ocrDone') || 'OCR Done',
+    ocr_processing: t('admin.stats.bookOcrProcessing') || 'OCR Processing',
+    indexing: t('admin.stats.bookIndexing') || 'Indexing',
     error: t('admin.stats.error') || 'Error',
     pending: t('admin.stats.bookPending') || 'Pending',
   };
 
   const pageStatusLabel: Record<string, string> = {
-    completed: t('admin.stats.indexedPages') || 'Completed',
+    indexed: t('admin.stats.indexedPages') || 'Indexed',
+    ocr_done: t('admin.stats.ocrDone') || 'OCR Done',
+    indexing: t('admin.stats.pageIndexing') || 'Indexing',
     error: t('admin.stats.errorPages') || 'Error',
-    processing: t('admin.stats.pageProcessing') || 'Processing',
+    ocr_processing: t('admin.stats.pageOcrProcessing') || 'OCR Processing',
     pending: t('admin.stats.pagePending') || 'Pending',
   };
 
@@ -315,9 +320,9 @@ export const StatsPanel: React.FC = () => {
               <div className="text-xs text-green-700 mt-1 text-right opacity-75">{stats.page_stats.percentage_indexed.toFixed(1)}%</div>
             </div>
 
-            {/* Dynamic page status breakdown (excluding completed/indexed which is above) */}
+            {/* Dynamic page status breakdown (excluding ocr_done/indexed which is above) */}
             {(stats.page_stats.pages_by_status || [])
-              .filter(({ status }) => status.toLowerCase() !== 'completed')
+              .filter(({ status }) => status.toLowerCase() !== 'indexed')
               .map(({ status, count }) => (
                 <StatCard
                   key={status}

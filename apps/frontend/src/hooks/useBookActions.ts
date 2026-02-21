@@ -51,7 +51,7 @@ export const useBookActions = (
       confirmText: t('modal.ocrStart.confirm'),
       onConfirm: async () => {
         try {
-          setBooks(prev => prev.map(b => b.id === bookId ? { ...b, status: 'processing', processingStep: 'ocr' } : b));
+          setBooks(prev => prev.map(b => b.id === bookId ? { ...b, status: 'ocr_processing', processingStep: 'ocr' } : b));
           await PersistenceService.startOcr(bookId);
           await refreshLibrary();
           setModal((prev: any) => ({ ...prev, isOpen: false }));
@@ -91,7 +91,7 @@ export const useBookActions = (
       if (!prev || prev.id !== book.id) return prev;
       return {
         ...prev,
-        status: 'processing',
+        status: 'ocr_processing',
         processingStep: 'ocr',
         lastUpdated: new Date(),
         pages: (prev.pages || []).map(r =>
@@ -108,7 +108,7 @@ export const useBookActions = (
         if (b.id !== book.id) return b;
         return {
           ...b,
-          status: 'processing',
+          status: 'ocr_processing',
           processingStep: 'ocr',
           lastUpdated: new Date(),
           pages: (b.pages || []).map(r =>
@@ -145,7 +145,7 @@ export const useBookActions = (
       if (!prev || prev.id !== bookId) return prev;
       return {
         ...prev,
-        status: 'processing',
+        status: 'ocr_processing',
         lastUpdated: new Date(),
         pages: (prev.pages || []).map(r =>
           r.pageNumber === pageNum
@@ -161,7 +161,7 @@ export const useBookActions = (
         if (b.id !== bookId) return b;
         return {
           ...b,
-          status: 'processing',
+          status: 'ocr_processing',
           lastUpdated: new Date(),
           pages: (b.pages || []).map(r =>
             r.pageNumber === pageNum
@@ -200,7 +200,7 @@ export const useBookActions = (
       onConfirm: async () => {
         try {
           await PersistenceService.reindexBook(bookId);
-          setBooks(prev => prev.map(b => b.id === bookId ? { ...b, status: 'processing', processingStep: 'rag' } : b));
+          setBooks(prev => prev.map(b => b.id === bookId ? { ...b, status: 'indexing', processingStep: 'rag' } : b));
           await refreshLibrary();
           setModal((prev: any) => ({ ...prev, isOpen: false }));
           addNotification(t('common.reindexStarted'), "success");
@@ -229,14 +229,14 @@ export const useBookActions = (
         let newPages;
         if (pageExists) {
           newPages = existingPages.map(r =>
-            r.pageNumber === pageNum ? { ...r, text: newText, isVerified: true, status: 'completed' } : r
+            r.pageNumber === pageNum ? { ...r, text: newText, isVerified: true, status: 'ocr_done' } : r
           );
         } else {
           newPages = [...existingPages, {
             pageNumber: pageNum,
             text: newText,
             isVerified: true,
-            status: 'completed'
+            status: 'ocr_done'
           }].sort((a, b) => a.pageNumber - b.pageNumber);
         }
 
@@ -307,7 +307,7 @@ export const useBookActions = (
       const updatedPages = Array.from(newPageMap.entries()).map(([pageNumber, text]) => ({
         pageNumber,
         text,
-        status: 'completed' as const,
+        status: 'ocr_done' as const,
         isVerified: true
       }));
 

@@ -65,7 +65,7 @@ async def lifespan(app: FastAPI):
             all_books = await books_repo.get_all(limit=2000)
 
             for book in all_books:
-                needs_resume = book.status == "processing"
+                needs_resume = book.status == "ocr_processing"
                 cover_file = settings.covers_dir / f"{book.id}.jpg"
                 needs_cover = (
                     book.status == "ready"
@@ -78,7 +78,7 @@ async def lifespan(app: FastAPI):
                     stmt = select(func.count(Page.id)).where(
                         and_(
                             Page.book_id == book.id,
-                            Page.status == 'completed',
+                            Page.status == 'ocr_done',
                             Page.is_indexed == False
                         )
                     )

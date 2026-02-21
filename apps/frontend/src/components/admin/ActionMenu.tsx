@@ -12,8 +12,8 @@ interface ActionMenuProps {
 export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close }) => {
   const { bookActions } = useAppContext();
   const { t } = useI18n();
-  const isStale = book.status === 'processing' && book.processingLockExpiresAt && new Date(book.processingLockExpiresAt) < new Date();
-  const isActuallyProcessing = book.status === 'processing' && !isStale;
+  const isStale = (book.status === 'ocr_processing' || book.status === 'indexing') && book.processingLockExpiresAt && new Date(book.processingLockExpiresAt) < new Date();
+  const isActuallyProcessing = (book.status === 'ocr_processing' || book.status === 'indexing') && !isStale;
   const hasFailedPages = (book.errorCount ?? 0) > 0 || (book.pages?.some(r => r.status === 'error') ?? false);
   const canRetry = (hasFailedPages || book.status === 'error' || isStale) && !isActuallyProcessing;
   const canStartOcr = !isActuallyProcessing && !canRetry && book.status !== 'ready';

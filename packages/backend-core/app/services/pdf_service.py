@@ -231,7 +231,7 @@ async def process_pdf_task(
                 await books_repo.update_one(
                     book_id,
                     total_pages=total_pages,
-                    status="processing",
+                    status="ocr_processing",
                     last_updated=datetime.now(timezone.utc),
                 )
 
@@ -266,7 +266,7 @@ async def process_pdf_task(
             )
             # Actually, let's use the PagesRepository to find all for now and filter or use a custom method
             all_pages = await pages_repo.find_by_book(book_id)
-            pages_to_process_recs = [p for p in all_pages if p.status != "completed"]
+            pages_to_process_recs = [p for p in all_pages if p.status != "ocr_done"]
             
             # Note: The original code also checked isIndexed. Let's see if Page has it.
             # I'll check Page model.
@@ -301,11 +301,11 @@ async def process_pdf_task(
                                 existing_text = page_record.text if page_record else ""
                                 is_verified = page_record.is_verified if page_record else False
                                 already_ocr = is_verified or (
-                                    page_record and page_record.status == "completed" and len(existing_text) > 40
+                                    page_record and page_record.status == "ocr_done" and len(existing_text) > 40
                                 )
 
                                 if not already_ocr:
-                                    await page_pages_repo.update_status(book_id, page_num, "processing")
+                                    await page_pages_repo.update_status(book_id, page_num, "ocr_processing")
                                     await page_session.commit()
 
                                 success = already_ocr
@@ -368,7 +368,7 @@ async def process_pdf_task(
                                     .where(and_(Page.book_id == book_id, Page.page_number == page_num))
                                     .values(
                                         text=page_text,
-                                        status="completed" if success else "error",
+                                        status="ocr_done" if success else "error",
                                         error=page_error,
                                         last_updated=datetime.now(timezone.utc),
                                         # embedding=None # Clear embedding if text changed
@@ -412,7 +412,7 @@ async def process_pdf_task(
             stmt_embed = select(Page).where(
                 and_(
                     Page.book_id == book_id,
-                    Page.status == "completed",
+                    Page.status == "ocr_done",
                     Page.is_indexed == False
                 )
             )
@@ -420,6 +420,13 @@ async def process_pdf_task(
             pages_to_embed = result_embed.scalars().all()
 
             if pages_to_embed:
+                # Set book status to indexing before starting embeddings
+                await books_repo.update_one(
+                    book_id,
+                    status="indexing",
+                    last_updated=datetime.now(timezone.utc),
+                )
+                await session.commit()
                 # Check circuit breaker before starting embeddings
                 if not await is_llm_available():
                     log_json(
@@ -448,6 +455,8 @@ async def process_pdf_task(
                         batch = pages_to_embed[start : start + batch_size]
                         pairs = []
                         for r in batch:
+                            # Set page status to indexing before processing
+                            r.status = "indexing"
                             text_content = strip_markdown(r.text or "").strip()
                             if text_content:
                                 pairs.append((r, text_content))
@@ -505,6 +514,7 @@ async def process_pdf_task(
 
                                 # Update page status
                                 r.is_indexed = True
+                                r.status = "indexed"
                                 r.last_updated = datetime.now(timezone.utc)
 
                             await session.commit()
@@ -546,20 +556,32 @@ async def process_pdf_task(
                             await session.commit()
 
             # Final check - aggregate page stats
-            completed_count = await pages_repo.count_by_book(book_id, status="completed")
+            # Count any page that has finished OCR (ocr_done, indexing, or indexed)
+            ocr_done_stmt = select(func.count()).select_from(Page).where(
+                and_(Page.book_id == book_id, Page.status.in_(['ocr_done', 'indexing', 'indexed']))
+            )
+            ocr_done_res = await session.execute(ocr_done_stmt)
+            ocr_done_count = ocr_done_res.scalar() or 0
 
             # Count indexed pages
             indexed_stmt = select(func.count()).select_from(Page).where(
-                and_(Page.book_id == book_id, Page.is_indexed == True)
+                and_(Page.book_id == book_id, Page.status == "indexed")
             )
             indexed_result = await session.execute(indexed_stmt)
-            indexed_count = indexed_result.scalar()
+            indexed_count = indexed_result.scalar() or 0
+            
+            # Count errors
+            error_stmt = select(func.count()).select_from(Page).where(
+                and_(Page.book_id == book_id, Page.status == "error")
+            )
+            error_res = await session.execute(error_stmt)
+            error_count = error_res.scalar() or 0
 
             # Determine final status
-            if completed_count == total_pages and indexed_count == total_pages:
+            if ocr_done_count == total_pages and indexed_count == total_pages:
                 final_status = "ready"  # Fully processed and searchable
-            elif completed_count == total_pages:
-                final_status = "completed"  # OCR done, but not fully indexed
+            elif ocr_done_count == total_pages:
+                final_status = "ocr_done"  # OCR done, but not fully indexed
             else:
                 final_status = "error"  # OCR incomplete
 
@@ -569,7 +591,7 @@ async def process_pdf_task(
                 "Determining final book status",
                 book_id=book_id,
                 total_pages=total_pages,
-                completed_pages=completed_count,
+                completed_pages=ocr_done_count,
                 indexed_pages=indexed_count,
                 final_status=final_status
             )
@@ -577,6 +599,8 @@ async def process_pdf_task(
             await books_repo.update_one(
                 book_id,
                 status=final_status,
+                ocr_done_count=ocr_done_count,
+                error_count=error_count,
                 last_updated=datetime.now(timezone.utc),
             )
             await session.commit()
@@ -597,6 +621,8 @@ async def process_pdf_task(
             if job_key:
                 if final_status == "ready":
                     await jobs_repo.update_status(job_key, "succeeded")
+                elif final_status == "ocr_done":
+                    await jobs_repo.update_status(job_key, "succeeded", "OCR completed, indexing pending")
                 else:
                     await jobs_repo.update_status(job_key, "failed", f"Final status: {final_status}")
                 await session.commit()
