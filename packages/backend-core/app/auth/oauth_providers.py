@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 import secrets
 import hashlib
@@ -24,30 +25,74 @@ GOOGLE_CERTS_URL = "https://www.googleapis.com/oauth2/v3/certs"
 
 @dataclass
 class OAuthState:
-    """OAuth state for CSRF protection and nonce validation."""
+    """OAuth state for CSRF protection, nonce validation, and PKCE support."""
     state: str
     nonce: str
-    
+    code_verifier: Optional[str] = None  # For PKCE (Twitter)
+
     @classmethod
-    def generate(cls) -> "OAuthState":
-        """Generate a new random state and nonce."""
-        return cls(
+    def generate(cls, use_pkce: bool = False) -> "OAuthState":
+        """
+        Generate a new random state and nonce, with optional PKCE support.
+
+        Args:
+            use_pkce: If True, also generate a code_verifier for PKCE flow (required for Twitter)
+
+        Returns:
+            OAuthState instance with state, nonce, and optionally code_verifier
+        """
+        oauth_state = cls(
             state=secrets.token_urlsafe(32),
             nonce=secrets.token_urlsafe(32),
         )
-    
+        if use_pkce:
+            oauth_state.code_verifier = secrets.token_urlsafe(32)
+        return oauth_state
+
+    def get_code_challenge(self) -> Optional[str]:
+        """
+        Generate PKCE code_challenge from code_verifier (SHA-256 base64url).
+
+        Returns:
+            Base64url-encoded SHA-256 hash of code_verifier, or None if no verifier
+        """
+        if not self.code_verifier:
+            return None
+        digest = hashlib.sha256(self.code_verifier.encode()).digest()
+        return base64.urlsafe_b64encode(digest).decode().rstrip('=')
+
     def to_cookie_value(self) -> str:
-        """Encode state and nonce for cookie storage."""
-        return f"{self.state}:{self.nonce}"
-    
+        """
+        Encode state, nonce, and optional code_verifier for cookie storage.
+
+        Returns:
+            Colon-separated string with state:nonce or state:nonce:code_verifier
+        """
+        parts = [self.state, self.nonce]
+        if self.code_verifier:
+            parts.append(self.code_verifier)
+        return ":".join(parts)
+
     @classmethod
     def from_cookie_value(cls, value: str) -> Optional["OAuthState"]:
-        """Decode state and nonce from cookie value."""
+        """
+        Decode state, nonce, and optional code_verifier from cookie value.
+
+        Args:
+            value: Colon-separated cookie value
+
+        Returns:
+            OAuthState instance or None if invalid format
+        """
         try:
-            parts = value.split(":", 1)
-            if len(parts) != 2:
+            parts = value.split(":")
+            if len(parts) < 2:
                 return None
-            return cls(state=parts[0], nonce=parts[1])
+            return cls(
+                state=parts[0],
+                nonce=parts[1],
+                code_verifier=parts[2] if len(parts) > 2 else None
+            )
         except Exception:
             return None
 

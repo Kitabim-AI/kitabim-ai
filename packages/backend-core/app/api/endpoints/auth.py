@@ -22,11 +22,11 @@ from app.auth.jwt_handler import (
 )
 from app.auth.oauth_providers import (
     OAuthState,
-    get_google_auth_url,
-    exchange_code_for_tokens,
-    get_google_user_info,
-    validate_oauth_config,
     is_admin_email,
+)
+from app.auth.providers import (
+    get_provider,
+    get_available_providers,
 )
 from app.models.user import User, UserPublic, UserRole
 from app.services.user_service import (
@@ -73,32 +73,58 @@ async def get_current_user_profile(
     )
 
 
-@router.get("/google/login")
-async def google_login(response: Response):
+@router.get("/{provider}/login")
+async def oauth_login(provider: str, response: Response):
     """
-    Initiate Google OAuth login flow.
-    
+    Initiate OAuth login flow for any provider.
+
+    Supports: google, facebook, twitter
+
     Generates authorization URL and sets state cookie for CSRF protection.
-    
+
+    Args:
+        provider: OAuth provider name (google, facebook, twitter)
+
     Returns:
-        Redirect to Google's authorization page.
+        Redirect to provider's authorization page.
+
+    Raises:
+        HTTPException 400: If provider is unknown
+        HTTPException 503: If provider is not configured
     """
-    if not validate_oauth_config():
+    try:
+        oauth_provider = get_provider(provider)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported OAuth provider: {provider}"
+        )
+
+    if not oauth_provider.validate_config():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=t("errors.oauth_not_configured"),
+            detail=t("errors.oauth_not_configured", provider=provider),
         )
-    
-    # Generate state and nonce for CSRF protection
-    oauth_state = OAuthState.generate()
-    
+
+    # Generate state and nonce for CSRF protection (with PKCE for Twitter)
+    use_pkce = provider.lower() == "twitter"
+    oauth_state = OAuthState.generate(use_pkce=use_pkce)
+
     # Build authorization URL
-    auth_url = get_google_auth_url(oauth_state.state, oauth_state.nonce)
-    
+    if use_pkce and oauth_state.code_verifier:
+        # Twitter requires PKCE
+        code_challenge = oauth_state.get_code_challenge()
+        auth_url = oauth_provider.get_auth_url(
+            oauth_state.state,
+            oauth_state.nonce,
+            code_challenge=code_challenge
+        )
+    else:
+        # Google and Facebook don't use PKCE
+        auth_url = oauth_provider.get_auth_url(oauth_state.state, oauth_state.nonce)
+
     # Set secure cookie with state (for validation on callback)
     response = RedirectResponse(url=auth_url, status_code=status.HTTP_302_FOUND)
-    # Removing COOP header to ensure window.opener is available across ports in dev
-    # response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
     response.set_cookie(
         key=OAUTH_STATE_COOKIE,
         value=oauth_state.to_cookie_value(),
@@ -107,12 +133,13 @@ async def google_login(response: Response):
         secure=False,  # Set to True in production with HTTPS
         samesite="lax",
     )
-    
+
     return response
 
 
-@router.get("/google/callback")
-async def google_callback(
+@router.get("/{provider}/callback")
+async def oauth_callback(
+    provider: str,
     request: Request,
     code: Optional[str] = None,
     state: Optional[str] = None,
@@ -120,88 +147,106 @@ async def google_callback(
     session: AsyncSession = Depends(get_session),
 ):
     """
-    Handle Google OAuth callback.
-    
+    Handle OAuth callback for any provider.
+
+    Supports: google, facebook, twitter
+
     Exchanges code for tokens, creates/updates user, and returns
     an HTML page that posts the access token to the opener window.
+
+    Args:
+        provider: OAuth provider name (google, facebook, twitter)
+
+    Returns:
+        HTML response with embedded JavaScript for popup communication
     """
+    # Get provider instance
+    try:
+        oauth_provider = get_provider(provider)
+    except ValueError:
+        return _error_response(f"Unsupported OAuth provider: {provider}")
+
     # Handle OAuth errors
     if error:
-        logger.warning(f"OAuth error from Google: {error}")
-        return _error_response(t("errors.google_login_failed", error=error))
-    
+        logger.warning(f"OAuth error from {provider}: {error}")
+        return _error_response(t("errors.oauth_login_failed", provider=provider, error=error))
+
     if not code or not state:
         return _error_response(t("errors.missing_oauth_params"))
-    
+
     # Validate state from cookie
     state_cookie = request.cookies.get(OAUTH_STATE_COOKIE)
     if not state_cookie:
         return _error_response(t("errors.oauth_cookie_missing"))
-    
+
     saved_state = OAuthState.from_cookie_value(state_cookie)
     if not saved_state or saved_state.state != state:
         return _error_response(t("errors.invalid_oauth_state"))
-    
+
     try:
-        # Exchange code for tokens
-        token_response = await exchange_code_for_tokens(code)
-        google_access_token = token_response.get("access_token")
-        
-        if not google_access_token:
+        # Exchange code for tokens (with PKCE code_verifier for Twitter)
+        token_response = await oauth_provider.exchange_code_for_tokens(
+            code,
+            code_verifier=saved_state.code_verifier
+        )
+        access_token = token_response.get("access_token")
+
+        if not access_token:
             return _error_response(t("errors.no_access_token"))
-        
-        # Get user info from Google
-        google_user = await get_google_user_info(google_access_token)
-        
-        # Check if email is verified
-        if not google_user.verified_email:
+
+        # Get user info from provider
+        user_info = await oauth_provider.get_user_info(access_token)
+
+        # Check if email is verified (skip for Twitter placeholder emails)
+        if not user_info.email_verified and not user_info.email.endswith("@twitter.placeholder"):
             return _error_response(t("errors.email_not_verified"))
-        
+
         # Check if user exists with this provider
-        user = await get_user_by_provider(session, "google", google_user.id)
-        
+        user = await get_user_by_provider(session, provider, user_info.provider_id)
+
         if not user:
             # Check if email exists with different provider (no auto-linking)
-            existing_user = await get_user_by_email(session, google_user.email)
-            if existing_user:
-                return _error_response(
-                    t("errors.email_already_exists")
-                )
-            
+            if not user_info.email.endswith(("@twitter.placeholder", "@facebook.placeholder")):
+                existing_user = await get_user_by_email(session, user_info.email)
+                if existing_user:
+                    return _error_response(
+                        t("errors.email_already_exists")
+                    )
+
             # Determine role based on admin emails
-            role = UserRole.ADMIN if is_admin_email(google_user.email) else UserRole.READER
-            
+            role = UserRole.ADMIN if is_admin_email(user_info.email) else UserRole.READER
+
             # Create new user
             user = await create_user(
                 session=session,
-                email=google_user.email,
-                display_name=google_user.name,
-                provider="google",
-                provider_id=google_user.id,
+                email=user_info.email,
+                display_name=user_info.name,
+                provider=provider,
+                provider_id=user_info.provider_id,
                 role=role,
-                avatar_url=google_user.picture,
+                avatar_url=user_info.picture,
             )
-            logger.info(f"Created new user from Google OAuth: {user.id} ({user.email})")
+            logger.info(f"Created new user from {provider} OAuth: {user.id} ({user.email})")
         else:
             # Update last login and avatar
-            await update_user_login(session, user.id, google_user.picture)
-            logger.info(f"User logged in via Google OAuth: {user.id} ({user.email})")
-        
+            await update_user_login(session, user.id, user_info.picture)
+            logger.info(f"User logged in via {provider} OAuth: {user.id} ({user.email})")
+
         # Check if user is active
         if not user.is_active:
             return _error_response(t("errors.account_disabled"))
-        
+
         # Generate tokens
         access_token = create_access_token(user)
         refresh_token, jti = create_refresh_token(user)
-        
+
         # Store refresh token
         user_agent = request.headers.get("User-Agent", "unknown")
         await store_refresh_token(session, user.id, jti, refresh_token, user_agent[:200])
-        
+
         # Commit changes
         await session.commit()
-        
+
         # Return HTML that posts token to opener (popup flow)
         return _success_response(access_token, refresh_token)
         
@@ -305,16 +350,19 @@ async def logout(
 async def auth_health():
     """
     Health check endpoint for auth service.
-    
+
     Returns:
-        dict: Status indicating auth service is operational.
+        dict: Status with list of configured OAuth providers.
     """
-    oauth_configured = validate_oauth_config()
-    
+    available_providers = get_available_providers()
+
     return {
         "status": "ok",
         "service": "auth",
-        "google_oauth": "configured" if oauth_configured else "not_configured",
+        "oauth_providers": available_providers,
+        "google_oauth": "google" in available_providers,
+        "facebook_oauth": "facebook" in available_providers,
+        "twitter_oauth": "twitter" in available_providers,
     }
 
 

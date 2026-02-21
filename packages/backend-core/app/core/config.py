@@ -84,6 +84,16 @@ class Settings:
     google_client_secret: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
     google_redirect_uri: str = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/auth/google/callback")
 
+    # Facebook OAuth
+    facebook_client_id: str = os.getenv("FACEBOOK_CLIENT_ID", "")
+    facebook_client_secret: str = os.getenv("FACEBOOK_CLIENT_SECRET", "")
+    facebook_redirect_uri: str = os.getenv("FACEBOOK_REDIRECT_URI", "http://localhost:8000/api/auth/facebook/callback")
+
+    # Twitter OAuth
+    twitter_client_id: str = os.getenv("TWITTER_CLIENT_ID", "")
+    twitter_client_secret: str = os.getenv("TWITTER_CLIENT_SECRET", "")
+    twitter_redirect_uri: str = os.getenv("TWITTER_REDIRECT_URI", "http://localhost:8000/api/auth/twitter/callback")
+
     # Auth Behavior
     default_user_role: str = os.getenv("DEFAULT_USER_ROLE", "reader")
     admin_emails: str = os.getenv("ADMIN_EMAILS", "")  # Comma-separated list of admin emails

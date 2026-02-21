@@ -125,9 +125,9 @@ export const AuthService = {
   },
 
   /**
-   * Initiate Google login in a popup window.
+   * Generic OAuth login handler (private method).
    */
-  loginWithGoogle(): Promise<User | null> {
+  _loginWithProvider(provider: 'google' | 'facebook' | 'twitter'): Promise<User | null> {
     return new Promise((resolve, reject) => {
       const width = 500;
       const height = 600;
@@ -135,8 +135,8 @@ export const AuthService = {
       const top = window.screenY + (window.outerHeight - height) / 2;
 
       const popup = window.open(
-        `${API_BASE}/google/login`,
-        'google-login',
+        `${API_BASE}/${provider}/login`,
+        `${provider}-login`,
         `width=${width},height=${height},left=${left},top=${top},popup=1`
       );
 
@@ -157,12 +157,12 @@ export const AuthService = {
           'http://localhost:8000'
         ];
         if (!allowedOrigins.includes(event.origin)) {
-          console.log('[OAuth] Ignored message from origin:', event.origin);
+          console.log(`[OAuth ${provider}] Ignored message from origin:`, event.origin);
           return;
         }
 
         if (event.data?.type === 'OAUTH_SUCCESS') {
-          console.log('[OAuth] Received success message');
+          console.log(`[OAuth ${provider}] Received success message`);
           messageReceived = true;
           window.removeEventListener('message', handleMessage);
 
@@ -175,14 +175,14 @@ export const AuthService = {
               popup.close();
             }
           } catch (e) {
-            console.warn('[OAuth] Could not close popup:', e);
+            console.warn(`[OAuth ${provider}] Could not close popup:`, e);
           }
 
           // Fetch user profile
           const user = await this.getCurrentUser();
           resolve(user);
         } else if (event.data?.type === 'OAUTH_ERROR') {
-          console.log('[OAuth] Received error message');
+          console.log(`[OAuth ${provider}] Received error message`);
           messageReceived = true;
           window.removeEventListener('message', handleMessage);
           reject(new Error(event.data.error));
@@ -199,13 +199,13 @@ export const AuthService = {
             window.removeEventListener('message', handleMessage);
 
             if (!messageReceived) {
-              console.log('[OAuth] Popup closed, checking for localStorage token');
+              console.log(`[OAuth ${provider}] Popup closed, checking for localStorage token`);
               // Check if token was set via localStorage fallback
               const token = getAccessToken();
               if (token) {
                 const user = await this.getCurrentUser();
                 if (user) {
-                  console.log('[OAuth] Found token in localStorage, login successful');
+                  console.log(`[OAuth ${provider}] Found token in localStorage, login successful`);
                   resolve(user);
                   return;
                 }
@@ -219,6 +219,27 @@ export const AuthService = {
         }
       }, 500);
     });
+  },
+
+  /**
+   * Initiate Google login in a popup window.
+   */
+  loginWithGoogle(): Promise<User | null> {
+    return this._loginWithProvider('google');
+  },
+
+  /**
+   * Initiate Facebook login in a popup window.
+   */
+  loginWithFacebook(): Promise<User | null> {
+    return this._loginWithProvider('facebook');
+  },
+
+  /**
+   * Initiate Twitter login in a popup window.
+   */
+  loginWithTwitter(): Promise<User | null> {
+    return this._loginWithProvider('twitter');
   },
 
   /**

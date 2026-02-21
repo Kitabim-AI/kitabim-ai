@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Book, FileText, CheckCircle, XCircle, RefreshCw, BarChart3, Clock, AlertTriangle, Loader } from 'lucide-react';
+import { Book, FileText, CheckCircle, XCircle, RefreshCw, BarChart3, Clock, AlertTriangle, Loader, Zap } from 'lucide-react';
 import { authFetch } from '../../services/authService';
 import { useI18n } from '../../i18n/I18nContext';
 
@@ -72,6 +72,7 @@ function StatusIcon({ status }: { status: string }) {
 }
 
 interface StatCardProps {
+  key?: React.Key;
   label: string;
   count: number;
   total: number;
@@ -109,6 +110,7 @@ export const StatsPanel: React.FC = () => {
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [llmAvailable, setLlmAvailable] = useState<boolean | null>(null);
 
   const loadStats = async () => {
     try {
@@ -124,7 +126,21 @@ export const StatsPanel: React.FC = () => {
     }
   };
 
-  useEffect(() => { loadStats(); }, []);
+  const loadLlmStatus = async () => {
+    try {
+      const res = await authFetch('/api/system-configs/circuit-breaker/status');
+      if (!res.ok) return;
+      const data = await res.json();
+      setLlmAvailable(data.overall_available ?? null);
+    } catch {
+      // silently ignore — editors may not have access
+    }
+  };
+
+  useEffect(() => {
+    loadStats();
+    loadLlmStatus();
+  }, []);
 
   if (isLoading) {
     return (
@@ -202,13 +218,33 @@ export const StatsPanel: React.FC = () => {
             </div>
           </div>
         </div>
-        <button
-          onClick={loadStats}
-          className="flex items-center gap-2 px-4 py-2 bg-white text-[#0369a1] rounded-xl border border-[#0369a1]/20 hover:border-[#0369a1] transition-all shadow-sm self-end md:self-auto"
-        >
-          <RefreshCw size={16} />
-          <span className="text-sm font-normal">{t('common.refresh') || 'Refresh'}</span>
-        </button>
+        {/* Right side: LLM chip + Refresh button */}
+        <div className="flex items-center gap-3 self-end md:self-auto">
+          {/* LLM Status Chip — leftmost */}
+          {llmAvailable !== null && (
+            <div
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl border-2 text-sm font-medium transition-all shadow-sm ${llmAvailable
+                ? 'bg-green-50 border-green-200 text-green-700'
+                : 'bg-red-50 border-red-200 text-red-700'
+                }`}
+            >
+              <Zap size={14} className={llmAvailable ? 'fill-green-500 text-green-500' : 'text-red-500'} />
+              {llmAvailable
+                ? (t('admin.stats.llmAvailable') || 'LLM Available')
+                : (t('admin.stats.llmUnavailable') || 'LLM Unavailable')}
+            </div>
+          )}
+
+          {/* Refresh button — rightmost */}
+          <button
+            onClick={() => { loadStats(); loadLlmStatus(); }}
+            className="flex items-center gap-2 px-4 py-2 bg-white text-[#0369a1] rounded-xl border border-[#0369a1]/20 hover:border-[#0369a1] transition-all shadow-sm"
+          >
+            <RefreshCw size={16} />
+            <span className="text-sm font-normal">{t('common.refresh') || 'Refresh'}</span>
+          </button>
+        </div>
+
       </div>
 
       {/* Stat Blocks */}

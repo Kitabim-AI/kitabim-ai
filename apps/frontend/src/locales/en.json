@@ -162,6 +162,8 @@
       "title": "System Statistics",
       "totalBooks": "Total Books",
       "readyBooks": "Ready Books",
+      "llmAvailable": "LLM Available",
+      "llmUnavailable": "LLM Unavailable",
       "processing": "Processing",
       "bookProcessing": "Processing",
       "pageProcessing": "Processing",
@@ -397,6 +399,8 @@
   },
   "auth": {
     "loginWithGoogle": "Login with Google",
+    "loginWithFacebook": "Login with Facebook",
+    "loginWithTwitter": "Login with Twitter",
     "loggingIn": "Logging in...",
     "logout": "Logout",
     "yourRole": "Your Role:"

@@ -10,7 +10,7 @@ from sqlalchemy import select
 from app.db.session import get_session
 from app.db.models import SystemConfig
 from app.db.repositories.system_configs import SystemConfigsRepository
-from app.auth.dependencies import require_admin
+from app.auth.dependencies import require_admin, require_editor
 from app.models.user import User
 from app.core.i18n import t
 from app.langchain.models import (
@@ -148,9 +148,9 @@ async def update_config(
 
 @router.get("/circuit-breaker/status")
 async def get_circuit_breaker_status_endpoint(
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_editor),
 ):
-    """Get circuit breaker status (admin only)"""
+    """Get circuit breaker status (editor and above)"""
     return await get_circuit_breaker_status()
 
 
