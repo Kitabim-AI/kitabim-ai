@@ -16,7 +16,7 @@ async def rescue_stale_jobs(ctx):
     """
     logger.info("🕵️ Watchdog: Checking for stale jobs...")
 
-    # Timeout logic: If a book has been "processing" for longer than (TIMEOUT + 5 mins), it's stale.
+    # Timeout logic: If a book has been "ocr_processing" for longer than (TIMEOUT + 5 mins), it's stale.
     # We add a buffer to ensure we don't race with a legitimate long-running job that is about to finish.
     timeout_seconds = settings.queue_job_timeout
     buffer_seconds = 300
@@ -26,7 +26,7 @@ async def rescue_stale_jobs(ctx):
         books_repo = BooksRepository(session)
         jobs_repo = JobsRepository(session)
 
-        # Find stale "processing" books
+        # Find stale "ocr_processing" books
         stale_processing = await books_repo.find_stale_processing_books(cutoff_time)
 
         # Find stale "pending" books (e.g., skipped due to circuit breaker)

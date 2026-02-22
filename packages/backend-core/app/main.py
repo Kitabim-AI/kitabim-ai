@@ -167,7 +167,7 @@ from app.services.storage_service import storage
 from fastapi.responses import RedirectResponse, FileResponse
 
 @app.get("/api/covers/{book_id}.jpg")
-async def get_cover(book_id: str):
+async def get_cover(book_id: str, request: Request):
     local_path = settings.covers_dir / f"{book_id}.jpg"
     if local_path.exists():
         return FileResponse(local_path)
@@ -177,7 +177,11 @@ async def get_cover(book_id: str):
     if storage.exists(remote_path):
         # We can either download and serve, or redirect to GCS
         if settings.storage_backend == "gcs":
-            return RedirectResponse(storage.get_public_url(remote_path))
+            url = storage.get_public_url(remote_path)
+            # Pass through query parameters (like ?v=...) to bypass GCS/browser cache
+            if request.query_params:
+                url += f"?{request.query_params}"
+            return RedirectResponse(url)
         else:
             await storage.download_file(remote_path, local_path)
             return FileResponse(local_path)

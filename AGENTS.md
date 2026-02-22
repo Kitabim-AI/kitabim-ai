@@ -23,6 +23,7 @@ This file provides guidance for automated agents working in this repo.
 - The application connects to PostgreSQL on your local host via `host.docker.internal:5432`.
 - See `KUBERNETES_DEPLOYMENT.md` for the current quickstart commands and ports.
 - **CRITICAL DEPLOYMENT RULE**: Do not rely on local dev servers (like `npm run dev`) for final change application. You MUST always deploy all code changes to Kubernetes to ensure they are available in the cluster. Run `./rebuild-and-restart.sh [frontend|backend|worker|all]` to rebuild the Docker image and restart the Kubernetes deployment after modifying files.
+- **IMAGE TAGGING**: Always build images with the `:local` tag and deploy using the same tag. This is the standardized tag used in the local cluster manifests. Never use `:latest` or other dynamic tags for local development.
 
 ## Code Conventions
 - Backend/worker code lives in `packages/backend-core/app`.

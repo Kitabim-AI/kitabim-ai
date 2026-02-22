@@ -5,10 +5,10 @@ import { useChat } from '../hooks/useChat';
 import { useBookActions } from '../hooks/useBookActions';
 
 interface AppContextType {
-  view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat';
-  setView: (view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat') => void;
-  previousView: 'home' | 'library' | 'admin' | 'global-chat';
-  setPreviousView: (view: 'home' | 'library' | 'admin' | 'global-chat') => void;
+  view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us';
+  setView: (view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us') => void;
+  previousView: 'home' | 'library' | 'admin' | 'global-chat' | 'join-us';
+  setPreviousView: (view: 'home' | 'library' | 'admin' | 'global-chat' | 'join-us') => void;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
   homeSearchQuery: string;
@@ -39,10 +39,10 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [view, setViewInternal] = useState<'home' | 'library' | 'admin' | 'reader' | 'global-chat'>('home');
-  const [previousView, setPreviousView] = useState<'home' | 'library' | 'admin' | 'global-chat'>('home');
+  const [view, setViewInternal] = useState<'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us'>('home');
+  const [previousView, setPreviousView] = useState<'home' | 'library' | 'admin' | 'global-chat' | 'join-us'>('home');
 
-  const setView = (newView: 'home' | 'library' | 'admin' | 'reader' | 'global-chat') => {
+  const setView = (newView: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us') => {
     if (newView !== view) {
       // Only set previousView if the current view is not 'reader'
       // This ensures we always return to a main navigation view

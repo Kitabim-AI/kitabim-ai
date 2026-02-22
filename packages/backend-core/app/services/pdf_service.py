@@ -199,7 +199,7 @@ async def process_pdf_task(
             except Exception as exc:
                 log_json(logger, logging.ERROR, "Failed to obtain PDF file", book_id=book_id, error=str(exc))
                 await books_repo.update_one(book_id, status="error")
-                await record_book_error(session, book_id, "processing", "Failed to obtain PDF file", {"error": str(exc)})
+                await record_book_error(session, book_id, "ocr_processing", "Failed to obtain PDF file", {"error": str(exc)})
                 if job_key:
                     await jobs_repo.update_status(job_key, "failed", "Failed to obtain PDF file")
                 await session.commit()
@@ -636,7 +636,7 @@ async def process_pdf_task(
 
             try:
                 await books_repo.update_one(book_id, status="error")
-                await record_book_error(session, book_id, "processing", str(exc))
+                await record_book_error(session, book_id, "ocr_processing", str(exc))
                 if job_key:
                     await jobs_repo.update_status(job_key, "failed", str(exc))
                 await session.commit()

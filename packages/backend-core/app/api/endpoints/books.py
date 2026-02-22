@@ -31,6 +31,7 @@ from app.auth.dependencies import (
 import logging
 from app.utils.markdown import normalize_markdown
 from app.utils.text import generate_uyghur_regex
+from app.core.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -695,7 +696,7 @@ async def get_book_stats(
     
     # Count by status
     pending = await repo.count_by_status("pending")
-    processing = await repo.count_by_status("processing")
+    processing = await repo.count_by_status("ocr_processing")
     completed = await repo.count_by_status("ready")
     error = await repo.count_by_status("error")
     
@@ -935,7 +936,7 @@ async def start_ocr(
     if not book:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
-    if book.status == "processing":
+    if book.status == "ocr_processing":
         # Note: processing_lock_expires_at field doesn't exist in current schema
         # TODO: Add processing lock mechanism if needed
         logger.warning(f"Book {book_id} is already processing. Allowing restart anyway.")
@@ -948,7 +949,7 @@ async def start_ocr(
     # Update book status
     await books_repo.update_one(
         book_id,
-        status="processing",
+        status="ocr_processing",
         processing_step="ocr",
         last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email,
@@ -977,7 +978,7 @@ async def retry_failed_ocr(
     if not book:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
-    if book.status == "processing":
+    if book.status == "ocr_processing":
         # Note: processing_lock_expires_at field doesn't exist in current schema
         logger.warning(f"Book {book_id} is already processing. Allowing retry anyway.")
 
@@ -995,7 +996,7 @@ async def retry_failed_ocr(
     if not failed_pages and book.status == "error":
         await books_repo.update_one(
             book_id,
-            status="processing",
+            status="ocr_processing",
             processing_step="ocr",
             last_updated=datetime.now(timezone.utc),
             updated_by=current_user.email,
@@ -1010,31 +1011,29 @@ async def retry_failed_ocr(
     # Update book status
     await books_repo.update_one(
         book_id,
-        status="processing",
+        status="ocr_processing",
         processing_step="ocr",
         last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email,
     )
 
-    # Reset failed pages to pending using raw SQL for is_indexed = FALSE
+    # Reset failed pages to pending using ORM update
+    from sqlalchemy import update
     await session.execute(
-        text("""
-            UPDATE pages
-            SET status = 'pending',
-                text = '',
-                error = NULL,
-                is_verified = FALSE,
-                is_indexed = FALSE,
-                last_updated = :last_updated,
-                updated_by = :updated_by
-            WHERE book_id = :book_id AND page_number = ANY(:page_numbers)
-        """),
-        {
-            "book_id": book_id,
-            "page_numbers": failed_pages,
-            "last_updated": datetime.now(timezone.utc),
-            "updated_by": current_user.email
-        }
+        update(Page)
+        .where(
+            Page.book_id == book_id,
+            Page.page_number.in_(failed_pages)
+        )
+        .values(
+            status="pending",
+            text="",
+            error=None,
+            is_verified=False,
+            is_indexed=False,
+            last_updated=datetime.now(timezone.utc),
+            updated_by=current_user.email
+        )
     )
 
     await session.commit()
@@ -1059,12 +1058,12 @@ async def reprocess_book(
     if not book:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
-    if book.status == "processing":
+    if book.status == "ocr_processing":
         logger.warning(f"Book {book_id} is already processing. Allowing reprocess anyway.")
 
     await books_repo.update_one(
         book_id,
-        status="processing",
+        status="ocr_processing",
         last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email
     )
@@ -1088,7 +1087,7 @@ async def reindex_book(
     if not book:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
-    if book.status == "processing":
+    if book.status == "ocr_processing":
         logger.warning(f"Book {book_id} is already processing. Allowing reindex anyway.")
 
     # Reset indexing status for all completed pages using raw SQL
@@ -1104,7 +1103,7 @@ async def reindex_book(
 
     await books_repo.update_one(
         book_id,
-        status="processing",
+        status="ocr_processing",
         last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email
     )
@@ -1142,7 +1141,7 @@ async def reset_page(
 
     await books_repo.update_one(
         book_id,
-        status="processing",
+        status="ocr_processing",
         last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email
     )
@@ -1399,7 +1398,6 @@ async def upload_cover(
     from PIL import Image
     from sqlalchemy import select
     from app.db.models import Book as BookDB
-    from app.core.i18n import t
 
     books_repo = BooksRepository(session)
 

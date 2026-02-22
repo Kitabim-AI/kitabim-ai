@@ -1,4 +1,4 @@
-"""Twitter OAuth 2.0 provider implementation."""
+"""X (formerly Twitter) OAuth 2.0 provider implementation."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class TwitterOAuthProvider(OAuthProvider):
-    """Twitter OAuth 2.0 provider implementation with PKCE support."""
+    """X (formerly Twitter) OAuth 2.0 provider implementation with PKCE support."""
 
     # Twitter OAuth 2.0 endpoints
     AUTH_URL = "https://twitter.com/i/oauth2/authorize"
@@ -30,7 +30,7 @@ class TwitterOAuthProvider(OAuthProvider):
 
     def validate_config(self) -> bool:
         """
-        Check if Twitter OAuth is properly configured.
+        Check if X (Twitter) OAuth is properly configured.
 
         Returns:
             True if client_id and client_secret are set.
@@ -45,18 +45,18 @@ class TwitterOAuthProvider(OAuthProvider):
 
     def get_auth_url(self, state: str, nonce: str, code_challenge: Optional[str] = None) -> str:
         """
-        Generate Twitter OAuth 2.0 authorization URL with PKCE.
+        Generate X (Twitter) OAuth 2.0 authorization URL with PKCE.
 
         Args:
             state: Random state for CSRF protection
-            nonce: Random nonce (not used by Twitter but kept for consistency)
+            nonce: Random nonce (not used by X but kept for consistency)
             code_challenge: PKCE code challenge (SHA-256 hash of code_verifier)
 
         Returns:
             Full authorization URL to redirect user to
         """
         if not code_challenge:
-            raise ValueError("Twitter OAuth requires PKCE code_challenge")
+            raise ValueError("X (Twitter) OAuth requires PKCE code_challenge")
 
         params = {
             "client_id": settings.twitter_client_id,
@@ -75,7 +75,7 @@ class TwitterOAuthProvider(OAuthProvider):
 
         Args:
             code: Authorization code from OAuth callback
-            code_verifier: PKCE code verifier (required for Twitter)
+            code_verifier: PKCE code verifier (required for X)
 
         Returns:
             Token response containing access_token and refresh_token
@@ -85,9 +85,9 @@ class TwitterOAuthProvider(OAuthProvider):
             ValueError: If code_verifier is missing
         """
         if not code_verifier:
-            raise ValueError("Twitter OAuth requires PKCE code_verifier")
+            raise ValueError("X (Twitter) OAuth requires PKCE code_verifier")
 
-        # Twitter requires Basic Auth with client_id:client_secret
+        # X (Twitter) requires Basic Auth with client_id:client_secret
         credentials = f"{settings.twitter_client_id}:{settings.twitter_client_secret}"
         b64_credentials = base64.b64encode(credentials.encode()).decode()
 
@@ -114,10 +114,10 @@ class TwitterOAuthProvider(OAuthProvider):
 
     async def get_user_info(self, access_token: str) -> ProviderUserInfo:
         """
-        Fetch user profile from Twitter using access token.
+        Fetch user profile from X (Twitter) using access token.
 
         Args:
-            access_token: Valid Twitter access token
+            access_token: Valid X access token
 
         Returns:
             ProviderUserInfo with user's profile data
@@ -127,7 +127,7 @@ class TwitterOAuthProvider(OAuthProvider):
             ValueError: If response is missing required fields
 
         Note:
-            Twitter's email access is restricted for new apps. If email is not available,
+            X's email access is restricted for new apps. If email is not available,
             we'll use the username as fallback and generate a placeholder email.
         """
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -146,13 +146,13 @@ class TwitterOAuthProvider(OAuthProvider):
 
             # Validate required fields
             if not data.get("id"):
-                raise ValueError("Missing required user info fields from Twitter (id)")
+                raise ValueError("Missing required user info fields from X (id)")
 
-            # Twitter email access is restricted - use username as fallback
+            # X email access is restricted - use username as fallback
             username = data.get("username", "")
             email = f"{username}@twitter.placeholder" if username else f"{data['id']}@twitter.placeholder"
 
-            logger.info(f"Twitter user {data['id']} authenticated (email not available, using placeholder)")
+            logger.info(f"X user {data['id']} authenticated (email not available, using placeholder)")
 
             return ProviderUserInfo(
                 provider_id=data["id"],
@@ -160,6 +160,6 @@ class TwitterOAuthProvider(OAuthProvider):
                 email_verified=False,  # We can't verify placeholder emails
                 name=data.get("name", username),
                 picture=data.get("profile_image_url"),
-                first_name=None,  # Twitter doesn't provide first/last name separately
+                first_name=None,  # X doesn't provide first/last name separately
                 last_name=None,
             )

@@ -78,7 +78,7 @@ async def oauth_login(provider: str, response: Response):
     """
     Initiate OAuth login flow for any provider.
 
-    Supports: google, facebook, twitter
+    Supports: google, facebook, twitter (X)
 
     Generates authorization URL and sets state cookie for CSRF protection.
 
@@ -149,7 +149,7 @@ async def oauth_callback(
     """
     Handle OAuth callback for any provider.
 
-    Supports: google, facebook, twitter
+    Supports: google, facebook, twitter (X)
 
     Exchanges code for tokens, creates/updates user, and returns
     an HTML page that posts the access token to the opener window.

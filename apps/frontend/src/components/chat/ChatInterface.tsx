@@ -1,10 +1,9 @@
 import React from 'react';
-import { MessageSquare, Globe, X, Send, Bot, User, BookOpen, LogIn } from 'lucide-react';
+import { MessageSquare, X, Send, Bot, User, BookOpen, LogIn } from 'lucide-react';
 import { Message, Book } from '@shared/types';
-import { GlassPanel } from '../ui/GlassPanel';
 import { useI18n } from '../../i18n/I18nContext';
 import { useAuth } from '../../hooks/useAuth';
-import { LoginButton } from '../auth/AuthButton';
+import { OAuthButtonGroup } from '../auth/AuthButton';
 import { MarkdownContent } from '../common/MarkdownContent';
 import { ReferenceModal } from './ReferenceModal';
 
@@ -205,7 +204,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 </div>
                 <p className="text-[#1a1a1a] font-normal">{t('auth.signInToUseChat')}</p>
               </div>
-              <LoginButton className="w-full sm:w-auto shadow-none border-[#0369a1]/10" />
+              <OAuthButtonGroup className="w-full sm:w-auto shadow-none border-[#0369a1]/10" />
             </div>
           )}
         </div>
@@ -338,7 +337,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         ) : (
           <div className="flex flex-col items-center gap-3 py-4 px-2">
             <p className="text-[13px] text-slate-500 font-normal text-center">{t('auth.signInMessage')}</p>
-            <LoginButton className="w-full scale-90 shadow-sm border-[#0369a1]/10" />
+            <OAuthButtonGroup className="w-full scale-90 shadow-sm border-[#0369a1]/10" />
           </div>
         )}
       </div>

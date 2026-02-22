@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { BookOpen, Library, MessageSquare, LayoutDashboard, Search, Upload } from 'lucide-react';
+import { BookOpen, Library, MessageSquare, LayoutDashboard, Search, Upload, Users } from 'lucide-react';
 import { AuthButton } from '../auth';
 import { useAuth, useIsEditor } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
@@ -66,6 +66,12 @@ export const Navbar: React.FC = () => {
               label={t('nav.admin')}
             />
           )}
+          <NavButton
+            active={view === 'join-us'}
+            onClick={() => setView('join-us')}
+            icon={<Users size={18} strokeWidth={2.5} />}
+            label={t('nav.joinUs')}
+          />
         </div>
       </div>
 

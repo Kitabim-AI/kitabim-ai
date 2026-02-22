@@ -62,6 +62,7 @@ export function TwitterLoginButton({ className = '' }: LoginButtonProps) {
       className={`flex items-center gap-3 px-6 py-2.5 bg-white hover:bg-black/10 text-[#1a1a1a] border-2 border-black/20 rounded-2xl font-normal text-sm transition-all active:scale-95 disabled:opacity-50 shadow-sm hover:shadow-lg shadow-black/10 ${className}`}
     >
       <div className="bg-black p-1.5 rounded-lg">
+        {/* X (formerly Twitter) logo */}
         <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
           <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
         </svg>
@@ -72,11 +73,102 @@ export function TwitterLoginButton({ className = '' }: LoginButtonProps) {
 }
 
 export function OAuthButtonGroup({ className = '' }: { className?: string }) {
+  const { loginWithGoogle, loginWithFacebook, loginWithTwitter, isLoading } = useAuth();
+  const { t } = useI18n();
+  const [isOpen, setIsOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const loginOptions = [
+    {
+      name: 'Google',
+      onClick: loginWithGoogle,
+      icon: (
+        <div className="bg-[#4285F4] p-2 rounded-lg">
+          <svg width="20" height="20" viewBox="0 0 18 18" fill="white">
+            <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z" />
+            <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" />
+            <path d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" />
+            <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" />
+          </svg>
+        </div>
+      ),
+      color: '#4285F4'
+    },
+    {
+      name: 'Facebook',
+      onClick: loginWithFacebook,
+      icon: (
+        <div className="bg-[#1877F2] p-2 rounded-lg">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+            <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+          </svg>
+        </div>
+      ),
+      color: '#1877F2'
+    },
+    {
+      name: 'X',
+      onClick: loginWithTwitter,
+      icon: (
+        <div className="bg-black p-2 rounded-lg">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+          </svg>
+        </div>
+      ),
+      color: '#000000'
+    }
+  ];
+
   return (
-    <div className={`flex flex-col gap-3 ${className}`}>
-      <LoginButton />
-      <FacebookLoginButton />
-      <TwitterLoginButton />
+    <div ref={menuRef} className={`relative ${className}`}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        disabled={isLoading}
+        className="flex items-center gap-3 px-6 py-3 bg-gradient-to-r from-[#0369a1] to-[#0284c7] hover:from-[#0284c7] hover:to-[#0369a1] text-white rounded-2xl font-normal text-base transition-all active:scale-95 disabled:opacity-50 shadow-lg hover:shadow-xl shadow-[#0369a1]/30"
+      >
+        <LogIn size={20} strokeWidth={2.5} />
+        <span className="uyghur-text">{isLoading ? t('auth.loggingIn') : t('auth.signIn')}</span>
+        <ChevronDown size={16} className={`transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} strokeWidth={3} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute top-full left-0 mt-2 w-[280px] bg-white/95 backdrop-blur-2xl border border-[#0369a1]/20 rounded-2xl shadow-[0_16px_64px_rgba(3,105,161,0.15)] overflow-hidden animate-fade-in z-50">
+          {loginOptions.map((option, index) => (
+            <button
+              key={option.name}
+              onClick={() => {
+                setIsOpen(false);
+                option.onClick();
+              }}
+              disabled={isLoading}
+              className={`w-full flex items-center gap-3 px-4 py-3 text-[#1a1a1a] hover:bg-gradient-to-r transition-all font-normal text-sm group ${
+                index !== loginOptions.length - 1 ? 'border-b border-[#0369a1]/10' : ''
+              }`}
+              style={{
+                ['--tw-gradient-from' as string]: `${option.color}10`,
+                ['--tw-gradient-to' as string]: `${option.color}05`
+              }}
+            >
+              {option.icon}
+              <span className="uyghur-text flex-1 text-left whitespace-nowrap">
+                {option.name} {t('auth.loginWithGoogle').split(' ')[0] !== 'Login' ? 'بىلەن كىرىش' : `with ${option.name}`}
+              </span>
+              <ChevronDown size={14} className="opacity-0 group-hover:opacity-100 -rotate-90 transition-all" style={{ color: option.color }} strokeWidth={3} />
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

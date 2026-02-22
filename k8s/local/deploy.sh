@@ -55,7 +55,8 @@ if [ -f .env ]; then
     grep -v "^DATABASE_URL=" .env | \
     grep -v "^REDIS_URL=" | \
     grep -v "^DATA_DIR=" | \
-    grep -v "^GOOGLE_REDIRECT_URI=" >> .env.k8s
+    grep -v "^GOOGLE_REDIRECT_URI=" | \
+    grep -v "^FACEBOOK_REDIRECT_URI=" >> .env.k8s
 
     # Add Kubernetes-specific overrides
     echo "" >> .env.k8s
@@ -66,11 +67,13 @@ if [ -f .env ]; then
         echo "DATABASE_URL=postgresql://postgres:postgres@host.minikube.internal:5432/kitabim_ai" >> .env.k8s
         echo "REDIS_URL=redis://redis:6379/0" >> .env.k8s
         echo "GOOGLE_REDIRECT_URI=http://$(minikube ip):30080/api/auth/google/callback" >> .env.k8s
+        echo "FACEBOOK_REDIRECT_URI=http://$(minikube ip):30080/api/auth/facebook/callback" >> .env.k8s
     else
         # Docker Desktop / Kind networking
         echo "DATABASE_URL=postgresql://omarjan@host.docker.internal:5432/kitabim_ai" >> .env.k8s
         echo "REDIS_URL=redis://redis:6379/0" >> .env.k8s
         echo "GOOGLE_REDIRECT_URI=http://localhost:30080/api/auth/google/callback" >> .env.k8s
+        echo "FACEBOOK_REDIRECT_URI=http://localhost:30080/api/auth/facebook/callback" >> .env.k8s
     fi
     
     # Common container paths
