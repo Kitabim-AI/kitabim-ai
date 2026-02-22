@@ -460,6 +460,13 @@ async def process_pdf_task(
                             text_content = strip_markdown(r.text or "").strip()
                             if text_content:
                                 pairs.append((r, text_content))
+                                log_json(
+                                    logger, 
+                                    logging.INFO, 
+                                    "Indexing page into embeddings", 
+                                    book_id=book_id, 
+                                    page_num=r.page_number
+                                )
                         if not pairs:
                             continue
 

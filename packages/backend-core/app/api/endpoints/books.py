@@ -30,7 +30,7 @@ from app.auth.dependencies import (
 )
 import logging
 from app.utils.markdown import normalize_markdown
-from app.utils.text import generate_uyghur_regex
+from app.utils.text import generate_uyghur_regex, normalize_uyghur_chars
 from app.core.i18n import t
 
 logger = logging.getLogger(__name__)
@@ -898,7 +898,7 @@ async def upload_pdf(
     new_book = await books_repo.create(
         id=book_id,
         content_hash=content_hash,
-        title=file.filename.replace(".pdf", ""),
+        title=normalize_uyghur_chars(file.filename.replace(".pdf", "")),
         file_name=file.filename,
         author="",
         volume=None,

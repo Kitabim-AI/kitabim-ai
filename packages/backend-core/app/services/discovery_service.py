@@ -15,6 +15,7 @@ from app.services.storage_service import storage
 from app.core.config import settings
 from app.utils.observability import log_json
 from app.langchain.models import is_llm_available
+from app.utils.text import normalize_uyghur_chars
 
 logger = logging.getLogger("app.discovery")
 
@@ -126,7 +127,7 @@ class DiscoveryService:
                     await self.books_repo.create(
                         id=book_id,
                         content_hash=content_hash,
-                        title=file_name.replace(".pdf", ""),
+                        title=normalize_uyghur_chars(file_name.replace(".pdf", "")),
                         file_name=file_name,
                         status="pending",
                         upload_date=now,

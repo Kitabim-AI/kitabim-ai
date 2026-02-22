@@ -428,6 +428,11 @@
       "paragraph2": "Old books, faded text, different fonts, and printing variations can confuse OCR systems. That's where human editors come in! Our community of volunteer editors carefully review and correct these texts to ensure accuracy.",
       "paragraph3": "Every correction you make helps improve our AI models and makes these books more accessible to everyone. Your contribution matters!"
     },
+    "smartLibrary": {
+      "title": "Smart Library & Chat",
+      "paragraph1": "Our platform is not just for reading books. We have implemented a Retrieval-Augmented Generation (RAG) based knowledge system that can answer any questions based on the factual knowledge within the books.",
+      "paragraph2": "With our 'Smart Chat' feature, you can search for information across all books in the library and chat directly with an intelligent AI assistant in your native language."
+    },
     "howToHelp": {
       "title": "How You Can Help",
       "subtitle": "Every contribution, big or small, makes a difference",
