@@ -38,31 +38,29 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
   const visibleTabs = tabs.filter((tab) => !tab.adminOnly || isAdmin);
 
   return (
-    <div className="space-y-8" dir="rtl" lang="ug">
+    <div className="space-y-6 md:space-y-8" dir="rtl" lang="ug">
       {/* Tab Navigation */}
-      <div className="flex items-end border-b border-[#0369a1]/20 px-4 -mb-px">
+      <div className="flex items-end px-2 md:px-4 overflow-x-auto scrollbar-hide">
         {visibleTabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`
-              flex items-center gap-3 px-8 py-3.5 transition-all duration-300 relative
-              rounded-t-[18px] text-[15px] font-normal
+              flex items-center gap-2 md:gap-3 px-3 sm:px-4 md:px-8 py-2.5 md:py-3.5 transition-all duration-300 relative
+              rounded-t-[14px] md:rounded-t-[18px] text-[13px] md:text-[15px] font-normal whitespace-nowrap
               ${activeTab === tab.id
-                ? 'bg-white text-[#0369a1] border-x border-t border-[#0369a1]/20 -mb-[1px] shadow-[0_-4px_12px_-4px_rgba(3,105,161,0.08)] z-10'
+                ? 'bg-white text-[#0369a1] shadow-[0_-4px_12px_-4px_rgba(3,105,161,0.08)] z-10'
                 : 'text-slate-500 hover:text-[#0369a1] hover:bg-[#0369a1]/5'
               }
             `}
+            title={tab.label}
           >
             <span className={`transition-all duration-300 ${activeTab === tab.id ? 'scale-110' : 'opacity-60'}`}>
-              {tab.icon}
+              {React.cloneElement(tab.icon as React.ReactElement, { size: 18, className: 'md:w-[20px] md:h-[20px]' })}
             </span>
-            <span className={`transition-all duration-200 ${activeTab === tab.id ? 'font-bold' : ''}`}>
+            <span className={`hidden lg:inline transition-all duration-200 ${activeTab === tab.id ? 'font-bold' : ''}`}>
               {tab.label}
             </span>
-            {activeTab === tab.id && (
-              <div className="absolute -bottom-[1px] left-0 right-0 h-[2px] bg-white z-20" />
-            )}
           </button>
         ))}
       </div>

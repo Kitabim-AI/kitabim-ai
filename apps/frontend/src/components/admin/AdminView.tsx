@@ -121,23 +121,23 @@ export const AdminView: React.FC = () => {
   return (
     <div className="space-y-8 animate-fade-in" lang="ug">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[#75C5F0]/20">
-        <div className="flex items-center gap-4 group">
-          <div className="p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:-rotate-6">
-            <BookIcon size={24} />
+        <div className="flex items-center gap-3 md:gap-4 group">
+          <div className="p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:-rotate-6">
+            <BookIcon size={20} className="md:w-6 md:h-6" />
           </div>
           <div>
-            <h2 className="text-2xl md:text-3xl font-normal text-[#1a1a1a]">
+            <h2 className="text-xl md:text-2xl lg:text-3xl font-normal text-[#1a1a1a]">
               {t('admin.table.managementSystem')}
             </h2>
             <div className="flex items-center gap-2 mt-1">
-              <span className="w-8 h-[2px] bg-[#0369a1] rounded-full" />
-              <p className="text-[12px] md:text-[14px] font-normal text-[#94a3b8] uppercase">{t('admin.table.manageBooks')}</p>
+              <span className="w-6 md:w-8 h-[2px] bg-[#0369a1] rounded-full" />
+              <p className="text-[11px] md:text-[14px] font-normal text-[#94a3b8] uppercase">{t('admin.table.manageBooks')}</p>
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-3 px-6 py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner w-fit">
-          <BookOpen size={18} strokeWidth={2.5} />
-          <span className="text-sm font-normal uppercase">
+        <div className="flex items-center gap-2 md:gap-3 px-4 md:px-6 py-2 md:py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner w-fit">
+          <BookOpen size={16} strokeWidth={2.5} className="md:w-[18px] md:h-[18px]" />
+          <span className="text-xs md:text-sm font-normal uppercase">
             {t('chat.libraryBookCount', { count: totalBooks })}
           </span>
         </div>
@@ -154,17 +154,17 @@ export const AdminView: React.FC = () => {
       )}
 
       {(!bookActions.isCheckingGlobal && (!isInitialLoading || books.length > 0)) && (
-        <div className="glass-panel overflow-hidden rounded-[24px] p-0 shadow-xl border border-[#0369a1]/10">
+        <div className="glass-panel overflow-hidden rounded-[16px] md:rounded-[24px] p-0 shadow-xl border border-[#0369a1]/10">
           <div className="overflow-x-auto custom-scrollbar">
-            <table className="w-full text-right min-w-[1000px]" dir="rtl">
+            <table className="w-full text-right lg:min-w-[900px]" dir="rtl">
               <thead>
-                <tr className="bg-[#0369a1]/5 border-b border-[#0369a1]/10 text-[14px] md:text-[16px] font-normal text-[#0369a1] uppercase">
-                  <th className="px-6 py-5 text-right font-normal">{t('admin.table.bookName')}</th>
-                  <th className="px-6 py-5 w-28 text-right font-normal">{t('book.volumeLabel') || t('admin.table.pageCount')}</th>
-                  <th className="px-6 py-5 w-52 text-right font-normal">{t('admin.table.author')}</th>
-                  <th className="px-6 py-5 w-52 text-right font-normal">{t('admin.table.category')}</th>
-                  <th className="px-6 py-5 text-right font-normal">{t('admin.table.progress')}</th>
-                  <th className="px-6 py-5 text-left font-normal">{t('admin.table.actions')}</th>
+                <tr className="bg-[#0369a1]/5 border-b border-[#0369a1]/10 text-[12px] md:text-[14px] lg:text-[16px] font-normal text-[#0369a1] uppercase">
+                  <th className="px-3 md:px-6 py-3 md:py-5 text-right font-normal">{t('admin.table.bookName')}</th>
+                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 w-20 md:w-28 text-right font-normal">{t('book.volumeLabel') || t('admin.table.pageCount')}</th>
+                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 w-40 md:w-52 text-right font-normal">{t('admin.table.author')}</th>
+                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 w-40 md:w-52 text-right font-normal">{t('admin.table.category')}</th>
+                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-right font-normal">{t('admin.table.progress')}</th>
+                  <th className="px-3 md:px-6 py-3 md:py-5 text-left font-normal">{t('admin.table.actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#75C5F0]/5">
@@ -172,28 +172,28 @@ export const AdminView: React.FC = () => {
                   const isEditing = editingId === book.id;
                   return (
                     <tr key={book.id} className={`hover:bg-[#e8f4f8]/20 transition-colors group/row ${isEditing ? 'bg-[#0369a1]/5' : ''}`}>
-                      <td className={`px-6 py-6 font-uyghur ${isEditing ? 'align-top' : ''}`}>
-                        <div className="flex items-center gap-4">
+                      <td className={`px-3 md:px-6 py-4 md:py-6 font-uyghur ${isEditing ? 'align-top' : ''}`}>
+                        <div className="flex items-center gap-2 md:gap-4">
                           <button
                             onClick={() => bookActions.openReader(book)}
                             disabled={book.status === 'pending' || isEditing}
-                            className={`p-3 rounded-xl transition-all shadow-sm active:scale-90 ${book.status === 'pending' || isEditing
+                            className={`p-2 md:p-3 rounded-xl transition-all shadow-sm active:scale-90 ${book.status === 'pending' || isEditing
                               ? 'bg-slate-100 text-slate-300 cursor-not-allowed'
                               : 'bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white group-hover/row:scale-110'
                               }`}
                             title={t('admin.table.view')}
                           >
-                            <BookOpen size={20} strokeWidth={2.5} />
+                            <BookOpen size={18} strokeWidth={2.5} className="md:w-5 md:h-5" />
                           </button>
                           {isEditing ? (
-                            <div className="flex-1 min-w-[250px]">
+                            <div className="flex-1 min-w-[200px]">
                               <input
                                 autoFocus
                                 type="text"
                                 value={editData?.title}
                                 onChange={e => setEditData(prev => prev ? { ...prev, title: e.target.value } : null)}
                                 onKeyDown={e => e.key === 'Enter' && handleSaveRow(book.id)}
-                                className="px-4 py-2 text-[16px] border-2 border-[#0369a1] rounded-xl bg-white w-full outline-none focus:ring-4 focus:ring-[#0369a1]/10 transition-all font-black"
+                                className="px-3 md:px-4 py-1.5 md:py-2 text-[14px] md:text-[16px] border-2 border-[#0369a1] rounded-xl bg-white w-full outline-none focus:ring-4 focus:ring-[#0369a1]/10 transition-all font-black"
                                 placeholder={t('admin.table.bookName')}
                               />
                             </div>
@@ -209,46 +209,51 @@ export const AdminView: React.FC = () => {
                               className={`text-right group/title transition-all duration-300 block ${book.status !== 'pending' && !isEditing ? 'cursor-pointer hover:translate-x-[-4px]' : 'cursor-default'}`}
                               disabled={book.status === 'pending' || isEditing}
                             >
-                              <span className={`font-black text-[18px] transition-colors block ${book.status !== 'pending' && !isEditing ? 'text-[#1a1a1a] group-hover/title:text-[#0369a1]' : 'text-slate-400'}`}>
+                              <span className={`font-black text-[14px] md:text-[16px] lg:text-[18px] transition-colors block ${book.status !== 'pending' && !isEditing ? 'text-[#1a1a1a] group-hover/title:text-[#0369a1]' : 'text-slate-400'}`}>
                                 {book.title}
+                                {book.volume !== null && (
+                                  <span className="lg:hidden text-[#0369a1] mr-2">
+                                    {' '}{t('book.volume', { volume: book.volume })}
+                                  </span>
+                                )}
                               </span>
-                              <div className="text-[12px] font-bold text-slate-400 mt-0.5">{new Date(book.uploadDate).toLocaleDateString()}</div>
+                              <div className="text-[10px] md:text-[12px] font-bold text-slate-400 mt-0.5">{new Date(book.uploadDate).toLocaleDateString()}</div>
                             </button>
                           )}
                         </div>
                       </td>
-                      <td className={`px-6 py-6 text-center ${isEditing ? 'align-top' : ''}`}>
+                      <td className={`hidden lg:table-cell px-3 md:px-6 py-4 md:py-6 text-center ${isEditing ? 'align-top' : ''}`}>
                         {isEditing ? (
                           <input
                             type="number"
                             value={editData?.volume}
                             onChange={e => setEditData(prev => prev ? { ...prev, volume: e.target.value } : null)}
                             onKeyDown={e => e.key === 'Enter' && handleSaveRow(book.id)}
-                            className="no-spinner px-3 py-2 border-2 border-[#0369a1] rounded-xl bg-white w-20 outline-none text-center font-black"
+                            className="no-spinner px-2 md:px-3 py-1.5 md:py-2 border-2 border-[#0369a1] rounded-xl bg-white w-16 md:w-20 outline-none text-center font-black text-sm md:text-base"
                           />
                         ) : (
-                          <div className="p-2 text-[16px] font-black text-[#1a1a1a]">
-                            {book.volume !== null ? t('book.volume', { volume: book.volume }) : <Hash size={14} className="mx-auto text-slate-200" />}
+                          <div className="p-1 md:p-2 text-[14px] md:text-[16px] font-black text-[#1a1a1a]">
+                            {book.volume !== null ? t('book.volume', { volume: book.volume }) : <Hash size={12} className="mx-auto text-slate-200 md:w-[14px] md:h-[14px]" />}
                           </div>
                         )}
                       </td>
-                      <td className={`px-6 py-6 ${isEditing ? 'align-top' : ''}`}>
+                      <td className={`hidden lg:table-cell px-3 md:px-6 py-4 md:py-6 ${isEditing ? 'align-top' : ''}`}>
                         {isEditing ? (
                           <input
                             type="text"
                             value={editData?.author}
                             onChange={e => setEditData(prev => prev ? { ...prev, author: e.target.value } : null)}
                             onKeyDown={e => e.key === 'Enter' && handleSaveRow(book.id)}
-                            className="px-4 py-2 text-[16px] border-2 border-[#0369a1] rounded-xl bg-white w-full outline-none font-normal"
+                            className="px-3 md:px-4 py-1.5 md:py-2 text-[14px] md:text-[16px] border-2 border-[#0369a1] rounded-xl bg-white w-full outline-none font-normal"
                             placeholder={t('admin.table.author')}
                           />
                         ) : (
-                          <div className="p-2 text-[16px] font-normal text-[#1a1a1a]">
-                            {book.author || <User size={14} className="text-slate-200" />}
+                          <div className="p-1 md:p-2 text-[14px] md:text-[16px] font-normal text-[#1a1a1a]">
+                            {book.author || <User size={12} className="text-slate-200 md:w-[14px] md:h-[14px]" />}
                           </div>
                         )}
                       </td>
-                      <td className={`px-6 py-6 ${isEditing ? 'align-top' : ''}`}>
+                      <td className={`hidden lg:table-cell px-3 md:px-6 py-4 md:py-6 ${isEditing ? 'align-top' : ''}`}>
                         <TagEditor
                           isOpen={isEditing}
                           onSave={() => handleSaveRow(book.id)}
@@ -266,10 +271,10 @@ export const AdminView: React.FC = () => {
                           hideActions={true}
                         />
                       </td>
-                      <td className={`px-6 py-6 ${isEditing ? 'align-top' : ''}`}>
-                        <div className="flex flex-col gap-2 min-w-[120px]">
+                      <td className={`hidden lg:table-cell px-3 md:px-6 py-4 md:py-6 ${isEditing ? 'align-top' : ''}`}>
+                        <div className="flex flex-col gap-1 md:gap-2 min-w-[100px] md:min-w-[120px]">
                           <ProgressBar book={book} />
-                          <div className="flex justify-between text-[12px] text-slate-400">
+                          <div className="flex justify-between text-[10px] md:text-[12px] text-slate-400">
                             <span>
                               {(book.ocrDoneCount !== undefined ? book.ocrDoneCount : (book as any).ocr_done_count) || (book.pages?.filter(p => p.status === 'ocr_done' || p.status === 'indexed').length) || 0}
                               /
@@ -281,8 +286,8 @@ export const AdminView: React.FC = () => {
                           </div>
                         </div>
                       </td>
-                      <td className={`px-6 py-6 text-left ${isEditing ? 'align-top' : ''}`}>
-                        <div className="flex items-center justify-end gap-2">
+                      <td className={`px-3 md:px-6 py-4 md:py-6 text-left ${isEditing ? 'align-top' : ''}`}>
+                        <div className="flex items-center justify-end gap-1 md:gap-2">
                           {isEditing ? (
                             <div className="flex items-center gap-2">
                               <button
@@ -301,7 +306,7 @@ export const AdminView: React.FC = () => {
                               </button>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-2">
+                            <div className="hidden md:flex items-center gap-2">
                               <button
                                 onClick={() => handleEditRow(book)}
                                 className="p-2 bg-[#0369a1]/10 text-[#0369a1] rounded-xl hover:bg-[#0369a1] hover:text-white transition-all"

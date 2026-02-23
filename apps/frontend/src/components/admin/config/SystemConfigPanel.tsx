@@ -209,39 +209,39 @@ export function SystemConfigPanel() {
   };
 
   return (
-    <div className="space-y-8 animate-fade-in">
+    <div className="space-y-6 md:space-y-8 animate-fade-in">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[#75C5F0]/20">
-        <div className="flex items-center gap-4 group">
-          <div className="p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:rotate-6">
-            <Settings size={24} />
+        <div className="flex items-center gap-3 md:gap-4 group">
+          <div className="p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:rotate-6">
+            <Settings size={20} className="md:w-6 md:h-6" />
           </div>
           <div>
-            <h2 className="text-2xl md:text-3xl font-normal text-[#1a1a1a]">
+            <h2 className="text-xl md:text-2xl lg:text-3xl font-normal text-[#1a1a1a]">
               {t('admin.systemConfig.title')}
             </h2>
             <div className="flex items-center gap-2 mt-1">
-              <span className="w-8 h-[2px] bg-[#0369a1] rounded-full" />
-              <p className="text-[12px] md:text-[14px] font-normal text-[#94a3b8] uppercase">
+              <span className="w-6 md:w-8 h-[2px] bg-[#0369a1] rounded-full" />
+              <p className="text-[11px] md:text-[14px] font-normal text-[#94a3b8] uppercase">
                 {t('admin.systemConfig.subtitle')}
               </p>
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 md:gap-3">
           <button
             onClick={loadConfigs}
-            className="flex items-center gap-2 px-4 py-2.5 bg-white text-[#0369a1] rounded-xl border border-[#0369a1]/20 hover:border-[#0369a1] transition-all shadow-sm"
+            className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-2.5 bg-white text-[#0369a1] rounded-xl border border-[#0369a1]/20 hover:border-[#0369a1] transition-all shadow-sm"
           >
-            <RefreshCw size={16} />
-            <span className="text-sm font-normal">{t('common.refresh')}</span>
+            <RefreshCw size={14} className="md:w-4 md:h-4" />
+            <span className="text-xs md:text-sm font-normal">{t('common.refresh')}</span>
           </button>
           <button
             onClick={() => setIsCreating(true)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-[#0369a1] text-white rounded-xl hover:bg-[#0369a1]/90 transition-all shadow-lg shadow-[#0369a1]/20"
+            className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-2.5 bg-[#0369a1] text-white rounded-xl hover:bg-[#0369a1]/90 transition-all shadow-lg shadow-[#0369a1]/20"
           >
-            <Plus size={16} />
-            <span className="text-sm font-normal">{t('admin.systemConfig.add')}</span>
+            <Plus size={14} className="md:w-4 md:h-4" />
+            <span className="text-xs md:text-sm font-normal">{t('admin.systemConfig.add')}</span>
           </button>
         </div>
       </div>
@@ -255,30 +255,30 @@ export function SystemConfigPanel() {
 
       {/* Circuit Breaker Control Panel */}
       {cbStatus && (
-        <div className="glass-panel p-6 rounded-[24px] shadow-xl border border-[#0369a1]/10">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20">
-                <Settings size={20} />
+        <div className="glass-panel p-4 md:p-6 rounded-[16px] md:rounded-[24px] shadow-xl border border-[#0369a1]/10">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-0 mb-4 md:mb-6">
+            <div className="flex items-center gap-2 md:gap-3">
+              <div className="p-2 md:p-2.5 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20">
+                <Settings size={18} className="md:w-5 md:h-5" />
               </div>
-              <h3 className="text-xl font-normal text-[#1a1a1a]">{t('admin.systemConfig.circuitBreaker.title')}</h3>
+              <h3 className="text-lg md:text-xl font-normal text-[#1a1a1a]">{t('admin.systemConfig.circuitBreaker.title')}</h3>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mb-4 md:mb-6">
             {/* Overall Status */}
-            <div className={`p-4 rounded-2xl border-2 ${cbStatus.overall_available ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-              <div className="text-sm text-slate-600 mb-1">{t('admin.systemConfig.circuitBreaker.overallStatus')}</div>
-              <div className={`text-2xl font-normal ${cbStatus.overall_available ? 'text-green-600' : 'text-red-600'}`}>
+            <div className={`p-3 md:p-4 rounded-xl md:rounded-2xl border-2 ${cbStatus.overall_available ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+              <div className="text-xs md:text-sm text-slate-600 mb-1">{t('admin.systemConfig.circuitBreaker.overallStatus')}</div>
+              <div className={`text-lg md:text-2xl font-normal ${cbStatus.overall_available ? 'text-green-600' : 'text-red-600'}`}>
                 {cbStatus.overall_available ? `✓ ${t('admin.systemConfig.circuitBreaker.available')}` : `✗ ${t('admin.systemConfig.circuitBreaker.unavailable')}`}
               </div>
             </div>
 
             {/* Text Breaker */}
-            <div className={`p-4 rounded-2xl border-2 ${cbStatus.text_breaker.state === 'closed' ? 'bg-green-50 border-green-200' : cbStatus.text_breaker.state === 'open' ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}`}>
-              <div className="text-sm text-slate-600 mb-1">{t('admin.systemConfig.circuitBreaker.textLlm')}</div>
-              <div className="text-xl font-normal text-slate-800">{t(`admin.systemConfig.circuitBreaker.states.${cbStatus.text_breaker.state}` as any)}</div>
-              <div className="text-xs text-slate-500 mt-2">
+            <div className={`p-3 md:p-4 rounded-xl md:rounded-2xl border-2 ${cbStatus.text_breaker.state === 'closed' ? 'bg-green-50 border-green-200' : cbStatus.text_breaker.state === 'open' ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}`}>
+              <div className="text-xs md:text-sm text-slate-600 mb-1">{t('admin.systemConfig.circuitBreaker.textLlm')}</div>
+              <div className="text-base md:text-xl font-normal text-slate-800">{t(`admin.systemConfig.circuitBreaker.states.${cbStatus.text_breaker.state}` as any)}</div>
+              <div className="text-[10px] md:text-xs text-slate-500 mt-1 md:mt-2">
                 {t('admin.systemConfig.circuitBreaker.failures')}: {cbStatus.text_breaker.failure_count}/{cbStatus.text_breaker.failure_threshold}
                 {cbStatus.text_breaker.state === 'open' && (
                   <> • {t('admin.systemConfig.circuitBreaker.opensFor')} {cbStatus.text_breaker.recovery_timeout}s</>
@@ -287,10 +287,10 @@ export function SystemConfigPanel() {
             </div>
 
             {/* Embed Breaker */}
-            <div className={`p-4 rounded-2xl border-2 ${cbStatus.embed_breaker.state === 'closed' ? 'bg-green-50 border-green-200' : cbStatus.embed_breaker.state === 'open' ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}`}>
-              <div className="text-sm text-slate-600 mb-1">{t('admin.systemConfig.circuitBreaker.embeddings')}</div>
-              <div className="text-xl font-normal text-slate-800">{t(`admin.systemConfig.circuitBreaker.states.${cbStatus.embed_breaker.state}` as any)}</div>
-              <div className="text-xs text-slate-500 mt-2">
+            <div className={`p-3 md:p-4 rounded-xl md:rounded-2xl border-2 ${cbStatus.embed_breaker.state === 'closed' ? 'bg-green-50 border-green-200' : cbStatus.embed_breaker.state === 'open' ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}`}>
+              <div className="text-xs md:text-sm text-slate-600 mb-1">{t('admin.systemConfig.circuitBreaker.embeddings')}</div>
+              <div className="text-base md:text-xl font-normal text-slate-800">{t(`admin.systemConfig.circuitBreaker.states.${cbStatus.embed_breaker.state}` as any)}</div>
+              <div className="text-[10px] md:text-xs text-slate-500 mt-1 md:mt-2">
                 {t('admin.systemConfig.circuitBreaker.failures')}: {cbStatus.embed_breaker.failure_count}/{cbStatus.embed_breaker.failure_threshold}
                 {cbStatus.embed_breaker.state === 'open' && (
                   <> • {t('admin.systemConfig.circuitBreaker.openedFor')} {cbStatus.embed_breaker.time_since_opened_seconds}s</>
@@ -300,22 +300,22 @@ export function SystemConfigPanel() {
           </div>
 
           {/* Control Buttons */}
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 md:gap-3">
             <button
               onClick={resetCircuitBreaker}
               disabled={cbLoading || cbStatus.overall_available}
-              className="flex items-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all shadow-lg shadow-green-600/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-600"
+              className="flex items-center justify-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all shadow-lg shadow-green-600/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-600"
             >
-              <RefreshCw size={16} />
-              <span className="text-sm font-normal">{t('admin.systemConfig.circuitBreaker.reset')}</span>
+              <RefreshCw size={14} className="md:w-4 md:h-4" />
+              <span className="text-xs md:text-sm font-normal">{t('admin.systemConfig.circuitBreaker.reset')}</span>
             </button>
             <button
               onClick={forceOpenCircuitBreaker}
               disabled={cbLoading || !cbStatus.overall_available}
-              className="flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all shadow-lg shadow-red-600/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-red-600"
+              className="flex items-center justify-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all shadow-lg shadow-red-600/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-red-600"
             >
-              <X size={16} />
-              <span className="text-sm font-normal">{t('admin.systemConfig.circuitBreaker.forceOpen')}</span>
+              <X size={14} className="md:w-4 md:h-4" />
+              <span className="text-xs md:text-sm font-normal">{t('admin.systemConfig.circuitBreaker.forceOpen')}</span>
             </button>
           </div>
         </div>
@@ -436,79 +436,79 @@ export function SystemConfigPanel() {
 
       {/* Configs Table */}
       {!isLoading && configs.length > 0 && (
-        <div className="glass-panel overflow-hidden rounded-[24px] p-0 shadow-xl border border-[#0369a1]/10">
+        <div className="glass-panel overflow-hidden rounded-[16px] md:rounded-[24px] p-0 shadow-xl border border-[#0369a1]/10">
           <div className="overflow-x-auto custom-scrollbar" dir="ltr">
-            <table className="w-full text-left min-w-[800px]">
+            <table className="w-full text-left lg:min-w-[700px]">
               <thead>
-                <tr className="bg-[#0369a1]/5 border-b border-[#0369a1]/10 text-[14px] md:text-[16px] font-normal text-[#0369a1] uppercase">
-                  <th className="px-6 py-5 font-normal w-1/4 text-left">{t('admin.systemConfig.key')}</th>
-                  <th className="px-6 py-5 font-normal w-1/4 text-left">{t('admin.systemConfig.value')}</th>
-                  <th className="px-6 py-5 font-normal w-1/3 text-left">{t('admin.systemConfig.description')}</th>
-                  <th className="px-6 py-5 font-normal w-1/6 text-right">{t('admin.systemConfig.actions')}</th>
+                <tr className="bg-[#0369a1]/5 border-b border-[#0369a1]/10 text-[12px] md:text-[14px] lg:text-[16px] font-normal text-[#0369a1] uppercase">
+                  <th className="px-3 md:px-6 py-3 md:py-5 font-normal w-1/4 text-left">{t('admin.systemConfig.key')}</th>
+                  <th className="px-3 md:px-6 py-3 md:py-5 font-normal w-1/4 text-left">{t('admin.systemConfig.value')}</th>
+                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 font-normal w-1/3 text-left">{t('admin.systemConfig.description')}</th>
+                  <th className="px-3 md:px-6 py-3 md:py-5 font-normal w-1/6 text-right">{t('admin.systemConfig.actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#75C5F0]/5">
                 {configs.map((config) => (
                   <tr key={config.key} className="hover:bg-[#e8f4f8]/20 transition-colors">
-                    <td className="px-6 py-6">
-                      <code className="text-sm font-mono bg-[#0369a1]/5 px-3 py-1 rounded-lg text-[#0369a1]">
+                    <td className="px-3 md:px-6 py-4 md:py-6">
+                      <code className="text-[11px] md:text-sm font-mono bg-[#0369a1]/5 px-2 md:px-3 py-0.5 md:py-1 rounded-lg text-[#0369a1] break-all">
                         {config.key}
                       </code>
                     </td>
-                    <td className="px-6 py-6">
+                    <td className="px-3 md:px-6 py-4 md:py-6">
                       {editingKey === config.key ? (
                         <input
                           type="text"
                           value={editValue}
                           onChange={(e) => setEditValue(e.target.value)}
-                          className="w-full px-3 py-2 border-2 border-[#0369a1] rounded-xl bg-white outline-none text-left"
+                          className="w-full px-2 md:px-3 py-1.5 md:py-2 border-2 border-[#0369a1] rounded-xl bg-white outline-none text-left text-sm md:text-base"
                         />
                       ) : (
-                        <span className="font-normal text-[#1a1a1a]">
+                        <span className="font-normal text-[#1a1a1a] text-sm md:text-base break-all">
                           {formatDisplayValue(config.key, config.value)}
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-6">
+                    <td className="hidden lg:table-cell px-3 md:px-6 py-4 md:py-6">
                       {editingKey === config.key ? (
                         <input
                           type="text"
                           value={editDescription}
                           onChange={(e) => setEditDescription(e.target.value)}
-                          className="w-full px-3 py-2 border-2 border-[#0369a1] rounded-xl bg-white outline-none text-left"
+                          className="w-full px-2 md:px-3 py-1.5 md:py-2 border-2 border-[#0369a1] rounded-xl bg-white outline-none text-left text-sm md:text-base"
                         />
                       ) : (
-                        <span className="text-sm text-[#94a3b8]">
+                        <span className="text-xs md:text-sm text-[#94a3b8]">
                           {config.description || <em className="opacity-50">No description</em>}
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-6">
-                      <div className="flex items-center justify-end gap-2">
+                    <td className="px-3 md:px-6 py-4 md:py-6">
+                      <div className="flex items-center justify-end gap-1 md:gap-2">
                         {editingKey === config.key ? (
                           <>
                             <button
                               onClick={() => handleUpdate(config.key)}
-                              className="p-2.5 bg-[#0369a1] text-white rounded-xl hover:bg-[#0369a1]/90 transition-all shadow-lg shadow-[#0369a1]/10"
+                              className="p-1.5 md:p-2.5 bg-[#0369a1] text-white rounded-xl hover:bg-[#0369a1]/90 transition-all shadow-lg shadow-[#0369a1]/10"
                               title={t('common.save')}
                             >
-                              <Save size={18} />
+                              <Save size={16} className="md:w-[18px] md:h-[18px]" />
                             </button>
                             <button
                               onClick={cancelEdit}
-                              className="p-2.5 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 transition-all"
+                              className="p-1.5 md:p-2.5 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 transition-all"
                               title={t('common.cancel')}
                             >
-                              <X size={18} />
+                              <X size={16} className="md:w-[18px] md:h-[18px]" />
                             </button>
                           </>
                         ) : (
                           <button
                             onClick={() => startEdit(config)}
-                            className="p-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-xl hover:bg-[#0369a1] hover:text-white transition-all border border-[#0369a1]/5 hover:shadow-lg hover:shadow-[#0369a1]/20"
+                            className="p-1.5 md:p-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-xl hover:bg-[#0369a1] hover:text-white transition-all border border-[#0369a1]/5 hover:shadow-lg hover:shadow-[#0369a1]/20"
                             title={t('common.edit')}
                           >
-                            <Edit2 size={18} />
+                            <Edit2 size={16} className="md:w-[18px] md:h-[18px]" />
                           </button>
                         )}
                       </div>
