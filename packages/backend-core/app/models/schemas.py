@@ -76,6 +76,7 @@ class Book(BaseModel):
     error_count: int = 0  # DB: error_count, API: errorCount
     file_name: Optional[str] = None  # Original uploaded filename
     source: Optional[str] = None  # Document source (e.g., 'upload', 'gcs')
+    processing_mode: str = "batch" # DB: processing_mode, API: processingMode
 
 
 class PaginatedBooks(BaseModel):

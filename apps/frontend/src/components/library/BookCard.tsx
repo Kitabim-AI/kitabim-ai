@@ -12,6 +12,7 @@ const getStatusStyles = (status: string) => {
   switch (status.toLowerCase()) {
     case 'ready': return 'bg-emerald-50 text-emerald-600';
     case 'ocr_done': return 'bg-indigo-50 text-indigo-600';
+    case 'chunked': return 'bg-amber-50 text-amber-600';
     case 'indexing': return 'bg-violet-50 text-violet-600';
     case 'ocr_processing': return 'bg-blue-50 text-blue-600';
     case 'error': return 'bg-red-50 text-red-500';

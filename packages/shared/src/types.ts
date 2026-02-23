@@ -28,8 +28,6 @@ export interface Book {
   visibility?: 'public' | 'private';
   processingStep?: 'ocr' | 'rag';
   categories?: string[];
-  tags?: string[];
-  errors?: ErrorEvent[];
   lastError?: ErrorEvent | null;
   ocrDoneCount?: number;
   errorCount?: number;

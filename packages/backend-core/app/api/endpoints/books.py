@@ -9,18 +9,22 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy import text
+from sqlalchemy import text, and_, delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.db.session import get_session
 from app.db.repositories.books import BooksRepository
 from app.db.repositories.pages import PagesRepository
+from app.db.models import Page, Chunk
 from app.services.discovery_service import DiscoveryService
 from app.models.schemas import Book, PaginatedBooks, ExtractionResult
 from app.models.user import User
 from app.queue import enqueue_pdf_processing
 from app.services.spell_check_service import spell_check_service
 from app.services.storage_service import storage
+from app.services.chunking_service import chunking_service
+from app.utils.markdown import normalize_markdown, strip_markdown
+from app.langchain.models import GeminiEmbeddings
 from app.auth.dependencies import (
     get_current_user,
     get_current_user_optional,
@@ -279,9 +283,14 @@ async def get_books(
                 else:
                     last_error_obj = rep.last_error
 
-            # Calculate total stats for the work group
-            group_ocr_done = sum(v.ocr_done_count or 0 for v in volumes)
-            group_error = sum(v.error_count or 0 for v in volumes)
+            # Calculate total stats for the work group from the DB aggregates dynamically
+            group_ocr_done = 0
+            group_error = 0
+            
+            for v in volumes:
+                v_stats = stats_by_book.get(str(v.id), {})
+                group_ocr_done += v_stats.get("ocr_done", 0) + v_stats.get("indexed", 0) + v_stats.get("indexing", 0) + v_stats.get("chunked", 0) + v_stats.get("ready_for_indexing", 0)
+                group_error += v_stats.get("error", 0)
 
             # Convert ORM object to dict
             rep_dict = {
@@ -320,6 +329,9 @@ async def get_books(
                     b_last_error_obj = b.last_error
 
             b_stats = stats_by_book.get(str(b.id), {})
+            b_ocr_done = b_stats.get("ocr_done", 0) + b_stats.get("indexed", 0) + b_stats.get("indexing", 0) + b_stats.get("chunked", 0) + b_stats.get("ready_for_indexing", 0)
+            b_error = b_stats.get("error", 0)
+            
             # Convert ORM object to dict
             b_dict = {
                 "id": b.id,
@@ -338,10 +350,9 @@ async def get_books(
                 "visibility": b.visibility,
                 "processing_step": b.processing_step,
                 "categories": b.categories,
-                "errors": b.errors,
                 "last_error": b_last_error_obj,
-                "ocr_done_count": b.ocr_done_count or 0,
-                "error_count": b.error_count or 0,
+                "ocr_done_count": b_ocr_done,
+                "error_count": b_error,
             }
             works_list.append(BookSchema.model_validate(b_dict))
 
@@ -420,6 +431,10 @@ async def get_books(
                 else:
                     last_error_obj = b.last_error
 
+            b_stats = stats_by_book.get(str(b.id), {})
+            b_ocr_done = b_stats.get("ocr_done", 0) + b_stats.get("indexed", 0) + b_stats.get("indexing", 0) + b_stats.get("chunked", 0) + b_stats.get("ready_for_indexing", 0)
+            b_error = b_stats.get("error", 0)
+
             # Create dict from ORM object, excluding lazy-loaded pages relationship
             b_dict = {
                 "id": b.id,
@@ -438,10 +453,9 @@ async def get_books(
                 "visibility": b.visibility,
                 "processing_step": b.processing_step,
                 "categories": b.categories,
-                "errors": b.errors,
                 "last_error": last_error_obj,
-                "ocr_done_count": b.ocr_done_count or 0,
-                "error_count": b.error_count or 0,
+                "ocr_done_count": b_ocr_done,
+                "error_count": b_error,
             }
             s_data = BookSchema.model_validate(b_dict)
             books_data.append(s_data)
@@ -1061,6 +1075,11 @@ async def reprocess_book(
     if book.status == "ocr_processing":
         logger.warning(f"Book {book_id} is already processing. Allowing reprocess anyway.")
 
+    # CLEAR OLD DATA to force new page creations in the worker for the batch pipeline
+    if book.status != "pending":
+        pages_repo = PagesRepository(session)
+        await pages_repo.delete_by_book(book_id)
+
     await books_repo.update_one(
         book_id,
         status="ocr_processing",
@@ -1080,7 +1099,7 @@ async def reindex_book(
     current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
-    """Reindex book embeddings with SQLAlchemy"""
+    """Reindex book embeddings with SQLAlchemy (Edge Case #3)"""
     books_repo = BooksRepository(session)
 
     book = await books_repo.get(book_id)
@@ -1090,15 +1109,16 @@ async def reindex_book(
     if book.status == "ocr_processing":
         logger.warning(f"Book {book_id} is already processing. Allowing reindex anyway.")
 
-    # Reset indexing status for all completed pages using raw SQL
-    # Note: Page model now uses is_indexed field instead of embedding
+    # Reset indexing status for all completed pages
     await session.execute(
-        text("""
-            UPDATE pages
-            SET is_indexed = FALSE, last_updated = NOW(), updated_by = :updated_by
-            WHERE book_id = :book_id AND status = 'ocr_done'
-        """),
-        {"book_id": book_id, "updated_by": current_user.email}
+        update(Page)
+        .where(and_(Page.book_id == book_id, Page.status == 'ocr_done'))
+        .values(is_indexed=False, last_updated=datetime.now(timezone.utc), updated_by=current_user.email)
+    )
+
+    # Delete existing chunks to trigger re-creation and re-embedding
+    await session.execute(
+        delete(Chunk).where(Chunk.book_id == book_id)
     )
 
     await books_repo.update_one(
@@ -1147,7 +1167,7 @@ async def reset_page(
     )
     await session.commit()
 
-    await enqueue_pdf_processing(book_id, reason="page_reset", background_tasks=background_tasks)
+    await enqueue_pdf_processing(book_id, reason="page_reset", background_tasks=background_tasks, force_realtime=True)
     return {"status": "page_reset_started"}
 
 
@@ -1160,25 +1180,71 @@ async def update_page_text(
     current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
-    """Update page text with SQLAlchemy"""
+    """Update page text with SQLAlchemy and synchronously re-chunk/re-embed (Edge Case #4a)"""
     books_repo = BooksRepository(session)
+    pages_repo = PagesRepository(session)
 
     new_text = normalize_markdown(payload.get("text", ""))
 
-    # Update page using raw SQL for is_indexed = FALSE
-    await session.execute(
-        text("""
-            UPDATE pages
-            SET text = :text,
-                status = 'ocr_done',
-                is_verified = TRUE,
-                is_indexed = FALSE,
-                last_updated = NOW(),
-                updated_by = :updated_by
-            WHERE book_id = :book_id AND page_number = :page_number
-        """),
-        {"book_id": book_id, "page_number": page_num, "text": new_text, "updated_by": current_user.email}
-    )
+    # 1. Update page text and status
+    page = await pages_repo.find_one(book_id, page_num)
+    if not page:
+        raise HTTPException(status_code=404, detail=t("errors.page_not_found"))
+    
+    page.text = new_text
+    page.status = 'ocr_done'
+    page.is_verified = True
+    page.is_indexed = False
+    page.last_updated = datetime.now(timezone.utc)
+    page.updated_by = current_user.email
+    
+    await session.flush()
+
+    # 2. Synchronous Re-chunking (Instant Feedback)
+    text_content = strip_markdown(new_text).strip()
+    if text_content:
+        # Delete old chunks
+        await session.execute(
+            delete(Chunk).where(and_(Chunk.book_id == book_id, Chunk.page_number == page_num))
+        )
+        
+        # Split into chunks
+        chunks_text = chunking_service.split_text(text_content)
+        if not chunks_text:
+            chunks_text = [text_content]
+            
+        chunk_records = []
+        for idx, txt in enumerate(chunks_text):
+            chunk = Chunk(
+                book_id=book_id,
+                page_number=page_num,
+                chunk_index=idx,
+                text=txt,
+                embedding=None,
+                created_at=datetime.now(timezone.utc)
+            )
+            session.add(chunk)
+            chunk_records.append(chunk)
+        
+        page.status = 'chunked'
+        await session.flush()
+        
+        # 3. Synchronous Embedding (Instant Feedback)
+        try:
+            embedder = GeminiEmbeddings()
+            vectors = await embedder.aembed_documents([c.text for c in chunk_records])
+            for chunk, vector in zip(chunk_records, vectors):
+                chunk.embedding = vector
+            
+            page.status = 'indexed'
+            page.is_indexed = True
+        except Exception as e:
+            logger.error(f"Failed to embed page {page_num} for book {book_id} during update: {e}")
+            # Page remains status='chunked', will be picked up by batch/retry later
+    else:
+        # If text is empty, just mark as indexed
+        page.status = 'indexed'
+        page.is_indexed = True
 
     await books_repo.update_one(
         book_id,
@@ -1187,8 +1253,7 @@ async def update_page_text(
     )
     await session.commit()
 
-    await enqueue_pdf_processing(book_id, reason="page_update", background_tasks=background_tasks)
-    return {"status": "page_updated", "requires_rag": True}
+    return {"status": "page_updated", "requires_rag": True, "synchronous": page.status == 'indexed'}
 
 
 @router.post("/")
@@ -1505,6 +1570,47 @@ async def check_page_spelling(
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=t("errors.spell_check_failed", error=str(exc)))
+
+
+@router.post("/{book_id}/pages/{page_num}/reprocess")
+async def reprocess_page(
+    book_id: str,
+    page_num: int,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """Reprocess a single page with force_realtime=True (Edge Case #4b)"""
+    books_repo = BooksRepository(session)
+
+    book = await books_repo.get(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+
+    # Reset page status to pending
+    await session.execute(
+        update(Page)
+        .where(and_(Page.book_id == book_id, Page.page_number == page_num))
+        .values(
+            status='pending',
+            text='',
+            is_verified=False,
+            is_indexed=False,
+            last_updated=datetime.now(timezone.utc),
+            updated_by=current_user.email
+        )
+    )
+    
+    # Delete chunks for this page
+    await session.execute(
+        delete(Chunk).where(and_(Chunk.book_id == book_id, Chunk.page_number == page_num))
+    )
+
+    await session.commit()
+
+    # Queue job with force_realtime=True
+    await enqueue_pdf_processing(book_id, reason=f"page_reprocess_{page_num}", force_realtime=True)
+    return {"status": "reprocess_started", "bookId": book_id, "pageNum": page_num}
 
 
 @router.post("/{book_id}/pages/{page_num}/apply-corrections")

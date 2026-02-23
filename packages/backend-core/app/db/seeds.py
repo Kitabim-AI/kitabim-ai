@@ -26,6 +26,16 @@ async def seed_system_configs(session: AsyncSession):
             "key": "llm_cb_recovery_seconds",
             "value": str(settings.llm_cb_recovery_seconds),
             "description": "Seconds to wait before attempting recovery (half-open)"
+        },
+        {
+            "key": "batch_polling_interval_minutes",
+            "value": "10",
+            "description": "How often (in minutes) the background worker polls Gemini for batch job updates"
+        },
+        {
+            "key": "batch_last_polled_at",
+            "value": "0",
+            "description": "Unix timestamp of the last time the worker polled for batch jobs"
         }
     ]
     

@@ -21,8 +21,18 @@ class StorageProvider(ABC):
         pass
 
     @abstractmethod
+    async def upload_bytes(self, data: bytes, remote_path: str) -> str:
+        """Upload raw bytes to storage and return its identifier/URL"""
+        pass
+
+    @abstractmethod
     async def download_file(self, remote_path: str, local_path: Path) -> None:
         """Download a file from storage to a local path"""
+        pass
+
+    @abstractmethod
+    async def read_bytes(self, remote_path: str) -> bytes:
+        """Read file content as bytes directly from storage"""
         pass
 
     @abstractmethod
@@ -38,6 +48,11 @@ class StorageProvider(ABC):
     @abstractmethod
     def exists(self, remote_path: str) -> bool:
         """Check if a file exists in storage"""
+        pass
+
+    @abstractmethod
+    def get_gs_uri(self, remote_path: str) -> str:
+        """Get gs:// URI for the file (if applicable)"""
         pass
 
     @abstractmethod
@@ -61,12 +76,24 @@ class FileSystemStorageProvider(StorageProvider):
         shutil.copy2(local_path, dest_path)
         return remote_path
 
+    async def upload_bytes(self, data: bytes, remote_path: str) -> str:
+        dest_path = self._get_full_path(remote_path)
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(dest_path, "wb") as f:
+            f.write(data)
+        return remote_path
+
     async def download_file(self, remote_path: str, local_path: Path) -> None:
         src_path = self._get_full_path(remote_path)
         if not src_path.exists():
             raise FileNotFoundError(f"Source file {src_path} does not exist")
         local_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src_path, local_path)
+
+    async def read_bytes(self, remote_path: str) -> bytes:
+        src_path = self._get_full_path(remote_path)
+        with open(src_path, "rb") as f:
+            return f.read()
 
     async def delete_file(self, remote_path: str) -> None:
         path = self._get_full_path(remote_path)
@@ -81,6 +108,10 @@ class FileSystemStorageProvider(StorageProvider):
 
     def exists(self, remote_path: str) -> bool:
         return self._get_full_path(remote_path).exists()
+
+    def get_gs_uri(self, remote_path: str) -> str:
+        # Local storage doesn't have gs:// URIs, return path for debugging
+        return f"file://{self._get_full_path(remote_path)}"
 
     async def list_files(self, prefix: str) -> list[str]:
         base_path = self._get_full_path(prefix)
@@ -119,12 +150,24 @@ class GCSStorageProvider(StorageProvider):
         log_json(logger, logging.DEBUG, "File uploaded to GCS", bucket=bucket_name, path=final_path)
         return remote_path
 
+    async def upload_bytes(self, data: bytes, remote_path: str) -> str:
+        bucket, bucket_name, final_path = self._get_bucket_and_path(remote_path)
+        blob = bucket.blob(final_path)
+        blob.upload_from_string(data)
+        log_json(logger, logging.DEBUG, "Bytes uploaded to GCS", bucket=bucket_name, path=final_path)
+        return remote_path
+
     async def download_file(self, remote_path: str, local_path: Path) -> None:
         bucket, bucket_name, final_path = self._get_bucket_and_path(remote_path)
         blob = bucket.blob(final_path)
         local_path.parent.mkdir(parents=True, exist_ok=True)
         blob.download_to_filename(str(local_path))
         log_json(logger, logging.DEBUG, "File downloaded from GCS", bucket=bucket_name, path=final_path)
+
+    async def read_bytes(self, remote_path: str) -> bytes:
+        bucket, bucket_name, final_path = self._get_bucket_and_path(remote_path)
+        blob = bucket.blob(final_path)
+        return blob.download_as_bytes()
 
     async def delete_file(self, remote_path: str) -> None:
         bucket, bucket_name, final_path = self._get_bucket_and_path(remote_path)
@@ -145,6 +188,10 @@ class GCSStorageProvider(StorageProvider):
         bucket, _, final_path = self._get_bucket_and_path(remote_path)
         blob = bucket.blob(final_path)
         return blob.exists()
+
+    def get_gs_uri(self, remote_path: str) -> str:
+        bucket, bucket_name, final_path = self._get_bucket_and_path(remote_path)
+        return f"gs://{bucket_name}/{final_path}"
 
     async def list_files(self, prefix: str) -> list[str]:
         bucket, _, final_prefix = self._get_bucket_and_path(prefix)

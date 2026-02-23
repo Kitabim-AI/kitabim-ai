@@ -29,6 +29,7 @@ interface SystemStats {
 const STATUS_STYLES: Record<string, { bg: string; border: string; text: string; bar: string }> = {
   ready: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', bar: 'bg-green-500' },
   ocr_done: { bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-700', bar: 'bg-indigo-500' },
+  chunked: { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', bar: 'bg-amber-500' },
   succeeded: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', bar: 'bg-green-500' },
   indexed: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', bar: 'bg-green-500' },
   indexing: { bg: 'bg-violet-50', border: 'border-violet-200', text: 'text-violet-700', bar: 'bg-violet-500' },
@@ -67,6 +68,7 @@ function StatusIcon({ status }: { status: string }) {
     case 'pending':
     case 'queued':
     case 'skipped':
+    case 'chunked':
       return <Clock size={14} />;
     default:
       return <AlertTriangle size={14} />;
@@ -181,6 +183,7 @@ export const StatsPanel: React.FC = () => {
     indexing: t('admin.stats.bookIndexing') || 'Indexing',
     error: t('admin.stats.error') || 'Error',
     pending: t('admin.stats.bookPending') || 'Pending',
+    chunked: t('admin.stats.pageChunked') || 'Waiting for Embedding',
   };
 
   const pageStatusLabel: Record<string, string> = {
@@ -190,6 +193,7 @@ export const StatsPanel: React.FC = () => {
     error: t('admin.stats.errorPages') || 'Error',
     ocr_processing: t('admin.stats.pageOcrProcessing') || 'OCR Processing',
     pending: t('admin.stats.pagePending') || 'Pending',
+    chunked: t('admin.stats.pageChunked') || 'Waiting for Embedding',
   };
 
   const jobStatusLabel: Record<string, string> = {

@@ -65,24 +65,24 @@ const JoinUsView: React.FC = () => {
       </div>
 
       <div className="w-full max-w-6xl px-4 space-y-24 pb-20">
-        {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 md:gap-12">
-          {/* Who We Are */}
-          <div className="glass-panel rounded-[40px] p-8 md:p-12 border border-white/40 flex flex-col gap-8 transition-transform hover:scale-[1.01]">
-            <div className="flex items-center gap-5">
-              <div className="p-4 rounded-[20px] shadow-lg shrink-0" style={{ background: 'linear-gradient(135deg, #FFD54F 0%, #FF9800 100%)' }}>
-                <BookOpen size={32} className="text-white" />
-              </div>
-              <h2 className="text-2xl lg:text-3xl font-bold text-[#1a1a1a]">{t('joinUs.whoWeAre.title')}</h2>
+        {/* Who We Are - Now Full Width at the Top */}
+        <div className="glass-panel rounded-[40px] p-8 md:p-12 border border-white/40 flex flex-col gap-8 transition-transform hover:scale-[1.005] bg-white/60">
+          <div className="flex items-center gap-6">
+            <div className="p-5 rounded-[24px] shadow-lg shrink-0 bg-gradient-to-br from-[#FFD54F] to-[#FF9800]">
+              <BookOpen size={36} className="text-white" />
             </div>
-            <div className="uyghur-text text-lg text-slate-700 space-y-4">
-              <p>{t('joinUs.whoWeAre.paragraph1')}</p>
-              <p>{t('joinUs.whoWeAre.paragraph2')}</p>
-            </div>
+            <h2 className="text-3xl md:text-4xl font-black text-[#1a1a1a]">{t('joinUs.whoWeAre.title')}</h2>
           </div>
+          <div className="uyghur-text text-xl text-slate-700 space-y-6 leading-relaxed max-w-5xl">
+            <p>{t('joinUs.whoWeAre.paragraph1')}</p>
+            <p>{t('joinUs.whoWeAre.paragraph2')}</p>
+          </div>
+        </div>
 
+        {/* Other Sections Side-by-Side */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-10">
           {/* Why Spelling Mistakes */}
-          <div className="glass-panel rounded-[40px] p-8 md:p-12 border border-[#FF9800]/20 bg-gradient-to-br from-white/90 to-orange-50/50 flex flex-col gap-8 transition-transform hover:scale-[1.01]">
+          <div className="glass-panel rounded-[40px] p-8 md:p-12 border border-[#FF9800]/10 bg-gradient-to-br from-white/90 to-orange-50/30 flex flex-col gap-8 transition-transform hover:scale-[1.01]">
             <div className="flex items-center gap-5">
               <div className="p-4 rounded-[20px] shadow-lg shrink-0 bg-gradient-to-br from-orange-400 to-rose-500">
                 <AlertCircle size={32} className="text-white" />
@@ -96,7 +96,7 @@ const JoinUsView: React.FC = () => {
           </div>
 
           {/* Smart Library */}
-          <div className="glass-panel rounded-[40px] p-8 md:p-12 border border-sky-300/30 bg-gradient-to-br from-white/90 to-sky-50/50 flex flex-col gap-8 transition-transform hover:scale-[1.01]">
+          <div className="glass-panel rounded-[40px] p-8 md:p-12 border border-sky-300/20 bg-gradient-to-br from-white/90 to-sky-50/30 flex flex-col gap-8 transition-transform hover:scale-[1.01]">
             <div className="flex items-center gap-5">
               <div className="p-4 rounded-[20px] shadow-lg shrink-0 bg-gradient-to-br from-sky-400 to-blue-600">
                 <Sparkles size={32} className="text-white" />
@@ -119,17 +119,20 @@ const JoinUsView: React.FC = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {/* Editor Card */}
-            <div className="glass-panel group rounded-[32px] p-8 border border-white/60 hover:border-purple-300 transition-all flex flex-col items-center text-center gap-6">
+            <div className="glass-panel group rounded-[32px] p-8 border border-white/60 hover:border-purple-300 transition-all flex flex-col items-center gap-6">
               <div className="p-5 rounded-2xl bg-purple-100 text-purple-600 group-hover:scale-110 group-hover:bg-purple-600 group-hover:text-white transition-all duration-300">
                 <FileEdit size={32} />
               </div>
               <h3 className="text-2xl font-bold text-[#1a1a1a]">{t('joinUs.howToHelp.editor.title')}</h3>
-              <p className="uyghur-text text-slate-600 leading-relaxed text-lg">
+              <p className="uyghur-text text-slate-600 leading-relaxed text-lg text-right w-full">
                 {t('joinUs.howToHelp.editor.description')}
               </p>
+              <p className="uyghur-text text-slate-600 leading-relaxed text-lg text-right w-full font-bold">
+                {t('joinUs.howToHelp.editor.benefit1')}
+              </p>
               <ul className="uyghur-text w-full text-right space-y-2 mb-4 opacity-80 text-base">
-                <li>• {t('joinUs.howToHelp.editor.benefit1')}</li>
                 <li>• {t('joinUs.howToHelp.editor.benefit2')}</li>
+                <li>• {t('joinUs.howToHelp.editor.benefit3')}</li>
               </ul>
               <button
                 onClick={() => {
@@ -143,17 +146,20 @@ const JoinUsView: React.FC = () => {
             </div>
 
             {/* Developer Card */}
-            <div className="glass-panel group rounded-[32px] p-8 border border-white/60 hover:border-[#0369a1]/30 transition-all flex flex-col items-center text-center gap-6">
+            <div className="glass-panel group rounded-[32px] p-8 border border-white/60 hover:border-[#0369a1]/30 transition-all flex flex-col items-center gap-6">
               <div className="p-5 rounded-2xl bg-[#0369a1]/10 text-[#0369a1] group-hover:scale-110 group-hover:bg-[#0369a1] group-hover:text-white transition-all duration-300">
                 <Code size={32} />
               </div>
               <h3 className="text-2xl font-bold text-[#1a1a1a]">{t('joinUs.howToHelp.developer.title')}</h3>
-              <p className="uyghur-text text-slate-600 leading-relaxed text-lg">
+              <p className="uyghur-text text-slate-600 leading-relaxed text-lg text-right w-full">
                 {t('joinUs.howToHelp.developer.description')}
               </p>
+              <p className="uyghur-text text-slate-600 leading-relaxed text-lg text-right w-full font-bold">
+                {t('joinUs.howToHelp.developer.benefit1')}
+              </p>
               <ul className="uyghur-text w-full text-right space-y-2 mb-4 opacity-80 text-base">
-                <li>• {t('joinUs.howToHelp.developer.benefit1')}</li>
                 <li>• {t('joinUs.howToHelp.developer.benefit2')}</li>
+                <li>• {t('joinUs.howToHelp.developer.benefit3')}</li>
               </ul>
               <button
                 onClick={() => {
@@ -167,17 +173,20 @@ const JoinUsView: React.FC = () => {
             </div>
 
             {/* Donate Card */}
-            <div className="glass-panel group rounded-[32px] p-8 border border-white/60 hover:border-rose-300 transition-all flex flex-col items-center text-center gap-6">
+            <div className="glass-panel group rounded-[32px] p-8 border border-white/60 hover:border-rose-300 transition-all flex flex-col items-center gap-6">
               <div className="p-5 rounded-2xl bg-rose-100 text-rose-600 group-hover:scale-110 group-hover:bg-rose-600 group-hover:text-white transition-all duration-300">
                 <Heart size={32} />
               </div>
               <h3 className="text-2xl font-bold text-[#1a1a1a]">{t('joinUs.howToHelp.donate.title')}</h3>
-              <p className="uyghur-text text-slate-600 leading-relaxed text-lg">
+              <p className="uyghur-text text-slate-600 leading-relaxed text-lg text-right w-full">
                 {t('joinUs.howToHelp.donate.description')}
               </p>
+              <p className="uyghur-text text-slate-600 leading-relaxed text-lg text-right w-full font-bold">
+                {t('joinUs.howToHelp.donate.benefit1')}
+              </p>
               <ul className="uyghur-text w-full text-right space-y-2 mb-4 opacity-80 text-base">
-                <li>• {t('joinUs.howToHelp.donate.benefit1')}</li>
                 <li>• {t('joinUs.howToHelp.donate.benefit2')}</li>
+                <li>• {t('joinUs.howToHelp.donate.benefit3')}</li>
               </ul>
               <button
                 onClick={() => alert(t('joinUs.howToHelp.donate.comingSoon'))}

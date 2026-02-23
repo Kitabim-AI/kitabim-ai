@@ -7,7 +7,7 @@ interface ProgressBarProps {
 
 export const ProgressBar: React.FC<ProgressBarProps> = ({ book }) => {
   // Count pages that have completed OCR (either ocr_done or fully indexed)
-  const completedPages = book.ocrDoneCount || book.pages?.filter(p => p.status === 'ocr_done' || p.status === 'indexed').length || 0;
+  const completedPages = book.ocrDoneCount || book.pages?.filter(p => p.status === 'ocr_done' || p.status === 'chunked' || p.status === 'indexed').length || 0;
   const percent = (completedPages / (book.totalPages || 1)) * 100;
   const isStale = book.status === 'ocr_processing' && book.processingLockExpiresAt && new Date(book.processingLockExpiresAt) < new Date();
 

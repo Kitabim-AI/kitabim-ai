@@ -193,6 +193,21 @@ export function SystemConfigPanel() {
     setEditDescription('');
   };
 
+  const formatDisplayValue = (key: string, value: string) => {
+    if (key.endsWith('_at')) {
+      const num = Number(value);
+      // Recognize Unix timestamps (seconds) - sanity check for range (1970-2065ish)
+      if (!isNaN(num) && num > 1000000000 && num < 3000000000 && /^\d+(\.\d+)?$/.test(value)) {
+        try {
+          return new Date(num * 1000).toISOString().replace(/-/g, '.').replace('Z', '+00:00');
+        } catch (e) {
+          return value;
+        }
+      }
+    }
+    return value;
+  };
+
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Header */}
@@ -422,14 +437,14 @@ export function SystemConfigPanel() {
       {/* Configs Table */}
       {!isLoading && configs.length > 0 && (
         <div className="glass-panel overflow-hidden rounded-[24px] p-0 shadow-xl border border-[#0369a1]/10">
-          <div className="overflow-x-auto custom-scrollbar">
-            <table className="w-full text-start min-w-[800px]">
+          <div className="overflow-x-auto custom-scrollbar" dir="ltr">
+            <table className="w-full text-left min-w-[800px]">
               <thead>
                 <tr className="bg-[#0369a1]/5 border-b border-[#0369a1]/10 text-[14px] md:text-[16px] font-normal text-[#0369a1] uppercase">
-                  <th className="px-6 py-5 font-normal w-1/4 text-start">{t('admin.systemConfig.key')}</th>
-                  <th className="px-6 py-5 font-normal w-1/4 text-start">{t('admin.systemConfig.value')}</th>
-                  <th className="px-6 py-5 font-normal w-1/3 text-start">{t('admin.systemConfig.description')}</th>
-                  <th className="px-6 py-5 font-normal w-1/6 text-left">{t('admin.systemConfig.actions')}</th>
+                  <th className="px-6 py-5 font-normal w-1/4 text-left">{t('admin.systemConfig.key')}</th>
+                  <th className="px-6 py-5 font-normal w-1/4 text-left">{t('admin.systemConfig.value')}</th>
+                  <th className="px-6 py-5 font-normal w-1/3 text-left">{t('admin.systemConfig.description')}</th>
+                  <th className="px-6 py-5 font-normal w-1/6 text-right">{t('admin.systemConfig.actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#75C5F0]/5">
@@ -449,7 +464,9 @@ export function SystemConfigPanel() {
                           className="w-full px-3 py-2 border-2 border-[#0369a1] rounded-xl bg-white outline-none text-left"
                         />
                       ) : (
-                        <span className="font-normal text-[#1a1a1a]">{config.value}</span>
+                        <span className="font-normal text-[#1a1a1a]">
+                          {formatDisplayValue(config.key, config.value)}
+                        </span>
                       )}
                     </td>
                     <td className="px-6 py-6">

@@ -61,7 +61,6 @@ class PagesRepository(BaseRepository[Page]):
                 "status": stmt.excluded.status,
                 "is_verified": stmt.excluded.is_verified,
                 "error": stmt.excluded.error,
-                "ocr_provider": stmt.excluded.ocr_provider,
                 "updated_by": stmt.excluded.updated_by,
                 "last_updated": func.now(),
             }

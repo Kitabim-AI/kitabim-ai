@@ -372,14 +372,14 @@ export function UserManagementPanel() {
       <div className="flex flex-col md:flex-row gap-4">
         <div className="relative flex-1 group">
           <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none text-[#94a3b8] group-focus-within:text-[#0369a1] transition-colors">
-            <Search size={18} />
+            <Search size={18} strokeWidth={3} />
           </div>
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('admin.users.searchPlaceholder') || "ئابونتلارنى ئىزدەش (نامى ياكى ئېلخەت)..."}
-            className="w-full pr-12 pl-4 py-3 bg-white border-2 border-[#0369a1]/10 rounded-2xl outline-none focus:border-[#0369a1] focus:ring-4 focus:ring-[#0369a1]/10 transition-all uyghur-text-small shadow-sm"
+            className="w-full pr-12 pl-10 py-2.5 bg-white border-2 border-[#0369a1]/10 rounded-2xl outline-none focus:border-[#0369a1] focus:ring-4 focus:ring-[#0369a1]/10 transition-all uyghur-text-small shadow-sm"
           />
           {searchQuery && (
             <button
@@ -391,7 +391,7 @@ export function UserManagementPanel() {
           )}
         </div>
 
-        <div className="flex items-center gap-2 text-[14px] font-normal text-[#0369a1] bg-[#0369a1]/10 px-4 py-2 rounded-full border border-[#0369a1]/20 shadow-sm whitespace-nowrap">
+        <div className="flex items-center gap-2 text-[14px] font-normal text-[#0369a1] bg-[#0369a1]/10 px-4 py-2.5 rounded-full border border-[#0369a1]/20 shadow-sm whitespace-nowrap">
           <Users size={14} />
           {t('admin.users.total', { count: total })}
         </div>

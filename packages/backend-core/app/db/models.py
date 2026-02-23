@@ -65,18 +65,8 @@ class Book(Base):
         default=list,
         server_default=text("'{}'")
     )
-    tags: Mapped[List[str]] = mapped_column(
-        ARRAY(Text),
-        default=list,
-        server_default=text("'{}'")
-    )
 
     # JSONB fields
-    errors: Mapped[dict] = mapped_column(
-        JSONB,
-        default=list,
-        server_default=text("'[]'::jsonb")
-    )
     last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Counts
@@ -97,7 +87,12 @@ class Book(Base):
         server_default=func.now(),
         nullable=False
     )
-    is_indexed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    processing_mode: Mapped[str] = mapped_column(
+        String(20),
+        default="batch",
+        server_default="batch",
+        nullable=False
+    )
     file_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     source: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 'upload', 'gcs'
     updated_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -151,7 +146,6 @@ class Page(Base):
     )
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    ocr_provider: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     is_indexed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     last_updated: Mapped[datetime] = mapped_column(
@@ -168,7 +162,7 @@ class Page(Base):
     __table_args__ = (
         UniqueConstraint("book_id", "page_number", name="pages_book_id_page_number_key"),
         CheckConstraint(
-            "status IN ('pending', 'ocr_processing', 'ocr_done', 'indexing', 'indexed', 'error')",
+            "status IN ('pending', 'ocr_processing', 'ocr_done', 'chunked', 'indexing', 'indexed', 'error')",
             name="pages_status_check"
         ),
     )
@@ -319,7 +313,6 @@ class Job(Base):
     type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     book_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     payload: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
@@ -444,4 +437,43 @@ class UserChatUsage(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "usage_date", name="user_chat_usage_user_id_date_key"),
+    )
+
+
+class BatchJob(Base):
+    """Tracks a single Gemini Batch API job (OCR or Embedding)"""
+    __tablename__ = "batch_jobs"
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    job_type: Mapped[str] = mapped_column(String(20), nullable=False)  # 'ocr' or 'embedding'
+    remote_job_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # Google Batch Job ID
+    status: Mapped[str] = mapped_column(String(20), default="created", server_default="created", nullable=False)
+    remote_status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # Actual state from Gemini API
+    request_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    input_file_uri: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    output_file_uri: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    requests: Mapped[List[BatchRequest]] = relationship("BatchRequest", back_populates="batch_job", cascade="all, delete-orphan")
+
+
+class BatchRequest(Base):
+    """Maps an individual request within a BatchJob to a specific book and page"""
+    __tablename__ = "batch_requests"
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    batch_job_id: Mapped[UUID] = mapped_column(ForeignKey("batch_jobs.id", ondelete="CASCADE"), nullable=False)
+    book_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    page_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    request_id: Mapped[str] = mapped_column(String(100), nullable=False)  # custom_id in JSONL
+    status: Mapped[str] = mapped_column(String(20), default="pending", server_default="pending", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    batch_job: Mapped[BatchJob] = relationship("BatchJob", back_populates="requests")
+
+    __table_args__ = (
+        UniqueConstraint("book_id", "page_number", "batch_job_id", name="uq_batch_request_page"),
     )

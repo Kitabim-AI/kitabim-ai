@@ -77,6 +77,7 @@ async def process_pdf_task(
     book_id: str,
     job_key: str | None = None,
     raise_on_error: bool = False,
+    force_realtime: bool = False,
 ) -> None:
     if book_id in RUNNING_TASKS:
         log_json(logger, logging.INFO, "Task already running", book_id=book_id)
@@ -251,6 +252,18 @@ async def process_pdf_task(
                     await record_book_error(session, book_id, "cover", str(exc))
             
             await session.commit()
+
+            # Determine effective mode
+            # Use 'realtime' if force_realtime is True, otherwise use book's mode
+            effective_mode = 'realtime' if force_realtime else (getattr(book, 'processing_mode', 'batch') or 'batch')
+            
+            if effective_mode == 'batch':
+                log_json(logger, logging.INFO, "Book in batch mode, returning after page creation", 
+                         book_id=book_id, pages=total_pages)
+                if job_key:
+                    await jobs_repo.update_status(job_key, "succeeded", "Pages queued for batch processing")
+                await session.commit()
+                return
 
             # Find pages that need processing
             stmt = select(Page).where(
@@ -438,7 +451,7 @@ async def process_pdf_task(
                     # Leave pages unindexed, will be picked up next time
                 else:
                     embedder = GeminiEmbeddings()
-                    batch_size = 20  # Reduced to avoid rate limits and timeouts
+                    batch_size = 20  # Process pages in batches
                     for start in range(0, len(pages_to_embed), batch_size):
                         # Check circuit breaker before each batch
                         if not await is_llm_available():
@@ -453,119 +466,89 @@ async def process_pdf_task(
 
                         await asyncio.sleep(1.0)  # Rate limiting
                         batch = pages_to_embed[start : start + batch_size]
-                        pairs = []
+                        
+                        # Phase 1: Chunking (Unified for both modes)
+                        # We create chunks with NULL embeddings first
+                        page_chunk_pairs = []
                         for r in batch:
-                            # Set page status to indexing before processing
-                            r.status = "indexing"
                             text_content = strip_markdown(r.text or "").strip()
-                            if text_content:
-                                pairs.append((r, text_content))
-                                log_json(
-                                    logger, 
-                                    logging.INFO, 
-                                    "Indexing page into embeddings", 
-                                    book_id=book_id, 
-                                    page_num=r.page_number
-                                )
-                        if not pairs:
-                            continue
-
-                        try:
-                            # Flatten all chunks from the batch
-                            all_chunks_text = []
-                            page_chunk_counts = [] # Keep track of how many chunks each page has
-
-                            for r, text_content in pairs:
-                                chunks = chunking_service.split_text(text_content)
-                                if not chunks:
-                                    chunks = [text_content] if text_content else []
-
-                                all_chunks_text.extend(chunks)
-                                page_chunk_counts.append(len(chunks))
-
-                            if not all_chunks_text:
+                            if not text_content:
+                                # Mark empty pages as indexed immediately
+                                r.status = "indexed"
+                                r.is_indexed = True
+                                r.last_updated = datetime.now(timezone.utc)
                                 continue
 
-                            all_embeddings = await embedder.aembed_documents(all_chunks_text)
+                            # Split into chunks
+                            chunks_text = chunking_service.split_text(text_content)
+                            if not chunks_text:
+                                chunks_text = [text_content]
 
-                            # Distribute embeddings back to pages and save chunks
-                            current_embed_idx = 0
+                            # Clean up old chunks for this page
+                            await session.execute(
+                                delete(Chunk).where(and_(Chunk.book_id == book_id, Chunk.page_number == r.page_number))
+                            )
 
-                            for i, (r, original_text) in enumerate(pairs):
-                                count = page_chunk_counts[i]
-                                if count == 0:
-                                    # Just mark indexed
-                                    r.is_indexed = True
-                                    continue
-
-                                page_chunks = all_chunks_text[current_embed_idx : current_embed_idx + count]
-                                page_vectors = all_embeddings[current_embed_idx : current_embed_idx + count]
-                                current_embed_idx += count
-
-                                # Clean up old chunks for this page
-                                await session.execute(
-                                    delete(Chunk).where(and_(Chunk.book_id == book_id, Chunk.page_number == r.page_number))
+                            # Create new chunks WITH NULL embeddings
+                            page_record_chunks = []
+                            for chunk_idx, txt in enumerate(chunks_text):
+                                new_chunk = Chunk(
+                                    book_id=book_id,
+                                    page_number=r.page_number,
+                                    chunk_index=chunk_idx,
+                                    text=txt,
+                                    embedding=None,  # ALWAYS NULL initially
+                                    created_at=datetime.now(timezone.utc)
                                 )
+                                session.add(new_chunk)
+                                page_record_chunks.append(new_chunk)
+                            
+                            # Mark page as chunked (chunks exist, no embeddings yet)
+                            r.status = "chunked"
+                            page_chunk_pairs.append((r, page_record_chunks))
+                        
+                        await session.flush()
 
-                                # Insert new chunks
-                                for chunk_idx, (txt, vec) in enumerate(zip(page_chunks, page_vectors)):
-                                    new_chunk = Chunk(
-                                        book_id=book_id,
-                                        page_number=r.page_number,
-                                        chunk_index=chunk_idx,
-                                        text=txt,
-                                        embedding=vec,
-                                        created_at=datetime.now(timezone.utc)
-                                    )
-                                    session.add(new_chunk)
+                        # Phase 2: Embedding (Immediate for real-time mode)
+                        all_chunks_to_embed = []
+                        for _, chunks in page_chunk_pairs:
+                            all_chunks_to_embed.extend(chunks)
 
-                                # Update page status
-                                r.is_indexed = True
-                                r.status = "indexed"
-                                r.last_updated = datetime.now(timezone.utc)
-
-                            await session.commit()
-
-                            log_json(
-                                logger,
-                                logging.INFO,
-                                "Embedding batch completed",
-                                book_id=book_id,
-                                pages_indexed=len(batch),
-                                batch_range=f"{start}-{start + len(batch) - 1}"
-                            )
-
-                        except CircuitBreakerOpen:
-                            log_json(
-                                logger,
-                                logging.WARNING,
-                                "Embedding circuit open, stopping further batches for this book",
-                                book_id=book_id,
-                            )
-                            break
-                        except Exception as exc:
-                            log_json(
-                                logger,
-                                logging.ERROR,
-                                "Embedding batch failed",
-                                book_id=book_id,
-                                batch_start=start,
-                                batch_end=start + len(batch) - 1,
-                                error=str(exc),
-                            )
-                            await record_book_error(
-                                session,
-                                book_id,
-                                "embedding",
-                                str(exc),
-                                {"batch_start": start, "batch_end": start + len(batch) - 1},
-                            )
-                            await session.commit()
+                        if all_chunks_to_embed:
+                            try:
+                                log_json(logger, logging.INFO, "Embedding chunks for batch", 
+                                         book_id=book_id, chunk_count=len(all_chunks_to_embed))
+                                
+                                all_vectors = await embedder.aembed_documents([c.text for c in all_chunks_to_embed])
+                                
+                                # Assign vectors back to chunks
+                                for chunk, vector in zip(all_chunks_to_embed, all_vectors):
+                                    chunk.embedding = vector
+                                
+                                # Mark pages as indexed
+                                for r, _ in page_chunk_pairs:
+                                    r.status = "indexed"
+                                    r.is_indexed = True
+                                    r.last_updated = datetime.now(timezone.utc)
+                                    
+                                log_json(logger, logging.INFO, "Embedding batch completed (Immediate)", 
+                                         book_id=book_id, pages=len(page_chunk_pairs))
+                                         
+                            except CircuitBreakerOpen:
+                                log_json(logger, logging.WARNING, "Embedding circuit open during batch", book_id=book_id)
+                                break
+                            except Exception as exc:
+                                log_json(logger, logging.ERROR, "Embedding batch failed", 
+                                         book_id=book_id, error=str(exc))
+                                await record_book_error(session, book_id, "embedding", str(exc))
+                                # We don't break here, let it continue to next batch or finish
+                        
+                        await session.commit()
 
             # Final check - aggregate page stats
             # Count any page that has finished OCR (ocr_done, indexing, or indexed)
             ocr_done_stmt = select(func.count()).select_from(Page).where(
-                and_(Page.book_id == book_id, Page.status.in_(['ocr_done', 'indexing', 'indexed']))
+                and_(Page.book_id == book_id, Page.status.in_(['ocr_done', 'chunked', 'indexing', 'indexed']))
             )
             ocr_done_res = await session.execute(ocr_done_stmt)
             ocr_done_count = ocr_done_res.scalar() or 0
