@@ -11,10 +11,12 @@ import {
   Send,
   X,
   ArrowLeft,
-  Sparkles
+  Sparkles,
+  CheckCircle2
 } from 'lucide-react';
 import { useI18n } from '../../i18n/I18nContext';
 import { useAppContext } from '../../context/AppContext';
+import { submitContactForm } from '../../services/contactService';
 
 const JoinUsView: React.FC = () => {
   const { t } = useI18n();
@@ -24,16 +26,34 @@ const JoinUsView: React.FC = () => {
     name: '',
     email: '',
     message: '',
-    interest: 'editor' // editor, developer, other
+    interest: 'editor' as 'editor' | 'developer' | 'other'
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSuccess, setIsSuccess] = useState(false);
+
+  const handleCloseModal = () => {
+    setShowContactModal(false);
+    setTimeout(() => {
+      setIsSuccess(false);
+      setContactForm({ name: '', email: '', message: '', interest: 'editor' });
+    }, 300);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // In a real app, this would send to an API
-    console.log('Contact form submitted:', contactForm);
-    alert(t('common.success'));
-    setShowContactModal(false);
-    setContactForm({ name: '', email: '', message: '', interest: 'editor' });
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      await submitContactForm(contactForm);
+      setIsSuccess(true);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : t('joinUs.contactModal.errorMessage');
+      setSubmitError(errorMessage);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -189,10 +209,14 @@ const JoinUsView: React.FC = () => {
                 <li>• {t('joinUs.howToHelp.donate.benefit3')}</li>
               </ul>
               <button
-                onClick={() => alert(t('joinUs.howToHelp.donate.comingSoon'))}
-                className="w-full py-4 min-h-[48px] bg-rose-600 text-white rounded-2xl font-bold hover:shadow-lg hover:shadow-rose-500/30 transition-all active:scale-95"
+                disabled
+                className="w-full py-4 min-h-[48px] bg-rose-200 text-rose-400 rounded-2xl font-bold cursor-not-allowed opacity-60"
+                title={t('joinUs.howToHelp.donate.comingSoon')}
               >
-                {t('joinUs.howToHelp.donate.button')}
+                <div className="flex items-center justify-center gap-3">
+                  <Heart size={20} className="fill-current" />
+                  <span>{t('joinUs.howToHelp.donate.button')}</span>
+                </div>
               </button>
             </div>
           </div>
@@ -202,7 +226,11 @@ const JoinUsView: React.FC = () => {
         <div className="glass-panel rounded-[32px] sm:rounded-[40px] p-6 sm:p-8 md:p-12 border border-white/60 flex flex-col md:flex-row items-center justify-between gap-6 sm:gap-8">
           <div className="text-right w-full md:w-auto">
             <h2 className="text-2xl sm:text-3xl font-bold text-[#1a1a1a] mb-2">{t('joinUs.contact.title')}</h2>
-            <p className="uyghur-text text-sm sm:text-base text-slate-500">{t('joinUs.contact.description')}</p>
+            <p className="uyghur-text text-sm sm:text-base text-slate-500 mb-3">{t('joinUs.contact.description')}</p>
+            <p className="uyghur-text text-slate-500 font-medium text-base flex flex-wrap items-center justify-end sm:justify-start gap-1">
+              <span>{t('joinUs.contact.emailLabel')}</span>
+              <a href="mailto:contact@kitabim.ai" className="text-[#0369a1] hover:underline font-bold" dir="ltr">contact@kitabim.ai</a>
+            </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 w-full md:w-auto">
             <button
@@ -226,75 +254,103 @@ const JoinUsView: React.FC = () => {
 
       {/* Modal Backdrop and Content */}
       {showContactModal && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-[#0369a1]/20 backdrop-blur-md" onClick={() => setShowContactModal(false)} />
-          <div className="glass-panel bg-white/95 w-full max-w-xl rounded-[40px] shadow-2xl relative z-10 overflow-hidden animate-fade-in border border-white">
-            <div className="p-10">
-              <div className="flex justify-between items-center mb-10">
-                <h3 className="text-3xl font-bold text-[#1a1a1a]">{t('joinUs.contactModal.title')}</h3>
-                <button onClick={() => setShowContactModal(false)} className="p-3 hover:bg-slate-100 rounded-2xl transition-all">
-                  <X size={24} />
-                </button>
-              </div>
-
-              <form onSubmit={handleSubmit} className="space-y-6">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">{t('joinUs.contactModal.interest')}</label>
-                  <select
-                    value={contactForm.interest}
-                    onChange={(e) => setContactForm({ ...contactForm, interest: e.target.value })}
-                    className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-[#0369a1] outline-none transition-all uyghur-text"
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6">
+          <div className="absolute inset-0 bg-[#0369a1]/20 backdrop-blur-md" onClick={handleCloseModal} />
+          <div className="glass-panel bg-white/95 w-full max-w-xl rounded-[32px] sm:rounded-[40px] shadow-2xl relative z-10 overflow-y-auto max-h-[90vh] animate-fade-in border border-white">
+            <div className="p-6 sm:p-10">
+              {isSuccess ? (
+                <div className="flex flex-col items-center justify-center text-center py-8">
+                  <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-6">
+                    <CheckCircle2 size={40} />
+                  </div>
+                  <h3 className="text-2xl font-bold text-[#1a1a1a] mb-2">{t('joinUs.contactModal.successTitle')}</h3>
+                  <p className="uyghur-text text-slate-500 text-lg mb-8">{t('joinUs.contactModal.successMessage')}</p>
+                  <button
+                    onClick={handleCloseModal}
+                    className="w-full py-4 bg-slate-100 hover:bg-slate-200 text-[#1a1a1a] rounded-2xl font-bold transition-all text-lg"
                   >
-                    <option value="editor">{t('joinUs.contactModal.interestEditor')}</option>
-                    <option value="developer">{t('joinUs.contactModal.interestDeveloper')}</option>
-                    <option value="other">{t('joinUs.contactModal.interestOther')}</option>
-                  </select>
+                    {t('common.close')}
+                  </button>
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">{t('joinUs.contactModal.name')}</label>
-                    <input
-                      type="text"
-                      required
-                      className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-[#0369a1] outline-none transition-all"
-                      placeholder={t('joinUs.contactModal.namePlaceholder')}
-                      value={contactForm.name}
-                      onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })}
-                    />
+              ) : (
+                <>
+                  <div className="flex justify-between items-center mb-10">
+                    <h3 className="text-3xl font-bold text-[#1a1a1a]">{t('joinUs.contactModal.title')}</h3>
+                    <button onClick={handleCloseModal} className="p-3 hover:bg-slate-100 rounded-2xl transition-all">
+                      <X size={24} />
+                    </button>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">{t('joinUs.contactModal.email')}</label>
-                    <input
-                      type="email"
-                      required
-                      className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-[#0369a1] outline-none transition-all"
-                      placeholder={t('joinUs.contactModal.emailPlaceholder')}
-                      value={contactForm.email}
-                      onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
-                    />
-                  </div>
-                </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">{t('joinUs.contactModal.message')}</label>
-                  <textarea
-                    required
-                    rows={4}
-                    className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-[#0369a1] outline-none transition-all resize-none uyghur-text"
-                    placeholder={t('joinUs.contactModal.messagePlaceholder')}
-                    value={contactForm.message}
-                    onChange={(e) => setContactForm({ ...contactForm, message: e.target.value })}
-                  />
-                </div>
+                  <form onSubmit={handleSubmit} className="space-y-6">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">{t('joinUs.contactModal.interest')}</label>
+                      <select
+                        value={contactForm.interest}
+                        onChange={(e) => setContactForm({ ...contactForm, interest: e.target.value })}
+                        className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-[#0369a1] outline-none transition-all uyghur-text"
+                      >
+                        <option value="editor">{t('joinUs.contactModal.interestEditor')}</option>
+                        <option value="developer">{t('joinUs.contactModal.interestDeveloper')}</option>
+                        <option value="other">{t('joinUs.contactModal.interestOther')}</option>
+                      </select>
+                    </div>
 
-                <button
-                  type="submit"
-                  className="w-full py-5 bg-[#0369a1] text-white rounded-2xl font-bold text-lg hover:shadow-xl hover:shadow-[#0369a1]/20 transition-all active:scale-95 mt-4"
-                >
-                  {t('joinUs.contactModal.submit')}
-                </button>
-              </form>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">{t('joinUs.contactModal.name')}</label>
+                        <input
+                          type="text"
+                          required
+                          className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-[#0369a1] outline-none transition-all"
+                          placeholder={t('joinUs.contactModal.namePlaceholder')}
+                          value={contactForm.name}
+                          onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">{t('joinUs.contactModal.email')}</label>
+                        <input
+                          type="email"
+                          required
+                          className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-[#0369a1] outline-none transition-all"
+                          placeholder={t('joinUs.contactModal.emailPlaceholder')}
+                          value={contactForm.email}
+                          onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">{t('joinUs.contactModal.message')}</label>
+                      <textarea
+                        required
+                        rows={4}
+                        className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-[#0369a1] outline-none transition-all resize-none uyghur-text"
+                        placeholder={t('joinUs.contactModal.messagePlaceholder')}
+                        value={contactForm.message}
+                        onChange={(e) => setContactForm({ ...contactForm, message: e.target.value })}
+                      />
+                    </div>
+
+                    {submitError && (
+                      <div className="p-4 bg-red-50 border-2 border-red-200 rounded-2xl">
+                        <p className="text-red-600 text-sm font-medium">{submitError}</p>
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className={`w-full py-5 rounded-2xl font-bold text-lg transition-all mt-4 ${isSubmitting
+                        ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                        : 'bg-[#0369a1] text-white hover:shadow-xl hover:shadow-[#0369a1]/20 active:scale-95'
+                        }`}
+                    >
+                      {isSubmitting ? t('joinUs.contactModal.submitting') : t('joinUs.contactModal.submit')}
+                    </button>
+                  </form>
+                </>
+              )}
             </div>
           </div>
         </div>

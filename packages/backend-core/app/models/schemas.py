@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -114,3 +114,44 @@ class ChatUsageStatus(BaseModel):
     usage: int
     limit: Optional[int]
     has_reached_limit: bool
+
+
+class ContactSubmissionCreate(BaseModel):
+    """Schema for creating a new contact submission"""
+    name: str = Field(..., min_length=1, max_length=255)
+    email: str = Field(..., min_length=3, max_length=255)
+    interest: Literal["editor", "developer", "other"]
+    message: str = Field(..., min_length=10, max_length=5000)
+
+
+class ContactSubmissionPublic(BaseModel):
+    """Public response schema for contact submission"""
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        from_attributes=True
+    )
+
+    id: int
+    status: str
+    created_at: datetime  # DB: created_at, API: createdAt
+
+
+class ContactSubmissionAdmin(BaseModel):
+    """Admin view schema for contact submissions with all fields"""
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        from_attributes=True
+    )
+
+    id: int
+    name: str
+    email: str
+    interest: str
+    message: str
+    status: str
+    admin_notes: Optional[str] = None  # DB: admin_notes, API: adminNotes
+    reviewed_by: Optional[str] = None  # DB: reviewed_by, API: reviewedBy
+    reviewed_at: Optional[datetime] = None  # DB: reviewed_at, API: reviewedAt
+    created_at: datetime  # DB: created_at, API: createdAt

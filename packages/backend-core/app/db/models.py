@@ -477,3 +477,48 @@ class BatchRequest(Base):
     __table_args__ = (
         UniqueConstraint("book_id", "page_number", "batch_job_id", name="uq_batch_request_page"),
     )
+
+
+class ContactSubmission(Base):
+    """Contact form submissions from Join Us page"""
+    __tablename__ = "contact_submissions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Form fields
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    interest: Mapped[str] = mapped_column(String(50), nullable=False)  # editor, developer, other
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Status and admin fields
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default="new",
+        server_default="new",
+        index=True,
+        nullable=False
+    )  # new, reviewed, contacted, archived
+    admin_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+        index=True
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "interest IN ('editor', 'developer', 'other')",
+            name="contact_submissions_interest_check"
+        ),
+        CheckConstraint(
+            "status IN ('new', 'reviewed', 'contacted', 'archived')",
+            name="contact_submissions_status_check"
+        ),
+    )

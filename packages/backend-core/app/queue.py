@@ -129,16 +129,24 @@ async def gemini_batch_submission_cron(ctx):
             log_json(logger, logging.WARNING, "LLM circuit breaker open, skipping batch submission")
             return
 
+        from app.db.repositories.system_configs import SystemConfigsRepository
+        config_repo = SystemConfigsRepository(session)
+        
+        # Get limits from system_configs
+        chunk_limit = int(await config_repo.get_value("batch_chunking_limit", "1000"))
+        ocr_limit = int(await config_repo.get_value("batch_ocr_limit", "100"))
+        embed_limit = int(await config_repo.get_value("batch_embedding_limit", "2000"))
+
         batch_service = BatchService(session)
         try:
             # 1. First, chunk any pages that finished OCR
-            await batch_service.chunk_ocr_done_pages(limit=1000)
+            await batch_service.chunk_ocr_done_pages(limit=chunk_limit)
             
             # 2. Submit new OCR batches
-            await batch_service.submit_ocr_batch(limit=5000)
+            await batch_service.submit_ocr_batch(limit=ocr_limit)
             
             # 3. Submit new Embedding batches
-            await batch_service.submit_embedding_batch(limit=10000)
+            await batch_service.submit_embedding_batch(limit=embed_limit)
             
             log_json(logger, logging.INFO, "Batch submission cron finished")
         except Exception as e:

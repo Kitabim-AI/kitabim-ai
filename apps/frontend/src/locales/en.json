@@ -160,6 +160,11 @@
   },
   "admin": {
     "title": "Administration",
+    "booksLabel": "Books",
+    "usersLabel": "Users",
+    "statsLabel": "Statistics",
+    "configLabel": "Settings",
+    "contactsLabel": "Contacts",
     "bookManagement": "Book Management",
     "userManagement": "User Management",
     "systemConfigLabel": "System Config",
@@ -197,6 +202,31 @@
       "jobSkipped": "Skipped",
       "jobQueued": "Queued",
       "jobRetrying": "Retrying"
+    },
+    "contacts": {
+      "title": "Contact Submissions",
+      "subtitle": "Messages from the Join Us page",
+      "name": "Name",
+      "email": "Email",
+      "interest": "Interest",
+      "message": "Message",
+      "status": "Status",
+      "createdAt": "Date",
+      "filterAll": "All",
+      "filterNew": "New",
+      "filterReviewed": "Reviewed",
+      "filterContacted": "Contacted",
+      "filterArchived": "Archived",
+      "statusNew": "New",
+      "statusReviewed": "Reviewed",
+      "statusContacted": "Contacted",
+      "statusArchived": "Archived",
+      "interestEditor": "Editor",
+      "interestDeveloper": "Developer",
+      "interestOther": "Other",
+      "loading": "Loading...",
+      "noSubmissions": "No contact submissions yet",
+      "error": "Failed to load submissions"
     },
     "table": {
       "name": "Name",
@@ -470,7 +500,8 @@
       "title": "Get in Touch",
       "description": "Have questions or want to learn more? We'd love to hear from you!",
       "button": "Contact Us",
-      "github": "View on GitHub"
+      "github": "View on GitHub",
+      "emailLabel": "Our email address:"
     },
     "contactModal": {
       "title": "Contact Us",
@@ -484,7 +515,11 @@
       "emailPlaceholder": "your.email@example.com",
       "message": "Message",
       "messagePlaceholder": "Tell us about yourself and how you'd like to help...",
-      "submit": "Send Message"
+      "submit": "Send Message",
+      "submitting": "Sending...",
+      "successTitle": "Thank You!",
+      "successMessage": "We have received your message and will respond soon.",
+      "errorMessage": "Failed to send message. Please try again."
     }
   }
 }

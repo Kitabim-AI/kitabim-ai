@@ -104,6 +104,7 @@ export function OAuthButtonGroup({ className = '', align = 'down' }: { className
       ),
       color: '#4285F4'
     },
+    /* Hidden for now
     {
       name: 'Facebook',
       onClick: loginWithFacebook,
@@ -128,6 +129,7 @@ export function OAuthButtonGroup({ className = '', align = 'down' }: { className
       ),
       color: '#000000'
     }
+    */
   ];
 
   return (

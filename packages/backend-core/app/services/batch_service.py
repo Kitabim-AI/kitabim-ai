@@ -35,13 +35,15 @@ class BatchService:
         self.requests_repo = BatchRequestsRepository(session)
         self.books_repo = BooksRepository(session)
 
-    async def submit_ocr_batch(self, limit: int = 1000) -> Optional[UUID]:
+    async def submit_ocr_batch(self, limit: int = 100) -> Optional[UUID]:
         """
         Collects pending OCR pages and submits them as a batch job.
         """
         from app.core.config import settings
         import os
         import tempfile
+        import asyncio
+        from pathlib import Path
 
         # 1. Collect pages with 'pending' status
         stmt = (
@@ -55,20 +57,57 @@ class BatchService:
         if not pages:
             return None
 
+        # 1.5. Group pages by book and upload PDFs to Gemini File API
+        # AI Studio API requires files to be in its File API, not gs://
+        book_ids = {p.book_id for p in pages}
+        book_gemini_uris = {}
+        uploaded_gemini_files = [] # Track for cleanup
+        
+        for book_id in book_ids:
+            try:
+                # Need to run blocking storage/gemini operations, but keeping it simple
+                local_pdf_path = Path(tempfile.gettempdir()) / f"{book_id}.pdf"
+                log_json(logger, logging.INFO, "Downloading PDF for Gemini File API", book_id=book_id)
+                await storage.download_file(f"uploads/{book_id}.pdf", local_pdf_path)
+                
+                # Upload to Gemini File API
+                log_json(logger, logging.INFO, "Uploading PDF to Gemini File API", book_id=book_id)
+                # Run sync client operation in executor to avoid blocking async loop
+                loop = asyncio.get_event_loop()
+                from google.genai import types
+                f_res = await loop.run_in_executor(
+                    None,
+                    lambda: self.batch_client.client.files.upload(
+                        file=str(local_pdf_path),
+                        config=types.UploadFileConfig(mime_type="application/pdf")
+                    )
+                )
+                book_gemini_uris[book_id] = f_res.uri
+                uploaded_gemini_files.append(f_res.name)
+                
+                if local_pdf_path.exists():
+                    os.remove(local_pdf_path)
+            except Exception as e:
+                log_json(logger, logging.ERROR, "Failed to prep PDF for Gemini API", book_id=book_id, error=str(e))
+                # Will skip pages for this book next
+                
         jsonl_lines = []
         request_mappings = []
 
         # 2. Generate JSONL lines
         for page in pages:
+            if page.book_id not in book_gemini_uris:
+                continue # Skip if PDF upload failed
+                
             custom_id = f"ocr_{page.book_id}_{page.page_number}"
             
-            # Request structure for Gemini API (File API mode requires "request" wrapper)
+            # Request structure for Gemini API using the File API URI
             request = {
                 "custom_id": custom_id,
                 "request": {
                     "contents": [{
                         "parts": [
-                            {"file_data": {"mime_type": "application/pdf", "file_uri": storage.get_gs_uri(f"uploads/{page.book_id}.pdf")}},
+                            {"file_data": {"mime_type": "application/pdf", "file_uri": book_gemini_uris[page.book_id]}},
                             {"text": f"Extract and OCR all text from page {page.page_number} of this document. Return ONLY the text content. Maintain original formatting as much as possible."}
                         ]
                     }]
@@ -81,6 +120,13 @@ class BatchService:
                 "request_id": custom_id,
                 "status": "pending"
             })
+            
+        if not jsonl_lines:
+            # If all PDF uploads failed, clean up and exit
+            for f_name in uploaded_gemini_files:
+                try: self.batch_client.delete_file(f_name)
+                except: pass
+            return None
 
         # 3. Write to local file and submit to Gemini
         fd, input_path = tempfile.mkstemp(suffix=".jsonl")
@@ -123,7 +169,7 @@ class BatchService:
             await self.session.commit()
             raise
 
-    async def submit_embedding_batch(self, limit: int = 2000) -> Optional[UUID]:
+    async def submit_embedding_batch(self, limit: int = 100) -> Optional[UUID]:
         """
         Collects chunks with NULL embeddings and submits them as a batch job.
         """
@@ -269,6 +315,7 @@ class BatchService:
                     log_json(logger, logging.WARNING, "Batch job failed on Gemini", 
                              job_id=str(job.id), remote_id=job.remote_job_id, status=current_status)
                     await self.jobs_repo.update_job_status(job.id, "failed", remote_status=current_status, error_message=f"Gemini status: {current_status}")
+                    await self.requests_repo.update_status_by_job(job.id, "failed")
                     await self.session.commit()
             except Exception as e:
                 log_json(logger, logging.ERROR, "Error polling job", job_id=str(job.id), error=str(e))
@@ -324,6 +371,7 @@ class BatchService:
 
             # 2. Mark job as completed
             await self.jobs_repo.update_job_status(job.id, "completed")
+            await self.requests_repo.update_status_by_job(job.id, "completed")
             await self.session.commit()
             log_json(logger, logging.INFO, "Batch job results processed successfully", job_id=str(job.id))
             
@@ -334,6 +382,7 @@ class BatchService:
         except Exception as e:
             log_json(logger, logging.ERROR, "Failed to process job results", job_id=str(job.id), error=str(e))
             await self.jobs_repo.update_job_status(job.id, "error", error_message=str(e))
+            await self.requests_repo.update_status_by_job(job.id, "error")
             await self.session.commit()
 
     async def _handle_ocr_result(self, custom_id: str, response: Dict[str, Any]):

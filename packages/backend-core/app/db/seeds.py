@@ -36,6 +36,21 @@ async def seed_system_configs(session: AsyncSession):
             "key": "batch_last_polled_at",
             "value": "0",
             "description": "Unix timestamp of the last time the worker polled for batch jobs"
+        },
+        {
+            "key": "batch_ocr_limit",
+            "value": "100",
+            "description": "Maximum number of pages per OCR batch job"
+        },
+        {
+            "key": "batch_embedding_limit",
+            "value": "100",
+            "description": "Maximum number of chunks per embedding batch job"
+        },
+        {
+            "key": "batch_chunking_limit",
+            "value": "100",
+            "description": "Maximum number of pages to chunk in one cycle"
         }
     ]
     

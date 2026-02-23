@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.endpoints import ai, auth, books, chat, users, system_configs, stats, batch_jobs
+from app.api.endpoints import ai, auth, books, chat, users, system_configs, stats, batch_jobs, contact
 from app.core.config import settings
 from app.db.session import init_db, close_db  # SQLAlchemy session management
 from app.core.i18n import I18n, set_current_lang
@@ -199,6 +199,7 @@ app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(system_configs.router, prefix="/api/system-configs", tags=["system-configs"])
 app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 app.include_router(batch_jobs.router, prefix="/api/admin", tags=["admin", "batch-jobs"])
+app.include_router(contact.router, prefix="/api/contact", tags=["contact"])
 
 
 @app.get("/")

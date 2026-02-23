@@ -1,0 +1,45 @@
+/**
+ * Contact form service for handling contact submission API calls.
+ */
+
+const API_BASE = '/api/contact';
+
+export interface ContactSubmission {
+  name: string;
+  email: string;
+  interest: 'editor' | 'developer' | 'other';
+  message: string;
+}
+
+export interface ContactSubmissionResponse {
+  id: number;
+  status: string;
+  createdAt: string;
+}
+
+/**
+ * Submit a contact form from the Join Us page.
+ *
+ * @param submission - Contact form data
+ * @returns Promise with submission response
+ * @throws Error if submission fails
+ */
+export async function submitContactForm(
+  submission: ContactSubmission
+): Promise<ContactSubmissionResponse> {
+  const response = await fetch(`${API_BASE}/submit`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(submission),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => null);
+    const errorMessage = errorData?.detail || 'Failed to submit contact form';
+    throw new Error(errorMessage);
+  }
+
+  return response.json();
+}

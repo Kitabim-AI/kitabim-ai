@@ -3,18 +3,19 @@
  */
 
 import React, { useState } from 'react';
-import { Book, Users, Settings, BarChart3 } from 'lucide-react';
+import { Book, Users, Settings, BarChart3, Mail } from 'lucide-react';
 import { useIsAdmin } from '../../hooks/useAuth';
 import { UserManagementPanel } from './users/UserManagementPanel';
 import { SystemConfigPanel } from './config/SystemConfigPanel';
 import { StatsPanel } from './StatsPanel';
+import { ContactSubmissionsPanel } from './ContactSubmissionsPanel';
 import { useI18n } from '../../i18n/I18nContext';
 
 interface AdminTabsProps {
   bookManagementPanel: React.ReactNode;
 }
 
-type TabId = 'books' | 'stats' | 'users' | 'config';
+type TabId = 'books' | 'stats' | 'users' | 'contacts' | 'config';
 
 interface Tab {
   id: TabId;
@@ -33,6 +34,7 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
     { id: 'users', label: t('admin.usersLabel'), icon: <Users size={18} />, adminOnly: true },
     { id: 'stats', label: t('admin.statsLabel') || 'Statistics', icon: <BarChart3 size={18} />, adminOnly: true },
     { id: 'config', label: t('admin.configLabel'), icon: <Settings size={18} />, adminOnly: true },
+    { id: 'contacts', label: t('admin.contactsLabel'), icon: <Mail size={18} />, adminOnly: true },
   ];
 
   const visibleTabs = tabs.filter((tab) => !tab.adminOnly || isAdmin);
@@ -69,6 +71,7 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
       <div className="">
         {activeTab === 'books' && bookManagementPanel}
         {activeTab === 'users' && isAdmin && <UserManagementPanel />}
+        {activeTab === 'contacts' && isAdmin && <ContactSubmissionsPanel />}
         {activeTab === 'stats' && isAdmin && <StatsPanel />}
         {activeTab === 'config' && isAdmin && <SystemConfigPanel />}
       </div>
