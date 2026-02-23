@@ -12,6 +12,7 @@ from app.services.rag_service import rag_service
 from app.services.chat_limit_service import chat_limit_service
 from app.utils.errors import record_book_error
 from app.utils.observability import log_json
+from app.utils.citation_fixer import fix_malformed_citations
 from app.auth.dependencies import require_reader
 from app.core.i18n import t
 
@@ -56,6 +57,9 @@ async def chat_with_book_api(
     try:
         # 2. Process chat request
         answer = await rag_service.answer_question(req, session, user_id=current_user.id)
+
+        # 2.5. Fix malformed citation references
+        answer = fix_malformed_citations(answer)
 
         # 3. Increment usage on successful answer
         await chat_limit_service.increment_usage(current_user, session)
@@ -111,10 +115,19 @@ async def chat_with_book_stream(
 
     async def event_generator():
         stream_completed = False
+        accumulated_response = ""
         try:
             # Stream chunks from RAG service
             async for chunk in rag_service.answer_question_stream(req, session, user_id=current_user.id):
+                accumulated_response += chunk
                 yield f'data: {json.dumps({"chunk": chunk})}\n\n'
+
+            # After streaming completes, apply citation fixer and send fixed version if needed
+            fixed_response = fix_malformed_citations(accumulated_response)
+            if fixed_response != accumulated_response:
+                # Send the corrected version
+                log_json(logger, logging.INFO, "Citations were fixed in stream", user_id=current_user.id)
+                yield f'data: {json.dumps({"correction": fixed_response})}\n\n'
 
             stream_completed = True
             yield f'data: {json.dumps({"done": True})}\n\n'

@@ -137,6 +137,7 @@ async def update_config(
         config.description = data.description
 
     await session.commit()
+    await session.refresh(config)
 
     return SystemConfigResponse(
         key=config.key,

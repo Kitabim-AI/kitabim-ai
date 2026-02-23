@@ -112,7 +112,13 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
           setStreamingMessage('');
           setIsChatting(false);
         },
-        controller.signal
+        controller.signal,
+        // onCorrection
+        (correctedText: string) => {
+          // Replace the streaming message with the corrected version
+          setStreamingMessage(correctedText);
+          streamingMessageRef.current = correctedText;
+        }
       );
     } catch (err: any) {
       if (err.name === 'AbortError') return;

@@ -75,7 +75,8 @@ export const chatWithBookStream = async (
   onChunk: (chunk: string) => void,
   onComplete: () => void,
   onError: (error: string) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onCorrection?: (correctedText: string) => void
 ): Promise<void> => {
   try {
     const response = await authFetch(`${API_BASE}/chat/stream`, {
@@ -141,6 +142,11 @@ export const chatWithBookStream = async (
               return;
             } else if (data.chunk) {
               onChunk(data.chunk);
+            } else if (data.correction) {
+              // Backend has sent a corrected version with fixed citations
+              if (onCorrection) {
+                onCorrection(data.correction);
+              }
             } else if (data.done) {
               onComplete();
               return;
