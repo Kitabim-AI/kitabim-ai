@@ -49,6 +49,8 @@ export function getAuthHeaders(): HeadersInit {
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
+  const lang = localStorage.getItem('kitabim_language') || 'ug';
+  headers['Accept-Language'] = lang;
   return headers;
 }
 
@@ -65,6 +67,8 @@ export async function authFetch(
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
+  const lang = localStorage.getItem('kitabim_language') || 'ug';
+  headers.set('Accept-Language', lang);
 
   const response = await fetch(url, {
     ...options,

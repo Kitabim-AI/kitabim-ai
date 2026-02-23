@@ -10,7 +10,13 @@ interface I18nContextType {
 const I18nContext = createContext<I18nContextType | undefined>(undefined);
 
 export const I18nProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [language, setLanguage] = useState<Language>(defaultLanguage);
+  const savedLang = (localStorage.getItem('kitabim_language') as Language) || defaultLanguage;
+  const [language, setLanguageState] = useState<Language>(savedLang);
+
+  const setLanguage = (lang: Language) => {
+    setLanguageState(lang);
+    localStorage.setItem('kitabim_language', lang);
+  };
 
   const t = (key: string, params?: Record<string, string | number>): string => {
     let translation = getNestedTranslation(translations[language], key);
