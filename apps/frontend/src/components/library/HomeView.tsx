@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Book as BookIcon, ArrowRight, X } from 'lucide-react';
+import { Search, Book as BookIcon, ArrowRight, X, RefreshCw } from 'lucide-react';
 import { BookCard } from './BookCard';
 import { PersistenceService } from '../../services/persistenceService';
 import { useI18n } from '../../i18n/I18nContext';
@@ -53,16 +53,18 @@ export const HomeView: React.FC = () => {
   const hasSearch = searchQuery.length > 0 || selectedCategory.length > 0;
 
   return (
-    <div className={`flex flex-col items-center transition-all duration-1000 ${hasSearch ? 'pt-6' : 'pt-20'}`} dir="rtl" lang="ug">
+    <div className={`flex flex-col items-center transition-all duration-1000 ${hasSearch ? 'pt-4 sm:pt-6' : 'pt-8 sm:pt-12 md:pt-20'}`} dir="rtl" lang="ug">
       {/* Brand & Hero Section */}
-      <div className={`text-center mb-10 transition-all duration-1000 ${hasSearch ? 'scale-75 opacity-70 mb-4' : 'scale-100 opacity-100'}`}>
-        <div className="flex flex-col items-center gap-2 mb-6">
-          <div className="px-6 py-2 bg-[#0369a1] text-white rounded-full text-[14px] font-normal uppercase mb-4 border border-[#0369a1]/20 shadow-[0_8px_20px_rgba(3,105,161,0.2)]">
+      <div className={`text-center mb-6 sm:mb-8 md:mb-10 transition-all duration-1000 ${hasSearch ? 'scale-75 opacity-70 mb-4' : 'scale-100 opacity-100'}`}>
+        <div className="flex flex-col items-center gap-2 mb-4 sm:mb-6">
+          <div className="px-4 sm:px-6 py-2 bg-[#0369a1] text-white rounded-full text-xs sm:text-sm font-normal uppercase mb-3 sm:mb-4 border border-[#0369a1]/20 shadow-[0_8px_20px_rgba(3,105,161,0.2)]">
             {t('app.tagline')}
           </div>
           <h1
-            className="font-black text-[#1a1a1a] leading-none transition-all duration-1000"
-            style={{ fontSize: hasSearch ? '3rem' : '5rem' }}
+            className={`font-black text-[#1a1a1a] leading-none transition-all duration-1000 ${hasSearch
+              ? 'text-2xl sm:text-3xl md:text-4xl'
+              : 'text-4xl sm:text-5xl md:text-6xl lg:text-7xl'
+              }`}
           >
             Kitabim<span className="text-[#0369a1]">.AI</span>
           </h1>
@@ -70,26 +72,32 @@ export const HomeView: React.FC = () => {
 
         {proverb ? (
           <div className="flex flex-col items-center gap-1">
-            <p className="uyghur-text font-normal text-[#1a1a1a] leading-relaxed italic max-w-3xl px-6 transition-all duration-700"
-              style={{ fontSize: hasSearch ? '1.1rem' : '1.5rem', opacity: hasSearch ? 0.6 : 1 }}>
+            <p className={`uyghur-text font-normal text-[#1a1a1a] leading-relaxed italic max-w-3xl px-4 sm:px-6 transition-all duration-700 ${hasSearch
+              ? 'text-base sm:text-lg md:text-xl opacity-60'
+              : 'text-lg sm:text-xl md:text-2xl opacity-100'
+              }`}>
               {proverb.text}
             </p>
           </div>
         ) : (
-          <p className="text-[#94a3b8] font-bold text-xl mb-8">{t('app.welcome')}</p>
+          <p className="text-[#94a3b8] font-bold text-lg sm:text-xl mb-6 sm:mb-8">{t('app.welcome')}</p>
         )}
       </div>
 
       {/* Search Section */}
-      <div className="w-full max-w-3xl px-4 relative mb-12">
+      <div className="w-full max-w-3xl px-4 relative mb-8 sm:mb-10 md:mb-12">
         <div className="relative group">
-          <div className="absolute inset-y-0 right-0 pr-6 flex items-center pointer-events-none text-[#94a3b8] group-focus-within:text-[#0369a1] transition-colors z-10">
-            <Search size={22} strokeWidth={3} />
+          <div className="absolute inset-y-0 right-0 pr-4 sm:pr-6 flex items-center pointer-events-none text-[#94a3b8] group-focus-within:text-[#0369a1] transition-colors z-10">
+            {isInitialLoading && searchQuery ? (
+              <RefreshCw size={20} className="sm:w-[22px] sm:h-[22px] animate-spin" strokeWidth={3} />
+            ) : (
+              <Search size={20} className="sm:w-[22px] sm:h-[22px]" strokeWidth={3} />
+            )}
           </div>
           <input
             ref={searchInputRef}
             type="text"
-            className="w-full px-16 py-5 bg-white/60 backdrop-blur-2xl border-2 border-[#0369a1]/10 rounded-[32px] text-lg font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none focus:border-[#0369a1] focus:ring-[12px] focus:ring-[#0369a1]/5 transition-all shadow-xl uyghur-text"
+            className="w-full px-12 sm:px-16 py-4 sm:py-5 bg-white/60 backdrop-blur-2xl border-2 border-[#0369a1]/10 rounded-[32px] text-base sm:text-lg font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none focus:border-[#0369a1] focus:ring-[12px] focus:ring-[#0369a1]/5 transition-all shadow-xl uyghur-text"
             placeholder={t('home.searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -98,22 +106,22 @@ export const HomeView: React.FC = () => {
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute inset-y-0 left-6 flex items-center text-[#94a3b8] hover:text-[#0369a1] transition-colors z-10"
+              className="absolute inset-y-0 left-4 sm:left-6 flex items-center text-[#94a3b8] hover:text-[#0369a1] transition-colors z-10 min-w-[44px] min-h-[44px]"
             >
-              <X size={24} strokeWidth={3} />
+              <X size={22} className="sm:w-[24px] sm:h-[24px]" strokeWidth={3} />
             </button>
           )}
         </div>
 
         {/* Categories helper */}
         {!hasSearch && topCategories.length > 0 && (
-          <div className="mt-12 flex flex-wrap justify-center gap-3 px-4">
-            <span className="w-full text-center text-[14px] font-normal text-[#94a3b8] uppercase mb-4">{t('home.topCategories')}</span>
+          <div className="mt-8 sm:mt-10 md:mt-12 flex flex-wrap justify-center gap-2 sm:gap-3 px-4">
+            <span className="w-full text-center text-xs sm:text-sm font-normal text-[#94a3b8] uppercase mb-2 sm:mb-4">{t('home.topCategories')}</span>
             {topCategories.map(cat => (
               <button
                 key={cat}
                 onClick={() => handleCategoryClick(cat)}
-                className="px-6 py-2.5 bg-white/40 backdrop-blur-md border border-[#75C5F0]/10 rounded-2xl text-sm font-normal text-[#1a1a1a] hover:bg-[#75C5F0] hover:text-white transition-all active:scale-95 shadow-sm hover:shadow-lg hover:shadow-[#75C5F0]/20"
+                className="px-4 sm:px-6 py-2.5 min-h-[48px] sm:min-h-0 bg-white/40 backdrop-blur-md border border-[#75C5F0]/10 rounded-2xl text-sm font-normal text-[#1a1a1a] hover:bg-[#75C5F0] hover:text-white transition-all active:scale-95 shadow-sm hover:shadow-lg hover:shadow-[#75C5F0]/20"
               >
                 {cat}
               </button>
@@ -124,21 +132,21 @@ export const HomeView: React.FC = () => {
 
       {/* Results Section */}
       {hasSearch && (
-        <div className="w-full max-w-none px-4 md:px-8 pb-32">
-          <div className="flex flex-col md:flex-row md:items-center justify-between mb-16 gap-4">
-            <div className="flex items-center gap-4">
+        <div className="w-full max-w-none px-4 md:px-8 pb-24 sm:pb-32">
+          <div className="flex flex-col md:flex-row md:items-center justify-between mb-10 sm:mb-12 md:mb-16 gap-4">
+            <div className="flex items-center gap-3 sm:gap-4">
               <button
                 onClick={() => { setSearchQuery(''); setSelectedCategory(''); }}
-                className="p-3 bg-white/40 hover:bg-[#0369a1] text-[#0369a1] hover:text-white rounded-2xl transition-all shadow-sm active:scale-90"
+                className="p-3 min-w-[44px] min-h-[44px] bg-white/40 hover:bg-[#0369a1] text-[#0369a1] hover:text-white rounded-2xl transition-all shadow-sm active:scale-90"
               >
-                <ArrowRight size={24} strokeWidth={3} className="rotate-180" />
+                <ArrowRight size={22} className="sm:w-[24px] sm:h-[24px] rotate-180" strokeWidth={3} />
               </button>
               <div>
-                <h2 className="text-2xl md:text-3xl font-normal text-[#1a1a1a]">{t('home.searchResults')}</h2>
-                <p className="text-[12px] md:text-[14px] font-normal text-[#94a3b8] uppercase mt-1">«{searchQuery || selectedCategory}» {t('home.resultsFor')}</p>
+                <h2 className="text-xl sm:text-2xl md:text-3xl font-normal text-[#1a1a1a]">{t('home.searchResults')}</h2>
+                <p className="text-[11px] sm:text-[12px] md:text-[14px] font-normal text-[#94a3b8] uppercase mt-1">«{searchQuery || selectedCategory}» {t('home.resultsFor')}</p>
               </div>
             </div>
-            <div className="px-6 py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl text-sm font-normal shadow-inner border border-[#0369a1]/5 w-fit">
+            <div className="px-4 sm:px-6 py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl text-xs sm:text-sm font-normal shadow-inner border border-[#0369a1]/5 w-fit">
               <span className="opacity-60">{t('common.total')}</span> {books.length} <span className="opacity-60">{t('home.totalBooks')}</span>
             </div>
           </div>

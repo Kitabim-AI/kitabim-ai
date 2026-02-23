@@ -108,6 +108,7 @@
     "category": "Category"
   },
   "chat": {
+    "chat": "Chat",
     "title": "Global Assistant",
     "subtitle": "Ask questions about all books",
     "globalAssistant": "Global Assistant",
@@ -132,6 +133,7 @@
     "noContentFound": "No content found."
   },
   "reader": {
+    "reading": "Reading",
     "title": "Reader",
     "close": "Close",
     "fontSize": "Font Size",

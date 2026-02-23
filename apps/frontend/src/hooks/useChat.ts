@@ -29,14 +29,16 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     scrollToBottom();
   }, [chatMessages, isChatting, view, streamingMessage]);
 
-  // Fetch usage status on mount and when messages change (after sending)
+  // Fetch usage status on mount and when chatting status changes
   useEffect(() => {
     if (isAuthenticated) {
-      getChatUsage().then(setUsageStatus);
+      if (!isChatting && !streamingMessage) {
+        getChatUsage().then(setUsageStatus);
+      }
     } else {
       setUsageStatus(null);
     }
-  }, [isAuthenticated, chatMessages]);
+  }, [isAuthenticated, chatMessages, isChatting, streamingMessage]);
 
   const abortOngoingChat = () => {
     if (abortControllerRef.current) {
@@ -98,7 +100,6 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
         },
         // onComplete
         () => {
-          // Use ref to get the latest value
           const finalMessage = streamingMessageRef.current;
           setChatMessages(prev => [...prev, { role: 'model', text: finalMessage }]);
           setStreamingMessage('');
@@ -106,9 +107,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
         },
         // onError
         (error: string) => {
-          // If aborted, don't show error
           if (controller.signal.aborted) return;
-
           setChatMessages(prev => [...prev, { role: 'model', text: error }]);
           setStreamingMessage('');
           setIsChatting(false);

@@ -103,6 +103,24 @@ html {
   }
 }
 
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s linear infinite;
+}
+
+.animate-shimmer-fast {
+  animation: shimmer 1s linear infinite;
+}
+
 *,
 body,
 button,
@@ -259,7 +277,7 @@ body::after {
 }
 
 .paper-background {
-  background: linear-gradient(rgba(255,255,255,0.7), rgba(255,255,255,0.7)), url("https://www.transparenttextures.com/patterns/paper-fibers.png");
+  background: linear-gradient(rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.7)), url("https://www.transparenttextures.com/patterns/paper-fibers.png");
 }
 
 /* Utility to hide number input spinners */

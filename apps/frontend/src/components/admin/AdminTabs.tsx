@@ -38,7 +38,7 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
   const visibleTabs = tabs.filter((tab) => !tab.adminOnly || isAdmin);
 
   return (
-    <div className="space-y-8 animate-fade-in" dir="rtl" lang="ug">
+    <div className="space-y-8" dir="rtl" lang="ug">
       {/* Tab Navigation */}
       <div className="flex items-end border-b border-[#0369a1]/20 px-4 -mb-px">
         {visibleTabs.map((tab) => (
@@ -68,7 +68,7 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
       </div>
 
       {/* Tab Content */}
-      <div className="animate-fade-in">
+      <div className="">
         {activeTab === 'books' && bookManagementPanel}
         {activeTab === 'users' && isAdmin && <UserManagementPanel />}
         {activeTab === 'stats' && isAdmin && <StatsPanel />}

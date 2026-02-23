@@ -373,6 +373,8 @@ async def process_pdf_task(
                                         )
 
                                 if success:
+                                    from app.utils.text import normalize_uyghur_chars
+                                    page_text = normalize_uyghur_chars(page_text)
                                     page_text = normalize_markdown(page_text)
 
                                 # Update page status

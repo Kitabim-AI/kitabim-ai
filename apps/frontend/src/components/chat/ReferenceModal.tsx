@@ -9,28 +9,30 @@ interface ReferenceModalProps {
   isOpen: boolean;
   onClose: () => void;
   bookId: string;
-  pageNumber: number;
+  pageNumbers: number[];
 }
 
 export const ReferenceModal: React.FC<ReferenceModalProps> = ({
   isOpen,
   onClose,
   bookId,
-  pageNumber,
+  pageNumbers,
 }) => {
   const { t } = useI18n();
-  const [pageData, setPageData] = useState<any | null>(null);
+  const [pagesData, setPagesData] = useState<any[]>([]);
   const [bookData, setBookData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (isOpen && bookId && pageNumber) {
+    if (isOpen && bookId && pageNumbers?.length > 0) {
       setLoading(true);
       Promise.all([
-        PersistenceService.getPage(bookId, pageNumber),
+        ...pageNumbers.map(pageNum => PersistenceService.getPage(bookId, pageNum)),
         PersistenceService.getBookById(bookId)
-      ]).then(([page, book]) => {
-        setPageData(page);
+      ]).then(results => {
+        const pages = results.slice(0, -1);
+        const book = results[results.length - 1];
+        setPagesData(pages);
         setBookData(book);
         setLoading(false);
       }).catch(err => {
@@ -38,7 +40,7 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
         setLoading(false);
       });
     }
-  }, [isOpen, bookId, pageNumber]);
+  }, [isOpen, bookId, pageNumbers]);
 
   if (!isOpen) return null;
 
@@ -74,7 +76,7 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
               </h3>
               <div className="flex items-center gap-4 text-[#94a3b8] text-sm font-normal uppercase tracking-wider">
                 <span className="flex items-center gap-1.5 px-3 py-1 bg-[#0369a1]/10 text-[#0369a1] rounded-full">
-                  {t('chat.pageNumber', { page: pageNumber })}
+                  {pageNumbers?.map(p => t('chat.pageNumber', { page: p })).join('، ')}
                 </span>
                 {bookData?.volume && (
                   <span className="flex items-center gap-1.5 px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-xs">
@@ -99,17 +101,28 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
               <Loader2 size={48} className="animate-spin text-[#0369a1]" />
               <p className="text-lg text-slate-400 font-normal uppercase tracking-widest">{t('common.loading')}</p>
             </div>
-          ) : pageData?.text ? (
-            <div className="max-w-3xl mx-auto">
-              <div className="bg-white/80 p-10 rounded-[32px] shadow-sm border border-white relative overflow-hidden group">
-                {/* Cultural motif background */}
-                <div className="absolute top-0 right-0 w-32 h-32 bg-[#0369a1]/5 rounded-bl-[100px] -mr-10 -mt-10 transition-transform group-hover:scale-110 duration-700" />
+          ) : pagesData.length > 0 && pagesData.some(p => p?.text) ? (
+            <div className="max-w-3xl mx-auto space-y-6">
+              {pagesData.map((pageData, index) => {
+                const pageNum = pageNumbers[index];
+                if (!pageData?.text) return null;
+                return (
+                  <div key={`page-${pageNum}`} className="bg-white/80 p-10 pt-12 rounded-[32px] shadow-sm border border-white relative overflow-hidden group">
+                    {pageNumbers.length > 1 && (
+                      <div className="absolute top-0 right-0 bg-[#0369a1] text-white px-4 py-1.5 rounded-bl-[24px] text-sm font-normal shadow-sm z-20 opacity-80 backdrop-blur-md">
+                        {t('chat.pageNumber', { page: pageNum })}
+                      </div>
+                    )}
+                    {/* Cultural motif background */}
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-[#0369a1]/5 rounded-bl-[100px] -mr-10 -mt-10 transition-transform group-hover:scale-110 duration-700" />
 
-                <MarkdownContent
-                  content={pageData.text}
-                  className="text-lg leading-[2] text-[#1e293b] relative z-10"
-                />
-              </div>
+                    <MarkdownContent
+                      content={pageData.text}
+                      className="text-lg leading-[2] text-[#1e293b] relative z-10"
+                    />
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="h-64 flex flex-col items-center justify-center text-center gap-4 opacity-40">

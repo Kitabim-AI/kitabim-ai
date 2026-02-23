@@ -81,7 +81,7 @@ class DiscoveryService:
                 skipped_count += 1
                 continue
             
-            # Download temporarily to compute hash
+            # Download temporarily to compute hash and extract metadata
             # Include process ID to prevent temp file collisions between concurrent discoveries
             temp_path = settings.data_dir / f".discovery_{os.getpid()}_{hashlib.md5(remote_path.encode()).hexdigest()}.pdf"
             try:
@@ -100,26 +100,41 @@ class DiscoveryService:
                     duplicate_count += 1
                     temp_path.unlink(missing_ok=True)
                     continue
-                
-                # It's a truly new book!
-                # Generate a unique ID (MD5 of filename + current time for uniqueness)
+
+                # Extract title/metadata from PDF if possible
+                title_from_pdf = None
+                author_from_pdf = None
+                try:
+                    import fitz
+                    doc = fitz.open(temp_path)
+                    metadata = doc.metadata
+                    if metadata:
+                        title_from_pdf = metadata.get("title")
+                        author_from_pdf = metadata.get("author")
+                    doc.close()
+                except Exception as meta_exc:
+                    log_json(logger, logging.WARNING, "Failed to read PDF metadata during discovery",
+                             path=remote_path, error=str(meta_exc))
+
+                # Truly new book discovered
                 book_id = hashlib.md5(f"{file_name}{datetime.now(timezone.utc)}".encode()).hexdigest()[:12]
                 
-                # If the remote filename isn't the standard ID-style, we might want to rename it in GCS
-                # but for simplicity now, we just link to the existing path.
-                # However, the app expects uploads/{id}.pdf.
-                # Let's move/copy it to the standard location if needed.
+                # Decide on title: 1. metadata.title (if valid) 2. filename
+                if title_from_pdf and len(title_from_pdf.strip()) > 2 and not any(x in title_from_pdf.lower() for x in ["untitled", "microsoft word", "document"]):
+                    final_title = title_from_pdf.strip()
+                else:
+                    final_title = file_name.replace(".pdf", "")
+
+                # Standardize location in GCS: move to uploads/{book_id}.pdf
                 standard_path = f"uploads/{book_id}.pdf"
                 if remote_path != standard_path:
-                    # Upload the file to the new standard path
                     await storage.upload_file(temp_path, standard_path)
-                    # Delete the original to prevent duplicates
                     try:
                         await storage.delete_file(remote_path)
-                        log_json(logger, logging.INFO, "Cleaned up original file after standardization",
+                        log_json(logger, logging.INFO, "Standardized book path in GCS",
                                  original=remote_path, standardized=standard_path)
                     except Exception as e:
-                        log_json(logger, logging.WARNING, "Failed to delete original file",
+                        log_json(logger, logging.WARNING, "Failed to delete original file after standardization",
                                  path=remote_path, error=str(e))
                 
                 now = datetime.now(timezone.utc)
@@ -127,7 +142,8 @@ class DiscoveryService:
                     await self.books_repo.create(
                         id=book_id,
                         content_hash=content_hash,
-                        title=normalize_uyghur_chars(file_name.replace(".pdf", "")),
+                        title=normalize_uyghur_chars(final_title),
+                        author=normalize_uyghur_chars(author_from_pdf) if author_from_pdf else None,
                         file_name=file_name,
                         status="pending",
                         upload_date=now,
@@ -137,17 +153,17 @@ class DiscoveryService:
                     )
                     new_count += 1
                     discovered_ids.append(book_id)
-                    log_json(logger, logging.INFO, "Discovered new book from GCS", file_name=file_name, book_id=book_id)
+                    log_json(logger, logging.INFO, "Discovered and registered new book", 
+                             title=final_title, book_id=book_id)
                 except IntegrityError as ie:
-                    # Another discovery process created this book concurrently (race condition)
-                    # The unique constraint on content_hash prevents duplicates
                     duplicate_count += 1
-                    log_json(logger, logging.INFO, "Book already created by concurrent discovery",
+                    log_json(logger, logging.INFO, "Book already created concurrently",
                              file_name=file_name, error=str(ie))
-                    await self.session.rollback()  # Rollback the failed transaction
+                    await self.session.rollback()
                 
             except Exception as e:
-                log_json(logger, logging.ERROR, "Failed to index GCS file", path=remote_path, error=str(e))
+                log_json(logger, logging.ERROR, "Failed to process GCS discovery file", 
+                         path=remote_path, error=str(e))
             finally:
                 temp_path.unlink(missing_ok=True)
 

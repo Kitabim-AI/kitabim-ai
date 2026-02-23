@@ -43,7 +43,7 @@ export function FacebookLoginButton({ className = '' }: LoginButtonProps) {
     >
       <div className="bg-[#1877F2] p-1.5 rounded-lg">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
-          <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+          <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
         </svg>
       </div>
       <span className="uyghur-text">{isLoading ? t('auth.loggingIn') : t('auth.loginWithFacebook')}</span>
@@ -64,7 +64,7 @@ export function TwitterLoginButton({ className = '' }: LoginButtonProps) {
       <div className="bg-black p-1.5 rounded-lg">
         {/* X (formerly Twitter) logo */}
         <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
-          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
         </svg>
       </div>
       <span className="uyghur-text">{isLoading ? t('auth.loggingIn') : t('auth.loginWithTwitter')}</span>
@@ -72,7 +72,7 @@ export function TwitterLoginButton({ className = '' }: LoginButtonProps) {
   );
 }
 
-export function OAuthButtonGroup({ className = '' }: { className?: string }) {
+export function OAuthButtonGroup({ className = '', align = 'down' }: { className?: string; align?: 'up' | 'down' }) {
   const { loginWithGoogle, loginWithFacebook, loginWithTwitter, isLoading } = useAuth();
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
@@ -110,7 +110,7 @@ export function OAuthButtonGroup({ className = '' }: { className?: string }) {
       icon: (
         <div className="bg-[#1877F2] p-2 rounded-lg">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
-            <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+            <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
           </svg>
         </div>
       ),
@@ -122,7 +122,7 @@ export function OAuthButtonGroup({ className = '' }: { className?: string }) {
       icon: (
         <div className="bg-black p-2 rounded-lg">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
-            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
           </svg>
         </div>
       ),
@@ -143,7 +143,7 @@ export function OAuthButtonGroup({ className = '' }: { className?: string }) {
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-2 w-[280px] bg-white/95 backdrop-blur-2xl border border-[#0369a1]/20 rounded-2xl shadow-[0_16px_64px_rgba(3,105,161,0.15)] overflow-hidden animate-fade-in z-50">
+        <div className={`absolute ${align === 'up' ? 'bottom-full mb-2' : 'top-full mt-2'} left-0 w-[280px] bg-white/95 backdrop-blur-2xl border border-[#0369a1]/20 rounded-2xl shadow-[0_16px_64px_rgba(3,105,161,0.15)] overflow-hidden animate-fade-in z-50`}>
           {loginOptions.map((option, index) => (
             <button
               key={option.name}
@@ -152,9 +152,8 @@ export function OAuthButtonGroup({ className = '' }: { className?: string }) {
                 option.onClick();
               }}
               disabled={isLoading}
-              className={`w-full flex items-center gap-3 px-4 py-3 text-[#1a1a1a] hover:bg-gradient-to-r transition-all font-normal text-sm group ${
-                index !== loginOptions.length - 1 ? 'border-b border-[#0369a1]/10' : ''
-              }`}
+              className={`w-full flex items-center gap-3 px-4 py-3 text-[#1a1a1a] hover:bg-gradient-to-r transition-all font-normal text-sm group ${index !== loginOptions.length - 1 ? 'border-b border-[#0369a1]/10' : ''
+                }`}
               style={{
                 ['--tw-gradient-from' as string]: `${option.color}10`,
                 ['--tw-gradient-to' as string]: `${option.color}05`
@@ -195,7 +194,7 @@ export function UserMenu({ onLogout }: { onLogout?: () => void }) {
   const roleInfo: Record<string, { label: string; bg: string; text: string; icon: React.ReactNode }> = {
     admin: {
       label: t('admin.users.admin'),
-      bg: 'linear-gradient(135deg, #FFD54F 0%, #FF9800 50%, #9C27B0 100%)',
+      bg: 'linear-gradient(135deg, #0369a1 0%, #0284c7 100%)',
       text: 'text-white',
       icon: <Shield size={12} />
     },
@@ -219,13 +218,8 @@ export function UserMenu({ onLogout }: { onLogout?: () => void }) {
     <div ref={menuRef} className="relative z-[1001]" dir="rtl">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-3 px-2 py-2 pr-4 bg-white/75 backdrop-blur-md border border-[#FF9800]/10 rounded-2xl transition-all hover:bg-white hover:shadow-xl hover:shadow-[#FF9800]/10 group ${isOpen ? 'ring-4 ring-[#FF9800]/5 border-[#FF9800]/30' : ''}`}
+        className={`p-1.5 bg-white/75 backdrop-blur-md border border-[#0369a1]/10 rounded-2xl transition-all hover:bg-white hover:shadow-xl hover:shadow-[#0369a1]/10 group ${isOpen ? 'ring-4 ring-[#0369a1]/5 border-[#0369a1]/30' : ''}`}
       >
-        <div className="flex flex-col items-end mr-3 hidden sm:flex">
-          <span className="text-sm font-normal text-[#1a1a1a]">{user.displayName}</span>
-          <span className="text-[12px] font-normal text-[#FF9800] uppercase">{currentRole.label}</span>
-        </div>
-
         <div className="relative">
           <UserAvatar
             url={user.avatarUrl}
@@ -239,14 +233,12 @@ export function UserMenu({ onLogout }: { onLogout?: () => void }) {
             {currentRole.icon}
           </div>
         </div>
-
-        <ChevronDown size={14} className={`text-slate-400 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} strokeWidth={3} />
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-4 w-72 bg-white/95 backdrop-blur-2xl border border-[#FF9800]/20 rounded-[32px] shadow-[0_32px_128px_rgba(255,152,0,0.1)] overflow-hidden animate-fade-in p-2">
+        <div className="absolute top-full left-0 mt-4 w-72 bg-white/95 backdrop-blur-2xl border border-[#0369a1]/20 rounded-[32px] shadow-[0_32px_128px_rgba(3,105,161,0.1)] overflow-hidden animate-fade-in p-2">
           {/* User Header */}
-          <div className="p-6 mb-2 bg-gradient-to-br from-[#FF9800]/5 to-[#9C27B0]/5 rounded-[24px] flex flex-col items-center text-center">
+          <div className="p-6 mb-2 bg-gradient-to-br from-[#0369a1]/5 to-[#0284c7]/5 rounded-[24px] flex flex-col items-center text-center">
             <div className="relative mb-4">
               <div className="w-20 h-20 rounded-[28px] shadow-2xl overflow-hidden border-4 border-white bg-white transform rotate-3 transition-transform hover:rotate-0">
                 <UserAvatar
@@ -274,15 +266,15 @@ export function UserMenu({ onLogout }: { onLogout?: () => void }) {
                 onLogout?.();
               }}
               disabled={isLoading}
-              className="w-full flex items-center justify-between px-5 py-4 text-[#1a1a1a] hover:bg-[#FF9800]/5 rounded-2xl transition-all font-normal text-sm active:scale-95 group"
+              className="w-full flex items-center justify-between px-5 py-4 text-[#1a1a1a] hover:bg-[#0369a1]/5 rounded-2xl transition-all font-normal text-sm active:scale-95 group"
             >
               <div className="flex items-center gap-4">
-                <div className="p-2.5 bg-[#FF9800]/10 text-[#FF9800] rounded-xl group-hover:bg-[#FF9800] group-hover:text-white transition-all shadow-sm">
+                <div className="p-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-xl group-hover:bg-[#0369a1] group-hover:text-white transition-all shadow-sm">
                   <LogOut size={18} strokeWidth={2.5} />
                 </div>
-                <span className="group-hover:text-[#FF9800] transition-colors uppercase font-normal">{t('auth.logout')}</span>
+                <span className="group-hover:text-[#0369a1] transition-colors uppercase font-normal">{t('auth.logout')}</span>
               </div>
-              <ChevronDown size={14} className="opacity-0 group-hover:opacity-100 -rotate-90 transition-all text-[#FF9800]/30" strokeWidth={3} />
+              <ChevronDown size={14} className="opacity-0 group-hover:opacity-100 -rotate-90 transition-all text-[#0369a1]/30" strokeWidth={3} />
             </button>
           </div>
         </div>

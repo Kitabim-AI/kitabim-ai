@@ -15,6 +15,7 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
     setView,
     searchQuery,
     setSearchQuery,
+    homeSearchQuery,
     bookActions,
     chat,
     setPage,
@@ -29,7 +30,7 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
       <Navbar />
 
       <main className="flex-grow p-8 max-w-[1600px] mx-auto w-full relative z-10">
-        {isLoading && view !== 'reader' && (
+        {isLoading && view !== 'reader' && !searchQuery && !homeSearchQuery && (
           <div className="absolute inset-0 bg-white/40 backdrop-blur-md z-40 flex items-center justify-center min-h-[400px] rounded-[40px]">
             <div className="flex flex-col items-center gap-6">
               <div className="relative">

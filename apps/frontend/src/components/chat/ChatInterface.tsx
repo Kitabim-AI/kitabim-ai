@@ -41,15 +41,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const { t } = useI18n();
   const { isAuthenticated } = useAuth();
   const isGlobal = type === 'global';
-  const [selectedReference, setSelectedReference] = React.useState<{ bookId: string; pageNum: number } | null>(null);
+  const [selectedReference, setSelectedReference] = React.useState<{ bookId: string; pageNums: number[] } | null>(null);
 
-  const handleReferenceClick = (bookId: string, pageNum: number) => {
-    setSelectedReference({ bookId, pageNum });
+  const handleReferenceClick = (bookId: string, pageNums: number[]) => {
+    setSelectedReference({ bookId, pageNums });
   };
 
   if (isGlobal) {
     return (
-      <div className="h-[calc(100vh-140px)] max-w-5xl mx-auto w-full flex flex-col gap-6 animate-fade-in py-4" dir="rtl" lang="ug">
+      <div className="h-[calc(100vh-140px)] max-w-5xl mx-auto w-full flex flex-col gap-6 py-4" dir="rtl" lang="ug">
         {/* Chat Header */}
         <div className="bg-white/60 backdrop-blur-2xl px-8 py-4 flex items-center justify-between border border-[#0369a1]/10 shadow-sm group" style={{ borderRadius: '32px' }}>
           <div className="flex items-center gap-5">
@@ -98,7 +98,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             </div>
           ) : (
             chatMessages.map((msg, idx) => (
-              <div key={idx} className={`flex gap-6 ${msg.role === 'user' ? 'flex-row' : 'flex-row-reverse'} items-start animate-fade-in`}>
+              <div key={idx} className={`flex gap-6 ${msg.role === 'user' ? 'flex-row' : 'flex-row-reverse'} items-start`}>
                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transition-all transform hover:scale-110 ${msg.role === 'user'
                   ? 'bg-white border-2 border-[#0369a1]/10 text-[#0369a1]'
                   : 'bg-[#0369a1] text-white shadow-[#0369a1]/30'
@@ -128,7 +128,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             ))
           )}
           {streamingMessage && (
-            <div className="flex flex-row-reverse gap-6 items-start animate-fade-in">
+            <div className="flex flex-row-reverse gap-6 items-start">
               <div className="w-12 h-12 rounded-2xl bg-[#0369a1] text-white flex items-center justify-center shadow-xl shadow-[#0369a1]/20">
                 <Bot size={24} strokeWidth={2.5} />
               </div>
@@ -148,7 +148,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             </div>
           )}
           {isChatting && !streamingMessage && (
-            <div className="flex flex-row-reverse gap-6 items-start animate-fade-in">
+            <div className="flex flex-row-reverse gap-6 items-start">
               <div className="w-12 h-12 rounded-2xl bg-[#0369a1] text-white flex items-center justify-center shadow-xl shadow-[#0369a1]/20 animate-pulse">
                 <Bot size={24} strokeWidth={2.5} />
               </div>
@@ -208,21 +208,23 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             </div>
           )}
         </div>
-        {selectedReference && (
-          <ReferenceModal
-            isOpen={!!selectedReference}
-            onClose={() => setSelectedReference(null)}
-            bookId={selectedReference.bookId}
-            pageNumber={selectedReference.pageNum}
-          />
-        )}
-      </div>
+        {
+          selectedReference && (
+            <ReferenceModal
+              isOpen={!!selectedReference}
+              onClose={() => setSelectedReference(null)}
+              bookId={selectedReference.bookId}
+              pageNumbers={selectedReference.pageNums}
+            />
+          )
+        }
+      </div >
     );
   }
 
   // Sidebar (Reader) Chat Version
   return (
-    <div className="h-full flex flex-col gap-6 animate-fade-in relative" dir="rtl" lang="ug">
+    <div className="h-full flex flex-col gap-6 relative" dir="rtl" lang="ug">
       <div className="bg-white/60 backdrop-blur-xl p-5 flex items-center justify-between border border-[#0369a1]/10 shadow-sm" style={{ borderRadius: '24px' }}>
         <div className="flex items-center gap-4">
           <div className="p-2.5 bg-[#0369a1] text-white rounded-2xl shadow-lg shadow-[#0369a1]/10">
@@ -252,7 +254,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           </div>
         )}
         {chatMessages.map((msg, idx) => (
-          <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row' : 'flex-row-reverse'} items-start animate-fade-in`}>
+          <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row' : 'flex-row-reverse'} items-start`}>
             <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm shadow-sm ${msg.role === 'user' ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'bg-[#0369a1] text-white'
               }`}>
               {msg.role === 'user' ? <User size={18} strokeWidth={2.5} /> : <Bot size={18} strokeWidth={2.5} />}
@@ -276,7 +278,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           </div>
         ))}
         {streamingMessage && (
-          <div className="flex gap-3 flex-row-reverse items-start animate-fade-in">
+          <div className="flex gap-3 flex-row-reverse items-start">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm shadow-sm bg-[#0369a1] text-white">
               <Bot size={18} strokeWidth={2.5} />
             </div>
@@ -293,7 +295,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           </div>
         )}
         {isChatting && !streamingMessage && (
-          <div className="flex flex-row-reverse gap-3 items-center px-4 animate-fade-in">
+          <div className="flex flex-row-reverse gap-3 items-center px-4">
             <div className="w-1.5 h-1.5 bg-[#0369a1] rounded-full animate-bounce" />
             <div className="w-1.5 h-1.5 bg-[#0369a1] rounded-full animate-bounce [animation-delay:0.2s]" />
             <div className="w-1.5 h-1.5 bg-[#0369a1] rounded-full animate-bounce [animation-delay:0.4s]" />
@@ -341,12 +343,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           </div>
         )}
       </div>
+      {/* Reference Modal */}
       {selectedReference && (
         <ReferenceModal
           isOpen={!!selectedReference}
           onClose={() => setSelectedReference(null)}
-          bookId={selectedReference.bookId}
-          pageNumber={selectedReference.pageNum}
+          bookId={selectedReference?.bookId || ''}
+          pageNumbers={selectedReference?.pageNums || []}
         />
       )}
     </div>

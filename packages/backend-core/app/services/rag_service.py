@@ -107,6 +107,7 @@ class RAGService:
             "   - Use > for direct quotations from the source text\n"
             "3. If the context contains the information, ALWAYS cite the source clearly including book title, author, volume number (if present), and page number.\n"
             "4. Format citations in Uyghur as a markdown link. The link URL MUST be in the format 'ref:book_id:page_number'.\n"
+            "   If multiple pages are referenced, separate the page numbers with commas in the URL (e.g. 'ref:book_id:9,10').\n"
             "   Example: **مەنبە:** [فلانى كىتاب (فلانى ئاپتور)، 1-توم، 25-بەت](ref:BOOK_ID_HERE:25)\n"
             "5. Replace BOOK_ID_HERE with the actual ID provided in the context header for that document. **Citations must be placed immediately after the relevant sentence or paragraph they support. NEVER group all citations at the end of your response.**\n"
             "6. If the context is marked as 'NO RELEVANT DOCUMENTS FOUND' or does not contain the answer:\n"

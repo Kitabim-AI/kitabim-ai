@@ -33,25 +33,31 @@ export const LibraryView: React.FC = () => {
   }, [hasMore, isLoadingMore, loadMore, loaderRef, isInitialLoading]);
 
   return (
-    <div className="space-y-12 animate-fade-in" dir="rtl">
+    <div className="space-y-8 sm:space-y-10 md:space-y-12" dir="rtl">
       {/* Header Section */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-12 border-b border-[#0369a1]/10 relative">
-        <header className="space-y-4">
-          <div className="flex items-center gap-4 group">
-            <div className="p-3.5 bg-[#0369a1] text-white rounded-[24px] shadow-xl shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:-rotate-6">
-              <Library size={32} strokeWidth={2.5} />
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 sm:gap-6 pb-8 sm:pb-10 md:pb-12 border-b border-[#0369a1]/10 relative">
+        <header className="space-y-3 sm:space-y-4">
+          <div className="flex items-center gap-3 sm:gap-4 group">
+            <div className="p-3 sm:p-3.5 bg-[#0369a1] text-white rounded-[20px] sm:rounded-[24px] shadow-xl shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:-rotate-6">
+              <Library size={28} className="sm:w-[32px] sm:h-[32px]" strokeWidth={2.5} />
             </div>
             <div>
-              <h2 className="text-3xl font-black text-[#1a1a1a]">{t('library.title')}</h2>
-              <div className="flex items-center gap-2 mt-2">
-                <span className="w-8 h-[2px] bg-[#0369a1] rounded-full" />
-                <p className="text-[14px] font-black text-[#94a3b8] uppercase">{t('library.subtitle')}</p>
+              <h2 className="text-2xl sm:text-3xl font-black text-[#1a1a1a]">{t('library.title')}</h2>
+              <div className="flex items-center gap-2 mt-1 sm:mt-2">
+                <span className="w-6 sm:w-8 h-[2px] bg-[#0369a1] rounded-full" />
+                <p className="text-xs sm:text-sm font-black text-[#94a3b8] uppercase">{t('library.subtitle')}</p>
               </div>
             </div>
           </div>
         </header>
 
         <div className="flex items-center gap-4">
+          <div className="flex md:hidden items-center gap-2 px-4 py-2 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner">
+            <BookOpen size={16} strokeWidth={2.5} />
+            <span className="text-xs font-normal uppercase">
+              {totalReady} {t('home.totalBooks')}
+            </span>
+          </div>
           <div className="hidden md:flex items-center gap-3 px-6 py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner">
             <BookOpen size={18} strokeWidth={2.5} />
             <span className="text-sm font-normal uppercase">
@@ -62,7 +68,7 @@ export const LibraryView: React.FC = () => {
       </div>
 
       {/* Grid Section */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-8 gap-y-12 justify-items-center">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-6 sm:gap-x-8 gap-y-10 sm:gap-y-12 justify-items-center">
         {books.map(book => (
           <BookCard
             key={book.id}

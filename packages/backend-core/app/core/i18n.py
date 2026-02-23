@@ -33,8 +33,22 @@ class I18n:
         if lang not in cls._translations:
             return key
             
-        text = cls._translations[lang].get(key, cls._translations.get("en", {}).get(key, key))
-        
+        def _get_nested(d: dict, k: str) -> Optional[str]:
+            parts = k.split('.')
+            curr = d
+            for part in parts:
+                if isinstance(curr, dict) and part in curr:
+                    curr = curr[part]
+                else:
+                    return None
+            return curr if isinstance(curr, str) else None
+            
+        text = _get_nested(cls._translations[lang], key)
+        if text is None and lang != "en" and "en" in cls._translations:
+            text = _get_nested(cls._translations["en"], key)
+            
+        if text is None:
+            text = key
         if kwargs:
             try:
                 return text.format(**kwargs)

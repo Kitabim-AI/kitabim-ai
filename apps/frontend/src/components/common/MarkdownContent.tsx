@@ -4,7 +4,7 @@ type MarkdownContentProps = {
   content: string;
   className?: string;
   style?: React.CSSProperties;
-  onReferenceClick?: (bookId: string, pageNum: number) => void;
+  onReferenceClick?: (bookId: string, pageNums: number[]) => void;
 };
 
 const splitInline = (text: string, regex: RegExp, render: (match: string, group1: string, group2: string | undefined, key: number) => React.ReactNode) => {
@@ -36,7 +36,7 @@ const applyInline = (
   render: (match: string, group1: string, group2: string | undefined, key: number) => React.ReactNode
 ) => nodes.flatMap(node => (typeof node === 'string' ? splitInline(node, regex, render) : [node]));
 
-const renderInline = (text: string, onReferenceClick?: (bookId: string, pageNum: number) => void) => {
+const renderInline = (text: string, onReferenceClick?: (bookId: string, pageNums: number[]) => void) => {
   let nodes: React.ReactNode[] = [text];
 
   // Handle markdown links: [text](url)
@@ -44,16 +44,17 @@ const renderInline = (text: string, onReferenceClick?: (bookId: string, pageNum:
     if (url?.startsWith('ref:')) {
       const parts = url.split(':');
       const bookId = parts[1];
-      const pageNum = parseInt(parts[2], 10);
+      const pageNumsStr = parts[2] || '';
+      const pageNums = pageNumsStr.split(',').map(p => parseInt(p.trim(), 10)).filter(p => !isNaN(p));
 
       return (
         <button
           key={`ref-${key}`}
           onClick={(e) => {
             e.preventDefault();
-            console.log('Reference clicked:', { bookId, pageNum });
-            if (onReferenceClick && bookId && !isNaN(pageNum)) {
-              onReferenceClick(bookId, pageNum);
+            console.log('Reference clicked:', { bookId, pageNums });
+            if (onReferenceClick && bookId && pageNums.length > 0) {
+              onReferenceClick(bookId, pageNums);
             }
           }}
           className="text-inherit hover:opacity-70 underline decoration-dotted underline-offset-4 font-normal transition-all"
@@ -97,7 +98,7 @@ const renderInline = (text: string, onReferenceClick?: (bookId: string, pageNum:
   return nodes;
 };
 
-const renderParagraph = (text: string, key: string, onReferenceClick?: (bookId: string, pageNum: number) => void) => {
+const renderParagraph = (text: string, key: string, onReferenceClick?: (bookId: string, pageNums: number[]) => void) => {
   const lines = text.split('\n');
   return (
     <p key={key} className="leading-relaxed">

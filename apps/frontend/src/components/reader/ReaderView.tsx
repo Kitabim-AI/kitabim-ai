@@ -47,6 +47,7 @@ export const ReaderView: React.FC = () => {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMorePages, setHasMorePages] = useState(true);
   const [isFetchingContent, setIsFetchingContent] = useState(false);
+  const [mobileTab, setMobileTab] = useState<'reader' | 'chat'>('reader');
 
   const pageTextAreaRef = useRef<HTMLTextAreaElement>(null);
   const globalTextAreaRef = useRef<HTMLTextAreaElement>(null);
@@ -221,22 +222,46 @@ export const ReaderView: React.FC = () => {
   };
 
   return (
-    <div className="h-[calc(100vh-140px)] flex flex-col md:flex-row-reverse gap-6 animate-fade-in py-4" lang="ug">
+    <div className="h-[calc(100vh-100px)] sm:h-[calc(100vh-120px)] md:h-[calc(100vh-140px)] flex flex-col xl:flex-row-reverse gap-4 xl:gap-6 py-2 md:py-4" lang="ug">
+      {/* Mobile/Tablet Tab Switcher */}
+      <div className="xl:hidden flex gap-2 px-2">
+        <button
+          onClick={() => setMobileTab('reader')}
+          className={`flex-1 flex items-center justify-center gap-3 py-3 px-4 rounded-2xl font-bold text-sm transition-all ${mobileTab === 'reader'
+            ? 'bg-[#0369a1] text-white shadow-lg'
+            : 'bg-white/60 text-[#64748b] border border-[#0369a1]/10'
+            }`}
+        >
+          <BookOpen className="inline-block" size={18} />
+          <span>{t('reader.reading')}</span>
+        </button>
+        <button
+          onClick={() => setMobileTab('chat')}
+          className={`flex-1 flex items-center justify-center gap-3 py-3 px-4 rounded-2xl font-bold text-sm transition-all ${mobileTab === 'chat'
+            ? 'bg-[#0369a1] text-white shadow-lg'
+            : 'bg-white/60 text-[#64748b] border border-[#0369a1]/10'
+            }`}
+        >
+          <MessageSquare className="inline-block" size={18} />
+          <span>{t('chat.chat')}</span>
+        </button>
+      </div>
+
       {/* Main Content Area */}
-      <div className="flex-grow glass-panel flex flex-col overflow-hidden rounded-[32px] border border-[#0369a1]/10 shadow-2xl">
+      <div className={`flex-grow glass-panel flex-col overflow-hidden rounded-[32px] border border-[#0369a1]/10 shadow-2xl ${mobileTab === 'reader' ? 'flex' : 'hidden xl:flex'}`}>
         {/* Header Ribbon */}
-        <div className="px-6 py-4 border-b border-[#0369a1]/10 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/40">
+        <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-[#0369a1]/10 flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-4 bg-white/40">
           <div className="flex items-center gap-4">
             <div className="p-2 bg-[#0369a1] text-white rounded-xl shadow-lg">
               <BookOpen size={20} />
             </div>
             <div>
-              <h2 className="font-normal text-[#1a1a1a] text-lg">
+              <h2 className="font-normal text-[#1a1a1a] text-base sm:text-lg">
                 {selectedBook.title}
                 {selectedBook.volume ? ` (${t('book.volume', { volume: selectedBook.volume })})` : ''}
               </h2>
               {selectedBook.author && (
-                <p className="text-sm text-[#64748b] mt-0.5">
+                <p className="text-xs sm:text-sm text-[#64748b] mt-0.5">
                   {selectedBook.author}
                 </p>
               )}
@@ -246,25 +271,31 @@ export const ReaderView: React.FC = () => {
           <div className="flex items-center gap-2 flex-wrap md:flex-nowrap">
             {isEditor && (
               !isEditing ? (
-                <button onClick={handleEnterGlobalEdit} className="flex items-center gap-2 px-4 py-2.5 bg-[#0369a1] text-white text-sm rounded-2xl hover:bg-[#0284c7] transition-all"><Edit3 size={16} /> {t('reader.editBook')}</button>
+                <button onClick={handleEnterGlobalEdit} className="flex items-center gap-2 px-3 sm:px-4 py-2.5 min-h-[44px] bg-[#0369a1] text-white text-xs sm:text-sm rounded-2xl hover:bg-[#0284c7] transition-all">
+                  <Edit3 size={16} />
+                  <span className="hidden sm:inline">{t('reader.editBook')}</span>
+                </button>
               ) : (
-                <button onClick={handleSaveCorrections} className="flex items-center gap-2 px-4 py-2.5 bg-[#0369a1] text-white text-sm rounded-2xl hover:bg-[#0284c7] transition-all"><Save size={16} /> {t('common.save')}</button>
+                <button onClick={handleSaveCorrections} className="flex items-center gap-2 px-3 sm:px-4 py-2.5 min-h-[44px] bg-[#0369a1] text-white text-xs sm:text-sm rounded-2xl hover:bg-[#0284c7] transition-all">
+                  <Save size={16} />
+                  <span className="hidden sm:inline">{t('common.save')}</span>
+                </button>
               )
             )}
 
             <div className="flex items-center gap-1 bg-white/60 border border-[#0369a1]/20 rounded-2xl p-1 shadow-sm">
-              <button onClick={() => setFontSize(prev => Math.max(14, prev - 2))} className="p-2 hover:bg-[#0369a1]/10 rounded-xl text-[#0369a1] transition-all"><Minus size={16} /></button>
-              <span className="text-sm px-2 font-bold">{fontSize}</span>
-              <button onClick={() => setFontSize(prev => Math.min(64, prev + 2))} className="p-2 hover:bg-[#0369a1]/10 rounded-xl text-[#0369a1] transition-all"><Plus size={16} /></button>
+              <button onClick={() => setFontSize(prev => Math.max(14, prev - 2))} className="p-2.5 sm:p-2 min-w-[44px] sm:min-w-0 min-h-[44px] sm:min-h-0 hover:bg-[#0369a1]/10 rounded-xl text-[#0369a1] transition-all"><Minus size={18} /></button>
+              <span className="text-sm px-2 font-bold min-w-[32px] text-center">{fontSize}</span>
+              <button onClick={() => setFontSize(prev => Math.min(64, prev + 2))} className="p-2.5 sm:p-2 min-w-[44px] sm:min-w-0 min-h-[44px] sm:min-h-0 hover:bg-[#0369a1]/10 rounded-xl text-[#0369a1] transition-all"><Plus size={18} /></button>
             </div>
 
 
-            <button onClick={() => isEditing ? setIsEditing(false) : (editingPageNum !== null ? setEditingPageNum(null) : onClose())} className="p-2.5 text-[#94a3b8] hover:bg-red-50 hover:text-red-500 rounded-2xl transition-all"><X size={20} /></button>
+            <button onClick={() => isEditing ? setIsEditing(false) : (editingPageNum !== null ? setEditingPageNum(null) : onClose())} className="p-2.5 min-w-[44px] min-h-[44px] text-[#94a3b8] hover:bg-red-50 hover:text-red-500 rounded-2xl transition-all"><X size={20} /></button>
           </div>
         </div>
 
         {/* Reading Canvas */}
-        <div ref={mainScrollRef} dir="rtl" className={`flex-grow overflow-y-auto custom-scrollbar paper-background ${isEditing ? 'p-4' : 'p-6'}`}>
+        <div ref={mainScrollRef} dir="rtl" className={`flex-grow overflow-y-auto custom-scrollbar paper-background ${isEditing ? 'p-3 sm:p-4' : 'p-4 sm:p-6'}`}>
           {isEditing ? (
             <div className="h-full relative">
               {isFetchingContent && <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-20 flex items-center justify-center"><Loader2 className="w-8 h-8 text-[#0369a1] animate-spin" /></div>}
@@ -311,8 +342,8 @@ export const ReaderView: React.FC = () => {
       </div>
 
       {/* Sidebar Area */}
-      <div className="w-full md:w-[450px] lg:w-[550px] flex flex-col gap-6">
-        <GlassPanel className="h-full flex flex-col overflow-hidden rounded-[32px] p-6 shadow-xl border border-[#0369a1]/10">
+      <div className={`w-full xl:w-[500px] 2xl:w-[600px] flex-col gap-6 ${mobileTab === 'chat' ? 'flex' : 'hidden xl:flex'}`}>
+        <GlassPanel className="h-full flex flex-col overflow-hidden rounded-[32px] p-4 sm:p-6 shadow-xl border border-[#0369a1]/10">
           {editingPageNum !== null ? (
             <SpellCheckPanel
               bookId={selectedBook.id}

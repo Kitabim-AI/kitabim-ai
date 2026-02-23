@@ -160,9 +160,9 @@ export const AdminView: React.FC = () => {
               <thead>
                 <tr className="bg-[#0369a1]/5 border-b border-[#0369a1]/10 text-[14px] md:text-[16px] font-normal text-[#0369a1] uppercase">
                   <th className="px-6 py-5 text-right font-normal">{t('admin.table.bookName')}</th>
-                  <th className="px-6 py-5 w-24 text-right font-normal">{t('book.volumeLabel') || t('admin.table.pageCount')}</th>
-                  <th className="px-6 py-5 w-48 text-right font-normal">{t('admin.table.author')}</th>
-                  <th className="px-6 py-5 w-60 text-right font-normal">{t('admin.table.category')}</th>
+                  <th className="px-6 py-5 w-28 text-right font-normal">{t('book.volumeLabel') || t('admin.table.pageCount')}</th>
+                  <th className="px-6 py-5 w-52 text-right font-normal">{t('admin.table.author')}</th>
+                  <th className="px-6 py-5 w-52 text-right font-normal">{t('admin.table.category')}</th>
                   <th className="px-6 py-5 text-right font-normal">{t('admin.table.progress')}</th>
                   <th className="px-6 py-5 text-left font-normal">{t('admin.table.actions')}</th>
                 </tr>
