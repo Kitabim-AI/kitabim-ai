@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Users,
   FileEdit,
@@ -12,7 +12,9 @@ import {
   X,
   ArrowLeft,
   Sparkles,
-  CheckCircle2
+  CheckCircle2,
+  ChevronDown,
+  Check
 } from 'lucide-react';
 import { useI18n } from '../../i18n/I18nContext';
 import { useAppContext } from '../../context/AppContext';
@@ -31,6 +33,24 @@ const JoinUsView: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [showInterestDropdown, setShowInterestDropdown] = useState(false);
+  const interestDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (interestDropdownRef.current && !interestDropdownRef.current.contains(event.target as Node)) {
+        setShowInterestDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const interestColors: Record<string, { bg: string; text: string }> = {
+    editor: { bg: 'bg-purple-50', text: 'text-purple-600' },
+    developer: { bg: 'bg-sky-50', text: 'text-[#0369a1]' },
+    other: { bg: 'bg-slate-50', text: 'text-slate-600' },
+  };
 
   const handleCloseModal = () => {
     setShowContactModal(false);
@@ -235,7 +255,10 @@ const JoinUsView: React.FC = () => {
             </div>
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 w-full md:w-auto">
               <button
-                onClick={() => setShowContactModal(true)}
+                onClick={() => {
+                  setContactForm({ ...contactForm, interest: 'other' });
+                  setShowContactModal(true);
+                }}
                 className="px-6 sm:px-10 py-4 min-h-[48px] bg-white text-[#1a1a1a] border border-[#0369a1]/10 rounded-2xl font-bold hover:bg-[#0369a1] hover:text-white transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2"
               >
                 <Send size={18} />
@@ -286,15 +309,43 @@ const JoinUsView: React.FC = () => {
                   <form onSubmit={handleSubmit} className="space-y-6">
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">{t('joinUs.contactModal.interest')}</label>
-                      <select
-                        value={contactForm.interest}
-                        onChange={(e) => setContactForm({ ...contactForm, interest: e.target.value })}
-                        className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-[#0369a1] outline-none transition-all uyghur-text"
-                      >
-                        <option value="editor">{t('joinUs.contactModal.interestEditor')}</option>
-                        <option value="developer">{t('joinUs.contactModal.interestDeveloper')}</option>
-                        <option value="other">{t('joinUs.contactModal.interestOther')}</option>
-                      </select>
+                      <div className="relative" ref={interestDropdownRef}>
+                        <button
+                          type="button"
+                          onClick={() => setShowInterestDropdown(!showInterestDropdown)}
+                          className={`w-full flex items-center justify-between p-4 ${interestColors[contactForm.interest]?.bg || 'bg-slate-50'} ${interestColors[contactForm.interest]?.text || 'text-slate-600'} border-2 ${showInterestDropdown ? 'border-[#0369a1]' : 'border-slate-100'} rounded-2xl transition-all uyghur-text group`}
+                        >
+                          <span className="font-bold">
+                            {contactForm.interest === 'editor' && t('joinUs.contactModal.interestEditor')}
+                            {contactForm.interest === 'developer' && t('joinUs.contactModal.interestDeveloper')}
+                            {contactForm.interest === 'other' && t('joinUs.contactModal.interestOther')}
+                          </span>
+                          <ChevronDown size={20} className={`transition-transform duration-300 ${showInterestDropdown ? 'rotate-180' : ''}`} />
+                        </button>
+
+                        {showInterestDropdown && (
+                          <div className="absolute top-full left-0 right-0 mt-2 glass-panel bg-white/95 shadow-2xl z-[150] overflow-hidden py-2 border border-[#0369a1]/10 rounded-[20px]">
+                            {(['editor', 'developer', 'other'] as const).map((interest) => (
+                              <button
+                                key={interest}
+                                type="button"
+                                onClick={() => {
+                                  setContactForm({ ...contactForm, interest });
+                                  setShowInterestDropdown(false);
+                                }}
+                                className={`w-full flex items-center justify-between px-6 py-4 text-lg font-bold transition-all ${interest === contactForm.interest ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
+                              >
+                                <span>
+                                  {interest === 'editor' && t('joinUs.contactModal.interestEditor')}
+                                  {interest === 'developer' && t('joinUs.contactModal.interestDeveloper')}
+                                  {interest === 'other' && t('joinUs.contactModal.interestOther')}
+                                </span>
+                                {interest === contactForm.interest && <Check size={18} strokeWidth={3} />}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
