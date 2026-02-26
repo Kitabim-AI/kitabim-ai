@@ -51,6 +51,16 @@ async def seed_system_configs(session: AsyncSession):
             "key": "batch_chunking_limit",
             "value": "100",
             "description": "Maximum number of pages to chunk in one cycle"
+        },
+        {
+            "key": "batch_books_per_submission",
+            "value": "1",
+            "description": "Number of books to process per OCR batch submission. Next book is only picked up after the previous batch job is done or failed."
+        },
+        {
+            "key": "batch_ocr_retry_after",
+            "value": "0",
+            "description": "Unix timestamp after which OCR batch submission is allowed again. Set automatically on 429 quota errors. Google resets batch quotas every 24 hours."
         }
     ]
     

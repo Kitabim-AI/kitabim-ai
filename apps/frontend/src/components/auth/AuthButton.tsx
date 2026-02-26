@@ -72,7 +72,7 @@ export function TwitterLoginButton({ className = '' }: LoginButtonProps) {
   );
 }
 
-export function OAuthButtonGroup({ className = '', align = 'down' }: { className?: string; align?: 'up' | 'down' }) {
+export function OAuthButtonGroup({ className = '', align = 'down', side = 'left' }: { className?: string; align?: 'up' | 'down'; side?: 'left' | 'right' }) {
   const { loginWithGoogle, loginWithFacebook, loginWithTwitter, isLoading } = useAuth();
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
@@ -145,7 +145,7 @@ export function OAuthButtonGroup({ className = '', align = 'down' }: { className
       </button>
 
       {isOpen && (
-        <div className={`absolute ${align === 'up' ? 'bottom-full mb-2' : 'top-full mt-2'} left-0 w-[280px] bg-white/95 backdrop-blur-2xl border border-[#0369a1]/20 rounded-2xl shadow-[0_16px_64px_rgba(3,105,161,0.15)] overflow-hidden animate-fade-in z-50`}>
+        <div className={`absolute ${align === 'up' ? 'bottom-full mb-2' : 'top-full mt-2'} ${side === 'right' ? 'right-0' : 'left-0'} w-[280px] bg-white/95 backdrop-blur-2xl border border-[#0369a1]/20 rounded-2xl shadow-[0_16px_64px_rgba(3,105,161,0.15)] overflow-hidden animate-fade-in z-50`}>
           {loginOptions.map((option, index) => (
             <button
               key={option.name}

@@ -19,6 +19,11 @@ from app.utils.observability import log_json
 
 logger = logging.getLogger(__name__)
 
+
+class QuotaExhaustedError(Exception):
+    """Raised when the Gemini API returns 429 RESOURCE_EXHAUSTED."""
+    pass
+
 class BatchService:
     """
     Manages the lifecycle of Gemini Batch jobs:
@@ -35,9 +40,11 @@ class BatchService:
         self.requests_repo = BatchRequestsRepository(session)
         self.books_repo = BooksRepository(session)
 
-    async def submit_ocr_batch(self, limit: int = 100) -> Optional[UUID]:
+    async def submit_ocr_batch(self, limit: int = 100, books_per_submission: int = 1) -> Optional[UUID]:
         """
         Collects pending OCR pages and submits them as a batch job.
+        Only processes `books_per_submission` books per run, and skips submission
+        entirely if there is already an active (submitted) OCR batch job.
         """
         from app.core.config import settings
         import os
@@ -45,10 +52,34 @@ class BatchService:
         import asyncio
         from pathlib import Path
 
-        # 1. Collect pages with 'pending' status
+        # 1. Skip if there is already an active OCR batch job
+        active_jobs = await self.jobs_repo.get_active_jobs(job_type="ocr")
+        if active_jobs:
+            log_json(logger, logging.INFO, "Active OCR batch job exists, skipping submission",
+                     active_count=len(active_jobs))
+            return None
+
+        # 2. Find which books have pending pages, limited to books_per_submission books
+        from sqlalchemy import distinct
+        book_stmt = (
+            select(distinct(Page.book_id))
+            .where(Page.status == "pending")
+            .limit(books_per_submission)
+        )
+        book_result = await self.session.execute(book_stmt)
+        book_ids_to_process = [row[0] for row in book_result]
+
+        if not book_ids_to_process:
+            return None
+
+        log_json(logger, logging.INFO, "OCR batch: selected books",
+                 books=book_ids_to_process, books_per_submission=books_per_submission)
+
+        # 3. Collect pending pages for those books only
         stmt = (
             select(Page)
             .where(Page.status == "pending")
+            .where(Page.book_id.in_(book_ids_to_process))
             .limit(limit)
         )
         result = await self.session.execute(stmt)
@@ -93,14 +124,15 @@ class BatchService:
                 
         jsonl_lines = []
         request_mappings = []
+        submitted_pages = []  # Only pages whose book PDF was uploaded successfully
 
         # 2. Generate JSONL lines
         for page in pages:
             if page.book_id not in book_gemini_uris:
                 continue # Skip if PDF upload failed
-                
+
             custom_id = f"ocr_{page.book_id}_{page.page_number}"
-            
+
             # Request structure for Gemini API using the File API URI
             request = {
                 "custom_id": custom_id,
@@ -120,7 +152,8 @@ class BatchService:
                 "request_id": custom_id,
                 "status": "pending"
             })
-            
+            submitted_pages.append(page)
+
         if not jsonl_lines:
             # If all PDF uploads failed, clean up and exit
             for f_name in uploaded_gemini_files:
@@ -128,46 +161,64 @@ class BatchService:
                 except: pass
             return None
 
-        # 3. Write to local file and submit to Gemini
-        fd, input_path = tempfile.mkstemp(suffix=".jsonl")
-        try:
-            with os.fdopen(fd, 'w') as f:
-                f.write("\n".join(jsonl_lines) + "\n")
-            
-            remote_job_id, file_api_name = self.batch_client.create_batch_job(
-                input_path, 
-                model=settings.gemini_model_name
-            )
-        finally:
-            if os.path.exists(input_path):
-                os.remove(input_path)
+        # 3. Create DB records FIRST — before calling the Gemini batch API.
+        # This ensures we always have a traceable record even if the API call fails.
+        batch_job = await self.jobs_repo.create_job("ocr", len(request_mappings), None)
 
-        # 4. Create job records
-        # Store file_api_name in input_file_uri so we can delete it later
-        batch_job = await self.jobs_repo.create_job("ocr", len(pages), file_api_name)
-        
         for mapping in request_mappings:
             mapping["batch_job_id"] = batch_job.id
         await self.requests_repo.create_requests(request_mappings)
 
-        # 5. Mark pages as 'ocr_processing'
-        for page in pages:
+        # Mark only the submitted pages as 'ocr_processing'
+        for page in submitted_pages:
             page.status = "ocr_processing"
             page.updated_by = "batch_service"
-            
-        await self.session.flush()
 
-        # 6. Finalize submission in DB
+        await self.session.flush()
+        await self.session.commit()
+        batch_job_id = batch_job.id  # Capture before session expire on commit
+        log_json(logger, logging.INFO, "OCR batch job record created",
+                 job_id=str(batch_job_id), count=len(request_mappings))
+
+        # 4. Now submit to Gemini — DB record already exists so failures are recoverable
+        fd, input_path = tempfile.mkstemp(suffix=".jsonl")
         try:
-            await self.jobs_repo.update_job_status(batch_job.id, "submitted", remote_job_id=remote_job_id)
-            await self.session.commit()
-            log_json(logger, logging.INFO, "OCR Batch Job submitted", 
-                     job_id=str(batch_job.id), remote_id=remote_job_id, count=len(pages))
-            return batch_job.id
-        except Exception as e:
-            await self.jobs_repo.update_job_status(batch_job.id, "failed", error_message=str(e))
-            await self.session.commit()
-            raise
+            with os.fdopen(fd, 'w') as f:
+                f.write("\n".join(jsonl_lines) + "\n")
+
+            try:
+                remote_job_id, file_api_name = self.batch_client.create_batch_job(
+                    input_path,
+                    model=settings.gemini_model_name
+                )
+            except Exception as e:
+                # Gemini call failed — mark record as failed and reset pages to pending
+                err_str = str(e)
+                await self.jobs_repo.update_job_status(batch_job_id, "failed", error_message=err_str)
+                for page in submitted_pages:
+                    page.status = "pending"
+                    page.updated_by = "batch_service"
+                await self.session.commit()
+                for f_name in uploaded_gemini_files:
+                    try: self.batch_client.delete_file(f_name)
+                    except: pass
+                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                    raise QuotaExhaustedError(err_str) from e
+                raise
+        finally:
+            if os.path.exists(input_path):
+                os.remove(input_path)
+
+        # 5. Update job with remote details
+        await self.jobs_repo.update_job_status(
+            batch_job_id, "submitted",
+            remote_job_id=remote_job_id,
+            input_file_uri=file_api_name
+        )
+        await self.session.commit()
+        log_json(logger, logging.INFO, "OCR Batch Job submitted",
+                 job_id=str(batch_job_id), remote_id=remote_job_id, count=len(request_mappings))
+        return batch_job_id
 
     async def submit_embedding_batch(self, limit: int = 100) -> Optional[UUID]:
         """
@@ -177,7 +228,14 @@ class BatchService:
         import os
         import tempfile
 
-        # 1. Collect chunks where embedding IS NULL
+        # 1. Skip if there is already an active embedding batch job
+        active_jobs = await self.jobs_repo.get_active_jobs(job_type="embedding")
+        if active_jobs:
+            log_json(logger, logging.INFO, "Active embedding batch job exists, skipping submission",
+                     active_count=len(active_jobs))
+            return None
+
+        # 2. Collect chunks where embedding IS NULL
         stmt = (
             select(Chunk)
             .where(Chunk.embedding == None)
@@ -215,40 +273,48 @@ class BatchService:
                 "status": "pending"
             })
 
-        # 3. Write to local file and submit
-        fd, input_path = tempfile.mkstemp(suffix=".jsonl")
-        try:
-            with os.fdopen(fd, 'w') as f:
-                f.write("\n".join(jsonl_lines) + "\n")
-            
-            remote_job_id, file_api_name = self.batch_client.create_embedding_batch_job(
-                input_path,
-                model=settings.gemini_embedding_model
-            )
-        finally:
-            if os.path.exists(input_path):
-                os.remove(input_path)
+        # 3. Create DB records FIRST — before calling the Gemini batch API.
+        batch_job = await self.jobs_repo.create_job("embedding", len(chunks), None)
 
-        # 4. Create job records
-        batch_job = await self.jobs_repo.create_job("embedding", len(chunks), file_api_name)
-        
         for mapping in request_mappings:
             mapping["batch_job_id"] = batch_job.id
         await self.requests_repo.create_requests(request_mappings)
 
         await self.session.flush()
+        await self.session.commit()
+        batch_job_id = batch_job.id  # Capture before session expire on commit
+        log_json(logger, logging.INFO, "Embedding batch job record created",
+                 job_id=str(batch_job_id), count=len(chunks))
 
-        # 5. Finalize submission
+        # 4. Now submit to Gemini — DB record already exists so failures are recoverable
+        fd, input_path = tempfile.mkstemp(suffix=".jsonl")
         try:
-            await self.jobs_repo.update_job_status(batch_job.id, "submitted", remote_job_id=remote_job_id)
-            await self.session.commit()
-            log_json(logger, logging.INFO, "Embedding Batch Job submitted", 
-                     job_id=str(batch_job.id), remote_id=remote_job_id, count=len(chunks))
-            return batch_job.id
-        except Exception as e:
-            await self.jobs_repo.update_job_status(batch_job.id, "failed", error_message=str(e))
-            await self.session.commit()
-            raise
+            with os.fdopen(fd, 'w') as f:
+                f.write("\n".join(jsonl_lines) + "\n")
+
+            try:
+                remote_job_id, file_api_name = self.batch_client.create_embedding_batch_job(
+                    input_path,
+                    model=settings.gemini_embedding_model
+                )
+            except Exception as e:
+                await self.jobs_repo.update_job_status(batch_job_id, "failed", error_message=str(e))
+                await self.session.commit()
+                raise
+        finally:
+            if os.path.exists(input_path):
+                os.remove(input_path)
+
+        # 5. Update job with remote details
+        await self.jobs_repo.update_job_status(
+            batch_job_id, "submitted",
+            remote_job_id=remote_job_id,
+            input_file_uri=file_api_name
+        )
+        await self.session.commit()
+        log_json(logger, logging.INFO, "Embedding Batch Job submitted",
+                 job_id=str(batch_job_id), remote_id=remote_job_id, count=len(chunks))
+        return batch_job_id
 
     async def poll_and_process_jobs(self):
         """
@@ -288,17 +354,16 @@ class BatchService:
                         log_json(logger, logging.ERROR, "Failed to cancel mismatched job", error=str(ce))
                     
                     await self.jobs_repo.update_job_status(job.id, "failed", error_message=f"Model mismatch. Exp: {target_model}, Act: {remote_job.model}")
-                    
+
                     if job.job_type == "ocr":
-                        stmt = text("UPDATE pages SET status = 'pending' WHERE id IN (SELECT target_id FROM batch_job_requests WHERE batch_job_id = :jid AND status = 'pending')")
-                        await self.session.execute(stmt, {'jid': str(job.id)})
-                    
-                    stmt2 = text("DELETE FROM batch_job_requests WHERE batch_job_id = :jid")
+                        await self._reset_ocr_pages_to_pending(job.id)
+
+                    stmt2 = text("DELETE FROM batch_requests WHERE batch_job_id = :jid")
                     await self.session.execute(stmt2, {'jid': str(job.id)})
-                    
+
                     if job.input_file_uri and job.input_file_uri.startswith("files/"):
                         self.batch_client.delete_file(job.input_file_uri)
-                        
+
                     await self.session.commit()
                     continue
 
@@ -312,13 +377,42 @@ class BatchService:
                 if current_status == "SUCCEEDED":
                     await self.process_job_results(job)
                 elif current_status in ["FAILED", "CANCELLED"]:
-                    log_json(logger, logging.WARNING, "Batch job failed on Gemini", 
+                    log_json(logger, logging.WARNING, "Batch job failed on Gemini",
                              job_id=str(job.id), remote_id=job.remote_job_id, status=current_status)
                     await self.jobs_repo.update_job_status(job.id, "failed", remote_status=current_status, error_message=f"Gemini status: {current_status}")
                     await self.requests_repo.update_status_by_job(job.id, "failed")
+                    if job.job_type == "ocr":
+                        await self._reset_ocr_pages_to_pending(job.id)
                     await self.session.commit()
             except Exception as e:
                 log_json(logger, logging.ERROR, "Error polling job", job_id=str(job.id), error=str(e))
+
+    async def _reset_ocr_pages_to_pending(self, batch_job_id: UUID) -> None:
+        """
+        Resets pages and their books back to 'pending' for a failed/cancelled OCR batch job.
+        Uses batch_requests to identify which pages were part of this job.
+        """
+        await self.session.execute(text("""
+            UPDATE pages
+            SET status = 'pending', updated_by = 'batch_service'
+            FROM batch_requests br
+            WHERE br.batch_job_id = :jid
+              AND pages.book_id = br.book_id
+              AND pages.page_number = br.page_number
+              AND pages.status = 'ocr_processing'
+        """), {'jid': str(batch_job_id)})
+
+        await self.session.execute(text("""
+            UPDATE books
+            SET status = 'pending'
+            WHERE id IN (
+                SELECT DISTINCT book_id FROM batch_requests WHERE batch_job_id = :jid
+            )
+            AND status = 'ocr_processing'
+        """), {'jid': str(batch_job_id)})
+
+        log_json(logger, logging.INFO, "OCR pages and books reset to pending",
+                 batch_job_id=str(batch_job_id))
 
     async def process_job_results(self, job: BatchJob):
         """
@@ -445,6 +539,67 @@ class BatchService:
             
         except Exception as e:
             log_json(logger, logging.ERROR, "Failed to handle embedding result", custom_id=custom_id, error=str(e))
+
+    async def embed_pending_chunks_realtime(self, limit: int = 200) -> int:
+        """
+        Embeds chunks with NULL embeddings synchronously using GeminiEmbeddings.
+        Used as an alternative to the Gemini Batch API when batch jobs are not reliable.
+        Returns the number of chunks embedded.
+        """
+        import asyncio
+        from app.langchain.embeddings import GeminiEmbeddings
+        from app.langchain.models import is_llm_available
+        from app.langchain.circuit_breaker import CircuitBreakerOpen
+        from datetime import datetime, timezone
+
+        if not await is_llm_available():
+            log_json(logger, logging.WARNING, "Circuit breaker open, skipping realtime embedding")
+            return 0
+
+        stmt = (
+            select(Chunk)
+            .where(Chunk.embedding == None)
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        chunks = result.scalars().all()
+
+        if not chunks:
+            return 0
+
+        log_json(logger, logging.INFO, "Realtime embedding started", chunk_count=len(chunks))
+
+        embedder = GeminiEmbeddings()
+        batch_size = 20
+        total_embedded = 0
+
+        for start in range(0, len(chunks), batch_size):
+            if not await is_llm_available():
+                log_json(logger, logging.WARNING, "Circuit breaker opened during realtime embedding, stopping")
+                break
+
+            batch = chunks[start:start + batch_size]
+            try:
+                vectors = await embedder.aembed_documents([c.text for c in batch])
+                for chunk, vector in zip(batch, vectors):
+                    chunk.embedding = vector
+                await self.session.commit()
+                total_embedded += len(batch)
+                log_json(logger, logging.INFO, "Realtime embedding batch done",
+                         start=start, count=len(batch), total=total_embedded)
+                await asyncio.sleep(0.5)  # Light rate limiting
+            except CircuitBreakerOpen:
+                log_json(logger, logging.WARNING, "Circuit breaker opened, stopping realtime embedding")
+                break
+            except Exception as e:
+                log_json(logger, logging.ERROR, "Realtime embedding batch failed", start=start, error=str(e))
+                break
+
+        # Update page and book statuses for newly embedded chunks
+        if total_embedded > 0:
+            await self.finalize_indexed_pages()
+
+        return total_embedded
 
     async def chunk_ocr_done_pages(self, limit: int = 100):
         """
@@ -586,4 +741,20 @@ class BatchService:
             
             book.last_updated = datetime.now(timezone.utc)
 
+        await self.session.commit()
+
+        # 3. Safety net: reset any books stuck in a non-terminal status
+        #    but with no pages actively being processed or already done.
+        #    Safe because the condition checks page status — if a batch job is
+        #    actively running, pages will be 'ocr_processing' and this won't fire.
+        await self.session.execute(text("""
+            UPDATE books
+            SET status = 'pending'
+            WHERE status NOT IN ('pending', 'new', 'ready')
+            AND NOT EXISTS (
+                SELECT 1 FROM pages
+                WHERE pages.book_id = books.id
+                AND pages.status IN ('ocr_done', 'chunked', 'indexed', 'ocr_processing')
+            )
+        """))
         await self.session.commit()

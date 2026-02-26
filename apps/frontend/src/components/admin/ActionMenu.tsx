@@ -16,12 +16,12 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close }) => {
   const isActuallyProcessing = (book.status === 'ocr_processing' || book.status === 'indexing') && !isStale;
   const hasFailedPages = (book.errorCount ?? 0) > 0 || (book.pages?.some(r => r.status === 'error') ?? false);
   const canRetry = (hasFailedPages || book.status === 'error' || isStale) && !isActuallyProcessing;
-  const canStartOcr = !isActuallyProcessing && !canRetry && book.status !== 'ready';
+  const canStartOcr = !isActuallyProcessing && !canRetry && book.status !== 'ready' && book.status !== 'uploading';
   const canReindex = book.status === 'ready';
 
   return (
     <div className="absolute left-0 top-full mt-2 w-52 glass-panel shadow-2xl z-50 py-2 rounded-[16px] border border-[#0369a1]/10">
-      <button onClick={() => { bookActions.openReader(book, () => { }, () => { }, () => { }); close(); }} disabled={book.status === 'pending'} className="w-full flex items-center gap-3 px-4 py-2 text-sm font-black text-[#1a1a1a] hover:bg-[#0369a1]/10 disabled:text-slate-200 transition-colors"><BookOpen size={14} /> {t('admin.table.view')}</button>
+      <button onClick={() => { bookActions.openReader(book, () => { }, () => { }, () => { }); close(); }} disabled={book.status === 'pending' || book.status === 'uploading'} className="w-full flex items-center gap-3 px-4 py-2 text-sm font-black text-[#1a1a1a] hover:bg-[#0369a1]/10 disabled:text-slate-200 transition-colors"><BookOpen size={14} /> {t('admin.table.view')}</button>
       <div className="h-px bg-slate-100 my-1 mx-4" />
       <button onClick={() => { bookActions.handleStartOcr(book.id); close(); }} disabled={!canStartOcr} className="w-full flex items-center gap-3 px-4 py-2 text-sm font-black text-[#0369a1] hover:bg-[#0369a1]/10 disabled:text-slate-200 transition-colors"><ScanText size={14} /> {t('admin.table.startOcr')}</button>
       <button onClick={() => { bookActions.handleRetryFailedOcr(book); close(); }} disabled={!canRetry} className="w-full flex items-center gap-3 px-4 py-2 text-sm font-black text-amber-600 hover:bg-amber-50 disabled:text-slate-200 transition-colors"><RotateCcw size={14} /> {t('admin.table.retryOcr')}</button>

@@ -74,9 +74,10 @@ class Book(BaseModel):
     last_error: Optional[ErrorEvent] = None  # DB: last_error, API: lastError
     ocr_done_count: int = 0  # DB: ocr_done_count, API: ocrDoneCount
     error_count: int = 0  # DB: error_count, API: errorCount
+    processing_lock_expires_at: Optional[datetime] = None  # DB: processing_lock_expires_at, API: processingLockExpiresAt
     file_name: Optional[str] = None  # Original uploaded filename
     source: Optional[str] = None  # Document source (e.g., 'upload', 'gcs')
-    processing_mode: str = "batch" # DB: processing_mode, API: processingMode
+    processing_mode: str = "realtime" # DB: processing_mode, API: processingMode
 
 
 class PaginatedBooks(BaseModel):

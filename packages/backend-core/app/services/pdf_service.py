@@ -255,7 +255,7 @@ async def process_pdf_task(
 
             # Determine effective mode
             # Use 'realtime' if force_realtime is True, otherwise use book's mode
-            effective_mode = 'realtime' if force_realtime else (getattr(book, 'processing_mode', 'batch') or 'batch')
+            effective_mode = 'realtime' if force_realtime else (getattr(book, 'processing_mode', 'realtime') or 'realtime')
             
             if effective_mode == 'batch':
                 log_json(logger, logging.INFO, "Book in batch mode, returning after page creation", 

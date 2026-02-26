@@ -49,11 +49,12 @@ class BatchJobsRepository(BaseRepository[BatchJob]):
         return list(result.scalars().all())
 
     async def update_job_status(
-        self, 
-        job_id: UUID, 
-        status: str, 
+        self,
+        job_id: UUID,
+        status: str,
         remote_job_id: Optional[str] = None,
         remote_status: Optional[str] = None,
+        input_file_uri: Optional[str] = None,
         output_file_uri: Optional[str] = None,
         error_message: Optional[str] = None
     ) -> None:
@@ -66,6 +67,8 @@ class BatchJobsRepository(BaseRepository[BatchJob]):
             values["remote_job_id"] = remote_job_id
         if remote_status:
             values["remote_status"] = remote_status
+        if input_file_uri:
+            values["input_file_uri"] = input_file_uri
         if output_file_uri:
             values["output_file_uri"] = output_file_uri
         if error_message:

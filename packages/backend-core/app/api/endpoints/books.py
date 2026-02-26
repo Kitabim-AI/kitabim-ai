@@ -729,27 +729,17 @@ async def get_book_stats(
 @router.get("/{book_id}/content")
 async def get_book_content(
     book_id: str,
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(require_reader),
     session: AsyncSession = Depends(get_session),
 ):
     """Get full book content with SQLAlchemy"""
     books_repo = BooksRepository(session)
     pages_repo = PagesRepository(session)
 
-    # Verify book exists and check access
+    # Verify book exists
     book_model = await books_repo.get(book_id)
     if not book_model:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
-
-    # Convert to dict for access check
-    book_dict = {
-        "id": str(book_model.id),
-        "status": book_model.status,
-        "visibility": book_model.visibility,
-    }
-
-    if not await check_book_access_for_guest(book_dict, current_user):
-        raise HTTPException(status_code=403, detail=t("errors.unauthorized_access"))
 
     # Get all pages using repository
     pages = await pages_repo.find_by_book(book_id, limit=10000)
@@ -1062,6 +1052,7 @@ async def retry_failed_ocr(
 async def reprocess_book(
     book_id: str,
     background_tasks: BackgroundTasks,
+    force_realtime: bool = False,
     current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
@@ -1088,8 +1079,8 @@ async def reprocess_book(
     )
     await session.commit()
 
-    await enqueue_pdf_processing(book_id, reason="reprocess", background_tasks=background_tasks)
-    return {"status": "reprocessing_started"}
+    await enqueue_pdf_processing(book_id, reason="reprocess", background_tasks=background_tasks, force_realtime=force_realtime)
+    return {"status": "reprocessing_started", "force_realtime": force_realtime}
 
 
 @router.post("/{book_id}/reindex")

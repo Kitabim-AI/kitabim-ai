@@ -89,8 +89,8 @@ class Book(Base):
     )
     processing_mode: Mapped[str] = mapped_column(
         String(20),
-        default="batch",
-        server_default="batch",
+        default="realtime",
+        server_default="realtime",
         nullable=False
     )
     file_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -475,7 +475,7 @@ class BatchRequest(Base):
     batch_job: Mapped[BatchJob] = relationship("BatchJob", back_populates="requests")
 
     __table_args__ = (
-        UniqueConstraint("book_id", "page_number", "batch_job_id", name="uq_batch_request_page"),
+        UniqueConstraint("request_id", "batch_job_id", name="uq_batch_request_request_id"),
     )
 
 

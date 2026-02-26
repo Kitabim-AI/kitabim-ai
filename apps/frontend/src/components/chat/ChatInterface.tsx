@@ -204,7 +204,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 </div>
                 <p className="text-[#1a1a1a] font-normal">{t('auth.signInToUseChat')}</p>
               </div>
-              <OAuthButtonGroup className="w-full sm:w-auto shadow-none border-[#0369a1]/10" />
+              <OAuthButtonGroup align="up" className="w-full sm:w-auto shadow-none border-[#0369a1]/10" />
             </div>
           )}
         </div>
@@ -246,12 +246,23 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         className="flex-grow overflow-y-auto space-y-6 px-4 custom-scrollbar-mini py-2"
       >
         {chatMessages.length === 0 && (
-          <div className="text-center py-20 px-8 bg-white/40 border-2 border-dashed border-[#0369a1]/10 rounded-[32px] flex flex-col items-center justify-center gap-4 opacity-60">
-            <Bot size={40} className="text-[#0369a1]" strokeWidth={1} />
-            <p className="text-sm text-[#1a1a1a] font-normal leading-loose">
-              {t('chat.bookAssistantWelcome')}
-            </p>
-          </div>
+          !isAuthenticated ? (
+            <div className="h-full flex flex-col items-center justify-center gap-5 py-8 px-4">
+              <div className="p-4 bg-[#0369a1]/10 rounded-[28px]">
+                <LogIn className="text-[#0369a1] w-10 h-10" strokeWidth={1.5} />
+              </div>
+              <p className="text-sm text-[#94a3b8] font-normal text-center leading-loose">
+                {t('auth.signInMessage')}
+              </p>
+            </div>
+          ) : (
+            <div className="text-center py-20 px-8 bg-white/40 border-2 border-dashed border-[#0369a1]/10 rounded-[32px] flex flex-col items-center justify-center gap-4 opacity-60">
+              <Bot size={40} className="text-[#0369a1]" strokeWidth={1} />
+              <p className="text-sm text-[#1a1a1a] font-normal leading-loose">
+                {t('chat.bookAssistantWelcome')}
+              </p>
+            </div>
+          )
         )}
         {chatMessages.map((msg, idx) => (
           <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row' : 'flex-row-reverse'} items-start`}>
@@ -337,9 +348,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             )}
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-3 py-4 px-2">
-            <p className="text-[13px] text-slate-500 font-normal text-center">{t('auth.signInMessage')}</p>
-            <OAuthButtonGroup className="w-full scale-90 shadow-sm border-[#0369a1]/10" />
+          <div className="py-2 px-1">
+            <OAuthButtonGroup align="up" side="right" className="w-full" />
           </div>
         )}
       </div>

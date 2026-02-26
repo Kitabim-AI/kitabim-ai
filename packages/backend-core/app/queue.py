@@ -14,7 +14,7 @@ from app.services.pdf_service import process_pdf_task
 from app.langchain import configure_langchain
 from app.utils.observability import configure_logging, log_json
 from app.services.discovery_service import DiscoveryService
-from app.services.batch_service import BatchService
+from app.services.batch_service import BatchService, QuotaExhaustedError
 import logging
 
 logger = logging.getLogger("app.queue")
@@ -132,25 +132,49 @@ async def gemini_batch_submission_cron(ctx):
         from app.db.repositories.system_configs import SystemConfigsRepository
         config_repo = SystemConfigsRepository(session)
         
+        import time
+
         # Get limits from system_configs
         chunk_limit = int(await config_repo.get_value("batch_chunking_limit", "1000"))
         ocr_limit = int(await config_repo.get_value("batch_ocr_limit", "100"))
         embed_limit = int(await config_repo.get_value("batch_embedding_limit", "2000"))
+        books_per_submission = int(await config_repo.get_value("batch_books_per_submission", "1"))
+        ocr_retry_after = float(await config_repo.get_value("batch_ocr_retry_after", "0"))
 
         batch_service = BatchService(session)
+
+        # 1. Chunk any pages that finished OCR
         try:
-            # 1. First, chunk any pages that finished OCR
             await batch_service.chunk_ocr_done_pages(limit=chunk_limit)
-            
-            # 2. Submit new OCR batches
-            await batch_service.submit_ocr_batch(limit=ocr_limit)
-            
-            # 3. Submit new Embedding batches
-            await batch_service.submit_embedding_batch(limit=embed_limit)
-            
-            log_json(logger, logging.INFO, "Batch submission cron finished")
         except Exception as e:
-            log_json(logger, logging.ERROR, "Batch submission cron failed", error=str(e))
+            log_json(logger, logging.ERROR, "Batch chunking failed", error=str(e))
+
+        # 2. Submit new OCR batches — skip if quota is in cooldown
+        if time.time() < ocr_retry_after:
+            remaining_minutes = int((ocr_retry_after - time.time()) / 60)
+            log_json(logger, logging.INFO, "OCR batch quota cooldown active, skipping submission",
+                     remaining_minutes=remaining_minutes)
+        else:
+            try:
+                await batch_service.submit_ocr_batch(limit=ocr_limit, books_per_submission=books_per_submission)
+            except QuotaExhaustedError as e:
+                retry_after = time.time() + (24 * 3600)
+                await config_repo.set_value("batch_ocr_retry_after", str(retry_after))
+                await session.commit()
+                log_json(logger, logging.WARNING,
+                         "OCR quota exhausted (429). Cooling down for 24 hours.", error=str(e))
+            except Exception as e:
+                log_json(logger, logging.ERROR, "OCR batch submission failed", error=str(e))
+
+        # 3. Embed pending chunks in realtime (sync) mode
+        try:
+            embedded = await batch_service.embed_pending_chunks_realtime(limit=embed_limit)
+            if embedded:
+                log_json(logger, logging.INFO, "Realtime embedding completed", embedded=embedded)
+        except Exception as e:
+            log_json(logger, logging.ERROR, "Realtime embedding failed", error=str(e))
+
+        log_json(logger, logging.INFO, "Batch submission cron finished")
 
 
 async def gemini_batch_polling_cron(ctx):
