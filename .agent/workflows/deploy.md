@@ -13,7 +13,7 @@ To deploy the changes to Kubernetes, you should use the provided wrapper script 
 // turbo
 1. Rebuild and restart the necessary component:
 ```bash
-./rebuild-and-restart.sh [component]
+./scripts/rebuild-and-restart.sh [component]
 ```
 
 Where `[component]` is one of:
@@ -24,7 +24,7 @@ Where `[component]` is one of:
 
 For example, to deploy a frontend UI change:
 ```bash
-./rebuild-and-restart.sh frontend
+./scripts/rebuild-and-restart.sh frontend
 ```
 
 2. Wait for the pod to successfully recycle and start running. The script will automatically trigger a `kubectl rollout restart` and then display the pod deployment status.

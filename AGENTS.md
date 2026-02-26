@@ -25,6 +25,11 @@ This file provides guidance for automated agents working in this repo.
 - **CRITICAL DEPLOYMENT RULE**: Do not rely on local dev servers (like `npm run dev`) for final change application. You MUST always deploy all code changes to Kubernetes to ensure they are available in the cluster. Run `./rebuild-and-restart.sh [frontend|backend|worker|all]` to rebuild the Docker image and restart the Kubernetes deployment after modifying files.
 - **IMAGE TAGGING**: Always build images with the `:local` tag and deploy using the same tag. This is the standardized tag used in the local cluster manifests. Never use `:latest` or other dynamic tags for local development.
 
+## File Management & Tooling
+- **SCRIPTS**: All scripts (operational, debugging, diagnostic, or testing) MUST be placed in the `scripts/` folder at the repo root. Never create ad-hoc scripts in the root or service-specific folders.
+- **DOCUMENTATION**: All documentation (other than root-level `README.md` and `AGENTS.md`) MUST be placed in the `docs/` folder.
+- **CLEANUP**: Always clean up temporary files, scratchpads, or logs immediately after use. Do not leave `.txt` or `.json` artifacts in the root.
+
 ## Code Conventions
 - Backend/worker code lives in `packages/backend-core/app`.
 - Keep secrets out of the frontend; all AI calls are proxied via the backend.

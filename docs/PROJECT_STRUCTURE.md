@@ -197,7 +197,7 @@ k8s/local/
 
 **Purpose:** Local Kubernetes manifests for Docker Desktop, minikube, or kind.
 
-### `/scripts` - Utility Scripts
+### `/scripts` - Utility Scripts (Mandatory for Agents)
 
 ```
 scripts/
@@ -211,7 +211,7 @@ scripts/
 └── extract_proverbs.py            # Proverb extraction
 ```
 
-**Purpose:** Database migrations, diagnostics, and maintenance utilities.
+**Rule:** All operational, debugging, diagnostic, or testing scripts created by developers or AI agents MUST be placed here. No ad-hoc scripts are allowed in the root or service folders.
 
 ### `/data` - Runtime Data (Gitignored)
 
@@ -224,7 +224,7 @@ data/
 
 **Purpose:** Persistent storage shared between backend and worker via volume mount.
 
-### `/docs` - Documentation
+### `/docs` - Documentation (Mandatory for Agents)
 
 ```
 docs/
@@ -232,7 +232,10 @@ docs/
 ├── SYSTEM_DESIGN.md         # Architecture and design
 ├── PROJECT_STRUCTURE.md     # This file
 └── openapi.json             # OpenAPI 3.0 spec
+└── *.md                      # Any project-wide documentation
 ```
+
+**Rule:** All documentation, implementation plans, and architectural notes (other than root-level `README.md` and `AGENTS.md`) MUST be placed here.
 
 ---
 

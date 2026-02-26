@@ -1,44 +1,46 @@
 # System Design — Kitabim.AI
 
 ## 1) Overview
-Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered reading of Uyghur books. The system uses Gemini for OCR, a FastAPI backend with a resumable processing pipeline, and a React/Vite frontend. Background processing is handled through a Redis-backed queue with a dedicated worker service. The backend API and worker share a common Python package (`packages/backend-core`).
+Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered reading of Uyghur books. The system uses **Gemini Batch API** for high-throughput OCR and embeddings, a FastAPI backend with an asynchronous processing pipeline, and a React/Vite frontend. Background orchestration is handled through a Redis-backed queue with a dedicated worker service. The backend API and worker share a common Python package (`packages/backend-core`).
 
 ## 2) Goals & Non‑Goals
 **Goals**
-- Reliable ingestion and OCR of PDFs at scale
+- Cost-effective, bulk OCR and indexing of PDFs using Gemini Batch API
 - High-quality RAG for book- and library-level Q&A
 - Maintainable, modular architecture with clear boundaries
-- Observability (logging, health checks, trace hooks)
+- Standardized file management (scripts in `scripts/`, docs in `docs/`)
+- Observability (logging, health checks, batch job tracking)
 
 **Non‑Goals (current)**
 - Multi-tenant auth and billing
-- Fully managed cloud deployments (infrastructure currently automated via Kubernetes)
+- Real-time OCR (Batch is preferred for its 50% cost reduction)
 
 ## 3) Architecture (High-Level)
 
 ### Core Services
 - **Backend API (`services/backend`)**
   - FastAPI application built on shared backend core
-  - Orchestrates upload, OCR, embeddings, and RAG chat
-  - Exposes REST endpoints for books, chat, spell‑check, AI OCR
+  - Orchestrates upload, batch job management, and RAG chat
+  - Exposes REST endpoints for books, chat, and admin batch monitoring
   - Uses PostgreSQL for metadata + embeddings (pgvector)
 
 - **Worker (`services/worker`)**
-  - ARQ worker process for background OCR/embedding/RAG jobs
-  - Shares code with the backend via `packages/backend-core`
+  - ARQ worker process for background orchestration
+  - **Submission Cycle**: Collects pending work and submits to Gemini Batch API
+  - **Polling Cycle**: Checks Gemini for job completion and applies results
+  - **Local Processing**: Handles text cleaning and semantic chunking
 
 - **Frontend (`apps/frontend`)**
   - React 19 + Vite UI
-  - Uses backend APIs; no secrets in browser
-  - Proxy `/api` to backend in dev
+  - Real-time status updates for books and individual pages
+
+- **Gemini Infrastructure**
+  - **Batch API**: Asynchronous processing of OCR and Embedding requests
+  - **File API**: Transient storage for input PDFs and JSONL request/response files
 
 - **Google Cloud Storage (GCS)**
-  - Dual-bucket architecture for security and performance.
-  - Private bucket for original PDFs.
-  - Public bucket (CDN-enabled) for book covers.
-- **Shared Data Volume (Processing Cache)**
-  - Local disk used as high-speed transient storage during OCR/indexing.
-  - Auto-cleaned after successful GCS upload/processing.
+  - Private bucket for original PDFs (source of truth)
+  - Public bucket (CDN-enabled) for book covers
 
 ### Architecture Diagram
 ```mermaid
@@ -46,12 +48,12 @@ flowchart LR
   FE[Frontend<br/>React/Vite] -->|/api| BE[Backend API<br/>FastAPI]
   BE -->|jobs| RQ[(Redis/ARQ)]
   RQ --> WK[Worker<br/>ARQ]
-  BE --> DB[(Local host PostgreSQL)]
+  WK --> GFA[Gemini File API<br/>Transient PDF/JSONL]
+  GFA <--> GBA[Gemini Batch API<br/>OCR/Embeddings]
+  BE --> DB[(PostgreSQL<br/>pgvector)]
   WK --> DB
   BE <-->|PDF/Covers| GCS[(Google Cloud Storage)]
   WK <-->|PDF/Covers| GCS
-  BE -.->|Processing Cache| DATA[(Local data/)]
-  WK -.->|Processing Cache| DATA
 ```
 
 ## 4) Monorepo Structure
@@ -64,111 +66,62 @@ flowchart LR
 /packages
   /shared
   /backend-core
-/k8s/local
-
-/data (runtime)
-```
-
-### Backend Core Layout
-```
-/packages/backend-core
-  /app
-    /api
-    /services
-    /langchain
-    /core
-    /db
-    /models
-    /utils
+/scripts         # All operational/diagnostic tools
+/docs            # All project documentation
+/k8s/local       # Kubernetes manifests
 ```
 
 ## 5) Data Model (PostgreSQL)
-**Books** (primary table)
-- `id`, `content_hash`, `title`, `author`, `volume`
-- `status`, `processing_step`, `upload_date`, `last_updated`
-- `errors`, `last_error`
+**Books**
+- `status` statuses: `pending`, `ocr_processing`, `ocr_done`, `ready`
+- `ocr_done_count`, `error_count` (counters for progress tracking)
 
-**Pages** (detailed book data)
-- `book_id`, `page_number`, `text`, `status`, `error`, `is_verified`
+**Pages**
+- `status` statuses: `pending`, `ocr_processing`, `ocr_done`, `chunked`, `indexed`
+- `text`, `is_indexed`, `is_verified`
 
-**Chunks** (semantic units for RAG)
-- `book_id`, `page_number`, `text`, `embedding` (vector type)
+**Batch Jobs**
+- Tracks the lifecycle of a Gemini Batch Job (`ocr` or `embedding`)
+- `remote_job_id`, `status` (SUCCEEDED, FAILED, etc.), `input_file_uri`
 
-**Users** & **Jobs** tables.
+**Batch Requests**
+- Maps individual JSONL requests back to specific `book_id` and `page_number`
 
-**Optional**
-- `rag_evaluations` (when `RAG_EVAL_ENABLED=true`)
+**Chunks**
+- Semantic units with `pgvector(768)` embeddings
 
 ## 6) Key Flows
 
-### A) PDF Upload & Processing
-1. Frontend uploads PDF to `/api/books/upload`
-2. Backend streams file to **Private GCS Bucket** and deletes local temp file.
-3. Backend enqueues job (`process_pdf`) via Redis.
-4. Worker (ARQ):
-    - Downloads PDF from GCS to local processing cache.
-    - OCRs pages with Gemini prompt.
-    - Generates embeddings.
-    - Builds full text + cover image.
-    - Uploads cover image to **Public GCS Media Bucket**.
-    - Updates status and writes to PostgreSQL.
-    - **Auto-cleans local files** (PDF and Cover) once processing is successful.
+### A) PDF Processing Workflow (Async Batch)
+1. **Upload**: User uploads PDF to Backend → Saved to GCS.
+2. **OCR Submission**: Worker picks up `pending` pages, uploads PDF to Gemini File API, submits Batch Job.
+3. **Polling**: Worker polls Gemini. On `SUCCEEDED`, downloads JSONL result.
+4. **OCR Application**: Worker applies text to `pages`, set status to `ocr_done`.
+5. **Local Chunking**: Worker cleans `ocr_done` text and creates `chunks`.
+6. **Embedding Submission**: Worker submits batch job for chunks with `NULL` embeddings.
+7. **Finalization**: Results applied; book marked `ready` when all pages are `indexed`.
 
 ### B) RAG Chat
-1. Frontend sends `/api/chat` request
-2. Backend embeds query, retrieves scored pages
-3. Context + prompt passed to LLM via LangChain pipeline
-4. Response returned to UI
+1. Backend embeds query using interactive Gemini API (LangChain).
+2. Performs vector similarity search in PostgreSQL.
+3. Context + prompt passed to LLM via LangChain pipeline for answer generation.
 
-### C) Spell Check
-1. User triggers `/api/books/{bookId}/spell-check`
-2. Backend uses LLM to extract corrections via structured output parser
-3. Corrections returned + optional apply flow
+## 7) Gemini Integration Strategy
+- **Official SDK (`google-genai`)**: Used for **Batch API** and **File API** operations where LangChain support is limited or direct control is required.
+- **LangChain**: Used for **Interactive Chat**, **Spell Check**, and **Categorization** (LCEL pipelines, structured output parsing).
 
-### D) Frontend OCR (Gemini)
-1. Frontend sends base64 image to `/api/ai/ocr`
-2. Backend calls Gemini OCR prompt
-3. Returns cleaned Uyghur text
+## 8) Reliability & Observability
+- **Idempotency**: All batch requests use a `custom_id` (e.g., `ocr_{book}_{page}`) to ensure results are mapped correctly even if retried.
+- **Cleanup**: Transient files in Gemini File API and local cache are deleted automatically after processing.
+- **Circuit Breaker**: Protects interactive services from LLM outages.
+- **Batch Tracking**: Admin endpoints allow monitoring of remote job states.
 
-## 7) LangChain Usage
-- LCEL pipelines for categorization and spell‑check
-- Structured output parsing with `PydanticOutputParser`
-- Optional in‑memory cache (`LANGCHAIN_CACHE=true`)
-- Optional LangSmith tracing (`LANGCHAIN_TRACING=true`)
-- Gemini provider accessed via `langchain-google-genai` wrappers (no direct SDK calls)
+## 9) Scalability
+- **Batching**: Reduces API overhead and provides higher throughput compared to sequential page processing.
+- **Cloud Storage**: GCS handles the heavy lifting for binary artifacts.
+- **Vector Search**: pgvector in PostgreSQL allows scaling retrieval without a separate vector database (using HNSW indexes).
 
-## 8) Reliability & Idempotency
-- Job locks stored in PostgreSQL via processing_lock field prevent duplicate processing
-- Retry policies managed by ARQ worker
-- Circuit breaker around LLM calls to avoid cascading failures
-- Processing status and errors persisted to `books` and `jobs`
-
-## 9) Observability
-- Structured JSON logging with request correlation IDs
-- `/health` and `/ready` endpoints on backend API
-- Optional RAG evaluation capture (latency, scores, context size)
-
-## 10) Deployment (Local)
-- **Kubernetes**: supported local dev environment (Docker Desktop, minikube, or kind); manifests in `/k8s/local`
-- **Manual Run (optional)**: run Redis, backend, worker, frontend for debugging (expects PostgreSQL on host)
-
-## 11) Security & Secrets
-- Gemini API key stored in backend only
-- Frontend proxies all AI calls through backend
-- `.env` files for local development
-
-## 12) Scalability Considerations
-- Horizontal scaling of workers for OCR/embedding throughput
-- Cloud-native object storage (GCS) for infinite file storage scalability
-- CDN delivery of media assets via public GCS buckets
-- PostgreSQL indexing on key fields
-
-## 13) Risks & Future Improvements
-- Embeddings stored in PostgreSQL (pgvector) may become large at scale
-- OCR quality depends on Gemini model; costs scale with volume
-- Vector search performance optimized with HNSW indexes in PostgreSQL
-- Add auth, user profiles, and multi‑tenant isolation
-
-## 14) Open Questions
-- Do we need per‑user collections or workspaces?
-- How should long‑term RAG evaluation be surfaced in UI?
+## 10) Security
+- All AI keys and GCS credentials are kept server-side.
+- JWT-based authentication with role-based access control (Admin, Editor, Reader).
+- Private GCS buckets ensure book content isn't exposed directly.

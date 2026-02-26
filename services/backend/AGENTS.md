@@ -20,3 +20,8 @@ PYTHONPATH=packages/backend-core uvicorn app.main:app --reload --port 8000 --app
 - Do not move secrets into the frontend; backend owns all AI keys.
 - Update `README.md` and `SYSTEM_DESIGN.md` when API behavior changes.
 - Local dev uses Kubernetes (see `k8s/local`).
+
+## Standard Rules
+- **GLOBAL RULES**: Refer to the root `AGENTS.md` for standardized project rules.
+- **SCRIPTS**: All operational/debug scripts MUST go in the root `scripts/` folder.
+- **DOCS**: All new documentation MUST go in the root `docs/` folder.

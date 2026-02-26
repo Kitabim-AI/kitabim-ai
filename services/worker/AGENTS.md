@@ -20,3 +20,8 @@ PYTHONPATH=packages/backend-core python -m arq app.worker.WorkerSettings
 ## Notes
 - Queue is required; there is no local fallback.
 - Local dev uses Kubernetes (see `k8s/local`).
+
+## Standard Rules
+- **GLOBAL RULES**: Refer to the root `AGENTS.md` for standardized project rules.
+- **SCRIPTS**: All operational/debug scripts MUST go in the root `scripts/` folder.
+- **DOCS**: All new documentation MUST go in the root `docs/` folder.
