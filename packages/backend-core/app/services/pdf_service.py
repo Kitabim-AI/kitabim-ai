@@ -363,7 +363,7 @@ async def process_pdf_task(
                                             error=str(exc),
                                         )
                                         page_error = str(exc)
-                                        page_text = f"[OCR Error: {exc}]"
+                                        page_text = ""
                                         await record_book_error(
                                             page_session,
                                             book_id,
@@ -377,16 +377,40 @@ async def process_pdf_task(
                                     page_text = normalize_uyghur_chars(page_text)
                                     page_text = normalize_markdown(page_text)
 
+                                # Determine new status, handling max retry
+                                current_retry = page_record.retry_count if page_record else 0
+                                if not success:
+                                    new_retry_count = current_retry + 1
+                                    configs_repo = SystemConfigsRepository(page_session)
+                                    max_retry = int(await configs_repo.get_value("ocr_max_retry_count", "3"))
+                                    if new_retry_count >= max_retry:
+                                        # Max retries reached — skip this page
+                                        log_json(
+                                            logger,
+                                            logging.WARNING,
+                                            "Page reached max OCR retries, skipping",
+                                            book_id=book_id,
+                                            page_num=page_num,
+                                            retry_count=new_retry_count,
+                                        )
+                                        new_status = "ocr_done"
+                                        page_error = None
+                                    else:
+                                        new_status = "error"
+                                else:
+                                    new_retry_count = current_retry
+                                    new_status = "ocr_done"
+
                                 # Update page status
                                 await page_session.execute(
                                     update(Page)
                                     .where(and_(Page.book_id == book_id, Page.page_number == page_num))
                                     .values(
                                         text=page_text,
-                                        status="ocr_done" if success else "error",
+                                        status=new_status,
                                         error=page_error,
+                                        retry_count=new_retry_count,
                                         last_updated=datetime.now(timezone.utc),
-                                        # embedding=None # Clear embedding if text changed
                                     )
                                 )
                                 await page_session.commit()

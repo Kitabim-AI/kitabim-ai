@@ -31,6 +31,7 @@ export interface Book {
   lastError?: ErrorEvent | null;
   ocrDoneCount?: number;
   errorCount?: number;
+  readCount?: number;
   processingLockExpiresAt?: Date | string | null;
 }
 

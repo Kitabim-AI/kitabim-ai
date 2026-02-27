@@ -107,11 +107,13 @@ class RAGService:
             "   - Use **bold** for emphasis on key terms or important information\n"
             "   - Use bullet points (- ) for lists when presenting multiple items\n"
             "   - Use > for direct quotations from the source text\n"
-            "4. If the context contains the information, ALWAYS cite the source clearly including book title, author, volume number (if present), and page number.\n"
+            "4. If the context contains the information, ALWAYS cite the source clearly.\n"
+            "   Each document in the context starts with a header like: [BookID: abc123, Book: title, Author: name, Volume: N, Page: N]\n"
+            "   You MUST use the EXACT author name from the 'Author:' field in that header. If there is no 'Author:' field in the header, omit the author from the citation entirely — do NOT write any 'unknown' or placeholder text for the author.\n"
             "5. Format citations in Uyghur as a markdown link. The link URL MUST be in the format 'ref:book_id:page_number'.\n"
             "   If multiple pages are referenced, separate the page numbers with commas in the URL (e.g. 'ref:book_id:9,10').\n"
-            "   Example: **مەنبە:** [فلانى كىتاب (فلانى ئاپتور)، 1-توم، 25-بەت](ref:BOOK_ID_HERE:25)\n"
-            "6. Replace BOOK_ID_HERE with the actual ID provided in the context header for that document. **Citations must be placed immediately after the relevant sentence or paragraph they support. NEVER group all citations at the end of your response.**\n"
+            "   Example: **مەنبە:** [ئانا يۇرت (زوردۇن سابىر)، 1-توم، 25-بەت](ref:abc123:25)\n"
+            "6. Replace 'abc123' with the actual BookID and the author/title with the exact values from the context header. **Citations must be placed immediately after the relevant sentence or paragraph they support. NEVER group all citations at the end of your response.**\n"
             "7. If the context is marked as 'NO RELEVANT DOCUMENTS FOUND' or does not contain the answer:\n"
             "   - Politely explain that you couldn't find a specific match in the indexed books.\n"
             "   - If it's a general question or greeting, respond naturally but maintain your persona as a librarian advisor.\n"
@@ -124,19 +126,21 @@ class RAGService:
 
     @staticmethod
     def _format_document(doc: Document) -> str:
-        title = doc.metadata.get("title", "Unknown")
-        author = doc.metadata.get("author", "Unknown")
+        title = doc.metadata.get("title") or "Unknown"
+        author = doc.metadata.get("author") or None
         volume = doc.metadata.get("volume")
         page = doc.metadata.get("page")
-        book_id = doc.metadata.get("book_id", "unknown")
+        book_id = doc.metadata.get("book_id") or "unknown"
 
         # Build a clear source header for the LLM
-        source_parts = [f"BookID: {book_id}", f"Book: {title}", f"Author: {author}"]
+        source_parts = [f"BookID: {book_id}", f"Book: {title}"]
+        if author:
+            source_parts.append(f"Author: {author}")
         if volume is not None:
             source_parts.append(f"Volume: {volume}")
         if page is not None:
             source_parts.append(f"Page: {page}")
-        
+
         header = ", ".join(source_parts)
         return f"[{header}]\n{doc.page_content}"
 
@@ -308,11 +312,10 @@ class RAGService:
             page_rec = await pages_repo.find_one(req.book_id, req.current_page)
             if page_rec and page_rec.text:
                 page_text = strip_markdown(page_rec.text or "")
-                # Format with volume if available
+                author_info = f", Author: {book.author}" if book.author else ""
                 volume_info = f", Volume {book.volume}" if book.volume is not None else ""
                 current_page_context = (
-                    "CURRENT PAGE (THE USER IS LOOKING AT THIS NOW) - "
-                    f"Book: {book.title or 'Unknown'}{volume_info}, Page {req.current_page}:\n"
+                    f"[BookID: {req.book_id}, Book: {book.title or 'Unknown'}{author_info}{volume_info}, Page {req.current_page}]\n"
                     f"{page_text}"
                 )
 
@@ -418,9 +421,9 @@ class RAGService:
                         "text": chunk.get("text", ""),
                         "score": chunk.get("similarity", 0.0),
                         "page": chunk.get("page_number"),
-                        "title": chunk.get("title", "Unknown"),
+                        "title": chunk.get("title") or "Unknown",
                         "volume": chunk.get("volume"),
-                        "author": chunk.get("author", "Unknown"),
+                        "author": chunk.get("author") or None,
                         "book_id": chunk.get("book_id"),
                     })
             except Exception as exc:
@@ -457,7 +460,7 @@ class RAGService:
                     Document(
                         page_content=r["text"],
                         metadata={
-                            "title": r.get("title", "Unknown"),
+                            "title": r.get("title") or "Unknown",
                             "volume": r.get("volume"),
                             "page": r.get("page"),
                             "book_id": r.get("book_id"),
@@ -481,9 +484,9 @@ class RAGService:
                         "text": doc.page_content,
                         "score": doc.metadata.get("vector_score", 0.0),
                         "page": doc.metadata.get("page"),
-                        "title": doc.metadata.get("title", "Unknown"),
+                        "title": doc.metadata.get("title") or "Unknown",
                         "volume": doc.metadata.get("volume"),
-                        "author": doc.metadata.get("author", "Unknown"),
+                        "author": doc.metadata.get("author") or None,
                         "book_id": doc.metadata.get("book_id"),
                     })
 
@@ -523,7 +526,7 @@ class RAGService:
                         metadata={
                             "title": title,
                             "volume": r.get("volume"),
-                            "author": r.get("author", "Unknown"),
+                            "author": r.get("author") or None,
                             "page": r.get("page"),
                             "book_id": r.get("book_id")
                         },
@@ -600,10 +603,10 @@ class RAGService:
             page_rec = await pages_repo.find_one(req.book_id, req.current_page)
             if page_rec and page_rec.text:
                 page_text = strip_markdown(page_rec.text or "")
+                author_info = f", Author: {book.author}" if book.author else ""
                 volume_info = f", Volume {book.volume}" if book.volume is not None else ""
                 current_page_context = (
-                    "CURRENT PAGE (THE USER IS LOOKING AT THIS NOW) - "
-                    f"Book: {book.title or 'Unknown'}{volume_info}, Page {req.current_page}:\n"
+                    f"[BookID: {req.book_id}, Book: {book.title or 'Unknown'}{author_info}{volume_info}, Page {req.current_page}]\n"
                     f"{page_text}"
                 )
 
@@ -707,9 +710,9 @@ class RAGService:
                         "text": chunk.get("text", ""),
                         "score": chunk.get("similarity", 0.0),
                         "page": chunk.get("page_number"),
-                        "title": chunk.get("title", "Unknown"),
+                        "title": chunk.get("title") or "Unknown",
                         "volume": chunk.get("volume"),
-                        "author": chunk.get("author", "Unknown"),
+                        "author": chunk.get("author") or None,
                         "book_id": chunk.get("book_id"),
                     })
             except Exception as exc:
@@ -742,7 +745,7 @@ class RAGService:
                     Document(
                         page_content=r["text"],
                         metadata={
-                            "title": r.get("title", "Unknown"),
+                            "title": r.get("title") or "Unknown",
                             "volume": r.get("volume"),
                             "page": r.get("page"),
                             "book_id": r.get("book_id"),
@@ -764,9 +767,9 @@ class RAGService:
                         "text": doc.page_content,
                         "score": doc.metadata.get("vector_score", 0.0),
                         "page": doc.metadata.get("page"),
-                        "title": doc.metadata.get("title", "Unknown"),
+                        "title": doc.metadata.get("title") or "Unknown",
                         "volume": doc.metadata.get("volume"),
-                        "author": doc.metadata.get("author", "Unknown"),
+                        "author": doc.metadata.get("author") or None,
                         "book_id": doc.metadata.get("book_id"),
                     })
 
@@ -805,7 +808,7 @@ class RAGService:
                         metadata={
                             "title": title,
                             "volume": r.get("volume"),
-                            "author": r.get("author", "Unknown"),
+                            "author": r.get("author") or None,
                             "page": r.get("page"),
                             "book_id": r.get("book_id")
                         },

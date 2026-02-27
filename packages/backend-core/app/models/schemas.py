@@ -74,6 +74,7 @@ class Book(BaseModel):
     last_error: Optional[ErrorEvent] = None  # DB: last_error, API: lastError
     ocr_done_count: int = 0  # DB: ocr_done_count, API: ocrDoneCount
     error_count: int = 0  # DB: error_count, API: errorCount
+    read_count: int = 0  # DB: read_count, API: readCount
     processing_lock_expires_at: Optional[datetime] = None  # DB: processing_lock_expires_at, API: processingLockExpiresAt
     file_name: Optional[str] = None  # Original uploaded filename
     source: Optional[str] = None  # Document source (e.g., 'upload', 'gcs')

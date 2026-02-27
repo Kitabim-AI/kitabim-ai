@@ -175,6 +175,20 @@ export const PersistenceService = {
     }
   },
 
+  async forceComplete(bookId: string): Promise<{ status: string }> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/force-complete`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Editor access required");
+      }
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to force complete");
+    }
+    return response.json();
+  },
+
   async updatePage(bookId: string, pageNum: number, text: string): Promise<void> {
     const response = await authFetch(`${API_BASE}/books/${bookId}/pages/${pageNum}/update`, {
       method: 'POST',

@@ -63,7 +63,7 @@ async def enqueue_pdf_processing(
         await session.commit()
 
     redis = await _get_pool()
-    await redis.enqueue_job("process_pdf_job", book_id=book_id, job_key=job_key, force_realtime=force_realtime)
+    await redis.enqueue_job("process_pdf_job", book_id=book_id, job_key=job_key, _job_id=job_key, force_realtime=force_realtime)
     return {"status": "queued", "jobKey": job_key}
 
 

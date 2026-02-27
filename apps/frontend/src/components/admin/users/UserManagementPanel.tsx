@@ -150,6 +150,10 @@ const UserRow: React.FC<UserRowProps> = ({
         {formatDate(user.created_at)}
       </td>
 
+      <td className="hidden lg:table-cell px-4 md:px-8 py-3 md:py-5 text-[13px] md:text-[16px] font-bold text-[#94a3b8]">
+        {formatDate(user.last_login_at)}
+      </td>
+
       <td className="px-4 md:px-8 py-3 md:py-5 text-left">
         <div className="flex items-center justify-end gap-1 md:gap-2">
           {isEditing ? (
@@ -492,19 +496,20 @@ export function UserManagementPanel() {
                   </div>
                 </th>
                 <th className="hidden lg:table-cell px-4 md:px-8 py-3 md:py-5 text-right font-normal">{t('admin.users.joinedDate')}</th>
+                <th className="hidden lg:table-cell px-4 md:px-8 py-3 md:py-5 text-right font-normal">{t('admin.users.lastLogin')}</th>
                 <th className="px-4 md:px-8 py-3 md:py-5 text-left font-normal">{t('admin.table.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#0369a1]/5">
               {isLoading && users.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-20 text-center">
+                  <td colSpan={6} className="py-20 text-center">
                     <div className="w-10 h-10 border-4 border-[#0369a1]/5 border-t-[#0369a1] rounded-full animate-spin mx-auto"></div>
                   </td>
                 </tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-20 text-center font-bold text-[#94a3b8]">{t('admin.users.notFound')}</td>
+                  <td colSpan={6} className="py-20 text-center font-bold text-[#94a3b8]">{t('admin.users.notFound')}</td>
                 </tr>
               ) : (
                 users.map((user) => (

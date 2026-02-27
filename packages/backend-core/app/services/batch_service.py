@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Page, Chunk, BatchJob, BatchRequest, Book
 from app.db.repositories.batch_jobs import BatchJobsRepository, BatchRequestsRepository
 from app.db.repositories.books import BooksRepository
+from app.db.repositories.system_configs import SystemConfigsRepository
 from app.services.gemini_batch_client import GeminiBatchClient
 from app.services.storage_service import storage
 from app.utils.observability import log_json
@@ -613,15 +614,34 @@ class BatchService:
         stmt = select(Page).where(Page.status == "ocr_done").limit(limit)
         res = await self.session.execute(stmt)
         pages = res.scalars().all()
-        
+
         if not pages:
             return
 
         log_json(logger, logging.INFO, "Chunking OCR results", count=len(pages))
 
+        configs_repo = SystemConfigsRepository(self.session)
+        max_retry = int(await configs_repo.get_value("ocr_max_retry_count", "3"))
+
         for page in pages:
             if not page.text:
-                page.status = "error"
+                new_retry_count = page.retry_count + 1
+                if new_retry_count >= max_retry:
+                    # Max retries reached — mark as indexed with no content and move on
+                    log_json(
+                        logger,
+                        logging.WARNING,
+                        "Page reached max retries with empty text, skipping",
+                        book_id=page.book_id,
+                        page_num=page.page_number,
+                        retry_count=new_retry_count,
+                    )
+                    page.status = "indexed"
+                    page.is_indexed = True
+                    page.retry_count = new_retry_count
+                else:
+                    page.status = "error"
+                    page.retry_count = new_retry_count
                 continue
 
             clean_text = strip_markdown(page.text)

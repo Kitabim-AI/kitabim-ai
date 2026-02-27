@@ -6,7 +6,7 @@
 |---|---|
 | `uploading` | File is being uploaded to storage — not yet persisted as a book record |
 | `pending` | Book record created, waiting for OCR to be triggered |
-| `ocr_processing` | OCR (and/or embedding) job is actively running in the worker |
+| `ocr_processing` | OCR (and/or re-embedding) job is actively running in the worker |
 | `ocr_done` | All pages have been OCR'd; embeddings/indexing not yet done |
 | `indexing` | Embedding and chunk indexing is in progress |
 | `ready` | Fully processed and indexed; available to readers |
@@ -21,36 +21,40 @@
                          │ upload complete
                          ▼
                     ┌─────────┐
-                    │ pending │  ◄─── Start OCR triggered here
+                    │ pending │  ◄─── Start OCR triggers from here only
                     └────┬────┘
                          │ Start OCR
                          ▼
                ┌──────────────────┐
-               │  ocr_processing  │  ◄─── Retry OCR / Reindex / Reset Page land here too
-               └────────┬─────────┘
-                        │                    │
-              pages done │              error │
-                        ▼                    ▼
-                  ┌──────────┐          ┌───────┐
-                  │ ocr_done │          │ error │
-                  └────┬─────┘          └───┬───┘
-                       │ indexing starts     │ Retry OCR
-                       ▼                    │
-                  ┌──────────┐             (back to ocr_processing)
+               │  ocr_processing  │  ◄─── Retry OCR / Reindex / Reset Page land here
+               └──────┬─────┬─────┘
+                      │     │
+            all done  │     │ failure
+                      ▼     ▼
+                  ┌──────────┐   ┌───────┐
+                  │ ocr_done │   │ error │
+                  └────┬─────┘   └───┬───┘
+                       │              │
+                       │              ├─ Retry OCR ──► ocr_processing
+                       │              └─ Force Complete ──► ocr_done or ready
+                       │                 (detected from surviving page states)
+                       │ indexing starts
+                       ▼
+                  ┌──────────┐
                   │ indexing │
-                  └────┬─────┘
-                       │ complete
+                  └────┬──┬──┘
+                       │  │ unindexed ocr_done pages remain
+                       │  └─ Force Complete ──► ocr_done
+                       │ all indexed
                        ▼
                   ┌─────────┐
-                  │  ready  │  ◄─── Reindex available from here
+                  │  ready  │  ◄─── Reindex available from here (and ocr_done)
                   └─────────┘
 ```
 
 ---
 
 ## Page Status Values
-
-Pages track individual PDF pages through their own pipeline.
 
 | Status | Description |
 |---|---|
@@ -62,52 +66,136 @@ Pages track individual PDF pages through their own pipeline.
 | `indexed` | Fully embedded and searchable |
 | `error` | This page failed OCR or indexing |
 
+### Page Retry Count
+
+Each page tracks a `retry_count` field. When OCR fails (exception or empty text), `retry_count` is incremented. Once it reaches `ocr_max_retry_count` (system config, default `3`), the page is automatically skipped instead of re-queued as `error`:
+
+- **OCR exception path** (`pdf_service`): on max retry → page set to `ocr_done` with empty text
+- **Empty text path** (`batch_service`): on max retry → page set to `indexed` with `is_indexed=true` (no chunk created)
+
+This prevents a permanently-failing page from blocking the entire book indefinitely. The `ocr_max_retry_count` value is configurable via the System Configs admin API.
+
 ---
 
 ## Admin Action Buttons
 
 ### Enable / Disable Rules
 
-These are evaluated in [ActionMenu.tsx](../apps/frontend/src/components/admin/ActionMenu.tsx).
+Evaluated in [ActionMenu.tsx](../apps/frontend/src/components/admin/ActionMenu.tsx).
 
 ```
-isStale             = (status is ocr_processing OR indexing)
-                      AND processingLockExpiresAt is in the past
+isStale              = (status is ocr_processing OR indexing)
+                       AND processingLockExpiresAt is in the past
 
 isActuallyProcessing = (status is ocr_processing OR indexing)
                        AND NOT isStale
 
-hasFailedPages      = errorCount > 0 OR any page.status === 'error'
+hasFailedPages       = errorCount > 0 OR any page.status === 'error'
 
-canRetry            = (hasFailedPages OR status === 'error' OR isStale)
-                      AND NOT isActuallyProcessing
+canStartOcr          = status === 'pending'
 
-canStartOcr         = NOT isActuallyProcessing
-                      AND NOT canRetry
-                      AND status !== 'ready'
-                      AND status !== 'uploading'
+canRetry             = (hasFailedPages OR status === 'error' OR isStale)
+                       AND NOT isActuallyProcessing
 
-canReindex          = status === 'ready'
+canReindex           = status === 'ready' OR status === 'ocr_done'
+
+canForceComplete     = isEditorOrAdmin
+                       AND (isStale OR status === 'ocr_processing'
+                            OR status === 'indexing' OR status === 'error')
 ```
 
 ### Button State by Status
 
-| Book Status | View | Start OCR | Retry OCR | Reindex | Delete |
-|---|---|---|---|---|---|
-| `uploading` | disabled | disabled | disabled | disabled | enabled |
-| `pending` | disabled | **enabled** | disabled | disabled | enabled |
-| `ocr_processing` (active) | enabled | disabled | disabled | disabled | enabled |
-| `ocr_processing` (stale lock) | enabled | disabled | **enabled** | disabled | enabled |
-| `ocr_done` | enabled | enabled | disabled | disabled | enabled |
-| `indexing` (active) | enabled | disabled | disabled | disabled | enabled |
-| `indexing` (stale lock) | enabled | disabled | **enabled** | disabled | enabled |
-| `ready` | enabled | disabled | disabled | **enabled** | enabled |
-| `error` | enabled | disabled | **enabled** | disabled | enabled |
-| `error` + failed pages | enabled | disabled | **enabled** | disabled | enabled |
+| Book Status | View | Start OCR | Retry OCR | Reindex | Force Complete | Delete |
+|---|---|---|---|---|---|---|
+| `uploading` | disabled | disabled | disabled | disabled | disabled | enabled |
+| `pending` | disabled | **enabled** | disabled | disabled | disabled | enabled |
+| `ocr_processing` (active) | enabled | disabled | disabled | disabled | **enabled** (editor+) | enabled |
+| `ocr_processing` (stale lock) | enabled | disabled | **enabled** | disabled | **enabled** (editor+) | enabled |
+| `ocr_done` | enabled | disabled | disabled | **enabled** | disabled | enabled |
+| `indexing` (active) | enabled | disabled | disabled | disabled | **enabled** (editor+) | enabled |
+| `indexing` (stale lock) | enabled | disabled | **enabled** | disabled | **enabled** (editor+) | enabled |
+| `ready` | enabled | disabled | disabled | **enabled** | disabled | enabled |
+| `error` | enabled | disabled | **enabled** | disabled | **enabled** (editor+) | enabled |
+| `error` + failed pages | enabled | disabled | **enabled** | disabled | **enabled** (editor+) | enabled |
 
 > **Stale detection**: A job is considered stale when the book is in `ocr_processing` or `indexing`
-> and `processingLockExpiresAt` is in the past. This unlocks Retry OCR so admins can recover
-> stuck books without backend intervention.
+> and `processingLockExpiresAt` is in the past. This unlocks Retry OCR and Force Complete so
+> admins can recover stuck books without backend intervention.
+
+---
+
+## Action Metrics
+
+Each action's trigger conditions, what it changes, and what state the book/pages end up in.
+
+### Start OCR — `POST /api/books/{id}/start-ocr`
+
+| | Detail |
+|---|---|
+| **Enabled when** | `status === 'pending'` |
+| **Book status → after** | `ocr_processing` |
+| **processing_step → after** | `ocr` |
+| **Pages changed** | All existing pages deleted (if non-pending); worker creates fresh `pending` pages |
+| **Worker enqueued** | Yes (`start_ocr`) |
+
+---
+
+### Retry OCR — `POST /api/books/{id}/retry-ocr`
+
+| | Detail |
+|---|---|
+| **Enabled when** | `hasFailedPages OR status === 'error' OR isStale` AND not actively processing |
+| **Book status → after** | `ocr_processing` |
+| **processing_step → after** | `ocr` |
+| **Pages changed** | Pages with `status IN ('error', 'ocr_processing')` → reset to `pending` (text cleared, is_indexed=false) |
+| **Special case** | If `status === 'error'` and no stuck/failed pages → re-enqueues as-is (`resumed`) |
+| **Worker enqueued** | Yes (`retry_failed` or `resume_error`) |
+
+> **Note on permanently-failing pages**: If a page consistently fails OCR, its `retry_count`
+> is incremented each attempt. Once `retry_count >= ocr_max_retry_count`, the page is
+> automatically skipped (set to `ocr_done` with empty text) rather than looping as `error`.
+> This means Retry OCR will eventually self-resolve without admin intervention.
+
+---
+
+### Reindex — `POST /api/books/{id}/reindex`
+
+| | Detail |
+|---|---|
+| **Enabled when** | `status === 'ready' OR status === 'ocr_done'` |
+| **Book status → after** | `ocr_processing` |
+| **processing_step → after** | `rag` |
+| **Pages changed** | All `ocr_done`, `chunked`, `indexed` pages → `ocr_done`, `is_indexed=false` |
+| **Chunks** | All existing chunks deleted |
+| **Worker enqueued** | Yes (`reindex`) — worker re-chunks and re-embeds all `ocr_done` pages |
+
+---
+
+### Force Complete — `POST /api/books/{id}/force-complete`
+
+| | Detail |
+|---|---|
+| **Enabled when** | Editor/admin AND (`isStale OR status IN ('ocr_processing', 'indexing', 'error')`) |
+| **Logic** | Backend detects the active stage from surviving page states and advances accordingly |
+| **Lock cleared** | Always (`processing_lock = null`, `processing_lock_expires_at = null`) |
+
+#### Force Complete — Outcome by Current Status
+
+| Book Status | Page condition | Pages changed | Book status → after |
+|---|---|---|---|
+| `ocr_processing` | — | `ocr_processing` pages → `ocr_done` | `ocr_done` |
+| `indexing` | no remaining `ocr_done` pages | `indexing` pages → `indexed` (is_indexed=true) | `ready` |
+| `indexing` | `ocr_done` pages still unindexed | `indexing` pages → `indexed` (is_indexed=true) | `ocr_done` |
+| `error` | has `ocr_processing` pages | `ocr_processing` pages → `ocr_done` | `ocr_done` |
+| `error` | has `indexing` pages, no `ocr_done` | `indexing` pages → `indexed` (is_indexed=true) | `ready` |
+| `error` | has `indexing` pages + `ocr_done` pages | `indexing` pages → `indexed` (is_indexed=true) | `ocr_done` |
+| `error` | has `ocr_done` pages only | none | `ocr_done` |
+| `error` | has `indexed` pages only | none | `ready` |
+| `error` | no surviving page states | none | `ocr_done` |
+
+> When force-complete resolves to `ocr_done`, the normal indexing pipeline will pick up
+> remaining `ocr_done` pages automatically on the next worker cycle.
 
 ---
 
@@ -121,9 +209,10 @@ All write endpoints require **editor** role or above. Read endpoints are role-de
 |---|---|---|---|---|
 | Upload PDF | `POST` | `/api/books/upload` | editor | `pending` |
 | Start OCR | `POST` | `/api/books/{id}/start-ocr` | editor | `ocr_processing` |
-| Retry failed pages | `POST` | `/api/books/{id}/retry-ocr` | editor | `ocr_processing` |
-| Full reprocess (clears pages) | `POST` | `/api/books/{id}/reprocess` | editor | `ocr_processing` |
+| Retry failed/stuck pages | `POST` | `/api/books/{id}/retry-ocr` | editor | `ocr_processing` |
+| Force complete current stage | `POST` | `/api/books/{id}/force-complete` | editor | `ocr_done` or `ready` |
 | Reindex embeddings | `POST` | `/api/books/{id}/reindex` | editor | `ocr_processing` → `ready` |
+| Full reprocess (clears pages) | `POST` | `/api/books/{id}/reprocess` | editor | `ocr_processing` |
 | Delete book | `DELETE` | `/api/books/{id}` | editor | — |
 
 ### Page-Level Operations
@@ -131,10 +220,25 @@ All write endpoints require **editor** role or above. Read endpoints are role-de
 | Action | Method | Endpoint | Auth | Page status after |
 |---|---|---|---|---|
 | Reset single page | `POST` | `/api/books/{id}/pages/{n}/reset` | editor | `pending`, book → `ocr_processing` |
-| Update page text manually | `POST` | `/api/books/{id}/pages/{n}/update` | editor | `ocr_done` |
+| Update page text manually | `POST` | `/api/books/{id}/pages/{n}/update` | editor | `ocr_done` → `indexed` (synchronous embed) |
 | Reprocess single page | `POST` | `/api/books/{id}/pages/{n}/reprocess` | editor | `pending` → re-queued |
 | Spell-check page | `POST` | `/api/books/{id}/pages/{n}/spell-check` | editor | unchanged |
 | Apply spell corrections | `POST` | `/api/books/{id}/pages/{n}/apply-corrections` | editor | unchanged |
+
+### System Configuration
+
+| Action | Method | Endpoint | Auth |
+|---|---|---|---|
+| List all system configs | `GET` | `/api/system-configs/` | admin |
+| Get config value | `GET` | `/api/system-configs/{key}` | admin |
+| Create config | `POST` | `/api/system-configs/` | admin |
+| Update config | `PUT` | `/api/system-configs/{key}` | admin |
+
+**Relevant config keys:**
+
+| Key | Default | Description |
+|---|---|---|
+| `ocr_max_retry_count` | `3` | Max OCR attempts per page before auto-skip |
 
 ### Metadata
 
@@ -160,29 +264,17 @@ All write endpoints require **editor** role or above. Read endpoints are role-de
 
 ---
 
-## Operation Details
+## Reprocess (internal)
 
-### Start OCR (`POST /start-ocr`)
-- Deletes all existing pages if book was previously processed (non-`pending` status)
-- Sets book to `ocr_processing` + `processing_step = 'ocr'`
-- Enqueues PDF processing job in the worker
+`POST /api/books/{id}/reprocess` — not exposed in the admin UI action menu.
 
-### Retry OCR (`POST /retry-ocr`)
-- If book is in `error` with no specific failed pages → resumes from scratch
-- If there are pages with `status = 'error'` → resets only those pages to `pending` and re-queues
-- Sets book to `ocr_processing`
-
-### Reindex (`POST /reindex`)
-- Only meaningful when book is `ready` (frontend enforces this)
-- Resets `is_indexed = false` on all `ocr_done` pages
-- Deletes all existing chunks
-- Sets book to `ocr_processing` and re-queues (worker will re-chunk and re-embed)
-
-### Reprocess (`POST /reprocess`)
 - Full restart: deletes all pages, re-runs OCR + indexing from scratch
 - Accepts `force_realtime=true` to bypass batch mode
-- Not exposed in the admin UI action menu (internal / recovery use)
+- Use for severe data corruption or full pipeline re-runs
 
-### Reset Page (`POST /pages/{n}/reset`)
+## Reset Page
+
+`POST /api/books/{id}/pages/{n}/reset`
+
 - Resets a single page to `pending` and triggers re-OCR for that page only
 - Sets book status to `ocr_processing` while that page is being redone

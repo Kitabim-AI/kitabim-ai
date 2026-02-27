@@ -95,6 +95,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               <p className="text-slate-500 font-normal max-w-lg leading-loose text-base">
                 {t('chat.welcome.message')}
               </p>
+              <p className="text-slate-400 font-normal max-w-lg leading-loose text-sm mt-4 italic border-t border-slate-200 pt-4">
+                {t('chat.welcome.disclaimer')}
+              </p>
             </div>
           ) : (
             chatMessages.map((msg, idx) => (

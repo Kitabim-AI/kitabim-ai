@@ -67,6 +67,15 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick }) => {
                 {t(`bookCard.${book.status}`) || book.status}
               </span>
             )}
+            {book.status === 'ready' && (book.readCount ?? 0) > 0 && (
+              <span className="flex items-center gap-1 text-[#64748b] text-[10px] font-semibold">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+                {book.readCount}
+              </span>
+            )}
           </div>
           <span className="font-semibold">{t('book.pagesCount', { count: book.totalPages || (book as any).total_pages || 0 })}</span>
         </div>

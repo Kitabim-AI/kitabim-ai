@@ -14,6 +14,7 @@ export interface UserPublic {
   role: 'admin' | 'editor' | 'reader';
   is_active: boolean;
   created_at?: string;
+  last_login_at?: string;
 }
 
 export interface PaginatedUsers {

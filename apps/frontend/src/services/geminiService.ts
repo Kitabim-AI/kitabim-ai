@@ -49,15 +49,15 @@ export const chatWithBook = async (question: string, bookId: string, currentPage
     if (response.status === 429) {
       try {
         const errorData = await response.json();
-        return errorData.detail || "كەچۈرۈڭ، سىستېما ئالدىراش ياكى كۈندىلىك چەكلىمىڭىز توشتى.";
+        return errorData.detail || "كەچۈرۈڭ، سېستىما ئالدىراش ياكى كۈندىلىك چەكلىمىڭىز توشتى.";
       } catch (e) {
-        return "كەچۈرۈڭ، سىستېما ئالدىراش ياكى كۈندىلىك چەكلىمىڭىز توشتى.";
+        return "كەچۈرۈڭ، سېستىما ئالدىراش ياكى كۈندىلىك چەكلىمىڭىز توشتى.";
       }
     }
     if (!response.ok) {
       const errorText = await response.text().catch(() => "Unknown error");
       console.error(`Chat API error (${response.status}):`, errorText);
-      return "كەچۈرۈڭ، سىستېما خاتالىقى كۆرۈلدى (500).";
+      return "كەچۈرۈڭ، سېستىما خاتالىقى كۆرۈلدى (500).";
     }
     const data = await response.json();
     return data.answer;
@@ -95,11 +95,11 @@ export const chatWithBookStream = async (
       return;
     }
     if (response.status === 429) {
-      onError("كەچۈرۈڭ، سىستېما ئالدىراش ياكى كۈندىلىك چەكلىمىڭىز توشتى.");
+      onError("كەچۈرۈڭ، سېستىما ئالدىراش ياكى كۈندىلىك چەكلىمىڭىز توشتى.");
       return;
     }
     if (!response.ok) {
-      onError("كەچۈرۈڭ، سىستېما خاتالىقى كۆرۈلدى (500).");
+      onError("كەچۈرۈڭ، سېستىما خاتالىقى كۆرۈلدى (500).");
       return;
     }
 

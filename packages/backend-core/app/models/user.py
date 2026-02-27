@@ -53,7 +53,8 @@ class UserPublic(BaseModel):
     role: UserRole
     is_active: bool = True
     created_at: Optional[datetime] = None
-    
+    last_login_at: Optional[datetime] = None
+
     @classmethod
     def from_user(cls, user: "User") -> "UserPublic":
         """Create a UserPublic from a User model."""
@@ -65,6 +66,7 @@ class UserPublic(BaseModel):
             role=user.role,
             is_active=user.is_active,
             created_at=user.created_at,
+            last_login_at=user.last_login_at,
         )
 
 

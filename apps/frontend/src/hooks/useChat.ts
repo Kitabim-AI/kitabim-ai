@@ -14,11 +14,6 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Keep ref in sync with state
-  useEffect(() => {
-    streamingMessageRef.current = streamingMessage;
-  }, [streamingMessage]);
-
   const scrollToBottom = () => {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
@@ -45,18 +40,19 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    streamingMessageRef.current = '';
     setIsChatting(false);
     setStreamingMessage('');
   };
 
-  // Terminate chat if context changes (view, book, or page unmounts/switches)
+  // Terminate chat if context changes (view or book switches)
   useEffect(() => {
     abortOngoingChat();
     // Also clear messages if we switch major views (e.g. from global to reader)
     if (view !== 'reader') {
       clearChat();
     }
-  }, [view, selectedBook?.id, currentPage]);
+  }, [view, selectedBook?.id]);
 
   // Clean up on unmount
   useEffect(() => {
@@ -82,6 +78,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
+    streamingMessageRef.current = '';
     setIsChatting(true);
     setStreamingMessage('');
 
@@ -96,6 +93,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
         historyToSend,
         // onChunk
         (chunk: string) => {
+          streamingMessageRef.current += chunk;
           setStreamingMessage(prev => prev + chunk);
         },
         // onComplete

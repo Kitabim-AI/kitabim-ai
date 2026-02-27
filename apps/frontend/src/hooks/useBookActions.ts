@@ -71,8 +71,9 @@ export const useBookActions = (
 
   const handleRetryFailedOcr = async (book: Book) => {
     const hasFailedPages = (book.errorCount ?? 0) > 0 || (book.pages?.some(r => r.status === 'error') ?? false);
+    const isStale = (book.status === 'ocr_processing' || book.status === 'indexing') && book.processingLockExpiresAt && new Date(book.processingLockExpiresAt) < new Date();
 
-    if (!hasFailedPages && book.status !== 'error') {
+    if (!hasFailedPages && book.status !== 'error' && !isStale) {
       setModal({
         isOpen: true,
         title: t('modal.noFailedPages.title'),
@@ -95,7 +96,7 @@ export const useBookActions = (
         processingStep: 'ocr',
         lastUpdated: new Date(),
         pages: (prev.pages || []).map(r =>
-          r.status === 'error'
+          (r.status === 'error' || r.status === 'ocr_processing')
             ? { ...r, status: 'pending', text: '', error: undefined, isVerified: false }
             : r
         ),
@@ -112,7 +113,7 @@ export const useBookActions = (
           processingStep: 'ocr',
           lastUpdated: new Date(),
           pages: (b.pages || []).map(r =>
-            r.status === 'error'
+            (r.status === 'error' || r.status === 'ocr_processing')
               ? { ...r, status: 'pending', text: '', error: undefined, isVerified: false }
               : r
           ),
@@ -190,6 +191,33 @@ export const useBookActions = (
 
 
 
+  const handleForceComplete = (book: Book) => {
+    setModal({
+      isOpen: true,
+      title: t('modal.forceComplete.title'),
+      message: t('modal.forceComplete.message'),
+      type: 'confirm',
+      confirmText: t('modal.forceComplete.confirm'),
+      onConfirm: async () => {
+        try {
+          const result = await PersistenceService.forceComplete(book.id);
+          setBooks(prev => prev.map(b => b.id === book.id ? { ...b, status: result.status as any } : b));
+          await refreshLibrary();
+          setModal((prev: any) => ({ ...prev, isOpen: false }));
+          addNotification(t('common.forceCompleteSuccess'), "success");
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : '';
+          setModal({
+            isOpen: true,
+            title: t('modal.forceCompleteError.title'),
+            message: msg || t('modal.forceCompleteError.message'),
+            type: 'alert'
+          });
+        }
+      }
+    });
+  };
+
   const handleReindexBook = (bookId: string) => {
     setModal({
       isOpen: true,
@@ -200,7 +228,7 @@ export const useBookActions = (
       onConfirm: async () => {
         try {
           await PersistenceService.reindexBook(bookId);
-          setBooks(prev => prev.map(b => b.id === bookId ? { ...b, status: 'indexing', processingStep: 'rag' } : b));
+          setBooks(prev => prev.map(b => b.id === bookId ? { ...b, status: 'ocr_processing', processingStep: 'rag' } : b));
           await refreshLibrary();
           setModal((prev: any) => ({ ...prev, isOpen: false }));
           addNotification(t('common.reindexStarted'), "success");
@@ -490,6 +518,7 @@ export const useBookActions = (
     handleFileUpload,
     handleStartOcr,
     handleRetryFailedOcr,
+    handleForceComplete,
     handleReProcessPage,
     handleReindexBook,
     handleUpdatePage,

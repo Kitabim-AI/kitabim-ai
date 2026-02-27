@@ -36,6 +36,7 @@
     "ocrStarted": "OCR process started successfully.",
     "ocrStartError": "Failed to start OCR process.",
     "reindexStarted": "Book re-indexing started.",
+    "forceCompleteSuccess": "Processing step marked as complete.",
     "pageUpdated": "Page {{pageNum}} updated.",
     "noPagesToSave": "No pages found to save. Please try reloading the book.",
     "saveSuccess": "Global corrections saved.",
@@ -118,7 +119,8 @@
     "libraryBookCount": "There are {{count}} books in the library",
     "welcome": {
       "title": "Welcome to AI Assistant",
-      "message": "I can compare all books in the library and provide the best answer to your question"
+      "message": "I can compare all books in the library and provide the best answer to your question",
+      "disclaimer": "My answers are completely based on content of the books, if it doesn't match with your political view, please be patient with me."
     },
     "bookAssistant": "Book Assistant",
     "bookAssistantWelcome": "Hello! I can help you with questions about this book. What would you like to ask?",
@@ -241,6 +243,7 @@
       "startOcr": "Start OCR",
       "retryOcr": "Retry",
       "reindex": "Reindex",
+      "forceComplete": "Force Complete",
       "showing": "Showing",
       "email": "Email",
       "role": "Role",
@@ -294,6 +297,7 @@
       "role": "Role",
       "status": "Status",
       "joinedDate": "Joined Date",
+      "lastLogin": "Last Login",
       "notFound": "No users found",
       "accessRequired": "Admin access required",
       "accessRequiredDetail": "You need admin privileges to manage users.",
@@ -412,6 +416,15 @@
     "reindexError": {
       "title": "Re-Index Error",
       "message": "Failed to start re-indexing. Please try again."
+    },
+    "forceComplete": {
+      "title": "Force Complete",
+      "message": "This will immediately mark the current processing step as complete. Any in-progress pages will be marked as done. Continue?",
+      "confirm": "Force Complete"
+    },
+    "forceCompleteError": {
+      "title": "Force Complete Error",
+      "message": "Failed to force complete the processing step. Please try again."
     },
     "updateError": {
       "title": "Update Error",

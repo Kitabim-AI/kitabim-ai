@@ -34,13 +34,22 @@ async def rescue_stale_jobs(ctx):
         pending_cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
         stale_pending = await books_repo.find_stale_pending_books(pending_cutoff)
 
-        stale_books = stale_processing + stale_pending
+        # Find stale "ocr_done" books — OCR finished but indexing never started.
+        # Use a 30-minute cutoff so the batch cron has had time to try first.
+        ocr_done_cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
+        stale_ocr_done = await books_repo.find_stale_ocr_done_books(ocr_done_cutoff)
+
+        stale_books = stale_processing + stale_pending + stale_ocr_done
 
         if not stale_books:
             logger.info("✅ Watchdog: No stale jobs found.")
             return
 
-        logger.warning(f"⚠️ Watchdog: Found {len(stale_books)} stale books ({len(stale_processing)} processing, {len(stale_pending)} pending). Checking job status...")
+        logger.warning(
+            f"⚠️ Watchdog: Found {len(stale_books)} stale books "
+            f"({len(stale_processing)} processing, {len(stale_pending)} pending, "
+            f"{len(stale_ocr_done)} ocr_done). Checking job status..."
+        )
 
         enqueued_count = 0
         skipped_count = 0

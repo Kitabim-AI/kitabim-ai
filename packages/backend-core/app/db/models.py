@@ -72,6 +72,7 @@ class Book(Base):
     # Counts
     ocr_done_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     error_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    read_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     # Timestamps & audit
     upload_date: Mapped[datetime] = mapped_column(
@@ -147,6 +148,8 @@ class Page(Base):
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_indexed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
 
     last_updated: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
