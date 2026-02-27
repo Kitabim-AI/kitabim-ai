@@ -963,27 +963,27 @@ async def start_ocr(
     if not book:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
-    if book.status == "ocr_processing":
-        # Note: processing_lock_expires_at field doesn't exist in current schema
-        # TODO: Add processing lock mechanism if needed
-        logger.warning(f"Book {book_id} is already processing. Allowing restart anyway.")
-
     # CLEAR OLD DATA
     if book.status != "pending":
         # Delete existing pages
         await pages_repo.delete_by_book(book_id)
 
-    # Update book status
+    # Update book status and clear any stale lock
     await books_repo.update_one(
         book_id,
         status="ocr_processing",
         processing_step="ocr",
+        processing_lock=None,
+        processing_lock_expires_at=None,
         last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email,
     )
     await session.commit()
 
-    await enqueue_pdf_processing(book_id, reason=f"start_{provider}", background_tasks=background_tasks)
+    try:
+        await enqueue_pdf_processing(book_id, reason=f"start_{provider}", background_tasks=background_tasks)
+    except Exception:
+        raise HTTPException(status_code=503, detail=t("errors.queue_unavailable"))
     return {"status": "started", "provider": provider}
 
 
@@ -1005,10 +1005,6 @@ async def retry_failed_ocr(
     if not book:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
-    if book.status == "ocr_processing":
-        # Note: processing_lock_expires_at field doesn't exist in current schema
-        logger.warning(f"Book {book_id} is already processing. Allowing retry anyway.")
-
     provider = "gemini"
 
     # Find failed or stuck pages (error = failed OCR, ocr_processing = stale/stuck)
@@ -1025,21 +1021,28 @@ async def retry_failed_ocr(
             book_id,
             status="ocr_processing",
             processing_step="ocr",
+            processing_lock=None,
+            processing_lock_expires_at=None,
             last_updated=datetime.now(timezone.utc),
             updated_by=current_user.email,
         )
         await session.commit()
-        await enqueue_pdf_processing(book_id, reason="resume_error", background_tasks=background_tasks)
+        try:
+            await enqueue_pdf_processing(book_id, reason="resume_error", background_tasks=background_tasks)
+        except Exception:
+            raise HTTPException(status_code=503, detail=t("errors.queue_unavailable"))
         return {"status": "resumed", "provider": provider}
 
     if not failed_pages:
         return {"status": "no_failed_pages"}
 
-    # Update book status
+    # Update book status and clear any stale lock
     await books_repo.update_one(
         book_id,
         status="ocr_processing",
         processing_step="ocr",
+        processing_lock=None,
+        processing_lock_expires_at=None,
         last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email,
     )
@@ -1063,7 +1066,10 @@ async def retry_failed_ocr(
     )
 
     await session.commit()
-    await enqueue_pdf_processing(book_id, reason="retry_failed", background_tasks=background_tasks)
+    try:
+        await enqueue_pdf_processing(book_id, reason="retry_failed", background_tasks=background_tasks)
+    except Exception:
+        raise HTTPException(status_code=503, detail=t("errors.queue_unavailable"))
     return {"status": "retry_started", "provider": provider, "failedPages": failed_pages}
 
 
@@ -1109,33 +1115,29 @@ async def force_complete_book(
         return {"status": "ocr_done"}
 
     elif book.status == "indexing":
-        # Mark any pages still indexing as indexed
+        # Reset chunked pages back to ocr_done so the embedding pipeline retries cleanly.
+        # Pages are in 'chunked' state during embedding — 'indexing' page status is unused.
         await session.execute(
             update(Page)
-            .where(and_(Page.book_id == book_id, Page.status == "indexing"))
+            .where(and_(Page.book_id == book_id, Page.status == "chunked"))
             .values(
-                status="indexed",
-                is_indexed=True,
+                status="ocr_done",
+                is_indexed=False,
                 last_updated=datetime.now(timezone.utc),
                 updated_by=current_user.email,
             )
         )
-        # Check if there are ocr_done pages that never started indexing
-        ocr_done_remaining = (await session.execute(
-            select(func.count()).where(and_(Page.book_id == book_id, Page.status == "ocr_done"))
-        )).scalar() or 0
-        new_status = "ocr_done" if ocr_done_remaining > 0 else "ready"
         await books_repo.update_one(
             book_id,
-            status=new_status,
+            status="ocr_done",
             processing_lock=None,
             processing_lock_expires_at=None,
             last_updated=datetime.now(timezone.utc),
             updated_by=current_user.email,
         )
         await session.commit()
-        logger.info(f"Force-completed indexing for book {book_id} → {new_status} by {current_user.email}")
-        return {"status": new_status}
+        logger.info(f"Force-completed indexing for book {book_id} → ocr_done by {current_user.email}")
+        return {"status": "ocr_done"}
 
     elif book.status == "error":
         # Detect which stage was running when the error occurred
@@ -1143,8 +1145,9 @@ async def force_complete_book(
             select(func.count()).where(and_(Page.book_id == book_id, Page.status == "ocr_processing"))
         )).scalar() or 0
 
-        indexing_count = (await session.execute(
-            select(func.count()).where(and_(Page.book_id == book_id, Page.status == "indexing"))
+        # chunked = embedding was in progress when error occurred
+        chunked_count = (await session.execute(
+            select(func.count()).where(and_(Page.book_id == book_id, Page.status == "chunked"))
         )).scalar() or 0
 
         ocr_done_count = (await session.execute(
@@ -1167,20 +1170,19 @@ async def force_complete_book(
                 )
             )
             new_book_status = "ocr_done"
-        elif indexing_count > 0:
-            # Was doing indexing — mark stuck pages as indexed
+        elif chunked_count > 0:
+            # Was doing embedding — reset chunked pages to ocr_done so embedding retries cleanly
             await session.execute(
                 update(Page)
-                .where(and_(Page.book_id == book_id, Page.status == "indexing"))
+                .where(and_(Page.book_id == book_id, Page.status == "chunked"))
                 .values(
-                    status="indexed",
-                    is_indexed=True,
+                    status="ocr_done",
+                    is_indexed=False,
                     last_updated=datetime.now(timezone.utc),
                     updated_by=current_user.email,
                 )
             )
-            # Still have unindexed ocr_done pages → back to ocr_done so indexing can resume
-            new_book_status = "ocr_done" if ocr_done_count > 0 else "ready"
+            new_book_status = "ocr_done"
         elif ocr_done_count > 0:
             # OCR finished but indexing never started or was partially done
             new_book_status = "ocr_done"
@@ -1242,7 +1244,10 @@ async def reprocess_book(
     )
     await session.commit()
 
-    await enqueue_pdf_processing(book_id, reason="reprocess", background_tasks=background_tasks, force_realtime=force_realtime)
+    try:
+        await enqueue_pdf_processing(book_id, reason="reprocess", background_tasks=background_tasks, force_realtime=force_realtime)
+    except Exception:
+        raise HTTPException(status_code=503, detail=t("errors.queue_unavailable"))
     return {"status": "reprocessing_started", "force_realtime": force_realtime}
 
 
@@ -1288,12 +1293,17 @@ async def reindex_book(
         book_id,
         status="ocr_processing",
         processing_step="rag",
+        processing_lock=None,
+        processing_lock_expires_at=None,
         last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email
     )
     await session.commit()
 
-    await enqueue_pdf_processing(book_id, reason="reindex", background_tasks=background_tasks)
+    try:
+        await enqueue_pdf_processing(book_id, reason="reindex", background_tasks=background_tasks)
+    except Exception:
+        raise HTTPException(status_code=503, detail=t("errors.queue_unavailable"))
     return {"status": "reindex_started"}
 
 
@@ -1331,7 +1341,10 @@ async def reset_page(
     )
     await session.commit()
 
-    await enqueue_pdf_processing(book_id, reason="page_reset", background_tasks=background_tasks, force_realtime=True)
+    try:
+        await enqueue_pdf_processing(book_id, reason="page_reset", background_tasks=background_tasks, force_realtime=True)
+    except Exception:
+        raise HTTPException(status_code=503, detail=t("errors.queue_unavailable"))
     return {"status": "page_reset_started"}
 
 
@@ -1373,7 +1386,7 @@ async def update_page_text(
         )
         
         # Split into chunks
-        chunks_text = chunking_service.split_text(text_content)
+        chunks_text = [c for c in chunking_service.split_text(text_content) if c.strip()]
         if not chunks_text:
             chunks_text = [text_content]
             
@@ -1404,7 +1417,12 @@ async def update_page_text(
             page.is_indexed = True
         except Exception as e:
             logger.error(f"Failed to embed page {page_num} for book {book_id} during update: {e}")
-            # Page remains status='chunked', will be picked up by batch/retry later
+            # Page remains 'chunked'; batch cron will embed it on next cycle
+            await books_repo.update_one(
+                book_id,
+                last_error=f"Page {page_num} embedding failed during manual update: {e}",
+                last_updated=datetime.now(timezone.utc),
+            )
     else:
         # If text is empty, just mark as indexed
         page.status = 'indexed'
@@ -1471,7 +1489,10 @@ async def create_book(
         await books_repo.create(**book_dict)
 
     await session.commit()
-    await enqueue_pdf_processing(book_id, reason="create_book", background_tasks=background_tasks)
+    try:
+        await enqueue_pdf_processing(book_id, reason="create_book", background_tasks=background_tasks)
+    except Exception:
+        raise HTTPException(status_code=503, detail=t("errors.queue_unavailable"))
     return {"status": "success"}
 
 
@@ -1560,7 +1581,10 @@ async def update_book_details(
     await session.commit()
 
     if has_page_updates:
-        await enqueue_pdf_processing(book_id, reason="global_edit", background_tasks=background_tasks)
+        try:
+            await enqueue_pdf_processing(book_id, reason="global_edit", background_tasks=background_tasks)
+        except Exception:
+            pass  # Edit is saved; watchdog will trigger reprocessing
 
     return {"status": "updated", "modified": True}
 
@@ -1736,47 +1760,6 @@ async def check_page_spelling(
         raise HTTPException(status_code=500, detail=t("errors.spell_check_failed", error=str(exc)))
 
 
-@router.post("/{book_id}/pages/{page_num}/reprocess")
-async def reprocess_page(
-    book_id: str,
-    page_num: int,
-    background_tasks: BackgroundTasks,
-    current_user: User = Depends(require_editor),
-    session: AsyncSession = Depends(get_session),
-):
-    """Reprocess a single page with force_realtime=True (Edge Case #4b)"""
-    books_repo = BooksRepository(session)
-
-    book = await books_repo.get(book_id)
-    if not book:
-        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
-
-    # Reset page status to pending
-    await session.execute(
-        update(Page)
-        .where(and_(Page.book_id == book_id, Page.page_number == page_num))
-        .values(
-            status='pending',
-            text='',
-            is_verified=False,
-            is_indexed=False,
-            last_updated=datetime.now(timezone.utc),
-            updated_by=current_user.email
-        )
-    )
-    
-    # Delete chunks for this page
-    await session.execute(
-        delete(Chunk).where(and_(Chunk.book_id == book_id, Chunk.page_number == page_num))
-    )
-
-    await session.commit()
-
-    # Queue job with force_realtime=True
-    await enqueue_pdf_processing(book_id, reason=f"page_reprocess_{page_num}", force_realtime=True)
-    return {"status": "reprocess_started", "bookId": book_id, "pageNum": page_num}
-
-
 @router.post("/{book_id}/pages/{page_num}/apply-corrections")
 async def apply_spelling_corrections(
     book_id: str,
@@ -1791,7 +1774,10 @@ async def apply_spelling_corrections(
         success = await spell_check_service.apply_corrections(book_id, page_num, corrections, session, user_email=current_user.email)
         if success:
             await session.commit()
-            await enqueue_pdf_processing(book_id, reason="spell_apply", background_tasks=background_tasks)
+            try:
+                await enqueue_pdf_processing(book_id, reason="spell_apply", background_tasks=background_tasks)
+            except Exception:
+                pass  # Corrections are saved; watchdog will trigger reprocessing
             return {
                 "status": "success",
                 "bookId": book_id,

@@ -44,12 +44,16 @@ class Settings:
     ocr_max_retries: int = int(os.getenv("OCR_MAX_RETRIES", "4"))
 
     # RAG Settings
-    rag_score_threshold: float = float(os.getenv("RAG_SCORE_THRESHOLD", "0.35"))
-    rag_top_k: int = int(os.getenv("RAG_TOP_K", "12"))
-    rag_fallback_k: int = int(os.getenv("RAG_FALLBACK_K", "8"))
-    rag_max_chars_per_book: int = int(os.getenv("RAG_MAX_CHARS_PER_BOOK", "4000"))
+    rag_score_threshold: float = float(os.getenv("RAG_SCORE_THRESHOLD", "0.50"))
+    rag_top_k: int = int(os.getenv("RAG_TOP_K", "16"))
+    rag_fallback_k: int = int(os.getenv("RAG_FALLBACK_K", "10"))
+    rag_max_chars_per_book: int = int(os.getenv("RAG_MAX_CHARS_PER_BOOK", "6000"))
     rag_rerank_enabled: bool = os.getenv("RAG_RERANK_ENABLED", "false").lower() == "true"
-    rag_rerank_top_n: int = int(os.getenv("RAG_RERANK_TOP_N", "5"))
+    rag_rerank_top_n: int = int(os.getenv("RAG_RERANK_TOP_N", "6"))
+
+    # Chunking Settings
+    chunk_size: int = int(os.getenv("CHUNK_SIZE", "500"))
+    chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "100"))
 
     # LangChain / Observability
     langchain_cache_enabled: bool = os.getenv("LANGCHAIN_CACHE", "false").lower() == "true"

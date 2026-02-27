@@ -114,7 +114,7 @@ class Book(Base):
     # Constraints
     __table_args__ = (
         CheckConstraint(
-            "status IN ('uploading', 'pending', 'ocr_processing', 'ocr_done', 'indexing', 'ready', 'error')",
+            "status IN ('pending', 'ocr_processing', 'ocr_done', 'indexing', 'ready', 'error')",
             name="books_status_check"
         ),
         CheckConstraint(

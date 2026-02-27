@@ -21,7 +21,7 @@ export interface Book {
   volume?: number | null;
   totalPages: number;
   pages: ExtractionResult[];
-  status: 'uploading' | 'pending' | 'ocr_processing' | 'ocr_done' | 'indexing' | 'ready' | 'error';
+  status: 'pending' | 'ocr_processing' | 'ocr_done' | 'indexing' | 'ready' | 'error';
   uploadDate: Date;
   lastUpdated: Date | null;
   coverUrl?: string;

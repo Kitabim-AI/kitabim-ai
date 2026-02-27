@@ -1,5 +1,6 @@
 from typing import List, Optional, Callable
 import re
+from app.core.config import settings
 
 class RecursiveCharacterTextSplitter:
     def __init__(
@@ -116,4 +117,4 @@ class ChunkingService:
             return []
         return self.text_splitter.split_text(text)
 
-chunking_service = ChunkingService()
+chunking_service = ChunkingService(chunk_size=settings.chunk_size, chunk_overlap=settings.chunk_overlap)

@@ -194,6 +194,18 @@ class BooksRepository(BaseRepository[Book]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def find_stale_indexing_books(self, cutoff_time: datetime) -> List[Book]:
+        """Find books stuck in indexing state since before cutoff_time.
+        These started embedding but never finished (e.g. process crashed mid-embedding)."""
+        stmt = select(Book).where(
+            and_(
+                Book.status == 'indexing',
+                Book.last_updated < cutoff_time
+            )
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
 
 def get_books_repository(session: AsyncSession) -> BooksRepository:
     """Factory function for dependency injection"""

@@ -61,6 +61,21 @@ async def seed_system_configs(session: AsyncSession):
             "key": "batch_ocr_retry_after",
             "value": "0",
             "description": "Unix timestamp after which OCR batch submission is allowed again. Set automatically on 429 quota errors. Google resets batch quotas every 24 hours."
+        },
+        {
+            "key": "ocr_max_retry_count",
+            "value": "10",
+            "description": "Maximum number of OCR retry attempts per page before marking it as error/skipped."
+        },
+        {
+            "key": "batch_submission_interval_minutes",
+            "value": "15",
+            "description": "How often (in minutes) the worker runs chunking and realtime embedding. Lower = faster processing."
+        },
+        {
+            "key": "batch_submission_last_run_at",
+            "value": "0",
+            "description": "Unix timestamp of the last time the submission cron ran. Managed automatically."
         }
     ]
     

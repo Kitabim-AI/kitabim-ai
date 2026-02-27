@@ -41,8 +41,16 @@ const renderInline = (text: string, onReferenceClick?: (bookId: string, pageNums
 
   // Handle markdown links: [text](url)
   nodes = applyInline(nodes, /\[([^\]]+)\]\(([^)]+)\)/, (match, text, url, key) => {
-    if (url?.startsWith('ref:')) {
-      const parts = url.split(':');
+    // If the captured URL is a nested markdown link like [مەنبە](ref:bookId:pages),
+    // extract the actual ref: URL from inside it.
+    let effectiveUrl = url || '';
+    if (!effectiveUrl.startsWith('ref:') && effectiveUrl.includes('ref:')) {
+      const nestedRef = effectiveUrl.match(/ref:[\w]+:[\d,]+/);
+      if (nestedRef) effectiveUrl = nestedRef[0];
+    }
+
+    if (effectiveUrl.startsWith('ref:')) {
+      const parts = effectiveUrl.split(':');
       const bookId = parts[1];
       const pageNumsStr = parts[2] || '';
       const pageNums = pageNumsStr.split(',').map(p => parseInt(p.trim(), 10)).filter(p => !isNaN(p));

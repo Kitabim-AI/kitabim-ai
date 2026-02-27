@@ -145,8 +145,12 @@ def _extract_message_text(response) -> str:
         for part in content:
             if isinstance(part, str):
                 parts.append(part)
-            elif isinstance(part, dict) and "text" in part:
-                parts.append(str(part["text"]))
+            elif isinstance(part, dict):
+                # Skip thought/thinking parts from Gemini thinking models
+                if part.get("thought") or part.get("type") in ("thinking", "thought"):
+                    continue
+                if "text" in part:
+                    parts.append(str(part["text"]))
         return "".join(parts)
     return str(response)
 

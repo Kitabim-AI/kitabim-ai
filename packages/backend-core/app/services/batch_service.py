@@ -53,6 +53,12 @@ class BatchService:
         import asyncio
         from pathlib import Path
 
+        # 0. Skip if circuit breaker is open
+        from app.langchain.models import is_llm_available
+        if not await is_llm_available():
+            log_json(logger, logging.INFO, "Circuit breaker open, skipping OCR batch submission")
+            return None
+
         # 1. Skip if there is already an active OCR batch job
         active_jobs = await self.jobs_repo.get_active_jobs(job_type="ocr")
         if active_jobs:
@@ -193,12 +199,11 @@ class BatchService:
                     model=settings.gemini_model_name
                 )
             except Exception as e:
-                # Gemini call failed — mark record as failed and reset pages to pending
+                # Gemini call failed — mark record as failed and reset pages via SQL
+                # (SQL-based reset is authoritative; handles retry_count and partial batch_requests)
                 err_str = str(e)
                 await self.jobs_repo.update_job_status(batch_job_id, "failed", error_message=err_str)
-                for page in submitted_pages:
-                    page.status = "pending"
-                    page.updated_by = "batch_service"
+                await self._reset_ocr_pages_to_pending(batch_job_id)
                 await self.session.commit()
                 for f_name in uploaded_gemini_files:
                     try: self.batch_client.delete_file(f_name)
@@ -228,6 +233,12 @@ class BatchService:
         from app.core.config import settings
         import os
         import tempfile
+
+        # 0. Skip if circuit breaker is open
+        from app.langchain.models import is_llm_available
+        if not await is_llm_available():
+            log_json(logger, logging.INFO, "Circuit breaker open, skipping embedding batch submission")
+            return None
 
         # 1. Skip if there is already an active embedding batch job
         active_jobs = await self.jobs_repo.get_active_jobs(job_type="embedding")
@@ -384,35 +395,81 @@ class BatchService:
                     await self.requests_repo.update_status_by_job(job.id, "failed")
                     if job.job_type == "ocr":
                         await self._reset_ocr_pages_to_pending(job.id)
+                    elif job.job_type == "embedding":
+                        await self._reset_embed_pages_to_ocr_done(job.id)
                     await self.session.commit()
             except Exception as e:
                 log_json(logger, logging.ERROR, "Error polling job", job_id=str(job.id), error=str(e))
 
     async def _reset_ocr_pages_to_pending(self, batch_job_id: UUID) -> None:
         """
-        Resets pages and their books back to 'pending' for a failed/cancelled OCR batch job.
-        Uses batch_requests to identify which pages were part of this job.
+        Resets pages for a failed/cancelled OCR batch job.
+        Increments retry_count on each affected page.
+        Pages that have reached ocr_max_retry_count are marked 'error' instead of 'pending'.
         """
+        configs_repo = SystemConfigsRepository(self.session)
+        try:
+            max_retry = int(await configs_repo.get_value("ocr_max_retry_count", "10"))
+        except (ValueError, TypeError):
+            max_retry = 10
+
         await self.session.execute(text("""
             UPDATE pages
-            SET status = 'pending', updated_by = 'batch_service'
+            SET
+                status = CASE WHEN retry_count + 1 >= :max_retry THEN 'error' ELSE 'pending' END,
+                retry_count = retry_count + 1,
+                updated_by = 'batch_service'
             FROM batch_requests br
             WHERE br.batch_job_id = :jid
               AND pages.book_id = br.book_id
               AND pages.page_number = br.page_number
               AND pages.status = 'ocr_processing'
-        """), {'jid': str(batch_job_id)})
+        """), {'jid': str(batch_job_id), 'max_retry': max_retry})
 
+        # Reset book to pending if it still has pending pages, else error
         await self.session.execute(text("""
             UPDATE books
-            SET status = 'pending'
+            SET status = CASE
+                WHEN EXISTS (
+                    SELECT 1 FROM pages
+                    WHERE pages.book_id = books.id AND pages.status = 'pending'
+                ) THEN 'pending'
+                ELSE 'error'
+            END
             WHERE id IN (
                 SELECT DISTINCT book_id FROM batch_requests WHERE batch_job_id = :jid
             )
             AND status = 'ocr_processing'
         """), {'jid': str(batch_job_id)})
 
-        log_json(logger, logging.INFO, "OCR pages and books reset to pending",
+        log_json(logger, logging.INFO, "OCR pages reset after batch failure",
+                 batch_job_id=str(batch_job_id), max_retry=max_retry)
+
+    async def _reset_embed_pages_to_ocr_done(self, batch_job_id: UUID) -> None:
+        """
+        Resets chunked pages back to 'ocr_done' for a failed/cancelled embedding batch job.
+        Uses batch_requests to identify which pages were part of this job.
+        """
+        await self.session.execute(text("""
+            UPDATE pages
+            SET status = 'ocr_done', is_indexed = false, updated_by = 'batch_service'
+            FROM batch_requests br
+            WHERE br.batch_job_id = :jid
+              AND pages.book_id = br.book_id
+              AND pages.page_number = br.page_number
+              AND pages.status = 'chunked'
+        """), {'jid': str(batch_job_id)})
+
+        await self.session.execute(text("""
+            UPDATE books
+            SET status = 'ocr_done'
+            WHERE id IN (
+                SELECT DISTINCT book_id FROM batch_requests WHERE batch_job_id = :jid
+            )
+            AND status = 'indexing'
+        """), {'jid': str(batch_job_id)})
+
+        log_json(logger, logging.INFO, "Embedding pages reset to ocr_done",
                  batch_job_id=str(batch_job_id))
 
     async def process_job_results(self, job: BatchJob):
@@ -548,9 +605,9 @@ class BatchService:
         Returns the number of chunks embedded.
         """
         import asyncio
-        from app.langchain.embeddings import GeminiEmbeddings
+        from app.langchain.models import GeminiEmbeddings
         from app.langchain.models import is_llm_available
-        from app.langchain.circuit_breaker import CircuitBreakerOpen
+        from app.utils.circuit_breaker import CircuitBreakerOpen
         from datetime import datetime, timezone
 
         if not await is_llm_available():
@@ -621,7 +678,10 @@ class BatchService:
         log_json(logger, logging.INFO, "Chunking OCR results", count=len(pages))
 
         configs_repo = SystemConfigsRepository(self.session)
-        max_retry = int(await configs_repo.get_value("ocr_max_retry_count", "3"))
+        try:
+            max_retry = int(await configs_repo.get_value("ocr_max_retry_count", "10"))
+        except (ValueError, TypeError):
+            max_retry = 10
 
         for page in pages:
             if not page.text:
@@ -645,7 +705,7 @@ class BatchService:
                 continue
 
             clean_text = strip_markdown(page.text)
-            text_chunks = chunking_service.split_text(clean_text)
+            text_chunks = [c for c in chunking_service.split_text(clean_text) if c.strip()]
 
             # Delete existing chunks for this page
             await self.session.execute(
@@ -747,12 +807,11 @@ class BatchService:
             new_status = book.status
             if idx_count == book.total_pages and book.total_pages > 0:
                 new_status = "ready"
+            elif idx_count + error_count == book.total_pages and book.total_pages > 0:
+                # All pages are settled (indexed or error) — book is as complete as it can be
+                new_status = "ready"
             elif ocr_count == book.total_pages and book.total_pages > 0:
                 new_status = "ocr_done"
-            elif error_count > 0:
-                # If some pages are error but others are moving, keep it in current state or mark error
-                # Usually we only mark the whole book 'error' if it gets stuck
-                pass
 
             if new_status != book.status:
                 log_json(logger, logging.INFO, "Book status updated via batch", 

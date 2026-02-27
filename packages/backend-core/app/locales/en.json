@@ -42,6 +42,7 @@
     "cannot_change_own_role": "Cannot change your own role. Ask another admin.",
     "failed_update_role": "Failed to update user role",
     "failed_update_status": "Failed to update user status",
+    "queue_unavailable": "Processing queue is temporarily unavailable. Please try again in a moment.",
     "ai": {
       "gemini_busy": "Oops, the book service is a bit busy. Would you like to try again in a moment?",
       "gemini_api_key_missing": "Gemini API key not configured",

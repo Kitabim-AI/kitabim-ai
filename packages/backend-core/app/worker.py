@@ -16,8 +16,8 @@ class WorkerSettings:
         cron(rescue_stale_jobs, run_at_startup=True, minute={0, 30}),
         # Reduced to 30 minutes - event-driven discovery is primary now
         cron(scheduled_gcs_sync, minute={0, 30}),
-        # Gemini Batch Submission: Every 15 minutes
-        cron(gemini_batch_submission_cron, minute={0, 15, 30, 45}),
+        # Gemini Batch Submission: Every minute, interval controlled via system_configs
+        cron(gemini_batch_submission_cron),
         # Gemini Batch Polling: Every 1 minute (dynamic early-exit inside function based on SystemConfig)
         cron(gemini_batch_polling_cron)
     ]

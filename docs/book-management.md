@@ -1,5 +1,19 @@
 # Book Management Reference
 
+## Overview
+
+A book moves through a multi-stage pipeline from upload to fully searchable:
+
+1. **Upload** → PDF stored in GCS, book record created (`pending`)
+2. **OCR** → Worker reads each page as an image and extracts text via Gemini (`ocr_processing` → `ocr_done`)
+3. **Chunking** → Batch cron splits page text into overlapping chunks (`ocr_done` → `chunked`)
+4. **Embedding** → Batch cron generates 768-dim vectors for each chunk (`chunked` → `indexed`)
+5. **Ready** → Book is fully searchable via RAG (`ready`)
+
+All five stages are tracked at both the book level (`status`) and page level (`page.status`). OCR and embedding are protected by circuit breakers — if Gemini returns repeated errors, the breakers open and processing pauses until the service recovers.
+
+---
+
 ## Book Status Values
 
 | Status | Description |
@@ -11,6 +25,9 @@
 | `indexing` | Embedding and chunk indexing is in progress |
 | `ready` | Fully processed and indexed; available to readers |
 | `error` | Processing failed at some stage |
+
+### The `processing_step` Field
+Alongside `status`, the database tracks the specific sub-stage via `processing_step`. Two values are used: `ocr` (set when OCR begins via start-ocr or retry-ocr) and `rag` (set when reindexing begins). This gives the UI fine-grained progress indicators during the `ocr_processing` status phase.
 
 ### Status Transition Flow
 
@@ -54,6 +71,80 @@
 
 ---
 
+## Status Recovery Reference
+
+| Status | Success — Next Step | Failure — Recovery Method |
+|---|---|---|
+| `uploading` | Upload completes → `pending` | Delete book and re-upload |
+| `pending` | Admin clicks **Start OCR** → `ocr_processing` | Watchdog auto-rescues after 30 min; or manually click **Start OCR** |
+| `ocr_processing` (active) | All pages OCR'd → `ocr_done` | Wait; pages that keep failing auto-skip at `ocr_max_retry_count` |
+| `ocr_processing` (stale lock) | — | **Retry OCR** resets stuck/error pages → `pending` and re-queues; or **Force Complete** promotes remaining pages → `ocr_done` |
+| `ocr_done` | Batch cron (every 15 min) chunks pages → embeds → `ready` | **Reindex** to re-chunk and re-embed all pages from scratch |
+| `indexing` (active) | All chunks embedded → `ready` | Wait for batch cron to finalize |
+| `indexing` (stale lock) | — | **Force Complete** → `ready` (if no unindexed `ocr_done` pages remain) or → `ocr_done` (if unindexed pages still exist, cron picks up next cycle) |
+| `error` | — | **Retry OCR** if pages are in `error`/`ocr_processing`; **Force Complete** to advance with what survived; last resort: **Reindex** after force-complete |
+| `ready` | Terminal success — searchable | **Reindex** to refresh embeddings (e.g. after chunking strategy change) |
+
+> **Key automatic recoveries (no admin action needed):**
+> - Pages that fail OCR repeatedly auto-skip at `retry_count >= ocr_max_retry_count` (system config, default `10`)
+> - Stale books in `pending`, `ocr_done`, or `ocr_processing` are auto-rescued by the watchdog every 30 min
+> - `finalize_indexed_pages` promotes books to `ready` automatically on every polling cron tick
+
+---
+
+## Real-time vs. Batch Processing
+
+The OCR and Indexing pipeline operates in two primary modes:
+
+1. **Real-time Mode**
+   - Pages are parsed and OCR'd immediately using parallel loop workers inside `app/services/pdf_service.py`.
+   - Embeddings are computed synchronously using the LLM directly.
+   - Used for single page corrections (`Reset Page`, `Update Text`) and forced runs.
+
+2. **Batch Mode**
+   - Background crons (`app/services/batch_service.py`) periodically sweep `pending` and `ocr_done` pages.
+   - Pages are bundled dynamically into JSONL files and submitted via the Gemini Batch API.
+   - If the API returns `429 Quota Exhausted`, the batch cron sets a 24-hour cooldown (`batch_ocr_retry_after`), pausing broad status transitions.
+   - **Page State Sweep:** `ocr_done` pages are implicitly swept to `chunked` and then updated to `indexed` after polling.
+
+### Cron Schedule
+
+| Job | Schedule | Description |
+|---|---|---|
+| `rescue_stale_jobs` | At startup + every 30 min | Finds stale `ocr_processing`/`pending`/`ocr_done` books and re-enqueues them |
+| `scheduled_gcs_sync` | Every 30 min | Scans GCS bucket for new PDFs not yet in the DB |
+| `gemini_batch_submission_cron` | Every 15 min | Chunks `ocr_done` pages, submits OCR batches, embeds pending chunks |
+| `gemini_batch_polling_cron` | Every 1 min (early-exit by `batch_polling_interval_minutes`) | Polls Gemini batch job results; finalizes indexed pages → promotes books to `ready` |
+
+---
+
+## Circuit Breakers
+
+Two circuit breakers protect all Gemini API calls: `llm_generate` (text/OCR) and `llm_embed` (embeddings). Both share the same configuration:
+
+| Parameter | Env var | Default | Description |
+|---|---|---|---|
+| `failure_threshold` | `LLM_CB_FAILURE_THRESHOLD` | `10` | Consecutive failures before breaker opens |
+| `recovery_timeout` | `LLM_CB_RECOVERY_SECONDS` | `60` | Seconds to wait before allowing a trial call (half-open) |
+| `half_open_max_calls` | `LLM_CB_HALF_OPEN_MAX_CALLS` | `1` | Trial calls allowed in half-open state |
+| `cooling_period` | `LLM_CB_COOLING_PERIOD` | `60` | Grace period after process restart before failures are counted |
+
+**When a breaker is open:**
+- All Gemini calls immediately raise `CircuitBreakerOpen` (no wait, no retry)
+- The batch submission cron skips entirely
+- RAG/chat responses fall back to no-context mode
+- The breaker auto-recovers after `recovery_timeout` seconds (half-open → single trial call → closed if successful)
+
+**Admin endpoints** (`/api/system-configs/circuit-breaker/`):
+
+| Action | Method | Endpoint | Auth |
+|---|---|---|---|
+| Check status | `GET` | `/api/system-configs/circuit-breaker/status` | editor |
+| Reset (force close) | `POST` | `/api/system-configs/circuit-breaker/reset` | admin |
+| Force open | `POST` | `/api/system-configs/circuit-breaker/open` | admin |
+
+---
+
 ## Page Status Values
 
 | Status | Description |
@@ -68,12 +159,40 @@
 
 ### Page Retry Count
 
-Each page tracks a `retry_count` field. When OCR fails (exception or empty text), `retry_count` is incremented. Once it reaches `ocr_max_retry_count` (system config, default `3`), the page is automatically skipped instead of re-queued as `error`:
+Each page tracks a `retry_count` field. When OCR fails (exception or empty text), `retry_count` is incremented. Once it reaches `ocr_max_retry_count` (system config, default `10`), the page is automatically skipped instead of re-queued as `error`:
 
 - **OCR exception path** (`pdf_service`): on max retry → page set to `ocr_done` with empty text
 - **Empty text path** (`batch_service`): on max retry → page set to `indexed` with `is_indexed=true` (no chunk created)
 
 This prevents a permanently-failing page from blocking the entire book indefinitely. The `ocr_max_retry_count` value is configurable via the System Configs admin API.
+
+### Page Status Recovery Reference
+
+| Status | Success — Next Step | Failure — Recovery Method |
+|---|---|---|
+| `pending` | Worker picks up → `ocr_processing` | Auto-retried by worker; manually **Reset Page** |
+| `ocr_processing` | OCR completes → `ocr_done` | `retry_count` incremented; auto-skip at max retry; **Reset Page** to re-queue |
+| `ocr_done` | Batch cron chunks text → `chunked` | **Edit Text** to manually correct; **Reindex** book to re-run chunking |
+| `chunked` | Batch cron embeds → `indexing` → `indexed` | **Reindex** book to re-chunk and re-embed from scratch |
+| `indexing` | Embedding completes → `indexed` | **Force Complete** on book; or **Reindex** book |
+| `indexed` | Terminal — embedded and searchable | **Edit Text** to correct and re-embed; **Reset Page** to re-OCR |
+| `error` | — | **Reset Page** (re-queues OCR); **Edit Text** if partial text exists |
+
+### Page Action Button State
+
+All page actions require **editor** role. The frontend shows the three buttons on hover for any page status — the backend does not restrict calls by page status. The table below indicates when each action is *meaningful*.
+
+| Page Status | Reset Page | Edit Text | Spell Check | Apply Corrections |
+|---|---|---|---|---|
+| `pending` | enabled | not useful (empty text) | not useful | not useful |
+| `ocr_processing` | enabled | not useful (empty text) | not useful | not useful |
+| `ocr_done` | enabled | **primary use** | **primary use** | after spell check |
+| `chunked` | enabled | **primary use** | **primary use** | after spell check |
+| `indexing` | enabled | **primary use** | **primary use** | after spell check |
+| `indexed` | enabled | **primary use** | **primary use** | after spell check |
+| `error` | **primary use** | enabled if partial text | enabled if partial text | after spell check |
+
+> **Reset Page** maps to `POST /api/books/{id}/pages/{n}/reset` — clears text, sets page to `pending`, and immediately re-queues it for real-time OCR (`force_realtime=true`). This is the Reprocess (↺) button in the reader UI.
 
 ---
 
@@ -91,6 +210,8 @@ isActuallyProcessing = (status is ocr_processing OR indexing)
                        AND NOT isStale
 
 hasFailedPages       = errorCount > 0 OR any page.status === 'error'
+
+canView              = status !== 'uploading' AND status !== 'pending'
 
 canStartOcr          = status === 'pending'
 
@@ -136,7 +257,8 @@ Each action's trigger conditions, what it changes, and what state the book/pages
 | **Enabled when** | `status === 'pending'` |
 | **Book status → after** | `ocr_processing` |
 | **processing_step → after** | `ocr` |
-| **Pages changed** | All existing pages deleted (if non-pending); worker creates fresh `pending` pages |
+| **Lock cleared** | Yes (`processing_lock = null`, `processing_lock_expires_at = null`) |
+| **Pages changed** | Worker deletes existing pages on first run and creates fresh `pending` pages |
 | **Worker enqueued** | Yes (`start_ocr`) |
 
 ---
@@ -148,6 +270,7 @@ Each action's trigger conditions, what it changes, and what state the book/pages
 | **Enabled when** | `hasFailedPages OR status === 'error' OR isStale` AND not actively processing |
 | **Book status → after** | `ocr_processing` |
 | **processing_step → after** | `ocr` |
+| **Lock cleared** | Yes (`processing_lock = null`, `processing_lock_expires_at = null`) |
 | **Pages changed** | Pages with `status IN ('error', 'ocr_processing')` → reset to `pending` (text cleared, is_indexed=false) |
 | **Special case** | If `status === 'error'` and no stuck/failed pages → re-enqueues as-is (`resumed`) |
 | **Worker enqueued** | Yes (`retry_failed` or `resume_error`) |
@@ -166,6 +289,7 @@ Each action's trigger conditions, what it changes, and what state the book/pages
 | **Enabled when** | `status === 'ready' OR status === 'ocr_done'` |
 | **Book status → after** | `ocr_processing` |
 | **processing_step → after** | `rag` |
+| **Lock cleared** | Yes (`processing_lock = null`, `processing_lock_expires_at = null`) |
 | **Pages changed** | All `ocr_done`, `chunked`, `indexed` pages → `ocr_done`, `is_indexed=false` |
 | **Chunks** | All existing chunks deleted |
 | **Worker enqueued** | Yes (`reindex`) — worker re-chunks and re-embeds all `ocr_done` pages |
@@ -185,11 +309,9 @@ Each action's trigger conditions, what it changes, and what state the book/pages
 | Book Status | Page condition | Pages changed | Book status → after |
 |---|---|---|---|
 | `ocr_processing` | — | `ocr_processing` pages → `ocr_done` | `ocr_done` |
-| `indexing` | no remaining `ocr_done` pages | `indexing` pages → `indexed` (is_indexed=true) | `ready` |
-| `indexing` | `ocr_done` pages still unindexed | `indexing` pages → `indexed` (is_indexed=true) | `ocr_done` |
+| `indexing` | — | `chunked` pages → `ocr_done` (embedding retries on next cycle) | `ocr_done` |
 | `error` | has `ocr_processing` pages | `ocr_processing` pages → `ocr_done` | `ocr_done` |
-| `error` | has `indexing` pages, no `ocr_done` | `indexing` pages → `indexed` (is_indexed=true) | `ready` |
-| `error` | has `indexing` pages + `ocr_done` pages | `indexing` pages → `indexed` (is_indexed=true) | `ocr_done` |
+| `error` | has `chunked` pages | `chunked` pages → `ocr_done` (embedding retries on next cycle) | `ocr_done` |
 | `error` | has `ocr_done` pages only | none | `ocr_done` |
 | `error` | has `indexed` pages only | none | `ready` |
 | `error` | no surviving page states | none | `ocr_done` |
@@ -205,15 +327,17 @@ All write endpoints require **editor** role or above. Read endpoints are role-de
 
 ### Book Lifecycle
 
+*Common Errors: API endpoints communicating directly with Gemini APIs may return `503 Service Unavailable` on high demand (triggering Circuit Breakers) or `429 Quota Exhausted` (triggering batch cooldowns).*
+
 | Action | Method | Endpoint | Auth | Book status after |
 |---|---|---|---|---|
 | Upload PDF | `POST` | `/api/books/upload` | editor | `pending` |
 | Start OCR | `POST` | `/api/books/{id}/start-ocr` | editor | `ocr_processing` |
 | Retry failed/stuck pages | `POST` | `/api/books/{id}/retry-ocr` | editor | `ocr_processing` |
-| Force complete current stage | `POST` | `/api/books/{id}/force-complete` | editor | `ocr_done` or `ready` |
+| Force complete current stage | `POST` | `/api/books/{id}/force-complete` | editor+ | `ocr_done` or `ready` |
 | Reindex embeddings | `POST` | `/api/books/{id}/reindex` | editor | `ocr_processing` → `ready` |
 | Full reprocess (clears pages) | `POST` | `/api/books/{id}/reprocess` | editor | `ocr_processing` |
-| Delete book | `DELETE` | `/api/books/{id}` | editor | — |
+| Delete book | `DELETE` | `/api/books/{id}` | admin | — |
 
 ### Page-Level Operations
 
@@ -221,7 +345,6 @@ All write endpoints require **editor** role or above. Read endpoints are role-de
 |---|---|---|---|---|
 | Reset single page | `POST` | `/api/books/{id}/pages/{n}/reset` | editor | `pending`, book → `ocr_processing` |
 | Update page text manually | `POST` | `/api/books/{id}/pages/{n}/update` | editor | `ocr_done` → `indexed` (synchronous embed) |
-| Reprocess single page | `POST` | `/api/books/{id}/pages/{n}/reprocess` | editor | `pending` → re-queued |
 | Spell-check page | `POST` | `/api/books/{id}/pages/{n}/spell-check` | editor | unchanged |
 | Apply spell corrections | `POST` | `/api/books/{id}/pages/{n}/apply-corrections` | editor | unchanged |
 
@@ -238,7 +361,14 @@ All write endpoints require **editor** role or above. Read endpoints are role-de
 
 | Key | Default | Description |
 |---|---|---|
-| `ocr_max_retry_count` | `3` | Max OCR attempts per page before auto-skip |
+| `ocr_max_retry_count` | `10` | Max OCR attempts per page before auto-skip |
+| `batch_chunking_limit` | `1000` | Max pages chunked per batch submission cron tick |
+| `batch_ocr_limit` | `100` | Max pages submitted to Gemini OCR batch per tick |
+| `batch_embedding_limit` | `2000` | Max chunks embedded per batch submission cron tick |
+| `batch_books_per_submission` | `1` | Number of books bundled per OCR batch submission |
+| `batch_ocr_retry_after` | `0` | Unix timestamp; OCR batch submissions paused until this time (set on `429`) |
+| `batch_polling_interval_minutes` | `10` | Minimum minutes between actual polling runs (polling cron fires every 1 min but early-exits until this interval passes) |
+| `batch_last_polled_at` | `0` | Unix timestamp of the last completed polling run |
 
 ### Metadata
 
@@ -264,17 +394,23 @@ All write endpoints require **editor** role or above. Read endpoints are role-de
 
 ---
 
-## Reprocess (internal)
+## Content Deduplication
 
-`POST /api/books/{id}/reprocess` — not exposed in the admin UI action menu.
+During upload (`POST /api/books/upload`), the backend computes a SHA-256 hash of the incoming PDF file. Before creating a new book record, it checks for an existing book with the same hash:
 
-- Full restart: deletes all pages, re-runs OCR + indexing from scratch
-- Accepts `force_realtime=true` to bypass batch mode
-- Use for severe data corruption or full pipeline re-runs
+- **Duplicate found** → returns `{"bookId": "<existing_id>", "status": "existing"}` immediately. No new record is created.
+- **No duplicate** → proceeds with normal book creation.
 
-## Reset Page
+The `content_hash` field is exposed on every book response and can be used to look up a book directly via `GET /api/books/hash/{hash}`.
 
-`POST /api/books/{id}/pages/{n}/reset`
+---
 
-- Resets a single page to `pending` and triggers re-OCR for that page only
-- Sets book status to `ocr_processing` while that page is being redone
+## Book Read Count
+
+The `read_count` field on every book tracks how many times `GET /api/books/{id}` has been called. It is:
+
+- Incremented atomically via a background task on every single-book fetch (non-blocking, does not slow down the response)
+- Returned in all book list and single book responses
+- Indexed in the database for fast sorting by popularity
+
+There is no API to manually set or reset `read_count`. It is read-only from the API perspective.

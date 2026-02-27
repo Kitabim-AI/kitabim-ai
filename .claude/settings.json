@@ -3,7 +3,10 @@
     "allow": [
       "Bash(/Applications/Postgres.app/Contents/Versions/latest/bin/psql -h localhost -p 5432 -U omarjan -d kitabim_ai -c \"SELECT id, title, author, volume FROM books WHERE title LIKE ''%ئۇيغۇر تارىخى%'' OR title LIKE ''%ئويغور%'' OR title LIKE ''%تارىخى%'' LIMIT 10;\")",
       "Read(//Applications/**)",
-      "Bash(/Applications/Postgres.app/Contents/Versions/latest/bin/psql \"postgresql://omarjan@localhost:5432/kitabim_ai\" -c \"SELECT status, COUNT\\(*\\) FROM books GROUP BY status ORDER BY count DESC; SELECT COUNT\\(*\\) as stale_pending FROM books WHERE status=''pending'' AND last_updated < NOW\\(\\) - INTERVAL ''30 minutes''; SELECT COUNT\\(*\\) as stale_ocr_done FROM books WHERE status=''ocr_done'' AND last_updated < NOW\\(\\) - INTERVAL ''30 minutes'';\")"
+      "Bash(/Applications/Postgres.app/Contents/Versions/latest/bin/psql \"postgresql://omarjan@localhost:5432/kitabim_ai\" -c \"SELECT status, COUNT\\(*\\) FROM books GROUP BY status ORDER BY count DESC; SELECT COUNT\\(*\\) as stale_pending FROM books WHERE status=''pending'' AND last_updated < NOW\\(\\) - INTERVAL ''30 minutes''; SELECT COUNT\\(*\\) as stale_ocr_done FROM books WHERE status=''ocr_done'' AND last_updated < NOW\\(\\) - INTERVAL ''30 minutes'';\")",
+      "Bash(/Applications/Postgres.app/Contents/Versions/latest/bin/psql \"postgresql://omarjan@localhost:5432/kitabim_ai\" -c \":*)",
+      "Read(//usr/local/bin/**)",
+      "Bash(__NEW_LINE_a33d6a143773278c__ /Applications/Postgres.app/Contents/Versions/latest/bin/psql \"postgresql://omarjan@localhost:5432/kitabim_ai\" -c \":*)"
     ]
   }
 }

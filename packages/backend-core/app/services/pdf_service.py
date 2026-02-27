@@ -211,6 +211,17 @@ async def process_pdf_task(
             if not book:
                 return
 
+            if total_pages == 0:
+                await books_repo.update_one(
+                    book_id,
+                    status="error",
+                    last_error="PDF has no readable pages (possibly password-protected or corrupt)",
+                    last_updated=datetime.now(timezone.utc),
+                )
+                await session.commit()
+                log_json(logger, logging.WARNING, "PDF has no pages, marking as error", book_id=book_id)
+                return
+
             if total_pages > 0:
                 # Fetch existing page numbers to avoid overwriting them
                 existing_pages = await pages_repo.find_by_book(book_id)
@@ -252,6 +263,7 @@ async def process_pdf_task(
                     await record_book_error(session, book_id, "cover", str(exc))
             
             await session.commit()
+            doc.close()
 
             # Determine effective mode
             # Use 'realtime' if force_realtime is True, otherwise use book's mode
@@ -337,40 +349,41 @@ async def process_pdf_task(
                                         )
                                         raise CircuitBreakerOpen("LLM circuit breaker opened during processing")
 
-                                    page_obj = doc.load_page(page_num - 1)
-                                    try:
-                                        page_text = await ocr_page(
-                                            page_obj,
-                                            book.title or "Unknown",
-                                            page_num,
-                                        )
-                                        success = True
-                                        log_json(
-                                            logger,
-                                            logging.INFO,
-                                            "OCR completed for page",
-                                            book_id=book_id,
-                                            page_num=page_num,
-                                            len=len(page_text) if page_text else 0
-                                        )
-                                    except Exception as exc:
-                                        log_json(
-                                            logger,
-                                            logging.ERROR,
-                                            "OCR failed",
-                                            book_id=book_id,
-                                            page_num=page_num,
-                                            error=str(exc),
-                                        )
-                                        page_error = str(exc)
-                                        page_text = ""
-                                        await record_book_error(
-                                            page_session,
-                                            book_id,
-                                            "ocr",
-                                            str(exc),
-                                            {"page_num": page_num},
-                                        )
+                                    with fitz.open(file_path) as local_doc:
+                                        page_obj = local_doc.load_page(page_num - 1)
+                                        try:
+                                            page_text = await ocr_page(
+                                                page_obj,
+                                                book.title or "Unknown",
+                                                page_num,
+                                            )
+                                            success = True
+                                            log_json(
+                                                logger,
+                                                logging.INFO,
+                                                "OCR completed for page",
+                                                book_id=book_id,
+                                                page_num=page_num,
+                                                len=len(page_text) if page_text else 0
+                                            )
+                                        except Exception as exc:
+                                            log_json(
+                                                logger,
+                                                logging.ERROR,
+                                                "OCR failed",
+                                                book_id=book_id,
+                                                page_num=page_num,
+                                                error=str(exc),
+                                            )
+                                            page_error = str(exc)
+                                            page_text = ""
+                                            await record_book_error(
+                                                page_session,
+                                                book_id,
+                                                "ocr",
+                                                str(exc),
+                                                {"page_num": page_num},
+                                            )
 
                                 if success:
                                     from app.utils.text import normalize_uyghur_chars
@@ -382,7 +395,10 @@ async def process_pdf_task(
                                 if not success:
                                     new_retry_count = current_retry + 1
                                     configs_repo = SystemConfigsRepository(page_session)
-                                    max_retry = int(await configs_repo.get_value("ocr_max_retry_count", "3"))
+                                    try:
+                                        max_retry = int(await configs_repo.get_value("ocr_max_retry_count", "10"))
+                                    except (ValueError, TypeError):
+                                        max_retry = 10
                                     if new_retry_count >= max_retry:
                                         # Max retries reached — skip this page
                                         log_json(
@@ -440,7 +456,7 @@ async def process_pdf_task(
                                 )
                                 await page_session.commit()
 
-                await asyncio.gather(*[process_page(p) for p in pages_to_process])
+                results = await asyncio.gather(*[process_page(p) for p in pages_to_process], return_exceptions=True)
 
             # Refresh session and book record
             await session.refresh(book)
@@ -506,7 +522,7 @@ async def process_pdf_task(
                                 continue
 
                             # Split into chunks
-                            chunks_text = chunking_service.split_text(text_content)
+                            chunks_text = [c for c in chunking_service.split_text(text_content) if c.strip()]
                             if not chunks_text:
                                 chunks_text = [text_content]
 
@@ -665,5 +681,3 @@ async def process_pdf_task(
             RUNNING_TASKS.discard(book_id)
             await _release_lock(session, book_id, job_key)
             await session.commit()
-            if "doc" in locals():
-                doc.close()

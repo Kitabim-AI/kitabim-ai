@@ -29,6 +29,21 @@ def fix_malformed_citations(text: str) -> str:
     if not text:
         return text
 
+    # Pattern 0: Detect nested markdown like [display text]([link text](ref:ID:pages))
+    # The LLM sometimes wraps a ref: URL inside another markdown link, e.g.:
+    #   [book title, 14-page]([مەنبە](ref:bookId:14))
+    # Convert to proper: [display text](ref:ID:pages)
+    pattern0 = r'\[([^\]]+)\]\(\[[^\]]*\]\((ref:[^)]+)\)\)'
+
+    def replace_pattern0(match):
+        display_text = match.group(1)
+        ref_url = match.group(2)
+        result = f"[{display_text}]({ref_url})"
+        logger.info(f"Fixed nested markdown reference -> [{display_text}]({ref_url})")
+        return result
+
+    text = re.sub(pattern0, replace_pattern0, text)
+
     # Pattern 1: Detect "ref:ID]بەت..." where the opening "[" and proper markdown is missing
     # This pattern looks for: ref:ID]بەت page_numbers text
     # Example: "ref:26]بەت179 ،178 ،2 ،ئوتوم (ئايۇز رىسانياۇ) نىخىرات تۆزۈۇغ :ەنەدم"

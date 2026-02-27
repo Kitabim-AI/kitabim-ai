@@ -14,7 +14,7 @@ from app.services.pdf_service import process_pdf_task
 from app.langchain import configure_langchain
 from app.utils.observability import configure_logging, log_json
 from app.services.discovery_service import DiscoveryService
-from app.services.batch_service import BatchService, QuotaExhaustedError
+from app.services.batch_service import BatchService
 import logging
 
 logger = logging.getLogger("app.queue")
@@ -122,7 +122,8 @@ async def scheduled_gcs_sync(ctx):
 
 
 async def gemini_batch_submission_cron(ctx):
-    """Submits pending OCR and Embedding work to Gemini"""
+    """Chunks OCR-done pages and embeds pending chunks in realtime"""
+    import time
     async with db_session.async_session_factory() as session:
         from app.langchain.models import is_llm_available
         if not await is_llm_available():
@@ -131,15 +132,23 @@ async def gemini_batch_submission_cron(ctx):
 
         from app.db.repositories.system_configs import SystemConfigsRepository
         config_repo = SystemConfigsRepository(session)
-        
-        import time
 
-        # Get limits from system_configs
+        # Configurable interval — default 15 minutes
+        try:
+            interval_minutes = int(await config_repo.get_value("batch_submission_interval_minutes", "15"))
+            last_run = float(await config_repo.get_value("batch_submission_last_run_at", "0"))
+        except (ValueError, TypeError):
+            interval_minutes = 15
+            last_run = 0
+
+        if (time.time() - last_run) / 60.0 < interval_minutes:
+            return
+
+        await config_repo.set_value("batch_submission_last_run_at", str(time.time()))
+        await session.commit()
+
         chunk_limit = int(await config_repo.get_value("batch_chunking_limit", "1000"))
-        ocr_limit = int(await config_repo.get_value("batch_ocr_limit", "100"))
         embed_limit = int(await config_repo.get_value("batch_embedding_limit", "2000"))
-        books_per_submission = int(await config_repo.get_value("batch_books_per_submission", "1"))
-        ocr_retry_after = float(await config_repo.get_value("batch_ocr_retry_after", "0"))
 
         batch_service = BatchService(session)
 
@@ -149,24 +158,7 @@ async def gemini_batch_submission_cron(ctx):
         except Exception as e:
             log_json(logger, logging.ERROR, "Batch chunking failed", error=str(e))
 
-        # 2. Submit new OCR batches — skip if quota is in cooldown
-        if time.time() < ocr_retry_after:
-            remaining_minutes = int((ocr_retry_after - time.time()) / 60)
-            log_json(logger, logging.INFO, "OCR batch quota cooldown active, skipping submission",
-                     remaining_minutes=remaining_minutes)
-        else:
-            try:
-                await batch_service.submit_ocr_batch(limit=ocr_limit, books_per_submission=books_per_submission)
-            except QuotaExhaustedError as e:
-                retry_after = time.time() + (24 * 3600)
-                await config_repo.set_value("batch_ocr_retry_after", str(retry_after))
-                await session.commit()
-                log_json(logger, logging.WARNING,
-                         "OCR quota exhausted (429). Cooling down for 24 hours.", error=str(e))
-            except Exception as e:
-                log_json(logger, logging.ERROR, "OCR batch submission failed", error=str(e))
-
-        # 3. Embed pending chunks in realtime (sync) mode
+        # 2. Embed pending chunks in realtime (sync) mode
         try:
             embedded = await batch_service.embed_pending_chunks_realtime(limit=embed_limit)
             if embedded:
@@ -178,44 +170,13 @@ async def gemini_batch_submission_cron(ctx):
 
 
 async def gemini_batch_polling_cron(ctx):
-    """Checks for completed Gemini Batch jobs and processes results dynamically"""
-    import time
-    from app.db.repositories.system_configs import SystemConfigsRepository
-
+    """Finalizes page/book statuses after embedding completes"""
     async with db_session.async_session_factory() as session:
-        # Check system config polling interval
-        config_repo = SystemConfigsRepository(session)
-        interval_str = await config_repo.get_value("batch_polling_interval_minutes", "10")
-        last_polled_str = await config_repo.get_value("batch_last_polled_at", "0")
-        
-        try:
-            interval_minutes = int(interval_str)
-            last_polled = float(last_polled_str)
-        except ValueError:
-            interval_minutes = 10
-            last_polled = 0
-            
-        current_time = time.time()
-        elapsed_minutes = (current_time - last_polled) / 60.0
-        
-        if elapsed_minutes < interval_minutes:
-            # Skip polling, interval hasn't passed yet
-            return
-
-        # Update last polled time
-        await config_repo.set_value("batch_last_polled_at", str(current_time))
-        
         batch_service = BatchService(session)
         try:
-            # 1. Poll and process results
-            await batch_service.poll_and_process_jobs()
-            
-            # 2. Finalize statuses for completed books/pages
             await batch_service.finalize_indexed_pages()
-            
-            log_json(logger, logging.INFO, "Batch polling cron finished")
         except Exception as e:
-            log_json(logger, logging.ERROR, "Batch polling cron failed", error=str(e))
+            log_json(logger, logging.ERROR, "Finalize indexed pages failed", error=str(e))
 
 
 # ARQ Worker Settings (Deprecated in favor of app.worker)

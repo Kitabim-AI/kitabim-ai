@@ -39,7 +39,12 @@ async def rescue_stale_jobs(ctx):
         ocr_done_cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
         stale_ocr_done = await books_repo.find_stale_ocr_done_books(ocr_done_cutoff)
 
-        stale_books = stale_processing + stale_pending + stale_ocr_done
+        # Find stale "indexing" books — embedding started but process crashed mid-way.
+        # Use same 30-minute cutoff.
+        indexing_cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
+        stale_indexing = await books_repo.find_stale_indexing_books(indexing_cutoff)
+
+        stale_books = stale_processing + stale_pending + stale_ocr_done + stale_indexing
 
         if not stale_books:
             logger.info("✅ Watchdog: No stale jobs found.")
@@ -48,7 +53,7 @@ async def rescue_stale_jobs(ctx):
         logger.warning(
             f"⚠️ Watchdog: Found {len(stale_books)} stale books "
             f"({len(stale_processing)} processing, {len(stale_pending)} pending, "
-            f"{len(stale_ocr_done)} ocr_done). Checking job status..."
+            f"{len(stale_ocr_done)} ocr_done, {len(stale_indexing)} indexing). Checking job status..."
         )
 
         enqueued_count = 0
