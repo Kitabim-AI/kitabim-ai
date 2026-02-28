@@ -8,6 +8,10 @@ from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Book, Page
 from app.db.repositories.base import BaseRepository
+from typing import Dict
+
+
+PIPELINE_ORDER = ["ocr", "chunking", "embedding"]
 
 
 class BooksRepository(BaseRepository[Book]):
@@ -127,23 +131,57 @@ class BooksRepository(BaseRepository[Book]):
         # Aggregate page stats
         stats_stmt = (
             select(
-                Page.status,
+                Page.pipeline_step,
+                Page.milestone,
                 func.count(Page.id).label("count")
             )
             .where(Page.book_id == book_id)
-            .group_by(Page.status)
+            .group_by(Page.pipeline_step, Page.milestone)
         )
 
         stats_result = await self.session.execute(stats_stmt)
-        stats = {row.status: row.count for row in stats_result}
+        # Stats is a dict of {(pipeline_step, milestone): count}
+        stats_data = {(row.pipeline_step, row.milestone): row.count for row in stats_result}
+
+        # Calculate cumulative pipeline stats
+        pipeline_stats = {}
+        total_pages = book.total_pages or 0
+
+        for i, step in enumerate(PIPELINE_ORDER):
+            # A page is "done" with 'step' if:
+            # 1. Its pipeline_step is further in the PIPELINE_ORDER than 'step'
+            # 2. Its pipeline_step is 'step' AND its milestone is 'succeeded'
+            # 3. Its pipeline_step is "ready" (terminal state for the whole book)
+            
+            done_count = 0
+            for (p_step, p_milestone), count in stats_data.items():
+                if p_step == "ready":
+                    done_count += count
+                    continue
+                
+                if p_step is None:
+                    continue
+                
+                try:
+                    p_step_idx = PIPELINE_ORDER.index(p_step)
+                    if p_step_idx > i:
+                        done_count += count
+                    elif p_step_idx == i and p_milestone == "succeeded":
+                        done_count += count
+                except ValueError:
+                    # Unknown step, ignore for specific pipeline stats
+                    pass
+            
+            pipeline_stats[step] = done_count
 
         return {
             "book": book,
-            "page_stats": stats,
-            "ocr_done_count": stats.get("ocr_done", 0) + stats.get("indexed", 0) + stats.get("indexing", 0),
-            "error_count": stats.get("error", 0),
-            "pending_count": stats.get("pending", 0),
-            "ocr_processing_count": stats.get("ocr_processing", 0),
+            "page_stats": {f"{s or 'none'}_{m or 'none'}": c for (s, m), c in stats_data.items()},
+            "pipeline_stats": pipeline_stats,
+            "ocr_done_count": pipeline_stats.get("ocr", 0),
+            "error_count": sum(count for (s, m), count in stats_data.items() if m == "failed"),
+            "pending_count": sum(count for (s, m), count in stats_data.items() if m == "idle"),
+            "ocr_processing_count": sum(count for (s, m), count in stats_data.items() if m == "in_progress"),
         }
 
     async def count_by_status(self, status: str) -> int:

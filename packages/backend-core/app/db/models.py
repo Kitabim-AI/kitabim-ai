@@ -3,13 +3,12 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import List, Optional
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from sqlalchemy import (
     ARRAY, Boolean, CheckConstraint, DateTime, Float, ForeignKey,
     Integer, String, Text, UniqueConstraint, func, text, Date
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 
@@ -52,15 +51,7 @@ class Book(Base):
         server_default="private",
         nullable=False
     )
-    processing_step: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    processing_lock: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-
-    # Worker v2 columns (v1 columns above are untouched)
-    v2_pipeline_step: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    processing_lock_expires_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True
-    )
+    pipeline_step: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
 
     # Arrays (PostgreSQL)
     categories: Mapped[List[str]] = mapped_column(
@@ -73,8 +64,6 @@ class Book(Base):
     last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Counts
-    ocr_done_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    error_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     read_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     # Timestamps & audit
@@ -89,12 +78,6 @@ class Book(Base):
         default=func.now(),
         onupdate=func.now(),
         server_default=func.now(),
-        nullable=False
-    )
-    processing_mode: Mapped[str] = mapped_column(
-        String(20),
-        default="realtime",
-        server_default="realtime",
         nullable=False
     )
     file_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -152,12 +135,9 @@ class Page(Base):
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_indexed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
+    pipeline_step: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    milestone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
-
-    # Worker v2 columns (v1 columns above are untouched)
-    v2_pipeline_step: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    v2_milestone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    v2_retry_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
 
     last_updated: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -315,33 +295,6 @@ class RefreshToken(Base):
     user: Mapped["User"] = relationship("User", back_populates="refresh_tokens")
 
 
-class Job(Base):
-    """Job model for ARQ background job tracking"""
-    __tablename__ = "jobs"
-
-    job_key: Mapped[str] = mapped_column(String(255), primary_key=True)
-    status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    book_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    payload: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=func.now(),
-        server_default=func.now(),
-        nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=func.now(),
-        onupdate=func.now(),
-        server_default=func.now(),
-        nullable=False
-    )
-
-
 class Proverb(Base):
     """Proverb model for Uyghur proverbs about knowledge and books"""
     __tablename__ = "proverbs"
@@ -448,45 +401,6 @@ class UserChatUsage(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "usage_date", name="user_chat_usage_user_id_date_key"),
-    )
-
-
-class BatchJob(Base):
-    """Tracks a single Gemini Batch API job (OCR or Embedding)"""
-    __tablename__ = "batch_jobs"
-
-    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    job_type: Mapped[str] = mapped_column(String(20), nullable=False)  # 'ocr' or 'embedding'
-    remote_job_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # Google Batch Job ID
-    status: Mapped[str] = mapped_column(String(20), default="created", server_default="created", nullable=False)
-    remote_status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # Actual state from Gemini API
-    request_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    input_file_uri: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    output_file_uri: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-
-    requests: Mapped[List[BatchRequest]] = relationship("BatchRequest", back_populates="batch_job", cascade="all, delete-orphan")
-
-
-class BatchRequest(Base):
-    """Maps an individual request within a BatchJob to a specific book and page"""
-    __tablename__ = "batch_requests"
-
-    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    batch_job_id: Mapped[UUID] = mapped_column(ForeignKey("batch_jobs.id", ondelete="CASCADE"), nullable=False)
-    book_id: Mapped[str] = mapped_column(String(50), nullable=False)
-    page_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    request_id: Mapped[str] = mapped_column(String(100), nullable=False)  # custom_id in JSONL
-    status: Mapped[str] = mapped_column(String(20), default="pending", server_default="pending", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-    batch_job: Mapped[BatchJob] = relationship("BatchJob", back_populates="requests")
-
-    __table_args__ = (
-        UniqueConstraint("request_id", "batch_job_id", name="uq_batch_request_request_id"),
     )
 
 

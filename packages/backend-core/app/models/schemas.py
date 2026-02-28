@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Dict
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -40,6 +40,8 @@ class ExtractionResult(BaseModel):
     error: Optional[str] = None
     last_updated: Optional[datetime] = None  # DB: last_updated, API: lastUpdated
     updated_by: Optional[str] = None  # DB: updated_by, API: updatedBy
+    pipeline_step: Optional[str] = None  # DB: pipeline_step, API: pipelineStep
+    milestone: Optional[str] = None  # DB: milestone, API: milestone
 
 
 class Book(BaseModel):
@@ -69,17 +71,13 @@ class Book(BaseModel):
     created_by: Optional[str] = None  # DB: created_by, API: createdBy
     cover_url: Optional[str] = None  # DB: cover_url, API: coverUrl
     visibility: str = "private"
-    processing_step: Optional[str] = "ocr"  # DB: processing_step, API: processingStep
     categories: List[str] = Field(default_factory=list)
     last_error: Optional[ErrorEvent] = None  # DB: last_error, API: lastError
-    ocr_done_count: int = 0  # DB: ocr_done_count, API: ocrDoneCount
-    error_count: int = 0  # DB: error_count, API: errorCount
     read_count: int = 0  # DB: read_count, API: readCount
-    processing_lock_expires_at: Optional[datetime] = None  # DB: processing_lock_expires_at, API: processingLockExpiresAt
     file_name: Optional[str] = None  # Original uploaded filename
     source: Optional[str] = None  # Document source (e.g., 'upload', 'gcs')
-    processing_mode: str = "realtime" # DB: processing_mode, API: processingMode
-    v2_pipeline_step: Optional[str] = None  # DB: v2_pipeline_step, API: v2PipelineStep
+    pipeline_step: Optional[str] = None  # DB: pipeline_step, API: pipelineStep
+    pipeline_stats: Optional[Dict[str, int]] = Field(default_factory=dict) # DB: pipeline_stats, API: pipelineStats
 
 
 class PaginatedBooks(BaseModel):

@@ -1,4 +1,4 @@
-# Worker Deployment for background jobs
+# Worker Deployment — runs arq worker.WorkerSettings
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -22,7 +22,8 @@ spec:
       containers:
         - name: worker
           image: kitabim-worker:local
-          imagePullPolicy: Never # Use locally built image
+          imagePullPolicy: Never
+          command: ["arq", "worker.WorkerSettings"]
           envFrom:
             - configMapRef:
                 name: kitabim-config

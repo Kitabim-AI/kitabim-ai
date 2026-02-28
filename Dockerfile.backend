@@ -32,17 +32,19 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 COPY --from=builder /root/.local /root/.local
 ENV PATH=/root/.local/bin:$PATH
 
-# Copy backend-core package
+# Copy shared backend-core package
 COPY packages/backend-core /app/packages/backend-core
 
-# Set Python path to include backend-core
-# Fixed warning by setting PYTHONPATH directly
-ENV PYTHONPATH=/app/packages/backend-core
+# Copy backend service code
+COPY services/backend /app/services/backend
 
-WORKDIR /app/packages/backend-core
+# Shared code + backend service code both on PYTHONPATH
+ENV PYTHONPATH=/app/packages/backend-core:/app/services/backend
+
+WORKDIR /app/services/backend
 
 # Expose port
 EXPOSE 8000
 
 # Run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

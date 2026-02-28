@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Book, FileText, CheckCircle, XCircle, RefreshCw, BarChart3, Clock, AlertTriangle, Loader, Zap } from 'lucide-react';
+import { Book, FileText, CheckCircle, XCircle, RefreshCw, BarChart3, Clock, AlertTriangle, Loader, Zap, Hash } from 'lucide-react';
 import { authFetch } from '../../services/authService';
 import { useI18n } from '../../i18n/I18nContext';
 
@@ -17,31 +17,41 @@ interface PageStats {
   pages_by_status: StatusCount[];
 }
 
+interface ChunkStats {
+  total: number;
+  embedded: number;
+  pending: number;
+  percentage_embedded: number;
+}
+
 interface SystemStats {
   total_books: number;
   books_by_status: StatusCount[];
   page_stats: PageStats;
-  jobs_by_status: StatusCount[];
-  jobs_by_type: StatusCount[];
+  chunk_stats: ChunkStats;
 }
 
 // ---- Styling helpers ----
 const STATUS_STYLES: Record<string, { bg: string; border: string; text: string; bar: string }> = {
   ready: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', bar: 'bg-green-500' },
-  ocr_done: { bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-700', bar: 'bg-indigo-500' },
-  chunked: { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', bar: 'bg-amber-500' },
-  succeeded: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', bar: 'bg-green-500' },
-  indexed: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', bar: 'bg-green-500' },
-  indexing: { bg: 'bg-violet-50', border: 'border-violet-200', text: 'text-violet-700', bar: 'bg-violet-500' },
-  ocr_processing: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', bar: 'bg-blue-500' },
-  running: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', bar: 'bg-blue-500' },
-  queued: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', bar: 'bg-blue-500' },
-  pending: { bg: 'bg-yellow-50', border: 'border-yellow-200', text: 'text-yellow-700', bar: 'bg-yellow-500' },
-  skipped: { bg: 'bg-yellow-50', border: 'border-yellow-200', text: 'text-yellow-700', bar: 'bg-yellow-500' },
-  retrying: { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', bar: 'bg-orange-500' },
-  error: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', bar: 'bg-red-500' },
+  ocr: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', bar: 'bg-blue-500' },
+  chunking: { bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-700', bar: 'bg-indigo-500' },
+  embedding: { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-700', bar: 'bg-purple-500' },
+  'ocr:idle': { bg: 'bg-blue-50', border: 'border-blue-100', text: 'text-blue-600', bar: 'bg-blue-400' },
+  'ocr:running': { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', bar: 'bg-blue-500' },
+  'ocr:in_progress': { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', bar: 'bg-blue-500' },
+  'ocr:succeeded': { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-800', bar: 'bg-blue-600' },
+  'chunking:idle': { bg: 'bg-indigo-50', border: 'border-indigo-100', text: 'text-indigo-600', bar: 'bg-indigo-400' },
+  'chunking:running': { bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-700', bar: 'bg-indigo-500' },
+  'chunking:in_progress': { bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-700', bar: 'bg-indigo-500' },
+  'chunking:succeeded': { bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-800', bar: 'bg-indigo-600' },
+  'embedding:idle': { bg: 'bg-purple-50', border: 'border-purple-100', text: 'text-purple-600', bar: 'bg-purple-400' },
+  'embedding:running': { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-700', bar: 'bg-purple-500' },
+  'embedding:in_progress': { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-700', bar: 'bg-purple-500' },
+  'embedding:succeeded': { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', bar: 'bg-emerald-500' },
   failed: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', bar: 'bg-red-500' },
-  unindexed: { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', bar: 'bg-orange-500' },
+  error: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', bar: 'bg-red-500' },
+  pending: { bg: 'bg-yellow-50', border: 'border-yellow-200', text: 'text-yellow-700', bar: 'bg-yellow-500' },
 };
 
 const DEFAULT_STYLE = { bg: 'bg-slate-50', border: 'border-slate-200', text: 'text-slate-700', bar: 'bg-slate-400' };
@@ -177,35 +187,30 @@ export const StatsPanel: React.FC = () => {
 
   // Label maps
   const bookStatusLabel: Record<string, string> = {
-    ready: t('admin.stats.ready') || 'Ready',
-    ocr_done: t('admin.stats.ocrDone') || 'OCR Done',
-    ocr_processing: t('admin.stats.bookOcrProcessing') || 'OCR Processing',
-    indexing: t('admin.stats.bookIndexing') || 'Indexing',
-    error: t('admin.stats.error') || 'Error',
-    pending: t('admin.stats.bookPending') || 'Pending',
-    chunked: t('admin.stats.pageChunked') || 'Waiting for Embedding',
+    ready: t('bookCard.pipeline.ready'),
+    ocr: t('bookCard.pipeline.ocr'),
+    chunking: t('bookCard.pipeline.chunking'),
+    embedding: t('bookCard.pipeline.embedding'),
+    error: t('bookCard.error'),
+    pending: t('bookCard.pending'),
   };
 
   const pageStatusLabel: Record<string, string> = {
-    indexed: t('admin.stats.indexedPages') || 'Indexed',
-    ocr_done: t('admin.stats.ocrDone') || 'OCR Done',
-    indexing: t('admin.stats.pageIndexing') || 'Indexing',
-    error: t('admin.stats.errorPages') || 'Error',
-    ocr_processing: t('admin.stats.pageOcrProcessing') || 'OCR Processing',
-    pending: t('admin.stats.pagePending') || 'Pending',
-    chunked: t('admin.stats.pageChunked') || 'Waiting for Embedding',
+    'ocr:idle': `OCR: ${t('bookCard.pipeline.idle')}`,
+    'ocr:running': `OCR: ${t('bookCard.pipeline.running')}`,
+    'ocr:in_progress': `OCR: ${t('bookCard.pipeline.in_progress')}`,
+    'ocr:succeeded': `OCR: ${t('bookCard.pipeline.succeeded')}`,
+    'chunking:idle': `${t('bookCard.pipeline.chunking')}: ${t('bookCard.pipeline.idle')}`,
+    'chunking:running': `${t('bookCard.pipeline.chunking')}: ${t('bookCard.pipeline.running')}`,
+    'chunking:in_progress': `${t('bookCard.pipeline.chunking')}: ${t('bookCard.pipeline.in_progress')}`,
+    'chunking:succeeded': `${t('bookCard.pipeline.chunking')}: ${t('bookCard.pipeline.succeeded')}`,
+    'embedding:idle': `${t('bookCard.pipeline.embedding')}: ${t('bookCard.pipeline.idle')}`,
+    'embedding:running': `${t('bookCard.pipeline.embedding')}: ${t('bookCard.pipeline.running')}`,
+    'embedding:in_progress': `${t('bookCard.pipeline.embedding')}: ${t('bookCard.pipeline.in_progress')}`,
+    'embedding:succeeded': `${t('bookCard.pipeline.embedding')}: ${t('bookCard.pipeline.succeeded')}`,
+    failed: t('bookCard.pipeline.failed'),
+    error: t('bookCard.error'),
   };
-
-  const jobStatusLabel: Record<string, string> = {
-    succeeded: t('admin.stats.jobSucceeded') || 'Succeeded',
-    failed: t('admin.stats.jobFailed') || 'Failed',
-    skipped: t('admin.stats.jobSkipped') || 'Skipped',
-    queued: t('admin.stats.jobQueued') || 'Queued',
-    retrying: t('admin.stats.jobRetrying') || 'Retrying',
-    running: t('admin.stats.jobRunning') || 'Running',
-  };
-
-  const totalJobs = (stats.jobs_by_status || []).reduce((acc, j) => acc + j.count, 0);
 
   return (
     <div className="space-y-8 animate-fade-in" dir="rtl" lang="ug">
@@ -340,38 +345,42 @@ export const StatsPanel: React.FC = () => {
           </div>
         </div>
 
-        {/* ── Jobs ── */}
+        {/* ── Chunks ── */}
         <div className="glass-panel overflow-hidden rounded-[24px] p-8 shadow-xl border border-[#0369a1]/10">
           <div className="space-y-3">
             <div className="flex items-center gap-2 mb-4">
-              <BarChart3 size={16} className="text-[#0369a1]" />
-              <h4 className="text-sm font-semibold text-[#0369a1] uppercase tracking-wide">
-                {t('admin.stats.jobStats') || 'Job Statistics'}
+              <Hash size={16} className="text-[#0369a1]" />
+              <h4 className="text-base font-semibold text-[#0369a1] uppercase tracking-wide">
+                {t('admin.stats.chunkStats') || 'Chunk Statistics'}
               </h4>
             </div>
 
             {/* Total */}
             <div className="p-4 bg-slate-50 border-2 border-slate-200 rounded-xl">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-slate-600">{t('admin.stats.totalJobs') || 'Total Jobs'}</span>
-                <span className="text-2xl font-bold text-slate-800">{totalJobs.toLocaleString()}</span>
+                <span className="text-sm font-medium text-slate-600">{t('admin.stats.totalChunks') || 'Total Chunks'}</span>
+                <span className="text-2xl font-bold text-slate-800">{stats.chunk_stats.total.toLocaleString()}</span>
               </div>
             </div>
 
-            {/* Dynamic breakdown */}
-            {(stats.jobs_by_status || []).map(({ status, count }) => (
-              <StatCard
-                key={status}
-                label={jobStatusLabel[status.toLowerCase()] || status}
-                count={count}
-                total={totalJobs}
-                status={status}
-                showBar
-              />
-            ))}
+            {/* Embedded */}
+            <StatCard
+              label={t('admin.stats.embeddedChunks') || 'Embedded Chunks'}
+              count={stats.chunk_stats.embedded}
+              total={stats.chunk_stats.total}
+              status="ready"
+              showBar
+            />
+
+            {/* Pending */}
+            <StatCard
+              label={t('admin.stats.pendingChunks') || 'Pending Chunks'}
+              count={stats.chunk_stats.pending}
+              total={stats.chunk_stats.total}
+              status="pending"
+            />
           </div>
         </div>
-
       </div>
     </div>
   );

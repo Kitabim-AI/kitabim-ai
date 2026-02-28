@@ -106,7 +106,7 @@
     "public": "Public",
     "private": "Private",
     "category": "Category",
-    "v2": {
+    "pipeline": {
       "ocr": "OCR",
       "chunking": "Chunking",
       "embedding": "Embedding",
@@ -392,7 +392,7 @@
     },
     "resetFailed": {
       "title": "Reset Failed Pages",
-      "message": "This will reset all exhausted-retry pages back to the OCR step so the v2 worker can try again. Continue?",
+      "message": "This will reset all exhausted-retry pages back to the OCR step so the worker can try again. Continue?",
       "confirm": "Reset Failed Pages"
     },
     "resetFailedError": {

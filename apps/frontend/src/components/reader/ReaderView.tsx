@@ -331,7 +331,7 @@ export const ReaderView: React.FC = () => {
                     onSave={() => handleUpdatePage(selectedBook.id, page.pageNumber, tempPageText)}
                     onCancel={() => setEditingPageNum(null)}
                     spellCheckResult={spellCheckResult}
-                    isLoading={page.status === 'ocr_processing' || page.status === 'indexing' || page.status === 'pending'}
+                    isLoading={!page.text && (!page.pipelineStep && (page.status === 'ocr_processing' || page.status === 'indexing' || page.status === 'pending')) || (page.pipelineStep === 'ocr' && page.milestone !== 'succeeded')}
                     isSaving={isSaving}
                   />
                 ))}

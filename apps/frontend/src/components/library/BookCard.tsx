@@ -12,8 +12,10 @@ const getStatusStyles = (status: string) => {
   switch (status.toLowerCase()) {
     case 'ready': return 'bg-emerald-50 text-emerald-600';
     case 'ocr_done': return 'bg-indigo-50 text-indigo-600';
-    case 'chunked': return 'bg-amber-50 text-amber-600';
+    case 'chunking': return 'bg-amber-50 text-amber-600';
     case 'indexing': return 'bg-violet-50 text-violet-600';
+    case 'ocr': return 'bg-blue-50 text-blue-600';
+    case 'embedding': return 'bg-purple-50 text-purple-600';
     case 'ocr_processing': return 'bg-blue-50 text-blue-600';
     case 'error': return 'bg-red-50 text-red-500';
     case 'pending': return 'bg-amber-50 text-amber-600';
@@ -62,16 +64,16 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick }) => {
             <span className="bg-[#0369a1]/5 text-[#0369a1] px-2.5 py-1 rounded-lg font-bold">
               {book.category?.[0] || t('common.book')}
             </span>
-            {book.status && book.status !== 'ready' && (
-              <span className={`px-2 py-1 rounded-lg font-bold uppercase text-[10px] ${getStatusStyles(book.status)}`}>
-                {t(`bookCard.${book.status}`) || book.status}
+            {book.pipelineStep && book.pipelineStep !== 'ready' && (
+              <span className={`px-2 py-1 rounded-lg font-bold uppercase text-[10px] ${getStatusStyles(book.pipelineStep)}`}>
+                {t(`bookCard.pipeline.${book.pipelineStep}`) || book.pipelineStep}
               </span>
             )}
             {book.status === 'ready' && (book.readCount ?? 0) > 0 && (
               <span className="flex items-center gap-1 text-[#64748b] text-[10px] font-semibold">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                  <circle cx="12" cy="12" r="3"/>
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                  <circle cx="12" cy="12" r="3" />
                 </svg>
                 {book.readCount}
               </span>

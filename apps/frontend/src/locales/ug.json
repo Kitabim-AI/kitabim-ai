@@ -107,11 +107,16 @@
     "public": "ئاشكارا",
     "private": "يوشۇرۇن",
     "category": "تۈر",
-    "v2": {
+    "pipeline": {
       "ocr": "OCR",
-      "chunking": "بۆلەكلەۋاتىدۇ",
-      "embedding": "ئىندېكىسلاۋاتىدۇ",
-      "ready": "پۈتتى"
+      "chunking": "پارچىلاۋاتىدۇ",
+      "embedding": "ۋېكتورلاۋاتىدۇ",
+      "ready": "پۈتتى",
+      "idle": "ساقلاۋاتىدۇ",
+      "running": "ئىجرادا",
+      "in_progress": "ئىجرادا",
+      "succeeded": "تاماملاندى",
+      "failed": "مەغلۇپ بولدى"
     }
   },
   "chat": {
@@ -202,6 +207,10 @@
       "unindexedPages": "ئىندېكىسلىنىۋاتقان بەت",
       "errorBooks": "مەغلۇپ بولغان كىتابلار",
       "errorPages": "مەغلۇپ بولغان بەت",
+      "chunkStats": "بۆلەك ستاتىستىكىسى",
+      "totalChunks": "جەمئىي بۆلەك",
+      "embeddedChunks": "ۋېكتورلانغان بۆلەك",
+      "pendingChunks": "ساقلاۋاتقان بۆلەك",
       "jobStats": "ۋەزىپە (Job) ستاتىستىكىسى",
       "totalJobs": "جەمئىي ۋەزىپە",
       "jobSucceeded": "تاماملانغان ۋەزىپە",

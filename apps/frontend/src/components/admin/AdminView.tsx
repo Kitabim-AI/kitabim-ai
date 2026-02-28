@@ -8,17 +8,14 @@ import { TagEditor } from './TagEditor';
 import { ProgressBar } from './ProgressBar';
 import { ActionMenu } from './ActionMenu';
 
-const getStatusTextColor = (status: string) => {
-  switch (status.toLowerCase()) {
+const getStatusTextColor = (step: string | null) => {
+  if (!step) return 'text-slate-400';
+  switch (step.toLowerCase()) {
     case 'ready': return 'text-emerald-600 font-bold';
     case 'embedding': return 'text-purple-600 font-bold';
     case 'chunking': return 'text-indigo-600 font-bold';
     case 'ocr': return 'text-blue-600 font-bold';
-    case 'ocr_done': return 'text-indigo-600 font-bold';
-    case 'indexing': return 'text-purple-600 font-bold';
-    case 'ocr_processing': return 'text-blue-600 font-bold';
     case 'error': return 'text-red-500 font-bold';
-    case 'pending': return 'text-amber-600 font-bold';
     default: return 'text-slate-400';
   }
 };
@@ -179,8 +176,8 @@ export const AdminView: React.FC = () => {
                         <div className="flex items-center gap-2 md:gap-4">
                           <button
                             onClick={() => bookActions.openReader(book)}
-                            disabled={book.status === 'pending' || isEditing}
-                            className={`p-2 md:p-3 rounded-xl transition-all shadow-sm active:scale-90 ${book.status === 'pending' || isEditing
+                            disabled={!book.pipelineStep && book.status === 'pending' || isEditing}
+                            className={`p-2 md:p-3 rounded-xl transition-all shadow-sm active:scale-90 ${(!book.pipelineStep && book.status === 'pending') || isEditing
                               ? 'bg-slate-100 text-slate-300 cursor-not-allowed'
                               : 'bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white group-hover/row:scale-110'
                               }`}
@@ -205,14 +202,13 @@ export const AdminView: React.FC = () => {
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                if (book.status !== 'pending' && !isEditing) {
-                                  bookActions.openReader(book);
-                                }
+                                if ((!book.pipelineStep && book.status === 'pending') && !isEditing) return;
+                                bookActions.openReader(book);
                               }}
-                              className={`text-right group/title transition-all duration-300 block ${book.status !== 'pending' && !isEditing ? 'cursor-pointer hover:translate-x-[-4px]' : 'cursor-default'}`}
-                              disabled={book.status === 'pending' || isEditing}
+                              className={`text-right group/title transition-all duration-300 block ${(!book.pipelineStep && book.status !== 'pending') || book.pipelineStep && !isEditing ? 'cursor-pointer hover:translate-x-[-4px]' : 'cursor-default'}`}
+                              disabled={(!book.pipelineStep && book.status === 'pending') || isEditing}
                             >
-                              <span className={`font-black text-[14px] md:text-[16px] lg:text-[18px] transition-colors block ${book.status !== 'pending' && !isEditing ? 'text-[#1a1a1a] group-hover/title:text-[#0369a1]' : 'text-slate-400'}`}>
+                              <span className={`font-black text-[14px] md:text-[16px] lg:text-[18px] transition-colors block ${(!book.pipelineStep && book.status !== 'pending') || book.pipelineStep && !isEditing ? 'text-[#1a1a1a] group-hover/title:text-[#0369a1]' : 'text-slate-400'}`}>
                                 {book.title}
                                 {book.volume !== null && (
                                   <span className="lg:hidden text-[#0369a1] mr-2">
@@ -279,14 +275,17 @@ export const AdminView: React.FC = () => {
                           <ProgressBar book={book} />
                           <div className="flex justify-between text-[10px] md:text-[12px] text-slate-400">
                             <span>
-                              {(book.ocrDoneCount !== undefined ? book.ocrDoneCount : (book as any).ocr_done_count) || (book.pages?.filter(p => p.status === 'ocr_done' || p.status === 'indexed').length) || 0}
+                              {book.pipelineStep && book.pipelineStats
+                                ? (book.pipelineStep === 'ready' ? (book.totalPages || 0) : (book.pipelineStats[book.pipelineStep] || 0))
+                                : 0
+                              }
                               /
-                              {book.totalPages || (book as any).total_pages || 0}
+                              {book.totalPages || 0}
                             </span>
-                            <span className={`${getStatusTextColor(book.v2PipelineStep ?? book.status)} uppercase`}>
-                              {book.v2PipelineStep
-                                ? (t(`bookCard.v2.${book.v2PipelineStep}`) || book.v2PipelineStep)
-                                : (t(`bookCard.${book.status}`) || book.status)}
+                            <span className={`${getStatusTextColor(book.pipelineStep)} uppercase`}>
+                              {book.pipelineStep
+                                ? (t(`bookCard.pipeline.${book.pipelineStep}`) || book.pipelineStep)
+                                : '...'}
                             </span>
                           </div>
                         </div>

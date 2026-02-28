@@ -3,6 +3,8 @@ export interface ExtractionResult {
   pageNumber: number;
   text?: string;
   status: 'pending' | 'ocr_processing' | 'ocr_done' | 'indexing' | 'indexed' | 'error';
+  pipelineStep?: 'ocr' | 'chunking' | 'embedding' | null;
+  milestone?: 'idle' | 'running' | 'succeeded' | 'failed' | null;
   error?: string;
 }
 
@@ -26,14 +28,11 @@ export interface Book {
   lastUpdated: Date | null;
   coverUrl?: string;
   visibility?: 'public' | 'private';
-  processingStep?: 'ocr' | 'rag';
   categories?: string[];
   lastError?: ErrorEvent | null;
-  ocrDoneCount?: number;
-  errorCount?: number;
   readCount?: number;
-  processingLockExpiresAt?: Date | string | null;
-  v2PipelineStep?: 'ocr' | 'chunking' | 'embedding' | 'ready' | null;
+  pipelineStep?: 'ocr' | 'chunking' | 'embedding' | 'ready' | null;
+  pipelineStats?: Record<string, number>;
 }
 
 export interface PaginatedBooks {
