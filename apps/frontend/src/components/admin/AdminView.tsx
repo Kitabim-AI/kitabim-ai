@@ -11,6 +11,9 @@ import { ActionMenu } from './ActionMenu';
 const getStatusTextColor = (status: string) => {
   switch (status.toLowerCase()) {
     case 'ready': return 'text-emerald-600 font-bold';
+    case 'embedding': return 'text-purple-600 font-bold';
+    case 'chunking': return 'text-indigo-600 font-bold';
+    case 'ocr': return 'text-blue-600 font-bold';
     case 'ocr_done': return 'text-indigo-600 font-bold';
     case 'indexing': return 'text-purple-600 font-bold';
     case 'ocr_processing': return 'text-blue-600 font-bold';
@@ -280,8 +283,10 @@ export const AdminView: React.FC = () => {
                               /
                               {book.totalPages || (book as any).total_pages || 0}
                             </span>
-                            <span className={`${getStatusTextColor(book.status)} uppercase`}>
-                              {t(`bookCard.${book.status}`) || book.status}
+                            <span className={`${getStatusTextColor(book.v2PipelineStep ?? book.status)} uppercase`}>
+                              {book.v2PipelineStep
+                                ? (t(`bookCard.v2.${book.v2PipelineStep}`) || book.v2PipelineStep)
+                                : (t(`bookCard.${book.status}`) || book.status)}
                             </span>
                           </div>
                         </div>

@@ -1,0 +1,57 @@
+# Worker v2 Deployment — runs arq app.worker_v2.worker.WorkerV2Settings
+# Uses the same kitabim-worker:local image as worker v1, overriding the CMD.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-v2
+  namespace: kitabim
+  labels:
+    app: kitabim
+    component: worker-v2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kitabim
+      component: worker-v2
+  template:
+    metadata:
+      labels:
+        app: kitabim
+        component: worker-v2
+    spec:
+      containers:
+        - name: worker-v2
+          image: kitabim-worker:local
+          imagePullPolicy: Never
+          command: ["arq", "app.worker_v2.worker.WorkerV2Settings"]
+          envFrom:
+            - configMapRef:
+                name: kitabim-config
+            - secretRef:
+                name: kitabim-secrets
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+            - name: gcs-key
+              mountPath: /etc/gcs
+              readOnly: true
+          env:
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /etc/gcs/key.json
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+      volumes:
+        - name: data
+          hostPath:
+            path: /Users/Omarjan/Projects/kitabim-ai/data
+            type: DirectoryOrCreate
+        - name: gcs-key
+          secret:
+            secretName: kitabim-gcs-key
+            optional: true

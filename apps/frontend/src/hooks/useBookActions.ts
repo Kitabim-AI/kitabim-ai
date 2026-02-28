@@ -42,99 +42,33 @@ export const useBookActions = (
     }
   };
 
-  const handleStartOcr = (bookId: string) => {
+  const handleResetFailedPages = (bookId: string) => {
     setModal({
       isOpen: true,
-      title: t('modal.ocrStart.title'),
-      message: t('modal.ocrStart.message'),
+      title: t('modal.resetFailed.title'),
+      message: t('modal.resetFailed.message'),
       type: 'confirm',
-      confirmText: t('modal.ocrStart.confirm'),
+      confirmText: t('modal.resetFailed.confirm'),
       onConfirm: async () => {
         try {
-          setBooks(prev => prev.map(b => b.id === bookId ? { ...b, status: 'ocr_processing', processingStep: 'ocr' } : b));
-          await PersistenceService.startOcr(bookId);
+          const result = await PersistenceService.resetFailedPages(bookId);
           await refreshLibrary();
           setModal((prev: any) => ({ ...prev, isOpen: false }));
-          addNotification(t('common.ocrStarted'), "success");
+          if (result.count === 0) {
+            addNotification(t('common.noFailedPages'), "info");
+          } else {
+            addNotification(t('common.resetFailedSuccess', { count: result.count }), "success");
+          }
         } catch (err) {
-          addNotification(t('common.ocrStartError'), "error");
           setModal({
             isOpen: true,
-            title: t('modal.processError.title'),
-            message: t('modal.processError.message'),
+            title: t('modal.resetFailedError.title'),
+            message: t('modal.resetFailedError.message'),
             type: 'alert'
           });
         }
       }
     });
-  };
-
-  const handleRetryFailedOcr = async (book: Book) => {
-    const hasFailedPages = (book.errorCount ?? 0) > 0 || (book.pages?.some(r => r.status === 'error') ?? false);
-    const isStale = (book.status === 'ocr_processing' || book.status === 'indexing') && book.processingLockExpiresAt && new Date(book.processingLockExpiresAt) < new Date();
-
-    if (!hasFailedPages && book.status !== 'error' && !isStale) {
-      setModal({
-        isOpen: true,
-        title: t('modal.noFailedPages.title'),
-        message: t('modal.noFailedPages.message'),
-        type: 'alert'
-      });
-      return;
-    }
-
-    const effectiveProvider = 'gemini';
-    let previousSelected: Book | null = null;
-    let previousBooks: Book[] | null = null;
-
-    setSelectedBook(prev => {
-      previousSelected = prev;
-      if (!prev || prev.id !== book.id) return prev;
-      return {
-        ...prev,
-        status: 'ocr_processing',
-        processingStep: 'ocr',
-        lastUpdated: new Date(),
-        pages: (prev.pages || []).map(r =>
-          (r.status === 'error' || r.status === 'ocr_processing')
-            ? { ...r, status: 'pending', text: '', error: undefined, isVerified: false }
-            : r
-        ),
-      };
-    });
-
-    setBooks(prev => {
-      previousBooks = prev;
-      return prev.map(b => {
-        if (b.id !== book.id) return b;
-        return {
-          ...b,
-          status: 'ocr_processing',
-          processingStep: 'ocr',
-          lastUpdated: new Date(),
-          pages: (b.pages || []).map(r =>
-            (r.status === 'error' || r.status === 'ocr_processing')
-              ? { ...r, status: 'pending', text: '', error: undefined, isVerified: false }
-              : r
-          ),
-        };
-      });
-    });
-
-    try {
-      await PersistenceService.retryFailedOcr(book.id);
-      refreshLibrary();
-    } catch (err) {
-      if (previousSelected) setSelectedBook(previousSelected);
-      if (previousBooks) setBooks(previousBooks);
-      console.error("Failed to retry OCR", err);
-      setModal({
-        isOpen: true,
-        title: t('modal.retryError.title'),
-        message: t('modal.retryError.message'),
-        type: 'alert'
-      });
-    }
   };
 
   const handleReProcessPage = async (bookId: string, pageNum: number) => {
@@ -190,33 +124,6 @@ export const useBookActions = (
   };
 
 
-
-  const handleForceComplete = (book: Book) => {
-    setModal({
-      isOpen: true,
-      title: t('modal.forceComplete.title'),
-      message: t('modal.forceComplete.message'),
-      type: 'confirm',
-      confirmText: t('modal.forceComplete.confirm'),
-      onConfirm: async () => {
-        try {
-          const result = await PersistenceService.forceComplete(book.id);
-          setBooks(prev => prev.map(b => b.id === book.id ? { ...b, status: result.status as any } : b));
-          await refreshLibrary();
-          setModal((prev: any) => ({ ...prev, isOpen: false }));
-          addNotification(t('common.forceCompleteSuccess'), "success");
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : '';
-          setModal({
-            isOpen: true,
-            title: t('modal.forceCompleteError.title'),
-            message: msg || t('modal.forceCompleteError.message'),
-            type: 'alert'
-          });
-        }
-      }
-    });
-  };
 
   const handleReindexBook = (bookId: string) => {
     setModal({
@@ -516,9 +423,7 @@ export const useBookActions = (
   return {
     isCheckingGlobal,
     handleFileUpload,
-    handleStartOcr,
-    handleRetryFailedOcr,
-    handleForceComplete,
+    handleResetFailedPages,
     handleReProcessPage,
     handleReindexBook,
     handleUpdatePage,

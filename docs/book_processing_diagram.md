@@ -1,6 +1,6 @@
 # Book Processing Pipeline Diagram
 
-Visual representation of the book processing pipeline, including triggers, stage transitions, admin recovery actions, and outputs. The pipeline uses the **Gemini Batch API** for high-throughput, cost-effective processing.
+Visual representation of the book processing pipeline, including triggers, stage transitions, admin recovery actions, and outputs. All processing is synchronous/realtime — no Gemini Batch API is used.
 
 ---
 
@@ -17,64 +17,53 @@ flowchart TD
     %% Init
     InitDB([Book: pending\nPages: pending])
 
-    %% Phase 1: OCR Batch Submission
-    subgraph OCR_Submission [Phase 1 — OCR Batch Submission]
-        S1[Check pending Pages] --> S2{Pages Found?}
-        S2 -->|Yes| S3[Download PDF from GCS]
-        S3 --> S4[Upload PDF to Gemini File API]
-        S4 --> S5[Generate JSONL with Page References]
-        S5 --> S6[Submit Gemini Batch Job]
-        S6 --> S7[Pages: ocr_processing\nBook: ocr_processing]
-        S7 --> S8[Store Batch Metadata]
+    %% Phase 1: Realtime OCR
+    subgraph OCR_Phase [Phase 1 — Realtime OCR]
+        S1[Book enqueued to ARQ worker queue] --> S2[Worker picks up job]
+        S2 --> S3[pdf_service processes each page\nvia Gemini synchronously]
+        S3 --> S4[Page: pending → ocr_processing → ocr_done\nBook: pending → ocr_processing → ocr_done]
+        S4 --> S5{OCR success?}
+        S5 -->|Yes| S6[Page: ocr_done\ntext stored]
+        S5 -->|Failure| S7[retry_count++]
+        S7 --> S8{retry_count\n>= max?}
+        S8 -->|No| S9[Page: error\nretried next attempt]
+        S8 -->|Yes| S10[Page: ocr_done\nempty text — auto-skipped]
     end
     InitDB --> S1
 
-    %% Phase 2: Polling & Results
-    subgraph Polling_Cycle [Phase 2 — Polling & Result Application]
-        P1[Poll Active Batch Jobs] --> P2{Job SUCCEEDED?}
-        P2 -->|Yes| P3[Download JSONL Output]
-        P3 --> P4[Map Results to DB]
-        P4 -->|OCR type| P5[Pages: ocr_done\ntext stored]
-        P4 -->|Embed type| P6[Chunks: embedding stored]
-        P2 -->|Failed| PE[Page: error\nretry_count++]
-        PE --> PR{retry_count\n>= max?}
-        PR -->|Yes| PS[Page: ocr_done\nempty text — skipped]
-        PR -->|No| P5skip[Stays error\nretried next cycle]
-    end
-    S8 -.->|async poll| P1
-
-    %% Phase 3: Local Chunking
-    subgraph Local_Processing [Phase 3 — Local Chunking]
-        C1[Find ocr_done Pages] --> C2{Has text?}
-        C2 -->|Yes| C3[Strip Markdown & Clean Text]
-        C3 --> C4[Semantic Chunking]
-        C4 --> C5[Save Chunks to DB]
-        C5 --> C6[Pages: chunked]
-        C2 -->|No — empty text| CE{retry_count\n>= max?}
+    %% Phase 2: Chunking
+    subgraph Chunking_Phase [Phase 2 — Chunking — Background Cron]
+        C1[chunk_ocr_done_pages\nevery N minutes] --> C2[Find ocr_done pages]
+        C2 --> C3{Has text?}
+        C3 -->|Yes| C4[Strip Markdown & Clean Text]
+        C4 --> C5[Semantic Chunking]
+        C5 --> C6[Save Chunks to DB\nembedding = NULL]
+        C6 --> C7[Page: chunked]
+        C3 -->|No — empty text| CE{retry_count\n>= max?}
         CE -->|Yes| CS[Page: indexed\nis_indexed=true\nno chunk created]
         CE -->|No| CErr[Page: error\nretry_count++]
     end
-    P5 --> C1
-    PS --> C1
+    S6 --> C1
+    S10 --> C1
 
-    %% Phase 4: Embedding Submission
-    subgraph Embed_Submission [Phase 4 — Embedding Batch Submission]
-        E1[Collect Chunks with NULL Embedding] --> E2[Generate JSONL for Embedding]
-        E2 --> E3[Submit Gemini Embedding Job]
-        E3 --> E4[Track Batch Metadata]
+    %% Phase 3: Realtime Embedding
+    subgraph Embed_Phase [Phase 3 — Realtime Embedding — Same Cron Run]
+        E1[embed_pending_chunks_realtime] --> E2[Fetch chunks with NULL embedding]
+        E2 --> E3[Generate 768-dim vectors\nsynchronously in batches of 20]
+        E3 --> E4[Chunks: embedding stored]
     end
-    C6 --> E1
-    E4 -.->|async poll| P1
+    C7 --> E1
 
-    %% Phase 5: Finalization
-    subgraph Finalization [Phase 5 — Finalization]
-        F1[Find chunked Pages] --> F2{All Chunks Embedded?}
-        F2 -->|Yes| F3[Pages: indexed]
+    %% Phase 4: Finalization
+    subgraph Finalization [Phase 4 — Finalization — Every Minute]
+        F1[finalize_indexed_pages\nevery 1 minute] --> F2[Find chunked pages\nwhere all chunks embedded]
+        F2 --> F3[Pages: indexed]
         F3 --> F4[Aggregate Book Progress]
-        F4 --> F5{All Pages Indexed?}
+        F4 --> F5{indexed + error\n== total_pages?}
         F5 -->|Yes| Ready([Book: ready])
+        F5 -->|No| F6[Book stays in current status\nnext cron tick picks up]
     end
-    P6 --> F1
+    E4 --> F1
 
     classDef output fill:#d4f1f4,stroke:#189ab4,stroke-width:2px,color:#05445E
     classDef trigger fill:#ffe8d6,stroke:#b5838d,stroke-width:2px,color:#6d6875
@@ -85,8 +74,8 @@ flowchart TD
     class Ready state
     class T1,T2 trigger
     class InitDB state
-    class OCR_Submission,Embed_Submission,Polling_Cycle cloud
-    class PS,CS skip
+    class OCR_Phase,Chunking_Phase,Embed_Phase,Finalization cloud
+    class S10,CS skip
 ```
 
 ---
@@ -107,8 +96,8 @@ flowchart LR
     %% Normal flow
     pending -->|Start OCR| ocr_proc
     ocr_proc -->|worker: all pages done| ocr_done
-    ocr_done -->|worker: indexing starts| indexing
-    indexing -->|worker: all indexed| ready
+    ocr_done -->|cron: chunking + embedding| indexing
+    indexing -->|cron: all indexed| ready
     ocr_proc -->|worker: failure| error
     indexing -->|worker: failure| error
 
@@ -140,7 +129,7 @@ flowchart LR
 
 ## Page Auto-Skip on Max Retry
 
-When a page repeatedly fails OCR, it is automatically skipped after `ocr_max_retry_count` attempts (configurable in System Configs, default `3`). This prevents a single bad page from blocking the entire book.
+When a page repeatedly fails OCR, it is automatically skipped after `ocr_max_retry_count` attempts (configurable in System Configs, default `10`). This prevents a single bad page from blocking the entire book.
 
 ```mermaid
 flowchart TD
@@ -164,7 +153,6 @@ flowchart TD
 
 | Status | Meaning | processing_step |
 |---|---|---|
-| `uploading` | File upload in progress | — |
 | `pending` | Awaiting Start OCR trigger | — |
 | `ocr_processing` | Worker running OCR or re-embedding | `ocr` or `rag` |
 | `ocr_done` | All pages OCR'd; not yet indexed | `ocr` |
@@ -180,7 +168,6 @@ flowchart TD
 | `ocr_processing` | OCR running for this page |
 | `ocr_done` | Text extracted; not yet chunked |
 | `chunked` | Text split into chunks; awaiting embeddings |
-| `indexing` | Embeddings being generated |
 | `indexed` | Fully embedded and searchable |
 | `error` | OCR or embedding failed; will be retried up to `ocr_max_retry_count` times |
 
@@ -259,10 +246,8 @@ flowchart TD
 
 | Component | Role |
 |---|---|
-| **ARQ Worker** | Periodically triggers submission and polling cycles |
-| **Gemini Batch API** | OCR + embeddings at 50% cost discount, outside rate limits |
-| **Gemini File API** | Transient PDF/JSONL storage (deleted after job completion) |
+| **ARQ Worker** | Runs realtime OCR jobs (via queue) and periodic chunking/embedding/finalization crons |
 | **Google Cloud Storage** | Persistent source for PDFs and covers |
 | **PostgreSQL + pgvector** | Stores metadata, page text, chunks, and embeddings |
 | **Processing Lock** | `processing_lock` + `processing_lock_expires_at` prevent duplicate jobs; used for stale detection |
-| **System Configs** | Admin-configurable runtime settings (e.g. `ocr_max_retry_count`) stored in `system_configs` table |
+| **System Configs** | Admin-configurable runtime settings (e.g. `ocr_max_retry_count`, `batch_submission_interval_minutes`) stored in `system_configs` table |

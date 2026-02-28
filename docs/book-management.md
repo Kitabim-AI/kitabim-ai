@@ -6,8 +6,8 @@ A book moves through a multi-stage pipeline from upload to fully searchable:
 
 1. **Upload** → PDF stored in GCS, book record created (`pending`)
 2. **OCR** → Worker reads each page as an image and extracts text via Gemini (`ocr_processing` → `ocr_done`)
-3. **Chunking** → Batch cron splits page text into overlapping chunks (`ocr_done` → `chunked`)
-4. **Embedding** → Batch cron generates 768-dim vectors for each chunk (`chunked` → `indexed`)
+3. **Chunking** → Background cron splits page text into overlapping chunks (`ocr_done` → `chunked`)
+4. **Embedding** → Background cron generates 768-dim vectors for each chunk in realtime (`chunked` → `indexed`)
 5. **Ready** → Book is fully searchable via RAG (`ready`)
 
 All five stages are tracked at both the book level (`status`) and page level (`page.status`). OCR and embedding are protected by circuit breakers — if Gemini returns repeated errors, the breakers open and processing pauses until the service recovers.
@@ -18,7 +18,6 @@ All five stages are tracked at both the book level (`status`) and page level (`p
 
 | Status | Description |
 |---|---|
-| `uploading` | File is being uploaded to storage — not yet persisted as a book record |
 | `pending` | Book record created, waiting for OCR to be triggered |
 | `ocr_processing` | OCR (and/or re-embedding) job is actively running in the worker |
 | `ocr_done` | All pages have been OCR'd; embeddings/indexing not yet done |
@@ -32,11 +31,6 @@ Alongside `status`, the database tracks the specific sub-stage via `processing_s
 ### Status Transition Flow
 
 ```
-                    ┌─────────┐
-                    │uploading│  (transient, during file upload)
-                    └────┬────┘
-                         │ upload complete
-                         ▼
                     ┌─────────┐
                     │ pending │  ◄─── Start OCR triggers from here only
                     └────┬────┘
@@ -62,7 +56,7 @@ Alongside `status`, the database tracks the specific sub-stage via `processing_s
                   └────┬──┬──┘
                        │  │ unindexed ocr_done pages remain
                        │  └─ Force Complete ──► ocr_done
-                       │ all indexed
+                       │ all indexed (or indexed + error == total_pages)
                        ▼
                   ┌─────────┐
                   │  ready  │  ◄─── Reindex available from here (and ocr_done)
@@ -75,46 +69,50 @@ Alongside `status`, the database tracks the specific sub-stage via `processing_s
 
 | Status | Success — Next Step | Failure — Recovery Method |
 |---|---|---|
-| `uploading` | Upload completes → `pending` | Delete book and re-upload |
 | `pending` | Admin clicks **Start OCR** → `ocr_processing` | Watchdog auto-rescues after 30 min; or manually click **Start OCR** |
 | `ocr_processing` (active) | All pages OCR'd → `ocr_done` | Wait; pages that keep failing auto-skip at `ocr_max_retry_count` |
 | `ocr_processing` (stale lock) | — | **Retry OCR** resets stuck/error pages → `pending` and re-queues; or **Force Complete** promotes remaining pages → `ocr_done` |
-| `ocr_done` | Batch cron (every 15 min) chunks pages → embeds → `ready` | **Reindex** to re-chunk and re-embed all pages from scratch |
-| `indexing` (active) | All chunks embedded → `ready` | Wait for batch cron to finalize |
+| `ocr_done` | Cron (interval configurable via `batch_submission_interval_minutes`, default 15 min) chunks pages → embeds → `ready` | **Reindex** to re-chunk and re-embed all pages from scratch |
+| `indexing` (active) | All chunks embedded → `ready` | Wait for finalization cron to promote book |
 | `indexing` (stale lock) | — | **Force Complete** → `ready` (if no unindexed `ocr_done` pages remain) or → `ocr_done` (if unindexed pages still exist, cron picks up next cycle) |
 | `error` | — | **Retry OCR** if pages are in `error`/`ocr_processing`; **Force Complete** to advance with what survived; last resort: **Reindex** after force-complete |
 | `ready` | Terminal success — searchable | **Reindex** to refresh embeddings (e.g. after chunking strategy change) |
 
 > **Key automatic recoveries (no admin action needed):**
 > - Pages that fail OCR repeatedly auto-skip at `retry_count >= ocr_max_retry_count` (system config, default `10`)
-> - Stale books in `pending`, `ocr_done`, or `ocr_processing` are auto-rescued by the watchdog every 30 min
+> - Stale books in `pending`, `ocr_done`, `ocr_processing`, or `indexing` are auto-rescued by the watchdog every 30 min
 > - `finalize_indexed_pages` promotes books to `ready` automatically on every polling cron tick
 
 ---
 
 ## Real-time vs. Batch Processing
 
-The OCR and Indexing pipeline operates in two primary modes:
+All OCR and indexing processing runs synchronously (realtime) — there is no Gemini Batch API in use.
 
-1. **Real-time Mode**
-   - Pages are parsed and OCR'd immediately using parallel loop workers inside `app/services/pdf_service.py`.
-   - Embeddings are computed synchronously using the LLM directly.
-   - Used for single page corrections (`Reset Page`, `Update Text`) and forced runs.
+1. **OCR (realtime)**
+   - When a book is enqueued for OCR, the ARQ worker picks up the job and `pdf_service` processes each page synchronously via Gemini, one at a time.
+   - Each page transitions `pending` → `ocr_processing` → `ocr_done` (or `error` on failure).
 
-2. **Batch Mode**
-   - Background crons (`app/services/batch_service.py`) periodically sweep `pending` and `ocr_done` pages.
-   - Pages are bundled dynamically into JSONL files and submitted via the Gemini Batch API.
-   - If the API returns `429 Quota Exhausted`, the batch cron sets a 24-hour cooldown (`batch_ocr_retry_after`), pausing broad status transitions.
-   - **Page State Sweep:** `ocr_done` pages are implicitly swept to `chunked` and then updated to `indexed` after polling.
+2. **Chunking (background cron)**
+   - `gemini_batch_submission_cron` runs every minute but early-exits based on `batch_submission_interval_minutes` (default 15 min) to avoid redundant runs.
+   - When it fires, `chunk_ocr_done_pages()` sweeps all `ocr_done` pages, splits their text into overlapping chunks, and saves those chunks with NULL embeddings. Pages move to `chunked`.
+
+3. **Embedding (realtime, same cron run)**
+   - Immediately after chunking, the same cron run calls `embed_pending_chunks_realtime()`, which fetches all chunks with NULL embeddings and generates 768-dim vectors synchronously in batches of 20.
+
+4. **Finalization (every minute)**
+   - `gemini_batch_polling_cron` runs every minute and calls `finalize_indexed_pages()`.
+   - `chunked` pages whose chunks are all embedded are promoted to `indexed`.
+   - A book is promoted to `ready` when `indexed_count + error_count == total_pages` — books with some error pages can still reach `ready`.
 
 ### Cron Schedule
 
 | Job | Schedule | Description |
 |---|---|---|
-| `rescue_stale_jobs` | At startup + every 30 min | Finds stale `ocr_processing`/`pending`/`ocr_done` books and re-enqueues them |
+| `rescue_stale_jobs` | At startup + every 30 min | Finds stale `ocr_processing`/`pending`/`ocr_done`/`indexing` books and re-enqueues them |
 | `scheduled_gcs_sync` | Every 30 min | Scans GCS bucket for new PDFs not yet in the DB |
-| `gemini_batch_submission_cron` | Every 15 min | Chunks `ocr_done` pages, submits OCR batches, embeds pending chunks |
-| `gemini_batch_polling_cron` | Every 1 min (early-exit by `batch_polling_interval_minutes`) | Polls Gemini batch job results; finalizes indexed pages → promotes books to `ready` |
+| `gemini_batch_submission_cron` | Every minute (early-exits by `batch_submission_interval_minutes`) | Chunks `ocr_done` pages; embeds pending chunks in realtime |
+| `gemini_batch_polling_cron` | Every minute | Finalizes page/book statuses; promotes books to `ready` |
 
 ---
 
@@ -173,7 +171,7 @@ This prevents a permanently-failing page from blocking the entire book indefinit
 | `pending` | Worker picks up → `ocr_processing` | Auto-retried by worker; manually **Reset Page** |
 | `ocr_processing` | OCR completes → `ocr_done` | `retry_count` incremented; auto-skip at max retry; **Reset Page** to re-queue |
 | `ocr_done` | Batch cron chunks text → `chunked` | **Edit Text** to manually correct; **Reindex** book to re-run chunking |
-| `chunked` | Batch cron embeds → `indexing` → `indexed` | **Reindex** book to re-chunk and re-embed from scratch |
+| `chunked` | Batch cron embeds → `indexed` | **Reindex** book to re-chunk and re-embed from scratch |
 | `indexing` | Embedding completes → `indexed` | **Force Complete** on book; or **Reindex** book |
 | `indexed` | Terminal — embedded and searchable | **Edit Text** to correct and re-embed; **Reset Page** to re-OCR |
 | `error` | — | **Reset Page** (re-queues OCR); **Edit Text** if partial text exists |
@@ -211,7 +209,7 @@ isActuallyProcessing = (status is ocr_processing OR indexing)
 
 hasFailedPages       = errorCount > 0 OR any page.status === 'error'
 
-canView              = status !== 'uploading' AND status !== 'pending'
+canView              = status !== 'pending'
 
 canStartOcr          = status === 'pending'
 
@@ -229,7 +227,6 @@ canForceComplete     = isEditorOrAdmin
 
 | Book Status | View | Start OCR | Retry OCR | Reindex | Force Complete | Delete |
 |---|---|---|---|---|---|---|
-| `uploading` | disabled | disabled | disabled | disabled | disabled | enabled |
 | `pending` | disabled | **enabled** | disabled | disabled | disabled | enabled |
 | `ocr_processing` (active) | enabled | disabled | disabled | disabled | **enabled** (editor+) | enabled |
 | `ocr_processing` (stale lock) | enabled | disabled | **enabled** | disabled | **enabled** (editor+) | enabled |
@@ -319,6 +316,10 @@ Each action's trigger conditions, what it changes, and what state the book/pages
 > When force-complete resolves to `ocr_done`, the normal indexing pipeline will pick up
 > remaining `ocr_done` pages automatically on the next worker cycle.
 
+> **Note on partial completion**: A book can reach `ready` even if some pages are in `error` status.
+> `finalize_indexed_pages` promotes a book to `ready` when `indexed_count + error_count == total_pages`,
+> meaning pages that permanently failed do not prevent the rest of the book from becoming searchable.
+
 ---
 
 ## API Endpoints
@@ -327,7 +328,7 @@ All write endpoints require **editor** role or above. Read endpoints are role-de
 
 ### Book Lifecycle
 
-*Common Errors: API endpoints communicating directly with Gemini APIs may return `503 Service Unavailable` on high demand (triggering Circuit Breakers) or `429 Quota Exhausted` (triggering batch cooldowns).*
+*Common Errors: API endpoints communicating directly with Gemini APIs may return `503 Service Unavailable` on high demand (triggering Circuit Breakers).*
 
 | Action | Method | Endpoint | Auth | Book status after |
 |---|---|---|---|---|
@@ -363,12 +364,9 @@ All write endpoints require **editor** role or above. Read endpoints are role-de
 |---|---|---|
 | `ocr_max_retry_count` | `10` | Max OCR attempts per page before auto-skip |
 | `batch_chunking_limit` | `1000` | Max pages chunked per batch submission cron tick |
-| `batch_ocr_limit` | `100` | Max pages submitted to Gemini OCR batch per tick |
 | `batch_embedding_limit` | `2000` | Max chunks embedded per batch submission cron tick |
-| `batch_books_per_submission` | `1` | Number of books bundled per OCR batch submission |
-| `batch_ocr_retry_after` | `0` | Unix timestamp; OCR batch submissions paused until this time (set on `429`) |
-| `batch_polling_interval_minutes` | `10` | Minimum minutes between actual polling runs (polling cron fires every 1 min but early-exits until this interval passes) |
-| `batch_last_polled_at` | `0` | Unix timestamp of the last completed polling run |
+| `batch_submission_interval_minutes` | `15` | Minutes between chunking + embedding runs. Lower = faster processing. |
+| `batch_submission_last_run_at` | `0` | Unix timestamp of last submission cron run. Managed automatically. |
 
 ### Metadata
 

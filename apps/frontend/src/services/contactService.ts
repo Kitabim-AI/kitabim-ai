@@ -37,7 +37,14 @@ export async function submitContactForm(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => null);
-    const errorMessage = errorData?.detail || 'Failed to submit contact form';
+    let errorMessage = 'Failed to submit contact form';
+    if (errorData?.detail) {
+      if (typeof errorData.detail === 'string') {
+        errorMessage = errorData.detail;
+      } else if (Array.isArray(errorData.detail)) {
+        errorMessage = errorData.detail.map((err: any) => err.msg).join(', ');
+      }
+    }
     throw new Error(errorMessage);
   }
 

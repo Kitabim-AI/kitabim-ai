@@ -79,6 +79,7 @@ class Book(BaseModel):
     file_name: Optional[str] = None  # Original uploaded filename
     source: Optional[str] = None  # Document source (e.g., 'upload', 'gcs')
     processing_mode: str = "realtime" # DB: processing_mode, API: processingMode
+    v2_pipeline_step: Optional[str] = None  # DB: v2_pipeline_step, API: v2PipelineStep
 
 
 class PaginatedBooks(BaseModel):

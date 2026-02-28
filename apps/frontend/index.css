@@ -105,11 +105,11 @@ html {
 
 @keyframes shimmer {
   0% {
-    transform: translateX(-100%);
+    transform: translateX(100%);
   }
 
   100% {
-    transform: translateX(100%);
+    transform: translateX(-100%);
   }
 }
 
@@ -289,4 +289,5 @@ body::after {
 
 .no-spinner[type="number"] {
   -moz-appearance: textfield;
+  appearance: textfield;
 }

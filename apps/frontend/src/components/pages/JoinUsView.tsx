@@ -65,6 +65,34 @@ const JoinUsView: React.FC = () => {
     setIsSubmitting(true);
     setSubmitError(null);
 
+    // Manual validation with internationalized messages
+    if (!contactForm.name.trim()) {
+      setSubmitError(t('joinUs.contactModal.validation.nameRequired'));
+      setIsSubmitting(false);
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!contactForm.email.trim()) {
+      setSubmitError(t('joinUs.contactModal.validation.emailRequired'));
+      setIsSubmitting(false);
+      return;
+    } else if (!emailRegex.test(contactForm.email)) {
+      setSubmitError(t('joinUs.contactModal.validation.emailInvalid'));
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (!contactForm.message.trim()) {
+      setSubmitError(t('joinUs.contactModal.validation.messageRequired'));
+      setIsSubmitting(false);
+      return;
+    } else if (contactForm.message.trim().length < 10) {
+      setSubmitError(t('joinUs.contactModal.validation.messageMinLength'));
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
       await submitContactForm(contactForm);
       setIsSuccess(true);
@@ -306,7 +334,7 @@ const JoinUsView: React.FC = () => {
                     </button>
                   </div>
 
-                  <form onSubmit={handleSubmit} className="space-y-6">
+                  <form onSubmit={handleSubmit} className="space-y-6" noValidate>
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">{t('joinUs.contactModal.interest')}</label>
                       <div className="relative" ref={interestDropdownRef}>
@@ -353,7 +381,6 @@ const JoinUsView: React.FC = () => {
                         <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">{t('joinUs.contactModal.name')}</label>
                         <input
                           type="text"
-                          required
                           className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-[#0369a1] outline-none transition-all"
                           placeholder={t('joinUs.contactModal.namePlaceholder')}
                           value={contactForm.name}
@@ -364,7 +391,6 @@ const JoinUsView: React.FC = () => {
                         <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">{t('joinUs.contactModal.email')}</label>
                         <input
                           type="email"
-                          required
                           className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-[#0369a1] outline-none transition-all"
                           placeholder={t('joinUs.contactModal.emailPlaceholder')}
                           value={contactForm.email}
@@ -376,7 +402,6 @@ const JoinUsView: React.FC = () => {
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">{t('joinUs.contactModal.message')}</label>
                       <textarea
-                        required
                         rows={4}
                         className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-[#0369a1] outline-none transition-all resize-none uyghur-text"
                         placeholder={t('joinUs.contactModal.messagePlaceholder')}

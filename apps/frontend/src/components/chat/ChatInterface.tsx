@@ -53,8 +53,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         {/* Chat Header */}
         <div className="bg-white/60 backdrop-blur-2xl px-8 py-4 flex items-center justify-between border border-[#0369a1]/10 shadow-sm group" style={{ borderRadius: '32px' }}>
           <div className="flex items-center gap-5">
-            <div className="p-3 bg-[#0369a1] text-white rounded-[24px] shadow-xl shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:-rotate-6">
-              <MessageSquare size={24} strokeWidth={2.5} />
+            <div className="p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:-rotate-6">
+              <MessageSquare size={20} className="md:w-6 md:h-6" strokeWidth={2.5} />
             </div>
             <div>
               <h1 className="text-2xl font-normal text-[#1a1a1a]">{t('chat.globalAssistant')}</h1>

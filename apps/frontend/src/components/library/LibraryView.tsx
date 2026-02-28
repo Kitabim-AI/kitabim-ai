@@ -38,8 +38,8 @@ export const LibraryView: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 sm:gap-6 pb-8 sm:pb-10 md:pb-12 border-b border-[#0369a1]/10 relative">
         <header className="space-y-3 sm:space-y-4">
           <div className="flex items-center gap-3 sm:gap-4 group">
-            <div className="p-3 sm:p-3.5 bg-[#0369a1] text-white rounded-[20px] sm:rounded-[24px] shadow-xl shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:-rotate-6">
-              <Library size={28} className="sm:w-[32px] sm:h-[32px]" strokeWidth={2.5} />
+            <div className="p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:-rotate-6">
+              <Library size={20} className="md:w-6 md:h-6" strokeWidth={2.5} />
             </div>
             <div>
               <h2 className="text-2xl sm:text-3xl font-black text-[#1a1a1a]">{t('library.title')}</h2>

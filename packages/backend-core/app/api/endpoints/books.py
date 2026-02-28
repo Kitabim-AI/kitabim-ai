@@ -317,6 +317,7 @@ async def get_books(
                 "total_pages": sum(v.total_pages or 0 for v in volumes),
                 "pages": [],
                 "status": rep.status,
+                "v2_pipeline_step": rep.v2_pipeline_step,
                 "upload_date": rep.upload_date,
                 "last_updated": rep.last_updated,
                 "updated_by": rep.updated_by,
@@ -358,6 +359,7 @@ async def get_books(
                 "total_pages": b.total_pages or 0,
                 "pages": [],
                 "status": b.status,
+                "v2_pipeline_step": b.v2_pipeline_step,
                 "upload_date": b.upload_date,
                 "last_updated": b.last_updated,
                 "updated_by": b.updated_by,
@@ -462,6 +464,7 @@ async def get_books(
                 "total_pages": b.total_pages,
                 "pages": [],  # We don't load pages in this endpoint
                 "status": b.status,
+                "v2_pipeline_step": b.v2_pipeline_step,
                 "upload_date": b.upload_date,
                 "last_updated": b.last_updated,
                 "updated_by": b.updated_by,
@@ -699,6 +702,7 @@ async def get_book(
         "total_pages": book_model.total_pages or 0,
         "pages": [],  # Empty list as we don't load pages here anymore
         "status": book_model.status,
+        "v2_pipeline_step": book_model.v2_pipeline_step,
         "upload_date": book_model.upload_date,
         "last_updated": book_model.last_updated,
         "updated_by": book_model.updated_by,
@@ -946,273 +950,6 @@ async def upload_pdf(
     return {"bookId": book_id, "status": "uploaded"}
 
 
-@router.post("/{book_id}/start-ocr")
-async def start_ocr(
-    book_id: str,
-    payload: dict,
-    background_tasks: BackgroundTasks,
-    current_user: User = Depends(require_editor),
-    session: AsyncSession = Depends(get_session),
-):
-    """Start OCR processing with SQLAlchemy"""
-    books_repo = BooksRepository(session)
-    pages_repo = PagesRepository(session)
-    provider = "gemini"
-
-    book = await books_repo.get(book_id)
-    if not book:
-        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
-
-    # CLEAR OLD DATA
-    if book.status != "pending":
-        # Delete existing pages
-        await pages_repo.delete_by_book(book_id)
-
-    # Update book status and clear any stale lock
-    await books_repo.update_one(
-        book_id,
-        status="ocr_processing",
-        processing_step="ocr",
-        processing_lock=None,
-        processing_lock_expires_at=None,
-        last_updated=datetime.now(timezone.utc),
-        updated_by=current_user.email,
-    )
-    await session.commit()
-
-    try:
-        await enqueue_pdf_processing(book_id, reason=f"start_{provider}", background_tasks=background_tasks)
-    except Exception:
-        raise HTTPException(status_code=503, detail=t("errors.queue_unavailable"))
-    return {"status": "started", "provider": provider}
-
-
-@router.post("/{book_id}/retry-ocr")
-async def retry_failed_ocr(
-    book_id: str,
-    background_tasks: BackgroundTasks,
-    payload: Optional[dict] = None,
-    current_user: User = Depends(require_editor),
-    session: AsyncSession = Depends(get_session),
-):
-    """Retry failed OCR pages with SQLAlchemy"""
-    from sqlalchemy import select, update
-    from app.db.models import Page
-
-    books_repo = BooksRepository(session)
-
-    book = await books_repo.get(book_id)
-    if not book:
-        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
-
-    provider = "gemini"
-
-    # Find failed or stuck pages (error = failed OCR, ocr_processing = stale/stuck)
-    failed_pages_stmt = select(Page.page_number).where(
-        Page.book_id == book_id,
-        Page.status.in_(["error", "ocr_processing"])
-    )
-    result = await session.execute(failed_pages_stmt)
-    failed_pages = [row[0] for row in result.fetchall()]
-
-    # Resume Logic: If no stuck/failed pages but book is in error state, re-enqueue as-is
-    if not failed_pages and book.status == "error":
-        await books_repo.update_one(
-            book_id,
-            status="ocr_processing",
-            processing_step="ocr",
-            processing_lock=None,
-            processing_lock_expires_at=None,
-            last_updated=datetime.now(timezone.utc),
-            updated_by=current_user.email,
-        )
-        await session.commit()
-        try:
-            await enqueue_pdf_processing(book_id, reason="resume_error", background_tasks=background_tasks)
-        except Exception:
-            raise HTTPException(status_code=503, detail=t("errors.queue_unavailable"))
-        return {"status": "resumed", "provider": provider}
-
-    if not failed_pages:
-        return {"status": "no_failed_pages"}
-
-    # Update book status and clear any stale lock
-    await books_repo.update_one(
-        book_id,
-        status="ocr_processing",
-        processing_step="ocr",
-        processing_lock=None,
-        processing_lock_expires_at=None,
-        last_updated=datetime.now(timezone.utc),
-        updated_by=current_user.email,
-    )
-
-    # Reset failed/stuck pages to pending
-    await session.execute(
-        update(Page)
-        .where(
-            Page.book_id == book_id,
-            Page.page_number.in_(failed_pages)
-        )
-        .values(
-            status="pending",
-            text="",
-            error=None,
-            is_verified=False,
-            is_indexed=False,
-            last_updated=datetime.now(timezone.utc),
-            updated_by=current_user.email
-        )
-    )
-
-    await session.commit()
-    try:
-        await enqueue_pdf_processing(book_id, reason="retry_failed", background_tasks=background_tasks)
-    except Exception:
-        raise HTTPException(status_code=503, detail=t("errors.queue_unavailable"))
-    return {"status": "retry_started", "provider": provider, "failedPages": failed_pages}
-
-
-@router.post("/{book_id}/force-complete")
-async def force_complete_book(
-    book_id: str,
-    current_user: User = Depends(require_editor),
-    session: AsyncSession = Depends(get_session),
-):
-    """Force-complete the current processing step of a book.
-
-    - ocr_processing → ocr_done  (marks stuck ocr_processing pages as ocr_done)
-    - indexing       → ocr_done if unindexed ocr_done pages remain, else ready
-    - error          → detects stage from surviving page states and advances accordingly
-    """
-    books_repo = BooksRepository(session)
-
-    book = await books_repo.get(book_id)
-    if not book:
-        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
-
-    if book.status == "ocr_processing":
-        # Mark any pages still in ocr_processing as ocr_done
-        await session.execute(
-            update(Page)
-            .where(and_(Page.book_id == book_id, Page.status == "ocr_processing"))
-            .values(
-                status="ocr_done",
-                last_updated=datetime.now(timezone.utc),
-                updated_by=current_user.email,
-            )
-        )
-        await books_repo.update_one(
-            book_id,
-            status="ocr_done",
-            processing_lock=None,
-            processing_lock_expires_at=None,
-            last_updated=datetime.now(timezone.utc),
-            updated_by=current_user.email,
-        )
-        await session.commit()
-        logger.info(f"Force-completed OCR for book {book_id} by {current_user.email}")
-        return {"status": "ocr_done"}
-
-    elif book.status == "indexing":
-        # Reset chunked pages back to ocr_done so the embedding pipeline retries cleanly.
-        # Pages are in 'chunked' state during embedding — 'indexing' page status is unused.
-        await session.execute(
-            update(Page)
-            .where(and_(Page.book_id == book_id, Page.status == "chunked"))
-            .values(
-                status="ocr_done",
-                is_indexed=False,
-                last_updated=datetime.now(timezone.utc),
-                updated_by=current_user.email,
-            )
-        )
-        await books_repo.update_one(
-            book_id,
-            status="ocr_done",
-            processing_lock=None,
-            processing_lock_expires_at=None,
-            last_updated=datetime.now(timezone.utc),
-            updated_by=current_user.email,
-        )
-        await session.commit()
-        logger.info(f"Force-completed indexing for book {book_id} → ocr_done by {current_user.email}")
-        return {"status": "ocr_done"}
-
-    elif book.status == "error":
-        # Detect which stage was running when the error occurred
-        ocr_processing_count = (await session.execute(
-            select(func.count()).where(and_(Page.book_id == book_id, Page.status == "ocr_processing"))
-        )).scalar() or 0
-
-        # chunked = embedding was in progress when error occurred
-        chunked_count = (await session.execute(
-            select(func.count()).where(and_(Page.book_id == book_id, Page.status == "chunked"))
-        )).scalar() or 0
-
-        ocr_done_count = (await session.execute(
-            select(func.count()).where(and_(Page.book_id == book_id, Page.status == "ocr_done"))
-        )).scalar() or 0
-
-        indexed_count = (await session.execute(
-            select(func.count()).where(and_(Page.book_id == book_id, Page.status == "indexed"))
-        )).scalar() or 0
-
-        if ocr_processing_count > 0:
-            # Was doing OCR — mark stuck pages as ocr_done, book → ocr_done
-            await session.execute(
-                update(Page)
-                .where(and_(Page.book_id == book_id, Page.status == "ocr_processing"))
-                .values(
-                    status="ocr_done",
-                    last_updated=datetime.now(timezone.utc),
-                    updated_by=current_user.email,
-                )
-            )
-            new_book_status = "ocr_done"
-        elif chunked_count > 0:
-            # Was doing embedding — reset chunked pages to ocr_done so embedding retries cleanly
-            await session.execute(
-                update(Page)
-                .where(and_(Page.book_id == book_id, Page.status == "chunked"))
-                .values(
-                    status="ocr_done",
-                    is_indexed=False,
-                    last_updated=datetime.now(timezone.utc),
-                    updated_by=current_user.email,
-                )
-            )
-            new_book_status = "ocr_done"
-        elif ocr_done_count > 0:
-            # OCR finished but indexing never started or was partially done
-            new_book_status = "ocr_done"
-        elif indexed_count > 0:
-            # All processed pages are indexed — book can be marked ready
-            new_book_status = "ready"
-        else:
-            # No surviving page state — treat as ocr_done
-            new_book_status = "ocr_done"
-
-        await books_repo.update_one(
-            book_id,
-            status=new_book_status,
-            processing_lock=None,
-            processing_lock_expires_at=None,
-            last_updated=datetime.now(timezone.utc),
-            updated_by=current_user.email,
-        )
-        await session.commit()
-        logger.info(f"Force-completed error book {book_id} → {new_book_status} by {current_user.email}")
-        return {"status": new_book_status}
-
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Book is not currently processing (status: {book.status}). Force-complete only applies to 'ocr_processing', 'indexing', or 'error' states."
-        )
-
-
-
 @router.post("/{book_id}/reprocess")
 async def reprocess_book(
     book_id: str,
@@ -1239,6 +976,10 @@ async def reprocess_book(
     await books_repo.update_one(
         book_id,
         status="ocr_processing",
+        processing_step="ocr",
+        processing_lock=None,
+        processing_lock_expires_at=None,
+        v2_pipeline_step=None,
         last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email
     )
@@ -1270,6 +1011,7 @@ async def reindex_book(
 
     # Reset all post-OCR pages back to ocr_done so the worker re-chunks and re-embeds them.
     # This covers indexed, chunked, and ocr_done pages — all have their text intact.
+    # Also reset v2 columns to chunking/idle so v2 worker picks them up from chunking step.
     await session.execute(
         update(Page)
         .where(and_(
@@ -1279,6 +1021,9 @@ async def reindex_book(
         .values(
             status='ocr_done',
             is_indexed=False,
+            v2_pipeline_step='chunking',
+            v2_milestone='idle',
+            v2_retry_count=0,
             last_updated=datetime.now(timezone.utc),
             updated_by=current_user.email
         )
@@ -1295,6 +1040,7 @@ async def reindex_book(
         processing_step="rag",
         processing_lock=None,
         processing_lock_expires_at=None,
+        v2_pipeline_step=None,
         last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email
     )
@@ -1305,6 +1051,54 @@ async def reindex_book(
     except Exception:
         raise HTTPException(status_code=503, detail=t("errors.queue_unavailable"))
     return {"status": "reindex_started"}
+
+
+@router.post("/{book_id}/reset-failed-pages")
+async def reset_failed_pages(
+    book_id: str,
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """Reset all exhausted-retry pages (v2_milestone='failed') back to ocr/idle.
+
+    Used when v2 worker has given up on pages after max retries and an admin
+    wants to force another attempt from the OCR step.
+    """
+    books_repo = BooksRepository(session)
+
+    book = await books_repo.get(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+
+    result = await session.execute(
+        update(Page)
+        .where(and_(
+            Page.book_id == book_id,
+            Page.v2_milestone == "failed",
+        ))
+        .values(
+            v2_pipeline_step="ocr",
+            v2_milestone="idle",
+            v2_retry_count=0,
+            last_updated=datetime.now(timezone.utc),
+            updated_by=current_user.email,
+        )
+        .returning(Page.id)
+    )
+    reset_count = len(result.fetchall())
+
+    if reset_count == 0:
+        return {"status": "no_failed_pages", "count": 0}
+
+    await books_repo.update_one(
+        book_id,
+        v2_pipeline_step=None,
+        last_updated=datetime.now(timezone.utc),
+        updated_by=current_user.email,
+    )
+    await session.commit()
+    logger.info(f"Reset {reset_count} failed v2 pages for book {book_id} by {current_user.email}")
+    return {"status": "reset", "count": reset_count}
 
 
 @router.post("/{book_id}/pages/{page_num}/reset")
@@ -1318,7 +1112,7 @@ async def reset_page(
     """Reset page to pending status with SQLAlchemy"""
     books_repo = BooksRepository(session)
 
-    # Update page using raw SQL for is_indexed = FALSE
+    # Update page using raw SQL — reset both v1 and v2 columns
     await session.execute(
         text("""
             UPDATE pages
@@ -1326,6 +1120,9 @@ async def reset_page(
                 text = '',
                 is_verified = FALSE,
                 is_indexed = FALSE,
+                v2_pipeline_step = 'ocr',
+                v2_milestone = 'idle',
+                v2_retry_count = 0,
                 last_updated = NOW(),
                 updated_by = :updated_by
             WHERE book_id = :book_id AND page_number = :page_number
@@ -1427,6 +1224,14 @@ async def update_page_text(
         # If text is empty, just mark as indexed
         page.status = 'indexed'
         page.is_indexed = True
+
+    # Set v2 columns based on final outcome
+    if page.status == 'indexed':
+        page.v2_pipeline_step = 'embedding'
+        page.v2_milestone = 'succeeded'
+    elif page.status == 'chunked':
+        page.v2_pipeline_step = 'chunking'
+        page.v2_milestone = 'succeeded'
 
     await books_repo.update_one(
         book_id,

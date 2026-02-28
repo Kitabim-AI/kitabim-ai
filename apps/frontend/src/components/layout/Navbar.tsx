@@ -26,8 +26,8 @@ export const Navbar: React.FC = () => {
           style={{ backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)' }} />
 
         {/* Gradient Border at Bottom - Matching Prototype */}
-        <div className="absolute -bottom-px left-0 right-0 h-px bg-gradient-to-r from-transparent via-[rgba(255,193,7,0.5)] to-transparent"
-          style={{ background: 'linear-gradient(90deg, transparent, rgba(255, 193, 7, 0.5), rgba(156, 39, 176, 0.3), transparent)' }} />
+        <div className="absolute -bottom-px left-0 right-0 h-px bg-gradient-to-l from-transparent via-[rgba(255,193,7,0.5)] to-transparent"
+          style={{ background: 'linear-gradient(270deg, transparent, rgba(255, 193, 7, 0.5), rgba(156, 39, 176, 0.3), transparent)' }} />
 
         <div className="relative flex items-center gap-3 sm:gap-4 md:gap-3 lg:gap-8">
           <div className="flex items-center gap-2 sm:gap-3 cursor-pointer group transition-transform duration-300 hover:-translate-y-0.5" onClick={() => setView('home')}>
@@ -113,7 +113,7 @@ export const Navbar: React.FC = () => {
                   background: 'linear-gradient(135deg, #0369a1 0%, #0284c7 100%)'
                 }}
               >
-                <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:animate-shimmer-fast" />
+                <div className="absolute inset-0 bg-gradient-to-l from-white/0 via-white/20 to-white/0 translate-x-[100%] group-hover:animate-shimmer-fast" />
                 <Upload size={14} strokeWidth={3} className="relative z-10 lg:w-[16px] lg:h-[16px]" />
                 <span className="relative z-10 hidden lg:inline whitespace-nowrap">{t('nav.addBook')}</span>
               </button>
@@ -223,7 +223,7 @@ const NavButton: React.FC<{
       </span>
     </div>
     {active && (
-      <div className="absolute inset-0 bg-gradient-to-r from-[#0369a1]/0 via-[#0369a1]/5 to-[#0369a1]/0 animate-shimmer" />
+      <div className="absolute inset-0 bg-gradient-to-l from-[#0369a1]/0 via-[#0369a1]/5 to-[#0369a1]/0 animate-shimmer" />
     )}
   </button>
 );

@@ -54,6 +54,9 @@ class Book(Base):
     )
     processing_step: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     processing_lock: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+    # Worker v2 columns (v1 columns above are untouched)
+    v2_pipeline_step: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     processing_lock_expires_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
         nullable=True
@@ -150,6 +153,11 @@ class Page(Base):
     is_indexed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     retry_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+
+    # Worker v2 columns (v1 columns above are untouched)
+    v2_pipeline_step: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    v2_milestone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    v2_retry_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
 
     last_updated: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

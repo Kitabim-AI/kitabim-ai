@@ -175,8 +175,8 @@ export const PersistenceService = {
     }
   },
 
-  async forceComplete(bookId: string): Promise<{ status: string }> {
-    const response = await authFetch(`${API_BASE}/books/${bookId}/force-complete`, {
+  async resetFailedPages(bookId: string): Promise<{ status: string; count: number }> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/reset-failed-pages`, {
       method: 'POST',
     });
     if (!response.ok) {
@@ -184,7 +184,7 @@ export const PersistenceService = {
         throw new Error("Permission denied: Editor access required");
       }
       const err = await response.json().catch(() => ({}));
-      throw new Error(err.detail || "Failed to force complete");
+      throw new Error(err.detail || "Failed to reset failed pages");
     }
     return response.json();
   },
@@ -208,38 +208,6 @@ export const PersistenceService = {
       throw new Error("Failed to reset page");
     }
   },
-
-  async retryFailedOcr(bookId: string): Promise<void> {
-    const response = await authFetch(`${API_BASE}/books/${bookId}/retry-ocr`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'gemini' }),
-    });
-    if (!response.ok) {
-      if (response.status === 403) {
-        throw new Error("Permission denied: Editor access required");
-      }
-      const errorText = await response.text();
-      throw new Error(`Failed to retry OCR: ${response.status} ${errorText}`);
-    }
-  },
-
-  async startOcr(bookId: string): Promise<void> {
-    const response = await authFetch(`${API_BASE}/books/${bookId}/start-ocr`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'gemini' })
-    });
-    if (!response.ok) {
-      if (response.status === 403) {
-        throw new Error("Permission denied: Editor access required");
-      }
-      const errorText = await response.text();
-      throw new Error(`Failed to start OCR: ${response.status} ${errorText}`);
-    }
-  },
-
-
 
   async updateBookMetadata(book_id: string, updates: Partial<Book>): Promise<void> {
     const response = await authFetch(`${API_BASE}/books/${book_id}`, {

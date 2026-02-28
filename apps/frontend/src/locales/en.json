@@ -33,10 +33,9 @@
     "add": "Add",
     "loadingApp": "Library is loading...",
     "uploadSuccess": "Document uploaded successfully.",
-    "ocrStarted": "OCR process started successfully.",
-    "ocrStartError": "Failed to start OCR process.",
     "reindexStarted": "Book re-indexing started.",
-    "forceCompleteSuccess": "Processing step marked as complete.",
+    "resetFailedSuccess": "{{count}} failed page(s) reset to OCR.",
+    "noFailedPages": "No failed pages found for this book.",
     "pageUpdated": "Page {{pageNum}} updated.",
     "noPagesToSave": "No pages found to save. Please try reloading the book.",
     "saveSuccess": "Global corrections saved.",
@@ -106,7 +105,13 @@
     "error": "Error",
     "public": "Public",
     "private": "Private",
-    "category": "Category"
+    "category": "Category",
+    "v2": {
+      "ocr": "OCR",
+      "chunking": "Chunking",
+      "embedding": "Embedding",
+      "ready": "Ready"
+    }
   },
   "chat": {
     "chat": "Chat",
@@ -240,10 +245,8 @@
       "view": "View",
       "edit": "Edit",
       "delete": "Delete",
-      "startOcr": "Start OCR",
-      "retryOcr": "Retry",
       "reindex": "Reindex",
-      "forceComplete": "Force Complete",
+      "resetFailed": "Reset Failed Pages",
       "showing": "Showing",
       "email": "Email",
       "role": "Role",
@@ -387,22 +390,14 @@
       "title": "Upload Error",
       "message": "Error uploading document: {{error}}"
     },
-    "ocrStart": {
-      "title": "Confirm OCR Start",
-      "message": "Are you sure you want to start Gemini OCR? This will analyze the document and extract text.",
-      "confirm": "Start Processing"
+    "resetFailed": {
+      "title": "Reset Failed Pages",
+      "message": "This will reset all exhausted-retry pages back to the OCR step so the v2 worker can try again. Continue?",
+      "confirm": "Reset Failed Pages"
     },
-    "processError": {
-      "title": "Process Error",
-      "message": "Failed to start OCR. Please try again."
-    },
-    "noFailedPages": {
-      "title": "No Failed Pages",
-      "message": "This book has no failed OCR pages to retry."
-    },
-    "retryError": {
-      "title": "Retry Error",
-      "message": "Failed to retry OCR for failed pages. Please try again."
+    "resetFailedError": {
+      "title": "Reset Error",
+      "message": "Failed to reset failed pages. Please try again."
     },
     "reOcrError": {
       "title": "Re-OCR Error",
@@ -416,15 +411,6 @@
     "reindexError": {
       "title": "Re-Index Error",
       "message": "Failed to start re-indexing. Please try again."
-    },
-    "forceComplete": {
-      "title": "Force Complete",
-      "message": "This will immediately mark the current processing step as complete. Any in-progress pages will be marked as done. Continue?",
-      "confirm": "Force Complete"
-    },
-    "forceCompleteError": {
-      "title": "Force Complete Error",
-      "message": "Failed to force complete the processing step. Please try again."
     },
     "updateError": {
       "title": "Update Error",
@@ -532,7 +518,14 @@
       "submitting": "Sending...",
       "successTitle": "Thank You!",
       "successMessage": "We have received your message and will respond soon.",
-      "errorMessage": "Failed to send message. Please try again."
+      "errorMessage": "Failed to send message. Please try again.",
+      "validation": {
+        "nameRequired": "Name is required",
+        "emailRequired": "Email is required",
+        "emailInvalid": "Please enter a valid email address",
+        "messageRequired": "Message is required",
+        "messageMinLength": "Message must be at least 10 characters long"
+      }
     }
   }
 }

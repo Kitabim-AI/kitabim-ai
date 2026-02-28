@@ -125,11 +125,6 @@ async def gemini_batch_submission_cron(ctx):
     """Chunks OCR-done pages and embeds pending chunks in realtime"""
     import time
     async with db_session.async_session_factory() as session:
-        from app.langchain.models import is_llm_available
-        if not await is_llm_available():
-            log_json(logger, logging.WARNING, "LLM circuit breaker open, skipping batch submission")
-            return
-
         from app.db.repositories.system_configs import SystemConfigsRepository
         config_repo = SystemConfigsRepository(session)
 
@@ -147,18 +142,23 @@ async def gemini_batch_submission_cron(ctx):
         await config_repo.set_value("batch_submission_last_run_at", str(time.time()))
         await session.commit()
 
-        chunk_limit = int(await config_repo.get_value("batch_chunking_limit", "1000"))
-        embed_limit = int(await config_repo.get_value("batch_embedding_limit", "2000"))
-
         batch_service = BatchService(session)
 
-        # 1. Chunk any pages that finished OCR
+        # 1. Chunk any pages that finished OCR (Safe even if LLM is down)
+        chunk_limit = int(await config_repo.get_value("batch_chunking_limit", "1000"))
         try:
             await batch_service.chunk_ocr_done_pages(limit=chunk_limit)
         except Exception as e:
             log_json(logger, logging.ERROR, "Batch chunking failed", error=str(e))
 
-        # 2. Embed pending chunks in realtime (sync) mode
+        # 2. Check LLM availability before embedding (LLM needed from here onwards)
+        from app.langchain.models import is_llm_available
+        if not await is_llm_available():
+            log_json(logger, logging.WARNING, "LLM circuit breaker open, skipping embedding portion of cron")
+            return
+
+        # 3. Embed pending chunks in realtime (sync) mode
+        embed_limit = int(await config_repo.get_value("batch_embedding_limit", "2000"))
         try:
             embedded = await batch_service.embed_pending_chunks_realtime(limit=embed_limit)
             if embedded:

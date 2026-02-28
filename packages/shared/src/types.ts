@@ -33,6 +33,7 @@ export interface Book {
   errorCount?: number;
   readCount?: number;
   processingLockExpiresAt?: Date | string | null;
+  v2PipelineStep?: 'ocr' | 'chunking' | 'embedding' | 'ready' | null;
 }
 
 export interface PaginatedBooks {
