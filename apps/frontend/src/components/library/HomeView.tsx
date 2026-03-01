@@ -45,6 +45,22 @@ export const HomeView: React.FC = () => {
     fetchCategories();
   }, []);
 
+  const { loadMoreShelf } = useAppContext();
+
+  useEffect(() => {
+    if (!hasSearch) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !isInitialLoading && hasMore && !isLoadingMore) {
+          loadMoreShelf();
+        }
+      },
+      { threshold: 0.1, rootMargin: '200px' }
+    );
+    if (loaderRef.current) observer.observe(loaderRef.current);
+    return () => observer.disconnect();
+  }, [hasSearch, hasMore, isLoadingMore, loadMoreShelf, loaderRef, isInitialLoading]);
+
   const handleCategoryClick = (category: string) => {
     setSelectedCategory(category);
     setSearchQuery('');
