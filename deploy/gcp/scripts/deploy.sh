@@ -82,7 +82,7 @@ gcloud compute ssh "$VM_INSTANCE" --zone="$VM_ZONE" --command="
 
     echo '--> Restarting services'
     REGISTRY=${REGISTRY} IMAGE_TAG=${IMAGE_TAG} \
-        docker compose -f ${COMPOSE_FILE} up -d --no-deps backend worker frontend
+        docker compose -f ${COMPOSE_FILE} up -d --no-deps backend worker frontend nginx
 
     echo '--> Waiting for backend health check'
     sleep 8
