@@ -47,6 +47,8 @@ export const HomeView: React.FC = () => {
 
   const { loadMoreShelf } = useAppContext();
 
+  const hasSearch = searchQuery.length > 0 || selectedCategory.length > 0;
+
   useEffect(() => {
     if (!hasSearch) return;
     const observer = new IntersectionObserver(
@@ -65,8 +67,6 @@ export const HomeView: React.FC = () => {
     setSelectedCategory(category);
     setSearchQuery('');
   };
-
-  const hasSearch = searchQuery.length > 0 || selectedCategory.length > 0;
 
   return (
     <div className={`flex flex-col items-center transition-all duration-1000 ${hasSearch ? 'pt-4 sm:pt-6' : 'pt-8 sm:pt-12 md:pt-20'}`} dir="rtl" lang="ug">
