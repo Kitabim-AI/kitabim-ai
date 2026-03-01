@@ -5,6 +5,18 @@
 # If no tag given, uses current git short SHA
 set -euo pipefail
 
+# Ensure gcloud is on PATH (handles non-interactive shells on Mac)
+for _gcloud_dir in \
+    "$HOME/google-cloud-sdk/bin" \
+    "/usr/local/google-cloud-sdk/bin" \
+    "/opt/homebrew/bin" \
+    "/usr/local/bin"; do
+    if [ -x "$_gcloud_dir/gcloud" ]; then
+        export PATH="$_gcloud_dir:$PATH"
+        break
+    fi
+done
+
 # ─── Config ───────────────────────────────────────────────────────────────
 GCP_PROJECT_ID="${GCP_PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"
 REGION="us-south1"
