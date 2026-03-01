@@ -23,5 +23,5 @@ PYTHONPATH=packages/backend-core python -m arq app.worker.WorkerSettings
 
 ## Notes
 - Uses the shared backend core package in `/packages/backend-core`.
-- Requires Redis (`REDIS_URL`) and MongoDB (`MONGODB_URL`).
-- Local dev uses Docker Desktop Kubernetes manifests in `/infra/k8s/docker-desktop`.
+- Requires Redis (`REDIS_URL`) and PostgreSQL (`DATABASE_URL`).
+- Local dev uses Docker Desktop Kubernetes manifests in `/k8s/local`.

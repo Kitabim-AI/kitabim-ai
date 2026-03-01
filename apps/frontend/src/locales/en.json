@@ -1,0 +1,531 @@
+{
+  "common": {
+    "volume": "Volume",
+    "lastUpdated": "Last Updated",
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "noData": "No data available",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "close": "Close",
+    "search": "Search",
+    "filter": "Filter",
+    "clear": "Clear",
+    "send": "Send",
+    "yes": "Yes",
+    "no": "No",
+    "all": "All",
+    "page": "Page",
+    "pages": "Pages",
+    "book": "Book",
+    "books": "Books",
+    "refresh": "Refresh",
+    "total": "Total",
+    "of": "of",
+    "loadingMore": "Loading...",
+    "endOfList": "The End",
+    "systemStatus": "System Status",
+    "active": "Active",
+    "view": "View",
+    "add": "Add",
+    "loadingApp": "Library is loading...",
+    "uploadSuccess": "Document uploaded successfully.",
+    "reindexStarted": "Book re-indexing started.",
+    "resetFailedSuccess": "{{count}} failed page(s) reset to OCR.",
+    "noFailedPages": "No failed pages found for this book.",
+    "pageUpdated": "Page {{pageNum}} updated.",
+    "noPagesToSave": "No pages found to save. Please try reloading the book.",
+    "saveSuccess": "Global corrections saved.",
+    "deleteSuccess": "Book deleted successfully.",
+    "tagsUpdateSuccess": "Tags updated successfully.",
+    "tagsUpdateError": "Failed to update tags.",
+    "categoriesUpdateSuccess": "Categories updated successfully.",
+    "categoriesUpdateError": "Failed to update categories.",
+    "authorUpdateSuccess": "Author updated successfully.",
+    "authorUpdateError": "Failed to update author.",
+    "titleUpdateSuccess": "Title updated successfully.",
+    "titleUpdateError": "Failed to update title.",
+    "volumeUpdateSuccess": "Volume updated successfully.",
+    "volumeUpdateError": "Failed to update volume.",
+    "visibilityUpdated": "Book made {{visibility}}.",
+    "enterContent": "Enter content..."
+  },
+  "book": {
+    "volume": "Volume {{volume}}",
+    "pagesCount": "{{count}} pages"
+  },
+  "app": {
+    "name": "Kitabim.AI",
+    "tagline": "Powerful AI Library",
+    "welcome": "Welcome to Uyghur Library and Knowledge World",
+    "footer": {
+      "text": "Uyghur Electronic Library - Combining Knowledge and Culture with Artificial Intelligence",
+      "copyright": "All Rights Reserved"
+    }
+  },
+  "nav": {
+    "home": "Home",
+    "library": "Public Library",
+    "globalChat": "Global Assistant",
+    "joinUs": "Join Us",
+    "admin": "Admin",
+    "addBook": "Add Book",
+    "switchLanguage": "Switch Language"
+  },
+  "home": {
+    "searchPlaceholder": "Search books, authors or topics...",
+    "topCategories": "Top Categories",
+    "searchResults": "Search Results",
+    "resultsFor": "Results for",
+    "totalBooks": "books"
+  },
+  "library": {
+    "title": "Public Library",
+    "subtitle": "All treasures in Kitabim system",
+    "systemStatus": "System Status",
+    "active": "Active",
+    "empty": {
+      "title": "Library is currently empty",
+      "message": "There are no books here yet. Try exploring other pages."
+    },
+    "loadingMore": "Loading more books...",
+    "searchPlaceholder": "Search books..."
+  },
+  "bookCard": {
+    "ready": "Ready",
+    "ocr_processing": "OCR Processing",
+    "ocr_done": "OCR Done",
+    "chunked": "Waiting for Embedding",
+    "indexing": "Indexing",
+    "failed": "Failed",
+    "pending": "Pending",
+    "error": "Error",
+    "public": "Public",
+    "private": "Private",
+    "category": "Category",
+    "pipeline": {
+      "ocr": "OCR",
+      "chunking": "Chunking",
+      "embedding": "Embedding",
+      "ready": "Ready"
+    }
+  },
+  "chat": {
+    "chat": "Chat",
+    "title": "Global Assistant",
+    "subtitle": "Ask questions about all books",
+    "globalAssistant": "Global Assistant",
+    "sidebarSubtitle": "Chat by content",
+    "pageNumber": "Page: {{page}}",
+    "allBooks": "All Books",
+    "libraryBookCount": "There are {{count}} books in the library",
+    "welcome": {
+      "title": "Welcome to AI Assistant",
+      "message": "I can compare all books in the library and provide the best answer to your question",
+      "disclaimer": "My answers are completely based on content of the books, if it doesn't match with your political view, please be patient with me."
+    },
+    "bookAssistant": "Book Assistant",
+    "bookAssistantWelcome": "Hello! I can help you with questions about this book. What would you like to ask?",
+    "you": "You",
+    "ai": "Kitabim.AI",
+    "inputPlaceholder": "Type your question here...",
+    "inputPlaceholderBook": "Type your question...",
+    "inputPlaceholderWithLimit": "Type your question... ({{usage}}/{{limit}} used)",
+    "limitReached": "Daily chat limit reached. Please try again tomorrow.",
+    "usageInfo": "Messages used: {{usage}} of {{limit}}",
+    "referenceTitle": "Reference Content",
+    "noContentFound": "No content found."
+  },
+  "reader": {
+    "reading": "Reading",
+    "title": "Reader",
+    "close": "Close",
+    "fontSize": "Font Size",
+    "spellCheck": "Spell Check",
+    "editBook": "Edit Book",
+    "editPage": "Edit Page",
+    "pageNumber": "Page Number",
+    "next": "Next",
+    "previous": "Previous",
+    "status": "Status",
+    "ready": "Ready",
+    "pageCount": "Page Count",
+    "category": "Category",
+    "save": "Save",
+    "cancel": "Cancel",
+    "verified": "Verified",
+    "activeRecognizing": "Actively recognizing...",
+    "goToPage": "Go to Page {{page}}",
+    "reprocess": {
+      "title": "Reprocess Page",
+      "message": "This page has your edits. Reprocessing will lose them. Are you sure?",
+      "confirm": "Reprocess"
+    }
+  },
+  "admin": {
+    "title": "Administration",
+    "booksLabel": "Books",
+    "usersLabel": "Users",
+    "statsLabel": "Statistics",
+    "configLabel": "Settings",
+    "contactsLabel": "Contacts",
+    "bookManagement": "Book Management",
+    "userManagement": "User Management",
+    "systemConfigLabel": "System Config",
+    "stats": {
+      "title": "System Statistics",
+      "totalBooks": "Total Books",
+      "readyBooks": "Ready Books",
+      "llmAvailable": "LLM Available",
+      "llmUnavailable": "LLM Unavailable",
+      "processing": "Processing",
+      "bookOcrProcessing": "OCR Processing",
+      "pageOcrProcessing": "OCR Processing",
+      "pageChunked": "Waiting for Embedding",
+      "bookIndexing": "Indexing",
+      "pageIndexing": "Indexing",
+      "jobRunning": "Running",
+      "users": "Users",
+      "ready": "Ready",
+      "ocrDone": "OCR Done (not indexed)",
+      "error": "Error",
+      "pending": "Pending",
+      "bookPending": "Pending",
+      "pagePending": "Pending",
+      "booksByStatus": "Books by Status",
+      "pageStats": "Page Statistics",
+      "totalPages": "Total Pages",
+      "indexedPages": "Indexed Pages",
+      "unindexedPages": "Unindexed Pages",
+      "errorBooks": "Error Books",
+      "errorPages": "Error Pages",
+      "jobStats": "Job Statistics",
+      "totalJobs": "Total Jobs",
+      "jobSucceeded": "Succeeded",
+      "jobFailed": "Failed",
+      "jobSkipped": "Skipped",
+      "jobQueued": "Queued",
+      "jobRetrying": "Retrying"
+    },
+    "contacts": {
+      "title": "Contact Submissions",
+      "subtitle": "Messages from the Join Us page",
+      "name": "Name",
+      "email": "Email",
+      "interest": "Interest",
+      "message": "Message",
+      "status": "Status",
+      "createdAt": "Date",
+      "filterAll": "All",
+      "filterNew": "New",
+      "filterReviewed": "Reviewed",
+      "filterContacted": "Contacted",
+      "filterArchived": "Archived",
+      "statusNew": "New",
+      "statusReviewed": "Reviewed",
+      "statusContacted": "Contacted",
+      "statusArchived": "Archived",
+      "interestEditor": "Editor",
+      "interestDeveloper": "Developer",
+      "interestOther": "Other",
+      "loading": "Loading...",
+      "noSubmissions": "No contact submissions yet",
+      "error": "Failed to load submissions"
+    },
+    "table": {
+      "name": "Name",
+      "author": "Author",
+      "category": "Category",
+      "pageCount": "Page Count",
+      "status": "Status",
+      "actions": "Actions",
+      "view": "View",
+      "edit": "Edit",
+      "delete": "Delete",
+      "reindex": "Reindex",
+      "resetFailed": "Reset Failed Pages",
+      "showing": "Showing",
+      "email": "Email",
+      "role": "Role",
+      "joinedDate": "Joined Date",
+      "admin": "Admin",
+      "editor": "Editor",
+      "reader": "Reader",
+      "active": "Active",
+      "suspended": "Suspended",
+      "systemActive": "System Node Active",
+      "managementSystem": "Kitabim Management System",
+      "manageBooks": "Manage books and indexes",
+      "uploading": "File is being uploaded to server",
+      "bookName": "Book Name",
+      "progress": "Progress",
+      "makePublic": "Make Public",
+      "makePrivate": "Make Private",
+      "recognizing": "Recognizing",
+      "waiting": "Waiting"
+    },
+    "categories": {
+      "title": "Categories",
+      "add": "Add Category...",
+      "existingCategories": "Existing Categories",
+      "history": "History",
+      "literature": "Literature",
+      "philosophy": "Philosophy",
+      "religion": "Religious Studies",
+      "linguistics": "Linguistics",
+      "sociology": "Sociology"
+    },
+    "filters": {
+      "all": "All",
+      "type": "Type"
+    },
+    "users": {
+      "title": "User Management",
+      "total": "Total {{count}} users",
+      "admin": "Admin",
+      "editor": "Editor",
+      "reader": "Reader",
+      "unknown": "Unknown",
+      "active": "Active",
+      "suspended": "Suspended",
+      "allRoles": "All Roles",
+      "allStatuses": "All Statuses",
+      "admins": "Admins",
+      "editors": "Editors",
+      "readers": "Readers",
+      "user": "User",
+      "role": "Role",
+      "status": "Status",
+      "joinedDate": "Joined Date",
+      "lastLogin": "Last Login",
+      "notFound": "No users found",
+      "accessRequired": "Admin access required",
+      "accessRequiredDetail": "You need admin privileges to manage users.",
+      "loadError": "Failed to load users",
+      "roleUpdateError": "Failed to update role",
+      "statusUpdateError": "Failed to update status",
+      "pagination": "Showing {{start}} to {{end}} of {{total}} users",
+      "searchPlaceholder": "Search users (name or email)...",
+      "disable": "Disable User",
+      "enable": "Enable User",
+      "cannotEditSelf": "Cannot edit your own account"
+    },
+    "systemConfig": {
+      "title": "System Configuration",
+      "subtitle": "Manage system settings",
+      "add": "Add Configuration",
+      "createNew": "Create New Configuration",
+      "key": "Key",
+      "value": "Value",
+      "description": "Description",
+      "actions": "Actions",
+      "empty": "No configurations found",
+      "emptyDescription": "Create your first system configuration to get started",
+      "circuitBreaker": {
+        "title": "Circuit Breaker Status",
+        "overallStatus": "Overall Status",
+        "available": "Available",
+        "unavailable": "Unavailable",
+        "textLlm": "Text LLM",
+        "embeddings": "Embeddings",
+        "failures": "Failures",
+        "opensFor": "Opens for",
+        "openedFor": "Opened for",
+        "reset": "Reset (Close) Circuit Breaker",
+        "forceOpen": "Force Open (Stop Processing)",
+        "confirmForceOpen": "Are you sure you want to manually open the circuit breaker? This will stop all LLM processing.",
+        "states": {
+          "closed": "Closed",
+          "open": "Open",
+          "half_open": "Half-Open"
+        }
+      }
+    }
+  },
+  "spellCheck": {
+    "title": "Spell Check",
+    "subtitle": "AI-Powered Correction",
+    "checking": "Checking...",
+    "analyzing": "Analyzing spellings...",
+    "runCheck": "Run Spell Check",
+    "clickTip": "Click the button above to start checking",
+    "noErrors": "No errors found!",
+    "noErrorsDetail": "The text on this page looks correct.",
+    "errorsCount": "Total {{count}} errors found",
+    "confidence": "Confidence: {{percent}}%",
+    "suggestion": "Suggested Correction",
+    "ignore": "Ignore",
+    "applied": "Corrected",
+    "ignored": "Ignored",
+    "apply": "Apply"
+  },
+  "pagination": {
+    "previous": "Previous",
+    "next": "Next",
+    "showingLabel": "Show:",
+    "showing": "Showing",
+    "of": "of"
+  },
+  "suggestions": {
+    "title": "Category",
+    "author": "Author",
+    "book": "Book"
+  },
+  "notifications": {
+    "bookDeleted": "Book deleted",
+    "bookUpdated": "Book updated",
+    "ocrStarted": "OCR started",
+    "pageUpdated": "Page updated",
+    "error": "An error occurred"
+  },
+  "modal": {
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "ok": "Got it",
+    "deleteConfirm": "Are you sure you want to delete?",
+    "uploadError": {
+      "title": "Upload Error",
+      "message": "Error uploading document: {{error}}"
+    },
+    "resetFailed": {
+      "title": "Reset Failed Pages",
+      "message": "This will reset all exhausted-retry pages back to the OCR step so the worker can try again. Continue?",
+      "confirm": "Reset Failed Pages"
+    },
+    "resetFailedError": {
+      "title": "Reset Error",
+      "message": "Failed to reset failed pages. Please try again."
+    },
+    "reOcrError": {
+      "title": "Re-OCR Error",
+      "message": "Failed to start re-OCR for this page. Please try again."
+    },
+    "reindex": {
+      "title": "Confirm Re-Index",
+      "message": "Are you sure you want to re-chunk and re-embed all pages in this book? This is useful for model upgrades or fixing search issues. Existing content will be preserved.",
+      "confirm": "Re-Index Book"
+    },
+    "reindexError": {
+      "title": "Re-Index Error",
+      "message": "Failed to start re-indexing. Please try again."
+    },
+    "updateError": {
+      "title": "Update Error",
+      "message": "Failed to save page changes. Please try again."
+    },
+    "loadError": {
+      "title": "Load Error",
+      "message": "Failed to load book content. Please try again."
+    },
+    "saveError": {
+      "title": "Save Error",
+      "message": "Failed to save global changes. Please try again."
+    },
+    "delete": {
+      "title": "Confirm Deletion",
+      "message": "Are you sure you want to delete this book? This will permanently remove it from the global library platform.",
+      "confirm": "Delete Permanently"
+    },
+    "visibilityError": {
+      "title": "Visibility Error",
+      "message": "Failed to update book visibility. Please try again."
+    }
+  },
+  "auth": {
+    "signIn": "Sign In",
+    "loginWithGoogle": "Login with Google",
+    "loginWithFacebook": "Login with Facebook",
+    "loginWithTwitter": "Login with X",
+    "loggingIn": "Logging in...",
+    "logout": "Logout",
+    "yourRole": "Your Role:"
+  },
+  "joinUs": {
+    "hero": {
+      "badge": "Join Our Mission",
+      "title": "Together We Build Kitabim",
+      "subtitle": "Help us preserve and digitize Uyghur literature for future generations"
+    },
+    "whoWeAre": {
+      "title": "Who We Are",
+      "paragraph1": "Kitabim.AI is a community-driven platform dedicated to preserving, digitizing, and making accessible Uyghur books and literature. We combine cutting-edge AI technology with human expertise to create the largest digital Uyghur library.",
+      "paragraph2": "Our mission is to ensure that Uyghur culture, knowledge, and literary heritage are preserved for future generations. We believe that access to knowledge in one's native language is a fundamental right.",
+      "paragraph3": "We are volunteers, developers, linguists, and book lovers working together to build something meaningful. Join us in this important mission!"
+    },
+    "spellingMistakes": {
+      "title": "Why Do Books Have Spelling Mistakes?",
+      "paragraph1": "Our books are digitized using Optical Character Recognition (OCR) technology powered by AI. While OCR has improved significantly, it's not perfect—especially with Uyghur script which has unique characteristics and multiple writing styles.",
+      "paragraph2": "Old books, faded text, different fonts, and printing variations can confuse OCR systems. That's where human editors come in! Our community of volunteer editors carefully review and correct these texts to ensure accuracy.",
+      "paragraph3": "Every correction you make helps improve our AI models and makes these books more accessible to everyone. Your contribution matters!"
+    },
+    "smartLibrary": {
+      "title": "Smart Library & Chat",
+      "paragraph1": "Our platform is not just for reading books. We have implemented a Retrieval-Augmented Generation (RAG) based knowledge system that can answer any questions based on the factual knowledge within the books.",
+      "paragraph2": "With our 'Smart Chat' feature, you can search for information across all books in the library and chat directly with an intelligent AI assistant in your native language."
+    },
+    "howToHelp": {
+      "title": "How You Can Help",
+      "subtitle": "Every contribution, big or small, makes a difference",
+      "editor": {
+        "title": "Join as Editor",
+        "description": "Help us correct spelling mistakes and improve book quality. No technical skills required—just fluency in Uyghur and attention to detail.",
+        "benefit1": "Review and correct OCR errors",
+        "benefit2": "Contribute to preserving Uyghur literature",
+        "benefit3": "Join a community of passionate volunteers",
+        "button": "Become an Editor"
+      },
+      "developer": {
+        "title": "Join Dev Team",
+        "description": "Help us build mobile apps, improve our platform, and develop new features. We use React, Python, and modern AI technologies.",
+        "benefit1": "Work with React Native, FastAPI, and AI",
+        "benefit2": "Build features that impact thousands",
+        "benefit3": "Collaborate with talented developers",
+        "button": "Join Development"
+      },
+      "donate": {
+        "title": "Support Us",
+        "description": "Help us cover server costs, AI API usage, and infrastructure expenses. Your donation keeps this platform free for everyone.",
+        "benefit1": "Keep the platform free and accessible",
+        "benefit2": "Support faster book digitization",
+        "benefit3": "Help us scale to more books",
+        "button": "Make a Donation",
+        "comingSoon": "Donation system coming soon! Thank you for your interest in supporting Kitabim.AI"
+      }
+    },
+    "contact": {
+      "title": "Get in Touch",
+      "description": "Have questions or want to learn more? We'd love to hear from you!",
+      "button": "Contact Us",
+      "github": "View on GitHub",
+      "emailLabel": "Our email address:"
+    },
+    "contactModal": {
+      "title": "Contact Us",
+      "interest": "I'm interested in:",
+      "interestEditor": "Becoming an Editor",
+      "interestDeveloper": "Joining Development Team",
+      "interestOther": "Other/General Inquiry",
+      "name": "Your Name",
+      "namePlaceholder": "Enter your name",
+      "email": "Email Address",
+      "emailPlaceholder": "your.email@example.com",
+      "message": "Message",
+      "messagePlaceholder": "Tell us about yourself and how you'd like to help...",
+      "submit": "Send Message",
+      "submitting": "Sending...",
+      "successTitle": "Thank You!",
+      "successMessage": "We have received your message and will respond soon.",
+      "errorMessage": "Failed to send message. Please try again.",
+      "validation": {
+        "nameRequired": "Name is required",
+        "emailRequired": "Email is required",
+        "emailInvalid": "Please enter a valid email address",
+        "messageRequired": "Message is required",
+        "messageMinLength": "Message must be at least 10 characters long"
+      }
+    }
+  }
+}

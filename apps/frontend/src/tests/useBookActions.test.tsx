@@ -8,8 +8,7 @@ vi.mock('../services/persistenceService', () => ({
   PersistenceService: {
     uploadPdf: vi.fn(),
     reprocessBook: vi.fn(),
-    retryFailedOcr: vi.fn(),
-    startOcr: vi.fn(),
+    resetFailedPages: vi.fn(),
     revertBook: vi.fn(),
     getBookById: vi.fn(),
     saveBookGlobally: vi.fn(),
@@ -23,7 +22,7 @@ vi.mock('../services/persistenceService', () => ({
 global.fetch = vi.fn() as any;
 
 const mockBook: Book = {
-  id: '1', title: 'T', author: 'A', totalPages: 1, pages: [{ pageNumber: 1, status: 'completed' }], status: 'ready', uploadDate: new Date(), lastUpdated: new Date(), contentHash: 'h'
+  id: '1', title: 'T', author: 'A', totalPages: 1, pages: [{ pageNumber: 1, status: 'ocr_done' }], status: 'ready', uploadDate: new Date(), lastUpdated: new Date(), contentHash: 'h'
 };
 
 beforeEach(() => {
@@ -109,24 +108,24 @@ test('useBookActions handles handleDeleteBook', async () => {
   expect(PersistenceService.deleteBook).toHaveBeenCalledWith('1');
 });
 
-test('useBookActions handles start OCR and page reset', async () => {
-  const setBooks = vi.fn();
+test('useBookActions handles reset failed pages', async () => {
+  const setModal = vi.fn();
   const refreshLibrary = vi.fn();
-  const { result } = renderHook(() => useBookActions(refreshLibrary, setBooks, vi.fn(), vi.fn(), vi.fn()));
+  (PersistenceService.resetFailedPages as any).mockResolvedValue({ status: 'reset', count: 3 });
+  const { result } = renderHook(() => useBookActions(refreshLibrary, vi.fn(), vi.fn(), vi.fn(), setModal));
 
-  await act(async () => {
-    await result.current.handleStartOcr('1', 'local');
+  act(() => {
+    result.current.handleResetFailedPages('1');
   });
-  expect(PersistenceService.startOcr).toHaveBeenCalledWith('1', 'local');
-  expect(setBooks).toHaveBeenCalled();
 
-  const fetchMock = vi.fn().mockResolvedValue({ ok: true });
-  // @ts-expect-error test mock
-  global.fetch = fetchMock;
+  expect(setModal).toHaveBeenCalledWith(expect.objectContaining({ type: 'confirm' }));
+
+  const onConfirm = setModal.mock.calls[0][0].onConfirm;
   await act(async () => {
-    await result.current.handleReProcessPage('1', 2);
+    await onConfirm();
   });
-  expect(fetchMock).toHaveBeenCalledWith('/api/books/1/pages/2/reset/', { method: 'POST' });
+  expect(PersistenceService.resetFailedPages).toHaveBeenCalledWith('1');
+  expect(refreshLibrary).toHaveBeenCalled();
 });
 
 test('useBookActions updates page text and saves corrections', async () => {
@@ -153,8 +152,8 @@ test('useBookActions updates page text and saves corrections', async () => {
     author: 'A',
     totalPages: 2,
     pages: [
-      { pageNumber: 1, text: 'a', status: 'completed' },
-      { pageNumber: 2, text: 'b', status: 'completed' }
+      { pageNumber: 1, text: 'a', status: 'ocr_done' },
+      { pageNumber: 2, text: 'b', status: 'ocr_done' }
     ],
     status: 'ready',
     uploadDate: new Date(),

@@ -1,62 +1,35 @@
+"""
+Shared ARQ worker lifecycle hooks.
+
+Imported by services/worker/worker/worker.py.
+All job functions live in services/worker/worker/ (scanners and jobs).
+"""
 from __future__ import annotations
 
-from typing import Optional
-
-from arq import create_pool
-from arq.connections import RedisSettings
+import logging
 
 from app.core.config import settings
-from app.db.mongodb import db_manager
-from app.jobs import create_or_reset_job, update_job_status
-from app.services.pdf_service import process_pdf_task
+from app.db import session as db_session
+from app.db.session import init_db, close_db
 from app.langchain import configure_langchain
-from app.utils.observability import configure_logging
-_POOL = None
+from app.utils.observability import configure_logging, log_json
 
-
-def _redis_settings() -> RedisSettings:
-    return RedisSettings.from_dsn(settings.redis_url)
-
-
-async def _get_pool():
-    global _POOL
-    if _POOL is None:
-        _POOL = await create_pool(_redis_settings())
-    return _POOL
-
-
-async def enqueue_pdf_processing(
-    book_id: str,
-    reason: str = "requested",
-    background_tasks=None,
-) -> dict:
-    db = db_manager.db
-    job_key = f"process_pdf:{book_id}"
-    job = await create_or_reset_job(db, job_key, "process_pdf", book_id, {"reason": reason})
-
-    redis = await _get_pool()
-    await redis.enqueue_job("process_pdf_job", book_id=book_id, job_key=job_key)
-    return {"status": "queued", "jobKey": job_key}
+logger = logging.getLogger("app.queue")
 
 
 async def worker_startup(ctx):
-    configure_logging()
+    log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
+    configure_logging(level=log_level)
     configure_langchain()
-    await db_manager.connect_to_storage()
+    await init_db()
+
+    try:
+        from app.db.repositories.seeds import seed_system_configs
+        async with db_session.async_session_factory() as session:
+            await seed_system_configs(session)
+    except Exception as exc:
+        log_json(logger, logging.ERROR, "Worker system config seeding failed", error=str(exc))
 
 
 async def worker_shutdown(ctx):
-    await db_manager.close_storage()
-
-
-async def process_pdf_job(ctx, book_id: str, job_key: Optional[str] = None):
-    try:
-        await process_pdf_task(book_id, job_key, raise_on_error=True)
-    except Exception as exc:
-        job_try = ctx.get("job_try", 1)
-        if job_key:
-            if job_try < settings.queue_max_retries:
-                await update_job_status(db_manager.db, job_key, "retrying", str(exc))
-            else:
-                await update_job_status(db_manager.db, job_key, "failed", str(exc))
-        raise
+    await close_db()

@@ -1,0 +1,47 @@
+# syntax=docker/dockerfile:1.4
+# Stage 1: Builder
+FROM python:3.13-slim AS builder
+
+WORKDIR /build
+
+# Install build dependencies
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+  apt-get update && apt-get install -y \
+    gcc \
+    g++
+
+# Install Python dependencies separately for better caching
+COPY services/backend/requirements.txt .
+COPY services/backend/requirements.postgres.txt .
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+  pip install --user -r requirements.txt -r requirements.postgres.txt
+
+# Stage 2: Final Image
+FROM python:3.13-slim
+
+WORKDIR /app
+
+# Install runtime dependencies
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+  apt-get update && apt-get install -y poppler-utils
+
+# Copy installed packages from builder
+COPY --from=builder /root/.local /root/.local
+ENV PATH=/root/.local/bin:$PATH
+
+# Copy shared backend-core package
+COPY packages/backend-core /app/packages/backend-core
+
+# Copy worker service code
+COPY services/worker /app/services/worker
+
+# Shared code on PYTHONPATH; worker service code alongside it
+ENV PYTHONPATH=/app/packages/backend-core:/app/services/worker
+
+WORKDIR /app/services/worker
+
+# Run the worker
+CMD ["arq", "worker.WorkerSettings"]

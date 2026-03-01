@@ -48,7 +48,7 @@ test('App renders and navigates between views', () => {
   mockUseBookActions.mockReturnValue({
     isCheckingGlobal: false,
     handleFileUpload: vi.fn(),
-    handleStartOcr: vi.fn(),
+    handleResetFailedPages: vi.fn(),
     handleReProcessPage: vi.fn(),
     handleRevertBook: vi.fn(),
     handleUpdatePage: vi.fn(),
@@ -84,7 +84,7 @@ test('App opens reader from library click', () => {
     title: 'Reader Book',
     author: 'Author',
     totalPages: 1,
-    pages: [{ pageNumber: 1, text: 'Page', status: 'completed' }],
+    pages: [{ pageNumber: 1, text: 'Page', status: 'ocr_done' }],
     status: 'ready',
     uploadDate: new Date(),
     lastUpdated: new Date(),
@@ -119,7 +119,7 @@ test('App opens reader from library click', () => {
   mockUseBookActions.mockImplementation((_refresh: any, _setBooks: any, setSelectedBook: any, setView: any) => ({
     isCheckingGlobal: false,
     handleFileUpload: vi.fn(),
-    handleStartOcr: vi.fn(),
+    handleResetFailedPages: vi.fn(),
     handleReProcessPage: vi.fn(),
     handleRevertBook: vi.fn(),
     handleUpdatePage: vi.fn(),
@@ -171,7 +171,7 @@ test('App shows loading overlay', () => {
   mockUseBookActions.mockReturnValue({
     isCheckingGlobal: false,
     handleFileUpload: vi.fn(),
-    handleStartOcr: vi.fn(),
+    handleResetFailedPages: vi.fn(),
     handleReProcessPage: vi.fn(),
     handleRevertBook: vi.fn(),
     handleUpdatePage: vi.fn(),

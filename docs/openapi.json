@@ -124,9 +124,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -218,9 +216,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -258,9 +254,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -341,9 +335,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -383,9 +375,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -434,9 +424,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -497,9 +485,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -539,9 +525,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -582,9 +566,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -634,9 +616,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -698,9 +678,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           },
@@ -767,9 +745,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-
-                }
+                "schema": {}
               }
             }
           }
@@ -856,12 +832,12 @@
             ],
             "title": "Content"
           },
-          "results": {
+          "pages": {
             "items": {
-              "$ref": "#/components/schemas/ExtractionResult"
+              "$ref": "#/components/schemas/Page"
             },
             "type": "array",
-            "title": "Results"
+            "title": "Pages"
           },
           "status": {
             "type": "string",
@@ -923,7 +899,7 @@
           "title",
           "author",
           "totalPages",
-          "results",
+          "pages",
           "status",
           "uploadDate"
         ],
@@ -980,7 +956,7 @@
         ],
         "title": "ChatResponse"
       },
-      "ExtractionResult": {
+      "Page": {
         "properties": {
           "pageNumber": {
             "type": "integer",
@@ -1023,7 +999,7 @@
           "pageNumber",
           "status"
         ],
-        "title": "ExtractionResult"
+        "title": "Page"
       },
       "HTTPValidationError": {
         "properties": {

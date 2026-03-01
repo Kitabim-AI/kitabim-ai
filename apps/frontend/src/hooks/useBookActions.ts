@@ -2,15 +2,19 @@ import React, { useState, useRef } from 'react';
 import { Book } from '@shared/types';
 import { PersistenceService } from '../services/persistenceService';
 import { useNotification } from '../context/NotificationContext';
+import { useI18n } from '../i18n/I18nContext';
 
 export const useBookActions = (
   refreshLibrary: () => Promise<void>,
   setBooks: (books: Book[] | ((prev: Book[]) => Book[])) => void,
   setSelectedBook: (book: Book | null | ((prev: Book | null) => Book | null)) => void,
   setView: (view: any) => void,
-  setModal: (modal: any) => void
+  setModal: (modal: any) => void,
+  setChatMessages: (messages: any[]) => void,
+  setCurrentPage: (page: number) => void
 ) => {
   const { addNotification } = useNotification();
+  const { t } = useI18n();
   const [isCheckingGlobal, setIsCheckingGlobal] = useState(false);
   const cancelledBooks = useRef<Set<string>>(new Set());
 
@@ -25,111 +29,46 @@ export const useBookActions = (
       await PersistenceService.uploadPdf(file);
       await refreshLibrary();
       setIsCheckingGlobal(false);
-      addNotification("Document uploaded successfully.", "success");
+      addNotification(t('common.uploadSuccess'), "success");
     } catch (err) {
       setIsCheckingGlobal(false);
       const errorMsg = err instanceof Error ? err.message : "An unknown error occurred.";
       setModal({
         isOpen: true,
-        title: "Upload Error",
-        message: `Error uploading document: ${errorMsg}`,
+        title: t('modal.uploadError.title'),
+        message: t('modal.uploadError.message', { error: errorMsg }),
         type: 'alert'
       });
     }
   };
 
-  const handleStartOcr = (bookId: string) => {
+  const handleResetFailedPages = (bookId: string) => {
     setModal({
       isOpen: true,
-      title: "Confirm OCR Start",
-      message: `Are you sure you want to start Gemini OCR? This will analyze the document and extract text.`,
+      title: t('modal.resetFailed.title'),
+      message: t('modal.resetFailed.message'),
       type: 'confirm',
-      confirmText: "Start Processing",
+      confirmText: t('modal.resetFailed.confirm'),
       onConfirm: async () => {
         try {
-          setBooks(prev => prev.map(b => b.id === bookId ? { ...b, status: 'processing', processingStep: 'ocr' } : b));
-          await PersistenceService.startOcr(bookId);
+          const result = await PersistenceService.resetFailedPages(bookId);
           await refreshLibrary();
           setModal((prev: any) => ({ ...prev, isOpen: false }));
-          addNotification("OCR process started successfully.", "success");
+          if (result.count === 0) {
+            addNotification(t('common.noFailedPages'), "info");
+          } else {
+            addNotification(t('common.resetFailedSuccess', { count: result.count }), "success");
+          }
         } catch (err) {
-          addNotification("Failed to start OCR process.", "error");
           setModal({
             isOpen: true,
-            title: "Process Error",
-            message: "Failed to start OCR. Please try again.",
+            title: t('modal.resetFailedError.title'),
+            message: t('modal.resetFailedError.message'),
             type: 'alert'
           });
         }
       }
     });
-  };
-
-  const handleRetryFailedOcr = async (book: Book) => {
-    const hasFailedPages = (book.errorCount ?? 0) > 0 || (book.pages?.some(r => r.status === 'error') ?? false);
-
-    if (!hasFailedPages && book.status !== 'error') {
-      setModal({
-        isOpen: true,
-        title: "No Failed Pages",
-        message: "This book has no failed OCR pages to retry.",
-        type: 'alert'
-      });
-      return;
-    }
-
-    const effectiveProvider = 'gemini';
-    let previousSelected: Book | null = null;
-    let previousBooks: Book[] | null = null;
-
-    setSelectedBook(prev => {
-      previousSelected = prev;
-      if (!prev || prev.id !== book.id) return prev;
-      return {
-        ...prev,
-        status: 'processing',
-        processingStep: 'ocr',
-        lastUpdated: new Date(),
-        pages: (prev.pages || []).map(r =>
-          r.status === 'error'
-            ? { ...r, status: 'pending', text: '', error: undefined, isVerified: false }
-            : r
-        ),
-      };
-    });
-
-    setBooks(prev => {
-      previousBooks = prev;
-      return prev.map(b => {
-        if (b.id !== book.id) return b;
-        return {
-          ...b,
-          status: 'processing',
-          processingStep: 'ocr',
-          lastUpdated: new Date(),
-          pages: (b.pages || []).map(r =>
-            r.status === 'error'
-              ? { ...r, status: 'pending', text: '', error: undefined, isVerified: false }
-              : r
-          ),
-        };
-      });
-    });
-
-    try {
-      await PersistenceService.retryFailedOcr(book.id);
-      refreshLibrary();
-    } catch (err) {
-      if (previousSelected) setSelectedBook(previousSelected);
-      if (previousBooks) setBooks(previousBooks);
-      console.error("Failed to retry OCR", err);
-      setModal({
-        isOpen: true,
-        title: "Retry Error",
-        message: "Failed to retry OCR for failed pages. Please try again.",
-        type: 'alert'
-      });
-    }
   };
 
   const handleReProcessPage = async (bookId: string, pageNum: number) => {
@@ -141,7 +80,7 @@ export const useBookActions = (
       if (!prev || prev.id !== bookId) return prev;
       return {
         ...prev,
-        status: 'processing',
+        status: 'ocr_processing',
         lastUpdated: new Date(),
         pages: (prev.pages || []).map(r =>
           r.pageNumber === pageNum
@@ -157,7 +96,7 @@ export const useBookActions = (
         if (b.id !== bookId) return b;
         return {
           ...b,
-          status: 'processing',
+          status: 'ocr_processing',
           lastUpdated: new Date(),
           pages: (b.pages || []).map(r =>
             r.pageNumber === pageNum
@@ -177,8 +116,8 @@ export const useBookActions = (
       console.error("Failed to reset page", err);
       setModal({
         isOpen: true,
-        title: "Re-OCR Error",
-        message: "Failed to start re-OCR for this page. Please try again.",
+        title: t('modal.reOcrError.title'),
+        message: t('modal.reOcrError.message'),
         type: 'alert'
       });
     }
@@ -189,22 +128,22 @@ export const useBookActions = (
   const handleReindexBook = (bookId: string) => {
     setModal({
       isOpen: true,
-      title: "Confirm Re-Index",
-      message: "Are you sure you want to re-chunk and re-embed all pages in this book? This is useful for model upgrades or fixing search issues. Existing content will be preserved.",
+      title: t('modal.reindex.title'),
+      message: t('modal.reindex.message'),
       type: 'confirm',
-      confirmText: "Re-Index Book",
+      confirmText: t('modal.reindex.confirm'),
       onConfirm: async () => {
         try {
           await PersistenceService.reindexBook(bookId);
-          setBooks(prev => prev.map(b => b.id === bookId ? { ...b, status: 'processing', processingStep: 'rag' } : b));
+          setBooks(prev => prev.map(b => b.id === bookId ? { ...b, status: 'ocr_processing', processingStep: 'rag' } : b));
           await refreshLibrary();
           setModal((prev: any) => ({ ...prev, isOpen: false }));
-          addNotification("Book re-indexing started.", "success");
+          addNotification(t('common.reindexStarted'), "success");
         } catch (err) {
           setModal({
             isOpen: true,
-            title: "Re-Index Error",
-            message: "Failed to start re-indexing. Please try again.",
+            title: t('modal.reindexError.title'),
+            message: t('modal.reindexError.message'),
             type: 'alert'
           });
         }
@@ -215,45 +154,66 @@ export const useBookActions = (
   const handleUpdatePage = async (bookId: string, pageNum: number, newText: string, setEditingPageNum: any) => {
     try {
       await PersistenceService.updatePage(bookId, pageNum, newText);
-      setEditingPageNum(null);
+
       setSelectedBook(prev => {
         if (!prev || prev.id !== bookId) return prev;
+
+        const existingPages = prev.pages || [];
+        const pageExists = existingPages.some(r => r.pageNumber === pageNum);
+
+        let newPages;
+        if (pageExists) {
+          newPages = existingPages.map(r =>
+            r.pageNumber === pageNum ? { ...r, text: newText, isVerified: true, status: 'ocr_done' } : r
+          );
+        } else {
+          newPages = [...existingPages, {
+            pageNumber: pageNum,
+            text: newText,
+            isVerified: true,
+            status: 'ocr_done'
+          }].sort((a, b) => a.pageNumber - b.pageNumber);
+        }
+
         return {
           ...prev,
-          pages: (prev.pages || []).map(r => r.pageNumber === pageNum ? { ...r, text: newText, isVerified: true } : r),
+          pages: newPages as any,
           lastUpdated: new Date()
         };
       });
-      refreshLibrary();
-      addNotification(`Page ${pageNum} updated.`, "success");
+
+      setEditingPageNum(null);
+      await refreshLibrary();
+      addNotification(t('common.pageUpdated', { pageNum }), "success");
     } catch (err) {
       console.error("Failed to update page", err);
       setModal({
         isOpen: true,
-        title: "Update Error",
-        message: "Failed to save page changes. Please try again.",
+        title: t('modal.updateError.title'),
+        message: t('modal.updateError.message'),
         type: 'alert'
       });
     }
   };
 
-  const openReader = async (book: Book, setEditContent: any, setChatMessages: any, setCurrentPage: any) => {
+  const openReader = async (book: Book) => {
     try {
       const fullBook = await PersistenceService.getBookById(book.id);
       if (!fullBook) throw new Error("Could not load book content");
 
-      const content = await PersistenceService.getBookContent(book.id);
+      // Ensure pages is an array
+      if (!fullBook.pages) fullBook.pages = [];
 
       setSelectedBook(fullBook);
-      setEditContent(content || '');
       setChatMessages([]);
       setView('reader');
       setCurrentPage(1);
     } catch (err) {
+      console.error("Error opening reader:", err);
       setModal({
         isOpen: true,
-        title: "Load Error",
-        message: "Failed to load book content. Please try again.",
+        title: t('modal.loadError.title'),
+        message: t('modal.loadError.message'),
         type: 'alert'
       });
     }
@@ -277,26 +237,17 @@ export const useBookActions = (
         });
       }
 
-      // 2. Identify changes and build updated results
-      let hasChanges = false;
-      const updatedPages = (selectedBook.pages || []).map(res => {
-        const newText = newPageMap.get(res.pageNumber);
+      // 2. Build pages array directly from parsed content
+      // This ensures ALL pages from editContent are included, not just the ones in selectedBook.pages
+      const updatedPages = Array.from(newPageMap.entries()).map(([pageNumber, text]) => ({
+        pageNumber,
+        text,
+        status: 'ocr_done' as const,
+        isVerified: true
+      }));
 
-        // If marker exists and text is different, update
-        if (newText !== undefined && newText !== (res.text || "")) {
-          hasChanges = true;
-          return {
-            ...res,
-            text: newText,
-            status: 'completed' as const,
-            isVerified: true
-          };
-        }
-        // Otherwise keep original (avoids re-verifying or re-syncing unchanged pages)
-        return res;
-      });
-
-      if (!hasChanges) {
+      if (updatedPages.length === 0) {
+        addNotification(t('common.noPagesToSave'), "error");
         setIsEditing(false);
         return;
       }
@@ -310,16 +261,17 @@ export const useBookActions = (
       };
 
       await PersistenceService.saveBookGlobally(updatedBook);
+
       setSelectedBook(updatedBook);
       await refreshLibrary();
       setIsEditing(false);
-      addNotification("Global corrections saved.", "success");
+      addNotification(t('common.saveSuccess'), "success");
     } catch (err) {
       console.error("Failed to save global corrections", err);
       setModal({
         isOpen: true,
-        title: "Save Error",
-        message: "Failed to save global changes. Please try again.",
+        title: t('modal.saveError.title'),
+        message: t('modal.saveError.message'),
         type: 'alert'
       });
     }
@@ -328,10 +280,11 @@ export const useBookActions = (
   const handleDeleteBook = (bookId: string, selectedBookId: string | undefined) => {
     setModal({
       isOpen: true,
-      title: "Confirm Deletion",
-      message: "Are you sure you want to delete this book? This will permanently remove it from the global library platform.",
+      title: t('modal.delete.title'),
+      message: t('modal.delete.message'),
       type: 'confirm',
-      confirmText: "Delete Permanently",
+      confirmText: t('modal.delete.confirm'),
+      destructive: true,
       onConfirm: async () => {
         cancelledBooks.current.add(bookId);
         await PersistenceService.deleteBook(bookId);
@@ -341,7 +294,7 @@ export const useBookActions = (
           setView('library');
         }
         setModal((prev: any) => ({ ...prev, isOpen: false }));
-        addNotification("Book deleted successfully.", "success");
+        addNotification(t('common.deleteSuccess'), "success");
       }
     });
   };
@@ -353,10 +306,10 @@ export const useBookActions = (
       setBooks(prev => prev.map(b => b.id === bookId ? { ...b, tags } : b));
       setEditingBookTagsId(null);
       setEditingTagsList([]);
-      addNotification("Tags updated successfully.", "success");
+      addNotification(t('common.tagsUpdateSuccess'), "success");
     } catch (e) {
       console.error("Failed to save tags", e);
-      addNotification("Failed to update tags.", "error");
+      addNotification(t('common.tagsUpdateError'), "error");
     }
   };
 
@@ -368,10 +321,10 @@ export const useBookActions = (
       setBooks(prev => prev.map(b => b.id === bookId ? { ...b, categories } : b));
       setEditingId(null);
       setEditingList([]);
-      addNotification("Categories updated successfully.", "success");
+      addNotification(t('common.categoriesUpdateSuccess'), "success");
     } catch (e) {
       console.error("Failed to save categories", e);
-      addNotification("Failed to update categories.", "error");
+      addNotification(t('common.categoriesUpdateError'), "error");
     }
   };
 
@@ -382,10 +335,10 @@ export const useBookActions = (
       setBooks(prev => prev.map(b => b.id === bookId ? { ...b, author: trimmedAuthor } : b));
       setEditingId(null);
       setTempAuthor('');
-      addNotification("Author updated successfully.", "success");
+      addNotification(t('common.authorUpdateSuccess'), "success");
     } catch (e) {
       console.error("Failed to save author", e);
-      addNotification("Failed to update author.", "error");
+      addNotification(t('common.authorUpdateError'), "error");
     }
   };
 
@@ -397,10 +350,10 @@ export const useBookActions = (
       setBooks(prev => prev.map(b => b.id === bookId ? { ...b, title: trimmedTitle } : b));
       setEditingId(null);
       setTempTitle('');
-      addNotification("Title updated successfully.", "success");
+      addNotification(t('common.titleUpdateSuccess'), "success");
     } catch (e) {
       console.error("Failed to save title", e);
-      addNotification("Failed to update title.", "error");
+      addNotification(t('common.titleUpdateError'), "error");
     }
   };
 
@@ -422,10 +375,31 @@ export const useBookActions = (
       setBooks(prev => prev.map(b => b.id === bookId ? { ...b, volume } : b));
       setEditingId(null);
       setTempVolume('');
-      addNotification("Volume updated successfully.", "success");
+      addNotification(t('common.volumeUpdateSuccess'), "success");
     } catch (e) {
       console.error("Failed to save volume", e);
-      addNotification("Failed to update volume.", "error");
+      addNotification(t('common.volumeUpdateError'), "error");
+    }
+  };
+
+  const handleSaveBookRow = async (
+    bookId: string,
+    data: {
+      title?: string;
+      author?: string;
+      volume?: number | null;
+      categories?: string[];
+    }
+  ) => {
+    try {
+      await PersistenceService.updateBookMetadata(bookId, data);
+      setBooks(prev => prev.map(b => b.id === bookId ? { ...b, ...data } : b));
+      addNotification(t('common.saveSuccess'), "success");
+      return true;
+    } catch (err) {
+      console.error("Failed to save book metadata", err);
+      addNotification(t('common.error'), "error");
+      return false;
     }
   };
 
@@ -434,13 +408,13 @@ export const useBookActions = (
       const newVisibility = currentVisibility === 'public' ? 'private' : 'public';
       await PersistenceService.updateBookMetadata(bookId, { visibility: newVisibility });
       setBooks(prev => prev.map(b => b.id === bookId ? { ...b, visibility: newVisibility } : b));
-      addNotification(`Book made ${newVisibility}.`, "success");
+      addNotification(t('common.visibilityUpdated', { visibility: newVisibility }), "success");
     } catch (e) {
       console.error("Failed to toggle visibility", e);
       setModal({
         isOpen: true,
-        title: "Visibility Error",
-        message: "Failed to update book visibility. Please try again.",
+        title: t('modal.visibilityError.title'),
+        message: t('modal.visibilityError.message'),
         type: 'alert'
       });
     }
@@ -449,8 +423,7 @@ export const useBookActions = (
   return {
     isCheckingGlobal,
     handleFileUpload,
-    handleStartOcr,
-    handleRetryFailedOcr,
+    handleResetFailedPages,
     handleReProcessPage,
     handleReindexBook,
     handleUpdatePage,
@@ -462,6 +435,7 @@ export const useBookActions = (
     handleSaveAuthor,
     handleSaveTitle,
     handleSaveVolume,
+    handleSaveBookRow,
     handleToggleVisibility,
   };
 };

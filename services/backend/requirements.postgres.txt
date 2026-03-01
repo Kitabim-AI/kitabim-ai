@@ -1,0 +1,7 @@
+# PostgreSQL requirements - versions already in requirements.txt
+# asyncpg==0.31.0 (in main requirements.txt)
+# pgvector==0.4.2 (in main requirements.txt)
+# python-dotenv (in main requirements.txt)
+# tqdm==4.66.1 (in main requirements.txt)
+
+# No additional dependencies needed - all PostgreSQL deps are in requirements.txt

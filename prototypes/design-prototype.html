@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="ug" dir="rtl">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kitabim.AI - ئۇيغۇر ئېلېكترونلۇق كىتابخانىسى</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'UKIJ Nasq', 'ALKATIP Tor', 'Noto Naskh Arabic', 'Arabic Typesetting', 'Traditional Arabic', serif;
+      background: linear-gradient(135deg, #fef5e7 0%, #e8f6f8 50%, #f5f0fb 100%);
+      background-size: 200% 200%;
+      animation: gradientShift 20s ease infinite;
+      direction: rtl;
+      min-height: 100vh;
+      position: relative;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image:
+        radial-gradient(circle at 20% 30%, rgba(255, 193, 7, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 80% 70%, rgba(156, 39, 176, 0.06) 0%, transparent 40%),
+        radial-gradient(circle at 50% 50%, rgba(117, 197, 240, 0.05) 0%, transparent 50%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Traditional Uyghur Pattern Overlay */
+    body::after {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image:
+        repeating-linear-gradient(90deg, transparent, transparent 50px, rgba(255, 193, 7, 0.02) 50px, rgba(255, 193, 7, 0.02) 51px),
+        repeating-linear-gradient(0deg, transparent, transparent 50px, rgba(156, 39, 176, 0.02) 50px, rgba(156, 39, 176, 0.02) 51px);
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.5;
+    }
+
+    @keyframes gradientShift {
+
+      0%,
+      100% {
+        background-position: 0% 50%;
+      }
+
+      50% {
+        background-position: 100% 50%;
+      }
+    }
+
+    /* Navigation Bar - iOS Glassy Style */
+    .navbar {
+      background: rgba(255, 255, 255, 0.75);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      border-bottom: 1px solid rgba(255, 193, 7, 0.2);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow:
+        0 4px 30px rgba(117, 197, 240, 0.1),
+        0 1px 0 rgba(255, 255, 255, 0.8) inset;
+      transition: all 0.3s ease;
+      position: relative;
+    }
+
+    .navbar::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(255, 193, 7, 0.5), rgba(156, 39, 176, 0.3), transparent);
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      cursor: pointer;
+      transition: transform 0.3s ease;
+    }
+
+    .logo:hover {
+      transform: translateY(-2px);
+    }
+
+    .logo-icon {
+      background: linear-gradient(135deg, #FFD54F 0%, #FF9800 50%, #9C27B0 100%);
+      padding: 0.75rem;
+      border-radius: 16px;
+      box-shadow:
+        0 4px 20px rgba(255, 193, 7, 0.4),
+        0 8px 40px rgba(156, 39, 176, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.4);
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .logo-icon::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: repeating-conic-gradient(from 0deg at 50% 50%,
+          transparent 0deg,
+          transparent 10deg,
+          rgba(255, 255, 255, 0.1) 10deg,
+          rgba(255, 255, 255, 0.1) 20deg);
+      opacity: 0.3;
+    }
+
+    .logo:hover .logo-icon {
+      box-shadow: 0 6px 20px rgba(117, 197, 240, 0.5);
+      transform: rotate(-5deg);
+    }
+
+    .logo-icon svg {
+      width: 28px;
+      height: 28px;
+      fill: white;
+      transition: transform 0.3s ease;
+    }
+
+    .logo-text {
+      font-size: 1.75rem;
+      font-weight: bold;
+      color: #1a1a1a;
+    }
+
+    .logo-text .ai {
+      color: #75C5F0;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .nav-btn {
+      padding: 0.75rem 1.5rem;
+      border-radius: 12px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      border: none;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: #4a5568;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .nav-btn::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 0;
+      height: 0;
+      border-radius: 50%;
+      background: rgba(117, 197, 240, 0.1);
+      transform: translate(-50%, -50%);
+      transition: width 0.6s, height 0.6s;
+    }
+
+    .nav-btn:hover::before {
+      width: 300px;
+      height: 300px;
+    }
+
+    .nav-btn:hover {
+      background: #e8f4f8;
+      color: #75C5F0;
+      transform: translateY(-1px);
+    }
+
+    .nav-btn.active {
+      background: linear-gradient(135deg, #75C5F0 0%, #5AB0E5 100%);
+      color: white;
+      box-shadow: 0 4px 12px rgba(117, 197, 240, 0.3);
+    }
+
+    .nav-btn.active:hover {
+      box-shadow: 0 6px 16px rgba(117, 197, 240, 0.5);
+    }
+
+    .add-book-btn {
+      background: linear-gradient(135deg, #75C5F0 0%, #5AB0E5 100%);
+      color: white;
+      padding: 0.75rem 1.75rem;
+      border-radius: 12px;
+      font-weight: bold;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(117, 197, 240, 0.3);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .add-book-btn::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0) 100%);
+      transform: translateX(-100%);
+      transition: transform 0.6s;
+    }
+
+    .add-book-btn:hover::after {
+      transform: translateX(100%);
+    }
+
+    .add-book-btn:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 24px rgba(117, 197, 240, 0.5);
+    }
+
+    .add-book-btn:active {
+      transform: translateY(-1px);
+    }
+
+    /* User Menu */
+    .user-menu-container {
+      position: relative;
+    }
+
+    .user-avatar-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: 2px solid #75C5F0;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      overflow: hidden;
+      background: linear-gradient(135deg, #75C5F0 0%, #5AB0E5 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      font-size: 1.125rem;
+    }
+
+    .user-avatar-btn:hover {
+      transform: scale(1.1);
+      box-shadow: 0 4px 12px rgba(117, 197, 240, 0.4);
+    }
+
+    .login-btn {
+      padding: 0.75rem 1.75rem;
+      background: linear-gradient(135deg, #75C5F0 0%, #5AB0E5 100%);
+      color: white;
+      border-radius: 12px;
+      font-weight: bold;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(117, 197, 240, 0.3);
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .login-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(117, 197, 240, 0.4);
+    }
+
+    /* Status Badges on Book Cards */
+    .book-status-badge {
+      position: absolute;
+      top: 0.75rem;
+      left: 0.75rem;
+      padding: 0.375rem 0.75rem;
+      border-radius: 8px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
+      z-index: 10;
+    }
+
+    .status-processing {
+      background: rgba(59, 130, 246, 0.9);
+      color: white;
+    }
+
+    .status-ready {
+      background: rgba(16, 185, 129, 0.9);
+      color: white;
+    }
+
+    .status-pending {
+      background: rgba(245, 158, 11, 0.9);
+      color: white;
+    }
+
+    .status-error {
+      background: rgba(239, 68, 68, 0.9);
+      color: white;
+    }
+
+    @keyframes spin-slow {
+      from {
+        transform: rotate(0deg);
+      }
+
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .processing-spinner {
+      animation: spin-slow 2s linear infinite;
+    }
+
+    /* Hero Section */
+    .hero {
+      text-align: center;
+      padding: 5rem 2rem;
+      max-width: 1200px;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    .hero-title {
+      font-size: 5rem;
+      font-weight: 900;
+      color: #1a1a1a;
+      margin-bottom: 1.5rem;
+      letter-spacing: -2px;
+      text-shadow: 0 2px 4px rgba(117, 197, 240, 0.1);
+      line-height: 1.1;
+    }
+
+    .hero-title .ai {
+      background: linear-gradient(135deg, #75C5F0 0%, #5AB0E5 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      position: relative;
+    }
+
+    .hero-subtitle {
+      font-size: 1.75rem;
+      background: linear-gradient(135deg, #75C5F0 0%, #5AB0E5 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 3rem;
+      font-style: italic;
+      font-weight: 600;
+      line-height: 1.6;
+      max-width: 800px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* Search Section */
+    .search-container {
+      max-width: 800px;
+      margin: 0 auto 3rem;
+      position: relative;
+    }
+
+    .search-box {
+      width: 100%;
+      padding: 1.5rem 6rem 1.5rem 2rem;
+      border: 3px solid #75C5F0;
+      border-radius: 24px;
+      font-size: 1.125rem;
+      background: white;
+      box-shadow: 0 8px 24px rgba(117, 197, 240, 0.15);
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      direction: rtl;
+      text-align: right;
+    }
+
+    .search-box:focus {
+      outline: none;
+      box-shadow: 0 12px 40px rgba(117, 197, 240, 0.3), 0 0 0 4px rgba(117, 197, 240, 0.1);
+      border-color: #5AB0E5;
+      transform: translateY(-2px);
+    }
+
+    .search-btn {
+      position: absolute;
+      left: 1rem;
+      top: 50%;
+      transform: translateY(-50%);
+      background: linear-gradient(135deg, #75C5F0 0%, #5AB0E5 100%);
+      color: white;
+      padding: 0.875rem 2rem;
+      border-radius: 16px;
+      border: none;
+      font-weight: bold;
+      cursor: pointer;
+      font-size: 1rem;
+      box-shadow: 0 4px 12px rgba(117, 197, 240, 0.3);
+      transition: all 0.3s ease;
+    }
+
+    .search-btn:hover {
+      transform: translateY(-50%) translateY(-2px);
+      box-shadow: 0 6px 16px rgba(117, 197, 240, 0.4);
+    }
+
+    /* Categories */
+    .categories {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 4rem;
+    }
+
+    .category-tag {
+      padding: 0.75rem 1.5rem;
+      background: white;
+      border: 2px solid #e8f4f8;
+      border-radius: 20px;
+      font-weight: 600;
+      color: #4a5568;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 2px 8px rgba(117, 197, 240, 0.1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .category-tag::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #75C5F0 0%, #5AB0E5 100%);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      z-index: -1;
+    }
+
+    .category-tag:hover {
+      border-color: #75C5F0;
+      color: white;
+      transform: translateY(-4px) scale(1.05);
+      box-shadow: 0 8px 20px rgba(117, 197, 240, 0.3);
+    }
+
+    .category-tag:hover::before {
+      opacity: 1;
+    }
+
+    /* Books Grid */
+    .books-section {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 0 2rem 4rem;
+    }
+
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+      padding-bottom: 1rem;
+      border-bottom: 2px solid #e8f4f8;
+    }
+
+    .section-title {
+      font-size: 1.75rem;
+      font-weight: bold;
+      color: #1a1a1a;
+    }
+
+    .book-count {
+      font-size: 0.875rem;
+      color: #75C5F0;
+      font-weight: bold;
+      background: #e8f4f8;
+      padding: 0.5rem 1rem;
+      border-radius: 12px;
+    }
+
+    .books-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 2rem;
+    }
+
+    .book-card {
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      border-radius: 24px;
+      padding: 1.75rem;
+      box-shadow:
+        0 8px 32px rgba(255, 193, 7, 0.08),
+        0 2px 8px rgba(156, 39, 176, 0.05),
+        inset 0 1px 0 rgba(255, 255, 255, 0.8);
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      cursor: pointer;
+      border: 1px solid rgba(255, 193, 7, 0.15);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .book-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 100px;
+      height: 100px;
+      background: radial-gradient(circle, rgba(255, 193, 7, 0.1) 0%, transparent 70%);
+      opacity: 0;
+      transition: opacity 0.4s ease;
+    }
+
+    .book-card::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(135deg, rgba(255, 193, 7, 0.05) 0%, rgba(156, 39, 176, 0.05) 100%);
+      opacity: 0;
+      transition: opacity 0.4s ease;
+      pointer-events: none;
+    }
+
+    .book-card:hover::before,
+    .book-card:hover::after {
+      opacity: 1;
+    }
+
+    .book-card:hover {
+      transform: translateY(-16px) scale(1.03);
+      box-shadow:
+        0 12px 40px rgba(255, 193, 7, 0.15),
+        0 8px 20px rgba(156, 39, 176, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+      border-color: rgba(255, 193, 7, 0.3);
+    }
+
+    .book-cover {
+      width: 100%;
+      height: 260px;
+      background: linear-gradient(135deg, #FFD54F 0%, #FF9800 50%, #F06292 100%);
+      border-radius: 16px;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 3rem;
+      font-weight: bold;
+      box-shadow:
+        0 8px 24px rgba(255, 152, 0, 0.3),
+        inset 0 2px 0 rgba(255, 255, 255, 0.3);
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .book-cover::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: repeating-linear-gradient(45deg,
+          transparent,
+          transparent 20px,
+          rgba(255, 255, 255, 0.05) 20px,
+          rgba(255, 255, 255, 0.05) 40px);
+    }
+
+    .book-card:hover .book-cover {
+      box-shadow: 0 8px 24px rgba(117, 197, 240, 0.5);
+      transform: scale(1.05);
+    }
+
+    .book-title {
+      font-size: 1.125rem;
+      font-weight: bold;
+      color: #1a1a1a;
+      margin-bottom: 0.5rem;
+      text-align: right;
+    }
+
+    .book-author {
+      font-size: 0.875rem;
+      color: #75C5F0;
+      margin-bottom: 0.75rem;
+      text-align: right;
+    }
+
+    .book-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.75rem;
+      color: #94a3b8;
+    }
+
+    .book-category {
+      background: #e8f4f8;
+      padding: 0.25rem 0.75rem;
+      border-radius: 8px;
+      color: #75C5F0;
+      font-weight: 600;
+    }
+
+    /* Footer */
+    .footer {
+      background: white;
+      border-top: 2px solid #75C5F0;
+      padding: 2rem;
+      text-align: center;
+      color: #4a5568;
+      margin-top: 4rem;
+    }
+
+    .footer-text {
+      font-size: 0.875rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .footer-copyright {
+      font-size: 0.75rem;
+      color: #94a3b8;
+    }
+
+    /* Icons */
+    .icon {
+      width: 20px;
+      height: 20px;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Navigation -->
+  <nav class="navbar">
+    <div style="display: flex; align-items: center; gap: 2rem;">
+      <div class="logo">
+        <span class="logo-text">Kitabim<span class="ai">.AI</span></span>
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+          </svg>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <button class="nav-btn active">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+          </svg>
+          باش بەت
+        </button>
+        <button class="nav-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="2" y1="12" x2="22" y2="12"></line>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+          </svg>
+          ئومۇمىي كىتابخانا
+        </button>
+        <button class="nav-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+          ئومۇمىي ياردەمچى
+        </button>
+        <button class="nav-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7"></rect>
+            <rect x="14" y="3" width="7" height="7"></rect>
+            <rect x="14" y="14" width="7" height="7"></rect>
+            <rect x="3" y="14" width="7" height="7"></rect>
+          </svg>
+          باشقۇرۇش
+        </button>
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 1rem; align-items: center;">
+      <button class="add-book-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="17 8 12 3 7 8"></polyline>
+          <line x1="12" y1="3" x2="12" y2="15"></line>
+        </svg>
+        <span>كىتاب قوشۇش</span>
+      </button>
+
+      <!-- Auth Button (User Menu or Login) -->
+      <div class="user-menu-container">
+        <!-- Logged In State: User Avatar -->
+        <button class="user-avatar-btn" title="ئابدۇللا يۈسۈپ • باشقۇرغۇچى">
+          أي
+        </button>
+
+        <!-- Logged Out State: Login Button (Hidden by default, swap visibility in production) -->
+        <!-- <button class="login-btn" style="display: none;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+          </svg>
+          <span>كىرىش</span>
+        </button> -->
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <section class="hero">
+    <h1 class="hero-title">Kitabim<span class="ai">.AI</span></h1>
+    <p class="hero-subtitle">«ئىلىم ئۆگىنىش بولمىسا، كۆز بىلەن قاراڭغۇلۇقتا يۈرۈشكە ئوخشاش» - مۇھەممەد ئەلىي</p>
+
+    <!-- Search -->
+    <div class="search-container">
+      <input type="text" class="search-box" placeholder="كىتاب نامى، ئاپتور ياكى تۈر بويىچە ئىزدەش..." />
+      <button class="search-btn">ئىزدەش →</button>
+    </div>
+
+    <!-- Categories -->
+    <div class="categories">
+      <div class="category-tag">تارىخ</div>
+      <div class="category-tag">ئەدەبىيات</div>
+      <div class="category-tag">پەلسەپە</div>
+      <div class="category-tag">دىن ئىلمى</div>
+      <div class="category-tag">تىلشۇناسلىق</div>
+      <div class="category-tag">ئىجتىمائىيەتشۇناسلىق</div>
+    </div>
+  </section>
+
+  <!-- Books Section -->
+  <section class="books-section">
+    <div class="section-header">
+      <h2 class="section-title">يېڭى قوشۇلغان كىتابلار</h2>
+      <div class="book-count">156 كىتاب تېپىلدى</div>
+    </div>
+
+    <div class="books-grid">
+      <!-- Book Card 1 -->
+      <div class="book-card">
+        <div class="book-cover">📖</div>
+        <div class="book-status-badge status-ready">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          تەييار
+        </div>
+        <h3 class="book-title">ئۇيغۇر خەلق ناخشىلىرى</h3>
+        <p class="book-author">مەھمۇت قاشقىرى</p>
+        <div class="book-meta">
+          <span>124 بەت</span>
+          <span class="book-category">ئەدەبىيات</span>
+        </div>
+      </div>
+
+      <!-- Book Card 2 -->
+      <div class="book-card">
+        <div class="book-cover" style="background: linear-gradient(135deg, #5AB0E5 0%, #4A9FD8 100%);">📚</div>
+        <div class="book-status-badge status-processing">
+          <svg class="processing-spinner" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2">
+            <line x1="12" y1="2" x2="12" y2="6"></line>
+            <line x1="12" y1="18" x2="12" y2="22"></line>
+            <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
+            <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+            <line x1="2" y1="12" x2="6" y2="12"></line>
+            <line x1="18" y1="12" x2="22" y2="12"></line>
+            <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
+            <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
+          </svg>
+          بىر تەرەپ قىلىنىۋاتىدۇ
+        </div>
+        <h3 class="book-title">ئۇيغۇر تىلى گرامماتىكىسى</h3>
+        <p class="book-author">ئابدۇۋەلى ئايۇپ</p>
+        <div class="book-meta">
+          <span>342 بەت</span>
+          <span class="book-category">تىلشۇناسلىق</span>
+        </div>
+      </div>
+
+      <!-- Book Card 3 -->
+      <div class="book-card">
+        <div class="book-cover" style="background: linear-gradient(135deg, #4A9FD8 0%, #3A8FC8 100%);">📜</div>
+        <h3 class="book-title">شەرقىي تۈركىستان تارىخى</h3>
+        <p class="book-author">مۇھەممەد ئىمىن بۇغرا</p>
+        <div class="book-meta">
+          <span>456 بەت</span>
+          <span class="book-category">تارىخ</span>
+        </div>
+      </div>
+
+      <!-- Book Card 4 -->
+      <div class="book-card">
+        <div class="book-cover" style="background: linear-gradient(135deg, #75C5F0 0%, #65B5E0 100%);">✍️</div>
+        <div class="book-status-badge status-pending">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          ساقلاۋاتىدۇ
+        </div>
+        <h3 class="book-title">مۇتەپەككۇرلەر سۆزى</h3>
+        <p class="book-author">تۇرغۇن ئالماس</p>
+        <div class="book-meta">
+          <span>289 بەت</span>
+          <span class="book-category">پەلسەپە</span>
+        </div>
+      </div>
+
+      <!-- Book Card 5 -->
+      <div class="book-card">
+        <div class="book-cover" style="background: linear-gradient(135deg, #65B5E0 0%, #55A5D0 100%);">🕌</div>
+        <h3 class="book-title">ئىسلام تەلىماتى</h3>
+        <p class="book-author">شىكرۇللاھ مەخدۇم</p>
+        <div class="book-meta">
+          <span>198 بەت</span>
+          <span class="book-category">دىن ئىلمى</span>
+        </div>
+      </div>
+
+      <!-- Book Card 6 -->
+      <div class="book-card">
+        <div class="book-cover" style="background: linear-gradient(135deg, #55A5D0 0%, #4595C0 100%);">🌍</div>
+        <h3 class="book-title">ئىجتىمائىي ئىلمىيات</h3>
+        <p class="book-author">ھامىت نىياز</p>
+        <div class="book-meta">
+          <span>367 بەت</span>
+          <span class="book-category">ئىجتىمائىيەتشۇناسلىق</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <p class="footer-text">ئۇيغۇر ئېلېكترونلۇق كىتابخانىسى - ئىلىم ۋە مەدەنىيەت بىلەن سۈنئىي ئەقىل تېخنىكىسىنى
+      بىرلەشتۈرۈش</p>
+    <p class="footer-copyright">© 2026 Kitabim.AI - بارلىق ھوقۇقلار ساقلانغان</p>
+  </footer>
+</body>
+
+</html>

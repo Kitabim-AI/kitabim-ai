@@ -1,12 +1,17 @@
 import re
 
 
+def normalize_uyghur_chars(text: str) -> str:
+    if not text:
+        return ""
+    # Normalize common OCR character variants
+    return text.replace("ی", "ي").replace("ه", "ە").replace("\u064A\u0654", "\u0626")
+
 def clean_uyghur_text(text: str) -> str:
     if not text:
         return ""
 
-    # Normalize common OCR character variants
-    text = text.replace("ی", "ي").replace("ه", "ە")
+    text = normalize_uyghur_chars(text)
 
     # 1. Join words split by hyphen/dash at line endings (standardizing line breaks)
     text = re.sub(r"(\w)[-—–_]\s*\n\s*(\w)", r"\1\2", text)

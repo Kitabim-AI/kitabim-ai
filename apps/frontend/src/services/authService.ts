@@ -49,6 +49,8 @@ export function getAuthHeaders(): HeadersInit {
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
+  const lang = localStorage.getItem('kitabim_language') || 'ug';
+  headers['Accept-Language'] = lang;
   return headers;
 }
 
@@ -65,6 +67,8 @@ export async function authFetch(
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
+  const lang = localStorage.getItem('kitabim_language') || 'ug';
+  headers.set('Accept-Language', lang);
 
   const response = await fetch(url, {
     ...options,
@@ -125,9 +129,9 @@ export const AuthService = {
   },
 
   /**
-   * Initiate Google login in a popup window.
+   * Generic OAuth login handler (private method).
    */
-  loginWithGoogle(): Promise<User | null> {
+  _loginWithProvider(provider: 'google' | 'facebook' | 'twitter'): Promise<User | null> {
     return new Promise((resolve, reject) => {
       const width = 500;
       const height = 600;
@@ -135,8 +139,8 @@ export const AuthService = {
       const top = window.screenY + (window.outerHeight - height) / 2;
 
       const popup = window.open(
-        `${API_BASE}/google/login`,
-        'google-login',
+        `${API_BASE}/${provider}/login`,
+        `${provider}-login`,
         `width=${width},height=${height},left=${left},top=${top},popup=1`
       );
 
@@ -145,24 +149,45 @@ export const AuthService = {
         return;
       }
 
+      let messageReceived = false;
+
       // Listen for message from popup
       const handleMessage = async (event: MessageEvent) => {
         // Allow messages from same origin OR backend origin
-        const allowedOrigins = [window.location.origin, 'http://localhost:8000'];
-        if (!allowedOrigins.includes(event.origin)) return;
+        const allowedOrigins = [
+          window.location.origin,
+          'http://localhost:30080',
+          'http://localhost:30800',
+          'http://localhost:8000'
+        ];
+        if (!allowedOrigins.includes(event.origin)) {
+          console.log(`[OAuth ${provider}] Ignored message from origin:`, event.origin);
+          return;
+        }
 
         if (event.data?.type === 'OAUTH_SUCCESS') {
-          clearInterval(checkClosed);
+          console.log(`[OAuth ${provider}] Received success message`);
+          messageReceived = true;
           window.removeEventListener('message', handleMessage);
 
           const { accessToken } = event.data;
           setAccessToken(accessToken);
 
+          // Close popup if still open
+          try {
+            if (popup && !popup.closed) {
+              popup.close();
+            }
+          } catch (e) {
+            console.warn(`[OAuth ${provider}] Could not close popup:`, e);
+          }
+
           // Fetch user profile
           const user = await this.getCurrentUser();
           resolve(user);
         } else if (event.data?.type === 'OAUTH_ERROR') {
-          clearInterval(checkClosed);
+          console.log(`[OAuth ${provider}] Received error message`);
+          messageReceived = true;
           window.removeEventListener('message', handleMessage);
           reject(new Error(event.data.error));
         }
@@ -170,21 +195,55 @@ export const AuthService = {
 
       window.addEventListener('message', handleMessage);
 
-      // Check if popup was closed without completing login
-      const checkClosed = setInterval(() => {
+      // Check if token was set in localStorage as fallback (for when popup can't post message)
+      const checkInterval = setInterval(async () => {
         try {
-          // Browser might throw or warn on this check due to COOP
-          if (popup && popup.closed) {
-            clearInterval(checkClosed);
+          if (popup.closed) {
+            clearInterval(checkInterval);
             window.removeEventListener('message', handleMessage);
-            resolve(null); // User closed popup
+
+            if (!messageReceived) {
+              console.log(`[OAuth ${provider}] Popup closed, checking for localStorage token`);
+              // Check if token was set via localStorage fallback
+              const token = getAccessToken();
+              if (token) {
+                const user = await this.getCurrentUser();
+                if (user) {
+                  console.log(`[OAuth ${provider}] Found token in localStorage, login successful`);
+                  resolve(user);
+                  return;
+                }
+              }
+              reject(new Error('Login cancelled or popup closed without authentication'));
+            }
           }
-        } catch (error) {
-          // Ignore COOP/Cross-origin errors, the message listener handles the success case
-          console.debug('Popup closed check suppressed by COOP');
+        } catch (e) {
+          // Popup.closed can throw if popup is on different origin
+          // This is expected behavior, ignore it
         }
       }, 500);
     });
+  },
+
+  /**
+   * Initiate Google login in a popup window.
+   */
+  loginWithGoogle(): Promise<User | null> {
+    return this._loginWithProvider('google');
+  },
+
+  /**
+   * Initiate Facebook login in a popup window.
+   */
+  loginWithFacebook(): Promise<User | null> {
+    return this._loginWithProvider('facebook');
+  },
+
+  /**
+   * Initiate Twitter login in a popup window.
+   */
+  loginWithTwitter(): Promise<User | null> {
+    return this._loginWithProvider('twitter');
   },
 
   /**

@@ -2,7 +2,9 @@
 export interface ExtractionResult {
   pageNumber: number;
   text?: string;
-  status: 'pending' | 'processing' | 'completed' | 'error';
+  status: 'pending' | 'ocr_processing' | 'ocr_done' | 'indexing' | 'indexed' | 'error';
+  pipelineStep?: 'ocr' | 'chunking' | 'embedding' | null;
+  milestone?: 'idle' | 'running' | 'succeeded' | 'failed' | null;
   error?: string;
 }
 
@@ -21,19 +23,16 @@ export interface Book {
   volume?: number | null;
   totalPages: number;
   pages: ExtractionResult[];
-  status: 'uploading' | 'pending' | 'processing' | 'ready' | 'error';
+  status: 'pending' | 'ocr_processing' | 'ocr_done' | 'indexing' | 'ready' | 'error';
   uploadDate: Date;
   lastUpdated: Date | null;
   coverUrl?: string;
   visibility?: 'public' | 'private';
-  processingStep?: 'ocr' | 'rag';
   categories?: string[];
-  tags?: string[];
-  errors?: ErrorEvent[];
   lastError?: ErrorEvent | null;
-  completedCount?: number;
-  errorCount?: number;
-  processingLockExpiresAt?: Date | string | null;
+  readCount?: number;
+  pipelineStep?: 'ocr' | 'chunking' | 'embedding' | 'ready' | null;
+  pipelineStats?: Record<string, number>;
 }
 
 export interface PaginatedBooks {

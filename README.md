@@ -10,7 +10,7 @@ The intelligent Uyghur Digital Library platform for OCR, curation, and RAG-power
   - `app/services`: PDF OCR, embeddings, spell check, and AI helpers.
   - `app/langchain`: LangChain-native chains and model/embedding adapters.
   - `app/core`: Settings and prompts.
-  - `app/db`: MongoDB connection and repositories.
+  - `app/db`: PostgreSQL repositories and connection logic.
   - `app/models`: Pydantic schemas.
   - `app/utils`: Text cleaning helpers.
 - `/services/worker`: ARQ worker that processes background OCR/embedding/RAG jobs (uses backend-core).
@@ -22,7 +22,8 @@ The intelligent Uyghur Digital Library platform for OCR, curation, and RAG-power
 - `/data`: Persistent storage created at runtime (ignored by git).
   - `uploads/`: Original PDF files.
   - `covers/`: Extracted book cover images.
-- `/infra/k8s/docker-desktop`: Docker Desktop Kubernetes manifests.
+- `/k8s/local`: Local Kubernetes manifests (PostgreSQL on host).
+
 - `AGENTS.md` files in the repo root and each service provide guidance for automated changes.
 
 ### Backend Core Layout
@@ -44,41 +45,44 @@ flowchart LR
   FE[Frontend<br/>React/Vite] -->|/api| BE[Backend API<br/>FastAPI]
   BE -->|jobs| RQ[(Redis/ARQ)]
   RQ --> WK[Worker<br/>ARQ]
-  BE --> DB[(MongoDB)]
+  BE --> DB[(PostgreSQL)]
   WK --> DB
-  BE <-->|files| DATA[(data/ volume)]
-  WK <-->|files| DATA
+  BE <-->|PDF/Covers| GCS[(Google Cloud Storage)]
+  WK <-->|PDF/Covers| GCS
+  BE -.->|Processing Cache| DATA[(Local data/)]
+  WK -.->|Processing Cache| DATA
 ```
 
 ## Core Features
 
+- **GCS Dual-Bucket Storage**: Private bucket for PDFs, Public-CDN bucket for covers.
+- **Auto-Cleanup**: Local storage is used as a high-speed processing cache and automatically cleared after cloud sync.
 - **SHA-256 deduplication** to avoid re-processing identical PDFs.
 - **Gemini OCR pipeline** with resumable tasks, cover extraction, and batch embeddings.
-- **Manual OCR start**: uploads are stored as pending; start OCR from the Management page.
 - **RAG chat** per book or global, with work-aware context and citations by page.
 - **Spell check & correction workflow** for OCR cleanup and embedding regeneration.
-- **Admin tools** for reprocessing, deletion, author/volume/category edits, and cover uploads.
-- **RTL reader** with inline page editing and page-level reprocess.
+- **RTL reader** with direct GCS cover serving and inline page editing.
 
 ## Local Development (Docker Desktop Kubernetes)
 
 ### Prerequisites
 
 - **Docker Desktop** with Kubernetes enabled + **kubectl**
-- **Note**: Docker Compose is not supported for local development; use Docker Desktop Kubernetes.
+- **Note**: Use Docker Desktop Kubernetes for local development.
 
 ### Environment Variables (Kubernetes)
 
 All configuration is managed via Kubernetes:
 
-- Secrets: `infra/k8s/docker-desktop/secret.yaml`
-- Non‑secrets: `infra/k8s/docker-desktop/configmap.yaml`
-- Example secret template: `infra/k8s/docker-desktop/secret.yaml.example` (copy to `secret.yaml` and fill in your key)
+- Secrets: `k8s/local/secrets.yaml`
+- Non‑secrets: `k8s/local/configmap.yaml`
+- Example secret template: `k8s/local/secrets.yaml` (edit the file directly)
 
 Notes:
+- `DATABASE_URL` connects to your **host PostgreSQL** via `host.docker.internal:5432`.
 - `GEMINI_API_KEY` is used by the backend only. The frontend proxies AI calls to the backend.
 - Use only `GEMINI_API_KEY` (Google’s recommended env var). Do not also set `GOOGLE_API_KEY` to avoid client warnings.
-- `.env` files are not used for local dev; configuration lives in Kubernetes manifests.
+- `.env` files can be used for local script execution, but Kubernetes uses the manifests in `k8s/local`.
 
 ### Docker Desktop Kubernetes Quickstart
 
@@ -88,56 +92,53 @@ Notes:
 kubectl config use-context docker-desktop
 ```
 
-2. Update `infra/k8s/docker-desktop/pv.yaml` if your repo path differs (for the shared `/data` mount).
+2. Update `k8s/local/backend.yaml` and `k8s/local/worker.yaml` if your repo path differs (for the shared `/data` mount).
 3. Build images:
 
 ```bash
-docker build -t kitabim-backend:local -f services/backend/Dockerfile .
-docker build -t kitabim-worker:local -f services/worker/Dockerfile .
+docker build -t kitabim-backend:local -f Dockerfile.backend .
+docker build -t kitabim-worker:local -f Dockerfile.worker .
 docker build -t kitabim-frontend:local -f apps/frontend/Dockerfile .
 ```
 
 4. Apply manifests:
 
 ```bash
-kubectl apply -k infra/k8s/docker-desktop
+kubectl apply -f k8s/local/
 ```
 
-5. Update `infra/k8s/docker-desktop/secret.yaml` with your `GEMINI_API_KEY` and re-apply if needed.
+5. Update `k8s/local/secrets.yaml` with your `GEMINI_API_KEY` and re-apply if needed.
 6. Access services:
    - Frontend: `http://localhost:30080`
-   - Backend: `kubectl -n kitabim port-forward svc/backend 8000:8000`
+   - Backend API: `http://localhost:30800`
 
 ### Start / Stop / Restart
 
 ```bash
 # Start (apply manifests)
-kubectl apply -k infra/k8s/docker-desktop
+kubectl apply -f k8s/local/
 
-# Stop (delete namespace)
-kubectl delete namespace kitabim
+# Stop
+kubectl delete -f k8s/local/
 
 # Restart (rolling restart all deployments)
-kubectl -n kitabim rollout restart deployment/backend deployment/worker deployment/frontend deployment/mongo deployment/redis
+kubectl rollout restart deployment/backend deployment/worker deployment/frontend deployment/redis
 ```
 
 ### Logs
 
 ```bash
 # Backend
-kubectl -n kitabim logs deployment/backend --tail=200 -f
+kubectl logs -f deployment/backend
 
 # Worker
-kubectl -n kitabim logs deployment/worker --tail=200 -f
+kubectl logs -f deployment/worker
 
 # Frontend (nginx)
-kubectl -n kitabim logs deployment/frontend --tail=200 -f
-
-# MongoDB
-kubectl -n kitabim logs deployment/mongo --tail=200 -f
+kubectl logs -f deployment/frontend
 
 # Redis
-kubectl -n kitabim logs deployment/redis --tail=200 -f
+kubectl logs -f deployment/redis
 ```
 
 ### Status
@@ -173,13 +174,13 @@ python3.13 -m pytest services/backend/tests
 ### Troubleshooting
 
 - **docker-desktop context missing**: Enable Kubernetes in Docker Desktop (Settings → Kubernetes), then run `kubectl config get-contexts` and `kubectl config use-context docker-desktop`.
-- **Pods stuck in Pending**: Check `infra/k8s/docker-desktop/pv.yaml` hostPath matches your repo path and that Docker Desktop has file sharing enabled for that path.
+- **Pods stuck in Pending**: Check `k8s/local/backend.yaml` and `k8s/local/worker.yaml` hostPath matches your repo path and that Docker Desktop has file sharing enabled for that path.
 - **Backend not ready**: Confirm `kubectl -n kitabim get pods` and check logs with `kubectl -n kitabim logs deployment/backend`.
 
 ## Technology Stack
 
 - **Frontend**: React 19, Vite 6, Tailwind (CDN), Lucide, pdf.js.
-- **Backend**: FastAPI, MongoDB (Motor), PyMuPDF, LangChain, `langchain-google-genai`, `httpx`, `numpy`.
+- **Backend**: FastAPI, PostgreSQL (asyncpg), pgvector, PyMuPDF, LangChain, `langchain-google-genai`, `httpx`, `numpy`.
 - **Queue/Worker**: Redis + ARQ.
 - **Microservices**: Backend (FastAPI), Worker (ARQ).
 - **Local Dev**: Docker Desktop Kubernetes.

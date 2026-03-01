@@ -13,7 +13,10 @@ interface AuthState {
 }
 
 interface AuthContextType extends AuthState {
-  login: () => Promise<void>;
+  login: () => Promise<void>;              // Backward compat (uses Google)
+  loginWithGoogle: () => Promise<void>;
+  loginWithFacebook: () => Promise<void>;
+  loginWithTwitter: () => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -65,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     initAuth();
   }, []);
 
-  const login = useCallback(async () => {
+  const loginWithGoogle = useCallback(async () => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
@@ -83,7 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setState(prev => ({ ...prev, isLoading: false }));
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Login failed';
+      const message = error instanceof Error ? error.message : 'Google login failed';
       setState(prev => ({
         ...prev,
         isLoading: false,
@@ -91,6 +94,63 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }));
     }
   }, []);
+
+  const loginWithFacebook = useCallback(async () => {
+    setState(prev => ({ ...prev, isLoading: true, error: null }));
+
+    try {
+      const user = await AuthService.loginWithFacebook();
+
+      if (user) {
+        setState({
+          user,
+          isLoading: false,
+          isAuthenticated: true,
+          error: null,
+        });
+      } else {
+        // User cancelled
+        setState(prev => ({ ...prev, isLoading: false }));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Facebook login failed';
+      setState(prev => ({
+        ...prev,
+        isLoading: false,
+        error: message,
+      }));
+    }
+  }, []);
+
+  const loginWithTwitter = useCallback(async () => {
+    setState(prev => ({ ...prev, isLoading: true, error: null }));
+
+    try {
+      const user = await AuthService.loginWithTwitter();
+
+      if (user) {
+        setState({
+          user,
+          isLoading: false,
+          isAuthenticated: true,
+          error: null,
+        });
+      } else {
+        // User cancelled
+        setState(prev => ({ ...prev, isLoading: false }));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Twitter login failed';
+      setState(prev => ({
+        ...prev,
+        isLoading: false,
+        error: message,
+      }));
+    }
+  }, []);
+
+  // Keep login() as alias for Google for backward compatibility
+  const login = loginWithGoogle;
 
   const logout = useCallback(async () => {
     setState(prev => ({ ...prev, isLoading: true }));
@@ -117,6 +177,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value: AuthContextType = {
     ...state,
     login,
+    loginWithGoogle,
+    loginWithFacebook,
+    loginWithTwitter,
     logout,
     refreshUser,
   };
