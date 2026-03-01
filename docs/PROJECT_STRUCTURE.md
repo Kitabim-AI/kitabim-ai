@@ -479,7 +479,7 @@ Used when running services manually (outside Kubernetes):
 
 ```bash
 # Database
-DATABASE_URL=postgresql://omarjan@localhost:5432/kitabim_ai
+DATABASE_URL=postgresql://omarjan@localhost:5432/kitabim-ai
 
 # Redis
 REDIS_URL=redis://localhost:6379/0
@@ -522,7 +522,7 @@ kind: ConfigMap
 metadata:
   name: kitabim-config
 data:
-  DATABASE_URL: "postgresql://user@host.docker.internal:5432/kitabim_ai"
+  DATABASE_URL: "postgresql://user@host.docker.internal:5432/kitabim-ai"
   REDIS_URL: "redis://redis:6379/0"
   GEMINI_MODEL_NAME: "gemini-3-flash-preview"
   DATA_DIR: "/app/data"
@@ -548,12 +548,12 @@ data:
    ```bash
    brew install postgresql@16
    brew services start postgresql@16
-   createdb kitabim_ai
+   createdb kitabim-ai
    ```
 
 3. **Initialize database**
    ```bash
-   psql kitabim_ai < scripts/init-db.sql
+   psql kitabim-ai < scripts/init-db.sql
    ```
 
 4. **Install frontend dependencies**
@@ -669,7 +669,7 @@ python3.13 -m pytest services/backend/tests
            │   Host Machine           │
            │                          │
            │  PostgreSQL :5432        │
-           │  (kitabim_ai database)   │
+           │  (kitabim-ai database)   │
            │                          │
            │  data/ directory         │
            │   ├── uploads/           │

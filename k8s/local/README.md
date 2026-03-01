@@ -13,7 +13,7 @@ This directory contains Kubernetes manifests for deploying Kitabim.AI locally us
 
 3. **Local PostgreSQL** running with the migrated data
    - Host: `localhost:5432`
-   - Database: `kitabim_ai`
+   - Database: `kitabim-ai`
    - Accessible from Kubernetes using `host.docker.internal`
 
 ## Quick Start
@@ -96,7 +96,7 @@ For Docker Desktop, access via:
 The application connects to your local PostgreSQL using `host.docker.internal`:
 
 ```yaml
-DATABASE_URL: "postgresql://omarjan@host.docker.internal:5432/kitabim_ai"
+DATABASE_URL: "postgresql://omarjan@host.docker.internal:5432/kitabim-ai"
 ```
 
 This works for:
