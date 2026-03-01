@@ -19,6 +19,15 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
     return view === 'library' || view === 'global-chat' || view === 'admin' || (view === 'home' && (searchQuery.trim().length > 0 || category));
   }, [view, searchQuery, category]);
 
+  // Reset shelf state whenever the search query or category changes
+  useEffect(() => {
+    if (isShelfView) {
+      setBooks([]);
+      setShelfPage(1);
+      setHasMoreShelf(true);
+    }
+  }, [searchQuery, category]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Internal Polling for Processing Books (only on admin page)
   useEffect(() => {
     const hasProcessing = books.some(b => b.pipelineStep && b.pipelineStep !== 'ready');
@@ -94,7 +103,7 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
     } finally {
       setIsLoadingMoreShelf(false);
     }
-  }, [shelfPage, hasMoreShelf, isLoadingMoreShelf, isShelfView, searchQuery]);
+  }, [shelfPage, hasMoreShelf, isLoadingMoreShelf, isShelfView, searchQuery, category]);
 
   const sortedBooks = useMemo(() => {
     if (isShelfView) {
