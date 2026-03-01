@@ -39,16 +39,19 @@ echo "==> [1/3] Building Docker images"
 export DOCKER_BUILDKIT=1
 
 docker build -f Dockerfile.backend \
+    --platform linux/amd64 \
     -t "${REGISTRY}/kitabim-backend:${IMAGE_TAG}" \
     -t "${REGISTRY}/kitabim-backend:latest" \
     --progress=plain .
 
 docker build -f Dockerfile.worker \
+    --platform linux/amd64 \
     -t "${REGISTRY}/kitabim-worker:${IMAGE_TAG}" \
     -t "${REGISTRY}/kitabim-worker:latest" \
     --progress=plain .
 
 docker build -f apps/frontend/Dockerfile \
+    --platform linux/amd64 \
     -t "${REGISTRY}/kitabim-frontend:${IMAGE_TAG}" \
     -t "${REGISTRY}/kitabim-frontend:latest" \
     --progress=plain .
