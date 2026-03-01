@@ -62,7 +62,7 @@ async def init_db() -> None:
         pool_recycle=3600,  # Recycle connections after 1 hour
         connect_args={
             "server_settings": {
-                "application_name": "kitabim_ai_backend"
+                "application_name": "kitabim-ai-backend"
             },
             "command_timeout": 60,
         }

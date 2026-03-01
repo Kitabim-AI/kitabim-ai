@@ -26,7 +26,7 @@ gcloud sql instances create $INSTANCE_NAME \
 ```
 
 # 2. Create DB and User
-gcloud sql databases create kitabim_ai --instance=$INSTANCE_NAME
+gcloud sql databases create kitabim-ai --instance=$INSTANCE_NAME
 APP_PASSWORD=$(openssl rand -base64 24)
 echo "SAVE THIS DB PASSWORD: $APP_PASSWORD"
 gcloud sql users create kitabim-app-user --instance=$INSTANCE_NAME --password=$APP_PASSWORD
@@ -47,15 +47,15 @@ cloud-sql-proxy ${PROJECT_ID}:${REGION}:${INSTANCE_NAME} --port 5433 &
 PROXY_PID=$!
 
 # 2. Dump local database
-pg_dump -U omarjan -d kitabim_ai -F c -f kitabim_dump.sql
+pg_dump -U omarjan -d kitabim-ai -F c -f kitabim_dump.sql
 
 # 3. Create required extensions on Cloud SQL as postgres default admin
 # Get your Postgres user password from GCP Console if you don't have it, or reset it.
-PGPASSWORD='<POSTGRES_ADMIN_PASSWORD>' psql -h localhost -p 5433 -U postgres -d kitabim_ai -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp"; CREATE EXTENSION IF NOT EXISTS "vector";'
+PGPASSWORD='<POSTGRES_ADMIN_PASSWORD>' psql -h localhost -p 5433 -U postgres -d kitabim-ai -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp"; CREATE EXTENSION IF NOT EXISTS "vector";'
 
 # 4. Restore dump directly to Cloud SQL using the app user
 export PGPASSWORD=$APP_PASSWORD
-pg_restore -h localhost -p 5433 -U kitabim-app-user -d kitabim_ai -O -x --clean kitabim_dump.sql
+pg_restore -h localhost -p 5433 -U kitabim-app-user -d kitabim-ai -O -x --clean kitabim_dump.sql
 
 # 5. Stop proxy
 kill $PROXY_PID
@@ -69,7 +69,7 @@ kubectl create secret generic cloudsql-db-credentials \
   -n kitabim \
   --from-literal=username=kitabim-app-user \
   --from-literal=password=$APP_PASSWORD \
-  --from-literal=database=kitabim_ai \
+  --from-literal=database=kitabim-ai \
   --from-literal=connection_name="${PROJECT_ID}:${REGION}:${INSTANCE_NAME}"
 ```
 

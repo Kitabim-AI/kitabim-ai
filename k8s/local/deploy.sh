@@ -64,13 +64,13 @@ if [ -f .env ]; then
 
     if [ "$CLUSTER_TYPE" = "minikube" ]; then
         # Minikube networking
-        echo "DATABASE_URL=postgresql://postgres:postgres@host.minikube.internal:5432/kitabim_ai" >> .env.k8s
+        echo "DATABASE_URL=postgresql://postgres:postgres@host.minikube.internal:5432/kitabim-ai" >> .env.k8s
         echo "REDIS_URL=redis://redis:6379/0" >> .env.k8s
         echo "GOOGLE_REDIRECT_URI=http://$(minikube ip):30080/api/auth/google/callback" >> .env.k8s
         echo "FACEBOOK_REDIRECT_URI=http://$(minikube ip):30080/api/auth/facebook/callback" >> .env.k8s
     else
         # Docker Desktop / Kind networking
-        echo "DATABASE_URL=postgresql://omarjan@host.docker.internal:5432/kitabim_ai" >> .env.k8s
+        echo "DATABASE_URL=postgresql://omarjan@host.docker.internal:5432/kitabim-ai" >> .env.k8s
         echo "REDIS_URL=redis://redis:6379/0" >> .env.k8s
         echo "GOOGLE_REDIRECT_URI=http://localhost:30080/api/auth/google/callback" >> .env.k8s
         echo "FACEBOOK_REDIRECT_URI=http://localhost:30080/api/auth/facebook/callback" >> .env.k8s
