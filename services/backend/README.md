@@ -23,12 +23,9 @@
 - Queue worker (required): `PYTHONPATH=packages/backend-core python -m arq app.worker.WorkerSettings`
 
 ## Notes
-- Local dev uses Docker Desktop Kubernetes manifests in `/infra/k8s/docker-desktop`.
-- Uses MongoDB from `MONGODB_URL` and the shared `data/` folder for uploads/covers.
+- Local dev uses Kubernetes manifests in `/k8s/local`.
+- Uses PostgreSQL from `DATABASE_URL` and the shared `data/` folder for uploads/covers.
 - Override the data location with `DATA_DIR` (useful for Docker/K8s).
-- If using local OCR, set `OCR_PROVIDER=local` and ensure `services/uyghurocr` is running on `LOCAL_OCR_URL`.
-- Optional: enable LangChain cache/tracing with `LANGCHAIN_CACHE=true` and `LANGCHAIN_TRACING=true`.
-- Optional: configure LLM circuit breaker with `LLM_CB_FAILURE_THRESHOLD`, `LLM_CB_RECOVERY_SECONDS`, `LLM_CB_HALF_OPEN_MAX_CALLS`.
 - The Gemini API key stays on the backend; the frontend proxies AI calls via `/api/ai`.
 - Redis is required for background jobs (`REDIS_URL`).
 - Core code now lives in `packages/backend-core`.

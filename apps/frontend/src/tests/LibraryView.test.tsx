@@ -6,7 +6,7 @@ import { Book } from '@shared/types';
 
 const mockBooks: Book[] = [
   { id: '1', title: 'Book 1', author: 'Author 1', totalPages: 10, pages: [], status: 'ready', uploadDate: new Date(), lastUpdated: new Date(), contentHash: 'h1' },
-  { id: '2', title: 'Book 2', author: 'Author 2', totalPages: 20, pages: [], status: 'processing', uploadDate: new Date(), lastUpdated: new Date(), contentHash: 'h2' }
+  { id: '2', title: 'Book 2', author: 'Author 2', totalPages: 20, pages: [], status: 'ocr_processing', uploadDate: new Date(), lastUpdated: new Date(), contentHash: 'h2' }
 ];
 
 test('LibraryView renders books and header', () => {

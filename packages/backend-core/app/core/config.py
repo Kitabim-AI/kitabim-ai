@@ -25,8 +25,12 @@ class Settings:
     gemini_embedding_model: str = os.getenv("GEMINI_EMBEDDING_MODEL", "models/gemini-embedding-001")
 
     # Database
-    mongodb_url: str = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
-    database_name: str = os.getenv("MONGODB_DATABASE", "kitabim_ai_db")
+    database_url: str | None = os.getenv("DATABASE_URL")  # PostgreSQL connection string
+
+    # Storage
+    storage_backend: str = os.getenv("STORAGE_BACKEND", "local")
+    gcs_data_bucket: str | None = os.getenv("GCS_DATA_BUCKET")
+    gcs_media_bucket: str | None = os.getenv("GCS_MEDIA_BUCKET")
 
     # Directories
     data_dir: Path = Path(os.getenv("DATA_DIR", str(REPO_ROOT / "data")))
@@ -40,10 +44,16 @@ class Settings:
     ocr_max_retries: int = int(os.getenv("OCR_MAX_RETRIES", "4"))
 
     # RAG Settings
-    rag_score_threshold: float = float(os.getenv("RAG_SCORE_THRESHOLD", "0.35"))
-    rag_top_k: int = int(os.getenv("RAG_TOP_K", "12"))
-    rag_fallback_k: int = int(os.getenv("RAG_FALLBACK_K", "8"))
-    rag_max_chars_per_book: int = int(os.getenv("RAG_MAX_CHARS_PER_BOOK", "4000"))
+    rag_score_threshold: float = float(os.getenv("RAG_SCORE_THRESHOLD", "0.50"))
+    rag_top_k: int = int(os.getenv("RAG_TOP_K", "16"))
+    rag_fallback_k: int = int(os.getenv("RAG_FALLBACK_K", "10"))
+    rag_max_chars_per_book: int = int(os.getenv("RAG_MAX_CHARS_PER_BOOK", "6000"))
+    rag_rerank_enabled: bool = os.getenv("RAG_RERANK_ENABLED", "false").lower() == "true"
+    rag_rerank_top_n: int = int(os.getenv("RAG_RERANK_TOP_N", "6"))
+
+    # Chunking Settings
+    chunk_size: int = int(os.getenv("CHUNK_SIZE", "500"))
+    chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "100"))
 
     # LangChain / Observability
     langchain_cache_enabled: bool = os.getenv("LANGCHAIN_CACHE", "false").lower() == "true"
@@ -51,10 +61,14 @@ class Settings:
     langchain_project: str | None = os.getenv("LANGCHAIN_PROJECT")
     rag_eval_enabled: bool = os.getenv("RAG_EVAL_ENABLED", "false").lower() == "true"
 
+    # Logging
+    log_level: str = os.getenv("LOG_LEVEL", "DEBUG")  # DEBUG, INFO, WARNING, ERROR
+
     # LLM Circuit Breaker
     llm_cb_failure_threshold: int = int(os.getenv("LLM_CB_FAILURE_THRESHOLD", "5"))
     llm_cb_recovery_seconds: int = int(os.getenv("LLM_CB_RECOVERY_SECONDS", "30"))
     llm_cb_half_open_max_calls: int = int(os.getenv("LLM_CB_HALF_OPEN_MAX_CALLS", "1"))
+    llm_cb_cooling_period: int = int(os.getenv("LLM_CB_COOLING_PERIOD", "60"))  # Grace period after service restart (seconds)
 
     # Queue / Workers
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -73,6 +87,16 @@ class Settings:
     google_client_id: str = os.getenv("GOOGLE_CLIENT_ID", "")
     google_client_secret: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
     google_redirect_uri: str = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/auth/google/callback")
+
+    # Facebook OAuth
+    facebook_client_id: str = os.getenv("FACEBOOK_CLIENT_ID", "")
+    facebook_client_secret: str = os.getenv("FACEBOOK_CLIENT_SECRET", "")
+    facebook_redirect_uri: str = os.getenv("FACEBOOK_REDIRECT_URI", "http://localhost:8000/api/auth/facebook/callback")
+
+    # Twitter OAuth
+    twitter_client_id: str = os.getenv("TWITTER_CLIENT_ID", "")
+    twitter_client_secret: str = os.getenv("TWITTER_CLIENT_SECRET", "")
+    twitter_redirect_uri: str = os.getenv("TWITTER_REDIRECT_URI", "http://localhost:8000/api/auth/twitter/callback")
 
     # Auth Behavior
     default_user_role: str = os.getenv("DEFAULT_USER_ROLE", "reader")

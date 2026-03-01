@@ -1,0 +1,116 @@
+services:
+  # ─── Redis (Job Queue + Cache) ────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: >
+      redis-server
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --appendfsync everysec
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ─── Backend API ──────────────────────────────────────────────────────────
+  backend:
+    image: ${REGISTRY}/kitabim-backend:${IMAGE_TAG}
+    restart: always
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - GOOGLE_APPLICATION_CREDENTIALS=/etc/gcs/key.json
+    volumes:
+      - app_data:/app/data
+      - /etc/gcs/key.json:/etc/gcs/key.json:ro
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # ─── Worker (ARQ - always running) ───────────────────────────────────────
+  worker:
+    image: ${REGISTRY}/kitabim-worker:${IMAGE_TAG}
+    restart: always
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - GOOGLE_APPLICATION_CREDENTIALS=/etc/gcs/key.json
+    volumes:
+      - app_data:/app/data
+      - /etc/gcs/key.json:/etc/gcs/key.json:ro
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # ─── Frontend (React/Vite served via Nginx) ───────────────────────────────
+  frontend:
+    image: ${REGISTRY}/kitabim-frontend:${IMAGE_TAG}
+    restart: always
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ─── Nginx Reverse Proxy (SSL Termination) ────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+volumes:
+  redis_data:
+    driver: local
+  app_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/kitabim-data
+
+networks:
+  internal:
+    driver: bridge

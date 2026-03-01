@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import List
+from typing import List, Optional, AsyncIterator
 from datetime import datetime
 from pydantic import BaseModel, Field
 from langchain_core.output_parsers import PydanticOutputParser
@@ -11,12 +11,22 @@ from langchain_core.documents import Document
 
 from app.core.config import settings
 from app.core.prompts import CATEGORY_PROMPT, RAG_PROMPT_TEMPLATE
+
 from app.langchain import GeminiEmbeddings, build_structured_chain, build_text_chain
 from app.models.schemas import ChatRequest
 from app.utils.markdown import strip_markdown
 from app.utils.observability import log_json
+from app.core.i18n import t
 import logging
 import time
+
+# Import reranker
+try:
+    from langchain_community.document_compressors import FlashrankRerank
+    FLASHRANK_AVAILABLE = True
+except ImportError:
+    FLASHRANK_AVAILABLE = False
+    logging.warning("FlashrankRerank not available. Install langchain-community and flashrank to enable reranking.")
 
 
 class CategoryResponse(BaseModel):
@@ -40,6 +50,16 @@ class RAGService:
         )
         self.logger = logging.getLogger("app.rag")
 
+        # Initialize reranker if enabled and available
+        self.reranker: Optional[FlashrankRerank] = None
+        if settings.rag_rerank_enabled and FLASHRANK_AVAILABLE:
+            try:
+                self.reranker = FlashrankRerank(top_n=settings.rag_rerank_top_n)
+                log_json(self.logger, logging.INFO, "Flashrank reranker initialized", top_n=settings.rag_rerank_top_n)
+            except Exception as exc:
+                log_json(self.logger, logging.WARNING, "Failed to initialize reranker", error=str(exc))
+                self.reranker = None
+
     @staticmethod
     def _is_current_volume_query(question: str) -> bool:
         if not question:
@@ -58,11 +78,7 @@ class RAGService:
 
     @staticmethod
     def _build_empty_response_message() -> str:
-        return (
-            "كەچۈرۈڭ، ھازىرچە بۇ سوئالغا جاۋاب بېرەلمەيمەن. "
-            "سوئالىڭىزنى قايتا تەپسىلى ۋە ئېنىق قىلىپ، "
-            "كىتابنىڭ نامى ياكى تەپسىلىي مەزمۇنى بىلەن بىرگە سوراپ بېرىڭ."
-        )
+        return t("errors.chat_no_context")
 
     @staticmethod
     def _build_instructions(strict_no_answer: bool, suppress_page_notice: bool) -> str:
@@ -70,20 +86,39 @@ class RAGService:
             return (
                 "Instructions:\n"
                 "1. Primary Goal: Answer the user's question ONLY based on the provided context.\n"
-                "2. If the answer is NOT in the context, respond with exactly: جاۋاب تېپىلمىدى\n"
-                "3. Respond ONLY in professional Uyghur (Arabic script)."
+                "2. Chat History: Review the chat history to understand follow-up questions, references to previous topics, and conversational context. If the user asks 'what about...', 'tell me more', or uses pronouns like 'it', 'that', or 'this', refer to the chat history to understand what they're asking about.\n"
+                "3. If the answer is NOT in the context, respond with exactly: " + t("errors.chat_no_answer") + "\n"
+                "4. Format your response in markdown:\n"
+                "   - Use double newlines (\\n\\n) to separate paragraphs for better readability\n"
+                "   - Use **bold** for emphasis on key terms\n"
+                "   - Use bullet points (- ) for lists when appropriate\n"
+                "5. Respond ONLY in professional Uyghur (Arabic script).\n"
+                "6. STRICT RULE: Output ONLY Uyghur text. Do not include English words, translations, or explanations in other languages."
             )
         extra_rules = ""
         if suppress_page_notice:
-            extra_rules = "\n5. If you can answer, do NOT mention whether the current page contained the answer."
+            extra_rules = "\n9. If you can answer, do NOT mention whether the current page contained the answer."
         return (
             "Instructions:\n"
             "1. Primary Goal: Answer the user's question based on the provided context.\n"
-            "2. If the context contains the information, cite the book title and page number.\n"
-            "3. If the context is marked as 'NO RELEVANT DOCUMENTS FOUND' or does not contain the answer:\n"
+            "2. Chat History: Review the chat history to understand follow-up questions, references to previous topics, and conversational context. If the user asks 'what about...', 'tell me more', or uses pronouns like 'it', 'that', or 'this', refer to the chat history to understand what they're asking about.\n"
+            "3. Format your response in markdown:\n"
+            "   - Use double newlines (\\n\\n) to separate paragraphs for better readability\n"
+            "   - Use **bold** for emphasis on key terms or important information\n"
+            "   - Use bullet points (- ) for lists when presenting multiple items\n"
+            "   - Use > for direct quotations from the source text\n"
+            "4. If the context contains the information, ALWAYS cite the source clearly.\n"
+            "   Each document in the context starts with a header like: [BookID: abc123, Book: title, Author: name, Volume: N, Page: N]\n"
+            "   You MUST use the EXACT author name from the 'Author:' field in that header. If there is no 'Author:' field in the header, omit the author from the citation entirely — do NOT write any 'unknown' or placeholder text for the author.\n"
+            "5. Format citations in Uyghur as a markdown link. The link URL MUST be in the format 'ref:book_id:page_number'.\n"
+            "   If multiple pages are referenced, separate the page numbers with commas in the URL (e.g. 'ref:book_id:9,10').\n"
+            "   Example: **مەنبە:** [ئانا يۇرت (زوردۇن سابىر)، 1-توم، 25-بەت](ref:abc123:25)\n"
+            "6. Replace 'abc123' with the actual BookID and the author/title with the exact values from the context header. **Citations must be placed immediately after the relevant sentence or paragraph they support. NEVER group all citations at the end of your response.**\n"
+            "7. If the context is marked as 'NO RELEVANT DOCUMENTS FOUND' or does not contain the answer:\n"
             "   - Politely explain that you couldn't find a specific match in the indexed books.\n"
             "   - If it's a general question or greeting, respond naturally but maintain your persona as a librarian advisor.\n"
-            "4. Respond ONLY in professional Uyghur (Arabic script)."
+            "8. Respond ONLY in professional Uyghur (Arabic script).\n"
+            "9. STRICT RULE: Output ONLY Uyghur text. Do not include English words, translations, or mixed-language sentences. Maintain purely Uyghur syntax and vocabulary."
             + extra_rules
         )
 
@@ -91,11 +126,23 @@ class RAGService:
 
     @staticmethod
     def _format_document(doc: Document) -> str:
-        title = doc.metadata.get("title", "Unknown")
+        title = doc.metadata.get("title") or "Unknown"
+        author = doc.metadata.get("author") or None
+        volume = doc.metadata.get("volume")
         page = doc.metadata.get("page")
-        if page is None:
-            return f"Book: {title}:\n{doc.page_content}"
-        return f"Book: {title}, Page {page}:\n{doc.page_content}"
+        book_id = doc.metadata.get("book_id") or "unknown"
+
+        # Build a clear source header for the LLM
+        source_parts = [f"BookID: {book_id}", f"Book: {title}"]
+        if author:
+            source_parts.append(f"Author: {author}")
+        if volume is not None:
+            source_parts.append(f"Volume: {volume}")
+        if page is not None:
+            source_parts.append(f"Page: {page}")
+
+        header = ", ".join(source_parts)
+        return f"[{header}]\n{doc.page_content}"
 
     @staticmethod
     def _cosine_similarity(v1: List[float], v2: List[float]) -> float:
@@ -157,24 +204,101 @@ class RAGService:
         )
         return response_text.strip() or self._build_empty_response_message()
 
-    async def _record_eval(self, db, payload: dict) -> None:
-        if not settings.rag_eval_enabled or db is None:
+    async def _generate_answer_stream(
+        self,
+        context: str,
+        question: str,
+        chat_history: str = "",
+        strict_no_answer: bool = False,
+        suppress_page_notice: bool = False,
+    ) -> AsyncIterator[str]:
+        """Stream answer chunks as they're generated by the LLM"""
+        instructions = self._build_instructions(strict_no_answer, suppress_page_notice)
+        has_content = False
+        chunk_count = 0
+
+        async for chunk in self.rag_chain.astream(
+            {
+                "context": context,
+                "instructions": instructions,
+                "chat_history": chat_history,
+                "question": question,
+            }
+        ):
+            if chunk:
+                has_content = True
+                chunk_count += 1
+                chunk_size = len(chunk) if isinstance(chunk, str) else 0
+                log_json(
+                    self.logger,
+                    logging.INFO,
+                    "Streaming chunk",
+                    chunk_num=chunk_count,
+                    chunk_size=chunk_size,
+                    chunk_type=type(chunk).__name__
+                )
+                yield chunk
+
+        log_json(
+            self.logger,
+            logging.INFO,
+            "Stream generation complete",
+            total_chunks=chunk_count
+        )
+
+        # If no content was generated, send empty response message
+        if not has_content:
+            yield self._build_empty_response_message()
+
+    async def _record_eval(self, session, payload: dict, user_id: Optional[str] = None) -> None:
+        """Record RAG evaluation metrics using SQLAlchemy"""
+        if not settings.rag_eval_enabled:
+            log_json(self.logger, logging.DEBUG, "RAG eval recording skipped: disabled in settings")
             return
-        payload["ts"] = datetime.utcnow()
+        if session is None:
+            log_json(self.logger, logging.WARNING, "RAG eval recording skipped: session is None")
+            return
         try:
-            await db.rag_evaluations.insert_one(payload)
+            from app.db.repositories.rag_evaluations import RAGEvaluationsRepository
+
+            repo = RAGEvaluationsRepository(session)
+            await repo.create_evaluation(
+                book_id=payload.get("bookId"),
+                is_global=payload.get("isGlobal", False),
+                question=payload.get("question", ""),
+                current_page=payload.get("currentPage"),
+                retrieved_count=payload.get("retrievedCount", 0),
+                context_chars=payload.get("contextChars", 0),
+                scores=payload.get("scores", []),
+                category_filter=payload.get("categoryFilter", []),
+                latency_ms=payload.get("latencyMs", 0),
+                answer_chars=payload.get("answerChars", 0),
+                user_id=user_id,
+            )
+            await session.commit()
         except Exception as exc:
             log_json(self.logger, logging.WARNING, "RAG eval insert failed", error=str(exc))
 
-    async def answer_question(self, req: ChatRequest, db) -> str:
+    async def answer_question(self, req: ChatRequest, session: AsyncSession, user_id: Optional[str] = None) -> str:
         start_ts = time.monotonic()
-        is_global = req.bookId == "global"
+        is_global = req.book_id == "global"
         relevant_categories: List[str] = []
         book = None
+
+        from app.db.repositories.books import BooksRepository
+        from app.db.repositories.pages import PagesRepository
+        from app.db.repositories.chunks import ChunksRepository
+        from sqlalchemy import select, func, and_, or_
+        from app.db.models import Book, Page
+
+        books_repo = BooksRepository(session)
+        pages_repo = PagesRepository(session)
+        chunks_repo = ChunksRepository(session)
+
         if not is_global:
-            book = await db.books.find_one({"id": req.bookId})
+            book = await books_repo.get(req.book_id)
             if not book:
-                raise ValueError("Book not found")
+                raise ValueError(t("errors.book_not_found"))
 
         use_current_volume_only = self._is_current_volume_query(req.question)
         include_current_page_context = self._is_current_page_query(req.question)
@@ -184,16 +308,14 @@ class RAGService:
         # Prepare chat history string
         chat_history_str = self._format_chat_history(req.history)
 
-        if include_current_page_context and not is_global and req.currentPage and book:
-            page_rec = await db.pages.find_one(
-                {"bookId": req.bookId, "pageNumber": req.currentPage}
-            )
-            if page_rec and page_rec.get("text"):
-                # ... existing logic remains ...
-                page_text = strip_markdown(page_rec.get("text") or "")
+        if include_current_page_context and not is_global and req.current_page and book:
+            page_rec = await pages_repo.find_one(req.book_id, req.current_page)
+            if page_rec and page_rec.text:
+                page_text = strip_markdown(page_rec.text or "")
+                author_info = f", Author: {book.author}" if book.author else ""
+                volume_info = f", Volume {book.volume}" if book.volume is not None else ""
                 current_page_context = (
-                    "CURRENT PAGE (THE USER IS LOOKING AT THIS NOW) - "
-                    f"Book: {book.get('title', 'Unknown')}, Page {req.currentPage}:\n"
+                    f"[BookID: {req.book_id}, Book: {book.title or 'Unknown'}{author_info}{volume_info}, Page {req.current_page}]\n"
                     f"{page_text}"
                 )
 
@@ -207,102 +329,188 @@ class RAGService:
                 suppress_page_notice=False,
             )
 
-        # ... (rest of search logic) ...
+        # Get query embedding for vector search
+        query_vector = []
+        try:
+            query_vector = await self.embeddings.aembed_query(req.question)
+        except Exception as exc:
+            log_json(self.logger, logging.WARNING, "Embedding generation failed", error=str(exc))
+            query_vector = []
 
-
-        pages_to_search = []
-        related_books = []
+        # Determine which books to search
+        book_ids = []
+        book_id_to_title = {}
 
         if is_global:
-            all_categories = await db.books.distinct("categories")
+            # Global search - categorize to narrow down books
+            # Get all unique categories from books table
+            stmt = select(Book.categories).where(Book.categories != None)
+            result = await session.execute(stmt)
+            all_categories = set()
+            for cats in result.scalars().all():
+                if cats:
+                    all_categories.update(cats)
+
             relevant_categories = []
             try:
-                relevant_categories = await self._categorize_question(req.question, all_categories)
+                relevant_categories = await self._categorize_question(req.question, list(all_categories))
             except Exception as exc:
                 log_json(self.logger, logging.WARNING, "Category routing failed", error=str(exc))
                 relevant_categories = []
 
-            query = {}
+            # Find books by category
             if relevant_categories:
-                query = {"categories": {"$in": relevant_categories}}
+                # Use overlap (&& in Postgres) for categories
+                from sqlalchemy import text
+                stmt = select(Book.id, Book.title).where(
+                    text("categories && :cats").bindparams(cats=relevant_categories)
+                ).limit(100)
+                result = await session.execute(stmt)
+                all_books_recs = result.fetchall()
+            else:
+                all_books_recs = []
 
-            all_books_recs = await db.books.find(query, {"id": 1, "title": 1}).to_list(100)
             if not all_books_recs:
-                all_books_recs = await db.books.find({}, {"id": 1, "title": 1}).sort("lastUpdated", -1).to_list(200)
-            
-            book_id_to_title = {b["id"]: b.get("title") for b in all_books_recs}
+                # Fallback to recent books
+                stmt = select(Book.id, Book.title).order_by(Book.last_updated.desc()).limit(200)
+                result = await session.execute(stmt)
+                all_books_recs = result.fetchall()
+
+            book_id_to_title = {str(b.id): b.title for b in all_books_recs}
             book_ids = list(book_id_to_title.keys())
-            
-            # Fetch chunks from chunks collection
-            chunks_recs = await db.chunks.find(
-                {"bookId": {"$in": book_ids}}
-            ).to_list(15000)
-            
-            for r in chunks_recs:
-                r["bookTitle"] = book_id_to_title.get(r.get("bookId"))
-                pages_to_search.append(r)
         else:
-            # For specific book, get siblings
-            title = book.get("title")
-            author = book.get("author")
-            
-            related_ids = [req.bookId]
-            book_id_to_title = {req.bookId: book.get("title")}
+            # Search specific book and siblings
+            title = book.title
+            author = book.author
+
+            book_ids = [str(req.book_id)]
+            book_id_to_title = {str(req.book_id): book.title}
 
             if title and not use_current_volume_only:
-                sibling_query = {"title": title, "id": {"$ne": req.bookId}}
+                # Find sibling volumes
+                stmt = select(Book.id, Book.title).where(
+                    and_(
+                        Book.title == title,
+                        Book.id != req.book_id
+                    )
+                )
                 if author:
-                    sibling_query["author"] = author
-                siblings = await db.books.find(sibling_query, {"id": 1, "title": 1}).to_list(200)
+                    stmt = stmt.where(Book.author == author)
+                
+                result = await session.execute(stmt)
+                siblings = result.fetchall()
                 for s in siblings:
-                    related_ids.append(s["id"])
-                    book_id_to_title[s["id"]] = s.get("title")
+                    book_ids.append(str(s.id))
+                    book_id_to_title[str(s.id)] = s.title
 
-            # Fetch chunks from chunks collection
-            chunks_recs = await db.chunks.find(
-                {"bookId": {"$in": related_ids}}
-            ).to_list(15000)
-            
-            for r in chunks_recs:
-                r["bookTitle"] = book_id_to_title.get(r.get("bookId"))
-                pages_to_search.append(r)
+        # Use PostgreSQL pgvector for similarity search
+        top_results = []
+        if query_vector:
+            try:
+                # Perform vector similarity search using PostgreSQL
+                similar_chunks = await chunks_repo.similarity_search(
+                    query_embedding=query_vector,
+                    book_ids=book_ids if book_ids else None,
+                    limit=settings.rag_top_k,
+                    threshold=settings.rag_score_threshold
+                )
 
-        query_vector = []
-        try:
-            query_vector = await self.embeddings.aembed_query(req.question)
-        except Exception:
-            query_vector = []
+                # Format results with book titles and volume
+                for chunk in similar_chunks:
+                    top_results.append({
+                        "text": chunk.get("text", ""),
+                        "score": chunk.get("similarity", 0.0),
+                        "page": chunk.get("page_number"),
+                        "title": chunk.get("title") or "Unknown",
+                        "volume": chunk.get("volume"),
+                        "author": chunk.get("author") or None,
+                        "book_id": chunk.get("book_id"),
+                    })
+            except Exception as exc:
+                log_json(self.logger, logging.WARNING, "Vector search failed", error=str(exc))
+                top_results = []
 
-        scored_results = []
-        keywords = self._extract_keywords(req.question)
+        # Fallback if no results or no embedding
+        if not top_results and book_ids:
+            # Keyword-based fallback (basic text search)
+            keywords = self._extract_keywords(req.question)
+            if keywords:
+                log_json(self.logger, logging.INFO, "Using keyword fallback search")
+                # TODO: Implement full-text search fallback in Postgres
+                top_results = []
 
-        for r in pages_to_search:
-            score = 0.0
-            if query_vector and r.get("embedding"):
-                score = self._cosine_similarity(query_vector, r["embedding"])
+        # Apply reranking if enabled and we have results
+        if self.reranker and top_results and len(top_results) > 1:
+            try:
+                rerank_start = time.monotonic()
+                log_json(
+                    self.logger,
+                    logging.INFO,
+                    "Starting reranking",
+                    candidate_count=len(top_results),
+                    timestamp=datetime.utcnow().isoformat()
+                )
 
-            txt = strip_markdown(r.get("text", ""))
-            match_count = 0
-            for k in keywords:
-                if k and k in txt:
-                    match_count += 1
-            if match_count > 0:
-                score += match_count * 0.15
+                # Store original vector scores for logging
+                original_scores = [r.get("score", 0.0) for r in top_results]
+                original_order = [i for i in range(len(top_results))]
 
-            scored_results.append(
-                {
-                    "text": txt,
-                    "score": score,
-                    "page": r.get("pageNumber"),
-                    "title": r.get("bookTitle"),
-                }
-            )
+                # Convert to Documents for reranking
+                docs_for_rerank = [
+                    Document(
+                        page_content=r["text"],
+                        metadata={
+                            "title": r.get("title") or "Unknown",
+                            "volume": r.get("volume"),
+                            "page": r.get("page"),
+                            "book_id": r.get("book_id"),
+                            "vector_score": r.get("score", 0.0),
+                            "original_index": i
+                        }
+                    ) for i, r in enumerate(top_results)
+                ]
 
-        top_results = [r for r in scored_results if r["score"] > settings.rag_score_threshold]
-        if not top_results and scored_results:
-            top_results = sorted(scored_results, key=lambda x: x["score"], reverse=True)[: settings.rag_fallback_k]
-        else:
-            top_results = sorted(top_results, key=lambda x: x["score"], reverse=True)[: settings.rag_top_k]
+                # Apply reranking
+                reranked_docs = await self.reranker.acompress_documents(docs_for_rerank, req.question)
+
+                rerank_end = time.monotonic()
+                rerank_duration_ms = int((rerank_end - rerank_start) * 1000)
+
+                # Rebuild top_results from reranked documents
+                reranked_results = []
+                for doc in reranked_docs:
+                    original_idx = doc.metadata.get("original_index", 0)
+                    reranked_results.append({
+                        "text": doc.page_content,
+                        "score": doc.metadata.get("vector_score", 0.0),
+                        "page": doc.metadata.get("page"),
+                        "title": doc.metadata.get("title") or "Unknown",
+                        "volume": doc.metadata.get("volume"),
+                        "author": doc.metadata.get("author") or None,
+                        "book_id": doc.metadata.get("book_id"),
+                    })
+
+                # Log reranking impact
+                if reranked_results:
+                    reranked_indices = [
+                        top_results.index(next(r for r in top_results if r["text"] == rr["text"]))
+                        for rr in reranked_results
+                    ]
+                    log_json(
+                        self.logger,
+                        logging.INFO,
+                        "Reranking completed",
+                        original_count=len(top_results),
+                        reranked_count=len(reranked_results),
+                        original_top_3=original_order[:3],
+                        reranked_top_3=reranked_indices[:3] if len(reranked_indices) >= 3 else reranked_indices,
+                        duration_ms=rerank_duration_ms,
+                        timestamp=datetime.utcnow().isoformat()
+                    )
+                    top_results = reranked_results
+
+            except Exception as exc:
+                log_json(self.logger, logging.WARNING, "Reranking failed, using original order", error=str(exc))
 
         context_parts = []
         if current_page_context:
@@ -310,19 +518,23 @@ class RAGService:
 
         documents: List[Document] = []
         for r in top_results:
-            if is_global or r["page"] != req.currentPage:
+            if is_global or r["page"] != req.current_page:
                 title = r.get("title") or "Unknown"
                 documents.append(
                     Document(
                         page_content=r["text"],
-                        metadata={"title": title, "page": r.get("page")},
+                        metadata={
+                            "title": title,
+                            "volume": r.get("volume"),
+                            "author": r.get("author") or None,
+                            "page": r.get("page"),
+                            "book_id": r.get("book_id")
+                        },
                     )
                 )
 
         for doc in documents:
             context_parts.append(self._format_document(doc))
-
-
 
         context = "\n\n---\n\n".join(context_parts)
         if not context and is_global:
@@ -337,22 +549,309 @@ class RAGService:
         )
 
         await self._record_eval(
-            db,
+            session,
             {
-                "bookId": req.bookId,
+                "bookId": req.book_id,
                 "isGlobal": is_global,
                 "question": req.question,
-                "currentPage": req.currentPage,
+                "currentPage": req.current_page,
                 "retrievedCount": len(top_results),
                 "contextChars": len(context),
                 "scores": [r.get("score") for r in top_results],
                 "categoryFilter": relevant_categories if is_global else [],
                 "latencyMs": int((time.monotonic() - start_ts) * 1000),
-                "answerChars": len(answer),
+                "answer_chars": len(answer),
             },
+            user_id=user_id,
         )
 
         return answer
+
+    async def answer_question_stream(
+        self, req: ChatRequest, session: AsyncSession, user_id: Optional[str] = None
+    ) -> AsyncIterator[str]:
+        """Stream answer chunks as they're generated by the LLM"""
+        start_ts = time.monotonic()
+        is_global = req.book_id == "global"
+        relevant_categories: List[str] = []
+        book = None
+
+        from app.db.repositories.books import BooksRepository
+        from app.db.repositories.pages import PagesRepository
+        from app.db.repositories.chunks import ChunksRepository
+        from sqlalchemy import select, func, and_, or_
+        from app.db.models import Book, Page
+
+        books_repo = BooksRepository(session)
+        pages_repo = PagesRepository(session)
+        chunks_repo = ChunksRepository(session)
+
+        if not is_global:
+            book = await books_repo.get(req.book_id)
+            if not book:
+                raise ValueError(t("errors.book_not_found"))
+
+        use_current_volume_only = self._is_current_volume_query(req.question)
+        include_current_page_context = self._is_current_page_query(req.question)
+        current_page_context = ""
+        current_page_only = include_current_page_context
+
+        # Prepare chat history string
+        chat_history_str = self._format_chat_history(req.history)
+
+        if include_current_page_context and not is_global and req.current_page and book:
+            page_rec = await pages_repo.find_one(req.book_id, req.current_page)
+            if page_rec and page_rec.text:
+                page_text = strip_markdown(page_rec.text or "")
+                author_info = f", Author: {book.author}" if book.author else ""
+                volume_info = f", Volume {book.volume}" if book.volume is not None else ""
+                current_page_context = (
+                    f"[BookID: {req.book_id}, Book: {book.title or 'Unknown'}{author_info}{volume_info}, Page {req.current_page}]\n"
+                    f"{page_text}"
+                )
+
+        if current_page_only:
+            context = current_page_context or "NO RELEVANT DOCUMENTS FOUND IN THE LIBRARY."
+            async for chunk in self._generate_answer_stream(
+                context,
+                req.question,
+                chat_history=chat_history_str,
+                strict_no_answer=False,
+                suppress_page_notice=False,
+            ):
+                yield chunk
+            return
+
+        # Get query embedding for vector search
+        query_vector = []
+        try:
+            query_vector = await self.embeddings.aembed_query(req.question)
+        except Exception as exc:
+            log_json(self.logger, logging.WARNING, "Embedding generation failed", error=str(exc))
+            query_vector = []
+
+        # Determine which books to search
+        book_ids = []
+        book_id_to_title = {}
+
+        if is_global:
+            # Global search - categorize to narrow down books
+            stmt = select(Book.categories).where(Book.categories != None)
+            result = await session.execute(stmt)
+            all_categories = set()
+            for cats in result.scalars().all():
+                if cats:
+                    all_categories.update(cats)
+
+            relevant_categories = []
+            try:
+                relevant_categories = await self._categorize_question(req.question, list(all_categories))
+            except Exception as exc:
+                log_json(self.logger, logging.WARNING, "Category routing failed", error=str(exc))
+                relevant_categories = []
+
+            # Find books by category
+            if relevant_categories:
+                from sqlalchemy import text
+                stmt = select(Book.id, Book.title).where(
+                    text("categories && :cats").bindparams(cats=relevant_categories)
+                ).limit(100)
+                result = await session.execute(stmt)
+                all_books_recs = result.fetchall()
+            else:
+                all_books_recs = []
+
+            if not all_books_recs:
+                # Fallback to recent books
+                stmt = select(Book.id, Book.title).order_by(Book.last_updated.desc()).limit(200)
+                result = await session.execute(stmt)
+                all_books_recs = result.fetchall()
+
+            book_id_to_title = {str(b.id): b.title for b in all_books_recs}
+            book_ids = list(book_id_to_title.keys())
+        else:
+            # Search specific book and siblings
+            title = book.title
+            author = book.author
+
+            book_ids = [str(req.book_id)]
+            book_id_to_title = {str(req.book_id): book.title}
+
+            if title and not use_current_volume_only:
+                # Find sibling volumes
+                stmt = select(Book.id, Book.title).where(
+                    and_(
+                        Book.title == title,
+                        Book.id != req.book_id
+                    )
+                )
+                if author:
+                    stmt = stmt.where(Book.author == author)
+
+                result = await session.execute(stmt)
+                siblings = result.fetchall()
+                for s in siblings:
+                    book_ids.append(str(s.id))
+                    book_id_to_title[str(s.id)] = s.title
+
+        # Use PostgreSQL pgvector for similarity search
+        top_results = []
+        if query_vector:
+            try:
+                similar_chunks = await chunks_repo.similarity_search(
+                    query_embedding=query_vector,
+                    book_ids=book_ids if book_ids else None,
+                    limit=settings.rag_top_k,
+                    threshold=settings.rag_score_threshold
+                )
+
+                for chunk in similar_chunks:
+                    top_results.append({
+                        "text": chunk.get("text", ""),
+                        "score": chunk.get("similarity", 0.0),
+                        "page": chunk.get("page_number"),
+                        "title": chunk.get("title") or "Unknown",
+                        "volume": chunk.get("volume"),
+                        "author": chunk.get("author") or None,
+                        "book_id": chunk.get("book_id"),
+                    })
+            except Exception as exc:
+                log_json(self.logger, logging.WARNING, "Vector search failed", error=str(exc))
+                top_results = []
+
+        # Fallback if no results or no embedding
+        if not top_results and book_ids:
+            keywords = self._extract_keywords(req.question)
+            if keywords:
+                log_json(self.logger, logging.INFO, "Using keyword fallback search")
+                top_results = []
+
+        # Apply reranking if enabled and we have results
+        if self.reranker and top_results and len(top_results) > 1:
+            try:
+                rerank_start = time.monotonic()
+                log_json(
+                    self.logger,
+                    logging.INFO,
+                    "Starting reranking",
+                    candidate_count=len(top_results),
+                    timestamp=datetime.utcnow().isoformat()
+                )
+
+                original_scores = [r.get("score", 0.0) for r in top_results]
+                original_order = [i for i in range(len(top_results))]
+
+                docs_for_rerank = [
+                    Document(
+                        page_content=r["text"],
+                        metadata={
+                            "title": r.get("title") or "Unknown",
+                            "volume": r.get("volume"),
+                            "page": r.get("page"),
+                            "book_id": r.get("book_id"),
+                            "vector_score": r.get("score", 0.0),
+                            "original_index": i
+                        }
+                    ) for i, r in enumerate(top_results)
+                ]
+
+                reranked_docs = await self.reranker.acompress_documents(docs_for_rerank, req.question)
+
+                rerank_end = time.monotonic()
+                rerank_duration_ms = int((rerank_end - rerank_start) * 1000)
+
+                reranked_results = []
+                for doc in reranked_docs:
+                    original_idx = doc.metadata.get("original_index", 0)
+                    reranked_results.append({
+                        "text": doc.page_content,
+                        "score": doc.metadata.get("vector_score", 0.0),
+                        "page": doc.metadata.get("page"),
+                        "title": doc.metadata.get("title") or "Unknown",
+                        "volume": doc.metadata.get("volume"),
+                        "author": doc.metadata.get("author") or None,
+                        "book_id": doc.metadata.get("book_id"),
+                    })
+
+                if reranked_results:
+                    reranked_indices = [
+                        top_results.index(next(r for r in top_results if r["text"] == rr["text"]))
+                        for rr in reranked_results
+                    ]
+                    log_json(
+                        self.logger,
+                        logging.INFO,
+                        "Reranking completed",
+                        original_count=len(top_results),
+                        reranked_count=len(reranked_results),
+                        original_top_3=original_order[:3],
+                        reranked_top_3=reranked_indices[:3] if len(reranked_indices) >= 3 else reranked_indices,
+                        duration_ms=rerank_duration_ms,
+                        timestamp=datetime.utcnow().isoformat()
+                    )
+                    top_results = reranked_results
+
+            except Exception as exc:
+                log_json(self.logger, logging.WARNING, "Reranking failed, using original order", error=str(exc))
+
+        context_parts = []
+        if current_page_context:
+            context_parts.append(current_page_context)
+
+        documents: List[Document] = []
+        for r in top_results:
+            if is_global or r["page"] != req.current_page:
+                title = r.get("title") or "Unknown"
+                documents.append(
+                    Document(
+                        page_content=r["text"],
+                        metadata={
+                            "title": title,
+                            "volume": r.get("volume"),
+                            "author": r.get("author") or None,
+                            "page": r.get("page"),
+                            "book_id": r.get("book_id")
+                        },
+                    )
+                )
+
+        for doc in documents:
+            context_parts.append(self._format_document(doc))
+
+        context = "\n\n---\n\n".join(context_parts)
+        if not context and is_global:
+            context = "NO RELEVANT DOCUMENTS FOUND IN THE LIBRARY."
+
+        # Stream the answer
+        answer_chunks = []
+        async for chunk in self._generate_answer_stream(
+            context,
+            req.question,
+            chat_history=chat_history_str,
+            strict_no_answer=False,
+            suppress_page_notice=False,
+        ):
+            answer_chunks.append(chunk)
+            yield chunk
+
+        # Record evaluation after streaming completes
+        full_answer = "".join(answer_chunks)
+        await self._record_eval(
+            session,
+            {
+                "bookId": req.book_id,
+                "isGlobal": is_global,
+                "question": req.question,
+                "currentPage": req.current_page,
+                "retrievedCount": len(top_results),
+                "contextChars": len(context),
+                "scores": [r.get("score") for r in top_results],
+                "categoryFilter": relevant_categories if is_global else [],
+                "latencyMs": int((time.monotonic() - start_ts) * 1000),
+                "answer_chars": len(full_answer),
+            },
+            user_id=user_id,
+        )
 
 
 rag_service = RAGService()

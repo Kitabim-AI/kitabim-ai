@@ -1,30 +1,24 @@
-import React from 'react';
-import { Database, Zap, Library } from 'lucide-react';
-import { Book } from '@shared/types';
+import React, { useEffect } from 'react';
+import { Zap, Library, BookOpen } from 'lucide-react';
 import { BookCard } from './BookCard';
+import { useI18n } from '../../i18n/I18nContext';
+import { useAppContext } from '../../context/AppContext';
 
-interface LibraryViewProps {
-  books: Book[];
-  isInitialLoading: boolean;
-  isLoadingMore: boolean;
-  hasMore: boolean;
-  searchQuery: string;
-  onBookClick: (book: Book) => void;
-  loaderRef: React.RefObject<HTMLDivElement>;
-  loadMore: () => void;
-}
+export const LibraryView: React.FC = () => {
+  const {
+    sortedBooks: books,
+    totalReady,
+    isLoading: isInitialLoading,
+    isLoadingMoreShelf: isLoadingMore,
+    hasMoreShelf: hasMore,
+    bookActions,
+    loaderRef,
+    loadMoreShelf: loadMore
+  } = useAppContext();
 
-export const LibraryView: React.FC<LibraryViewProps> = ({
-  books,
-  isInitialLoading,
-  isLoadingMore,
-  hasMore,
-  searchQuery,
-  onBookClick,
-  loaderRef,
-  loadMore,
-}) => {
-  React.useEffect(() => {
+  const { t } = useI18n();
+
+  useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && !isInitialLoading && hasMore && !isLoadingMore) {
@@ -39,56 +33,73 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   }, [hasMore, isLoadingMore, loadMore, loaderRef, isInitialLoading]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <header>
-          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-            <Database className="text-indigo-600 w-6 h-6" />
-            Global Knowledge Base
-          </h2>
-          <p className="text-slate-500">Shared collection of pre-processed Uyghur literature on Kitabim.AI</p>
+    <div className="space-y-8 sm:space-y-10 md:space-y-12" dir="rtl">
+      {/* Header Section */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 sm:gap-6 pb-8 sm:pb-10 md:pb-12 border-b border-[#0369a1]/10 relative">
+        <header className="space-y-3 sm:space-y-4">
+          <div className="flex items-center gap-3 sm:gap-4 group">
+            <div className="p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:-rotate-6">
+              <Library size={20} className="md:w-6 md:h-6" strokeWidth={2.5} />
+            </div>
+            <div>
+              <h2 className="text-2xl sm:text-3xl font-black text-[#1a1a1a]">{t('library.title')}</h2>
+              <div className="flex items-center gap-2 mt-1 sm:mt-2">
+                <span className="w-6 sm:w-8 h-[2px] bg-[#0369a1] rounded-full" />
+                <p className="text-xs sm:text-sm font-black text-[#94a3b8] uppercase">{t('library.subtitle')}</p>
+              </div>
+            </div>
+          </div>
         </header>
-        <div className="flex items-center gap-2 text-xs font-bold text-slate-400 bg-slate-100 px-3 py-1.5 rounded-full">
-          <Zap size={14} className="text-amber-500" />
-          DEDUPLICATION ACTIVE
+
+        <div className="flex items-center gap-4">
+          <div className="flex md:hidden items-center gap-2 px-4 py-2 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner">
+            <BookOpen size={16} strokeWidth={2.5} />
+            <span className="text-xs font-normal uppercase">
+              {totalReady} {t('home.totalBooks')}
+            </span>
+          </div>
+          <div className="hidden md:flex items-center gap-3 px-6 py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner">
+            <BookOpen size={18} strokeWidth={2.5} />
+            <span className="text-sm font-normal uppercase">
+              {t('chat.libraryBookCount', { count: totalReady })}
+            </span>
+          </div>
         </div>
       </div>
 
-      <div className="book-shelf-row">
+      {/* Grid Section */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-6 sm:gap-x-8 gap-y-10 sm:gap-y-12 justify-items-center">
         {books.map(book => (
           <BookCard
             key={book.id}
             book={book}
-            onClick={onBookClick}
+            onClick={bookActions.openReader}
           />
         ))}
-        {books.length === 0 && !isLoadingMore && (
-          <div className="col-span-full py-20 text-center border-2 border-dashed border-slate-200 rounded-3xl">
-            <Library className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-            <p className="text-slate-500 font-medium">
-              {searchQuery ? 'No books match your search.' : 'No books indexed in the global database yet.'}
-            </p>
+
+        {books.length === 0 && !isInitialLoading && !isLoadingMore && (
+          <div className="col-span-full py-40 w-full flex flex-col items-center justify-center glass-panel rounded-[48px]">
+            <div className="p-10 bg-[#0369a1]/10 rounded-[48px] mb-8 relative">
+              <Library className="w-24 h-24 text-[#0369a1]" strokeWidth={1.5} />
+            </div>
+            <h4 className="text-3xl font-black text-[#1a1a1a] mb-4">{t('library.empty.title')}</h4>
+            <p className="text-[#94a3b8] font-bold text-lg max-w-md text-center">{t('library.empty.message')}</p>
           </div>
         )}
       </div>
 
       {/* Infinite Scroll Trigger */}
-      <div ref={loaderRef} className="h-32 flex items-center justify-center">
-        {!isInitialLoading && isLoadingMore && (
-          <div className="flex flex-col items-center gap-3 animate-in fade-in slide-in-from-bottom-2">
-            <div className="relative">
-              <div className="w-10 h-10 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin"></div>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <Zap size={14} className="text-amber-500 animate-pulse" />
-              </div>
-            </div>
-            <span className="text-xs font-bold text-indigo-600 uppercase tracking-widest">Loading more treasures...</span>
+      <div ref={loaderRef as any} className="h-64 flex flex-col items-center justify-center gap-6">
+        {isLoadingMore ? (
+          <div className="flex flex-col items-center gap-5 animate-fade-in">
+            <div className="w-12 h-12 border-4 border-[#0369a1]/10 border-t-[#0369a1] rounded-full animate-spin"></div>
+            <span className="text-xs font-black text-[#0369a1] uppercase animate-pulse">{t('common.loadingMore')}</span>
           </div>
-        )}
-        {!hasMore && books.length > 0 && (
-          <div className="flex flex-col items-center gap-2 opacity-40">
-            <Library size={24} className="text-slate-400" />
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">End of the collection</p>
+        ) : !hasMore && books.length > 0 && (
+          <div className="flex flex-col items-center gap-4 opacity-30">
+            <div className="w-16 h-[1px] bg-[#94a3b8]" />
+            <p className="text-[12px] font-black text-[#94a3b8] uppercase">{t('common.endOfList')}</p>
+            <div className="w-16 h-[2px] bg-[#94a3b8]" />
           </div>
         )}
       </div>

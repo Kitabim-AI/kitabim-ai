@@ -4,11 +4,11 @@ import asyncio
 import base64
 import inspect
 import logging
-from typing import List
+from typing import Any, AsyncIterator, List
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.messages import HumanMessage
-from langchain_core.runnables import RunnableLambda
+from langchain_core.runnables import Runnable, RunnableConfig, RunnableLambda
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 
 from app.core.config import settings
@@ -23,16 +23,67 @@ _TEXT_BREAKER = CircuitBreaker(
         failure_threshold=settings.llm_cb_failure_threshold,
         recovery_timeout=float(settings.llm_cb_recovery_seconds),
         half_open_max_calls=settings.llm_cb_half_open_max_calls,
+        cooling_period=float(settings.llm_cb_cooling_period),
     ),
 )
+
+
+
+
 _EMBED_BREAKER = CircuitBreaker(
     "llm_embed",
     CircuitBreakerConfig(
         failure_threshold=settings.llm_cb_failure_threshold,
         recovery_timeout=float(settings.llm_cb_recovery_seconds),
         half_open_max_calls=settings.llm_cb_half_open_max_calls,
+        cooling_period=float(settings.llm_cb_cooling_period),
     ),
 )
+
+
+async def is_llm_available() -> bool:
+    """Check if the LLM circuit breakers are available."""
+    text_open = await _TEXT_BREAKER.is_open()
+    embed_open = await _EMBED_BREAKER.is_open()
+    return not text_open and not embed_open
+
+def update_breaker_config(failure_threshold: int | None = None, recovery_timeout: float | None = None) -> None:
+    """Update defaults for both circuit breakers."""
+    for breaker in [_TEXT_BREAKER, _EMBED_BREAKER]:
+        if failure_threshold is not None:
+            breaker.config.failure_threshold = failure_threshold
+        if recovery_timeout is not None:
+            breaker.config.recovery_timeout = recovery_timeout
+
+
+async def reset_circuit_breakers() -> dict:
+    """Manually reset (close) both circuit breakers. Admin control."""
+    for breaker in [_TEXT_BREAKER, _EMBED_BREAKER]:
+        await breaker.reset()
+
+    return await get_circuit_breaker_status()
+
+
+async def force_open_circuit_breakers() -> dict:
+    """Manually open both circuit breakers. Admin control."""
+    for breaker in [_TEXT_BREAKER, _EMBED_BREAKER]:
+        await breaker.force_open()
+
+    return await get_circuit_breaker_status()
+
+
+async def get_circuit_breaker_status() -> dict:
+    """Get current status of circuit breakers."""
+    text_info = await _TEXT_BREAKER.get_info()
+    embed_info = await _EMBED_BREAKER.get_info()
+
+    return {
+        "text_breaker": text_info,
+        "embed_breaker": embed_info,
+        "overall_available": await is_llm_available(),
+    }
+
+
 _CHAT_MODEL_CACHE: dict[str, ChatGoogleGenerativeAI] = {}
 
 
@@ -67,6 +118,10 @@ def _build_chat_model(model_name: str) -> ChatGoogleGenerativeAI:
     if cached is not None:
         return cached
     kwargs = _build_kwargs(ChatGoogleGenerativeAI, model_name)
+    # Enable streaming for better UX
+    kwargs["streaming"] = True
+    # Add retries to handle transient 503 errors
+    kwargs["max_retries"] = 3
     model = ChatGoogleGenerativeAI(**kwargs)
     _CHAT_MODEL_CACHE[model_name] = model
     return model
@@ -90,8 +145,12 @@ def _extract_message_text(response) -> str:
         for part in content:
             if isinstance(part, str):
                 parts.append(part)
-            elif isinstance(part, dict) and "text" in part:
-                parts.append(str(part["text"]))
+            elif isinstance(part, dict):
+                # Skip thought/thinking parts from Gemini thinking models
+                if part.get("thought") or part.get("type") in ("thinking", "thought"):
+                    continue
+                if "text" in part:
+                    parts.append(str(part["text"]))
         return "".join(parts)
     return str(response)
 
@@ -102,6 +161,9 @@ async def _call_with_breaker(breaker: CircuitBreaker, fn, *args, **kwargs):
     except CircuitBreakerOpen as exc:
         log_json(_logger, logging.ERROR, "LLM circuit open", error=str(exc))
         raise
+    except Exception as exc:
+        log_json(_logger, logging.ERROR, "LLM call failed", error=str(exc), breaker=breaker.name)
+        raise
 
 
 async def generate_text(prompt: str, model_name: str) -> str:
@@ -111,7 +173,9 @@ async def generate_text(prompt: str, model_name: str) -> str:
         return await llm.ainvoke(prompt)
 
     response = await _call_with_breaker(_TEXT_BREAKER, _call)
-    return _extract_message_text(response)
+    text = _extract_message_text(response)
+    log_json(_logger, logging.INFO, "LLM response received", text_length=len(text) if text else 0)
+    return text
 
 
 async def generate_text_with_image(prompt: str, image_bytes: bytes, model_name: str) -> str:
@@ -127,7 +191,9 @@ async def generate_text_with_image(prompt: str, image_bytes: bytes, model_name: 
         return await llm.ainvoke([message])
 
     response = await _call_with_breaker(_TEXT_BREAKER, _call)
-    return _extract_message_text(response)
+    text = _extract_message_text(response)
+    log_json(_logger, logging.INFO, "LLM response received", text_length=len(text) if text else 0)
+    return text
 
 
 def _normalize_prompt_value(value) -> str:
@@ -139,12 +205,71 @@ def _normalize_prompt_value(value) -> str:
     return str(value)
 
 
-def build_text_llm(model_name: str) -> RunnableLambda:
-    async def _call_llm(prompt_value) -> str:
-        prompt = _normalize_prompt_value(prompt_value)
-        return await generate_text(prompt, model_name)
+async def _stream_with_breaker(breaker: CircuitBreaker, fn, *args, **kwargs):
+    allowed = await breaker._allow_call()
+    if not allowed:
+        raise CircuitBreakerOpen(f"Circuit breaker '{breaker.name}' is open")
 
-    return RunnableLambda(_call_llm)
+    try:
+        # Get the async iterator (ensure we don't double-await if it's already an iterator)
+        it = fn(*args, **kwargs)
+        started = False
+        async for chunk in it:
+            if not started:
+                await breaker._on_success()
+                started = True
+            yield chunk
+    except Exception as exc:
+        await breaker._on_failure()
+        log_json(_logger, logging.ERROR, "LLM stream failed", error=str(exc), breaker=breaker.name)
+        raise
+
+
+class ProtectedLLM(Runnable[Any, str]):
+    """
+    A protected LLM wrapper that adds circuit breaker protection
+    for both non-streaming (ainvoke) and streaming (astream) calls.
+    """
+    def __init__(self, model: ChatGoogleGenerativeAI, breaker: CircuitBreaker):
+        self.model = model
+        self.breaker = breaker
+
+    async def ainvoke(
+        self, input: Any, config: RunnableConfig | None = None, **kwargs: Any
+    ) -> str:
+        prompt = _normalize_prompt_value(input)
+        async def _call():
+            return await self.model.ainvoke(prompt, config=config, **kwargs)
+        response = await _call_with_breaker(self.breaker, _call)
+        text = _extract_message_text(response)
+        log_json(_logger, logging.INFO, "LLM response received", text_length=len(text) if text else 0)
+        return text
+
+    async def astream(
+        self, input: Any, config: RunnableConfig | None = None, **kwargs: Any
+    ) -> AsyncIterator[str]:
+        prompt = _normalize_prompt_value(input)
+        log_json(_logger, logging.INFO, "LLM stream started", model=self.model.model)
+        
+        def _get_stream():
+            return self.model.astream(prompt, config=config, **kwargs)
+            
+        chunk_count = 0
+        async for chunk in _stream_with_breaker(self.breaker, _get_stream):
+            text_chunk = _extract_message_text(chunk)
+            if text_chunk:
+                chunk_count += 1
+                yield text_chunk
+        log_json(_logger, logging.INFO, "LLM stream completed", chunks=chunk_count)
+
+    def invoke(self, input: Any, config: RunnableConfig | None = None, **kwargs: Any) -> str:
+        return _run_sync(self.ainvoke(input, config, **kwargs))
+
+
+def build_text_llm(model_name: str) -> ProtectedLLM:
+    """Build a protected LLM instance."""
+    llm = _build_chat_model(model_name)
+    return ProtectedLLM(llm, _TEXT_BREAKER)
 
 
 class GeminiEmbeddings(Embeddings):

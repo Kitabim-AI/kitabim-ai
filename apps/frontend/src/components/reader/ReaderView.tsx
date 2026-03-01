@@ -1,84 +1,94 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   X, Type, Minus, Plus, Edit3, Save, MessageSquare,
-  RotateCcw, Wand2, ChevronRight, ChevronLeft, CheckCircle2, Loader2
+  RotateCcw, Wand2, ChevronRight, ChevronLeft, CheckCircle2, Loader2, BookOpen
 } from 'lucide-react';
 import { Book } from '@shared/types';
+import { useI18n } from '../../i18n/I18nContext';
 import { ChatInterface } from '../chat/ChatInterface';
 import { SpellCheckPanel } from '../spell-check/SpellCheckPanel';
-import { HighlightedText } from '../spell-check/HighlightedText';
 import { useSpellCheck } from '../../hooks/useSpellCheck';
-import { MarkdownContent } from '../common/MarkdownContent';
-
-interface ReaderViewProps {
-  selectedBook: Book;
-  isEditing: boolean;
-  setIsEditing: (editing: boolean) => void;
-  editContent: string;
-  setEditContent: (content: string) => void;
-  onSaveCorrections: () => void;
-  fontSize: number;
-  setFontSize: (size: number | ((prev: number) => number)) => void;
-  onClose: () => void;
-  onReProcessPage: (id: string, num: number) => void;
-  onUpdatePage: (id: string, num: number, text: string) => void;
-  currentPage: number | null;
-  setCurrentPage: (page: number) => void;
-  editingPageNum: number | null;
-  setEditingPageNum: (num: number | null) => void;
-  tempPageText: string;
-  setTempPageText: (text: string) => void;
-  chatMessages: any[];
-  chatInput: string;
-  setChatInput: (input: string) => void;
-  onSendMessage: () => void;
-  isChatting: boolean;
-  chatContainerRef: React.RefObject<HTMLDivElement>;
-  setModal: (modal: any) => void;
-}
-
+import { GlassPanel } from '../ui/GlassPanel';
+import { useIsEditor, useAuth } from '../../hooks/useAuth';
+import { useAppContext } from '../../context/AppContext';
 import { PersistenceService } from '../../services/persistenceService';
+import { PageItem } from './PageItem';
+import VirtualScrollReader from './VirtualScrollReader';
 
-export const ReaderView: React.FC<ReaderViewProps> = ({
-  selectedBook,
-  isEditing,
-  setIsEditing,
-  editContent,
-  setEditContent,
-  onSaveCorrections,
-  fontSize,
-  setFontSize,
-  onClose,
-  onReProcessPage,
-  onUpdatePage,
-  currentPage,
-  setCurrentPage,
-  editingPageNum,
-  setEditingPageNum,
-  tempPageText,
-  setTempPageText,
-  chatMessages,
-  chatInput,
-  setChatInput,
-  onSendMessage,
-  isChatting,
-  chatContainerRef,
-  setModal,
-}) => {
+export const ReaderView: React.FC = () => {
+  const {
+    selectedBook,
+    view,
+    setView,
+    previousView,
+    currentPage,
+    setCurrentPage,
+    chat,
+    bookActions,
+    setModal
+  } = useAppContext();
+
+  if (!selectedBook) return null;
+
+  const { t } = useI18n();
+  const isEditor = useIsEditor();
+  const { isAuthenticated, user } = useAuth();
+  const isGuestOrReader = !isAuthenticated || (user?.role === 'reader');
+
+  // Reader-specific state
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState('');
+  const [fontSize, setFontSize] = useState(20);
+  const [editingPageNum, setEditingPageNum] = useState<number | null>(null);
+  const [tempPageText, setTempPageText] = useState('');
+  const [pageInput, setPageInput] = useState((currentPage || 1).toString());
+  const [shouldRunSpellCheck, setShouldRunSpellCheck] = useState(false);
+  const [loadedPages, setLoadedPages] = useState<any[]>(selectedBook.pages || []);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMorePages, setHasMorePages] = useState(true);
+  const [isFetchingContent, setIsFetchingContent] = useState(false);
+  const [mobileTab, setMobileTab] = useState<'reader' | 'chat'>('reader');
+
   const pageTextAreaRef = useRef<HTMLTextAreaElement>(null);
   const globalTextAreaRef = useRef<HTMLTextAreaElement>(null);
-  const [shouldRunSpellCheck, setShouldRunSpellCheck] = React.useState(false);
-  const [loadedPages, setLoadedPages] = React.useState<any[]>(selectedBook.pages || []);
-  const [isLoadingMore, setIsLoadingMore] = React.useState(false);
-  const [hasMorePages, setHasMorePages] = React.useState(true);
   const observerTarget = useRef<HTMLDivElement>(null);
+  const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const mainScrollRef = useRef<HTMLDivElement>(null);
+
+  const onClose = () => setView(previousView);
 
   useEffect(() => {
-    // Initial sync
-    setLoadedPages(selectedBook.pages || []);
-  }, [selectedBook.id]); // Only reset on book change, rely on subsequent fetch logic for updates
+    if (isGuestOrReader) {
+      setLoadedPages([]);
+    } else {
+      setLoadedPages(selectedBook.pages || []);
+    }
+  }, [selectedBook.id, isGuestOrReader]);
 
-  // Auto-resize textarea for page edit
+  useEffect(() => {
+    if (isGuestOrReader && currentPage !== null) {
+      const fetchSpecificPage = async () => {
+        setIsLoadingMore(true);
+        try {
+          const pages = await PersistenceService.getBookPages(selectedBook.id, currentPage - 1, 1);
+          setLoadedPages(pages);
+          setPageInput(currentPage.toString());
+        } catch (err) {
+          console.error("Failed to fetch requested page", err);
+        } finally {
+          setIsLoadingMore(false);
+        }
+      };
+      fetchSpecificPage();
+    }
+  }, [selectedBook.id, currentPage, isGuestOrReader]);
+
+  useEffect(() => {
+    if (currentPage !== null) {
+      setPageInput(currentPage.toString());
+    }
+  }, [currentPage]);
+
   useEffect(() => {
     if (pageTextAreaRef.current) {
       pageTextAreaRef.current.style.height = 'auto';
@@ -86,8 +96,8 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
     }
   }, [tempPageText, editingPageNum]);
 
-  const fetchMorePages = React.useCallback(async () => {
-    if (isLoadingMore || !hasMorePages) return;
+  const fetchMorePages = useCallback(async () => {
+    if (isLoadingMore || !hasMorePages || isGuestOrReader) return;
     setIsLoadingMore(true);
 
     try {
@@ -98,7 +108,6 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
         setHasMorePages(false);
       } else {
         setLoadedPages(prev => {
-          // De-duplicate in case of race conditions or overlaps
           const existingIds = new Set(prev.map(p => p.pageNumber));
           const uniqueNew = newPages.filter((p: any) => !existingIds.has(p.pageNumber));
           return [...prev, ...uniqueNew].sort((a, b) => Number(a.pageNumber) - Number(b.pageNumber));
@@ -109,8 +118,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
     } finally {
       setIsLoadingMore(false);
     }
-  }, [isLoadingMore, hasMorePages, loadedPages.length, selectedBook.id]);
-
+  }, [isLoadingMore, hasMorePages, loadedPages.length, selectedBook.id, isGuestOrReader]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -129,22 +137,31 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
     return () => observer.disconnect();
   }, [fetchMorePages]);
 
-
-  // Also update loadedPages if selectedBook updates (e.g. from polling in App.tsx) - but be careful not to overwrite fetched pages if App.tsx doesn't have them all
-  // Actually, App.tsx polling might overwrite 'pages' with just the initial set if we aren't careful.
-  // We need to merge polling updates into our local state.
   useEffect(() => {
     if (selectedBook.pages && selectedBook.pages.length > 0) {
       setLoadedPages(prev => {
-        const prevMap = new Map(prev.map(p => [p.pageNumber, p]));
+        const prevMap = new Map<number, any>(prev.map(p => [p.pageNumber, p]));
         let hasChanges = false;
 
         selectedBook.pages.forEach(p => {
           const existing = prevMap.get(p.pageNumber);
-          // Check if content or status changed and update if so
-          if (!existing || existing.status !== p.status || existing.text !== p.text || existing.error !== p.error) {
+          if (!existing) {
             prevMap.set(p.pageNumber, p);
             hasChanges = true;
+          } else {
+            const isCurrentlyEditing = editingPageNum !== null && Number(p.pageNumber) === Number(editingPageNum);
+            if (isCurrentlyEditing) {
+              if (existing.status !== p.status || existing.error !== p.error) {
+                prevMap.set(p.pageNumber, { ...existing, status: p.status, error: p.error });
+                hasChanges = true;
+              }
+            } else {
+              if (existing.text !== p.text || existing.isVerified !== p.isVerified ||
+                existing.status !== p.status || existing.error !== p.error) {
+                prevMap.set(p.pageNumber, p);
+                hasChanges = true;
+              }
+            }
           }
         });
 
@@ -154,11 +171,10 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
         return prev;
       });
     }
-  }, [selectedBook.pages]);
-
+  }, [selectedBook.pages, editingPageNum]);
 
   const {
-    isChecking,
+    isChecking: isCheckingSpell,
     spellCheckResult,
     appliedCorrections,
     ignoredCorrections,
@@ -168,282 +184,194 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
     resetSpellCheck,
   } = useSpellCheck(selectedBook.id, editingPageNum || 0);
 
-  // Trigger auto-spell check when entering edit mode via the magic button
   useEffect(() => {
     if (editingPageNum !== null && shouldRunSpellCheck && tempPageText) {
       runSpellCheck(tempPageText);
       setShouldRunSpellCheck(false);
     }
-  }, [editingPageNum, shouldRunSpellCheck, tempPageText]);
+  }, [editingPageNum, shouldRunSpellCheck, tempPageText, runSpellCheck]);
+
+  const handleEnterGlobalEdit = async () => {
+    setIsEditing(true);
+    if (!editContent && !isFetchingContent) {
+      setIsFetchingContent(true);
+      try {
+        const content = await PersistenceService.getBookContent(selectedBook.id);
+        setEditContent(content);
+      } catch (err) {
+        console.error("Failed to fetch full book content:", err);
+      } finally {
+        setIsFetchingContent(false);
+      }
+    }
+  };
+
+  const handleSaveCorrections = () => {
+    bookActions.saveCorrections(selectedBook, editContent, setIsEditing);
+  };
+
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleUpdatePage = async (id: string, num: number, text: string) => {
+    setIsSaving(true);
+    try {
+      await bookActions.handleUpdatePage(id, num, text, setEditingPageNum);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
-    <div className="h-[calc(100vh-140px)] flex gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex-grow bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-          <div>
-            <h2 className="font-bold text-slate-900">{selectedBook.title}</h2>
-            {selectedBook.tags && selectedBook.tags.length > 0 && (
-              <div className="flex gap-1 mt-1">
-                {selectedBook.tags.map((tag, i) => (
-                  <span key={i} className="text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-100 font-medium">
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            )}
+    <div className="h-[calc(100vh-100px)] sm:h-[calc(100vh-120px)] md:h-[calc(100vh-140px)] flex flex-col xl:flex-row-reverse gap-4 xl:gap-6 py-2 md:py-4" lang="ug">
+      {/* Mobile/Tablet Tab Switcher */}
+      <div className="xl:hidden flex gap-2 px-2">
+        <button
+          onClick={() => setMobileTab('reader')}
+          className={`flex-1 flex items-center justify-center gap-3 py-3 px-4 rounded-2xl font-bold text-sm transition-all ${mobileTab === 'reader'
+            ? 'bg-[#0369a1] text-white shadow-lg'
+            : 'bg-white/60 text-[#64748b] border border-[#0369a1]/10'
+            }`}
+        >
+          <BookOpen className="inline-block" size={18} />
+          <span>{t('reader.reading')}</span>
+        </button>
+        <button
+          onClick={() => setMobileTab('chat')}
+          className={`flex-1 flex items-center justify-center gap-3 py-3 px-4 rounded-2xl font-bold text-sm transition-all ${mobileTab === 'chat'
+            ? 'bg-[#0369a1] text-white shadow-lg'
+            : 'bg-white/60 text-[#64748b] border border-[#0369a1]/10'
+            }`}
+        >
+          <MessageSquare className="inline-block" size={18} />
+          <span>{t('chat.chat')}</span>
+        </button>
+      </div>
+
+      {/* Main Content Area */}
+      <div className={`flex-grow glass-panel flex-col overflow-hidden rounded-[32px] border border-[#0369a1]/10 shadow-2xl ${mobileTab === 'reader' ? 'flex' : 'hidden xl:flex'}`}>
+        {/* Header Ribbon */}
+        <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-[#0369a1]/10 flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-4 bg-white/40">
+          <div className="flex items-center gap-4">
+            <div className="p-2 bg-[#0369a1] text-white rounded-xl shadow-lg">
+              <BookOpen size={20} />
+            </div>
+            <div>
+              <h2 className="font-normal text-[#1a1a1a] text-base sm:text-lg">
+                {selectedBook.title}
+                {selectedBook.volume ? ` (${t('book.volume', { volume: selectedBook.volume })})` : ''}
+              </h2>
+              {selectedBook.author && (
+                <p className="text-xs sm:text-sm text-[#64748b] mt-0.5">
+                  {selectedBook.author}
+                </p>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-3">
-              {!isEditing ? (
-                <button
-                  onClick={() => setIsEditing(true)}
-                  className="flex items-center gap-1.5 px-5 py-[10px] bg-indigo-50 text-indigo-600 text-[11px] font-black rounded-xl hover:bg-indigo-600 hover:text-white transition-all active:scale-95 shadow-sm shadow-indigo-100/50 uppercase tracking-tight"
-                >
-                  <Edit3 size={16} className="stroke-[3]" /> EDIT BOOK
+
+          <div className="flex items-center gap-2 flex-wrap md:flex-nowrap">
+            {isEditor && (
+              !isEditing ? (
+                <button onClick={handleEnterGlobalEdit} className="flex items-center gap-2 px-3 sm:px-4 py-2.5 min-h-[44px] bg-[#0369a1] text-white text-xs sm:text-sm rounded-2xl hover:bg-[#0284c7] transition-all">
+                  <Edit3 size={16} />
+                  <span className="hidden sm:inline">{t('reader.editBook')}</span>
                 </button>
               ) : (
-                <button
-                  onClick={onSaveCorrections}
-                  className="flex items-center gap-1.5 px-5 py-[10px] bg-indigo-600 text-white text-[11px] font-black rounded-xl hover:bg-indigo-700 transition-all active:scale-95 shadow-md shadow-indigo-100 uppercase tracking-tight"
-                >
-                  <Save size={16} className="stroke-[3]" /> UPDATE KNOWLEDGE BASE
+                <button onClick={handleSaveCorrections} className="flex items-center gap-2 px-3 sm:px-4 py-2.5 min-h-[44px] bg-[#0369a1] text-white text-xs sm:text-sm rounded-2xl hover:bg-[#0284c7] transition-all">
+                  <Save size={16} />
+                  <span className="hidden sm:inline">{t('common.save')}</span>
                 </button>
-              )}
-              <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
-                <button
-                  onClick={() => setFontSize(prev => Math.max(12, prev - 2))}
-                  className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors active:scale-90"
-                  title="Decrease Font Size"
-                >
-                  <Minus size={14} />
-                </button>
-                <div className="flex items-center gap-1 px-3 text-slate-400 border-x border-slate-100">
-                  <Type size={14} />
-                  <span className="text-[11px] font-bold font-mono text-slate-600">{fontSize}</span>
-                </div>
-                <button
-                  onClick={() => setFontSize(prev => Math.min(64, prev + 2))}
-                  className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors active:scale-90"
-                  title="Increase Font Size"
-                >
-                  <Plus size={14} />
-                </button>
-              </div>
+              )
+            )}
 
-              <button
-                onClick={() => {
-                  if (isEditing) {
-                    setIsEditing(false);
-                  } else if (editingPageNum !== null) {
-                    setEditingPageNum(null);
-                    resetSpellCheck();
-                  } else {
-                    onClose();
-                  }
-                }}
-                className="p-2 text-slate-400 hover:bg-red-50 hover:text-red-500 rounded-xl transition-all active:scale-95"
-                aria-label="Close Reader"
-              >
-                <X size={20} />
-              </button>
+            <div className="flex items-center gap-1 bg-white/60 border border-[#0369a1]/20 rounded-2xl p-1 shadow-sm">
+              <button onClick={() => setFontSize(prev => Math.max(14, prev - 2))} className="p-2.5 sm:p-2 min-w-[44px] sm:min-w-0 min-h-[44px] sm:min-h-0 hover:bg-[#0369a1]/10 rounded-xl text-[#0369a1] transition-all"><Minus size={18} /></button>
+              <span className="text-sm px-2 font-bold min-w-[32px] text-center">{fontSize}</span>
+              <button onClick={() => setFontSize(prev => Math.min(64, prev + 2))} className="p-2.5 sm:p-2 min-w-[44px] sm:min-w-0 min-h-[44px] sm:min-h-0 hover:bg-[#0369a1]/10 rounded-xl text-[#0369a1] transition-all"><Plus size={18} /></button>
             </div>
+
+
+            <button onClick={() => isEditing ? setIsEditing(false) : (editingPageNum !== null ? setEditingPageNum(null) : onClose())} className="p-2.5 min-w-[44px] min-h-[44px] text-[#94a3b8] hover:bg-red-50 hover:text-red-500 rounded-2xl transition-all"><X size={20} /></button>
           </div>
         </div>
 
-        <div className={`flex-grow ${isEditing ? 'p-6 flex flex-col' : 'p-10 overflow-y-auto'} bg-[url('https://www.transparenttextures.com/patterns/paper-fibers.png')]`}>
+        {/* Reading Canvas */}
+        <div ref={mainScrollRef} dir="rtl" className={`flex-grow overflow-y-auto custom-scrollbar paper-background ${isEditing ? 'p-3 sm:p-4' : 'p-4 sm:p-6'}`}>
           {isEditing ? (
-            <textarea
-              ref={globalTextAreaRef}
-              value={editContent}
-              onChange={(e) => setEditContent(e.target.value)}
-              className="flex-grow w-full p-6 uyghur-text border border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none resize-none bg-white shadow-inner overflow-y-auto"
-              style={{ fontSize: `${fontSize}px` }}
-              dir="rtl"
+            <div className="h-full relative">
+              {isFetchingContent && <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-20 flex items-center justify-center"><Loader2 className="w-8 h-8 text-[#0369a1] animate-spin" /></div>}
+              <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} className="w-full h-full p-6 uyghur-text border-2 border-[#0369a1]/10 rounded-3xl outline-none resize-none bg-white shadow-inner" style={{ fontSize: `${fontSize}px` }} placeholder={t('common.enterContent')} />
+            </div>
+          ) : isGuestOrReader ? (
+            <VirtualScrollReader
+              bookId={selectedBook.id}
+              totalPages={selectedBook.totalPages || (selectedBook as any).total_pages || 0}
+              fontSize={fontSize}
+              initialPage={currentPage || 1}
+              onPageChange={setCurrentPage}
+              scrollParentRef={mainScrollRef}
             />
           ) : (
-            <div className="max-w-3xl mx-auto space-y-12 pb-32">
+            <div className={`max-w-4xl mx-auto ${isGuestOrReader ? 'pt-8' : 'space-y-16 pb-40'}`}>
               {[...loadedPages]
-                .sort((a, b) => Number(a.pageNumber) - Number(b.pageNumber))
-                // Deduplicate by pageNumber just in case
-                .filter((page, index, self) =>
-                  self.findIndex(p => p.pageNumber === page.pageNumber) === index
-                )
-                .filter(page => editingPageNum === null || Number(page.pageNumber) === Number(editingPageNum))
-                .map((page) => (
-                  <div
+                .sort((a, b) => a.pageNumber - b.pageNumber)
+                .filter(page => isGuestOrReader ? Number(page.pageNumber) === Number(currentPage) : (editingPageNum === null || Number(page.pageNumber) === Number(editingPageNum)))
+                .map(page => (
+                  <PageItem
                     key={page.pageNumber}
-                    onMouseEnter={() => setCurrentPage(page.pageNumber)}
-                    className={`group relative p-8 rounded-2xl transition-all duration-300 ${currentPage === page.pageNumber ? 'bg-white shadow-xl ring-1 ring-indigo-100 scale-[1.02]' : 'bg-transparent opacity-80'}`}
-                  >
-                    <div className="flex items-center justify-between border-b border-transparent group-hover:border-slate-100 pb-4 mb-6 transition-colors">
-                      <div className="flex items-center gap-3">
-                        <span className="text-[11px] font-black text-slate-400 font-mono tracking-tighter uppercase">
-                          PAGE {page.pageNumber}
-                        </span>
-                        {currentPage === page.pageNumber && (page.status === 'pending' || page.status === 'processing') && (
-                          <Loader2 size={12} className="text-indigo-400 animate-spin" />
-                        )}
-                        {page.isVerified && (
-                          <div className="flex items-center gap-1 text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full ring-1 ring-emerald-500/20 shadow-sm shadow-emerald-100/50">
-                            <CheckCircle2 size={10} className="stroke-[3]" />
-                            <span className="text-[9px] font-black tracking-tight">VERIFIED</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {editingPageNum === null && (
-                        <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-all duration-300">
-                          <button
-                            onClick={() => {
-                              if (page.isVerified) {
-                                setModal({
-                                  isOpen: true,
-                                  title: "Confirm Re-OCR",
-                                  message: "This page has manual edits or verifications. Re-OCR will delete your work and replace it with fresh AI reading. Are you sure?",
-                                  type: 'confirm',
-                                  confirmText: "RE-OCR anyway",
-                                  onConfirm: () => {
-                                    onReProcessPage(selectedBook.id, page.pageNumber);
-                                    setModal((prev: any) => ({ ...prev, isOpen: false }));
-                                  }
-                                });
-                              } else {
-                                onReProcessPage(selectedBook.id, page.pageNumber);
-                              }
-                            }}
-                            className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white rounded-lg text-[9px] font-black transition-all active:scale-95 shadow-sm shadow-indigo-100/50"
-                          >
-                            <RotateCcw size={10} className="stroke-[3]" /> RE-OCR PAGE
-                          </button>
-                          <button
-                            onClick={() => {
-                              setEditingPageNum(page.pageNumber);
-                              setTempPageText(page.text || '');
-                            }}
-                            className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white rounded-lg text-[9px] font-black transition-all active:scale-95 shadow-sm shadow-indigo-100/50"
-                          >
-                            <Edit3 size={10} className="stroke-[3]" /> EDIT PAGE
-                          </button>
-                          <button
-                            onClick={() => {
-                              setEditingPageNum(page.pageNumber);
-                              setTempPageText(page.text || '');
-                              setShouldRunSpellCheck(true);
-                            }}
-                            className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white rounded-lg text-[9px] font-black transition-all active:scale-95 shadow-sm shadow-indigo-100/50"
-                          >
-                            <Wand2 size={10} className="stroke-[3]" /> SPELL CHECK
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    {Number(editingPageNum) === Number(page.pageNumber) ? (
-                      <div className="flex flex-col gap-4">
-                        <div className="relative w-full">
-                          {spellCheckResult && spellCheckResult.corrections.length > 0 && (
-                            <div className="absolute inset-0 p-4 pointer-events-none overflow-hidden">
-                              <HighlightedText
-                                text={tempPageText}
-                                corrections={spellCheckResult.corrections}
-                                className="uyghur-text leading-relaxed whitespace-pre-wrap"
-                                style={{ fontSize: `${fontSize}px` }}
-                                isLayer={true}
-                              />
-                            </div>
-                          )}
-                          <textarea
-                            ref={pageTextAreaRef}
-                            value={tempPageText}
-                            onChange={(e) => setTempPageText(e.target.value)}
-                            className="w-full p-4 uyghur-text border border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 outline-none resize-none bg-white/50 relative z-10 font-medium overflow-hidden leading-relaxed"
-                            style={{ fontSize: `${fontSize}px`, backgroundColor: 'transparent' }}
-                            dir="rtl"
-                          />
-                        </div>
-                        <div className="flex items-center gap-3 mt-2">
-                          <button
-                            onClick={() => {
-                              onUpdatePage(selectedBook.id, page.pageNumber, tempPageText);
-                              resetSpellCheck();
-                            }}
-                            className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-black hover:bg-indigo-700 transition-all active:scale-95 flex items-center gap-2 shadow-lg shadow-indigo-100/50"
-                          >
-                            <Save size={14} className="stroke-[3]" /> SAVE & VERIFY PAGE
-                          </button>
-                          <button
-                            onClick={() => {
-                              setEditingPageNum(null);
-                              resetSpellCheck();
-                            }}
-                            className="px-6 py-2.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-black hover:bg-slate-200 transition-all active:scale-95"
-                          >
-                            CANCEL
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      page.status === 'pending' || page.status === 'processing' ? (
-                        <div className="flex flex-col items-center justify-center py-20 text-indigo-400">
-                          <Loader2 size={32} className="animate-spin" />
-                          <span className="mt-3 text-xs font-bold uppercase tracking-widest text-indigo-300">Processing...</span>
-                        </div>
-                      ) : (
-                        <MarkdownContent
-                          content={page.text || "..."}
-                          className="uyghur-text text-slate-800"
-                          style={{ fontSize: `${fontSize}px` }}
-                        />
-                      )
-                    )}
-                  </div>
+                    page={page}
+                    isActive={currentPage === page.pageNumber}
+                    isEditing={editingPageNum === page.pageNumber}
+                    fontSize={fontSize}
+                    onSetActive={() => !isGuestOrReader && setCurrentPage(page.pageNumber)}
+                    onEdit={() => { setEditingPageNum(page.pageNumber); setTempPageText(page.text || ''); }}
+                    onReprocess={() => bookActions.handleReProcessPage(selectedBook.id, page.pageNumber)}
+                    onSpellCheck={() => { setEditingPageNum(page.pageNumber); setTempPageText(page.text || ''); setShouldRunSpellCheck(true); }}
+                    tempText={tempPageText}
+                    onTempTextChange={setTempPageText}
+                    onSave={() => handleUpdatePage(selectedBook.id, page.pageNumber, tempPageText)}
+                    onCancel={() => setEditingPageNum(null)}
+                    spellCheckResult={spellCheckResult}
+                    isLoading={!page.text && (!page.pipelineStep && (page.status === 'ocr_processing' || page.status === 'indexing' || page.status === 'pending')) || (page.pipelineStep === 'ocr' && page.milestone !== 'succeeded')}
+                    isSaving={isSaving}
+                  />
                 ))}
-
-              {/* Loader Element for Intersection Observer */}
-              {hasMorePages && !isEditing && (
-                <div ref={observerTarget} className="flex justify-center p-8">
-                  {isLoadingMore && (
-                    <div className="flex flex-col items-center gap-2">
-                      <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
-                      <span className="text-xs text-indigo-400 font-medium uppercase tracking-wider">Loading more pages...</span>
-                    </div>
-                  )}
-                </div>
-              )}
+              {!isEditing && !isGuestOrReader && hasMorePages && <div ref={observerTarget} className="h-20 flex items-center justify-center">{isLoadingMore && <Loader2 className="animate-spin text-[#0369a1]" />}</div>}
             </div>
           )}
         </div>
       </div>
 
-      <div className="w-[420px] flex flex-col gap-4">
-        {editingPageNum !== null ? (
-          <SpellCheckPanel
-            bookId={selectedBook.id}
-            pageNumber={editingPageNum}
-            pageText={tempPageText}
-            isChecking={isChecking}
-            spellCheckResult={spellCheckResult}
-            onRunSpellCheck={() => runSpellCheck(tempPageText)}
-            onApplyCorrection={(correction) => {
-              const newText = applyCorrection(correction, tempPageText);
-              setTempPageText(newText);
-            }}
-            onIgnoreCorrection={ignoreCorrection}
-            appliedCorrections={appliedCorrections}
-            ignoredCorrections={ignoredCorrections}
-          />
-        ) : (
-          <ChatInterface
-            type="book"
-            chatMessages={chatMessages}
-            chatInput={chatInput}
-            setChatInput={setChatInput}
-            onSendMessage={onSendMessage}
-            isChatting={isChatting}
-            currentPage={currentPage}
-            chatContainerRef={chatContainerRef}
-          />
-        )}
+      {/* Sidebar Area */}
+      <div className={`w-full xl:w-[500px] 2xl:w-[600px] flex-col gap-6 ${mobileTab === 'chat' ? 'flex' : 'hidden xl:flex'}`}>
+        <GlassPanel className="h-full flex flex-col overflow-hidden rounded-[32px] p-4 sm:p-6 shadow-xl border border-[#0369a1]/10">
+          {editingPageNum !== null ? (
+            <SpellCheckPanel
+              bookId={selectedBook.id}
+              pageNumber={editingPageNum}
+              pageText={tempPageText}
+              isChecking={isCheckingSpell}
+              spellCheckResult={spellCheckResult}
+              onRunSpellCheck={() => runSpellCheck(tempPageText)}
+              onApplyCorrection={(c) => setTempPageText(applyCorrection(c, tempPageText))}
+              onIgnoreCorrection={ignoreCorrection}
+              appliedCorrections={appliedCorrections}
+              ignoredCorrections={ignoredCorrections}
+            />
+          ) : (
+            <ChatInterface
+              type="book"
+              chatMessages={chat.chatMessages}
+              chatInput={chat.chatInput}
+              setChatInput={chat.setChatInput}
+              onSendMessage={chat.handleSendMessage}
+              isChatting={chat.isChatting}
+              streamingMessage={chat.streamingMessage}
+              currentPage={currentPage}
+              usageStatus={chat.usageStatus}
+              chatContainerRef={chat.chatContainerRef}
+            />
+          )}
+        </GlassPanel>
       </div>
     </div>
   );

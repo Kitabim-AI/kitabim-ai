@@ -1,23 +1,37 @@
 # AGENTS.md — Backend API
 
 ## Service Purpose
-FastAPI API service that orchestrates uploads, OCR, embeddings, and RAG. It runs the shared backend core package.
+FastAPI API service that handles HTTP requests, authentication, and orchestrates uploads, OCR, embeddings, and RAG.
 
 ## Code Location
-- Core logic lives in `packages/backend-core/app`.
-- This service is a thin runtime wrapper.
+- **Backend-specific code lives here** (`services/backend/`): `main.py`, `api/`, `auth/`, `locales/`
+- **Shared business logic** lives in `packages/backend-core/app` (DB, services, utils, queue, langchain, models)
+- Both are on `PYTHONPATH` in the Docker image
+
+## Structure
+```
+services/backend/
+  main.py        ← FastAPI app entry point
+  api/           ← HTTP route handlers (endpoints)
+  auth/          ← JWT, OAuth, dependency injection
+  locales/       ← i18n translation JSON files
+```
 
 ## Run (Dev)
 ```bash
-PYTHONPATH=packages/backend-core uvicorn app.main:app --reload --port 8000 --app-dir packages/backend-core
+PYTHONPATH=packages/backend-core:services/backend uvicorn main:app --reload --port 8000 --app-dir services/backend
 ```
 
 ## Dependencies
-- MongoDB (required)
+- PostgreSQL (required, host or container)
 - Redis (required, queue/worker)
-- UyghurOCR service (optional, only if `OCR_PROVIDER=local`)
 
 ## Notes
 - Do not move secrets into the frontend; backend owns all AI keys.
-- Update `README.md` and `SYSTEM_DESIGN.md` when API behavior changes.
-- Local dev uses Docker Desktop Kubernetes (see `infra/k8s/docker-desktop`).
+- Backend-specific code belongs in `services/backend/`. Shared code belongs in `packages/backend-core/app/`.
+- Local dev uses Kubernetes (see `k8s/local`).
+
+## Standard Rules
+- **GLOBAL RULES**: Refer to the root `AGENTS.md` for standardized project rules.
+- **SCRIPTS**: All operational/debug scripts MUST go in the root `scripts/` folder.
+- **DOCS**: All new documentation MUST go in the root `docs/` folder.

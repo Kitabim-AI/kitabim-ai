@@ -37,7 +37,8 @@ def configure_logging(level: int = logging.INFO) -> None:
     root.setLevel(level)
     root.handlers = [handler]
 
-    for name in ("uvicorn", "uvicorn.error", "uvicorn.access", "google_genai"):
+    # Silence noisy loggers - keep only warnings and errors
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access", "google_genai", "arq.worker", "arq.jobs"):
         logging.getLogger(name).handlers = [handler]
         logging.getLogger(name).propagate = False
         logging.getLogger(name).setLevel(logging.WARNING)

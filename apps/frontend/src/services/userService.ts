@@ -14,6 +14,7 @@ export interface UserPublic {
   role: 'admin' | 'editor' | 'reader';
   is_active: boolean;
   created_at?: string;
+  last_login_at?: string;
 }
 
 export interface PaginatedUsers {
@@ -30,11 +31,19 @@ export const UserService = {
   async listUsers(
     page: number = 1,
     pageSize: number = 20,
-    roleFilter?: string
+    roleFilter?: string,
+    statusFilter?: string,
+    search?: string
   ): Promise<PaginatedUsers> {
     let url = `${API_BASE}/?page=${page}&page_size=${pageSize}`;
     if (roleFilter && roleFilter !== 'all') {
       url += `&role=${roleFilter}`;
+    }
+    if (statusFilter && statusFilter !== 'all') {
+      url += `&status=${statusFilter}`;
+    }
+    if (search) {
+      url += `&search=${encodeURIComponent(search)}`;
     }
 
     const response = await authFetch(url);

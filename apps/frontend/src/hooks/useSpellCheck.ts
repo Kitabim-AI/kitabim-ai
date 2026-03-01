@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { SpellCorrection, SpellCheckResult } from '../components/spell-check/SpellCheckPanel';
+import { authFetch } from '../services/authService';
 
 const API_BASE_URL = '/api';
 
@@ -18,8 +19,8 @@ export const useSpellCheck = (bookId: string, pageNumber: number) => {
     setIgnoredCorrections(new Set());
 
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/books/${bookId}/pages/${pageNumber}/spell-check/`,
+      const response = await authFetch(
+        `${API_BASE_URL}/books/${bookId}/pages/${pageNumber}/spell-check`,
         {
           method: 'POST',
           headers: {

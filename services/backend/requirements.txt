@@ -1,6 +1,5 @@
 fastapi
 uvicorn
-motor
 pydantic
 python-multipart
 pymupdf
@@ -10,6 +9,16 @@ httpx
 pillow
 langchain
 langchain-core
+langchain-community
 langchain-google-genai
 arq
 python-jose[cryptography]
+asyncpg==0.31.0
+pgvector==0.4.2
+tqdm==4.66.1
+sqlalchemy[asyncio]==2.0.36
+alembic==1.14.0
+greenlet==3.1.1
+flashrank==0.2.9
+google-cloud-storage
+google-genai

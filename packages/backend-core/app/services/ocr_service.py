@@ -24,7 +24,7 @@ async def ocr_page_with_gemini(page: fitz.Page) -> str:
             return clean_uyghur_text(text or "")
         except Exception as exc:
             err_msg = str(exc)
-            if ("503" in err_msg or "overloaded" in err_msg.lower()) and attempt < settings.ocr_max_retries - 1:
+            if any(x in err_msg or x in err_msg.lower() for x in ["429", "503", "overloaded", "resource_exhausted"]) and attempt < settings.ocr_max_retries - 1:
                 await asyncio.sleep((2 ** (attempt + 1)) + random.uniform(0, 1))
                 continue
             raise

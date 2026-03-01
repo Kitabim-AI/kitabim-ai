@@ -1,19 +1,49 @@
+# Git
+.git
+.gitignore
+
+# IDEs
+.vscode
+.idea
+.claude
+.gemini
+*.swp
+*.swo
+
+# Project specific
+.agent
+.last_deploy_*
+AGENTS.md
+prototypes
+docs
+books.json
+output
+output.txt
+prev_logs.txt
+
+# Node
 node_modules
 **/node_modules
+apps/frontend/dist
+
+# Python
 **/__pycache__
 **/*.pyc
-.env
-.env.*
-coverage
-.data
-# Runtime data
-/data
-# Virtual envs
+**/*.pyo
+**/*.pyd
+.venv
 venv
 **/venv
-# Reference repo
+.pytest_cache
+.coverage
+htmlcov
+
+# Data
+.data
+/data
 UyghurOCR
-# Logs
-*.log
-# Build outputs
-**/dist
+
+# Env
+.env
+.env.*
+!.env.example

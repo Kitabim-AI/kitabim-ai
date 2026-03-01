@@ -1,0 +1,57 @@
+# Frontend Deployment and Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: kitabim
+  labels:
+    app: kitabim
+    component: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kitabim
+      component: frontend
+  template:
+    metadata:
+      labels:
+        app: kitabim
+        component: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: kitabim-frontend:local
+          imagePullPolicy: Never # Use locally built image
+          ports:
+            - containerPort: 80
+              name: http
+          env:
+            - name: VITE_API_URL
+              value: "/api"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: kitabim
+  labels:
+    app: kitabim
+    component: frontend
+spec:
+  type: NodePort
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 30080
+      name: http
+  selector:
+    app: kitabim
+    component: frontend

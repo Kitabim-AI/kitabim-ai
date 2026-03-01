@@ -520,7 +520,7 @@ Processing jobs have a maximum time limit. If processing exceeds this limit, the
 The system must be designed and optimized to handle a digital library of at least **2,000 books**. Based on an average of 300 pages per book and semantic chunking, the system must effectively manage and search a database of approximately **3,000,000 unique text segments**.
 
 **REQ-SCALE-002: Database-Level Vector Indexing**  
-To maintain performance at scale, the system must utilize database-level vector indexing (e.g., Atlas Vector Search). Similarity calculations for AI chat and semantic search must be performed by the database engine rather than the application tier to ensure sub-second retrieval times across millions of records.
+To maintain performance at scale, the system must utilize database-level vector indexing (PostgreSQL with pgvector). Similarity calculations for AI chat and semantic search must be performed by the database engine rather than the application tier to ensure sub-second retrieval times across millions of records.
 
 **REQ-SCALE-003: Mandatory Intelligent Routing**  
 The Global Chat Assistant must employ an intelligent "Routing" or "Librarian" phase for every query. The system must first narrow the search space to relevant categories or metadata filters before performing vector similarity searches, preventing performance degradation and "noise" from unrelated sections of the library.

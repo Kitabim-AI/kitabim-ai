@@ -8,37 +8,39 @@ export const NotificationContainer: React.FC = () => {
   if (notifications.length === 0) return null;
 
   return (
-    <div className="flex flex-col gap-2 mb-4 w-full">
+    <div className="fixed top-24 right-8 z-[2000] flex flex-col gap-4 w-full max-w-sm pointer-events-none" dir="rtl" lang="ug">
       {notifications.map((notification) => (
         <div
           key={notification.id}
-          className={`flex items-center justify-between p-4 rounded-xl border animate-in fade-in slide-in-from-top-4 duration-300 ${notification.type === 'success'
-              ? 'bg-emerald-50 border-emerald-100 text-emerald-800 shadow-sm shadow-emerald-100/50'
-              : notification.type === 'error'
-                ? 'bg-rose-50 border-rose-100 text-rose-800 shadow-sm shadow-rose-100/50'
-                : 'bg-indigo-50 border-indigo-100 text-indigo-800 shadow-sm shadow-indigo-100/50'
+          className={`pointer-events-auto flex items-center justify-between p-6 bg-white/80 backdrop-blur-2xl rounded-3xl border shadow-2xl animate-fade-in ${notification.type === 'success'
+            ? 'border-emerald-500/20 text-[#1a1a1a] shadow-emerald-500/5'
+            : notification.type === 'error'
+              ? 'border-red-500/20 text-[#1a1a1a] shadow-red-500/5'
+              : 'border-[#0369a1]/20 text-[#1a1a1a] shadow-[#0369a1]/5'
             }`}
         >
-          <div className="flex items-center gap-3">
-            {notification.type === 'success' ? (
-              <CheckCircle2 size={18} className="text-emerald-500" />
-            ) : notification.type === 'error' ? (
-              <AlertCircle size={18} className="text-rose-500" />
-            ) : (
-              <AlertCircle size={18} className="text-indigo-500" />
-            )}
-            <p className="text-sm font-medium">{notification.message}</p>
+          <div className="flex items-center gap-4">
+            <div className={`p-2.5 rounded-2xl ${notification.type === 'success'
+              ? 'bg-emerald-50 text-emerald-500'
+              : notification.type === 'error'
+                ? 'bg-red-50 text-red-500'
+                : 'bg-[#0369a1]/10 text-[#0369a1]'
+              }`}>
+              {notification.type === 'success' ? (
+                <CheckCircle2 size={24} strokeWidth={3} />
+              ) : notification.type === 'error' ? (
+                <AlertCircle size={24} strokeWidth={3} />
+              ) : (
+                <AlertCircle size={24} strokeWidth={3} />
+              )}
+            </div>
+            <p className="text-sm font-normal uyghur-text leading-relaxed">{notification.message}</p>
           </div>
           <button
             onClick={() => removeNotification(notification.id)}
-            className={`p-1 rounded-lg transition-colors ${notification.type === 'success'
-                ? 'hover:bg-emerald-100 text-emerald-400 hover:text-emerald-600'
-                : notification.type === 'error'
-                  ? 'hover:bg-rose-100 text-rose-400 hover:text-rose-600'
-                  : 'hover:bg-indigo-100 text-indigo-400 hover:text-indigo-600'
-              }`}
+            className="p-2 hover:bg-slate-100 text-slate-300 hover:text-slate-500 rounded-xl transition-all active:scale-90"
           >
-            <X size={16} />
+            <X size={20} strokeWidth={3} />
           </button>
         </div>
       ))}

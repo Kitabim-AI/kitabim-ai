@@ -4,6 +4,7 @@ import ReactDOM from 'react-dom/client';
 import App from './src/App';
 import { AuthProvider } from './src/hooks/useAuth';
 import { NotificationProvider } from './src/context/NotificationContext';
+import { I18nProvider } from './src/i18n/I18nContext';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -13,10 +14,12 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <AuthProvider>
-      <NotificationProvider>
-        <App />
-      </NotificationProvider>
-    </AuthProvider>
+    <I18nProvider>
+      <AuthProvider>
+        <NotificationProvider>
+          <App />
+        </NotificationProvider>
+      </AuthProvider>
+    </I18nProvider>
   </React.StrictMode>
 );

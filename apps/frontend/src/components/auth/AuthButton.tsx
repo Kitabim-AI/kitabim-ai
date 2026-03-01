@@ -1,89 +1,187 @@
-/**
- * Authentication UI components.
- */
-
-import React from 'react';
-import { useAuth, useIsAdmin, useIsEditor } from '../../hooks/useAuth';
+import React, { useState, useEffect, useRef } from 'react';
+import { useAuth } from '../../hooks/useAuth';
+import { LogOut, User as UserIcon, LogIn, ChevronDown, Shield, Edit3, BookOpen } from 'lucide-react';
+import { useI18n } from '../../i18n/I18nContext';
+import { UserAvatar } from '../common/UserAvatar';
 
 interface LoginButtonProps {
   className?: string;
 }
 
-/**
- * Google login button component.
- */
 export function LoginButton({ className = '' }: LoginButtonProps) {
-  const { login, isLoading } = useAuth();
+  const { loginWithGoogle, isLoading } = useAuth();
+  const { t } = useI18n();
 
   return (
     <button
-      onClick={login}
+      onClick={loginWithGoogle}
       disabled={isLoading}
-      className={`login-button ${className}`}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        padding: '8px 16px',
-        backgroundColor: '#4285f4',
-        color: 'white',
-        border: 'none',
-        borderRadius: '6px',
-        cursor: isLoading ? 'wait' : 'pointer',
-        fontSize: '14px',
-        fontWeight: 500,
-        opacity: isLoading ? 0.7 : 1,
-        transition: 'opacity 0.2s, transform 0.2s',
-      }}
-      onMouseEnter={(e) => {
-        if (!isLoading) {
-          e.currentTarget.style.opacity = '0.9';
-          e.currentTarget.style.transform = 'translateY(-1px)';
-        }
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.opacity = isLoading ? '0.7' : '1';
-        e.currentTarget.style.transform = 'translateY(0)';
-      }}
+      className={`flex items-center gap-3 px-6 py-2.5 bg-white hover:bg-[#0369a1]/10 text-[#1a1a1a] border-2 border-[#0369a1]/20 rounded-2xl font-normal text-sm transition-all active:scale-95 disabled:opacity-50 shadow-sm hover:shadow-lg shadow-[#0369a1]/10 ${className}`}
     >
-      {/* Google Icon SVG */}
-      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-        <path
-          d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"
-          fill="#4285F4"
-        />
-        <path
-          d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z"
-          fill="#34A853"
-        />
-        <path
-          d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"
-          fill="#FBBC05"
-        />
-        <path
-          d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"
-          fill="#EA4335"
-        />
-      </svg>
-      {isLoading ? 'Signing in...' : 'Sign in with Google'}
+      <div className="bg-[#4285F4] p-1.5 rounded-lg">
+        <svg width="16" height="16" viewBox="0 0 18 18" fill="white">
+          <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z" />
+          <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" />
+          <path d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" />
+          <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" />
+        </svg>
+      </div>
+      <span className="uyghur-text">{isLoading ? t('auth.loggingIn') : t('auth.loginWithGoogle')}</span>
     </button>
   );
 }
 
-interface UserMenuProps {
-  className?: string;
+export function FacebookLoginButton({ className = '' }: LoginButtonProps) {
+  const { loginWithFacebook, isLoading } = useAuth();
+  const { t } = useI18n();
+
+  return (
+    <button
+      onClick={loginWithFacebook}
+      disabled={isLoading}
+      className={`flex items-center gap-3 px-6 py-2.5 bg-white hover:bg-[#1877F2]/10 text-[#1a1a1a] border-2 border-[#1877F2]/20 rounded-2xl font-normal text-sm transition-all active:scale-95 disabled:opacity-50 shadow-sm hover:shadow-lg shadow-[#1877F2]/10 ${className}`}
+    >
+      <div className="bg-[#1877F2] p-1.5 rounded-lg">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+          <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+        </svg>
+      </div>
+      <span className="uyghur-text">{isLoading ? t('auth.loggingIn') : t('auth.loginWithFacebook')}</span>
+    </button>
+  );
 }
 
-/**
- * User menu dropdown showing avatar, name, role, and logout.
- */
-export function UserMenu({ className = '' }: UserMenuProps) {
-  const { user, logout, isLoading } = useAuth();
-  const [isOpen, setIsOpen] = React.useState(false);
-  const menuRef = React.useRef<HTMLDivElement>(null);
+export function TwitterLoginButton({ className = '' }: LoginButtonProps) {
+  const { loginWithTwitter, isLoading } = useAuth();
+  const { t } = useI18n();
 
-  // Close menu when clicking outside
-  React.useEffect(() => {
+  return (
+    <button
+      onClick={loginWithTwitter}
+      disabled={isLoading}
+      className={`flex items-center gap-3 px-6 py-2.5 bg-white hover:bg-black/10 text-[#1a1a1a] border-2 border-black/20 rounded-2xl font-normal text-sm transition-all active:scale-95 disabled:opacity-50 shadow-sm hover:shadow-lg shadow-black/10 ${className}`}
+    >
+      <div className="bg-black p-1.5 rounded-lg">
+        {/* X (formerly Twitter) logo */}
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+        </svg>
+      </div>
+      <span className="uyghur-text">{isLoading ? t('auth.loggingIn') : t('auth.loginWithTwitter')}</span>
+    </button>
+  );
+}
+
+export function OAuthButtonGroup({ className = '', align = 'down', side = 'left' }: { className?: string; align?: 'up' | 'down'; side?: 'left' | 'right' }) {
+  const { loginWithGoogle, loginWithFacebook, loginWithTwitter, isLoading } = useAuth();
+  const { t } = useI18n();
+  const [isOpen, setIsOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const loginOptions = [
+    {
+      name: 'Google',
+      onClick: loginWithGoogle,
+      icon: (
+        <div className="bg-[#4285F4] p-2 rounded-lg">
+          <svg width="20" height="20" viewBox="0 0 18 18" fill="white">
+            <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z" />
+            <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" />
+            <path d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" />
+            <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" />
+          </svg>
+        </div>
+      ),
+      color: '#4285F4'
+    },
+    /* Hidden for now
+    {
+      name: 'Facebook',
+      onClick: loginWithFacebook,
+      icon: (
+        <div className="bg-[#1877F2] p-2 rounded-lg">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+            <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+          </svg>
+        </div>
+      ),
+      color: '#1877F2'
+    },
+    {
+      name: 'X',
+      onClick: loginWithTwitter,
+      icon: (
+        <div className="bg-black p-2 rounded-lg">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+          </svg>
+        </div>
+      ),
+      color: '#000000'
+    }
+    */
+  ];
+
+  return (
+    <div ref={menuRef} className={`relative ${className}`}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        disabled={isLoading}
+        className="flex items-center gap-3 px-6 py-3 bg-gradient-to-r from-[#0369a1] to-[#0284c7] hover:from-[#0284c7] hover:to-[#0369a1] text-white rounded-2xl font-normal text-base transition-all active:scale-95 disabled:opacity-50 shadow-lg hover:shadow-xl shadow-[#0369a1]/30"
+      >
+        <LogIn size={20} strokeWidth={2.5} />
+        <span className="uyghur-text">{isLoading ? t('auth.loggingIn') : t('auth.signIn')}</span>
+        <ChevronDown size={16} className={`transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} strokeWidth={3} />
+      </button>
+
+      {isOpen && (
+        <div className={`absolute ${align === 'up' ? 'bottom-full mb-2' : 'top-full mt-2'} ${side === 'right' ? 'right-0' : 'left-0'} w-[280px] bg-white/95 backdrop-blur-2xl border border-[#0369a1]/20 rounded-2xl shadow-[0_16px_64px_rgba(3,105,161,0.15)] overflow-hidden animate-fade-in z-50`}>
+          {loginOptions.map((option, index) => (
+            <button
+              key={option.name}
+              onClick={() => {
+                setIsOpen(false);
+                option.onClick();
+              }}
+              disabled={isLoading}
+              className={`w-full flex items-center gap-3 px-4 py-3 text-[#1a1a1a] hover:bg-gradient-to-r transition-all font-normal text-sm group ${index !== loginOptions.length - 1 ? 'border-b border-[#0369a1]/10' : ''
+                }`}
+              style={{
+                ['--tw-gradient-from' as string]: `${option.color}10`,
+                ['--tw-gradient-to' as string]: `${option.color}05`
+              }}
+            >
+              {option.icon}
+              <span className="uyghur-text flex-1 text-left whitespace-nowrap">
+                {option.name} {t('auth.loginWithGoogle').split(' ')[0] !== 'Login' ? 'بىلەن كىرىش' : `with ${option.name}`}
+              </span>
+              <ChevronDown size={14} className="opacity-0 group-hover:opacity-100 -rotate-90 transition-all" style={{ color: option.color }} strokeWidth={3} />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+export function UserMenu({ onLogout }: { onLogout?: () => void }) {
+  const { user, logout, isLoading } = useAuth();
+  const { t } = useI18n();
+  const [isOpen, setIsOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setIsOpen(false);
@@ -95,148 +193,90 @@ export function UserMenu({ className = '' }: UserMenuProps) {
 
   if (!user) return null;
 
-  const roleColors: Record<string, string> = {
-    admin: '#ef4444',
-    editor: '#3b82f6',
-    reader: '#10b981',
+  const roleInfo: Record<string, { label: string; bg: string; text: string; icon: React.ReactNode }> = {
+    admin: {
+      label: t('admin.users.admin'),
+      bg: 'linear-gradient(135deg, #0369a1 0%, #0284c7 100%)',
+      text: 'text-white',
+      icon: <Shield size={12} />
+    },
+    editor: {
+      label: t('admin.users.editor'),
+      bg: 'linear-gradient(135deg, #0369a1 0%, #0284c7 100%)',
+      text: 'text-white',
+      icon: <Edit3 size={12} />
+    },
+    reader: {
+      label: t('admin.users.reader'),
+      bg: 'linear-gradient(135deg, #64748b 0%, #475569 100%)',
+      text: 'text-white',
+      icon: <BookOpen size={12} />
+    },
   };
 
+  const currentRole = roleInfo[user.role] || roleInfo.reader;
+
   return (
-    <div ref={menuRef} className={`user-menu ${className}`} style={{ position: 'relative' }}>
+    <div ref={menuRef} className="relative z-[1001]" dir="rtl">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          padding: '4px 8px',
-          background: 'rgba(255, 255, 255, 0.1)',
-          border: '1px solid rgba(255, 255, 255, 0.2)',
-          borderRadius: '8px',
-          cursor: 'pointer',
-          color: 'inherit',
-        }}
+        className={`p-1.5 bg-white/75 backdrop-blur-md border border-[#0369a1]/10 rounded-2xl transition-all hover:bg-white hover:shadow-xl hover:shadow-[#0369a1]/10 group ${isOpen ? 'ring-4 ring-[#0369a1]/5 border-[#0369a1]/30' : ''}`}
       >
-        {user.avatarUrl ? (
-          <img
-            src={user.avatarUrl}
-            alt={user.displayName}
-            style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '50%',
-              objectFit: 'cover',
-            }}
+        <div className="relative">
+          <UserAvatar
+            url={user.avatarUrl}
+            name={user.displayName}
+            className="w-10 h-10 rounded-xl object-cover ring-2 ring-white shadow-md transition-transform group-hover:scale-110"
           />
-        ) : (
           <div
-            style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '50%',
-              backgroundColor: '#6366f1',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '14px',
-              fontWeight: 'bold',
-              color: 'white',
-            }}
+            className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-lg border-2 border-white flex items-center justify-center text-white shadow-sm`}
+            style={{ background: currentRole.bg }}
           >
-            {user.displayName.charAt(0).toUpperCase()}
+            {currentRole.icon}
           </div>
-        )}
-        <span style={{ fontSize: '14px', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {user.displayName}
-        </span>
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 12 12"
-          fill="currentColor"
-          style={{
-            transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-            transition: 'transform 0.2s',
-          }}
-        >
-          <path d="M6 8L2 4h8L6 8z" />
-        </svg>
+        </div>
       </button>
 
       {isOpen && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '100%',
-            right: 0,
-            marginTop: '8px',
-            backgroundColor: '#1f2937',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            borderRadius: '8px',
-            minWidth: '200px',
-            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.3)',
-            zIndex: 1000,
-            overflow: 'hidden',
-          }}
-        >
-          {/* User Info */}
-          <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
-            <div style={{ fontSize: '14px', fontWeight: 500 }}>{user.displayName}</div>
-            <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)', marginTop: '2px' }}>
-              {user.email}
+        <div className="absolute top-full left-0 mt-4 w-72 bg-white/95 backdrop-blur-2xl border border-[#0369a1]/20 rounded-[32px] shadow-[0_32px_128px_rgba(3,105,161,0.1)] overflow-hidden animate-fade-in p-2">
+          {/* User Header */}
+          <div className="p-6 mb-2 bg-gradient-to-br from-[#0369a1]/5 to-[#0284c7]/5 rounded-[24px] flex flex-col items-center text-center">
+            <div className="relative mb-4">
+              <div className="w-20 h-20 rounded-[28px] shadow-2xl overflow-hidden border-4 border-white bg-white transform rotate-3 transition-transform hover:rotate-0">
+                <UserAvatar
+                  url={user.avatarUrl}
+                  name={user.displayName}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div
+                className="absolute -bottom-2 -right-2 px-3 py-1 rounded-full text-[11px] font-normal uppercase text-white shadow-lg"
+                style={{ background: currentRole.bg }}
+              >
+                {currentRole.label}
+              </div>
             </div>
-            <div
-              style={{
-                display: 'inline-block',
-                marginTop: '8px',
-                padding: '2px 8px',
-                backgroundColor: roleColors[user.role] || '#6b7280',
-                color: 'white',
-                borderRadius: '4px',
-                fontSize: '11px',
-                fontWeight: 'bold',
-                textTransform: 'uppercase',
-              }}
-            >
-              {user.role}
-            </div>
+            <div className="font-normal text-[#1a1a1a] text-lg">{user.displayName}</div>
+            <div className="text-[13px] font-normal text-slate-400 mt-1">{user.email}</div>
           </div>
 
-          {/* Actions */}
-          <div style={{ padding: '8px' }}>
+          <div className="p-2 space-y-1">
             <button
               onClick={() => {
                 setIsOpen(false);
                 logout();
+                onLogout?.();
               }}
               disabled={isLoading}
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                backgroundColor: 'transparent',
-                border: 'none',
-                borderRadius: '6px',
-                color: '#ef4444',
-                cursor: 'pointer',
-                textAlign: 'left',
-                fontSize: '14px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'transparent';
-              }}
+              className="w-full flex items-center justify-between px-5 py-4 text-[#1a1a1a] hover:bg-[#0369a1]/5 rounded-2xl transition-all font-normal text-sm active:scale-95 group"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
-                <polyline points="16,17 21,12 16,7" />
-                <line x1="21" y1="12" x2="9" y2="12" />
-              </svg>
-              Sign out
+              <div className="flex items-center gap-4">
+                <div className="p-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-xl group-hover:bg-[#0369a1] group-hover:text-white transition-all shadow-sm">
+                  <LogOut size={18} strokeWidth={2.5} />
+                </div>
+                <span className="group-hover:text-[#0369a1] transition-colors uppercase font-normal">{t('auth.logout')}</span>
+              </div>
+              <ChevronDown size={14} className="opacity-0 group-hover:opacity-100 -rotate-90 transition-all text-[#0369a1]/30" strokeWidth={3} />
             </button>
           </div>
         </div>
@@ -245,21 +285,20 @@ export function UserMenu({ className = '' }: UserMenuProps) {
   );
 }
 
-/**
- * Combined auth button that shows login or user menu based on auth state.
- */
-export function AuthButton() {
+export function AuthButton({ onLogout }: { onLogout?: () => void }) {
   const { isAuthenticated, isLoading } = useAuth();
+  const { t } = useI18n();
 
   if (isLoading) {
     return (
-      <div style={{ padding: '8px 16px', opacity: 0.5 }}>
-        Loading...
+      <div className="flex items-center gap-2 px-6 py-2.5 bg-white/40 backdrop-blur-md rounded-2xl border border-[#0369a1]/10 animate-pulse">
+        <div className="w-4 h-4 bg-[#0369a1]/30 rounded-full animate-bounce" />
+        <span className="text-sm font-normal text-[#0369a1]/50 uppercase">{t('common.loading')}</span>
       </div>
     );
   }
 
-  return isAuthenticated ? <UserMenu /> : <LoginButton />;
+  return isAuthenticated ? <UserMenu onLogout={onLogout} /> : <OAuthButtonGroup />;
 }
 
 export default AuthButton;
