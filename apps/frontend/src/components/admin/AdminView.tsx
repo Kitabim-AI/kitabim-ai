@@ -12,7 +12,7 @@ const getStatusTextColor = (step: string | null) => {
   if (!step) return 'text-slate-400';
   switch (step.toLowerCase()) {
     case 'ready': return 'text-emerald-600 font-bold';
-    case 'embedding': return 'text-purple-600 font-bold';
+    case 'embedding': return 'text-orange-600 font-bold';
     case 'chunking': return 'text-indigo-600 font-bold';
     case 'ocr': return 'text-blue-600 font-bold';
     case 'error': return 'text-red-500 font-bold';
@@ -145,15 +145,23 @@ export const AdminView: React.FC = () => {
 
       <NotificationContainer />
 
-      {(bookActions.isCheckingGlobal || isInitialLoading) && books.length === 0 && (
-        <div className="glass-panel p-20 flex flex-col items-center justify-center text-center animate-pulse">
-          <Database className="w-16 h-16 text-[#75C5F0] mb-6 animate-bounce" />
+      {(bookActions.isCheckingGlobal || (isInitialLoading && books.length === 0)) && (
+        <div className="glass-panel p-20 flex flex-col items-center justify-center text-center animate-pulse z-50">
+          <Database className="w-16 h-16 text-[#0369a1] mb-6 animate-bounce" />
           <h3 className="text-xl font-normal text-[#1a1a1a]">{t('common.loading')}</h3>
-          <p className="text-slate-500 font-normal">{t('admin.table.uploading')}</p>
+          <p className="text-slate-500 font-normal">{bookActions.isCheckingGlobal ? t('admin.table.uploading') : t('common.fetchingData')}</p>
         </div>
       )}
 
-      {(!bookActions.isCheckingGlobal && (!isInitialLoading || books.length > 0)) && (
+      {(!bookActions.isCheckingGlobal && !isInitialLoading && books.length === 0) && (
+        <div className="glass-panel p-20 flex flex-col items-center justify-center text-center">
+          <Database className="w-16 h-16 text-[#94a3b8] mb-6" />
+          <h3 className="text-xl font-normal text-[#1a1a1a]">{t('admin.table.noBooks')}</h3>
+          <p className="text-slate-500 font-normal">{t('admin.table.uploadFirst')}</p>
+        </div>
+      )}
+
+      {!bookActions.isCheckingGlobal && books.length > 0 && (
         <div className="glass-panel overflow-hidden rounded-[16px] md:rounded-[24px] p-0 shadow-xl border border-[#0369a1]/10">
           <div className="overflow-x-auto custom-scrollbar">
             <table className="w-full text-right lg:min-w-[900px]" dir="rtl">

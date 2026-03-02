@@ -34,6 +34,8 @@ interface AppContextType {
   hasMoreShelf: boolean;
   isLoadingMoreShelf: boolean;
   loaderRef: React.RefObject<HTMLDivElement | null>;
+  isReaderFullscreen: boolean;
+  setIsReaderFullscreen: (v: boolean) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -59,6 +61,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [currentPage, setCurrentPage] = useState<number | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [isReaderFullscreen, setIsReaderFullscreen] = useState(false);
   const loaderRef = useRef<HTMLDivElement>(null);
 
   const [modal, setModal] = useState<{
@@ -135,7 +138,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     loadMoreShelf,
     hasMoreShelf,
     isLoadingMoreShelf,
-    loaderRef
+    loaderRef,
+    isReaderFullscreen,
+    setIsReaderFullscreen,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

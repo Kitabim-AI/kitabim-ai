@@ -102,6 +102,9 @@ class Settings:
     default_user_role: str = os.getenv("DEFAULT_USER_ROLE", "reader")
     admin_emails: str = os.getenv("ADMIN_EMAILS", "")  # Comma-separated list of admin emails
 
+    # Cookie Security (set COOKIE_SECURE=false for local HTTP dev)
+    cookie_secure: bool = os.getenv("COOKIE_SECURE", "true").lower() == "true"
+
 
 settings = Settings()
 

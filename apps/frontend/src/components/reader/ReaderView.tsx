@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   X, Type, Minus, Plus, Edit3, Save, MessageSquare,
-  RotateCcw, Wand2, ChevronRight, ChevronLeft, CheckCircle2, Loader2, BookOpen
+  RotateCcw, Wand2, ChevronRight, ChevronLeft, CheckCircle2, Loader2, BookOpen,
+  Maximize2, Minimize2
 } from 'lucide-react';
 import { Book } from '@shared/types';
 import { useI18n } from '../../i18n/I18nContext';
 import { ChatInterface } from '../chat/ChatInterface';
-import { SpellCheckPanel } from '../spell-check/SpellCheckPanel';
 import { useSpellCheck } from '../../hooks/useSpellCheck';
 import { GlassPanel } from '../ui/GlassPanel';
 import { useIsEditor, useAuth } from '../../hooks/useAuth';
@@ -25,7 +25,8 @@ export const ReaderView: React.FC = () => {
     setCurrentPage,
     chat,
     bookActions,
-    setModal
+    setModal,
+    setIsReaderFullscreen,
   } = useAppContext();
 
   if (!selectedBook) return null;
@@ -38,7 +39,21 @@ export const ReaderView: React.FC = () => {
   // Reader-specific state
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
-  const [fontSize, setFontSize] = useState(20);
+  const [fontSize, setFontSize] = useState(() => window.innerWidth < 640 ? 18 : 20);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Sync local fullscreen state → context (so Shell can hide the navbar)
+  useEffect(() => {
+    setIsReaderFullscreen(isFullscreen);
+    return () => setIsReaderFullscreen(false);
+  }, [isFullscreen]);
+
+  // Exit fullscreen automatically when screen grows to lg (1024px+)
+  useEffect(() => {
+    const onResize = () => { if (window.innerWidth >= 1024) setIsFullscreen(false); };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
   const [editingPageNum, setEditingPageNum] = useState<number | null>(null);
   const [tempPageText, setTempPageText] = useState('');
   const [pageInput, setPageInput] = useState((currentPage || 1).toString());
@@ -174,14 +189,8 @@ export const ReaderView: React.FC = () => {
   }, [selectedBook.pages, editingPageNum]);
 
   const {
-    isChecking: isCheckingSpell,
     spellCheckResult,
-    appliedCorrections,
-    ignoredCorrections,
     runSpellCheck,
-    applyCorrection,
-    ignoreCorrection,
-    resetSpellCheck,
   } = useSpellCheck(selectedBook.id, editingPageNum || 0);
 
   useEffect(() => {
@@ -222,9 +231,12 @@ export const ReaderView: React.FC = () => {
   };
 
   return (
-    <div className="h-[calc(100vh-100px)] sm:h-[calc(100vh-120px)] md:h-[calc(100vh-140px)] flex flex-col xl:flex-row-reverse gap-4 xl:gap-6 py-2 md:py-4" lang="ug">
+    <div className={isFullscreen
+      ? 'fixed inset-0 z-50 flex flex-col bg-[#f0f4f8]'
+      : `h-[calc(100dvh-72px)] sm:h-[calc(100dvh-88px)] md:h-[calc(100dvh-120px)] flex flex-col xl:flex-row-reverse ${mobileTab === 'chat' ? 'gap-3' : 'gap-4'} xl:gap-6 py-0 md:py-4`
+    } lang="ug">
       {/* Mobile/Tablet Tab Switcher */}
-      <div className="xl:hidden flex gap-2 px-2">
+      <div className={`xl:hidden flex gap-2 ${mobileTab === 'reader' ? 'px-2' : 'p-2'}${isFullscreen ? ' hidden' : ''}`}>
         <button
           onClick={() => setMobileTab('reader')}
           className={`flex-1 flex items-center justify-center gap-3 py-3 px-4 rounded-2xl font-bold text-sm transition-all ${mobileTab === 'reader'
@@ -248,9 +260,19 @@ export const ReaderView: React.FC = () => {
       </div>
 
       {/* Main Content Area */}
-      <div className={`flex-grow glass-panel flex-col overflow-hidden rounded-[32px] border border-[#0369a1]/10 shadow-2xl ${mobileTab === 'reader' ? 'flex' : 'hidden xl:flex'}`}>
+      <div className={`flex-grow glass-panel flex-col overflow-hidden rounded-[32px] border border-[#0369a1]/10 shadow-2xl relative ${mobileTab === 'reader' ? 'flex' : 'hidden xl:flex'}`}>
+        {/* Floating minimize button — fullscreen only */}
+        {isFullscreen && (
+          <button
+            onClick={() => setIsFullscreen(false)}
+            className="absolute top-4 left-4 z-20 p-2.5 bg-white/80 backdrop-blur-sm text-[#0369a1] hover:bg-white rounded-2xl shadow-lg border border-[#0369a1]/10 transition-all"
+            title="Exit fullscreen"
+          >
+            <Minimize2 size={20} />
+          </button>
+        )}
         {/* Header Ribbon */}
-        <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-[#0369a1]/10 flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-4 bg-white/40">
+        <div className={`px-4 sm:px-6 py-3 sm:py-4 border-b border-[#0369a1]/10 flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-4 bg-white/40 ${isFullscreen ? 'hidden' : ''}`}>
           <div className="flex items-center gap-4">
             <div className="p-2 bg-[#0369a1] text-white rounded-xl shadow-lg">
               <BookOpen size={20} />
@@ -290,14 +312,21 @@ export const ReaderView: React.FC = () => {
             </div>
 
 
+            <button
+              onClick={() => setIsFullscreen(prev => !prev)}
+              className="lg:hidden p-2.5 min-w-[44px] min-h-[44px] text-[#94a3b8] hover:bg-[#0369a1]/10 hover:text-[#0369a1] rounded-2xl transition-all"
+              title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            >
+              {isFullscreen ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
+            </button>
             <button onClick={() => isEditing ? setIsEditing(false) : (editingPageNum !== null ? setEditingPageNum(null) : onClose())} className="p-2.5 min-w-[44px] min-h-[44px] text-[#94a3b8] hover:bg-red-50 hover:text-red-500 rounded-2xl transition-all"><X size={20} /></button>
           </div>
         </div>
 
         {/* Reading Canvas */}
-        <div ref={mainScrollRef} dir="rtl" className={`flex-grow overflow-y-auto custom-scrollbar paper-background ${isEditing ? 'p-3 sm:p-4' : 'p-4 sm:p-6'}`}>
+        <div ref={mainScrollRef} dir="rtl" className={`flex-grow overflow-y-auto custom-scrollbar paper-background ${isEditing ? 'p-3 sm:p-4' : 'p-4 sm:p-6'} flex flex-col`}>
           {isEditing ? (
-            <div className="h-full relative">
+            <div className="h-full relative w-full max-w-4xl mx-auto">
               {isFetchingContent && <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-20 flex items-center justify-center"><Loader2 className="w-8 h-8 text-[#0369a1] animate-spin" /></div>}
               <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} className="w-full h-full p-6 uyghur-text border-2 border-[#0369a1]/10 rounded-3xl outline-none resize-none bg-white shadow-inner" style={{ fontSize: `${fontSize}px` }} placeholder={t('common.enterContent')} />
             </div>
@@ -309,9 +338,10 @@ export const ReaderView: React.FC = () => {
               initialPage={currentPage || 1}
               onPageChange={setCurrentPage}
               scrollParentRef={mainScrollRef}
+              isFullscreen={isFullscreen}
             />
           ) : (
-            <div className={`max-w-4xl mx-auto ${isGuestOrReader ? 'pt-8' : 'space-y-16 pb-40'}`}>
+            <div className={`w-full max-w-4xl mx-auto ${isGuestOrReader ? 'pt-8' : 'space-y-16 pb-40'}`}>
               {[...loadedPages]
                 .sort((a, b) => a.pageNumber - b.pageNumber)
                 .filter(page => isGuestOrReader ? Number(page.pageNumber) === Number(currentPage) : (editingPageNum === null || Number(page.pageNumber) === Number(editingPageNum)))
@@ -342,35 +372,20 @@ export const ReaderView: React.FC = () => {
       </div>
 
       {/* Sidebar Area */}
-      <div className={`w-full xl:w-[500px] 2xl:w-[600px] flex-col gap-6 ${mobileTab === 'chat' ? 'flex' : 'hidden xl:flex'}`}>
-        <GlassPanel className="h-full flex flex-col overflow-hidden rounded-[32px] p-4 sm:p-6 shadow-xl border border-[#0369a1]/10">
-          {editingPageNum !== null ? (
-            <SpellCheckPanel
-              bookId={selectedBook.id}
-              pageNumber={editingPageNum}
-              pageText={tempPageText}
-              isChecking={isCheckingSpell}
-              spellCheckResult={spellCheckResult}
-              onRunSpellCheck={() => runSpellCheck(tempPageText)}
-              onApplyCorrection={(c) => setTempPageText(applyCorrection(c, tempPageText))}
-              onIgnoreCorrection={ignoreCorrection}
-              appliedCorrections={appliedCorrections}
-              ignoredCorrections={ignoredCorrections}
-            />
-          ) : (
-            <ChatInterface
-              type="book"
-              chatMessages={chat.chatMessages}
-              chatInput={chat.chatInput}
-              setChatInput={chat.setChatInput}
-              onSendMessage={chat.handleSendMessage}
-              isChatting={chat.isChatting}
-              streamingMessage={chat.streamingMessage}
-              currentPage={currentPage}
-              usageStatus={chat.usageStatus}
-              chatContainerRef={chat.chatContainerRef}
-            />
-          )}
+      <div className={`w-full xl:w-[500px] 2xl:w-[600px] flex-col gap-4 xl:gap-6 ${isFullscreen ? 'hidden' : mobileTab === 'chat' ? 'flex flex-grow' : 'hidden xl:flex'}`}>
+        <GlassPanel className={`h-full flex flex-col overflow-hidden ${mobileTab === 'chat' ? 'rounded-[24px] border' : 'rounded-none xl:rounded-[32px] border'} p-3 sm:p-4 xl:p-6 shadow-xl border-[#0369a1]/10`}>
+          <ChatInterface
+            type="book"
+            chatMessages={chat.chatMessages}
+            chatInput={chat.chatInput}
+            setChatInput={chat.setChatInput}
+            onSendMessage={chat.handleSendMessage}
+            isChatting={chat.isChatting}
+            streamingMessage={chat.streamingMessage}
+            currentPage={currentPage}
+            usageStatus={chat.usageStatus}
+            chatContainerRef={chat.chatContainerRef}
+          />
         </GlassPanel>
       </div>
     </div>

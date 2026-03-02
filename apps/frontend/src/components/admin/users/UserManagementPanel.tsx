@@ -45,9 +45,13 @@ const UserRow: React.FC<UserRowProps> = ({
     inactive: { bg: 'bg-red-50', text: 'text-red-600', label: t('admin.users.suspended') },
   };
 
-  const formatDate = (dateString?: string) => {
+  const formatDate = (dateString?: string, includeTime: boolean = false) => {
     if (!dateString) return t('admin.users.unknown');
-    return new Date(dateString).toLocaleDateString();
+    const date = new Date(dateString);
+    if (includeTime) {
+      return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    }
+    return date.toLocaleDateString();
   };
 
   const currentRole = isEditing && editData ? editData.role : user.role;
@@ -62,9 +66,85 @@ const UserRow: React.FC<UserRowProps> = ({
             name={user.display_name}
             className="w-8 h-8 md:w-10 md:h-10 rounded-full object-cover ring-2 ring-[#0369a1]/20"
           />
-          <div>
+          <div className="flex flex-col gap-1">
             <div className="font-normal text-[#1a1a1a] text-[14px] md:text-[16px] lg:text-[18px]">{user.display_name}</div>
             <div className="text-[11px] md:text-[13px] font-normal text-[#94a3b8] uppercase truncate max-w-[150px] md:max-w-none">{user.email}</div>
+
+            {/* Mobile Role & Status Section */}
+            <div className="flex lg:hidden items-center gap-2 mt-1.5 flex-wrap">
+              <div className="relative">
+                {isEditing ? (
+                  <button
+                    onClick={() => setShowRoleDropdown(!showRoleDropdown)}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 ${roleColors[currentRole]?.bg || 'bg-slate-50'} ${roleColors[currentRole]?.text || 'text-slate-500'} rounded-lg text-[10px] font-normal uppercase border-2 border-[#0369a1] transition-all active:scale-95 shadow-sm`}
+                  >
+                    {roleColors[currentRole]?.label || currentRole}
+                    <svg width="8" height="8" viewBox="0 0 12 12" fill="currentColor">
+                      <path d="M6 8L2 4h8L6 8z" />
+                    </svg>
+                  </button>
+                ) : (
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 ${roleColors[currentRole]?.bg || 'bg-slate-50'} ${roleColors[currentRole]?.text || 'text-slate-500'} rounded-lg text-[9px] font-normal uppercase border border-current/10`}>
+                    {roleColors[currentRole]?.label || currentRole}
+                  </span>
+                )}
+
+                {isEditing && showRoleDropdown && (
+                  <div className="absolute top-full right-0 mt-2 w-32 glass-panel shadow-2xl z-[100] overflow-hidden py-1.5 border border-[#0369a1]/10 rounded-xl" dir="rtl">
+                    {(['admin', 'editor', 'reader'] as const).map((role) => (
+                      <button
+                        key={role}
+                        onClick={() => {
+                          setShowRoleDropdown(false);
+                          onRoleChange(role);
+                        }}
+                        className={`w-full flex items-center justify-between px-4 py-2.5 text-[12px] font-normal uppercase transition-all ${role === currentRole ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
+                      >
+                        {roleColors[role].label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="relative">
+                {isEditing ? (
+                  <button
+                    onClick={() => setShowStatusDropdown(!showStatusDropdown)}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 ${statusColors[currentStatus ? 'active' : 'inactive']?.bg || 'bg-slate-50'} ${statusColors[currentStatus ? 'active' : 'inactive']?.text || 'text-slate-500'} rounded-lg text-[10px] font-normal uppercase border-2 border-[#0369a1] transition-all active:scale-95 shadow-sm`}
+                  >
+                    {statusColors[currentStatus ? 'active' : 'inactive']?.label}
+                    <svg width="8" height="8" viewBox="0 0 12 12" fill="currentColor">
+                      <path d="M6 8L2 4h8L6 8z" />
+                    </svg>
+                  </button>
+                ) : (
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 ${statusColors[currentStatus ? 'active' : 'inactive']?.bg || 'bg-slate-50'} ${statusColors[currentStatus ? 'active' : 'inactive']?.text || 'text-slate-500'} rounded-lg text-[9px] font-normal uppercase border border-current/10`}>
+                    {statusColors[currentStatus ? 'active' : 'inactive']?.label}
+                  </span>
+                )}
+
+                {isEditing && showStatusDropdown && (
+                  <div className="absolute top-full right-0 mt-2 w-32 glass-panel shadow-2xl z-[100] overflow-hidden py-1.5 border border-[#0369a1]/10 rounded-xl" dir="rtl">
+                    {([
+                      { value: true, key: 'active' },
+                      { value: false, key: 'inactive' }
+                    ] as const).map((status) => (
+                      <button
+                        key={status.key}
+                        onClick={() => {
+                          setShowStatusDropdown(false);
+                          onStatusChange(status.value);
+                        }}
+                        className={`w-full flex items-center justify-between px-4 py-2.5 text-[12px] font-normal uppercase transition-all ${status.value === currentStatus ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
+                      >
+                        {statusColors[status.key].label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </td>
@@ -150,8 +230,8 @@ const UserRow: React.FC<UserRowProps> = ({
         {formatDate(user.created_at)}
       </td>
 
-      <td className="hidden lg:table-cell px-4 md:px-8 py-3 md:py-5 text-[13px] md:text-[16px] font-bold text-[#94a3b8]">
-        {formatDate(user.last_login_at)}
+      <td className="hidden lg:table-cell px-4 md:px-8 py-3 md:py-5 text-[13px] md:text-[14px] font-bold text-[#94a3b8]">
+        {formatDate(user.last_login_at, true)}
       </td>
 
       <td className="px-4 md:px-8 py-3 md:py-5 text-left">

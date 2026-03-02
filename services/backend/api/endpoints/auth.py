@@ -23,6 +23,8 @@ from auth.jwt_handler import (
 from auth.oauth_providers import (
     OAuthState,
     is_admin_email,
+    create_oauth_state_token,
+    decode_oauth_state_token,
 )
 from auth.providers import (
     get_provider,
@@ -74,7 +76,7 @@ async def get_current_user_profile(
 
 
 @router.get("/{provider}/login")
-async def oauth_login(provider: str, response: Response):
+async def oauth_login(provider: str, response: Response, next: Optional[str] = None):
     """
     Initiate OAuth login flow for any provider.
 
@@ -109,32 +111,26 @@ async def oauth_login(provider: str, response: Response):
     # Generate state and nonce for CSRF protection (with PKCE for Twitter)
     use_pkce = provider.lower() == "twitter"
     oauth_state = OAuthState.generate(use_pkce=use_pkce)
+    if next:
+        oauth_state.redirect_uri = next
 
-    # Build authorization URL
+    # Encode all state into a signed JWT passed as the OAuth `state` parameter.
+    # No cookie is needed — the JWT is returned unchanged by Google in the callback.
+    # This avoids iOS Safari ITP cookie issues entirely.
+    state_jwt = create_oauth_state_token(oauth_state)
+
+    # Build authorization URL (pass JWT as state instead of bare random token)
     if use_pkce and oauth_state.code_verifier:
-        # Twitter requires PKCE
         code_challenge = oauth_state.get_code_challenge()
         auth_url = oauth_provider.get_auth_url(
-            oauth_state.state,
+            state_jwt,
             oauth_state.nonce,
             code_challenge=code_challenge
         )
     else:
-        # Google and Facebook don't use PKCE
-        auth_url = oauth_provider.get_auth_url(oauth_state.state, oauth_state.nonce)
+        auth_url = oauth_provider.get_auth_url(state_jwt, oauth_state.nonce)
 
-    # Set secure cookie with state (for validation on callback)
-    response = RedirectResponse(url=auth_url, status_code=status.HTTP_302_FOUND)
-    response.set_cookie(
-        key=OAUTH_STATE_COOKIE,
-        value=oauth_state.to_cookie_value(),
-        max_age=600,  # 10 minutes
-        httponly=True,
-        secure=False,  # Set to True in production with HTTPS
-        samesite="lax",
-    )
-
-    return response
+    return RedirectResponse(url=auth_url)
 
 
 @router.get("/{provider}/callback")
@@ -174,13 +170,10 @@ async def oauth_callback(
     if not code or not state:
         return _error_response(t("errors.missing_oauth_params"))
 
-    # Validate state from cookie
-    state_cookie = request.cookies.get(OAUTH_STATE_COOKIE)
-    if not state_cookie:
-        return _error_response(t("errors.oauth_cookie_missing"))
-
-    saved_state = OAuthState.from_cookie_value(state_cookie)
-    if not saved_state or saved_state.state != state:
+    # Validate state by decoding the signed JWT (no cookie needed).
+    # The JWT contains state, nonce, code_verifier, and redirect_uri.
+    saved_state = decode_oauth_state_token(state)
+    if not saved_state:
         return _error_response(t("errors.invalid_oauth_state"))
 
     try:
@@ -247,7 +240,27 @@ async def oauth_callback(
         # Commit changes
         await session.commit()
 
-        # Return HTML that posts token to opener (popup flow)
+        # Mobile redirect flow: redirect back to app with token in URL
+        if saved_state.redirect_uri:
+            from urllib.parse import urlencode, urlparse
+            parsed = urlparse(saved_state.redirect_uri)
+            # Safety check: only allow same-host or relative redirects
+            request_host = request.headers.get("host", "")
+            if not parsed.netloc or parsed.netloc == request_host:
+                callback_url = f"{saved_state.redirect_uri}?{urlencode({'access_token': access_token})}"
+                redirect_response = RedirectResponse(url=callback_url)
+                redirect_response.set_cookie(
+                    key=REFRESH_TOKEN_COOKIE,
+                    value=refresh_token,
+                    max_age=settings.jwt_refresh_token_expire_days * 24 * 60 * 60,
+                    httponly=True,
+                    secure=settings.cookie_secure,
+                    samesite="lax",
+                )
+                redirect_response.delete_cookie(OAUTH_STATE_COOKIE)
+                return redirect_response
+
+        # Popup flow: return HTML that posts token to opener
         return _success_response(access_token, refresh_token)
         
     except Exception as e:
@@ -439,28 +452,28 @@ def _success_response(access_token: str, refresh_token: str) -> HTMLResponse:
             const notified = notifyAndClose();
             
             if (!notified) {{
-                console.log('[Kitabim Auth] Opener not found or message failed, showing fallback UI');
-                // Fallback: store token in localStorage (only works if same origin)
+                console.log('[Kitabim Auth] Opener not found, storing token and redirecting to app');
+                // Store token in localStorage then redirect back to the app.
+                // window.close() is blocked by Safari when not opened via window.open(),
+                // so we navigate back to the app root instead.
                 localStorage.setItem('kitabim_access_token', accessToken);
-                
-                // Update UI to be more helpful
+
+                // Update UI while redirecting
                 const container = document.querySelector('.container');
                 const p = container.querySelector('p');
                 const h2 = container.querySelector('h2');
-                const spinner = container.querySelector('.spinner');
-                
+
                 h2.textContent = 'Login Successful!';
-                p.innerHTML = 'You are now signed in.<br>Please close this window and <strong>refresh the main page</strong> to continue.';
-                
-                if (spinner) spinner.style.display = 'none';
-                
-                // Add explicit close button
+                p.textContent = 'Redirecting you back to the app\u2026';
+
+                // Redirect — useAuth will pick up the token from localStorage on load
+                setTimeout(() => window.location.replace('/'), 800);
+
+                // Fallback button in case redirect is blocked
                 const btn = document.createElement('button');
-                btn.textContent = 'Close Window & Continue';
-                btn.style.cssText = 'margin-top: 1.5rem; padding: 0.75rem 2rem; background: white; color: #667eea; border: none; border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 1rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1); transition: transform 0.2s;';
-                btn.onmouseover = () => btn.style.transform = 'scale(1.05)';
-                btn.onmouseout = () => btn.style.transform = 'scale(1)';
-                btn.onclick = () => window.close();
+                btn.textContent = 'Continue to App';
+                btn.style.cssText = 'margin-top: 1.5rem; padding: 0.75rem 2rem; background: white; color: #667eea; border: none; border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 1rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1);';
+                btn.onclick = () => window.location.replace('/');
                 container.appendChild(btn);
             }}
 
@@ -487,7 +500,7 @@ def _success_response(access_token: str, refresh_token: str) -> HTMLResponse:
         value=refresh_token,
         max_age=settings.jwt_refresh_token_expire_days * 24 * 60 * 60,
         httponly=True,
-        secure=False,  # Set to True in production with HTTPS
+        secure=settings.cookie_secure,
         samesite="lax",
     )
     

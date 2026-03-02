@@ -11,11 +11,11 @@ interface BookCardProps {
 const getStatusStyles = (status: string) => {
   switch (status.toLowerCase()) {
     case 'ready': return 'bg-emerald-50 text-emerald-600';
-    case 'ocr_done': return 'bg-indigo-50 text-indigo-600';
-    case 'chunking': return 'bg-amber-50 text-amber-600';
-    case 'indexing': return 'bg-violet-50 text-violet-600';
+    case 'ocr_done': return 'bg-blue-50 text-blue-600';
+    case 'chunking': return 'bg-indigo-50 text-indigo-600';
+    case 'indexing': return 'bg-orange-50 text-orange-600';
     case 'ocr': return 'bg-blue-50 text-blue-600';
-    case 'embedding': return 'bg-purple-50 text-purple-600';
+    case 'embedding': return 'bg-orange-50 text-orange-600';
     case 'ocr_processing': return 'bg-blue-50 text-blue-600';
     case 'error': return 'bg-red-50 text-red-500';
     case 'pending': return 'bg-amber-50 text-amber-600';
@@ -33,10 +33,10 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick }) => {
   return (
     <div
       onClick={() => onClick(book)}
-      className="group relative w-full max-w-[300px] bg-white/80 backdrop-blur-xl rounded-3xl p-7 cursor-pointer transition-all duration-300 border border-[#0369a1]/10 hover:border-[#0369a1]/30 hover:-translate-y-2 hover:shadow-[0_20px_40px_rgba(3,105,161,0.15)] shadow-lg"
+      className="group relative w-full max-w-[300px] bg-white/80 backdrop-blur-xl rounded-2xl sm:rounded-3xl p-3 sm:p-7 cursor-pointer transition-all duration-300 border border-[#0369a1]/10 hover:border-[#0369a1]/30 hover:-translate-y-2 hover:shadow-[0_20px_40px_rgba(3,105,161,0.15)] shadow-lg"
     >
       {/* Book Cover */}
-      <div className="relative w-full aspect-[5/7] mb-6 rounded-2xl overflow-hidden shadow-lg transition-transform duration-500 group-hover:scale-105 group-hover:shadow-2xl">
+      <div className="relative w-full aspect-[5/7] mb-3 sm:mb-6 rounded-xl sm:rounded-2xl overflow-hidden shadow-lg transition-transform duration-500 group-hover:scale-105 group-hover:shadow-2xl">
         {book.coverUrl ? (
           <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${book.coverUrl})` }} />
         ) : (
@@ -48,20 +48,20 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick }) => {
       </div>
 
       {/* Book Info */}
-      <div className="text-right space-y-2" dir="rtl">
-        <h3 className="font-bold text-[#1a1a1a] text-lg leading-snug line-clamp-2 min-h-[3.5rem]" title={titleWithVolume}>
+      <div className="text-right space-y-1 sm:space-y-2" dir="rtl">
+        <h3 className="font-bold text-[#1a1a1a] text-sm sm:text-lg leading-snug line-clamp-2 min-h-[2.5rem] sm:min-h-[3.5rem]" title={titleWithVolume}>
           {titleWithVolume}
         </h3>
 
         {displayAuthor && displayAuthor !== 'Unknown Author' && (
-          <p className="text-sm text-[#0369a1] font-medium truncate">
+          <p className="text-[10px] sm:text-sm text-[#0369a1] font-medium truncate">
             {displayAuthor}
           </p>
         )}
 
-        <div className="flex items-center justify-between text-xs text-[#64748b] pt-2 border-t border-[#0369a1]/5">
-          <div className="flex items-center gap-2">
-            <span className="bg-[#0369a1]/5 text-[#0369a1] px-2.5 py-1 rounded-lg font-bold">
+        <div className="flex items-center justify-between text-[9px] sm:text-xs text-[#64748b] pt-2 border-t border-[#0369a1]/5">
+          <div className="flex items-center gap-1 sm:gap-2">
+            <span className="bg-[#0369a1]/5 text-[#0369a1] px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-md sm:rounded-lg font-bold">
               {book.category?.[0] || t('common.book')}
             </span>
             {book.pipelineStep && book.pipelineStep !== 'ready' && (
