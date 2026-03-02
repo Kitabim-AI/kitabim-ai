@@ -31,14 +31,13 @@ export const PageItem: React.FC<PageItemProps> = ({
   const isEditor = useIsEditor();
 
   return (
-    <div onMouseEnter={onSetActive} className={`group relative p-6 rounded-[24px] transition-all duration-300 ${isActive ? 'bg-white shadow-xl scale-[1.02] border border-[#0369a1]/10' : 'opacity-80'}`}>
+    <div onMouseEnter={onSetActive} className={`group relative p-6 rounded-[24px] transition-all duration-300 ${isActive ? 'bg-white shadow-xl border border-[#0369a1]/10' : 'opacity-80'}`}>
       <div className="flex items-center justify-between mb-4 border-b border-[#0369a1]/5 pb-3">
         <div className="flex items-center gap-2">
           {isEditor && !isEditing && (
             <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
               <button onClick={onReprocess} className="p-2 bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white rounded-lg"><RotateCcw size={14} /></button>
               <button onClick={onEdit} className="flex items-center gap-2 px-3 py-1.5 bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white rounded-lg text-xs font-bold uppercase"><Edit3 size={12} /> {t('reader.editPage')}</button>
-              <button onClick={onSpellCheck} className="p-2 bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white rounded-lg"><Wand2 size={14} /></button>
             </div>
           )}
         </div>

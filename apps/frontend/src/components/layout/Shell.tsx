@@ -21,16 +21,19 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
     setPage,
     isLoading,
     modal,
-    setModal
+    setModal,
+    isReaderFullscreen,
   } = useAppContext();
   const { t } = useI18n();
 
   return (
-    <div className="min-h-screen bg-transparent flex flex-col font-sans relative overflow-x-hidden" dir="rtl">
-      <Navbar />
+    <div className="min-h-[100dvh] bg-transparent flex flex-col font-sans relative overflow-x-hidden" dir="rtl">
+      <div className={isReaderFullscreen ? 'hidden lg:block' : ''}>
+        <Navbar />
+      </div>
 
-      <main className="flex-grow p-8 max-w-[1600px] mx-auto w-full relative z-10">
-        {isLoading && view !== 'reader' && !searchQuery && !homeSearchQuery && (
+      <main className="flex-grow p-0 sm:p-2 md:p-4 lg:p-8 max-w-[1600px] mx-auto w-full relative z-10">
+        {(isLoading || bookActions?.isCheckingGlobal) && view !== 'reader' && !searchQuery && !homeSearchQuery && (
           <div className="absolute inset-0 bg-white/40 backdrop-blur-md z-40 flex items-center justify-center min-h-[400px] rounded-[40px]">
             <div className="flex flex-col items-center gap-6">
               <div className="relative">

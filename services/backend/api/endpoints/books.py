@@ -34,6 +34,7 @@ import logging
 from app.utils.markdown import normalize_markdown
 from app.utils.text import generate_uyghur_regex, normalize_uyghur_chars
 from app.core.i18n import t
+from app.services.pdf_service import read_pdf_page_count, extract_pdf_cover, create_page_stubs
 
 logger = logging.getLogger(__name__)
 
@@ -879,6 +880,16 @@ async def upload_pdf(
 
         book_id = hashlib.md5(f"{file.filename}{datetime.now(timezone.utc)}".encode()).hexdigest()[:12]
         remote_path = f"uploads/{book_id}.pdf"
+        page_count = read_pdf_page_count(temp_path)
+        cover_url = None
+        cover_temp_path = settings.uploads_dir / f".cover_{book_id}.jpg"
+        if extract_pdf_cover(temp_path, cover_temp_path):
+            try:
+                remote_cover_path = f"covers/{book_id}.jpg"
+                await storage.upload_file(cover_temp_path, remote_cover_path)
+                cover_url = storage.get_public_url(remote_cover_path)
+            finally:
+                cover_temp_path.unlink(missing_ok=True)
         await storage.upload_file(temp_path, remote_path)
         temp_path.unlink(missing_ok=True)
     except Exception:
@@ -896,7 +907,8 @@ async def upload_pdf(
         file_name=file.filename,
         author="",
         volume=None,
-        total_pages=0,
+        total_pages=page_count,
+        cover_url=cover_url,
         status="pending",
         upload_date=now,
         last_updated=now,
@@ -907,6 +919,7 @@ async def upload_pdf(
         source="upload",
     )
 
+    create_page_stubs(session, book_id, page_count)
     await session.commit()
 
     return {"bookId": book_id, "status": "uploaded"}

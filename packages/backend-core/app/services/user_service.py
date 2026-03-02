@@ -53,7 +53,7 @@ async def create_user(
 ) -> User:
     """Create a new user in the database."""
     now = datetime.now(timezone.utc)
-    user_id = uuid.uuid4()
+    user_id = str(uuid.uuid4())
     
     user_obj = UserDB(
         id=user_id,

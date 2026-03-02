@@ -11,6 +11,7 @@ interface VirtualScrollReaderProps {
   initialPage?: number;
   onPageChange?: (page: number) => void;
   scrollParentRef?: React.RefObject<HTMLDivElement>;
+  isFullscreen?: boolean;
 }
 
 const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
@@ -19,7 +20,8 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
   fontSize,
   initialPage = 1,
   onPageChange,
-  scrollParentRef
+  scrollParentRef,
+  isFullscreen = false,
 }) => {
   const { t } = useI18n();
   const [pages, setPages] = useState<Map<number, any>>(new Map());
@@ -143,9 +145,9 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
   const allPageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
 
   return (
-    <div className="max-w-4xl mx-auto select-none" onContextMenu={(e) => e.preventDefault()}>
+    <div className="w-full max-w-4xl mx-auto select-none flex flex-col items-center" onContextMenu={(e) => e.preventDefault()}>
       {/* Page indicator */}
-      <div className="sticky top-0 z-[1000] bg-white/90 backdrop-blur-md p-4 mb-8 text-center rounded-2xl shadow-lg border border-[#0369a1]/10 flex items-center justify-center gap-4 transition-all hover:bg-white">
+      <div className={`sticky top-0 z-[1000] bg-white/90 backdrop-blur-md p-4 mb-8 text-center rounded-2xl shadow-lg border border-[#0369a1]/10 flex items-center justify-center gap-4 transition-all hover:bg-white${isFullscreen ? ' hidden' : ''}`}>
         <div className="flex items-center gap-3">
           <span className="text-sm font-black text-[#0369a1] bg-[#0369a1]/10 px-4 py-1.5 rounded-xl uppercase tracking-wider">
             {t('chat.pageNumber', { page: currentCenterPage })}
@@ -154,7 +156,7 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
         </div>
       </div>
 
-      <div className="space-y-16 pb-64">
+      <div className="w-full space-y-16 pb-64 flex flex-col items-center">
         {allPageNumbers.map(pageNum => {
           const page = pages.get(pageNum);
           return (
@@ -162,7 +164,7 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
               key={`page-${pageNum}`}
               ref={el => { if (el) pageRefs.current.set(pageNum, el); else pageRefs.current.delete(pageNum); }}
               data-page-number={pageNum}
-              className="scroll-mt-32 min-h-[300px]"
+              className="scroll-mt-32 min-h-[300px] w-full"
             >
               {page ? (
                 <PageItem

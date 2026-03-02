@@ -175,7 +175,7 @@ export function OAuthButtonGroup({ className = '', align = 'down', side = 'left'
 }
 
 
-export function UserMenu({ onLogout }: { onLogout?: () => void }) {
+export function UserMenu({ onLogout, side = 'left' }: { onLogout?: () => void; side?: 'left' | 'right' }) {
   const { user, logout, isLoading } = useAuth();
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
@@ -238,7 +238,7 @@ export function UserMenu({ onLogout }: { onLogout?: () => void }) {
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-4 w-72 bg-white/95 backdrop-blur-2xl border border-[#0369a1]/20 rounded-[32px] shadow-[0_32px_128px_rgba(3,105,161,0.1)] overflow-hidden animate-fade-in p-2">
+        <div className={`absolute top-full ${side === 'right' ? 'right-0' : 'left-0'} mt-4 w-72 bg-white/95 backdrop-blur-2xl border border-[#0369a1]/20 rounded-[32px] shadow-[0_32px_128px_rgba(3,105,161,0.1)] overflow-hidden animate-fade-in p-2`}>
           {/* User Header */}
           <div className="p-6 mb-2 bg-gradient-to-br from-[#0369a1]/5 to-[#0284c7]/5 rounded-[24px] flex flex-col items-center text-center">
             <div className="relative mb-4">
@@ -285,7 +285,7 @@ export function UserMenu({ onLogout }: { onLogout?: () => void }) {
   );
 }
 
-export function AuthButton({ onLogout }: { onLogout?: () => void }) {
+export function AuthButton({ onLogout, dropdownSide = 'left' }: { onLogout?: () => void; dropdownSide?: 'left' | 'right' }) {
   const { isAuthenticated, isLoading } = useAuth();
   const { t } = useI18n();
 
@@ -298,7 +298,7 @@ export function AuthButton({ onLogout }: { onLogout?: () => void }) {
     );
   }
 
-  return isAuthenticated ? <UserMenu onLogout={onLogout} /> : <OAuthButtonGroup />;
+  return isAuthenticated ? <UserMenu onLogout={onLogout} side={dropdownSide} /> : <OAuthButtonGroup side={dropdownSide} />;
 }
 
 export default AuthButton;
