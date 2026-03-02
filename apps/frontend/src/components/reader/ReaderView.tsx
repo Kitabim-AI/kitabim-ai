@@ -272,54 +272,54 @@ export const ReaderView: React.FC = () => {
           </button>
         )}
         {/* Header Ribbon */}
-        <div className={`px-4 sm:px-6 py-3 sm:py-4 border-b border-[#0369a1]/10 flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-4 bg-white/40 ${isFullscreen ? 'hidden' : ''}`}>
-          <div className="flex items-center gap-4">
-            <div className="p-2 bg-[#0369a1] text-white rounded-xl shadow-lg">
+        <div className={`px-3 sm:px-6 py-2 sm:py-4 border-b border-[#0369a1]/10 flex flex-row items-center justify-between gap-1 sm:gap-4 bg-white/40 ${isFullscreen ? 'hidden' : ''}`}>
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-shrink">
+            <div className="hidden sm:flex p-2 bg-[#0369a1] text-white rounded-xl shadow-lg shrink-0">
               <BookOpen size={20} />
             </div>
-            <div>
-              <h2 className="font-normal text-[#1a1a1a] text-base sm:text-lg">
+            <div className="min-w-0">
+              <h2 className="font-bold text-[#1a1a1a] text-sm sm:text-lg truncate">
                 {selectedBook.title}
                 {selectedBook.volume ? ` (${t('book.volume', { volume: selectedBook.volume })})` : ''}
               </h2>
               {selectedBook.author && (
-                <p className="text-xs sm:text-sm text-[#64748b] mt-0.5">
+                <p className="text-[10px] sm:text-sm text-[#64748b] mt-0.5 truncate hidden sm:block">
                   {selectedBook.author}
                 </p>
               )}
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap md:flex-nowrap">
+          <div className="flex items-center gap-0.5 sm:gap-2 shrink-0">
             {isEditor && (
               !isEditing ? (
-                <button onClick={handleEnterGlobalEdit} className="flex items-center gap-2 px-3 sm:px-4 py-2.5 min-h-[44px] bg-[#0369a1] text-white text-xs sm:text-sm rounded-2xl hover:bg-[#0284c7] transition-all">
-                  <Edit3 size={16} />
+                <button onClick={handleEnterGlobalEdit} className="flex items-center gap-2 px-2 sm:px-4 py-2 min-h-[36px] sm:min-h-[44px] bg-[#0369a1] text-white text-xs sm:text-sm rounded-xl sm:rounded-2xl hover:bg-[#0284c7] transition-all">
+                  <Edit3 size={14} className="sm:w-4 sm:h-4" />
                   <span className="hidden sm:inline">{t('reader.editBook')}</span>
                 </button>
               ) : (
-                <button onClick={handleSaveCorrections} className="flex items-center gap-2 px-3 sm:px-4 py-2.5 min-h-[44px] bg-[#0369a1] text-white text-xs sm:text-sm rounded-2xl hover:bg-[#0284c7] transition-all">
-                  <Save size={16} />
+                <button onClick={handleSaveCorrections} className="flex items-center gap-2 px-2 sm:px-4 py-2 min-h-[36px] sm:min-h-[44px] bg-[#0369a1] text-white text-xs sm:text-sm rounded-xl sm:rounded-2xl hover:bg-[#0284c7] transition-all">
+                  <Save size={14} className="sm:w-4 sm:h-4" />
                   <span className="hidden sm:inline">{t('common.save')}</span>
                 </button>
               )
             )}
 
-            <div className="flex items-center gap-1 bg-white/60 border border-[#0369a1]/20 rounded-2xl p-1 shadow-sm">
-              <button onClick={() => setFontSize(prev => Math.max(14, prev - 2))} className="p-2.5 sm:p-2 min-w-[44px] sm:min-w-0 min-h-[44px] sm:min-h-0 hover:bg-[#0369a1]/10 rounded-xl text-[#0369a1] transition-all"><Minus size={18} /></button>
-              <span className="text-sm px-2 font-bold min-w-[32px] text-center">{fontSize}</span>
-              <button onClick={() => setFontSize(prev => Math.min(64, prev + 2))} className="p-2.5 sm:p-2 min-w-[44px] sm:min-w-0 min-h-[44px] sm:min-h-0 hover:bg-[#0369a1]/10 rounded-xl text-[#0369a1] transition-all"><Plus size={18} /></button>
+            <div className="flex items-center gap-0.5 sm:gap-1 bg-white/60 border border-[#0369a1]/20 rounded-xl sm:rounded-2xl p-0.5 sm:p-1 shadow-sm">
+              <button onClick={() => setFontSize(prev => Math.max(14, prev - 2))} className="p-1 sm:p-2 min-w-[32px] sm:min-w-0 min-h-[32px] sm:min-h-0 hover:bg-[#0369a1]/10 rounded-lg text-[#0369a1] transition-all focus:outline-none"><Minus size={16} /></button>
+              <span className="text-[11px] sm:text-sm px-1 font-bold min-w-[20px] text-center">{fontSize}</span>
+              <button onClick={() => setFontSize(prev => Math.min(64, prev + 2))} className="p-1 sm:p-2 min-w-[32px] sm:min-w-0 min-h-[32px] sm:min-h-0 hover:bg-[#0369a1]/10 rounded-lg text-[#0369a1] transition-all focus:outline-none"><Plus size={16} /></button>
             </div>
 
 
             <button
               onClick={() => setIsFullscreen(prev => !prev)}
-              className="lg:hidden p-2.5 min-w-[44px] min-h-[44px] text-[#94a3b8] hover:bg-[#0369a1]/10 hover:text-[#0369a1] rounded-2xl transition-all"
+              className="lg:hidden p-1.5 sm:p-2.5 min-w-[32px] sm:min-w-[44px] min-h-[32px] sm:min-h-[44px] text-[#94a3b8] hover:bg-[#0369a1]/10 hover:text-[#0369a1] rounded-xl transition-all"
               title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
             >
-              {isFullscreen ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
+              {isFullscreen ? <Minimize2 size={18} className="sm:w-5 sm:h-5" /> : <Maximize2 size={18} className="sm:w-5 sm:h-5" />}
             </button>
-            <button onClick={() => isEditing ? setIsEditing(false) : (editingPageNum !== null ? setEditingPageNum(null) : onClose())} className="p-2.5 min-w-[44px] min-h-[44px] text-[#94a3b8] hover:bg-red-50 hover:text-red-500 rounded-2xl transition-all"><X size={20} /></button>
+            <button onClick={() => isEditing ? setIsEditing(false) : (editingPageNum !== null ? setEditingPageNum(null) : onClose())} className="p-1.5 sm:p-2.5 min-w-[32px] sm:min-w-[44px] min-h-[32px] sm:min-h-[44px] text-[#94a3b8] hover:bg-red-50 hover:text-red-500 rounded-xl transition-all"><X size={18} className="sm:w-5 sm:h-5" /></button>
           </div>
         </div>
 
