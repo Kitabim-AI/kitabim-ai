@@ -283,7 +283,7 @@ export const ReaderView: React.FC = () => {
                 {selectedBook.volume ? ` (${t('book.volume', { volume: selectedBook.volume })})` : ''}
               </h2>
               {selectedBook.author && (
-                <p className="text-[10px] sm:text-sm text-[#64748b] mt-0.5 truncate hidden sm:block">
+                <p className="text-xs sm:text-sm text-[#64748b] mt-0.5 truncate hidden sm:block">
                   {selectedBook.author}
                 </p>
               )}
@@ -307,7 +307,7 @@ export const ReaderView: React.FC = () => {
 
             <div className="flex items-center gap-0.5 sm:gap-1 bg-white/60 border border-[#0369a1]/20 rounded-xl sm:rounded-2xl p-0.5 sm:p-1 shadow-sm">
               <button onClick={() => setFontSize(prev => Math.max(14, prev - 2))} className="p-1 sm:p-2 min-w-[32px] sm:min-w-0 min-h-[32px] sm:min-h-0 hover:bg-[#0369a1]/10 rounded-lg text-[#0369a1] transition-all focus:outline-none"><Minus size={16} /></button>
-              <span className="text-[11px] sm:text-sm px-1 font-bold min-w-[20px] text-center">{fontSize}</span>
+              <span className="text-xs sm:text-sm px-1 font-bold min-w-[20px] text-center">{fontSize}</span>
               <button onClick={() => setFontSize(prev => Math.min(64, prev + 2))} className="p-1 sm:p-2 min-w-[32px] sm:min-w-0 min-h-[32px] sm:min-h-0 hover:bg-[#0369a1]/10 rounded-lg text-[#0369a1] transition-all focus:outline-none"><Plus size={16} /></button>
             </div>
 

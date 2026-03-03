@@ -26,6 +26,23 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
   } = useAppContext();
   const { t } = useI18n();
 
+  // Fix iOS Safari keyboard dismiss leaving page scrolled with empty space at bottom
+  React.useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    let keyboardOpen = false;
+    const handleResize = () => {
+      const shrunk = vv.height < window.innerHeight * 0.85;
+      if (keyboardOpen && !shrunk) {
+        // keyboard just closed — reset scroll
+        requestAnimationFrame(() => window.scrollTo(0, 0));
+      }
+      keyboardOpen = shrunk;
+    };
+    vv.addEventListener('resize', handleResize);
+    return () => vv.removeEventListener('resize', handleResize);
+  }, []);
+
   return (
     <div className="min-h-[100dvh] bg-transparent flex flex-col font-sans relative overflow-x-hidden" dir="rtl">
       <div className={isReaderFullscreen ? 'hidden lg:block' : ''}>

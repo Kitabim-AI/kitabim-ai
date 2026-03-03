@@ -57,8 +57,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               <MessageSquare size={20} className="md:w-6 md:h-6" strokeWidth={2.5} />
             </div>
             <div>
-              <h1 className="text-2xl font-normal text-[#1a1a1a]">{t('chat.globalAssistant')}</h1>
-              <p className="text-[14px] font-normal text-[#94a3b8] uppercase mt-1">{t('chat.subtitle')}</p>
+              <h1 className="text-lg sm:text-xl md:text-2xl font-normal text-[#1a1a1a]">{t('chat.globalAssistant')}</h1>
+              <p className="text-xs sm:text-sm font-normal text-[#94a3b8] uppercase mt-1">{t('chat.subtitle')}</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -82,7 +82,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         {/* Messages Buffer */}
         <div
           ref={chatContainerRef}
-          className="flex-grow overflow-y-auto space-y-4 md:space-y-8 lg:space-y-10 px-2 sm:px-4 lg:px-10 py-3 sm:py-4 lg:py-12 glass-panel relative custom-scrollbar border border-white/60 rounded-[24px] sm:rounded-[40px] flex flex-col"
+          className="flex-grow overflow-y-auto space-y-4 md:space-y-8 lg:space-y-10 px-4 sm:px-6 lg:px-10 py-4 sm:py-6 lg:py-12 glass-panel relative custom-scrollbar border border-white/60 rounded-[24px] sm:rounded-[40px] flex flex-col"
         >
           {chatMessages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center">
@@ -90,7 +90,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 <div className="absolute inset-0 bg-[#0369a1]/10 animate-pulse" />
                 <MessageSquare className="text-[#0369a1] w-14 h-14 relative z-10 transition-transform group-hover:scale-110" strokeWidth={2.5} />
               </div>
-              <h4 className="text-2xl font-normal text-[#1a1a1a] mb-4">{t('chat.welcome.title')}</h4>
+              <h4 className="text-xl sm:text-2xl font-normal text-[#1a1a1a] mb-4">{t('chat.welcome.title')}</h4>
               <p className="text-slate-500 font-normal max-w-lg leading-loose text-base">
                 {t('chat.welcome.message')}
               </p>
@@ -100,18 +100,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             </div>
           ) : (
             chatMessages.map((msg, idx) => (
-              <div key={idx} className={`flex gap-2 md:gap-4 lg:gap-6 ${msg.role === 'user' ? 'flex-row' : 'flex-row-reverse'} items-start`}>
+              <div key={idx} className={`flex gap-2 md:gap-4 lg:gap-6 ${msg.role === 'user' ? 'flex-col md:flex-row items-start' : 'flex-col items-end md:flex-row-reverse md:items-start'}`}>
                 <div className={`w-7 h-7 md:w-10 md:h-10 shrink-0 rounded-xl md:rounded-2xl flex items-center justify-center shadow-lg transition-all transform hover:scale-110 ${msg.role === 'user'
-                  ? 'bg-white border-2 border-[#0369a1]/10 text-[#0369a1]'
-                  : 'bg-[#0369a1] text-white shadow-[#0369a1]/30'
-                  }`}>
-                  {msg.role === 'user' ? <User size={14} className="md:w-5 md:h-5" strokeWidth={2.5} /> : <Bot size={14} className="md:w-5 md:h-5" strokeWidth={2.5} />}
+                    ? 'bg-white border-2 border-[#0369a1]/10 text-[#0369a1]'
+                    : 'bg-[#0369a1] text-white shadow-[#0369a1]/30'
+                    }`}>
+                    {msg.role === 'user' ? <User size={14} className="md:w-5 md:h-5" strokeWidth={2.5} /> : <Bot size={14} className="md:w-5 md:h-5" strokeWidth={2.5} />}
                 </div>
-                <div className={`flex flex-col gap-1 md:gap-2 max-w-[91%] md:max-w-[83%] ${msg.role === 'user' ? 'items-start' : 'items-end'}`}>
-                  <span className="text-[10px] md:text-[14px] font-normal text-[#94a3b8] uppercase px-1 md:px-2">
-                    {msg.role === 'user' ? t('chat.you') : t('chat.ai')}
-                  </span>
-                  <div className={`px-3 sm:px-5 lg:px-8 py-2 sm:py-3 lg:py-5 rounded-[20px] lg:rounded-[28px] text-lg font-normal leading-loose uyghur-text shadow-sm ${msg.role === 'user'
+                <div className={`flex flex-col gap-1 md:gap-2 ${msg.role === 'user' ? 'max-w-[91%] md:max-w-[83%] items-start' : 'w-full items-end'}`}>
+                  <div className={`px-3 sm:px-5 lg:px-8 py-2 sm:py-3 lg:py-5 rounded-[20px] lg:rounded-[28px] text-base sm:text-lg font-normal leading-loose uyghur-text shadow-sm ${msg.role === 'user'
                     ? 'bg-white/80 border border-[#0369a1]/10 text-[#1a1a1a] rounded-tr-none'
                     : 'bg-[#0369a1] text-white rounded-tl-none shadow-xl shadow-[#0369a1]/10'
                     }`}>
@@ -130,15 +127,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             ))
           )}
           {streamingMessage && (
-            <div className="flex flex-row-reverse gap-2 md:gap-4 lg:gap-6 items-start">
+            <div className="flex flex-col items-end md:flex-row-reverse md:items-start gap-2 md:gap-4 lg:gap-6">
               <div className="w-7 h-7 md:w-10 md:h-10 shrink-0 rounded-xl md:rounded-2xl bg-[#0369a1] text-white flex items-center justify-center shadow-xl shadow-[#0369a1]/20">
                 <Bot size={14} className="md:w-5 md:h-5" strokeWidth={2.5} />
               </div>
-              <div className="flex flex-col gap-1 md:gap-2 max-w-[91%] md:max-w-[83%] items-end">
-                <span className="text-[10px] md:text-[14px] font-normal text-[#94a3b8] uppercase px-1 md:px-2">
-                  {t('chat.ai')}
-                </span>
-                <div className="px-3 sm:px-5 lg:px-8 py-2 sm:py-3 lg:py-5 rounded-[20px] lg:rounded-[28px] rounded-tl-none text-lg font-normal leading-loose uyghur-text shadow-xl shadow-[#0369a1]/10 bg-[#0369a1] text-white">
+              <div className="flex flex-col gap-1 md:gap-2 w-full items-end">
+                <div className="px-3 sm:px-5 lg:px-8 py-2 sm:py-3 lg:py-5 rounded-[20px] lg:rounded-[28px] rounded-tl-none text-base sm:text-lg font-normal leading-loose uyghur-text shadow-xl shadow-[#0369a1]/10 bg-[#0369a1] text-white">
                   <MarkdownContent
                     content={streamingMessage}
                     onReferenceClick={handleReferenceClick}
@@ -150,7 +144,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             </div>
           )}
           {isChatting && !streamingMessage && (
-            <div className="flex flex-row-reverse gap-2 md:gap-4 lg:gap-6 items-start">
+            <div className="flex flex-col items-end md:flex-row-reverse md:items-start gap-2 md:gap-4 lg:gap-6">
               <div className="w-7 h-7 md:w-10 md:h-10 shrink-0 rounded-xl md:rounded-2xl bg-[#0369a1] text-white flex items-center justify-center shadow-xl shadow-[#0369a1]/20 animate-pulse">
                 <Bot size={14} className="md:w-5 md:h-5" strokeWidth={2.5} />
               </div>
@@ -169,7 +163,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             <div className="flex flex-col gap-2">
               {usageStatus?.hasReachedLimit ? (
                 <div className="px-6 py-4 text-center">
-                  <p className="text-red-500 font-normal text-lg bg-red-50 px-6 py-3 rounded-2xl border border-red-100 uppercase">
+                  <p className="text-red-500 font-normal text-base sm:text-lg bg-red-50 px-6 py-3 rounded-2xl border border-red-100 uppercase">
                     {t('chat.limitReached')}
                   </p>
                 </div>
@@ -183,16 +177,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     placeholder={usageStatus && usageStatus.limit !== null
                       ? t('chat.inputPlaceholderWithLimit', { usage: usageStatus.usage, limit: usageStatus.limit })
                       : t('chat.inputPlaceholderBook')}
-                    className="flex-1 bg-transparent py-3 px-6 text-lg font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none uyghur-text"
+                    className="flex-1 bg-transparent py-3 px-6 text-base sm:text-lg font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none uyghur-text"
                     dir="rtl"
                     disabled={usageStatus?.hasReachedLimit}
                   />
                   <button
                     onClick={onSendMessage}
                     disabled={isChatting || !chatInput.trim() || usageStatus?.hasReachedLimit}
-                    className="px-5 sm:px-8 py-3 bg-[#0369a1] hover:bg-[#0284c7] text-white rounded-[24px] text-sm font-normal flex items-center gap-2 sm:gap-3 transition-all active:scale-95 shadow-lg shadow-[#0369a1]/20 disabled:opacity-30 disabled:grayscale uppercase shrink-0"
+                    className="p-3 bg-[#0369a1] hover:bg-[#0284c7] text-white rounded-[24px] flex items-center justify-center transition-all active:scale-95 shadow-lg shadow-[#0369a1]/20 disabled:opacity-30 disabled:grayscale shrink-0"
                   >
-                    {t('common.send')}
                     <Send size={18} strokeWidth={3} />
                   </button>
                 </div>
@@ -237,7 +230,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           </div>
         </div>
         {currentPage && (
-          <div className="bg-[#0369a1]/10 text-[#0369a1] px-3 py-1 rounded-xl text-[14px] font-normal border border-[#0369a1]/10 shadow-inner">
+          <div className="bg-[#0369a1]/10 text-[#0369a1] px-3 py-1 rounded-xl text-sm font-normal border border-[#0369a1]/10 shadow-inner">
             {t('chat.pageNumber', { page: currentPage })}
           </div>
         )}
@@ -269,12 +262,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           </div>
         )}
         {chatMessages.map((msg, idx) => (
-          <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row' : 'flex-row-reverse'} items-start`}>
+          <div key={idx} className={`flex gap-2 ${msg.role === 'user' ? 'flex-col items-start' : 'flex-col items-end'}`}>
             <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm shadow-sm ${msg.role === 'user' ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'bg-[#0369a1] text-white'
               }`}>
               {msg.role === 'user' ? <User size={18} strokeWidth={2.5} /> : <Bot size={18} strokeWidth={2.5} />}
             </div>
-            <div className={`flex flex-col gap-1.5 max-w-[85%] ${msg.role === 'user' ? 'items-start' : 'items-end'}`}>
+            <div className={`flex flex-col gap-1.5 ${msg.role === 'user' ? 'max-w-[85%] items-start' : 'w-full items-end'}`}>
               <div className={`px-5 py-3.5 rounded-2xl text-sm font-normal leading-relaxed shadow-sm ${msg.role === 'user'
                 ? 'bg-white/80 border border-[#0369a1]/10 text-[#1a1a1a] rounded-tr-none'
                 : 'bg-[#0369a1] text-white rounded-tl-none shadow-lg shadow-[#0369a1]/5'
@@ -293,11 +286,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           </div>
         ))}
         {streamingMessage && (
-          <div className="flex gap-3 flex-row-reverse items-start">
+          <div className="flex gap-2 flex-col items-end">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm shadow-sm bg-[#0369a1] text-white">
               <Bot size={18} strokeWidth={2.5} />
             </div>
-            <div className="flex flex-col gap-1.5 max-w-[85%] items-end">
+            <div className="flex flex-col gap-1.5 w-full items-end">
               <div className="px-5 py-3.5 rounded-2xl text-sm font-normal leading-relaxed shadow-lg shadow-[#0369a1]/5 bg-[#0369a1] text-white rounded-tl-none">
                 <MarkdownContent
                   content={streamingMessage}
@@ -323,7 +316,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           <div className="flex flex-col gap-1">
             {usageStatus?.hasReachedLimit ? (
               <div className="py-2 px-4 text-center">
-                <p className="text-[12px] text-red-500 font-normal bg-red-50 py-2 rounded-xl border border-red-50/50">
+                <p className="text-xs text-red-500 font-normal bg-red-50 py-2 rounded-xl border border-red-50/50">
                   {t('chat.limitReached')}
                 </p>
               </div>

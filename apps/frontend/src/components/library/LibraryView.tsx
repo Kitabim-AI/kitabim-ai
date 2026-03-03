@@ -82,8 +82,8 @@ export const LibraryView: React.FC = () => {
             <div className="p-10 bg-[#0369a1]/10 rounded-[48px] mb-8 relative">
               <Library className="w-24 h-24 text-[#0369a1]" strokeWidth={1.5} />
             </div>
-            <h4 className="text-3xl font-black text-[#1a1a1a] mb-4">{t('library.empty.title')}</h4>
-            <p className="text-[#94a3b8] font-bold text-lg max-w-md text-center">{t('library.empty.message')}</p>
+            <h4 className="text-xl sm:text-2xl md:text-3xl font-black text-[#1a1a1a] mb-4">{t('library.empty.title')}</h4>
+            <p className="text-[#94a3b8] font-bold text-base sm:text-lg max-w-md text-center">{t('library.empty.message')}</p>
           </div>
         )}
       </div>
@@ -98,7 +98,7 @@ export const LibraryView: React.FC = () => {
         ) : !hasMore && books.length > 0 && (
           <div className="flex flex-col items-center gap-4 opacity-30">
             <div className="w-16 h-[1px] bg-[#94a3b8]" />
-            <p className="text-[12px] font-black text-[#94a3b8] uppercase">{t('common.endOfList')}</p>
+            <p className="text-xs font-black text-[#94a3b8] uppercase">{t('common.endOfList')}</p>
             <div className="w-16 h-[2px] bg-[#94a3b8]" />
           </div>
         )}

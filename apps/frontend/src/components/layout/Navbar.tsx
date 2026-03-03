@@ -41,7 +41,7 @@ export const Navbar: React.FC = () => {
                 }} />
               <BookOpen size={20} className="sm:w-[24px] sm:h-[24px] md:w-[24px] md:h-[24px] text-white relative z-10" strokeWidth={2} />
             </div>
-            <span className="font-normal text-[#1a1a1a] text-lg sm:text-xl md:text-[1rem] lg:text-[1.6rem] tracking-tight hidden sm:block transition-all">
+            <span className="font-normal text-[#1a1a1a] text-lg sm:text-xl md:text-base lg:text-2xl tracking-tight hidden sm:block transition-all">
               Kitabim<span className="text-[#0369a1]">.AI</span>
             </span>
           </div>
@@ -108,7 +108,7 @@ export const Navbar: React.FC = () => {
             <>
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="group relative px-4 md:px-5 lg:px-6 h-[48px] rounded-2xl font-normal flex items-center justify-center gap-2 transition-all duration-300 text-white shadow-[0_8px_20px_rgba(3,105,161,0.2)] hover:shadow-[0_12px_28px_rgba(3,105,161,0.3)] hover:-translate-y-0.5 active:translate-y-0 overflow-hidden text-sm md:text-[0.95rem] lg:text-[1.05rem]"
+                className="group relative px-4 md:px-5 lg:px-6 h-[48px] rounded-2xl font-normal flex items-center justify-center gap-2 transition-all duration-300 text-white shadow-[0_8px_20px_rgba(3,105,161,0.2)] hover:shadow-[0_12px_28px_rgba(3,105,161,0.3)] hover:-translate-y-0.5 active:translate-y-0 overflow-hidden text-sm lg:text-base"
                 style={{
                   background: 'linear-gradient(135deg, #0369a1 0%, #0284c7 100%)'
                 }}
@@ -206,7 +206,7 @@ const NavButton: React.FC<{
 }> = ({ active, onClick, icon, label, showIcon = 'always' }) => (
   <button
     onClick={onClick}
-    className={`relative px-4 md:px-4 lg:px-6 h-[48px] rounded-2xl text-sm md:text-[0.95rem] lg:text-[1.05rem] font-normal flex items-center gap-2 transition-all duration-300 group ${active
+    className={`relative px-4 md:px-4 lg:px-6 h-[48px] rounded-2xl text-sm lg:text-base font-normal flex items-center gap-2 transition-all duration-300 group ${active
       ? 'text-[#0369a1] bg-[#0369a1]/10 shadow-[inset_0_0_0_1px_rgba(3,105,161,0.2)]'
       : 'text-[#64748b] hover:bg-[#0369a1]/5 hover:text-[#0369a1]'
       }`}
