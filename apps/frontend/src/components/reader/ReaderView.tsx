@@ -272,7 +272,7 @@ export const ReaderView: React.FC = () => {
           </button>
         )}
         {/* Header Ribbon */}
-        <div className={`px-3 sm:px-6 py-2 sm:py-4 border-b border-[#0369a1]/10 flex flex-row items-center justify-between gap-1 sm:gap-4 bg-white/40 ${isFullscreen ? 'hidden' : ''}`}>
+        <div className={`px-3 sm:px-6 py-2 sm:py-4 border-b border-[#0369a1]/10 flex flex-row items-center justify-between gap-1 sm:gap-4 bg-white/80 backdrop-blur-sm ${isFullscreen ? 'hidden' : ''}`}>
           <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-shrink">
             <div className="hidden sm:flex p-2 bg-[#0369a1] text-white rounded-xl shadow-lg shrink-0">
               <BookOpen size={20} />

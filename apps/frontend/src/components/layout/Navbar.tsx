@@ -121,7 +121,7 @@ export const Navbar: React.FC = () => {
                 type="file"
                 ref={fileInputRef}
                 onChange={bookActions.handleFileUpload}
-                accept="application/pdf"
+                accept="application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 className="hidden"
               />
             </>

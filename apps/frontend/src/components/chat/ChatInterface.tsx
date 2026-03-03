@@ -82,7 +82,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         {/* Messages Buffer */}
         <div
           ref={chatContainerRef}
-          className="flex-grow overflow-y-auto space-y-4 md:space-y-8 lg:space-y-10 px-2 sm:px-4 lg:px-10 py-3 sm:py-4 lg:py-12 bg-white/40 backdrop-blur-xl relative custom-scrollbar shadow-inner border border-white/40 rounded-[24px] sm:rounded-[40px] flex flex-col"
+          className="flex-grow overflow-y-auto space-y-4 md:space-y-8 lg:space-y-10 px-2 sm:px-4 lg:px-10 py-3 sm:py-4 lg:py-12 glass-panel relative custom-scrollbar border border-white/60 rounded-[24px] sm:rounded-[40px] flex flex-col"
         >
           {chatMessages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center">
