@@ -62,12 +62,12 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
               <BookOpen size={28} strokeWidth={2.5} />
             </div>
             <div>
-              <h3 className="text-2xl font-normal text-[#1a1a1a] mb-2 leading-tight flex items-center flex-wrap gap-2 text-right">
+              <h3 className="text-xl sm:text-2xl font-normal text-[#1a1a1a] mb-2 leading-tight flex items-center flex-wrap gap-2 text-right">
                 {loading ? t('common.loading') : (
                   <>
                     <span>{bookData?.title || t('chat.referenceTitle')}</span>
                     {bookData?.author && (
-                      <span className="text-lg text-slate-400 font-normal">
+                      <span className="text-base sm:text-lg text-slate-400 font-normal">
                         ({bookData.author})
                       </span>
                     )}
@@ -99,7 +99,7 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
           {loading ? (
             <div className="h-64 flex flex-col items-center justify-center gap-6 opacity-40">
               <Loader2 size={48} className="animate-spin text-[#0369a1]" />
-              <p className="text-lg text-slate-400 font-normal uppercase tracking-widest">{t('common.loading')}</p>
+              <p className="text-sm text-slate-400 font-normal uppercase tracking-widest">{t('common.loading')}</p>
             </div>
           ) : pagesData.length > 0 && pagesData.some(p => p?.text) ? (
             <div className="max-w-3xl mx-auto space-y-6">
@@ -118,7 +118,7 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
 
                     <MarkdownContent
                       content={pageData.text}
-                      className="text-lg leading-[2] text-[#1e293b] relative z-10"
+                      className="text-base sm:text-lg leading-[2] text-[#1e293b] relative z-10"
                     />
                   </div>
                 );
@@ -127,14 +127,14 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
           ) : (
             <div className="h-64 flex flex-col items-center justify-center text-center gap-4 opacity-40">
               <HardDrive size={48} className="text-slate-300" />
-              <p className="text-lg text-slate-400 font-normal">{t('chat.noContentFound')}</p>
+              <p className="text-sm sm:text-base text-slate-400 font-normal">{t('chat.noContentFound')}</p>
             </div>
           )}
         </div>
 
         {/* Footer */}
         <div className="p-6 px-10 bg-white/50 border-t border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-6 text-[13px] text-slate-400 font-normal">
+          <div className="flex items-center gap-6 text-xs text-slate-400 font-normal">
             <div className="flex items-center gap-2">
               <Clock size={14} />
               {t('common.lastUpdated')}: {bookData?.lastUpdated ? new Date(bookData.lastUpdated).toLocaleDateString() : '-'}

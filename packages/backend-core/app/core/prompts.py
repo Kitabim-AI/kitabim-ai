@@ -7,11 +7,14 @@ OCR_PROMPT = (
     "3. Preserve punctuation exactly and keep Uyghur symbols & Arabic script. "
     "4. Identify and preserve structure: "
     "use Markdown headings for titles/headers/chapters, "
-    "render table of contents as a Markdown list, "
+    "if a table of contents is detected render it as a right-to-left Markdown table "
+    "(columns: chapter/title | page number, with | --- | --- | separator row, dir=rtl), "
     "keep poems with their original line breaks, "
     "and include header/footer text (if present) on separate lines, prefixed with "
     "\"[Header]\" or \"[Footer]\". "
-    "5. Output ONLY the recognized Uyghur text with the minimal Markdown needed for structure. "
+    "5. If the page contains no readable text, output nothing at all — no placeholders, "
+    "no explanations, no filler text. "
+    "6. Output ONLY the recognized Uyghur text with the minimal Markdown needed for structure. "
 )
 
 SPELL_CHECK_PROMPT = """You are an expert {language} language and OCR error detection specialist.

@@ -40,9 +40,9 @@ export const Modal: React.FC<ModalProps> = ({
             <div className={`p-3 rounded-2xl ${type === 'confirm' ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'bg-red-50 text-red-500'}`}>
               <AlertCircle size={32} strokeWidth={2.5} />
             </div>
-            <h3 className="text-2xl font-normal text-[#1a1a1a]">{title}</h3>
+            <h3 className="text-xl sm:text-2xl font-normal text-[#1a1a1a]">{title}</h3>
           </div>
-          <p className="text-[#94a3b8] font-normal leading-loose mb-10 text-lg uyghur-text">
+          <p className="text-[#94a3b8] font-normal leading-loose mb-10 text-base sm:text-lg uyghur-text">
             {message}
           </p>
           <div className="flex items-center gap-4">
