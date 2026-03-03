@@ -29,7 +29,8 @@ export const AdminView: React.FC = () => {
     isLoadingMoreShelf: isLoadingMore,
     hasMoreShelf: hasMore,
     loadMoreShelf: loadMore,
-    isLoading: isInitialLoading
+    isLoading: isInitialLoading,
+    searchQuery
   } = useAppContext();
   const { t } = useI18n();
 
@@ -156,8 +157,8 @@ export const AdminView: React.FC = () => {
       {(!bookActions.isCheckingGlobal && !isInitialLoading && books.length === 0) && (
         <div className="glass-panel p-20 flex flex-col items-center justify-center text-center">
           <Database className="w-16 h-16 text-[#94a3b8] mb-6" />
-          <h3 className="text-xl font-normal text-[#1a1a1a]">{t('admin.table.noBooks')}</h3>
-          <p className="text-slate-500 font-normal">{t('admin.table.uploadFirst')}</p>
+          <h3 className="text-xl font-normal text-[#1a1a1a]">{t(searchQuery ? 'admin.table.noResults' : 'admin.table.noBooks')}</h3>
+          <p className="text-slate-500 font-normal">{t(searchQuery ? 'admin.table.tryDifferent' : 'admin.table.uploadFirst')}</p>
         </div>
       )}
 

@@ -122,7 +122,7 @@ export const HomeView: React.FC = () => {
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute inset-y-0 left-4 sm:left-6 flex items-center text-[#94a3b8] hover:text-[#0369a1] transition-colors z-10 min-w-[44px] min-h-[44px]"
+              className="absolute inset-y-0 left-0 pl-4 sm:pl-6 flex items-center text-[#94a3b8] hover:text-[#0369a1] transition-colors z-10 min-w-[44px] min-h-[44px]"
             >
               <X size={22} className="sm:w-[24px] sm:h-[24px]" strokeWidth={3} />
             </button>
@@ -182,8 +182,8 @@ export const HomeView: React.FC = () => {
               <div className="p-6 bg-[#0369a1]/10 rounded-[32px] mb-6">
                 <BookIcon className="w-16 h-16 text-[#0369a1] opacity-40" />
               </div>
-              <p className="text-[#1a1a1a] font-normal text-2xl mb-2">{t('library.empty.title')}</p>
-              <p className="text-[#94a3b8] font-bold text-md max-w-sm">{t('library.empty.message')}</p>
+              <p className="text-[#1a1a1a] font-normal text-2xl mb-2">{t(hasSearch ? 'library.noResults.title' : 'library.empty.title')}</p>
+              <p className="text-[#94a3b8] font-bold text-md max-w-sm">{t(hasSearch ? 'library.noResults.message' : 'library.empty.message')}</p>
             </div>
           )}
 

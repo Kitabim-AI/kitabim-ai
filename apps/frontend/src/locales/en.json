@@ -91,6 +91,10 @@
       "title": "Library is currently empty",
       "message": "There are no books here yet. Try exploring other pages."
     },
+    "noResults": {
+      "title": "No books found.",
+      "message": "Try searching with different keywords or categories."
+    },
     "loadingMore": "Loading more books...",
     "searchPlaceholder": "Search books..."
   },
@@ -265,7 +269,11 @@
       "makePublic": "Make Public",
       "makePrivate": "Make Private",
       "recognizing": "Recognizing",
-      "waiting": "Waiting"
+      "waiting": "Waiting",
+      "noBooks": "No books yet.",
+      "uploadFirst": "Upload your first book to get started.",
+      "noResults": "No books found.",
+      "tryDifferent": "Try searching with different keywords."
     },
     "categories": {
       "title": "Categories",
