@@ -35,6 +35,7 @@ from app.utils.markdown import normalize_markdown
 from app.utils.text import generate_uyghur_regex, normalize_uyghur_chars
 from app.core.i18n import t
 from app.services.pdf_service import read_pdf_page_count, extract_pdf_cover, create_page_stubs
+from app.services.docx_service import extract_docx_pages, extract_docx_cover
 
 logger = logging.getLogger(__name__)
 
@@ -852,13 +853,19 @@ async def upload_pdf(
     current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
-    """Upload PDF with SQLAlchemy"""
+    """Upload a PDF or DOCX book file."""
     books_repo = BooksRepository(session)
 
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail=t("errors.invalid_file_type", allowed=".pdf"))
+    fname_lower = file.filename.lower()
+    if fname_lower.endswith(".pdf"):
+        file_type = "pdf"
+    elif fname_lower.endswith(".docx"):
+        file_type = "docx"
+    else:
+        raise HTTPException(status_code=400, detail=t("errors.invalid_file_type", allowed=".pdf, .docx"))
 
-    temp_path = settings.uploads_dir / f".upload_{uuid.uuid4().hex}.pdf"
+    ext = "." + file_type
+    temp_path = settings.uploads_dir / f".upload_{uuid.uuid4().hex}{ext}"
     hasher = hashlib.sha256()
 
     try:
@@ -879,32 +886,49 @@ async def upload_pdf(
             return {"bookId": str(existing.id), "status": "existing"}
 
         book_id = hashlib.md5(f"{file.filename}{datetime.now(timezone.utc)}".encode()).hexdigest()[:12]
-        remote_path = f"uploads/{book_id}.pdf"
-        page_count = read_pdf_page_count(temp_path)
+        remote_path = f"uploads/{book_id}{ext}"
         cover_url = None
         cover_temp_path = settings.uploads_dir / f".cover_{book_id}.jpg"
-        if extract_pdf_cover(temp_path, cover_temp_path):
-            try:
-                remote_cover_path = f"covers/{book_id}.jpg"
-                await storage.upload_file(cover_temp_path, remote_cover_path)
-                cover_url = storage.get_public_url(remote_cover_path)
-            finally:
-                cover_temp_path.unlink(missing_ok=True)
-        await storage.upload_file(temp_path, remote_path)
-        temp_path.unlink(missing_ok=True)
+
+        if file_type == "pdf":
+            page_count = read_pdf_page_count(temp_path)
+            if extract_pdf_cover(temp_path, cover_temp_path):
+                try:
+                    remote_cover_path = f"covers/{book_id}.jpg"
+                    await storage.upload_file(cover_temp_path, remote_cover_path)
+                    cover_url = storage.get_public_url(remote_cover_path)
+                finally:
+                    cover_temp_path.unlink(missing_ok=True)
+            await storage.upload_file(temp_path, remote_path)
+            temp_path.unlink(missing_ok=True)
+        else:
+            # DOCX: extract pages immediately, skip OCR
+            docx_pages = extract_docx_pages(temp_path)
+            page_count = len(docx_pages)
+            if extract_docx_cover(temp_path, cover_temp_path):
+                try:
+                    remote_cover_path = f"covers/{book_id}.jpg"
+                    await storage.upload_file(cover_temp_path, remote_cover_path)
+                    cover_url = storage.get_public_url(remote_cover_path)
+                finally:
+                    cover_temp_path.unlink(missing_ok=True)
+            await storage.upload_file(temp_path, remote_path)
+            temp_path.unlink(missing_ok=True)
+
     except Exception:
         if temp_path.exists():
             temp_path.unlink(missing_ok=True)
         raise
 
     now = datetime.now(timezone.utc)
+    title_raw = file.filename[: file.filename.lower().rfind(ext)]
 
-    # Create book using repository
     new_book = await books_repo.create(
         id=book_id,
         content_hash=content_hash,
-        title=normalize_uyghur_chars(file.filename.replace(".pdf", "")),
+        title=normalize_uyghur_chars(title_raw),
         file_name=file.filename,
+        file_type=file_type,
         author="",
         volume=None,
         total_pages=page_count,
@@ -919,7 +943,22 @@ async def upload_pdf(
         source="upload",
     )
 
-    create_page_stubs(session, book_id, page_count)
+    if file_type == "pdf":
+        create_page_stubs(session, book_id, page_count)
+    else:
+        # Pre-populate page text; start pipeline at chunking (skip OCR)
+        session.add_all([
+            Page(
+                book_id=book_id,
+                page_number=i + 1,
+                text=text,
+                pipeline_step="chunking",
+                milestone="idle",
+                status="ocr_done",
+            )
+            for i, text in enumerate(docx_pages)
+        ])
+
     await session.commit()
 
     return {"bookId": book_id, "status": "uploaded"}

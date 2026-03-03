@@ -20,7 +20,8 @@ export const useBookActions = (
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file || file.type !== 'application/pdf') return;
+    const ALLOWED_TYPES = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    if (!file || (!ALLOWED_TYPES.includes(file.type) && !file.name.toLowerCase().endsWith('.docx'))) return;
 
     setIsCheckingGlobal(true);
     setView('admin');

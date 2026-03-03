@@ -81,6 +81,7 @@ class Book(Base):
         nullable=False
     )
     file_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    file_type: Mapped[str] = mapped_column(String(10), default="pdf", server_default="pdf", nullable=False)
     source: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 'upload', 'gcs'
     updated_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
