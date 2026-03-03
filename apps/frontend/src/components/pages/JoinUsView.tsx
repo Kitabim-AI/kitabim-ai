@@ -271,12 +271,33 @@ const JoinUsView: React.FC = () => {
             </div>
           </div>
 
+          {/* Sponsors Strip */}
+          <div className="glass-panel rounded-[32px] sm:rounded-[40px] p-6 sm:p-8 md:p-12 border border-white/60 flex flex-col md:flex-row items-center justify-between gap-6 sm:gap-8 overflow-hidden relative group">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-[#0369a1]/5 rounded-full blur-3xl -mr-16 -mt-16 group-hover:bg-[#0369a1]/10 transition-colors" />
+            <div className="text-center md:text-right w-full md:w-auto z-10">
+              <h2 className="text-2xl sm:text-3xl font-bold text-[#1a1a1a] mb-2">{t('joinUs.sponsors.title')}</h2>
+              <p className="uyghur-text text-sm sm:text-base text-slate-500">{t('joinUs.sponsors.subtitle')}</p>
+            </div>
+            <a
+              href="https://www.dallasuyghurcommunity.org"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center p-4 sm:p-6 bg-white/40 backdrop-blur-sm rounded-[24px] border border-[#0369a1]/10 shadow-sm hover:shadow-md hover:bg-white/60 transition-all z-10 active:scale-95 group/logo"
+            >
+              <img
+                src="https://dallasuyghurcommunity.org/wp-content/uploads/2025/01/DUC_Logo_3ai_Artboard-2-photoaidcom-cropped-1.png"
+                alt="Dallas Uyghur Community Logo"
+                className="h-16 md:h-24 w-auto object-contain group-hover/logo:scale-105 transition-transform"
+              />
+            </a>
+          </div>
+
           {/* Contact Strip */}
           <div className="glass-panel rounded-[32px] sm:rounded-[40px] p-6 sm:p-8 md:p-12 border border-white/60 flex flex-col md:flex-row items-center justify-between gap-6 sm:gap-8">
-            <div className="text-right w-full md:w-auto">
+            <div className="text-center md:text-right w-full md:w-auto">
               <h2 className="text-2xl sm:text-3xl font-bold text-[#1a1a1a] mb-2">{t('joinUs.contact.title')}</h2>
               <p className="uyghur-text text-sm sm:text-base text-slate-500 mb-3">{t('joinUs.contact.description')}</p>
-              <p className="uyghur-text text-slate-500 font-medium text-base flex flex-wrap items-center justify-end sm:justify-start gap-1">
+              <p className="uyghur-text text-slate-500 font-medium text-base flex flex-wrap items-center justify-center md:justify-start gap-x-2 gap-y-1">
                 <span>{t('joinUs.contact.emailLabel')}</span>
                 <a href="mailto:contact@kitabim.ai" className="text-[#0369a1] hover:underline font-bold" dir="ltr">contact@kitabim.ai</a>
               </p>
