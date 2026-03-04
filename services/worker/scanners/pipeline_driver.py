@@ -8,6 +8,8 @@ Responsibilities (runs every 1 minute):
                    chunking/succeeded → embedding/idle
   4. Book ready  — marks book.pipeline_step = 'ready' when all pages are terminal
                    Terminal = embedding/succeeded OR failed with exhausted retries
+                   If any pages failed (exhausted retries) → status='error', pipeline_step='failed'
+                   Only marks 'ready' when ALL pages are embedding/succeeded
 """
 from __future__ import annotations
 
@@ -18,8 +20,8 @@ from sqlalchemy import update, select, func, case, or_, and_
 from app.db import session as db_session
 from app.db.models import Book, Page
 
-# Books already marked ready — do not reprocess them.
-_V1_READY_STATUSES = ("ready",)
+# Books already marked ready or failed — do not reprocess them.
+_V1_READY_STATUSES = ("ready", "error")
 from app.db.repositories.system_configs import SystemConfigsRepository
 from app.utils.observability import log_json
 
@@ -105,8 +107,38 @@ async def run_pipeline_driver(ctx) -> None:
             else_=None,
         )
 
-        ready_books_stmt = (
-            select(Page.book_id)
+        # Count pages that completed successfully (embedding/succeeded)
+        success_case = case(
+            (
+                and_(
+                    Page.pipeline_step == "embedding",
+                    Page.milestone == "succeeded",
+                ),
+                Page.id,
+            ),
+            else_=None,
+        )
+
+        # Count pages that failed with exhausted retries
+        failed_case = case(
+            (
+                and_(
+                    Page.milestone == "failed",
+                    Page.retry_count >= max_retries,
+                ),
+                Page.id,
+            ),
+            else_=None,
+        )
+
+        terminal_books_stmt = (
+            select(
+                Page.book_id,
+                func.count(Page.id).label("total"),
+                func.count(terminal_case).label("terminal"),
+                func.count(success_case).label("succeeded"),
+                func.count(failed_case).label("failed_exhausted"),
+            )
             .where(Page.pipeline_step.is_not(None))
             .group_by(Page.book_id)
             .having(
@@ -116,21 +148,36 @@ async def run_pipeline_driver(ctx) -> None:
                 func.count(Page.id) > 0,
             )
         )
-        result = await session.execute(ready_books_stmt)
-        ready_book_ids = [row[0] for row in result.fetchall()]
+        result = await session.execute(terminal_books_stmt)
+        rows = result.fetchall()
+
+        # Split into fully-succeeded vs. any-failed groups
+        fully_ready_ids = [row.book_id for row in rows if row.failed_exhausted == 0]
+        has_failures_ids = [row.book_id for row in rows if row.failed_exhausted > 0]
 
         books_marked_ready = 0
-        if ready_book_ids:
+        if fully_ready_ids:
             books_marked_ready = (await session.execute(
                 update(Book)
                 .where(
-                    Book.id.in_(ready_book_ids),
+                    Book.id.in_(fully_ready_ids),
                     or_(
                         Book.pipeline_step != "ready",
                         Book.pipeline_step.is_(None),
                     ),
                 )
                 .values(pipeline_step="ready", status="ready")
+            )).rowcount
+
+        books_marked_error = 0
+        if has_failures_ids:
+            books_marked_error = (await session.execute(
+                update(Book)
+                .where(
+                    Book.id.in_(has_failures_ids),
+                    Book.pipeline_step != "failed",
+                )
+                .values(pipeline_step="failed", status="error")
             )).rowcount
 
         await session.commit()
@@ -142,4 +189,5 @@ async def run_pipeline_driver(ctx) -> None:
         ocr_promoted=ocr_promoted,
         chunk_promoted=chunk_promoted,
         books_marked_ready=books_marked_ready,
+        books_marked_error=books_marked_error,
     )

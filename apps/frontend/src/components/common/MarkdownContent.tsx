@@ -138,8 +138,10 @@ const isUnorderedList = (line: string) => {
   return false;
 };
 const isTocLine = (line: string) => dotLeaderPattern.test(line);
+const isTableRow = (line: string) => /^\s*\|/.test(line);
+const isTableSeparator = (line: string) => /^\s*\|[\s|:=-]+\|?\s*$/.test(line);
 const isBlockStart = (line: string) =>
-  isHr(line) || isHeading(line) || isQuote(line) || isOrderedList(line) || isUnorderedList(line) || isTocLine(line);
+  isHr(line) || isHeading(line) || isQuote(line) || isOrderedList(line) || isUnorderedList(line) || isTocLine(line) || isTableRow(line);
 
 export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, className, style, onReferenceClick }) => {
   const normalized = (content || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -148,8 +150,8 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
     .map(line => line.replace(/\[(Header|Footer)\]/g, '').trim())
     .filter(line => {
       if (!line) return false;
-      // Allow lines that contain text OR start with markdown block markers
-      return /[A-Za-z\u0600-\u06FF]/.test(line) || isBlockStart(line);
+      // Allow lines that contain text OR start with markdown block markers (including table rows/separators)
+      return /[A-Za-z\u0600-\u06FF]/.test(line) || isBlockStart(line) || isTableSeparator(line);
     });
   const blocks: React.ReactNode[] = [];
   let i = 0;
@@ -266,6 +268,49 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
           ))}
         </ul>
       );
+      continue;
+    }
+
+    if (isTableRow(line)) {
+      const tableLines: string[] = [];
+      while (i < lines.length && (isTableRow(lines[i]) || isTableSeparator(lines[i]))) {
+        tableLines.push(lines[i]);
+        i += 1;
+      }
+      const parseRow = (row: string) =>
+        row.split('|').slice(1, -1).map(cell => cell.trim());
+      const dataLines = tableLines.filter(l => !isTableSeparator(l));
+      const [headerLine, ...bodyLines] = dataLines;
+      if (headerLine) {
+        const headers = parseRow(headerLine);
+        const rows = bodyLines.map(parseRow);
+        blocks.push(
+          <div key={`table-${key++}`} className="overflow-x-auto my-2" dir="rtl">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr>
+                  {headers.map((h, idx) => (
+                    <th key={idx} className="border border-slate-200 px-3 py-2 bg-slate-50 font-bold text-right">
+                      {renderInline(h, onReferenceClick)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, rowIdx) => (
+                  <tr key={rowIdx} className={rowIdx % 2 === 1 ? 'bg-slate-50/50' : ''}>
+                    {row.map((cell, cellIdx) => (
+                      <td key={cellIdx} className="border border-slate-200 px-3 py-2 text-right">
+                        {renderInline(cell, onReferenceClick)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
       continue;
     }
 

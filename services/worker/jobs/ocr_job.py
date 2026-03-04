@@ -35,16 +35,35 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
         await session.commit()
 
     # Download PDF (re-download if missing or corrupted)
-    remote_path = f"uploads/{book_id}.pdf"
+    # Build candidate GCS paths: standardized name first, then original file_name as fallback.
     file_path = settings.uploads_dir / f"{book_id}.pdf"
+    async with db_session.async_session_factory() as session:
+        book_row = (await session.execute(select(Book).where(Book.id == book_id))).scalar_one_or_none()
+    remote_paths = [f"uploads/{book_id}.pdf"]
+    if book_row and book_row.file_name and book_row.file_name != f"{book_id}.pdf":
+        remote_paths.append(f"uploads/{book_row.file_name}")
+    if book_row and book_row.title:
+        title_path = f"uploads/{book_row.title}.pdf"
+        if title_path not in remote_paths:
+            remote_paths.append(title_path)
+
+    async def _download_pdf() -> None:
+        last_exc: Exception | None = None
+        for rp in remote_paths:
+            try:
+                await storage.download_file(rp, file_path)
+                return
+            except Exception as e:
+                last_exc = e
+        raise last_exc  # type: ignore[misc]
 
     try:
         if not file_path.exists():
-            await storage.download_file(remote_path, file_path)
+            await _download_pdf()
         try:
             doc = fitz.open(file_path)
         except Exception:
-            await storage.download_file(remote_path, file_path)
+            await _download_pdf()
             doc = fitz.open(file_path)
     except Exception as exc:
         log_json(logger, logging.ERROR, "OCR job: failed to obtain PDF",

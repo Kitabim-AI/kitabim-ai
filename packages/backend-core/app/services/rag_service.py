@@ -160,6 +160,15 @@ class RAGService:
         tokens = [re.sub(r"[^\w]", "", k, flags=re.UNICODE).strip() for k in question.split()]
         return [k for k in tokens if len(k) > 2]
 
+    @staticmethod
+    def _expand_history_categories(categories: List[str]) -> List[str]:
+        """When تارىخ is matched, also include ئۇيغۇر تارىخى and ئىسلام تارىخى so those books are always searched.
+        ئۇيغۇر تارىخى is prioritized over ئىسلام تارىخى in result ordering (see priority_book_ids logic)."""
+        if "تارىخ" in categories:
+            extra = [c for c in ["ئۇيغۇر تارىخى", "ئىسلام تارىخى"] if c not in categories]
+            return categories + extra
+        return categories
+
     async def _categorize_question(self, question: str, categories: List[str]) -> List[str]:
         if not categories:
             return []
@@ -283,6 +292,7 @@ class RAGService:
         start_ts = time.monotonic()
         is_global = req.book_id == "global"
         relevant_categories: List[str] = []
+        priority_book_ids: set = set()
         book = None
 
         from app.db.repositories.books import BooksRepository
@@ -354,6 +364,7 @@ class RAGService:
             relevant_categories = []
             try:
                 relevant_categories = await self._categorize_question(req.question, list(all_categories))
+                relevant_categories = self._expand_history_categories(relevant_categories)
             except Exception as exc:
                 log_json(self.logger, logging.WARNING, "Category routing failed", error=str(exc))
                 relevant_categories = []
@@ -362,11 +373,17 @@ class RAGService:
             if relevant_categories:
                 # Use overlap (&& in Postgres) for categories
                 from sqlalchemy import text
-                stmt = select(Book.id, Book.title).where(
+                stmt = select(Book.id, Book.title, Book.categories).where(
                     text("categories && :cats").bindparams(cats=relevant_categories)
                 ).limit(100)
                 result = await session.execute(stmt)
                 all_books_recs = result.fetchall()
+                # Track ئۇيغۇر تارىخى books for result prioritization
+                if "ئۇيغۇر تارىخى" in relevant_categories:
+                    priority_book_ids = {
+                        str(b.id) for b in all_books_recs
+                        if b.categories and "ئۇيغۇر تارىخى" in b.categories
+                    }
             else:
                 all_books_recs = []
 
@@ -396,7 +413,7 @@ class RAGService:
                 )
                 if author:
                     stmt = stmt.where(Book.author == author)
-                
+
                 result = await session.execute(stmt)
                 siblings = result.fetchall()
                 for s in siblings:
@@ -512,6 +529,10 @@ class RAGService:
             except Exception as exc:
                 log_json(self.logger, logging.WARNING, "Reranking failed, using original order", error=str(exc))
 
+        # Prioritize ئۇيغۇر تارىخى books when تارىخ was matched (stable sort)
+        if priority_book_ids:
+            top_results.sort(key=lambda r: 0 if str(r.get("book_id", "")) in priority_book_ids else 1)
+
         context_parts = []
         if current_page_context:
             context_parts.append(current_page_context)
@@ -574,6 +595,7 @@ class RAGService:
         start_ts = time.monotonic()
         is_global = req.book_id == "global"
         relevant_categories: List[str] = []
+        priority_book_ids: set = set()
         book = None
 
         from app.db.repositories.books import BooksRepository
@@ -646,6 +668,7 @@ class RAGService:
             relevant_categories = []
             try:
                 relevant_categories = await self._categorize_question(req.question, list(all_categories))
+                relevant_categories = self._expand_history_categories(relevant_categories)
             except Exception as exc:
                 log_json(self.logger, logging.WARNING, "Category routing failed", error=str(exc))
                 relevant_categories = []
@@ -653,11 +676,17 @@ class RAGService:
             # Find books by category
             if relevant_categories:
                 from sqlalchemy import text
-                stmt = select(Book.id, Book.title).where(
+                stmt = select(Book.id, Book.title, Book.categories).where(
                     text("categories && :cats").bindparams(cats=relevant_categories)
                 ).limit(100)
                 result = await session.execute(stmt)
                 all_books_recs = result.fetchall()
+                # Track ئۇيغۇر تارىخى books for result prioritization
+                if "ئۇيغۇر تارىخى" in relevant_categories:
+                    priority_book_ids = {
+                        str(b.id) for b in all_books_recs
+                        if b.categories and "ئۇيغۇر تارىخى" in b.categories
+                    }
             else:
                 all_books_recs = []
 
@@ -793,6 +822,10 @@ class RAGService:
 
             except Exception as exc:
                 log_json(self.logger, logging.WARNING, "Reranking failed, using original order", error=str(exc))
+
+        # Prioritize ئۇيغۇر تارىخى books when تارىخ was matched (stable sort)
+        if priority_book_ids:
+            top_results.sort(key=lambda r: 0 if str(r.get("book_id", "")) in priority_book_ids else 1)
 
         context_parts = []
         if current_page_context:
