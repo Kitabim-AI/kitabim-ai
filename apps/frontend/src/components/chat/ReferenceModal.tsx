@@ -45,7 +45,7 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
   if (!isOpen) return null;
 
   const modalContent = (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 md:p-8" dir="rtl" lang="ug">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-4 md:p-8" dir="rtl" lang="ug">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-slate-900/60 backdrop-blur-xl animate-fade-in transition-all duration-500"
@@ -53,13 +53,14 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
       />
 
       {/* Modal Container */}
-      <div className="bg-white/90 backdrop-blur-2xl rounded-[40px] shadow-[0_32px_128px_rgba(0,0,0,0.3)] w-full max-w-4xl max-h-[90vh] relative z-10 overflow-hidden animate-scale-up border border-white/40 flex flex-col">
+      <div className="bg-white/90 backdrop-blur-2xl rounded-[24px] sm:rounded-[32px] md:rounded-[40px] shadow-[0_32px_128px_rgba(0,0,0,0.3)] w-full max-w-4xl max-h-[95vh] sm:max-h-[90vh] relative z-10 overflow-hidden animate-scale-up border border-white/40 flex flex-col">
 
         {/* Header */}
-        <div className="p-8 pb-6 border-b border-slate-100 flex items-start justify-between bg-white/50">
-          <div className="flex items-center gap-6">
-            <div className="p-4 bg-[#0369a1] text-white rounded-[24px] shadow-xl shadow-[#0369a1]/20">
-              <BookOpen size={28} strokeWidth={2.5} />
+        <div className="p-4 pb-3 sm:p-6 sm:pb-4 md:p-8 md:pb-6 border-b border-slate-100 flex items-start justify-between bg-white/50">
+          <div className="flex items-center gap-3 sm:gap-4 md:gap-6">
+            <div className="p-2.5 sm:p-3 md:p-4 bg-[#0369a1] text-white rounded-2xl sm:rounded-[24px] shadow-xl shadow-[#0369a1]/20 shrink-0">
+              <BookOpen size={20} strokeWidth={2.5} className="sm:hidden" />
+              <BookOpen size={28} strokeWidth={2.5} className="hidden sm:block" />
             </div>
             <div>
               <h3 className="text-xl sm:text-2xl font-normal text-[#1a1a1a] mb-2 leading-tight flex items-center flex-wrap gap-2 text-right">
@@ -88,14 +89,15 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-3 hover:bg-red-50 text-slate-300 hover:text-red-500 rounded-2xl transition-all active:scale-95 group"
+            className="p-2 sm:p-3 hover:bg-red-50 text-slate-300 hover:text-red-500 rounded-2xl transition-all active:scale-95 group shrink-0"
           >
-            <X size={28} strokeWidth={3} />
+            <X size={20} strokeWidth={3} className="sm:hidden" />
+            <X size={28} strokeWidth={3} className="hidden sm:block" />
           </button>
         </div>
 
         {/* Content Area */}
-        <div className="flex-grow overflow-y-auto p-10 custom-scrollbar bg-[#f8fafc]/30">
+        <div className="flex-grow overflow-y-auto p-4 sm:p-6 md:p-10 custom-scrollbar bg-[#f8fafc]/30">
           {loading ? (
             <div className="h-64 flex flex-col items-center justify-center gap-6 opacity-40">
               <Loader2 size={48} className="animate-spin text-[#0369a1]" />
@@ -107,7 +109,7 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
                 const pageNum = pageNumbers[index];
                 if (!pageData?.text) return null;
                 return (
-                  <div key={`page-${pageNum}`} className="bg-white/80 p-10 pt-12 rounded-[32px] shadow-sm border border-white relative overflow-hidden group">
+                  <div key={`page-${pageNum}`} className="bg-white/80 p-4 pt-8 sm:p-6 sm:pt-10 md:p-10 md:pt-12 rounded-[20px] sm:rounded-[24px] md:rounded-[32px] shadow-sm border border-white relative overflow-hidden group">
                     {pageNumbers.length > 1 && (
                       <div className="absolute top-0 right-0 bg-[#0369a1] text-white px-4 py-1.5 rounded-bl-[24px] text-sm font-normal shadow-sm z-20 opacity-80 backdrop-blur-md">
                         {t('chat.pageNumber', { page: pageNum })}
@@ -133,8 +135,8 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-6 px-10 bg-white/50 border-t border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-6 text-xs text-slate-400 font-normal">
+        <div className="p-4 px-4 sm:p-4 sm:px-6 md:p-6 md:px-10 bg-white/50 border-t border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-3 sm:gap-6 text-xs text-slate-400 font-normal">
             <div className="flex items-center gap-2">
               <Clock size={14} />
               {t('common.lastUpdated')}: {bookData?.lastUpdated ? new Date(bookData.lastUpdated).toLocaleDateString() : '-'}
@@ -142,7 +144,7 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="px-8 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl text-sm font-normal transition-all active:scale-95 shadow-lg shadow-black/10 uppercase tracking-widest"
+            className="px-4 py-2 sm:px-6 sm:py-2.5 md:px-8 md:py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl text-sm font-normal transition-all active:scale-95 shadow-lg shadow-black/10 uppercase tracking-widest"
           >
             {t('common.close')}
           </button>

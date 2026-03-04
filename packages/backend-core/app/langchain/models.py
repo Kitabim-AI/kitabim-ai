@@ -205,19 +205,29 @@ def _normalize_prompt_value(value) -> str:
     return str(value)
 
 
+_STREAM_FIRST_CHUNK_TIMEOUT = 30.0  # seconds to wait for the first chunk before treating as failure
+
+
 async def _stream_with_breaker(breaker: CircuitBreaker, fn, *args, **kwargs):
     allowed = await breaker._allow_call()
     if not allowed:
         raise CircuitBreakerOpen(f"Circuit breaker '{breaker.name}' is open")
 
     try:
-        # Get the async iterator (ensure we don't double-await if it's already an iterator)
         it = fn(*args, **kwargs)
-        started = False
-        async for chunk in it:
-            if not started:
-                await breaker._on_success()
-                started = True
+        aiter = it.__aiter__()
+        first = True
+        while True:
+            try:
+                if first:
+                    # Timeout only on the first chunk — if the model connects but never responds
+                    chunk = await asyncio.wait_for(aiter.__anext__(), timeout=_STREAM_FIRST_CHUNK_TIMEOUT)
+                    await breaker._on_success()
+                    first = False
+                else:
+                    chunk = await aiter.__anext__()
+            except StopAsyncIteration:
+                break
             yield chunk
     except Exception as exc:
         await breaker._on_failure()

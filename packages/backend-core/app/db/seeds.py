@@ -16,6 +16,21 @@ async def seed_system_configs(session: AsyncSession):
             "value": "10",
             "description": "Maximum number of OCR retry attempts per page before marking it as error/skipped."
         },
+        {
+            "key": "gemini_chat_model",
+            "value": "gemini-3.1-flash-lite-preview",
+            "description": "Gemini model used for chat responses (reader chat and global chat)."
+        },
+        {
+            "key": "gemini_categorization_model",
+            "value": "gemini-3.1-flash-lite-preview",
+            "description": "Gemini model used for category routing in global search."
+        },
+        {
+            "key": "gemini_ocr_model",
+            "value": "gemini-2.0-flash",
+            "description": "Gemini model used for OCR page processing."
+        },
     ]
     
     for item in defaults:
