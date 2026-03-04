@@ -1090,6 +1090,7 @@ async def reset_failed_pages(
 
     await books_repo.update_one(
         book_id,
+        status="pending",
         pipeline_step=None,
         last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email,

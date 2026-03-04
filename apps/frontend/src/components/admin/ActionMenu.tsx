@@ -14,8 +14,9 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close }) => {
   const { t } = useI18n();
   // Reindex: re-embed a ready book without re-doing OCR
   const canReindex = book.pipelineStep === 'ready';
-  // Reset Failed Pages: available for non-ready books
-  const canResetFailed = book.pipelineStep !== 'ready' && book.pipelineStep !== null;
+  // Reset Failed Pages: available when there are failed pages (in-progress or error state)
+  const canResetFailed = book.pipelineStep !== null
+    && (book.pipelineStep !== 'ready' || book.status === 'error');
 
   return (
     <div className="absolute left-0 top-full mt-2 w-52 glass-panel shadow-2xl z-50 py-2 rounded-[16px] border border-[#0369a1]/10">
