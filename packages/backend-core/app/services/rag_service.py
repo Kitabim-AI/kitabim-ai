@@ -35,19 +35,10 @@ class CategoryResponse(BaseModel):
 
 class RAGService:
     def __init__(self) -> None:
-        parser = PydanticOutputParser(pydantic_object=CategoryResponse)
         self.embeddings = GeminiEmbeddings()
-        self.category_chain = build_structured_chain(
-            CATEGORY_PROMPT,
-            settings.gemini_categorization_model,
-            parser,
-            run_name="category_chain",
-        )
-        self.rag_chain = build_text_chain(
-            RAG_PROMPT_TEMPLATE,
-            settings.gemini_model_name,
-            run_name="rag_chain",
-        )
+        self._parser = PydanticOutputParser(pydantic_object=CategoryResponse)
+        self._rag_chains: dict = {}
+        self._category_chains: dict = {}
         self.logger = logging.getLogger("app.rag")
 
         # Initialize reranker if enabled and available
@@ -58,7 +49,20 @@ class RAGService:
                 log_json(self.logger, logging.INFO, "Flashrank reranker initialized", top_n=settings.rag_rerank_top_n)
             except Exception as exc:
                 log_json(self.logger, logging.WARNING, "Failed to initialize reranker", error=str(exc))
-                self.reranker = None
+
+    def _get_rag_chain(self, model_name: str):
+        if model_name not in self._rag_chains:
+            self._rag_chains[model_name] = build_text_chain(
+                RAG_PROMPT_TEMPLATE, model_name, run_name="rag_chain"
+            )
+        return self._rag_chains[model_name]
+
+    def _get_category_chain(self, model_name: str):
+        if model_name not in self._category_chains:
+            self._category_chains[model_name] = build_structured_chain(
+                CATEGORY_PROMPT, model_name, self._parser, run_name="category_chain"
+            )
+        return self._category_chains[model_name]
 
     @staticmethod
     def _is_current_volume_query(question: str) -> bool:
@@ -75,6 +79,38 @@ class RAGService:
         q = question.strip()
         keywords = ["ئۇشبۇ بەتتە", "مەزكور بەتتە", "بۇ بەتتە"]
         return any(k in q for k in keywords)
+
+    @staticmethod
+    def _is_author_or_catalog_query(question: str) -> bool:
+        """Detect if the question is about book authors or which books exist in the library."""
+        if not question:
+            return False
+        q = question.strip()
+        keywords = [
+            # Author-related
+            "مۇئەللىپ", "يازغۇچى", "كىم يازغان", "ئاپتور", "مۇئەللىپى",
+            "كىم تەرىپىدىن", "يازغانلىقى", "ئەسەر يازغان", "ئەسەرلىرى",
+            # Catalog / book-list related
+            "كىتابلىرىڭىز", "كىتاب بارمۇ", "كىتابخانىڭىز",
+            "كىتاب تىزىملىكى", "قانچە كىتاب", "نەچچە كىتاب",
+            "قايسى كىتابلار", "قايسى ئەسەر",
+        ]
+        return any(k in q for k in keywords)
+
+    @staticmethod
+    def _format_book_catalog(books) -> str:
+        """Format a list of (title, author) rows as LLM context."""
+        if not books:
+            return "NO BOOKS FOUND IN THE LIBRARY."
+        lines = ["Library catalog — available books:"]
+        for book in books:
+            title = book.title or "Unknown"
+            author = book.author
+            if author:
+                lines.append(f"- {title} (Author: {author})")
+            else:
+                lines.append(f"- {title}")
+        return "\n".join(lines)
 
     @staticmethod
     def _build_empty_response_message() -> str:
@@ -169,10 +205,10 @@ class RAGService:
             return categories + extra
         return categories
 
-    async def _categorize_question(self, question: str, categories: List[str]) -> List[str]:
+    async def _categorize_question(self, question: str, categories: List[str], chain) -> List[str]:
         if not categories:
             return []
-        response = await self.category_chain.ainvoke(
+        response = await chain.ainvoke(
             {
                 "categories": categories,
                 "question": question,
@@ -198,12 +234,13 @@ class RAGService:
         self,
         context: str,
         question: str,
+        chain,
         chat_history: str = "",
         strict_no_answer: bool = False,
         suppress_page_notice: bool = False,
     ) -> str:
         instructions = self._build_instructions(strict_no_answer, suppress_page_notice)
-        response_text = await self.rag_chain.ainvoke(
+        response_text = await chain.ainvoke(
             {
                 "context": context,
                 "instructions": instructions,
@@ -217,6 +254,7 @@ class RAGService:
         self,
         context: str,
         question: str,
+        chain,
         chat_history: str = "",
         strict_no_answer: bool = False,
         suppress_page_notice: bool = False,
@@ -226,7 +264,7 @@ class RAGService:
         has_content = False
         chunk_count = 0
 
-        async for chunk in self.rag_chain.astream(
+        async for chunk in chain.astream(
             {
                 "context": context,
                 "instructions": instructions,
@@ -298,12 +336,19 @@ class RAGService:
         from app.db.repositories.books import BooksRepository
         from app.db.repositories.pages import PagesRepository
         from app.db.repositories.chunks import ChunksRepository
+        from app.db.repositories.system_configs import SystemConfigsRepository
         from sqlalchemy import select, func, and_, or_
         from app.db.models import Book, Page
 
         books_repo = BooksRepository(session)
         pages_repo = PagesRepository(session)
         chunks_repo = ChunksRepository(session)
+        configs_repo = SystemConfigsRepository(session)
+
+        chat_model = await configs_repo.get_value("gemini_chat_model", default=settings.gemini_chat_model)
+        categorization_model = await configs_repo.get_value("gemini_categorization_model", default=settings.gemini_categorization_model)
+        rag_chain = self._get_rag_chain(chat_model)
+        category_chain = self._get_category_chain(categorization_model)
 
         if not is_global:
             book = await books_repo.get(req.book_id)
@@ -334,6 +379,7 @@ class RAGService:
             return await self._generate_answer(
                 context,
                 req.question,
+                rag_chain,
                 chat_history=chat_history_str,
                 strict_no_answer=False,
                 suppress_page_notice=False,
@@ -352,7 +398,41 @@ class RAGService:
         book_id_to_title = {}
 
         if is_global:
-            # Global search - categorize to narrow down books
+            # If the user is asking about book authors or catalog, provide the full book list
+            if self._is_author_or_catalog_query(req.question):
+                stmt = select(Book.title, Book.author).where(
+                    Book.status == "ready"
+                ).order_by(Book.title)
+                result = await session.execute(stmt)
+                all_books = result.fetchall()
+                context = self._format_book_catalog(all_books)
+                answer = await self._generate_answer(
+                    context,
+                    req.question,
+                    rag_chain,
+                    chat_history=chat_history_str,
+                    strict_no_answer=False,
+                    suppress_page_notice=True,
+                )
+                await self._record_eval(
+                    session,
+                    {
+                        "bookId": req.book_id,
+                        "isGlobal": True,
+                        "question": req.question,
+                        "currentPage": req.current_page,
+                        "retrievedCount": len(all_books),
+                        "contextChars": len(context),
+                        "scores": [],
+                        "categoryFilter": [],
+                        "latencyMs": int((time.monotonic() - start_ts) * 1000),
+                        "answer_chars": len(answer),
+                    },
+                    user_id=user_id,
+                )
+                return answer
+
+            # Global content search - categorize to narrow down books
             # Get all unique categories from books table
             stmt = select(Book.categories).where(Book.categories != None)
             result = await session.execute(stmt)
@@ -363,7 +443,7 @@ class RAGService:
 
             relevant_categories = []
             try:
-                relevant_categories = await self._categorize_question(req.question, list(all_categories))
+                relevant_categories = await self._categorize_question(req.question, list(all_categories), category_chain)
                 relevant_categories = self._expand_history_categories(relevant_categories)
             except Exception as exc:
                 log_json(self.logger, logging.WARNING, "Category routing failed", error=str(exc))
@@ -396,7 +476,7 @@ class RAGService:
             book_id_to_title = {str(b.id): b.title for b in all_books_recs}
             book_ids = list(book_id_to_title.keys())
         else:
-            # Search specific book and siblings
+            # Search the specific book and all its sibling volumes (same title + author)
             title = book.title
             author = book.author
 
@@ -564,6 +644,7 @@ class RAGService:
         answer = await self._generate_answer(
             context,
             req.question,
+            rag_chain,
             chat_history=chat_history_str,
             strict_no_answer=False,
             suppress_page_notice=False,
@@ -601,12 +682,19 @@ class RAGService:
         from app.db.repositories.books import BooksRepository
         from app.db.repositories.pages import PagesRepository
         from app.db.repositories.chunks import ChunksRepository
+        from app.db.repositories.system_configs import SystemConfigsRepository
         from sqlalchemy import select, func, and_, or_
         from app.db.models import Book, Page
 
         books_repo = BooksRepository(session)
         pages_repo = PagesRepository(session)
         chunks_repo = ChunksRepository(session)
+        configs_repo = SystemConfigsRepository(session)
+
+        chat_model = await configs_repo.get_value("gemini_chat_model", default=settings.gemini_chat_model)
+        categorization_model = await configs_repo.get_value("gemini_categorization_model", default=settings.gemini_categorization_model)
+        rag_chain = self._get_rag_chain(chat_model)
+        category_chain = self._get_category_chain(categorization_model)
 
         if not is_global:
             book = await books_repo.get(req.book_id)
@@ -637,6 +725,7 @@ class RAGService:
             async for chunk in self._generate_answer_stream(
                 context,
                 req.question,
+                rag_chain,
                 chat_history=chat_history_str,
                 strict_no_answer=False,
                 suppress_page_notice=False,
@@ -657,7 +746,45 @@ class RAGService:
         book_id_to_title = {}
 
         if is_global:
-            # Global search - categorize to narrow down books
+            # If the user is asking about book authors or catalog, provide the full book list
+            if self._is_author_or_catalog_query(req.question):
+                stmt = select(Book.title, Book.author).where(
+                    Book.status == "ready"
+                ).order_by(Book.title)
+                result = await session.execute(stmt)
+                all_books = result.fetchall()
+                context = self._format_book_catalog(all_books)
+                answer_chunks = []
+                async for chunk in self._generate_answer_stream(
+                    context,
+                    req.question,
+                    rag_chain,
+                    chat_history=chat_history_str,
+                    strict_no_answer=False,
+                    suppress_page_notice=True,
+                ):
+                    answer_chunks.append(chunk)
+                    yield chunk
+                full_answer = "".join(answer_chunks)
+                await self._record_eval(
+                    session,
+                    {
+                        "bookId": req.book_id,
+                        "isGlobal": True,
+                        "question": req.question,
+                        "currentPage": req.current_page,
+                        "retrievedCount": len(all_books),
+                        "contextChars": len(context),
+                        "scores": [],
+                        "categoryFilter": [],
+                        "latencyMs": int((time.monotonic() - start_ts) * 1000),
+                        "answer_chars": len(full_answer),
+                    },
+                    user_id=user_id,
+                )
+                return
+
+            # Global content search - categorize to narrow down books
             stmt = select(Book.categories).where(Book.categories != None)
             result = await session.execute(stmt)
             all_categories = set()
@@ -667,7 +794,7 @@ class RAGService:
 
             relevant_categories = []
             try:
-                relevant_categories = await self._categorize_question(req.question, list(all_categories))
+                relevant_categories = await self._categorize_question(req.question, list(all_categories), category_chain)
                 relevant_categories = self._expand_history_categories(relevant_categories)
             except Exception as exc:
                 log_json(self.logger, logging.WARNING, "Category routing failed", error=str(exc))
@@ -699,7 +826,7 @@ class RAGService:
             book_id_to_title = {str(b.id): b.title for b in all_books_recs}
             book_ids = list(book_id_to_title.keys())
         else:
-            # Search specific book and siblings
+            # Search the specific book and all its sibling volumes (same title + author)
             title = book.title
             author = book.author
 
@@ -860,6 +987,7 @@ class RAGService:
         async for chunk in self._generate_answer_stream(
             context,
             req.question,
+            rag_chain,
             chat_history=chat_history_str,
             strict_no_answer=False,
             suppress_page_notice=False,

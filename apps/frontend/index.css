@@ -232,8 +232,13 @@ body::after {
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(3, 105, 161, 0.2);
+  background: transparent;
   border-radius: 10px;
+  transition: background 0.2s;
+}
+
+.custom-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: rgba(3, 105, 161, 0.2);
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {

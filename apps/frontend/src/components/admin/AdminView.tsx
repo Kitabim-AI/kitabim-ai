@@ -172,7 +172,7 @@ export const AdminView: React.FC = () => {
                   <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 w-20 md:w-28 text-right font-normal">{t('book.volumeLabel') || t('admin.table.pageCount')}</th>
                   <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 w-40 md:w-52 text-right font-normal">{t('admin.table.author')}</th>
                   <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 w-40 md:w-52 text-right font-normal">{t('admin.table.category')}</th>
-                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-right font-normal">{t('admin.table.progress')}</th>
+                  <th className="hidden md:table-cell px-3 md:px-6 py-3 md:py-5 text-right font-normal">{t('admin.table.progress')}</th>
                   <th className="px-3 md:px-6 py-3 md:py-5 text-left font-normal">{t('admin.table.actions')}</th>
                 </tr>
               </thead>
@@ -245,7 +245,7 @@ export const AdminView: React.FC = () => {
                           </div>
                         )}
                       </td>
-                      <td className={`hidden lg:table-cell px-3 md:px-6 py-4 md:py-6 ${isEditing ? 'align-top' : ''}`}>
+                      <td className={`hidden md:table-cell px-3 md:px-6 py-4 md:py-6 ${isEditing ? 'align-top' : ''}`}>
                         {isEditing ? (
                           <input
                             type="text"
@@ -261,7 +261,7 @@ export const AdminView: React.FC = () => {
                           </div>
                         )}
                       </td>
-                      <td className={`hidden lg:table-cell px-3 md:px-6 py-4 md:py-6 ${isEditing ? 'align-top' : ''}`}>
+                      <td className={`hidden md:table-cell px-3 md:px-6 py-4 md:py-6 ${isEditing ? 'align-top' : ''}`}>
                         <TagEditor
                           isOpen={isEditing}
                           onSave={() => handleSaveRow(book.id)}
@@ -279,7 +279,7 @@ export const AdminView: React.FC = () => {
                           hideActions={true}
                         />
                       </td>
-                      <td className={`hidden lg:table-cell px-3 md:px-6 py-4 md:py-6 ${isEditing ? 'align-top' : ''}`}>
+                      <td className={`hidden md:table-cell px-3 md:px-6 py-4 md:py-6 ${isEditing ? 'align-top' : ''}`}>
                         <div className="flex flex-col gap-1 md:gap-2 min-w-[100px] md:min-w-[120px]">
                           <ProgressBar book={book} />
                           <div className="flex justify-between text-[10px] md:text-[12px] text-slate-400">
