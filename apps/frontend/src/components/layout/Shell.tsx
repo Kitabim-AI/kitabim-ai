@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navbar } from './Navbar';
 import { Modal } from '../common/Modal';
+import { NotificationContainer } from '../common/NotificationContainer';
 import { RefreshCw } from 'lucide-react';
 import { useAppContext } from '../../context/AppContext';
 import { useI18n } from '../../i18n/I18nContext';
@@ -44,7 +45,7 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
   }, []);
 
   return (
-    <div className="min-h-[100dvh] bg-transparent flex flex-col font-sans relative overflow-x-hidden" dir="rtl">
+    <div className="min-h-[100dvh] bg-transparent flex flex-col font-sans relative overflow-x-hidden notranslate" dir="rtl" translate="no">
       <div className={isReaderFullscreen ? 'hidden lg:block' : ''}>
         <Navbar />
       </div>
@@ -65,18 +66,19 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
         )}
 
         {children}
-
-        <Modal
-          isOpen={modal.isOpen}
-          title={modal.title}
-          message={modal.message}
-          type={modal.type}
-          confirmText={modal.confirmText}
-          onConfirm={modal.onConfirm}
-          destructive={modal.destructive}
-          onClose={() => setModal({ ...modal, isOpen: false })}
-        />
       </main>
+
+      <Modal
+        isOpen={modal.isOpen}
+        title={modal.title}
+        message={modal.message}
+        type={modal.type}
+        confirmText={modal.confirmText}
+        onConfirm={modal.onConfirm}
+        destructive={modal.destructive}
+        onClose={() => setModal({ ...modal, isOpen: false })}
+      />
+      <NotificationContainer />
     </div>
   );
 };

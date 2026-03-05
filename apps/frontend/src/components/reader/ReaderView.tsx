@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   X, Type, Minus, Plus, Edit3, Save, MessageSquare,
   RotateCcw, Wand2, ChevronRight, ChevronLeft, CheckCircle2, Loader2, BookOpen,
-  Maximize2, Minimize2
+  Maximize2, Minimize2, Download
 } from 'lucide-react';
 import { Book } from '@shared/types';
 import { useI18n } from '../../i18n/I18nContext';
@@ -27,6 +27,8 @@ export const ReaderView: React.FC = () => {
     bookActions,
     setModal,
     setIsReaderFullscreen,
+    fontSize,
+    setFontSize,
   } = useAppContext();
 
   if (!selectedBook) return null;
@@ -39,7 +41,6 @@ export const ReaderView: React.FC = () => {
   // Reader-specific state
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
-  const [fontSize, setFontSize] = useState(() => window.innerWidth < 640 ? 18 : 20);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Sync local fullscreen state → context (so Shell can hide the navbar)
@@ -230,11 +231,27 @@ export const ReaderView: React.FC = () => {
     }
   };
 
+  const [isDownloading, setIsDownloading] = useState(false);
+  const handleDownload = async () => {
+    if (isDownloading) return;
+    setIsDownloading(true);
+    try {
+      const fileName = selectedBook.fileName || `${selectedBook.title || selectedBook.id}.${selectedBook.fileType || 'pdf'}`;
+      await PersistenceService.downloadBook(selectedBook.id, fileName);
+    } catch (err: any) {
+      console.error("Download failed:", err);
+      // We could use addNotification here if we had access to it from context directly
+      // but selectedBook and other actions are already in useAppContext
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   return (
     <div className={isFullscreen
-      ? 'fixed inset-0 z-50 flex flex-col bg-[#f0f4f8]'
-      : `h-[calc(100dvh-72px)] sm:h-[calc(100dvh-88px)] md:h-[calc(100dvh-120px)] flex flex-col xl:flex-row-reverse ${mobileTab === 'chat' ? 'gap-3' : 'gap-4'} xl:gap-6 py-0 md:py-4`
-    } lang="ug">
+      ? 'fixed inset-0 z-50 flex flex-col bg-[#f0f4f8] notranslate'
+      : `h-[calc(100dvh-72px)] sm:h-[calc(100dvh-88px)] md:h-[calc(100dvh-120px)] flex flex-col xl:flex-row-reverse ${mobileTab === 'chat' ? 'gap-3' : 'gap-4'} xl:gap-6 py-0 md:py-4 notranslate`
+    } lang="ug" translate="no">
       {/* Mobile/Tablet Tab Switcher */}
       <div className={`xl:hidden flex gap-2 ${mobileTab === 'reader' ? 'px-2' : 'p-2'}${isFullscreen ? ' hidden' : ''}`}>
         <button
@@ -277,13 +294,19 @@ export const ReaderView: React.FC = () => {
             <div className="hidden sm:flex p-2 bg-[#0369a1] text-white rounded-xl shadow-lg shrink-0">
               <BookOpen size={20} />
             </div>
-            <div className="min-w-0">
-              <h2 className="font-bold text-[#1a1a1a] text-sm sm:text-lg truncate">
+            <div className="min-w-0 flex flex-col justify-center">
+              <h2
+                className="font-bold text-[#1a1a1a] truncate"
+                style={{ fontSize: `${fontSize}px` }}
+              >
                 {selectedBook.title}
                 {selectedBook.volume ? ` (${t('book.volume', { volume: selectedBook.volume })})` : ''}
               </h2>
               {selectedBook.author && (
-                <p className="text-xs sm:text-sm text-[#64748b] mt-0.5 truncate hidden sm:block">
+                <p
+                  className="text-[#64748b] mt-0.5 truncate hidden sm:block"
+                  style={{ fontSize: `${Math.max(12, fontSize - 4)}px` }}
+                >
                   {selectedBook.author}
                 </p>
               )}
@@ -292,17 +315,34 @@ export const ReaderView: React.FC = () => {
 
           <div className="flex items-center gap-0.5 sm:gap-2 shrink-0">
             {isEditor && (
-              !isEditing ? (
-                <button onClick={handleEnterGlobalEdit} className="flex items-center gap-2 px-2 sm:px-4 py-2 min-h-[36px] sm:min-h-[44px] bg-[#0369a1] text-white text-xs sm:text-sm rounded-xl sm:rounded-2xl hover:bg-[#0284c7] transition-all">
-                  <Edit3 size={14} className="sm:w-4 sm:h-4" />
-                  <span className="hidden sm:inline">{t('reader.editBook')}</span>
-                </button>
-              ) : (
-                <button onClick={handleSaveCorrections} className="flex items-center gap-2 px-2 sm:px-4 py-2 min-h-[36px] sm:min-h-[44px] bg-[#0369a1] text-white text-xs sm:text-sm rounded-xl sm:rounded-2xl hover:bg-[#0284c7] transition-all">
-                  <Save size={14} className="sm:w-4 sm:h-4" />
-                  <span className="hidden sm:inline">{t('common.save')}</span>
-                </button>
-              )
+              <div className="flex items-center gap-1 sm:gap-2">
+                {!isEditing ? (
+                  <>
+                    <button
+                      onClick={handleDownload}
+                      disabled={isDownloading}
+                      className="flex items-center gap-2 px-2 sm:px-4 py-2 min-h-[36px] sm:min-h-[44px] bg-white border border-[#0369a1]/20 text-[#0369a1] text-xs sm:text-sm rounded-xl sm:rounded-2xl hover:bg-[#0369a1]/10 transition-all font-bold disabled:opacity-50"
+                      title={t('common.download')}
+                    >
+                      {isDownloading ? (
+                        <Loader2 size={14} className="animate-spin sm:w-4 sm:h-4" />
+                      ) : (
+                        <Download size={14} className="sm:w-4 sm:h-4" />
+                      )}
+                      <span className="hidden sm:inline">{t('common.download')}</span>
+                    </button>
+                    <button onClick={handleEnterGlobalEdit} className="flex items-center gap-2 px-2 sm:px-4 py-2 min-h-[36px] sm:min-h-[44px] bg-[#0369a1] text-white text-xs sm:text-sm rounded-xl sm:rounded-2xl hover:bg-[#0284c7] transition-all">
+                      <Edit3 size={14} className="sm:w-4 sm:h-4" />
+                      <span className="hidden sm:inline">{t('reader.editBook')}</span>
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={handleSaveCorrections} className="flex items-center gap-2 px-2 sm:px-4 py-2 min-h-[36px] sm:min-h-[44px] bg-[#0369a1] text-white text-xs sm:text-sm rounded-xl sm:rounded-2xl hover:bg-[#0284c7] transition-all">
+                    <Save size={14} className="sm:w-4 sm:h-4" />
+                    <span className="hidden sm:inline">{t('common.save')}</span>
+                  </button>
+                )}
+              </div>
             )}
 
             <div className="flex items-center gap-0.5 sm:gap-1 bg-white/60 border border-[#0369a1]/20 rounded-xl sm:rounded-2xl p-0.5 sm:p-1 shadow-sm">

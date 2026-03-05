@@ -55,6 +55,9 @@ const renderInline = (text: string, onReferenceClick?: (bookId: string, pageNums
       const pageNumsStr = parts[2] || '';
       const pageNums = pageNumsStr.split(',').map(p => parseInt(p.trim(), 10)).filter(p => !isNaN(p));
 
+      // Clean up the text in case the LLM included the BookID inside the link name
+      const cleanText = text.replace(/\s*\(?BookID:\s*[a-zA-Z0-9-]+\)?/gi, '');
+
       return (
         <button
           key={`ref-${key}`}
@@ -67,7 +70,7 @@ const renderInline = (text: string, onReferenceClick?: (bookId: string, pageNums
           }}
           className="text-inherit hover:opacity-70 underline decoration-dotted underline-offset-4 font-normal transition-all"
         >
-          {text}
+          {cleanText}
         </button>
       );
     }
@@ -279,37 +282,59 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
       }
       const parseRow = (row: string) =>
         row.split('|').slice(1, -1).map(cell => cell.trim());
+      const hasSeparator = tableLines.some(l => isTableSeparator(l));
       const dataLines = tableLines.filter(l => !isTableSeparator(l));
-      const [headerLine, ...bodyLines] = dataLines;
-      if (headerLine) {
-        const headers = parseRow(headerLine);
-        const rows = bodyLines.map(parseRow);
-        blocks.push(
-          <div key={`table-${key++}`} className="overflow-x-auto my-2" dir="rtl">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr>
-                  {headers.map((h, idx) => (
-                    <th key={idx} className="border border-slate-200 px-3 py-2 bg-slate-50 font-bold text-right">
-                      {renderInline(h, onReferenceClick)}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row, rowIdx) => (
-                  <tr key={rowIdx} className={rowIdx % 2 === 1 ? 'bg-slate-50/50' : ''}>
-                    {row.map((cell, cellIdx) => (
-                      <td key={cellIdx} className="border border-slate-200 px-3 py-2 text-right">
-                        {renderInline(cell, onReferenceClick)}
-                      </td>
+      if (dataLines.length > 0) {
+        if (hasSeparator) {
+          const [headerLine, ...bodyLines] = dataLines;
+          const headers = parseRow(headerLine);
+          const rows = bodyLines.map(parseRow);
+          blocks.push(
+            <div key={`table-${key++}`} className="overflow-x-auto my-2" dir="rtl">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr>
+                    {headers.map((h, idx) => (
+                      <th key={idx} className="border border-slate-200 px-3 py-2 bg-slate-50 font-bold text-right">
+                        {renderInline(h, onReferenceClick)}
+                      </th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        );
+                </thead>
+                <tbody>
+                  {rows.map((row, rowIdx) => (
+                    <tr key={rowIdx} className={rowIdx % 2 === 1 ? 'bg-slate-50/50' : ''}>
+                      {row.map((cell, cellIdx) => (
+                        <td key={cellIdx} className="border border-slate-200 px-3 py-2 text-right">
+                          {renderInline(cell, onReferenceClick)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        } else {
+          const rows = dataLines.map(parseRow);
+          blocks.push(
+            <div key={`table-${key++}`} className="overflow-x-auto my-2" dir="rtl">
+              <table className="w-full border-collapse text-sm">
+                <tbody>
+                  {rows.map((row, rowIdx) => (
+                    <tr key={rowIdx} className={rowIdx % 2 === 1 ? 'bg-slate-50/50' : ''}>
+                      {row.map((cell, cellIdx) => (
+                        <td key={cellIdx} className="px-3 py-1.5 text-right">
+                          {renderInline(cell, onReferenceClick)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        }
       }
       continue;
     }

@@ -130,7 +130,7 @@ export const PersistenceService = {
   /**
    * Uploads a PDF to the backend for server-side processing.
    */
-  async uploadPdf(file: File): Promise<string> {
+  async uploadPdf(file: File): Promise<{ bookId: string; status: string }> {
     const formData = new FormData();
     formData.append('file', file);
 
@@ -148,7 +148,32 @@ export const PersistenceService = {
     }
 
     const data = await response.json();
-    return data.bookId;
+    return { bookId: data.bookId, status: data.status };
+  },
+
+  async downloadBook(bookId: string, fileName: string): Promise<void> {
+    try {
+      const response = await authFetch(`${API_BASE}/books/${bookId}/download`);
+      if (!response.ok) {
+        if (response.status === 401) throw new Error("Authentication required");
+        if (response.status === 403) throw new Error("Permission denied");
+        if (response.status === 404) throw new Error("File not found");
+        throw new Error("Failed to download book");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error("Download failed:", error);
+      throw error;
+    }
   },
 
   async reprocessBook(bookId: string): Promise<void> {
