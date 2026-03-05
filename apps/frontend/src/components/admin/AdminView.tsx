@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Database, Book as BookIcon, User, Hash, BookOpen, MoreVertical, Save, X, Edit2, Check, Globe, Shield } from 'lucide-react';
 import { Pagination } from '../common/Pagination';
-import { NotificationContainer } from '../common/NotificationContainer';
+
 import { useI18n } from '../../i18n/I18nContext';
 import { useAppContext } from '../../context/AppContext';
 import { TagEditor } from './TagEditor';
@@ -144,7 +144,7 @@ export const AdminView: React.FC = () => {
         </div>
       </div>
 
-      <NotificationContainer />
+
 
       {(bookActions.isCheckingGlobal || (isInitialLoading && books.length === 0)) && (
         <div className="glass-panel p-20 flex flex-col items-center justify-center text-center animate-pulse z-50">
@@ -245,7 +245,7 @@ export const AdminView: React.FC = () => {
                           </div>
                         )}
                       </td>
-                      <td className={`hidden md:table-cell px-3 md:px-6 py-4 md:py-6 ${isEditing ? 'align-top' : ''}`}>
+                      <td className={`hidden lg:table-cell px-3 md:px-6 py-4 md:py-6 ${isEditing ? 'align-top' : ''}`}>
                         {isEditing ? (
                           <input
                             type="text"
@@ -261,7 +261,7 @@ export const AdminView: React.FC = () => {
                           </div>
                         )}
                       </td>
-                      <td className={`hidden md:table-cell px-3 md:px-6 py-4 md:py-6 ${isEditing ? 'align-top' : ''}`}>
+                      <td className={`hidden lg:table-cell px-3 md:px-6 py-4 md:py-6 ${isEditing ? 'align-top' : ''}`}>
                         <TagEditor
                           isOpen={isEditing}
                           onSave={() => handleSaveRow(book.id)}

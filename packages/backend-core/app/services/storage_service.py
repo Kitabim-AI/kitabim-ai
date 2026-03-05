@@ -60,6 +60,11 @@ class StorageProvider(ABC):
         """List files in storage matching a prefix"""
         pass
 
+    @abstractmethod
+    def get_stream(self, remote_path: str):
+        """Get a readable stream for the file"""
+        pass
+
 
 class FileSystemStorageProvider(StorageProvider):
     """Legacy storage provider using local filesystem"""
@@ -123,6 +128,12 @@ class FileSystemStorageProvider(StorageProvider):
             if p.is_file():
                 results.append(str(p.relative_to(self.base_dir)))
         return results
+
+    def get_stream(self, remote_path: str):
+        src_path = self._get_full_path(remote_path)
+        if not src_path.exists():
+            raise FileNotFoundError(f"Source file {src_path} does not exist")
+        return open(src_path, "rb")
 
 
 class GCSStorageProvider(StorageProvider):
@@ -197,6 +208,13 @@ class GCSStorageProvider(StorageProvider):
         bucket, _, final_prefix = self._get_bucket_and_path(prefix)
         blobs = self.client.list_blobs(bucket, prefix=final_prefix)
         return [blob.name for blob in blobs]
+
+    def get_stream(self, remote_path: str):
+        bucket, _, final_path = self._get_bucket_and_path(remote_path)
+        blob = bucket.blob(final_path)
+        if not blob.exists():
+            raise FileNotFoundError(f"Blob {final_path} does not exist in bucket {bucket.name}")
+        return blob.open("rb")
 
 
 def get_storage_provider() -> StorageProvider:

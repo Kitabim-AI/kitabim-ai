@@ -145,7 +145,7 @@ h5,
 h6 {
   font-family: var(--font-headers) !important;
   font-weight: normal !important;
-  letter-spacing: normal !important;
+  letter-spacing: 0 !important;
 }
 
 nav *,
@@ -217,9 +217,22 @@ body::after {
   direction: rtl;
   line-height: 1.8;
   text-rendering: optimizeLegibility;
-  font-variant-ligatures: common-ligatures;
+  /* Reset to standard features to ensure 'LA' (لا) connects correctly. */
+  font-variant-ligatures: common-ligatures contextual !important;
+  font-feature-settings: "kern" 1, "liga" 1, "calt" 1, "ccmp" 1 !important;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  letter-spacing: 0;
+  word-spacing: 0;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+/* Italics break connections in almost all Uyghur webfonts. */
+.uyghur-text i,
+.uyghur-text em,
+.uyghur-text .italic {
+  font-style: normal !important;
 }
 
 /* Custom Scrollbars */

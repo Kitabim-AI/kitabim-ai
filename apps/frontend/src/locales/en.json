@@ -12,6 +12,7 @@
     "edit": "Edit",
     "close": "Close",
     "search": "Search",
+    "download": "Download",
     "filter": "Filter",
     "clear": "Clear",
     "send": "Send",
@@ -33,9 +34,12 @@
     "add": "Add",
     "loadingApp": "Library is loading...",
     "uploadSuccess": "Document uploaded successfully.",
+    "uploadExisting": "This book already exists in the library.",
     "reindexStarted": "Book re-indexing started.",
     "resetFailedSuccess": "{{count}} failed page(s) reset to OCR.",
     "noFailedPages": "No failed pages found for this book.",
+    "pageResetSuccess": "Page {{pageNum}} reset and queued for re-processing.",
+    "pageResetError": "Failed to reset page {{pageNum}}. Please try again.",
     "pageUpdated": "Page {{pageNum}} updated.",
     "noPagesToSave": "No pages found to save. Please try reloading the book.",
     "saveSuccess": "Global corrections saved.",
@@ -406,6 +410,11 @@
     "resetFailedError": {
       "title": "Reset Error",
       "message": "Failed to reset failed pages. Please try again."
+    },
+    "resetPage": {
+      "title": "Reset Page",
+      "message": "Are you sure you want to reset page {{pageNum}}? This will clear the current text and queue it for re-processing. Any unsaved edits will be lost.",
+      "confirm": "Reset Page"
     },
     "reOcrError": {
       "title": "Re-OCR Error",

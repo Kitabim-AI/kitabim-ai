@@ -8,8 +8,10 @@ from langchain_core.output_parsers import PydanticOutputParser
 
 import numpy as np
 from langchain_core.documents import Document
+from sqlalchemy import select
 
 from app.core.config import settings
+from app.db.models import Book
 from app.core.prompts import CATEGORY_PROMPT, RAG_PROMPT_TEMPLATE
 
 from app.langchain import GeminiEmbeddings, build_structured_chain, build_text_chain
@@ -81,21 +83,33 @@ class RAGService:
         return any(k in q for k in keywords)
 
     @staticmethod
+    def _normalize_uyghur(text: str) -> str:
+        """Normalize Uyghur character variants for reliable keyword matching.
+        ې (U+06D0) and ي (U+064A) are often used interchangeably with ى (U+06CC)
+        depending on keyboard/input method.
+        """
+        return text.replace("\u06D0", "\u06CC").replace("\u0649", "\u06CC").replace("\u064A", "\u06CC")
+
+    @staticmethod
     def _is_author_or_catalog_query(question: str) -> bool:
         """Detect if the question is about book authors or which books exist in the library."""
         if not question:
             return False
-        q = question.strip()
+        q = RAGService._normalize_uyghur(question.strip())
         keywords = [
-            # Author-related
-            "مۇئەللىپ", "يازغۇچى", "كىم يازغان", "ئاپتور", "مۇئەللىپى",
-            "كىم تەرىپىدىن", "يازغانلىقى", "ئەسەر يازغان", "ئەسەرلىرى",
+            # Author-related — "who wrote X" / "author of X"
+            "مۇئەللىپ", "مۇئەللىپى", "يازغۇچى", "يازغۇچىسى", "ئاپتور", "ئاپتورى",
+            "كىم يازغان", "يازغان كىشى", "يازغان كىم",
+            "كىم تەرىپىدىن", "يازغانلىقى", "كىمنىڭ", "كىمنىكى",
+            # Author-related — "X's books / works"
+            "ئەسەر يازغان", "ئەسەرلىرى", "كىتابلىرى",
             # Catalog / book-list related
             "كىتابلىرىڭىز", "كىتاب بارمۇ", "كىتابخانىڭىز",
             "كىتاب تىزىملىكى", "قانچە كىتاب", "نەچچە كىتاب",
             "قايسى كىتابلار", "قايسى ئەسەر",
         ]
-        return any(k in q for k in keywords)
+        normalized_keywords = [RAGService._normalize_uyghur(k) for k in keywords]
+        return any(k in q for k in normalized_keywords)
 
     @staticmethod
     def _format_book_catalog(books) -> str:
@@ -111,6 +125,101 @@ class RAGService:
             else:
                 lines.append(f"- {title}")
         return "\n".join(lines)
+
+    @staticmethod
+    def _entity_matches_question(entity: str, question: str) -> bool:
+        """
+        Check if an author name or book title is referenced in the question,
+        handling Uyghur agglutinative suffixes (e.g. 'سابىر' matches 'سابىرنىڭ').
+        Each word of the entity must appear as a prefix of at least one word in the question.
+        Requires at least 2 words to match to avoid false positives on common single words.
+        Normalizes ى/ې/ي variants before comparison.
+        """
+        normalize = RAGService._normalize_uyghur
+        entity_words = normalize(entity.strip()).split()
+        if len(entity_words) < 2:
+            return False
+        q_words = normalize(question.strip()).split()
+        return all(
+            any(q_word.startswith(e_word) for q_word in q_words)
+            for e_word in entity_words
+        )
+
+    @staticmethod
+    async def _build_catalog_context(question: str, session) -> tuple[str, int]:
+        """
+        Build the most specific context possible from the books table:
+        - If a known book title is referenced in the question → return info for that book
+        - Elif a known author name is referenced → return that author's books
+        - Else → return the full library catalog
+        Returns (context_str, retrieved_count).
+        """
+        q = question.strip()
+
+        # 1. Try to match a book title (word-prefix match to handle Uyghur suffixes)
+        title_result = await session.execute(
+            select(Book.title).where(Book.status != "error")
+        )
+        titles = [row[0] for row in title_result.fetchall() if row[0]]
+        matched_title = next((t for t in titles if RAGService._entity_matches_question(t, q)), None)
+
+        if matched_title:
+            stmt = select(Book.title, Book.author, Book.volume, Book.total_pages, Book.status).where(
+                Book.status != "error",
+                Book.title == matched_title,
+            ).order_by(Book.volume)
+            result = await session.execute(stmt)
+            books = result.fetchall()
+            if books:
+                lines = [f"Information about '{matched_title}':"]
+                for book in books:
+                    author = book.author or "Unknown"
+                    volume = f", Volume {book.volume}" if book.volume is not None else ""
+                    pages = f", {book.total_pages} pages" if book.total_pages else ""
+                    status_tag = f" [Status: {book.status}]" if book.status != "ready" else ""
+                    lines.append(f"- Title: {book.title}{volume}, Author: {author}{pages}{status_tag}")
+                return "\n".join(lines), len(books)
+
+        # 2. Try to match an author name (word-prefix match to handle Uyghur suffixes)
+        author_result = await session.execute(
+            select(Book.author).where(Book.author.isnot(None), Book.status != "error").distinct()
+        )
+        authors = [row[0] for row in author_result.fetchall() if row[0]]
+        matched_author = next((a for a in authors if RAGService._entity_matches_question(a, q)), None)
+
+        if matched_author:
+            stmt = select(Book.title, Book.author, Book.volume, Book.total_pages, Book.status).where(
+                Book.status != "error",
+                Book.author == matched_author,
+            ).order_by(Book.volume, Book.title)
+            result = await session.execute(stmt)
+            books = result.fetchall()
+            lines = [f"Books by author '{matched_author}' in the library:"]
+            for book in books:
+                volume = f", Volume {book.volume}" if book.volume is not None else ""
+                pages = f", {book.total_pages} pages" if book.total_pages else ""
+                status_tag = f" [Status: {book.status}]" if book.status != "ready" else ""
+                lines.append(f"- {book.title}{volume}{pages}{status_tag}")
+            return "\n".join(lines), len(books)
+
+        # 3. Fall back to full catalog
+        stmt = select(Book.title, Book.author, Book.status).where(Book.status != "error").order_by(Book.title)
+        result = await session.execute(stmt)
+        all_books = result.fetchall()
+        
+        if not all_books:
+            return "NO BOOKS FOUND IN THE LIBRARY.", 0
+            
+        lines = ["Library catalog — available books:"]
+        for book in all_books:
+            title = book.title or "Unknown"
+            author = book.author
+            status_tag = f" [Status: {book.status}]" if book.status != "ready" else ""
+            if author:
+                lines.append(f"- {title} (Author: {author}){status_tag}")
+            else:
+                lines.append(f"- {title}{status_tag}")
+        return "\n".join(lines), len(all_books)
 
     @staticmethod
     def _build_empty_response_message() -> str:
@@ -148,8 +257,9 @@ class RAGService:
             "   You MUST use the EXACT author name from the 'Author:' field in that header. If there is no 'Author:' field in the header, omit the author from the citation entirely — do NOT write any 'unknown' or placeholder text for the author.\n"
             "5. Format citations in Uyghur as a markdown link. The link URL MUST be in the format 'ref:book_id:page_number'.\n"
             "   If multiple pages are referenced, separate the page numbers with commas in the URL (e.g. 'ref:book_id:9,10').\n"
+            "   STRICT RULE: Do NOT include the 'BookID: abc123' part in the visible text label of the link! Keep the book ID ONLY in the URL parenthesis.\n"
             "   Example: **مەنبە:** [ئانا يۇرت (زوردۇن سابىر)، 1-توم، 25-بەت](ref:abc123:25)\n"
-            "6. Replace 'abc123' with the actual BookID and the author/title with the exact values from the context header. **Citations must be placed immediately after the relevant sentence or paragraph they support. NEVER group all citations at the end of your response.**\n"
+            "6. Replace 'abc123' with the actual BookID in the URL, and use the exact values from the context header for the author/title. **Citations must be placed immediately after the relevant sentence or paragraph they support. NEVER group all citations at the end of your response.**\n"
             "7. If the context is marked as 'NO RELEVANT DOCUMENTS FOUND' or does not contain the answer:\n"
             "   - Politely explain that you couldn't find a specific match in the indexed books.\n"
             "   - If it's a general question or greeting, respond naturally but maintain your persona as a librarian advisor.\n"
@@ -397,41 +507,49 @@ class RAGService:
         book_ids = []
         book_id_to_title = {}
 
-        if is_global:
-            # If the user is asking about book authors or catalog, provide the full book list
-            if self._is_author_or_catalog_query(req.question):
-                stmt = select(Book.title, Book.author).where(
-                    Book.status == "ready"
-                ).order_by(Book.title)
-                result = await session.execute(stmt)
-                all_books = result.fetchall()
-                context = self._format_book_catalog(all_books)
-                answer = await self._generate_answer(
-                    context,
-                    req.question,
-                    rag_chain,
-                    chat_history=chat_history_str,
-                    strict_no_answer=False,
-                    suppress_page_notice=True,
-                )
-                await self._record_eval(
-                    session,
-                    {
-                        "bookId": req.book_id,
-                        "isGlobal": True,
-                        "question": req.question,
-                        "currentPage": req.current_page,
-                        "retrievedCount": len(all_books),
-                        "contextChars": len(context),
-                        "scores": [],
-                        "categoryFilter": [],
-                        "latencyMs": int((time.monotonic() - start_ts) * 1000),
-                        "answer_chars": len(answer),
-                    },
-                    user_id=user_id,
-                )
-                return answer
+        # 0. Check if the user is asking about book authors or the general catalog
+        if self._is_author_or_catalog_query(req.question):
+            context, retrieved_count = await self._build_catalog_context(req.question, session)
+            
+            # If we are in a specific book, also include its metadata specifically
+            # This handles cases like "Who is the author of this book?" when in reader
+            if not is_global and book:
+                author_info = f", Author: {book.author}" if book.author else ""
+                volume_info = f", Volume {book.volume}" if book.volume is not None else ""
+                pages_info = f", {book.total_pages} pages" if book.total_pages else ""
+                status_info = f" [Status: {book.status}]" if book.status != "ready" else ""
+                
+                current_book_intro = "Information about the book the user is currently reading:\n"
+                current_book_intro += f"- Title: {book.title or 'Unknown'}{author_info}{volume_info}{pages_info}{status_info}\n\n---\n\n"
+                context = current_book_intro + context
 
+            answer = await self._generate_answer(
+                context,
+                req.question,
+                rag_chain,
+                chat_history=chat_history_str,
+                strict_no_answer=False,
+                suppress_page_notice=True,
+            )
+            await self._record_eval(
+                session,
+                {
+                    "bookId": req.book_id,
+                    "isGlobal": is_global,
+                    "question": req.question,
+                    "currentPage": req.current_page,
+                    "retrievedCount": retrieved_count,
+                    "contextChars": len(context),
+                    "scores": [],
+                    "categoryFilter": [],
+                    "latencyMs": int((time.monotonic() - start_ts) * 1000),
+                    "answer_chars": len(answer),
+                },
+                user_id=user_id,
+            )
+            return answer
+
+        if is_global:
             # Global content search - categorize to narrow down books
             # Get all unique categories from books table
             stmt = select(Book.categories).where(Book.categories != None)
@@ -745,45 +863,53 @@ class RAGService:
         book_ids = []
         book_id_to_title = {}
 
-        if is_global:
-            # If the user is asking about book authors or catalog, provide the full book list
-            if self._is_author_or_catalog_query(req.question):
-                stmt = select(Book.title, Book.author).where(
-                    Book.status == "ready"
-                ).order_by(Book.title)
-                result = await session.execute(stmt)
-                all_books = result.fetchall()
-                context = self._format_book_catalog(all_books)
-                answer_chunks = []
-                async for chunk in self._generate_answer_stream(
-                    context,
-                    req.question,
-                    rag_chain,
-                    chat_history=chat_history_str,
-                    strict_no_answer=False,
-                    suppress_page_notice=True,
-                ):
-                    answer_chunks.append(chunk)
-                    yield chunk
-                full_answer = "".join(answer_chunks)
-                await self._record_eval(
-                    session,
-                    {
-                        "bookId": req.book_id,
-                        "isGlobal": True,
-                        "question": req.question,
-                        "currentPage": req.current_page,
-                        "retrievedCount": len(all_books),
-                        "contextChars": len(context),
-                        "scores": [],
-                        "categoryFilter": [],
-                        "latencyMs": int((time.monotonic() - start_ts) * 1000),
-                        "answer_chars": len(full_answer),
-                    },
-                    user_id=user_id,
-                )
-                return
+        # 0. Check if the user is asking about book authors or the general catalog
+        if self._is_author_or_catalog_query(req.question):
+            context, retrieved_count = await self._build_catalog_context(req.question, session)
+            
+            # If we are in a specific book, also include its metadata specifically
+            if not is_global and book:
+                author_info = f", Author: {book.author}" if book.author else ""
+                volume_info = f", Volume {book.volume}" if book.volume is not None else ""
+                pages_info = f", {book.total_pages} pages" if book.total_pages else ""
+                status_info = f" [Status: {book.status}]" if book.status != "ready" else ""
+                
+                current_book_intro = "Information about the book the user is currently reading:\n"
+                current_book_intro += f"- Title: {book.title or 'Unknown'}{author_info}{volume_info}{pages_info}{status_info}\n\n---\n\n"
+                context = current_book_intro + context
 
+            answer_chunks = []
+            async for chunk in self._generate_answer_stream(
+                context,
+                req.question,
+                rag_chain,
+                chat_history=chat_history_str,
+                strict_no_answer=False,
+                suppress_page_notice=True,
+            ):
+                answer_chunks.append(chunk)
+                yield chunk
+            
+            full_answer = "".join(answer_chunks)
+            await self._record_eval(
+                session,
+                {
+                    "bookId": req.book_id,
+                    "isGlobal": is_global,
+                    "question": req.question,
+                    "currentPage": req.current_page,
+                    "retrievedCount": retrieved_count,
+                    "contextChars": len(context),
+                    "scores": [],
+                    "categoryFilter": [],
+                    "latencyMs": int((time.monotonic() - start_ts) * 1000),
+                    "answer_chars": len(full_answer),
+                },
+                user_id=user_id,
+            )
+            return
+
+        if is_global:
             # Global content search - categorize to narrow down books
             stmt = select(Book.categories).where(Book.categories != None)
             result = await session.execute(stmt)

@@ -36,6 +36,8 @@ interface AppContextType {
   loaderRef: React.RefObject<HTMLDivElement | null>;
   isReaderFullscreen: boolean;
   setIsReaderFullscreen: (v: boolean) => void;
+  fontSize: number;
+  setFontSize: React.Dispatch<React.SetStateAction<number>>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -62,6 +64,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [isReaderFullscreen, setIsReaderFullscreen] = useState(false);
+  const [fontSize, setFontSize] = useState(18);
   const loaderRef = useRef<HTMLDivElement>(null);
 
   const [modal, setModal] = useState<{
@@ -141,6 +144,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     loaderRef,
     isReaderFullscreen,
     setIsReaderFullscreen,
+    fontSize,
+    setFontSize,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

@@ -1593,3 +1593,59 @@ async def apply_spelling_corrections(
         raise HTTPException(status_code=500, detail=t("errors.apply_corrections_failed", error=str(exc)))
 
 
+@router.get("/{book_id}/download")
+async def download_book(
+    book_id: str,
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """Download the original book file (PDF or DOCX) from storage."""
+    from fastapi.responses import StreamingResponse
+    import io
+
+    books_repo = BooksRepository(session)
+    book = await books_repo.get(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+
+    # Determine remote path (standardized or original)
+    ext = f".{book.file_type}"
+    remote_path = f"uploads/{book_id}{ext}"
+    
+    # Check if standardized path exists, fallback to original file_name
+    if not storage.exists(remote_path) and book.file_name:
+        remote_path = f"uploads/{book.file_name}"
+
+    if not storage.exists(remote_path):
+        raise HTTPException(status_code=404, detail=t("errors.file_not_found_in_storage"))
+
+    try:
+        # Get a readable stream directly from storage (doesn't load entire file into memory)
+        stream = storage.get_stream(remote_path)
+        media_type = "application/pdf" if book.file_type == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        
+        # Use a safe filename for the download, handling non-ASCII characters for RFC 5987
+        from urllib.parse import quote
+        download_name = book.file_name or f"{book.title or book_id}{ext}"
+        if not download_name.lower().endswith(ext):
+            download_name += ext
+
+        # Sanitize fallback filename for standard 'filename' (latin-1 only)
+        # We replace non-latin characters with underscores or similar for the fallback
+        safe_fallback = "".join(c if ord(c) < 128 else "_" for c in download_name)
+        encoded_filename = quote(download_name)
+
+        def iter_file():
+            yield from stream
+            stream.close()
+
+        return StreamingResponse(
+            iter_file(),
+            media_type=media_type,
+            headers={"Content-Disposition": f"attachment; filename=\"{safe_fallback}\"; filename*=UTF-8''{encoded_filename}"}
+        )
+    except Exception as exc:
+        logger.error(f"Failed to download book {book_id}: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
