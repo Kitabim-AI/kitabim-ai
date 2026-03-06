@@ -29,8 +29,12 @@ export interface Book {
   coverUrl?: string;
   visibility?: 'public' | 'private';
   categories?: string[];
+  tags?: string[];
   lastError?: ErrorEvent | null;
   readCount?: number;
+  fileType?: string;
+  fileName?: string;
+  source?: string;
   pipelineStep?: 'ocr' | 'chunking' | 'embedding' | 'ready' | null;
   pipelineStats?: Record<string, number>;
 }

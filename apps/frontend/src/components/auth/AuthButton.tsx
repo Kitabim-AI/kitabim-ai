@@ -72,7 +72,7 @@ export function TwitterLoginButton({ className = '' }: LoginButtonProps) {
   );
 }
 
-export function OAuthButtonGroup({ className = '', align = 'down', side = 'left' }: { className?: string; align?: 'up' | 'down'; side?: 'left' | 'right' }) {
+export function OAuthButtonGroup({ className = '', align = 'down', side = 'left' }: { className?: string; align?: 'up' | 'down'; side?: 'left' | 'right' | 'center' }) {
   const { loginWithGoogle, loginWithFacebook, loginWithTwitter, isLoading } = useAuth();
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
@@ -145,7 +145,7 @@ export function OAuthButtonGroup({ className = '', align = 'down', side = 'left'
       </button>
 
       {isOpen && (
-        <div className={`absolute ${align === 'up' ? 'bottom-full mb-2' : 'top-full mt-2'} ${side === 'right' ? 'right-0' : 'left-0'} w-[280px] bg-white/95 backdrop-blur-2xl border border-[#0369a1]/20 rounded-2xl shadow-[0_16px_64px_rgba(3,105,161,0.15)] overflow-hidden animate-fade-in z-50`}>
+        <div className={`absolute ${align === 'up' ? 'bottom-full mb-2' : 'top-full mt-2'} ${side === 'right' ? 'right-0' : side === 'center' ? 'left-1/2 -translate-x-1/2' : 'left-0'} min-w-full bg-white/95 backdrop-blur-2xl border border-[#0369a1]/20 rounded-2xl shadow-[0_16px_64px_rgba(3,105,161,0.15)] overflow-hidden animate-fade-in z-50`}>
           {loginOptions.map((option, index) => (
             <button
               key={option.name}
@@ -162,7 +162,7 @@ export function OAuthButtonGroup({ className = '', align = 'down', side = 'left'
               }}
             >
               {option.icon}
-              <span className="uyghur-text flex-1 text-left whitespace-nowrap">
+              <span className="uyghur-text flex-1 text-right whitespace-nowrap">
                 {option.name} {t('auth.loginWithGoogle').split(' ')[0] !== 'Login' ? 'بىلەن كىرىش' : `with ${option.name}`}
               </span>
               <ChevronDown size={14} className="opacity-0 group-hover:opacity-100 -rotate-90 transition-all" style={{ color: option.color }} strokeWidth={3} />

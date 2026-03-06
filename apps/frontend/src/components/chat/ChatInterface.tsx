@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageSquare, X, Send, Bot, User, BookOpen, LogIn } from 'lucide-react';
+import { X, Send, Bot, User, BookOpen, LogIn } from 'lucide-react';
 import { Message, Book } from '@shared/types';
 import { useI18n } from '../../i18n/I18nContext';
 import { useAuth } from '../../hooks/useAuth';
@@ -56,7 +56,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         <div className="hidden lg:flex bg-white/60 backdrop-blur-2xl px-8 py-4 items-center justify-between border border-[#0369a1]/10 shadow-sm group" style={{ borderRadius: '32px' }}>
           <div className="flex items-center gap-5">
             <div className="p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:-rotate-6">
-              <MessageSquare size={20} className="md:w-6 md:h-6" strokeWidth={2.5} />
+              <Bot size={24} className="md:w-7 md:h-7" strokeWidth={2.5} />
             </div>
             <div>
               <h1
@@ -100,7 +100,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             <div className="h-full flex flex-col items-center justify-center text-center">
               <div className="w-28 h-28 bg-[#0369a1]/10 rounded-[40px] flex items-center justify-center mb-8 border-2 border-[#0369a1]/10 shadow-lg relative group overflow-hidden">
                 <div className="absolute inset-0 bg-[#0369a1]/10 animate-pulse" />
-                <MessageSquare className="text-[#0369a1] w-14 h-14 relative z-10 transition-transform group-hover:scale-110" strokeWidth={2.5} />
+                <Bot size={72} className="text-[#0369a1] relative z-10 transition-transform group-hover:scale-110" strokeWidth={2.5} />
               </div>
               <h4 className="text-xl sm:text-2xl font-normal text-[#1a1a1a] mb-4">{t('chat.welcome.title')}</h4>
               <p className="text-slate-500 font-normal max-w-lg leading-loose text-base">
@@ -117,7 +117,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   ? 'bg-white border-2 border-[#0369a1]/10 text-[#0369a1]'
                   : 'bg-[#0369a1] text-white shadow-[#0369a1]/30'
                   }`}>
-                  {msg.role === 'user' ? <User size={14} className="md:w-5 md:h-5" strokeWidth={2.5} /> : <Bot size={14} className="md:w-5 md:h-5" strokeWidth={2.5} />}
+                  {msg.role === 'user' ? <User size={16} className="md:w-5 md:h-5" strokeWidth={2.5} /> : <Bot size={18} className="md:w-6 md:h-6" strokeWidth={2.5} />}
                 </div>
                 <div
                   className={`px-3 sm:px-5 lg:px-8 py-2 sm:py-3 lg:py-5 rounded-[20px] lg:rounded-[28px] font-normal uyghur-text shadow-sm ${msg.role === 'user'
@@ -143,7 +143,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           {streamingMessage && (
             <div className="flex flex-col items-end md:flex-row-reverse md:items-start gap-2 md:gap-4 lg:gap-6">
               <div className="w-7 h-7 md:w-10 md:h-10 shrink-0 rounded-xl md:rounded-2xl bg-[#0369a1] text-white flex items-center justify-center shadow-xl shadow-[#0369a1]/20">
-                <Bot size={14} className="md:w-5 md:h-5" strokeWidth={2.5} />
+                <Bot size={18} className="md:w-6 md:h-6" strokeWidth={2.5} />
               </div>
               <div className="flex flex-col gap-1 md:gap-2 w-full items-end">
                 <div
@@ -164,7 +164,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           {isChatting && !streamingMessage && (
             <div className="flex flex-col items-end md:flex-row-reverse md:items-start gap-2 md:gap-4 lg:gap-6">
               <div className="w-7 h-7 md:w-10 md:h-10 shrink-0 rounded-xl md:rounded-2xl bg-[#0369a1] text-white flex items-center justify-center shadow-xl shadow-[#0369a1]/20 animate-pulse">
-                <Bot size={14} className="md:w-5 md:h-5" strokeWidth={2.5} />
+                <Bot size={18} className="md:w-6 md:h-6" strokeWidth={2.5} />
               </div>
               <div className="bg-[#0369a1]/10 px-5 py-4 rounded-[28px] rounded-tl-none flex gap-2 items-center border border-[#0369a1]/10 shadow-sm animate-bounce">
                 <div className="w-2 h-2 bg-[#0369a1] rounded-full animate-bounce" />
@@ -176,7 +176,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         </div>
 
         {/* Input Bar */}
-        <div className="bg-white/80 backdrop-blur-2xl p-[5px] border-2 lg:border-2 border-[#0369a1]/10 shadow-[0_24px_64px_rgba(0,0,0,0.06)] relative transition-all focus-within:border-[#0369a1] focus-within:ring-[12px] focus-within:ring-[#0369a1]/5 rounded-[24px] sm:rounded-[32px]">
+        <div className="bg-white/80 backdrop-blur-2xl p-1 sm:p-2 border-2 lg:border-2 border-[#0369a1]/10 shadow-[0_24px_64px_rgba(0,0,0,0.06)] relative transition-all focus-within:border-[#0369a1] focus-within:ring-[12px] focus-within:ring-[#0369a1]/5 rounded-[24px] sm:rounded-[32px]">
           {isAuthenticated ? (
             <div className="flex flex-col gap-2">
               {usageStatus?.hasReachedLimit ? (
@@ -195,7 +195,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     placeholder={usageStatus && usageStatus.limit !== null
                       ? t('chat.inputPlaceholderWithLimit', { usage: usageStatus.usage, limit: usageStatus.limit })
                       : t('chat.inputPlaceholderBook')}
-                    className="flex-1 bg-transparent py-3 px-6 font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none uyghur-text"
+                    className="flex-1 bg-transparent py-2.5 sm:py-3 pr-3 sm:pr-6 pl-3 sm:pl-4 font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none uyghur-text"
                     style={{ fontSize: `${fontSize}px` }}
                     dir="rtl"
                     disabled={usageStatus?.hasReachedLimit}
@@ -203,7 +203,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   <button
                     onClick={onSendMessage}
                     disabled={isChatting || !chatInput.trim() || usageStatus?.hasReachedLimit}
-                    className="p-3 bg-[#0369a1] hover:bg-[#0284c7] text-white rounded-[24px] flex items-center justify-center transition-all active:scale-95 shadow-lg shadow-[#0369a1]/20 disabled:opacity-30 disabled:grayscale shrink-0"
+                    className="p-2 sm:p-3 me-2 sm:me-6 bg-[#0369a1] hover:bg-[#0284c7] text-white rounded-[24px] flex items-center justify-center transition-all active:scale-95 shadow-lg shadow-[#0369a1]/20 disabled:opacity-30 disabled:grayscale shrink-0"
                   >
                     <Send size={18} strokeWidth={3} />
                   </button>
@@ -211,14 +211,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               )}
             </div>
           ) : (
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-6 py-4">
-              <div className="flex items-center gap-4">
-                <div className="p-2 bg-[#0369a1]/10 text-[#0369a1] rounded-xl">
-                  <LogIn size={20} />
-                </div>
-                <p className="text-[#1a1a1a] font-normal">{t('auth.signInToUseChat')}</p>
+            <div className="flex flex-row items-center justify-between gap-6 px-5 py-4 sm:px-8 sm:py-5">
+              <div className="flex items-center">
+                <p className="text-[#1a1a1a] font-normal text-sm sm:text-base leading-relaxed">
+                  {t('auth.signInToUseChat')}
+                </p>
               </div>
-              <OAuthButtonGroup align="up" className="w-full sm:w-auto shadow-none border-[#0369a1]/10" />
+              <OAuthButtonGroup align="up" side="right" className="shrink-0" />
             </div>
           )}
         </div>
@@ -242,14 +241,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       <div className="bg-white/60 backdrop-blur-xl p-3 md:p-5 flex items-center justify-between border border-[#0369a1]/10 shadow-sm rounded-xl md:rounded-[24px]">
         <div className="flex items-center gap-4">
           <div className="p-2.5 bg-[#0369a1] text-white rounded-2xl shadow-lg shadow-[#0369a1]/10">
-            <MessageSquare size={18} strokeWidth={2.5} />
+            <Bot size={22} strokeWidth={2.5} />
           </div>
           <div>
             <h3
               className="font-normal text-[#1a1a1a]"
               style={{ fontSize: `${fontSize}px` }}
             >
-              {t('chat.bookAssistant')}{t('chat.sidebarSubtitle')}
+              {t('chat.sidebarSubtitle')}
             </h3>
           </div>
         </div>
@@ -280,7 +279,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               </div>
             ) : (
               <div className="text-center py-12 px-8 bg-white/40 border-2 border-dashed border-[#0369a1]/10 rounded-[32px] flex flex-col items-center justify-center gap-4 opacity-60">
-                <Bot size={40} className="text-[#0369a1]" strokeWidth={1} />
+                <Bot size={48} className="text-[#0369a1]" strokeWidth={1} />
                 <p
                   className="font-normal leading-loose text-[#1a1a1a]"
                   style={{ fontSize: `${fontSize}px` }}
@@ -349,7 +348,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         )}
       </div>
 
-      <div className="relative mt-auto p-[5px] bg-white/80 backdrop-blur-2xl border-2 border-[#0369a1]/10 shadow-[0_24px_64px_rgba(0,0,0,0.06)] transition-all focus-within:border-[#0369a1] focus-within:ring-[12px] focus-within:ring-[#0369a1]/5 rounded-[20px] md:rounded-[24px]">
+      <div className="relative mt-auto p-1 sm:p-2 bg-white/80 backdrop-blur-2xl border-2 border-[#0369a1]/10 shadow-[0_24px_64px_rgba(0,0,0,0.06)] transition-all focus-within:border-[#0369a1] focus-within:ring-[12px] focus-within:ring-[#0369a1]/5 rounded-[20px] md:rounded-[24px]">
         {isAuthenticated ? (
           <div className="flex flex-col gap-1">
             {usageStatus?.hasReachedLimit ? (
@@ -368,7 +367,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && !isChatting && !usageStatus?.hasReachedLimit && onSendMessage()}
-                  className="w-full bg-transparent border-none py-3 pl-12 pr-4 font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none uyghur-text"
+                  className="w-full bg-transparent border-none py-2 sm:py-3 pl-[52px] sm:pl-[76px] pr-2 sm:pr-4 font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none uyghur-text"
                   style={{ fontSize: `${fontSize}px` }}
                   dir="rtl"
                   disabled={usageStatus?.hasReachedLimit}
@@ -376,7 +375,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 <button
                   onClick={onSendMessage}
                   disabled={isChatting || !chatInput.trim() || usageStatus?.hasReachedLimit}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 p-3 bg-[#0369a1] text-white rounded-2xl shadow-lg shadow-[#0369a1]/20 hover:scale-105 active:scale-90 transition-all disabled:opacity-30"
+                  className="absolute left-[12px] sm:left-[24px] top-1/2 -translate-y-1/2 p-2 sm:p-3 bg-[#0369a1] text-white rounded-2xl shadow-lg shadow-[#0369a1]/20 hover:scale-105 active:scale-90 transition-all disabled:opacity-30"
                 >
                   <Send size={16} strokeWidth={3} />
                 </button>
@@ -384,8 +383,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             )}
           </div>
         ) : (
-          <div className="py-2 px-1">
-            <OAuthButtonGroup align="up" side="right" className="w-full" />
+          <div className="flex items-center justify-start px-4 py-2.5 sm:py-3 min-h-[52px] sm:min-h-[60px]">
+            <p className="flex-1 text-[#1a1a1a] font-normal text-[11px] sm:text-sm leading-relaxed pl-14 sm:pl-20 text-right">
+              {t('auth.signInToUseChat')}
+            </p>
+            <div className="absolute left-[12px] sm:left-[24px] top-1/2 -translate-y-1/2">
+              <OAuthButtonGroup align="up" side="right" />
+            </div>
           </div>
         )}
       </div>

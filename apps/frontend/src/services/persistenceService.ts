@@ -249,6 +249,26 @@ export const PersistenceService = {
     }
   },
 
+  async updateBookCover(bookId: string, file: File): Promise<{ coverUrl: string }> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await authFetch(`${API_BASE}/books/${bookId}/cover`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Editor access required");
+      }
+      const errorText = await response.text();
+      throw new Error(`Upload failed: ${response.status} ${errorText}`);
+    }
+
+    return response.json();
+  },
+
   async updateBookTags(bookId: string, tags: string[]): Promise<void> {
     // Legacy support or specific tag update
     return this.updateBookMetadata(bookId, { tags });
