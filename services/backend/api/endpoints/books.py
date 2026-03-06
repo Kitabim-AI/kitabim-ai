@@ -295,11 +295,14 @@ async def get_books(
                 "last_updated": rep.last_updated,
                 "updated_by": rep.updated_by,
                 "created_by": rep.created_by,
-                "cover_url": rep.cover_url,
+                "cover_url": storage.get_public_url(rep.cover_url) if rep.cover_url else None,
                 "visibility": rep.visibility,
                 "categories": rep.categories,
                 "last_error": last_error_obj,
                 "read_count": rep.read_count or 0,
+                "file_name": rep.file_name,
+                "file_type": rep.file_type,
+                "source": rep.source,
             }
             works_list.append(BookSchema.model_validate(rep_dict))
 
@@ -330,11 +333,14 @@ async def get_books(
                 "last_updated": b.last_updated,
                 "updated_by": b.updated_by,
                 "created_by": b.created_by,
-                "cover_url": b.cover_url,
+                "cover_url": storage.get_public_url(b.cover_url) if b.cover_url else None,
                 "visibility": b.visibility,
                 "categories": b.categories,
                 "last_error": b_last_error_obj,
                 "read_count": b.read_count or 0,
+                "file_name": b.file_name,
+                "file_type": b.file_type,
+                "source": b.source,
             }
             works_list.append(BookSchema.model_validate(b_dict))
 
@@ -437,11 +443,14 @@ async def get_books(
                 "last_updated": b.last_updated,
                 "updated_by": b.updated_by,
                 "created_by": b.created_by,
-                "cover_url": b.cover_url,
+                "cover_url": storage.get_public_url(b.cover_url) if b.cover_url else None,
                 "visibility": b.visibility,
                 "categories": b.categories,
                 "last_error": last_error_obj,
                 "read_count": b.read_count or 0,
+                "file_name": b.file_name,
+                "file_type": b.file_type,
+                "source": b.source,
                 "pipeline_stats": (await repo.get_with_page_stats(str(b.id))).get("pipeline_stats", {}) if repo else {}
             }
             s_data = BookSchema.model_validate(b_dict)
@@ -675,11 +684,14 @@ async def get_book(
         "last_updated": book_model.last_updated,
         "updated_by": book_model.updated_by,
         "created_by": book_model.created_by,
-        "cover_url": book_model.cover_url,
+        "cover_url": storage.get_public_url(book_model.cover_url) if book_model.cover_url else None,
         "visibility": book_model.visibility,
         "categories": book_model.categories,
         "last_error": last_error_obj,
         "read_count": book_model.read_count or 0,
+        "file_name": book_model.file_name,
+        "file_type": book_model.file_type,
+        "source": book_model.source,
         "pipeline_stats": stats.get("pipeline_stats", {})
     }
 
@@ -896,7 +908,7 @@ async def upload_pdf(
                 try:
                     remote_cover_path = f"covers/{book_id}.jpg"
                     await storage.upload_file(cover_temp_path, remote_cover_path)
-                    cover_url = storage.get_public_url(remote_cover_path)
+                    cover_url = remote_cover_path
                 finally:
                     cover_temp_path.unlink(missing_ok=True)
             await storage.upload_file(temp_path, remote_path)
@@ -909,7 +921,7 @@ async def upload_pdf(
                 try:
                     remote_cover_path = f"covers/{book_id}.jpg"
                     await storage.upload_file(cover_temp_path, remote_cover_path)
-                    cover_url = storage.get_public_url(remote_cover_path)
+                    cover_url = remote_cover_path
                 finally:
                     cover_temp_path.unlink(missing_ok=True)
             await storage.upload_file(temp_path, remote_path)
@@ -1389,6 +1401,13 @@ async def update_book_details(
     book_update["last_updated"] = datetime.now(timezone.utc)
     book_update["updated_by"] = current_user.email
 
+    # Normalize cover_url to relative path if it contains covers/
+    if "cover_url" in book_update and book_update["cover_url"]:
+        import re
+        match = re.search(r"covers/([^/?#]+)", book_update["cover_url"])
+        if match:
+            book_update["cover_url"] = f"covers/{match.group(1)}"
+
     await books_repo.update_one(book_id, **book_update)
     await session.commit()
 
@@ -1479,12 +1498,21 @@ async def upload_cover(
         img = Image.open(io.BytesIO(image_data))
         if img.mode in ("RGBA", "P", "LA"):
             img = img.convert("RGB")
-        cover_path = settings.covers_dir / f"{book_id}.jpg"
-        img.save(cover_path, "JPEG", quality=90)
+        # Save to temp file first for storage provider to upload
+        temp_cover_path = settings.uploads_dir / f".cover_upload_{book_id}.jpg"
+        img.save(temp_cover_path, "JPEG", quality=90)
+        
+        # Upload to storage (works with GCS or Local)
+        remote_cover_path = f"covers/{book_id}.jpg"
+        await storage.upload_file(temp_cover_path, remote_cover_path)
+        cover_url = remote_cover_path
+        
+        # Cleanup temp file
+        temp_cover_path.unlink(missing_ok=True)
+        
     except Exception as exc:
         raise HTTPException(status_code=500, detail=t("errors.image_process_failed", error=str(exc)))
 
-    cover_url = f"/api/covers/{book_id}.jpg"
     await books_repo.update_one(
         book_id,
         cover_url=cover_url,
@@ -1497,7 +1525,65 @@ async def upload_cover(
         "status": "success",
         "bookId": book_id,
         "title": book.title,
-        "coverUrl": cover_url,
+        "coverUrl": storage.get_public_url(cover_url),
+    }
+
+
+@router.post("/{book_id}/cover")
+async def update_book_cover(
+    book_id: str,
+    file: UploadFile = File(...),
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """Update book cover by book ID with SQLAlchemy and storage service"""
+    from PIL import Image
+    
+    books_repo = BooksRepository(session)
+    book = await books_repo.get(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+
+    allowed_types = ["image/png", "image/jpeg", "image/jpg", "image/webp", "application/octet-stream"]
+    if file.content_type not in allowed_types:
+        # Some browsers might send image/jpg as application/octet-stream for some reason, 
+        # but let's be strict for now or trust PIL to check.
+        pass
+
+    try:
+        image_data = await file.read()
+        img = Image.open(io.BytesIO(image_data))
+        if img.mode in ("RGBA", "P", "LA"):
+            img = img.convert("RGB")
+        
+        # Save to temp file first for storage provider to upload
+        temp_cover_path = settings.uploads_dir / f".cover_update_{book_id}.jpg"
+        img.save(temp_cover_path, "JPEG", quality=90)
+        
+        # Upload to storage (works with GCS or Local)
+        remote_cover_path = f"covers/{book_id}.jpg"
+        await storage.upload_file(temp_cover_path, remote_cover_path)
+        cover_url = remote_cover_path
+        
+        # Cleanup temp file
+        temp_cover_path.unlink(missing_ok=True)
+        
+    except Exception as exc:
+        logger.error(f"Failed to process cover for book {book_id}: {exc}")
+        raise HTTPException(status_code=500, detail=t("errors.image_process_failed", error=str(exc)))
+
+    await books_repo.update_one(
+        book_id,
+        cover_url=cover_url,
+        last_updated=datetime.now(timezone.utc),
+        updated_by=current_user.email
+    )
+    await session.commit()
+
+    return {
+        "status": "success",
+        "bookId": book_id,
+        "coverUrl": storage.get_public_url(cover_url),
     }
 
 

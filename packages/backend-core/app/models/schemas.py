@@ -75,6 +75,7 @@ class Book(BaseModel):
     last_error: Optional[ErrorEvent] = None  # DB: last_error, API: lastError
     read_count: int = 0  # DB: read_count, API: readCount
     file_name: Optional[str] = None  # Original uploaded filename
+    file_type: Optional[str] = None  # File extension (e.g., 'pdf', 'docx')
     source: Optional[str] = None  # Document source (e.g., 'upload', 'gcs')
     pipeline_step: Optional[str] = None  # DB: pipeline_step, API: pipelineStep
     pipeline_stats: Optional[Dict[str, int]] = Field(default_factory=dict) # DB: pipeline_stats, API: pipelineStats

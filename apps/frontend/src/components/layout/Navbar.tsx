@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { BookOpen, Library, MessageSquare, LayoutDashboard, Search, Upload, Users, Menu, X, RefreshCw } from 'lucide-react';
+import { BookOpen, Library, Bot, LayoutDashboard, Search, Upload, Users, Menu, X, RefreshCw } from 'lucide-react';
 import { AuthButton } from '../auth';
 import { useAuth, useIsEditor } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
@@ -63,7 +63,7 @@ export const Navbar: React.FC = () => {
             <NavButton
               active={view === 'global-chat'}
               onClick={() => { setView('global-chat'); chat.clearChat(); }}
-              icon={<MessageSquare size={20} strokeWidth={2.5} />}
+              icon={<Bot size={24} strokeWidth={2.5} />}
               label={t('nav.globalChat')}
             />
             {isEditor && (
@@ -84,8 +84,16 @@ export const Navbar: React.FC = () => {
         </div>
 
         <div className="relative flex items-center gap-2 md:gap-2 lg:gap-4">
-          {view !== 'home' && (
+          {(view === 'admin' || view === 'library') && (
             <div className="relative hidden xl:block">
+              <input
+                type="text"
+                placeholder={t('library.searchPlaceholder')}
+                value={view === 'home' ? homeSearchQuery : searchQuery}
+                onChange={(e) => view === 'home' ? setHomeSearchQuery(e.target.value) : setSearchQuery(e.target.value)}
+                className="pr-11 pl-4 py-2.5 bg-white/50 backdrop-blur-md border-2 border-[#0369a1]/10 rounded-2xl text-sm font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none focus:border-[#0369a1] transition-all w-64 shadow-sm uyghur-text"
+                dir="rtl"
+              />
               <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1]">
                 {isLoading && ((view === 'home' && homeSearchQuery) || (view !== 'home' && searchQuery)) ? (
                   <RefreshCw size={18} strokeWidth={3} className="animate-spin" />
@@ -93,14 +101,6 @@ export const Navbar: React.FC = () => {
                   <Search size={18} strokeWidth={3} />
                 )}
               </div>
-              <input
-                type="text"
-                placeholder={t('library.searchPlaceholder')}
-                value={view === 'home' ? homeSearchQuery : searchQuery}
-                onChange={(e) => view === 'home' ? setHomeSearchQuery(e.target.value) : setSearchQuery(e.target.value)}
-                className="px-12 py-2.5 bg-white/50 backdrop-blur-md border-2 border-[#0369a1]/10 rounded-2xl text-sm font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none focus:border-[#0369a1] transition-all w-64 shadow-sm"
-                dir="rtl"
-              />
             </div>
           )}
 
@@ -108,7 +108,7 @@ export const Navbar: React.FC = () => {
             <>
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="group relative px-4 md:px-5 lg:px-6 h-[48px] rounded-2xl font-normal flex items-center justify-center gap-2 transition-all duration-300 text-white shadow-[0_8px_20px_rgba(3,105,161,0.2)] hover:shadow-[0_12px_28px_rgba(3,105,161,0.3)] hover:-translate-y-0.5 active:translate-y-0 overflow-hidden text-sm lg:text-base"
+                className="group relative px-[0.7rem] md:px-5 lg:px-6 h-[35px] md:h-[48px] rounded-[0.7rem] md:rounded-2xl font-normal flex items-center justify-center gap-2 transition-all duration-300 text-white shadow-[0_8px_20px_rgba(3,105,161,0.2)] hover:shadow-[0_12px_28px_rgba(3,105,161,0.3)] hover:-translate-y-0.5 active:translate-y-0 overflow-hidden text-sm lg:text-base"
                 style={{
                   background: 'linear-gradient(135deg, #0369a1 0%, #0284c7 100%)'
                 }}
@@ -167,7 +167,7 @@ export const Navbar: React.FC = () => {
               <MobileNavButton
                 active={view === 'global-chat'}
                 onClick={() => handleNavClick(() => { setView('global-chat'); chat.clearChat(); })}
-                icon={<MessageSquare size={20} strokeWidth={2.5} />}
+                icon={<Bot size={24} strokeWidth={2.5} />}
                 label={t('nav.globalChat')}
               />
               {isEditor && (

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
-  X, Type, Minus, Plus, Edit3, Save, MessageSquare,
+  X, Type, Minus, Plus, Edit3, Save, Bot,
   RotateCcw, Wand2, ChevronRight, ChevronLeft, CheckCircle2, Loader2, BookOpen,
   Maximize2, Minimize2, Download
 } from 'lucide-react';
@@ -271,7 +271,7 @@ export const ReaderView: React.FC = () => {
             : 'bg-white/60 text-[#64748b] border border-[#0369a1]/10'
             }`}
         >
-          <MessageSquare className="inline-block" size={18} />
+          <Bot className="inline-block" size={22} />
           <span>{t('chat.chat')}</span>
         </button>
       </div>
@@ -318,19 +318,21 @@ export const ReaderView: React.FC = () => {
               <div className="flex items-center gap-1 sm:gap-2">
                 {!isEditing ? (
                   <>
-                    <button
-                      onClick={handleDownload}
-                      disabled={isDownloading}
-                      className="flex items-center gap-2 px-2 sm:px-4 py-2 min-h-[36px] sm:min-h-[44px] bg-white border border-[#0369a1]/20 text-[#0369a1] text-xs sm:text-sm rounded-xl sm:rounded-2xl hover:bg-[#0369a1]/10 transition-all font-bold disabled:opacity-50"
-                      title={t('common.download')}
-                    >
-                      {isDownloading ? (
-                        <Loader2 size={14} className="animate-spin sm:w-4 sm:h-4" />
-                      ) : (
-                        <Download size={14} className="sm:w-4 sm:h-4" />
-                      )}
-                      <span className="hidden sm:inline">{t('common.download')}</span>
-                    </button>
+                    {selectedBook.fileType === 'pdf' && (
+                      <button
+                        onClick={handleDownload}
+                        disabled={isDownloading}
+                        className="flex items-center gap-2 px-2 sm:px-4 py-2 min-h-[36px] sm:min-h-[44px] bg-white border border-[#0369a1]/20 text-[#0369a1] text-xs sm:text-sm rounded-xl sm:rounded-2xl hover:bg-[#0369a1]/10 transition-all font-bold disabled:opacity-50"
+                        title={t('common.download')}
+                      >
+                        {isDownloading ? (
+                          <Loader2 size={14} className="animate-spin sm:w-4 sm:h-4" />
+                        ) : (
+                          <Download size={14} className="sm:w-4 sm:h-4" />
+                        )}
+                        <span className="hidden sm:inline">{t('common.download')}</span>
+                      </button>
+                    )}
                     <button onClick={handleEnterGlobalEdit} className="flex items-center gap-2 px-2 sm:px-4 py-2 min-h-[36px] sm:min-h-[44px] bg-[#0369a1] text-white text-xs sm:text-sm rounded-xl sm:rounded-2xl hover:bg-[#0284c7] transition-all">
                       <Edit3 size={14} className="sm:w-4 sm:h-4" />
                       <span className="hidden sm:inline">{t('reader.editBook')}</span>

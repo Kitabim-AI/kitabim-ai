@@ -432,6 +432,17 @@ export const useBookActions = (
     }
   };
 
+  const handleReplaceCover = async (bookId: string, file: File) => {
+    try {
+      const { coverUrl } = await PersistenceService.updateBookCover(bookId, file);
+      setBooks(prev => prev.map(b => b.id === bookId ? { ...b, coverUrl, lastUpdated: new Date() } : b));
+      addNotification(t('common.saveSuccess'), "success");
+    } catch (err) {
+      console.error("Failed to replace cover", err);
+      addNotification(t('common.error'), "error");
+    }
+  };
+
   return {
     isCheckingGlobal,
     handleFileUpload,
@@ -449,5 +460,6 @@ export const useBookActions = (
     handleSaveVolume,
     handleSaveBookRow,
     handleToggleVisibility,
+    handleReplaceCover,
   };
 };
