@@ -2,11 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-@font-face {
-  font-family: "UKIJ Nasq";
-  src: url("https://db.onlinewebfonts.com/t/a8e0cad8b667b481bffead364267971f.woff2") format("woff2"),
-    url("https://db.onlinewebfonts.com/t/a8e0cad8b667b481bffead364267971f.woff") format("woff");
-}
 
 @font-face {
   font-family: "UKIJ Basma Tuz";
@@ -20,17 +15,8 @@
     url("https://db.onlinewebfonts.com/t/064458dac48a6d2319d9a4f921784196.woff") format("woff");
 }
 
-@font-face {
-  font-family: "UKIJ Ekran";
-  src: url("https://db.onlinewebfonts.com/t/a0e437afd7da4e1d1acc2ba3dc2a87a1.woff2") format("woff2"),
-    url("https://db.onlinewebfonts.com/t/a0e437afd7da4e1d1acc2ba3dc2a87a1.woff") format("woff");
-}
 
-@font-face {
-  font-family: "UKIJ Tuz";
-  src: url("https://db.onlinewebfonts.com/t/b77eb95a066dd6c2a86e18c9bce699cc.woff2") format("woff2"),
-    url("https://db.onlinewebfonts.com/t/b77eb95a066dd6c2a86e18c9bce699cc.woff") format("woff");
-}
+
 
 
 
