@@ -43,9 +43,9 @@ class RAGService:
         self._category_chains: dict = {}
         self.logger = logging.getLogger("app.rag")
 
-        # Initialize reranker if enabled and available
+        # Initialize reranker if available (toggled at request-time via system_configs)
         self.reranker: Optional[FlashrankRerank] = None
-        if settings.rag_rerank_enabled and FLASHRANK_AVAILABLE:
+        if FLASHRANK_AVAILABLE:
             try:
                 self.reranker = FlashrankRerank(top_n=settings.rag_rerank_top_n)
                 log_json(self.logger, logging.INFO, "Flashrank reranker initialized", top_n=settings.rag_rerank_top_n)
@@ -220,6 +220,35 @@ class RAGService:
             else:
                 lines.append(f"- {title}{status_tag}")
         return "\n".join(lines), len(all_books)
+
+    @staticmethod
+    async def _find_books_by_title_in_question(question: str, session) -> Optional[List[str]]:
+        """
+        Detect if the question mentions a known book title and return matching book IDs.
+        Handles Uyghur agglutinative suffixes via word-prefix matching.
+        Returns all volume IDs for the matched title, or None if no match.
+        """
+        from sqlalchemy import select
+        from app.db.models import Book
+
+        q = question.strip()
+        title_result = await session.execute(
+            select(Book.id, Book.title).where(Book.status != "error")
+        )
+        rows = title_result.fetchall()
+
+        # Group IDs by title (handles multi-volume books)
+        title_to_ids: dict = {}
+        for row in rows:
+            book_id, title = str(row[0]), row[1]
+            if title:
+                title_to_ids.setdefault(title, []).append(book_id)
+
+        matched_title = next(
+            (t for t in title_to_ids if RAGService._entity_matches_question(t, q)),
+            None,
+        )
+        return title_to_ids[matched_title] if matched_title else None
 
     @staticmethod
     def _build_empty_response_message() -> str:
@@ -457,6 +486,8 @@ class RAGService:
 
         chat_model = await configs_repo.get_value("gemini_chat_model", default=settings.gemini_chat_model)
         categorization_model = await configs_repo.get_value("gemini_categorization_model", default=settings.gemini_categorization_model)
+        rerank_enabled_str = await configs_repo.get_value("rag_rerank_enabled", default=str(settings.rag_rerank_enabled).lower())
+        rerank_enabled = rerank_enabled_str == "true"
         rag_chain = self._get_rag_chain(chat_model)
         category_chain = self._get_category_chain(categorization_model)
 
@@ -550,49 +581,54 @@ class RAGService:
             return answer
 
         if is_global:
-            # Global content search - categorize to narrow down books
-            # Get all unique categories from books table
-            stmt = select(Book.categories).where(Book.categories != None)
-            result = await session.execute(stmt)
-            all_categories = set()
-            for cats in result.scalars().all():
-                if cats:
-                    all_categories.update(cats)
-
-            relevant_categories = []
-            try:
-                relevant_categories = await self._categorize_question(req.question, list(all_categories), category_chain)
-                relevant_categories = self._expand_history_categories(relevant_categories)
-            except Exception as exc:
-                log_json(self.logger, logging.WARNING, "Category routing failed", error=str(exc))
-                relevant_categories = []
-
-            # Find books by category
-            if relevant_categories:
-                # Use overlap (&& in Postgres) for categories
-                from sqlalchemy import text
-                stmt = select(Book.id, Book.title, Book.categories).where(
-                    text("categories && :cats").bindparams(cats=relevant_categories)
-                ).limit(100)
-                result = await session.execute(stmt)
-                all_books_recs = result.fetchall()
-                # Track ئۇيغۇر تارىخى books for result prioritization
-                if "ئۇيغۇر تارىخى" in relevant_categories:
-                    priority_book_ids = {
-                        str(b.id) for b in all_books_recs
-                        if b.categories and "ئۇيغۇر تارىخى" in b.categories
-                    }
+            # 1. Check if the question references a specific book title
+            title_matched_ids = await self._find_books_by_title_in_question(req.question, session)
+            if title_matched_ids:
+                book_ids = title_matched_ids
+                log_json(self.logger, logging.INFO, "Book title detected in global query, restricting search", count=len(title_matched_ids))
             else:
-                all_books_recs = []
-
-            if not all_books_recs:
-                # Fallback to recent books
-                stmt = select(Book.id, Book.title).order_by(Book.last_updated.desc()).limit(200)
+                # Category-based search across library
+                stmt = select(Book.categories).where(Book.categories != None)
                 result = await session.execute(stmt)
-                all_books_recs = result.fetchall()
+                all_categories = set()
+                for cats in result.scalars().all():
+                    if cats:
+                        all_categories.update(cats)
 
-            book_id_to_title = {str(b.id): b.title for b in all_books_recs}
-            book_ids = list(book_id_to_title.keys())
+                relevant_categories = []
+                try:
+                    relevant_categories = await self._categorize_question(req.question, list(all_categories), category_chain)
+                    relevant_categories = self._expand_history_categories(relevant_categories)
+                except Exception as exc:
+                    log_json(self.logger, logging.WARNING, "Category routing failed", error=str(exc))
+                    relevant_categories = []
+
+                # Find books by category
+                if relevant_categories:
+                    # Use overlap (&& in Postgres) for categories
+                    from sqlalchemy import text
+                    stmt = select(Book.id, Book.title, Book.categories).where(
+                        text("categories && :cats").bindparams(cats=relevant_categories)
+                    ).limit(100)
+                    result = await session.execute(stmt)
+                    all_books_recs = result.fetchall()
+                    # Track ئۇيغۇر تارىخى books for result prioritization
+                    if "ئۇيغۇر تارىخى" in relevant_categories:
+                        priority_book_ids = {
+                            str(b.id) for b in all_books_recs
+                            if b.categories and "ئۇيغۇر تارىخى" in b.categories
+                        }
+                else:
+                    all_books_recs = []
+
+                if not all_books_recs:
+                    # Fallback to recent books
+                    stmt = select(Book.id, Book.title).order_by(Book.last_updated.desc()).limit(200)
+                    result = await session.execute(stmt)
+                    all_books_recs = result.fetchall()
+
+                book_id_to_title = {str(b.id): b.title for b in all_books_recs}
+                book_ids = list(book_id_to_title.keys())
         else:
             # Search the specific book and all its sibling volumes (same title + author)
             title = book.title
@@ -655,7 +691,7 @@ class RAGService:
                 top_results = []
 
         # Apply reranking if enabled and we have results
-        if self.reranker and top_results and len(top_results) > 1:
+        if self.reranker and rerank_enabled and top_results and len(top_results) > 1:
             try:
                 rerank_start = time.monotonic()
                 log_json(
@@ -811,6 +847,8 @@ class RAGService:
 
         chat_model = await configs_repo.get_value("gemini_chat_model", default=settings.gemini_chat_model)
         categorization_model = await configs_repo.get_value("gemini_categorization_model", default=settings.gemini_categorization_model)
+        rerank_enabled_str = await configs_repo.get_value("rag_rerank_enabled", default=str(settings.rag_rerank_enabled).lower())
+        rerank_enabled = rerank_enabled_str == "true"
         rag_chain = self._get_rag_chain(chat_model)
         category_chain = self._get_category_chain(categorization_model)
 
@@ -910,47 +948,53 @@ class RAGService:
             return
 
         if is_global:
-            # Global content search - categorize to narrow down books
-            stmt = select(Book.categories).where(Book.categories != None)
-            result = await session.execute(stmt)
-            all_categories = set()
-            for cats in result.scalars().all():
-                if cats:
-                    all_categories.update(cats)
-
-            relevant_categories = []
-            try:
-                relevant_categories = await self._categorize_question(req.question, list(all_categories), category_chain)
-                relevant_categories = self._expand_history_categories(relevant_categories)
-            except Exception as exc:
-                log_json(self.logger, logging.WARNING, "Category routing failed", error=str(exc))
-                relevant_categories = []
-
-            # Find books by category
-            if relevant_categories:
-                from sqlalchemy import text
-                stmt = select(Book.id, Book.title, Book.categories).where(
-                    text("categories && :cats").bindparams(cats=relevant_categories)
-                ).limit(100)
-                result = await session.execute(stmt)
-                all_books_recs = result.fetchall()
-                # Track ئۇيغۇر تارىخى books for result prioritization
-                if "ئۇيغۇر تارىخى" in relevant_categories:
-                    priority_book_ids = {
-                        str(b.id) for b in all_books_recs
-                        if b.categories and "ئۇيغۇر تارىخى" in b.categories
-                    }
+            # 1. Check if the question references a specific book title
+            title_matched_ids = await self._find_books_by_title_in_question(req.question, session)
+            if title_matched_ids:
+                book_ids = title_matched_ids
+                log_json(self.logger, logging.INFO, "Book title detected in global query, restricting search", count=len(title_matched_ids))
             else:
-                all_books_recs = []
-
-            if not all_books_recs:
-                # Fallback to recent books
-                stmt = select(Book.id, Book.title).order_by(Book.last_updated.desc()).limit(200)
+                # Category-based search across library
+                stmt = select(Book.categories).where(Book.categories != None)
                 result = await session.execute(stmt)
-                all_books_recs = result.fetchall()
+                all_categories = set()
+                for cats in result.scalars().all():
+                    if cats:
+                        all_categories.update(cats)
 
-            book_id_to_title = {str(b.id): b.title for b in all_books_recs}
-            book_ids = list(book_id_to_title.keys())
+                relevant_categories = []
+                try:
+                    relevant_categories = await self._categorize_question(req.question, list(all_categories), category_chain)
+                    relevant_categories = self._expand_history_categories(relevant_categories)
+                except Exception as exc:
+                    log_json(self.logger, logging.WARNING, "Category routing failed", error=str(exc))
+                    relevant_categories = []
+
+                # Find books by category
+                if relevant_categories:
+                    from sqlalchemy import text
+                    stmt = select(Book.id, Book.title, Book.categories).where(
+                        text("categories && :cats").bindparams(cats=relevant_categories)
+                    ).limit(100)
+                    result = await session.execute(stmt)
+                    all_books_recs = result.fetchall()
+                    # Track ئۇيغۇر تارىخى books for result prioritization
+                    if "ئۇيغۇر تارىخى" in relevant_categories:
+                        priority_book_ids = {
+                            str(b.id) for b in all_books_recs
+                            if b.categories and "ئۇيغۇر تارىخى" in b.categories
+                        }
+                else:
+                    all_books_recs = []
+
+                if not all_books_recs:
+                    # Fallback to recent books
+                    stmt = select(Book.id, Book.title).order_by(Book.last_updated.desc()).limit(200)
+                    result = await session.execute(stmt)
+                    all_books_recs = result.fetchall()
+
+                book_id_to_title = {str(b.id): b.title for b in all_books_recs}
+                book_ids = list(book_id_to_title.keys())
         else:
             # Search the specific book and all its sibling volumes (same title + author)
             title = book.title
@@ -1009,7 +1053,7 @@ class RAGService:
                 top_results = []
 
         # Apply reranking if enabled and we have results
-        if self.reranker and top_results and len(top_results) > 1:
+        if self.reranker and rerank_enabled and top_results and len(top_results) > 1:
             try:
                 rerank_start = time.monotonic()
                 log_json(

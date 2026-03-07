@@ -7,6 +7,7 @@ import { useAppContext } from '../../context/AppContext';
 import { TagEditor } from './TagEditor';
 import { ProgressBar } from './ProgressBar';
 import { ActionMenu } from './ActionMenu';
+import { ProverbDisplay } from '../common/ProverbDisplay';
 
 const getStatusTextColor = (step: string | null) => {
   if (!step) return 'text-slate-400';
@@ -132,7 +133,12 @@ export const AdminView: React.FC = () => {
             </h2>
             <div className="flex items-center gap-2 mt-1">
               <span className="w-6 md:w-8 h-[2px] bg-[#0369a1] rounded-full" />
-              <p className="text-[11px] md:text-[14px] font-normal text-[#94a3b8] uppercase">{t('admin.table.manageBooks')}</p>
+              <ProverbDisplay
+                keywords={t('proverbs.admin')}
+                size="sm"
+                className="opacity-70 mt-[-2px]"
+                defaultText={t('admin.table.manageBooks')}
+              />
             </div>
           </div>
         </div>

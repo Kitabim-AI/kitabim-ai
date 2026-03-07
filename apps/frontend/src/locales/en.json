@@ -545,5 +545,12 @@
         "messageMinLength": "Message must be at least 10 characters long"
       }
     }
+  },
+  "proverbs": {
+    "home": "كىتاب,بىلىم",
+    "library": "كىتاب,بىلىم,ئوقۇش",
+    "admin": "ئەمگەك,تېرىش",
+    "chat": "ئەقىل,پاراسەت",
+    "joinUs": "ئۆملۈك,بىرلىك,ياردەم"
   }
 }

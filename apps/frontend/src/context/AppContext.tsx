@@ -48,6 +48,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const setView = (newView: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us') => {
     if (newView !== view) {
+      // Clear search queries and categories when switching views
+      setSearchQuery('');
+      setHomeSearchQuery('');
+      setSelectedCategory('');
+
       // Only set previousView if the current view is not 'reader'
       // This ensures we always return to a main navigation view
       if (view !== 'reader') {

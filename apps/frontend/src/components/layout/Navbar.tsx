@@ -91,7 +91,7 @@ export const Navbar: React.FC = () => {
                 placeholder={t('library.searchPlaceholder')}
                 value={view === 'home' ? homeSearchQuery : searchQuery}
                 onChange={(e) => view === 'home' ? setHomeSearchQuery(e.target.value) : setSearchQuery(e.target.value)}
-                className="pr-11 pl-4 py-2.5 bg-white/50 backdrop-blur-md border-2 border-[#0369a1]/10 rounded-2xl text-sm font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none focus:border-[#0369a1] transition-all w-64 shadow-sm uyghur-text"
+                className="pr-11 pl-11 py-2.5 bg-white/50 backdrop-blur-md border-2 border-[#0369a1]/10 rounded-2xl text-sm font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none focus:border-[#0369a1] transition-all w-64 shadow-sm uyghur-text"
                 dir="rtl"
               />
               <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1]">
@@ -101,6 +101,14 @@ export const Navbar: React.FC = () => {
                   <Search size={18} strokeWidth={3} />
                 )}
               </div>
+              {(view === 'home' ? homeSearchQuery : searchQuery) && (
+                <button
+                  onClick={() => view === 'home' ? setHomeSearchQuery('') : setSearchQuery('')}
+                  className="absolute inset-y-0 left-4 flex items-center text-slate-400 hover:text-[#0369a1] transition-all active:scale-90"
+                >
+                  <X size={16} strokeWidth={3} />
+                </button>
+              )}
             </div>
           )}
 

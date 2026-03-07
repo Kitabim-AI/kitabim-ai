@@ -4,6 +4,7 @@ import { Users, Filter, Check, Search, X, Edit2, Save, Loader2 } from 'lucide-re
 import { useIsAdmin, useAuth } from '../../../hooks/useAuth';
 import { useI18n } from '../../../i18n/I18nContext';
 import { UserAvatar } from '../../common/UserAvatar';
+import { ProverbDisplay } from '../../common/ProverbDisplay';
 
 interface UserRowProps {
   user: UserPublic;
@@ -445,7 +446,12 @@ export function UserManagementPanel() {
             <h2 className="text-xl md:text-2xl lg:text-3xl font-normal text-[#1a1a1a]">{t('admin.users.title')}</h2>
             <div className="flex items-center gap-2 mt-1">
               <span className="w-6 md:w-8 h-[2px] bg-[#0369a1] rounded-full" />
-              <p className="text-[11px] md:text-[14px] font-normal text-[#94a3b8] uppercase">{t('admin.users.subtitle')}</p>
+              <ProverbDisplay
+                keywords={t('proverbs.admin')}
+                size="sm"
+                className="opacity-70 mt-[-2px]"
+                defaultText={t('admin.users.subtitle')}
+              />
             </div>
           </div>
         </div>

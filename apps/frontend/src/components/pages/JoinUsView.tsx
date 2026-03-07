@@ -10,19 +10,19 @@ import {
   Github,
   Send,
   X,
-  ArrowLeft,
-  Sparkles,
+  Bot,
   CheckCircle2,
   ChevronDown,
   Check
 } from 'lucide-react';
 import { useI18n } from '../../i18n/I18nContext';
+import { ProverbDisplay } from '../common/ProverbDisplay';
 import { useAppContext } from '../../context/AppContext';
 import { submitContactForm } from '../../services/contactService';
 
 const JoinUsView: React.FC = () => {
   const { t } = useI18n();
-  const { setView, previousView } = useAppContext();
+  const { setView } = useAppContext();
   const [showContactModal, setShowContactModal] = useState(false);
   const [contactForm, setContactForm] = useState({
     name: '',
@@ -107,15 +107,6 @@ const JoinUsView: React.FC = () => {
   return (
     <div className="flex flex-col items-center py-6 sm:py-8 md:py-12" dir="rtl" lang="ug">
       <div className="w-full flex flex-col items-center animate-fade-in">
-        {/* Back Button */}
-        <div className="w-full max-w-6xl mb-6 sm:mb-8 flex justify-start px-4">
-          <button
-            onClick={() => setView(previousView || 'home')}
-            className="p-3 min-w-[44px] min-h-[44px] bg-white/40 hover:bg-[#0369a1] text-[#0369a1] hover:text-white rounded-2xl transition-all shadow-sm active:scale-90 flex items-center gap-2 group"
-          >
-            <ArrowLeft size={20} strokeWidth={3} className="group-hover:-translate-x-1 transition-transform" />
-          </button>
-        </div>
 
         {/* Hero Section */}
         <div className="text-center mb-12 sm:mb-14 md:mb-16 px-4">
@@ -168,7 +159,7 @@ const JoinUsView: React.FC = () => {
             <div className="glass-panel rounded-[32px] sm:rounded-[40px] p-6 sm:p-8 md:p-12 border border-sky-300/20 bg-gradient-to-br from-white/90 to-sky-50/30 flex flex-col gap-6 sm:gap-8 transition-transform hover:scale-[1.01]">
               <div className="flex items-center gap-4 sm:gap-5">
                 <div className="p-3 sm:p-4 rounded-[16px] sm:rounded-[20px] shadow-lg shrink-0 bg-gradient-to-br from-sky-400 to-blue-600">
-                  <Sparkles size={28} className="sm:w-[32px] sm:h-[32px] text-white" />
+                  <Bot size={28} className="sm:w-[32px] sm:h-[32px] text-white" />
                 </div>
                 <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-[#1a1a1a]">{t('joinUs.smartLibrary.title')}</h2>
               </div>
@@ -183,7 +174,12 @@ const JoinUsView: React.FC = () => {
           <div className="space-y-8 sm:space-y-10 md:space-y-12">
             <div className="text-center">
               <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-[#1a1a1a] mb-3 sm:mb-4">{t('joinUs.howToHelp.title')}</h2>
-              <p className="text-slate-500 text-base sm:text-lg">{t('joinUs.howToHelp.subtitle')}</p>
+              <ProverbDisplay
+                keywords={t('proverbs.joinUs')}
+                size="base"
+                className="opacity-60 items-center text-center"
+                defaultText={t('joinUs.howToHelp.subtitle')}
+              />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8">
