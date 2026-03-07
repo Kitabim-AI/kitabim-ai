@@ -9,7 +9,6 @@ import { UserManagementPanel } from './users/UserManagementPanel';
 import { SystemConfigPanel } from './config/SystemConfigPanel';
 import { StatsPanel } from './StatsPanel';
 import { ContactSubmissionsPanel } from './ContactSubmissionsPanel';
-import { ProverbDisplay } from '../common/ProverbDisplay';
 import { useI18n } from '../../i18n/I18nContext';
 
 interface AdminTabsProps {
