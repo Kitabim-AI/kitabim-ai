@@ -286,9 +286,14 @@ export const PersistenceService = {
     }
   },
 
-  async getRandomProverb(): Promise<{ text: string; volume: number; pageNumber: number }> {
+  async getRandomProverb(keywords?: string | string[]): Promise<{ text: string; volume: number; pageNumber: number }> {
     try {
-      const response = await authFetch(`${API_BASE}/books/random-proverb`);
+      let url = `${API_BASE}/books/random-proverb`;
+      if (keywords) {
+        const keywordParam = Array.isArray(keywords) ? keywords.join(',') : keywords;
+        url += `?keyword=${encodeURIComponent(keywordParam)}`;
+      }
+      const response = await authFetch(url);
       if (!response.ok) throw new Error("Failed to fetch proverb");
       return await response.json();
     } catch (error) {

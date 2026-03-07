@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Book, FileText, CheckCircle, XCircle, RefreshCw, BarChart3, Clock, AlertTriangle, Loader, Zap, Hash } from 'lucide-react';
 import { authFetch } from '../../services/authService';
 import { useI18n } from '../../i18n/I18nContext';
+import { ProverbDisplay } from '../common/ProverbDisplay';
 
 interface StatusCount {
   status: string;
@@ -226,9 +227,12 @@ export const StatsPanel: React.FC = () => {
             </h2>
             <div className="flex items-center gap-2 mt-1">
               <span className="w-8 h-[2px] bg-[#0369a1] rounded-full" />
-              <p className="text-[12px] md:text-[14px] font-normal text-[#94a3b8]">
-                {t('admin.stats.subtitle') || 'View system analytics and metrics'}
-              </p>
+              <ProverbDisplay
+                keywords={t('proverbs.admin')}
+                size="sm"
+                className="opacity-70 mt-[-2px]"
+                defaultText={t('admin.stats.subtitle') || 'View system analytics and metrics'}
+              />
             </div>
           </div>
         </div>

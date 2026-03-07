@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { Zap, Library, BookOpen } from 'lucide-react';
+import { ProverbDisplay } from '../common/ProverbDisplay';
 import { BookCard } from './BookCard';
 import { useI18n } from '../../i18n/I18nContext';
 import { useAppContext } from '../../context/AppContext';
@@ -33,7 +34,7 @@ export const LibraryView: React.FC = () => {
   }, [hasMore, isLoadingMore, loadMore, loaderRef, isInitialLoading]);
 
   return (
-    <div className="space-y-8 sm:space-y-10 md:space-y-12" dir="rtl">
+    <div className="space-y-8 sm:space-y-10 md:space-y-12 px-4 sm:px-6 md:px-0 py-4 sm:py-6 md:py-8" dir="rtl">
       {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 sm:gap-6 pb-8 sm:pb-10 md:pb-12 border-b border-[#0369a1]/10 relative">
         <header className="space-y-3 sm:space-y-4">
@@ -45,7 +46,7 @@ export const LibraryView: React.FC = () => {
               <h2 className="text-2xl sm:text-3xl font-black text-[#1a1a1a]">{t('library.title')}</h2>
               <div className="flex items-center gap-2 mt-1 sm:mt-2">
                 <span className="w-6 sm:w-8 h-[2px] bg-[#0369a1] rounded-full" />
-                <p className="text-xs sm:text-sm font-black text-[#94a3b8] uppercase">{t('library.subtitle')}</p>
+                <ProverbDisplay size="sm" keywords={t('proverbs.library')} className="opacity-70 mt-[-2px]" />
               </div>
             </div>
           </div>
@@ -68,7 +69,7 @@ export const LibraryView: React.FC = () => {
       </div>
 
       {/* Grid Section */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-3 sm:gap-x-8 gap-y-8 sm:gap-y-12 justify-items-center px-1 sm:px-0">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-3 sm:gap-x-8 gap-y-8 sm:gap-y-12 justify-items-center">
         {books.map(book => (
           <BookCard
             key={book.id}

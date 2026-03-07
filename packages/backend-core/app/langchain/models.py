@@ -205,7 +205,7 @@ def _normalize_prompt_value(value) -> str:
     return str(value)
 
 
-_STREAM_FIRST_CHUNK_TIMEOUT = 30.0  # seconds to wait for the first chunk before treating as failure
+_STREAM_FIRST_CHUNK_TIMEOUT = 60.0  # seconds to wait for the first chunk before treating as failure
 
 
 async def _stream_with_breaker(breaker: CircuitBreaker, fn, *args, **kwargs):
@@ -226,9 +226,15 @@ async def _stream_with_breaker(breaker: CircuitBreaker, fn, *args, **kwargs):
                     first = False
                 else:
                     chunk = await aiter.__anext__()
+            except asyncio.TimeoutError:
+                await breaker._on_failure()
+                log_json(_logger, logging.ERROR, "LLM stream timed out waiting for first chunk", timeout=_STREAM_FIRST_CHUNK_TIMEOUT, breaker=breaker.name)
+                raise TimeoutError(f"LLM did not respond within {_STREAM_FIRST_CHUNK_TIMEOUT}s")
             except StopAsyncIteration:
                 break
             yield chunk
+    except (TimeoutError, asyncio.TimeoutError):
+        raise
     except Exception as exc:
         await breaker._on_failure()
         log_json(_logger, logging.ERROR, "LLM stream failed", error=str(exc), breaker=breaker.name)

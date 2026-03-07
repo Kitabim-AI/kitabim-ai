@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Book as BookIcon, ArrowRight, X, RefreshCw } from 'lucide-react';
+import { ProverbDisplay } from '../common/ProverbDisplay';
 import { BookCard } from './BookCard';
 import { PersistenceService } from '../../services/persistenceService';
 import { useI18n } from '../../i18n/I18nContext';
@@ -20,7 +21,6 @@ export const HomeView: React.FC = () => {
   } = useAppContext();
 
   const { t } = useI18n();
-  const [proverb, setProverb] = useState<{ text: string; volume: number; pageNumber: number } | null>(null);
   const [topCategories, setTopCategories] = useState<string[]>([]);
   const [localSearch, setLocalSearch] = useState(searchQuery);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -32,14 +32,6 @@ export const HomeView: React.FC = () => {
   }, [localSearch]);
 
   useEffect(() => {
-    const fetchProverb = async () => {
-      try {
-        const data = await PersistenceService.getRandomProverb();
-        setProverb(data);
-      } catch (e) {
-        console.error('Error fetching proverb:', e);
-      }
-    };
     const fetchCategories = async () => {
       try {
         const categories = await PersistenceService.getTopCategories(5);
@@ -48,11 +40,11 @@ export const HomeView: React.FC = () => {
         console.error('Error fetching categories:', e);
       }
     };
-    fetchProverb();
     fetchCategories();
   }, []);
 
   const { loadMoreShelf } = useAppContext();
+  const { fontSize } = useAppContext();
 
   const hasSearch = searchQuery.length > 0 || selectedCategory.length > 0;
 
@@ -94,18 +86,12 @@ export const HomeView: React.FC = () => {
           </h1>
         </div>
 
-        {proverb ? (
-          <div className="flex flex-col items-center gap-1">
-            <p className={`uyghur-text font-normal text-[#1a1a1a] leading-relaxed italic max-w-3xl px-4 sm:px-6 transition-all duration-700 ${hasSearch
-              ? 'text-base sm:text-lg md:text-xl opacity-60'
-              : 'text-lg sm:text-xl md:text-2xl opacity-100'
-              }`}>
-              {proverb.text}
-            </p>
-          </div>
-        ) : (
-          <p className="text-[#94a3b8] font-bold text-lg sm:text-xl mb-6 sm:mb-8">{t('app.welcome')}</p>
-        )}
+        <ProverbDisplay
+          className={`items-center text-center transition-all duration-700 ${hasSearch ? 'opacity-60' : 'opacity-100'}`}
+          size={hasSearch ? 'sm' : 'lg'}
+          keywords={t('proverbs.home')}
+          defaultText={t('app.welcome')}
+        />
       </div>
 
       {/* Search Section */}

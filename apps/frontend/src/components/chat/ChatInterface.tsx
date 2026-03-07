@@ -7,6 +7,8 @@ import { useAppContext } from '../../context/AppContext';
 import { OAuthButtonGroup } from '../auth/AuthButton';
 import { MarkdownContent } from '../common/MarkdownContent';
 import { ReferenceModal } from './ReferenceModal';
+import { ProverbDisplay } from '../common/ProverbDisplay';
+
 
 interface ChatInterfaceProps {
   type: 'book' | 'global';
@@ -65,12 +67,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               >
                 {t('chat.globalAssistant')}
               </h1>
-              <p
-                className="font-normal text-[#94a3b8] uppercase mt-1"
-                style={{ fontSize: `${Math.max(12, fontSize - 4)}px` }}
-              >
-                {t('chat.subtitle')}
-              </p>
+              <ProverbDisplay
+                size="xs"
+                keywords={t('proverbs.chat')}
+                className="opacity-70 uppercase mt-[-2px]"
+                defaultText={t('chat.subtitle')}
+              />
             </div>
           </div>
           <div className="flex items-center gap-4">

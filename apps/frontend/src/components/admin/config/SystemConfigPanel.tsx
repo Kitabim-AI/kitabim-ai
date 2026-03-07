@@ -6,6 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { Settings, Plus, Save, X, Edit2, RefreshCw } from 'lucide-react';
 import { authFetch } from '../../../services/authService';
 import { useI18n } from '../../../i18n/I18nContext';
+import { ProverbDisplay } from '../../common/ProverbDisplay';
 
 interface SystemConfig {
   key: string;
@@ -222,9 +223,12 @@ export function SystemConfigPanel() {
             </h2>
             <div className="flex items-center gap-2 mt-1">
               <span className="w-6 md:w-8 h-[2px] bg-[#0369a1] rounded-full" />
-              <p className="text-[11px] md:text-[14px] font-normal text-[#94a3b8] uppercase">
-                {t('admin.systemConfig.subtitle')}
-              </p>
+              <ProverbDisplay
+                keywords={t('proverbs.admin')}
+                size="sm"
+                className="opacity-70 mt-[-2px]"
+                defaultText={t('admin.systemConfig.subtitle')}
+              />
             </div>
           </div>
         </div>

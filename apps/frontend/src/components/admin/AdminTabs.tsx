@@ -9,6 +9,7 @@ import { UserManagementPanel } from './users/UserManagementPanel';
 import { SystemConfigPanel } from './config/SystemConfigPanel';
 import { StatsPanel } from './StatsPanel';
 import { ContactSubmissionsPanel } from './ContactSubmissionsPanel';
+import { ProverbDisplay } from '../common/ProverbDisplay';
 import { useI18n } from '../../i18n/I18nContext';
 
 interface AdminTabsProps {
@@ -40,9 +41,9 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
   const visibleTabs = tabs.filter((tab) => !tab.adminOnly || isAdmin);
 
   return (
-    <div className="space-y-6 md:space-y-8" dir="rtl" lang="ug">
+    <div className="space-y-6 md:space-y-8 px-3 py-3 sm:px-6 md:px-0" dir="rtl" lang="ug">
       {/* Tab Navigation */}
-      <div className="flex items-end px-2 md:px-4 overflow-x-auto scrollbar-hide">
+      <div className="flex items-end overflow-x-auto scrollbar-hide">
         {visibleTabs.map((tab) => (
           <button
             key={tab.id}

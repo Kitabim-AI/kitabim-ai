@@ -295,7 +295,7 @@ async def get_books(
                 "last_updated": rep.last_updated,
                 "updated_by": rep.updated_by,
                 "created_by": rep.created_by,
-                "cover_url": storage.get_public_url(rep.cover_url) if rep.cover_url else None,
+                "cover_url": f"{storage.get_public_url(rep.cover_url)}?v={int(rep.last_updated.timestamp())}" if rep.cover_url and rep.last_updated else (storage.get_public_url(rep.cover_url) if rep.cover_url else None),
                 "visibility": rep.visibility,
                 "categories": rep.categories,
                 "last_error": last_error_obj,
@@ -333,7 +333,7 @@ async def get_books(
                 "last_updated": b.last_updated,
                 "updated_by": b.updated_by,
                 "created_by": b.created_by,
-                "cover_url": storage.get_public_url(b.cover_url) if b.cover_url else None,
+                "cover_url": f"{storage.get_public_url(b.cover_url)}?v={int(b.last_updated.timestamp())}" if b.cover_url and b.last_updated else (storage.get_public_url(b.cover_url) if b.cover_url else None),
                 "visibility": b.visibility,
                 "categories": b.categories,
                 "last_error": b_last_error_obj,
@@ -443,7 +443,7 @@ async def get_books(
                 "last_updated": b.last_updated,
                 "updated_by": b.updated_by,
                 "created_by": b.created_by,
-                "cover_url": storage.get_public_url(b.cover_url) if b.cover_url else None,
+                "cover_url": f"{storage.get_public_url(b.cover_url)}?v={int(b.last_updated.timestamp())}" if b.cover_url and b.last_updated else (storage.get_public_url(b.cover_url) if b.cover_url else None),
                 "visibility": b.visibility,
                 "categories": b.categories,
                 "last_error": last_error_obj,
@@ -468,20 +468,30 @@ async def get_books(
 
 @router.get("/random-proverb")
 async def get_random_proverb(
+    keyword: Optional[str] = None,
     session: AsyncSession = Depends(get_session),
 ):
     """Fetch a random proverb with SQLAlchemy"""
     from app.db.repositories.proverbs import ProverbsRepository
 
     proverbs_repo = ProverbsRepository(session)
-    keywords = ["كىتاب", "بىلىم", "ئەقىل", "پاراسەت"]
+    
+    if keyword:
+        # Use provided keywords (supports comma-separated list)
+        keywords = [k.strip() for k in keyword.split(",") if k.strip()]
+        patterns = [generate_uyghur_regex(k) for k in keywords]
+    else:
+        # Use default keywords
+        keywords = ["كىتاب", "بىلىم", "ئەقىل", "پاراسەت"]
+        patterns = [generate_uyghur_regex(k) for k in keywords]
 
-    # Build regex pattern for all keywords (OR condition)
-    # Pattern: (keyword1|keyword2|keyword3|keyword4)
-    patterns = [generate_uyghur_regex(k) for k in keywords]
-    combined_pattern = "(" + "|".join(patterns) + ")"
+    # Build regex pattern (OR condition)
+    if patterns:
+        combined_pattern = "(" + "|".join(patterns) + ")"
+    else:
+        combined_pattern = ".*" # Match everything if somehow patterns is empty
 
-    # Get random proverb matching any of the keywords
+    # Get random proverb matching the pattern
     proverb = await proverbs_repo.get_random_proverb(text_pattern=combined_pattern)
 
     if proverb:
@@ -684,7 +694,7 @@ async def get_book(
         "last_updated": book_model.last_updated,
         "updated_by": book_model.updated_by,
         "created_by": book_model.created_by,
-        "cover_url": storage.get_public_url(book_model.cover_url) if book_model.cover_url else None,
+        "cover_url": f"{storage.get_public_url(book_model.cover_url)}?v={int(book_model.last_updated.timestamp())}" if book_model.cover_url and book_model.last_updated else (storage.get_public_url(book_model.cover_url) if book_model.cover_url else None),
         "visibility": book_model.visibility,
         "categories": book_model.categories,
         "last_error": last_error_obj,
@@ -1525,7 +1535,7 @@ async def upload_cover(
         "status": "success",
         "bookId": book_id,
         "title": book.title,
-        "coverUrl": storage.get_public_url(cover_url),
+        "coverUrl": f"{storage.get_public_url(cover_url)}?v={int(datetime.now(timezone.utc).timestamp())}",
     }
 
 
@@ -1583,7 +1593,7 @@ async def update_book_cover(
     return {
         "status": "success",
         "bookId": book_id,
-        "coverUrl": storage.get_public_url(cover_url),
+        "coverUrl": f"{storage.get_public_url(cover_url)}?v={int(datetime.now(timezone.utc).timestamp())}",
     }
 
 
