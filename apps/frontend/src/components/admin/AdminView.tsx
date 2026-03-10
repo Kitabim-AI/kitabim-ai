@@ -36,6 +36,7 @@ export const AdminView: React.FC = () => {
   const { t } = useI18n();
 
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [menuAnchorRect, setMenuAnchorRect] = useState<DOMRect | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -66,6 +67,7 @@ export const AdminView: React.FC = () => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setActiveMenuId(null);
+        setMenuAnchorRect(null);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -345,14 +347,25 @@ export const AdminView: React.FC = () => {
                               </button>
                             </div>
                           )}
-                          <div className="relative" ref={activeMenuId === book.id ? menuRef : null}>
+                          <div className="relative">
                             <button
-                              onClick={() => setActiveMenuId(activeMenuId === book.id ? null : book.id)}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                if (activeMenuId === book.id) {
+                                  setActiveMenuId(null);
+                                  setMenuAnchorRect(null);
+                                } else {
+                                  setActiveMenuId(book.id);
+                                  setMenuAnchorRect(e.currentTarget.getBoundingClientRect());
+                                }
+                              }}
                               className={`p-2 hover:bg-[#0369a1]/10 rounded-xl transition-all ${activeMenuId === book.id ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-slate-400'}`}
                             >
                               <MoreVertical size={20} />
                             </button>
-                            {activeMenuId === book.id && <ActionMenu book={book} close={() => setActiveMenuId(null)} />}
+                            {activeMenuId === book.id && menuAnchorRect && (
+                              <ActionMenu book={book} close={() => { setActiveMenuId(null); setMenuAnchorRect(null); }} anchorRect={menuAnchorRect} menuRef={menuRef} />
+                            )}
                           </div>
                         </div>
                       </td>

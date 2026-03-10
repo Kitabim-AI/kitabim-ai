@@ -457,6 +457,31 @@ export const useBookActions = (
     }
   };
 
+  const handleReprocessBook = (bookId: string) => {
+    setModal({
+      isOpen: true,
+      title: t('modal.redoOcr.title'),
+      message: t('modal.redoOcr.message'),
+      type: 'confirm',
+      confirmText: t('modal.redoOcr.confirm'),
+      onConfirm: async () => {
+        try {
+          await PersistenceService.reprocessBook(bookId);
+          await refreshLibrary();
+          setModal((prev: any) => ({ ...prev, isOpen: false }));
+          addNotification(t('common.redoOcrStarted'), "success");
+        } catch (err) {
+          setModal({
+            isOpen: true,
+            title: t('modal.redoOcrError.title'),
+            message: t('modal.redoOcrError.message'),
+            type: 'alert'
+          });
+        }
+      }
+    });
+  };
+
   const handleReplaceCover = async (bookId: string, file: File) => {
     try {
       const { coverUrl } = await PersistenceService.updateBookCover(bookId, file);
@@ -487,5 +512,6 @@ export const useBookActions = (
     handleSaveBookRow,
     handleToggleVisibility,
     handleReplaceCover,
+    handleReprocessBook,
   };
 };

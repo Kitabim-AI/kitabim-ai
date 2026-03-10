@@ -1,109 +1,194 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { SpellCheckPanel, SpellCheckResult } from '../components/spell-check/SpellCheckPanel';
-import { expect, test, vi } from 'vitest';
+import { SpellCheckPanel } from '../components/spell-check/SpellCheckPanel';
+import { SpellIssue } from '../hooks/useSpellCheck';
+import { expect, test, vi, beforeEach } from 'vitest';
 import React from 'react';
 
-const baseResult: SpellCheckResult = {
-  bookId: '1',
-  pageNumber: 2,
-  corrections: [],
-  totalIssues: 0,
-  checkedAt: 'now'
+// Mock hooks that require context providers
+vi.mock('../i18n/I18nContext', () => ({
+  useI18n: () => ({
+    t: (key: string, params?: Record<string, string | number>) => {
+      // Return a readable stub so assertions can target meaningful strings
+      if (params) {
+        return Object.entries(params).reduce(
+          (s, [k, v]) => s.replace(`{{${k}}}`, String(v)),
+          key
+        );
+      }
+      return key;
+    },
+    language: 'en',
+    setLanguage: vi.fn(),
+  }),
+}));
+
+vi.mock('../context/NotificationContext', () => ({
+  useNotification: () => ({ addNotification: vi.fn() }),
+}));
+
+const baseIssue: SpellIssue = {
+  id: 1,
+  word: 'teh',
+  char_offset: 0,
+  char_end: 3,
+  ocr_corrections: ['the', 'thee'],
+  status: 'open',
 };
 
-test('SpellCheckPanel runs spell check and shows empty state', () => {
-  const onRunSpellCheck = vi.fn();
-  render(
-    <SpellCheckPanel
-      bookId="1"
-      pageNumber={2}
-      pageText="Some text"
-      isChecking={false}
-      spellCheckResult={null}
-      onRunSpellCheck={onRunSpellCheck}
-      onApplyCorrection={vi.fn()}
-      onIgnoreCorrection={vi.fn()}
-      appliedCorrections={new Set()}
-      ignoredCorrections={new Set()}
-    />
-  );
+const defaultProps = {
+  pageNumber: 2,
+  totalPages: 10,
+  pageText: 'teh quick brown fox',
+  fontSize: 16,
+  issues: [] as SpellIssue[],
+  isLoading: false,
+  isScanning: false,
+  hasLoaded: true,
+  navigationMode: 'manual' as const,
+  onUpdatePageText: vi.fn().mockResolvedValue(true),
+  onAddPending: vi.fn(),
+  pendingIssueIds: [] as number[],
+  onRemoveFromPending: vi.fn(),
+  onIgnoreIssue: vi.fn(),
+  onNextPage: vi.fn(),
+  onPrevPage: vi.fn(),
+};
 
-  const runButton = screen.getByRole('button', { name: /Run Spell Check/i });
-  expect(runButton).toBeInTheDocument();
-  fireEvent.click(runButton);
-  expect(onRunSpellCheck).toHaveBeenCalled();
-  expect(screen.getByText(/analyze this page/i)).toBeInTheDocument();
+beforeEach(() => {
+  vi.clearAllMocks();
 });
 
-test('SpellCheckPanel shows no issues state', () => {
+test('SpellCheckPanel shows spinner when loading before first load', () => {
   render(
     <SpellCheckPanel
-      bookId="1"
-      pageNumber={2}
-      pageText="Some text"
-      isChecking={false}
-      spellCheckResult={baseResult}
-      onRunSpellCheck={vi.fn()}
-      onApplyCorrection={vi.fn()}
-      onIgnoreCorrection={vi.fn()}
-      appliedCorrections={new Set()}
-      ignoredCorrections={new Set()}
+      {...defaultProps}
+      isLoading={true}
+      hasLoaded={false}
     />
   );
-
-  expect(screen.getByText(/No spelling issues/i)).toBeInTheDocument();
+  // Loading spinner renders; no issue cards
+  expect(screen.queryByText('teh')).not.toBeInTheDocument();
 });
 
-test('SpellCheckPanel renders corrections and handles apply/ignore', () => {
-  const onApplyCorrection = vi.fn();
-  const onIgnoreCorrection = vi.fn();
-  const result: SpellCheckResult = {
-    ...baseResult,
-    corrections: [
-      { original: 'teh', corrected: 'the', confidence: 0.9, reason: 'typo', context: '...teh book...' }
-    ],
-    totalIssues: 1
-  };
-
-  render(
-    <SpellCheckPanel
-      bookId="1"
-      pageNumber={2}
-      pageText="Some text"
-      isChecking={false}
-      spellCheckResult={result}
-      onRunSpellCheck={vi.fn()}
-      onApplyCorrection={onApplyCorrection}
-      onIgnoreCorrection={onIgnoreCorrection}
-      appliedCorrections={new Set()}
-      ignoredCorrections={new Set()}
-    />
-  );
-
-  expect(screen.getByText(/1 Issue Found/i)).toBeInTheDocument();
-  fireEvent.click(screen.getByText('the'));
-  expect(onApplyCorrection).toHaveBeenCalled();
-
-  fireEvent.click(screen.getByText(/Ignore/i));
-  expect(onIgnoreCorrection).toHaveBeenCalled();
+test('SpellCheckPanel shows nothing when no issues and hasLoaded', () => {
+  render(<SpellCheckPanel {...defaultProps} issues={[]} hasLoaded={true} />);
+  // No issue cards; page header should show
+  expect(screen.queryByText('teh')).not.toBeInTheDocument();
 });
 
-test('SpellCheckPanel shows applied/ignored footer', () => {
+test('SpellCheckPanel renders active issue with OCR suggestions', () => {
   render(
     <SpellCheckPanel
-      bookId="1"
-      pageNumber={2}
-      pageText="Some text"
-      isChecking={false}
-      spellCheckResult={baseResult}
-      onRunSpellCheck={vi.fn()}
-      onApplyCorrection={vi.fn()}
-      onIgnoreCorrection={vi.fn()}
-      appliedCorrections={new Set(['a'])}
-      ignoredCorrections={new Set(['b'])}
+      {...defaultProps}
+      issues={[baseIssue]}
+      hasLoaded={true}
     />
   );
+  // OCR suggestion buttons should be visible
+  const buttons = screen.getAllByText('the');
+  expect(buttons.length).toBeGreaterThan(0);
+  expect(screen.getAllByText('thee').length).toBeGreaterThan(0);
+});
 
-  expect(screen.getByText(/1 applied/i)).toBeInTheDocument();
-  expect(screen.getByText(/1 ignored/i)).toBeInTheDocument();
+test('Clicking OCR suggestion calls onAddPending with correct args', () => {
+  const onAddPending = vi.fn();
+  render(
+    <SpellCheckPanel
+      {...defaultProps}
+      issues={[baseIssue]}
+      onAddPending={onAddPending}
+    />
+  );
+  // Click the first "the" suggestion button (desktop view uses hidden sm:flex)
+  const suggestionButtons = screen.getAllByText('the');
+  fireEvent.click(suggestionButtons[0]);
+  expect(onAddPending).toHaveBeenCalledWith(
+    1,        // issueId
+    'the',    // correctedWord
+    'teh',    // originalWord
+    { range: [0, 3] }
+  );
+});
+
+test('Custom input calls onAddPending on apply button click', () => {
+  const onAddPending = vi.fn();
+  render(
+    <SpellCheckPanel
+      {...defaultProps}
+      issues={[baseIssue]}
+      onAddPending={onAddPending}
+    />
+  );
+  const input = screen.getByPlaceholderText('spellCheck.typeCorrection');
+  fireEvent.change(input, { target: { value: 'the' } });
+  const applyBtn = screen.getByRole('button', { name: 'spellCheck.apply' });
+  fireEvent.click(applyBtn);
+  expect(onAddPending).toHaveBeenCalledWith(1, 'the', 'teh', { range: [0, 3] });
+});
+
+test('Custom input calls onAddPending on Enter key', () => {
+  const onAddPending = vi.fn();
+  render(
+    <SpellCheckPanel
+      {...defaultProps}
+      issues={[baseIssue]}
+      onAddPending={onAddPending}
+    />
+  );
+  const input = screen.getByPlaceholderText('spellCheck.typeCorrection');
+  fireEvent.change(input, { target: { value: 'the' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  expect(onAddPending).toHaveBeenCalled();
+});
+
+test('Clicking ignore calls onIgnoreIssue', () => {
+  const onIgnoreIssue = vi.fn();
+  render(
+    <SpellCheckPanel
+      {...defaultProps}
+      issues={[baseIssue]}
+      onIgnoreIssue={onIgnoreIssue}
+    />
+  );
+  const ignoreBtn = screen.getByRole('button', { name: 'spellCheck.ignore' });
+  fireEvent.click(ignoreBtn);
+  expect(onIgnoreIssue).toHaveBeenCalledWith(1);
+});
+
+test('Clicking skip moves to skipped state', () => {
+  render(
+    <SpellCheckPanel
+      {...defaultProps}
+      issues={[baseIssue]}
+    />
+  );
+  const skipBtn = screen.getByRole('button', { name: 'spellCheck.skipLater' });
+  fireEvent.click(skipBtn);
+  // After skip, undo button should appear
+  expect(screen.getByRole('button', { name: 'spellCheck.undoSkip' })).toBeInTheDocument();
+});
+
+test('Issue queued in pendingIssueIds shows queued card', () => {
+  render(
+    <SpellCheckPanel
+      {...defaultProps}
+      issues={[baseIssue]}
+      pendingIssueIds={[1]}
+    />
+  );
+  expect(screen.getByText('spellCheck.queued')).toBeInTheDocument();
+});
+
+test('Edit button opens page text editor with full page text', () => {
+  render(
+    <SpellCheckPanel
+      {...defaultProps}
+      issues={[baseIssue]}
+      pageText="teh quick brown fox"
+    />
+  );
+  const editBtn = screen.getByRole('button', { name: /common\.edit/i });
+  fireEvent.click(editBtn);
+  const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+  expect(textarea.value).toBe('teh quick brown fox');
 });

@@ -33,10 +33,13 @@
     "active": "Active",
     "view": "View",
     "add": "Add",
+    "previous": "Previous",
+    "next": "Next",
     "loadingApp": "Library is loading...",
     "uploadSuccess": "Document uploaded successfully.",
     "uploadExisting": "This book already exists in the library.",
     "reindexStarted": "Book re-indexing started.",
+    "redoOcrStarted": "Full OCR reprocess started. Book remains readable while pages update.",
     "spellCheckStarted": "{{count}} page(s) queued for spell check.",
     "resetFailedSuccess": "{{count}} failed page(s) reset to OCR.",
     "noFailedPages": "No failed pages found for this book.",
@@ -260,6 +263,7 @@
       "triggerSpellCheck": "Spell Check",
       "replaceCover": "Replace Cover",
       "resetFailed": "Reset Failed Pages",
+      "redoOcr": "Redo OCR",
       "showing": "Showing",
       "email": "Email",
       "role": "Role",
@@ -477,6 +481,15 @@
     "reindexError": {
       "title": "Re-Index Error",
       "message": "Failed to start re-indexing. Please try again."
+    },
+    "redoOcr": {
+      "title": "Redo Full OCR",
+      "message": "This will re-run OCR on every page. Existing content is preserved and replaced page-by-page as new OCR completes — the book stays readable throughout. Continue?",
+      "confirm": "Redo OCR"
+    },
+    "redoOcrError": {
+      "title": "Re-OCR Error",
+      "message": "Failed to start re-OCR. Please try again."
     },
     "updateError": {
       "title": "Update Error",
