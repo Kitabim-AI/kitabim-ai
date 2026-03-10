@@ -451,7 +451,7 @@ export const ReaderView: React.FC = () => {
                       onTempTextChange={setTempPageText}
                       onSave={() => handleUpdatePage(selectedBook.id, page.pageNumber, tempPageText)}
                       onCancel={() => setEditingPageNum(null)}
-                      isLoading={!page.text && (!page.pipelineStep && (page.status === 'ocr_processing' || page.status === 'indexing' || page.status === 'pending')) || (page.pipelineStep === 'ocr' && page.milestone !== 'succeeded')}
+                      isLoading={!page.text && ((!page.pipelineStep && (page.status === 'ocr_processing' || page.status === 'indexing' || page.status === 'pending')) || (page.pipelineStep === 'ocr' && page.milestone !== 'succeeded'))}
                       isSaving={isSaving}
                       isFullscreen={isFullscreen}
                     />

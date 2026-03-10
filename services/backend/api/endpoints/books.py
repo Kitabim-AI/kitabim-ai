@@ -1004,17 +1004,25 @@ async def upload_pdf(
 @router.post("/{book_id}/reprocess")
 async def reprocess_book(
     book_id: str,
-    current_user: User = Depends(require_editor),
+    current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
-    """Reset book to the beginning of the pipeline (OCR step)."""
+    """Gracefully reprocess book from OCR step.
+
+    Existing page text and chunks are preserved and replaced per-page as new
+    OCR completes, so the book remains fully readable during reprocessing.
+    The pipeline handles replacement atomically: OCR overwrites text per page,
+    chunking replaces chunks per page, embedding re-embeds per page.
+    """
     books_repo = BooksRepository(session)
 
     book = await books_repo.get(book_id)
     if not book:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
-    # Reset all pages to ocr/idle so the OCR scanner re-processes from scratch
+    # Reset all pages to ocr/idle but DO NOT clear text or delete chunks.
+    # Existing content stays available for reading until new OCR replaces it
+    # page-by-page through the normal pipeline flow.
     await session.execute(
         update(Page)
         .where(Page.book_id == book_id)
@@ -1022,7 +1030,6 @@ async def reprocess_book(
             pipeline_step="ocr",
             milestone="idle",
             retry_count=0,
-            text=None,
             is_indexed=False,
             status="pending",
             last_updated=datetime.now(timezone.utc),
@@ -1030,13 +1037,11 @@ async def reprocess_book(
         )
     )
 
-    # Delete existing chunks
-    await session.execute(delete(Chunk).where(Chunk.book_id == book_id))
-
+    # Keep book status "ready" so the book stays accessible to readers.
+    # Update pipeline_step to "ocr" to signal reprocessing has started.
     await books_repo.update_one(
         book_id,
-        status="pending",
-        pipeline_step=None,
+        pipeline_step="ocr",
         last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email,
     )

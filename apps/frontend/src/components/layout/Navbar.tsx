@@ -211,7 +211,7 @@ export const Navbar: React.FC = () => {
 
               {/* Auth section in mobile menu */}
               <div className="pt-4 border-t border-[#0369a1]/10 sm:hidden">
-                <AuthButton onLogout={() => { setView('home'); setMobileMenuOpen(false); }} dropdownSide="right" />
+                <AuthButton onLogout={() => { setView('home'); setMobileMenuOpen(false); }} dropdownSide="right" inline />
               </div>
             </div>
           </div>

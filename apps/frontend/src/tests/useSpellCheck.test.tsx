@@ -6,76 +6,151 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-test('useSpellCheck runs and stores pages', async () => {
-  const response = { ok: true, json: vi.fn().mockResolvedValue({ bookId: '1', pageNumber: 2, corrections: [], totalIssues: 0, checkedAt: 'now' }) };
-  const fetchMock = vi.fn().mockResolvedValue(response);
-  // @ts-expect-error test mock
-  global.fetch = fetchMock;
+const mockIssues = [
+  { id: 1, word: 'teh', char_offset: 0, char_end: 3, ocr_corrections: ['the'], status: 'open' },
+  { id: 2, word: 'quikc', char_offset: 4, char_end: 9, ocr_corrections: ['quick'], status: 'open' },
+];
 
-  const { result } = renderHook(() => useSpellCheck('1', 2));
+test('useSpellCheck loadIssues fetches and stores open issues', async () => {
+  const mockFetch = vi.fn().mockResolvedValue({
+    ok: true,
+    json: vi.fn().mockResolvedValue({ milestone: null, issues: mockIssues }),
+  });
+  // @ts-expect-error test mock
+  global.fetch = mockFetch;
+
+  const { result } = renderHook(() => useSpellCheck('book1', 1));
 
   await act(async () => {
-    await result.current.runSpellCheck('Some text');
+    await result.current.loadIssues();
   });
 
-  expect(fetchMock).toHaveBeenCalledWith(
-    '/api/books/1/pages/2/spell-check/',
-    expect.any(Object)
-  );
-  expect(result.current.spellCheckResult?.bookId).toBe('1');
-  expect(result.current.isChecking).toBe(false);
+  expect(result.current.hasLoaded).toBe(true);
+  expect(result.current.issues).toHaveLength(2);
+  expect(result.current.issues[0].word).toBe('teh');
+  expect(result.current.isLoading).toBe(false);
 });
 
-test('useSpellCheck handles empty text without fetch', async () => {
-  const fetchMock = vi.fn();
+test('useSpellCheck loadIssues filters out non-open issues', async () => {
+  const issuesWithMixed = [
+    ...mockIssues,
+    { id: 3, word: 'fox', char_offset: 10, char_end: 13, ocr_corrections: [], status: 'corrected' },
+  ];
+  const mockFetch = vi.fn().mockResolvedValue({
+    ok: true,
+    json: vi.fn().mockResolvedValue({ milestone: null, issues: issuesWithMixed }),
+  });
   // @ts-expect-error test mock
-  global.fetch = fetchMock;
+  global.fetch = mockFetch;
 
-  const { result } = renderHook(() => useSpellCheck('1', 2));
-  await act(async () => {
-    await result.current.runSpellCheck('   ');
-  });
-
-  expect(fetchMock).not.toHaveBeenCalled();
-});
-
-test('useSpellCheck apply/ignore/reset updates sets', () => {
-  const { result } = renderHook(() => useSpellCheck('1', 2));
-
-  act(() => {
-    const updated = result.current.applyCorrection({ original: 'a', corrected: 'b', confidence: 1, reason: 't' }, 'a a');
-    expect(updated).toBe('b b');
-  });
-
-  act(() => {
-    result.current.ignoreCorrection({ original: 'x', corrected: 'y', confidence: 1, reason: 't' });
-  });
-
-  expect(result.current.appliedCorrections.has('a')).toBe(true);
-  expect(result.current.ignoredCorrections.has('x')).toBe(true);
-
-  act(() => {
-    result.current.resetSpellCheck();
-  });
-
-  expect(result.current.appliedCorrections.size).toBe(0);
-  expect(result.current.ignoredCorrections.size).toBe(0);
-});
-
-test('useSpellCheck alerts on failure', async () => {
-  const response = { ok: false };
-  const fetchMock = vi.fn().mockResolvedValue(response);
-  const alertMock = vi.fn();
-  // @ts-expect-error test mock
-  global.fetch = fetchMock;
-  // @ts-expect-error test mock
-  global.alert = alertMock;
-
-  const { result } = renderHook(() => useSpellCheck('1', 2));
+  const { result } = renderHook(() => useSpellCheck('book1', 1));
 
   await act(async () => {
-    await result.current.runSpellCheck('text');
+    await result.current.loadIssues();
   });
 
-  expect(alertMock).toHaveBeenCalled();
+  // Should filter out the 'corrected' status issue
+  expect(result.current.issues).toHaveLength(2);
+  expect(result.current.issues.every(i => i.status === 'open')).toBe(true);
+});
+
+test('useSpellCheck loadIssues handles fetch failure gracefully', async () => {
+  const mockFetch = vi.fn().mockResolvedValue({ ok: false });
+  // @ts-expect-error test mock
+  global.fetch = mockFetch;
+
+  const { result } = renderHook(() => useSpellCheck('book1', 1));
+
+  await act(async () => {
+    await result.current.loadIssues();
+  });
+
+  expect(result.current.hasLoaded).toBe(false);
+  expect(result.current.issues).toHaveLength(0);
+});
+
+test('useSpellCheck applyCorrection removes issue on success', async () => {
+  // Seed with issues first
+  const loadFetch = vi.fn().mockResolvedValue({
+    ok: true,
+    json: vi.fn().mockResolvedValue({ milestone: null, issues: mockIssues }),
+  });
+  // @ts-expect-error test mock
+  global.fetch = loadFetch;
+
+  const { result } = renderHook(() => useSpellCheck('book1', 1));
+  await act(async () => { await result.current.loadIssues(); });
+
+  // Now mock apply
+  const applyFetch = vi.fn().mockResolvedValue({ ok: true, json: vi.fn().mockResolvedValue({ applied: 1 }) });
+  // @ts-expect-error test mock
+  global.fetch = applyFetch;
+
+  let success: boolean | undefined;
+  await act(async () => {
+    success = await result.current.applyCorrection(1, 'the');
+  });
+
+  expect(success).toBe(true);
+  expect(result.current.issues).toHaveLength(1);
+  expect(result.current.issues[0].id).toBe(2);
+});
+
+test('useSpellCheck applyCorrection returns false on failure', async () => {
+  const mockFetch = vi.fn().mockResolvedValue({ ok: false });
+  // @ts-expect-error test mock
+  global.fetch = mockFetch;
+
+  const { result } = renderHook(() => useSpellCheck('book1', 1));
+
+  let success: boolean | undefined;
+  await act(async () => {
+    success = await result.current.applyCorrection(1, 'the');
+  });
+
+  expect(success).toBe(false);
+});
+
+test('useSpellCheck ignoreIssue removes issue on success', async () => {
+  const loadFetch = vi.fn().mockResolvedValue({
+    ok: true,
+    json: vi.fn().mockResolvedValue({ milestone: null, issues: mockIssues }),
+  });
+  // @ts-expect-error test mock
+  global.fetch = loadFetch;
+
+  const { result } = renderHook(() => useSpellCheck('book1', 1));
+  await act(async () => { await result.current.loadIssues(); });
+
+  const ignoreFetch = vi.fn().mockResolvedValue({ ok: true, json: vi.fn().mockResolvedValue({ ignored: 1 }) });
+  // @ts-expect-error test mock
+  global.fetch = ignoreFetch;
+
+  await act(async () => {
+    await result.current.ignoreIssue(1);
+  });
+
+  expect(result.current.issues).toHaveLength(1);
+  expect(result.current.issues[0].id).toBe(2);
+});
+
+test('useSpellCheck reset clears all state', async () => {
+  const mockFetch = vi.fn().mockResolvedValue({
+    ok: true,
+    json: vi.fn().mockResolvedValue({ milestone: null, issues: mockIssues }),
+  });
+  // @ts-expect-error test mock
+  global.fetch = mockFetch;
+
+  const { result } = renderHook(() => useSpellCheck('book1', 1));
+  await act(async () => { await result.current.loadIssues(); });
+
+  expect(result.current.hasLoaded).toBe(true);
+  expect(result.current.issues).toHaveLength(2);
+
+  act(() => { result.current.reset(); });
+
+  expect(result.current.hasLoaded).toBe(false);
+  expect(result.current.issues).toHaveLength(0);
+  expect(result.current.isScanning).toBe(false);
 });

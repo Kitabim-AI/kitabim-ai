@@ -1,26 +1,30 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  BookOpenCheck, Check, X, RefreshCw, Clock, RotateCcw, Inbox, FileText, Edit3,
+  BookOpenCheck, Check, X, RefreshCw, Clock, RotateCcw, Inbox, FileText, Edit3, ChevronRight, ChevronLeft,
 } from 'lucide-react';
 import { useI18n } from '../../i18n/I18nContext';
 import { SpellIssue } from '../../hooks/useSpellCheck';
 import { MarkdownContent } from '../common/MarkdownContent';
+import { useNotification } from '../../context/NotificationContext';
 
 interface SpellCheckPanelProps {
   pageNumber: number;
+  totalPages?: number;
   pageText?: string;
   fontSize: number;
   issues: SpellIssue[];
   isLoading: boolean;
   isScanning: boolean;
   hasLoaded: boolean;
-  onApplyCorrection?: (issueId: number, correctedWord: string, options?: { isPhrase?: boolean; range?: [number, number] }) => void;
+  navigationMode?: 'auto' | 'manual';
+  onUpdatePageText?: (text: string) => Promise<boolean>;
   onAddPending: (issueId: number, correctedWord: string, originalWord: string, options?: { isPhrase?: boolean; range?: [number, number] }) => void;
   pendingIssueIds: number[];
   onRemoveFromPending?: (issueId: number) => void;
   onIgnoreIssue: (issueId: number) => void;
   onNextPage: () => void;
+  onPrevPage?: () => void;
   globalIssueOffset?: number;
   totalBookIssues?: number;
   bookTitle?: string;
@@ -62,19 +66,21 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
   isLoading,
   isScanning,
   hasLoaded,
-  onApplyCorrection,
+  navigationMode = 'auto',
+  onUpdatePageText,
   onAddPending,
   pendingIssueIds,
   onRemoveFromPending,
   onIgnoreIssue,
   onNextPage,
-
+  onPrevPage,
   globalIssueOffset = 0,
   totalBookIssues,
   bookTitle,
   bookAuthor,
 }) => {
   const { t } = useI18n();
+  const { addNotification } = useNotification();
 
   // ─── Single-finding model state ───────────────────────────────────────────
   const [activeIssueId, setActiveIssueId] = useState<number | null>(null);
@@ -166,14 +172,15 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
     return () => clearTimeout(timer);
   }, [activeIssueId]);
 
-  // ─── Auto-advance ──────────────────────────────────────────────────────────
+  // ─── Auto-advance (only in 'auto' mode) ────────────────────────────────────
   useEffect(() => {
+    if (navigationMode !== 'auto') return;
     if (!hasLoaded || isBusy || nonSkippedIssues.length > 0) return;
     if (autoAdvanceTriggered.current) return;
     autoAdvanceTriggered.current = true;
     onNextPage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasLoaded, isBusy, nonSkippedIssues.length]);
+  }, [hasLoaded, isBusy, nonSkippedIssues.length, navigationMode]);
 
 
   // ─── Action handlers ──────────────────────────────────────────────────────
@@ -209,12 +216,14 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
     setCustomInput('');
   };
 
-  const handlePhraseApply = (contextStart: number, contextEnd: number) => {
-    if (!activeIssue) return;
-    // Phrase edits apply immediately — too complex to queue (multi-word range, bad review display)
-    onApplyCorrection?.(activeIssue.id, phraseEdit, { isPhrase: true, range: [contextStart, contextEnd] });
+  const handlePageTextSave = async () => {
+    if (!onUpdatePageText) return;
+    const success = await onUpdatePageText(phraseEdit);
     setIsEditingPhrase(false);
     setPhraseEdit('');
+    if (success) {
+      addNotification(t('spellCheck.applied'), 'success');
+    }
   };
 
   const handleIgnore = (issueId: number) => {
@@ -242,7 +251,38 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
               })}
             </span>
           )}
+          {totalPages && (
+            <span className="px-3 py-1 bg-slate-100 text-slate-400 rounded-2xl text-xs font-bold">
+              {t('chat.pageNumber', { page: pageNumber })}
+              {' / '}
+              {totalPages}
+            </span>
+          )}
         </div>
+        {(onPrevPage) && (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => {
+                if (isEditingPhrase) { setShowUnsavedGuard(true); setPendingNavAction(() => onPrevPage); }
+                else onPrevPage?.();
+              }}
+              className="p-1.5 text-slate-400 hover:text-[#0369a1] hover:bg-[#0369a1]/10 rounded-lg transition-all"
+              title={t('common.previous')}
+            >
+              <ChevronRight size={16} />
+            </button>
+            <button
+              onClick={() => {
+                if (isEditingPhrase) { setShowUnsavedGuard(true); setPendingNavAction(() => onNextPage); }
+                else onNextPage();
+              }}
+              className="p-1.5 text-slate-400 hover:text-[#0369a1] hover:bg-[#0369a1]/10 rounded-lg transition-all"
+              title={t('common.next')}
+            >
+              <ChevronLeft size={16} />
+            </button>
+          </div>
+        )}
       </div>
     );
   };
@@ -251,7 +291,38 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
   const renderContextSection = () => {
     if (!activeIssue) return null;
 
-    // Skeleton shimmer while pageText loads (S-NEW-2)
+    // Full-page editor
+    if (isEditingPhrase) {
+      return (
+        <div className="flex-1 flex flex-col min-h-0 gap-3">
+          <textarea
+            dir="rtl"
+            value={phraseEdit}
+            onChange={(e) => setPhraseEdit(e.target.value)}
+            className="flex-1 min-h-0 w-full p-3 uyghur-text leading-loose border-2 border-[#0369a1]/30 rounded-2xl outline-none focus:border-[#0369a1] bg-slate-50 shadow-inner resize-none overflow-y-auto"
+            style={{ fontSize: `${fontSize}px` }}
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={handlePageTextSave}
+              className="flex-1 px-4 py-2.5 bg-[#0369a1] text-white rounded-xl font-bold shadow-lg shadow-[#0369a1]/20 active:scale-95 transition-all"
+              style={{ fontSize: `${fontSize}px` }}
+            >
+              {t('spellCheck.apply')}
+            </button>
+            <button
+              onClick={() => { setIsEditingPhrase(false); setPhraseEdit(''); }}
+              className="px-4 py-2.5 bg-slate-100 text-slate-500 rounded-xl font-bold active:scale-95 transition-all hover:bg-slate-200"
+              style={{ fontSize: `${fontSize}px` }}
+            >
+              {t('common.cancel')}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // Skeleton shimmer while pageText loads
     if (pageText === undefined) {
       return (
         <div className="space-y-2">
@@ -270,34 +341,6 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
       );
     }
 
-    if (isEditingPhrase) {
-      return (
-        <div className="flex-1 flex flex-col min-h-0 gap-3">
-          <textarea
-            dir="rtl"
-            value={phraseEdit}
-            onChange={(e) => setPhraseEdit(e.target.value)}
-            className="flex-1 min-h-0 w-full p-3 uyghur-text leading-loose border-2 border-[#0369a1]/30 rounded-2xl outline-none focus:border-[#0369a1] bg-slate-50 shadow-inner resize-none overflow-y-auto"
-            style={{ fontSize: `${fontSize}px` }}
-          />
-          <div className="flex gap-2">
-            <button
-              onClick={() => handlePhraseApply(ctx.contextStart, ctx.contextEnd)}
-              className="flex-1 px-4 py-2 bg-[#0369a1] text-white rounded-xl text-sm font-bold shadow-lg shadow-[#0369a1]/20 active:scale-95 transition-all"
-            >
-              {t('spellCheck.apply')}
-            </button>
-            <button
-              onClick={() => { setIsEditingPhrase(false); setPhraseEdit(''); }}
-              className="px-4 py-2 bg-slate-100 text-slate-500 rounded-xl text-sm font-bold active:scale-95 transition-all hover:bg-slate-200"
-            >
-              {t('common.cancel')}
-            </button>
-          </div>
-        </div>
-      );
-    }
-
     return (
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-2">
@@ -305,19 +348,19 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
           <div className="flex items-center gap-1">
             <button
               onClick={() => setShowPageModal(true)}
-              className="text-[11px] font-bold text-slate-400 px-2 py-1 bg-slate-100 rounded-lg hover:bg-slate-200 transition-all uppercase flex items-center gap-1"
+              className="text-xs font-bold text-slate-400 px-3 py-1.5 bg-slate-100 rounded-lg hover:bg-slate-200 transition-all uppercase flex items-center gap-2"
             >
-              <FileText size={10} />
+              <FileText size={12} />
               {t('spellCheck.viewPage')}
             </button>
             <button
               onClick={() => {
                 setIsEditingPhrase(true);
-                setPhraseEdit(`${ctx.before}${ctx.word}${ctx.after}`);
+                setPhraseEdit(pageText || '');
               }}
-              className="text-[11px] font-bold text-[#0369a1] px-2 py-1 bg-[#0369a1]/10 rounded-lg hover:bg-[#0369a1] hover:text-white transition-all uppercase flex items-center gap-1"
+              className="text-xs font-bold text-[#0369a1] px-3 py-1.5 bg-[#0369a1]/10 rounded-lg hover:bg-[#0369a1] hover:text-white transition-all uppercase flex items-center gap-2"
             >
-              <Edit3 size={10} />
+              <Edit3 size={12} />
               {t('common.edit')}
             </button>
           </div>
@@ -423,7 +466,7 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
                       key={correction}
                       onClick={() => handleOcrApply(correction)}
                       disabled={isBusy}
-                      className="flex items-center justify-between px-5 py-3 bg-[#0369a1] text-white rounded-2xl font-normal transition-all active:scale-95 shadow-md shadow-[#0369a1]/10 hover:shadow-lg hover:shadow-[#0369a1]/20 disabled:opacity-40"
+                      className="flex items-center justify-between px-5 py-2.5 bg-[#0369a1] text-white rounded-2xl font-normal transition-all active:scale-95 shadow-md shadow-[#0369a1]/10 hover:shadow-lg hover:shadow-[#0369a1]/20 disabled:opacity-40"
                       style={{ fontSize: `${fontSize}px` }}
                     >
                       <span className="uyghur-text">{correction}</span>
@@ -469,7 +512,8 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
               <button
                 onClick={() => handleSkip(activeIssue.id)}
                 disabled={isBusy}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-50 text-slate-400 hover:text-slate-600 hover:bg-slate-100 disabled:opacity-40 rounded-2xl font-normal text-sm transition-all active:scale-95 uppercase"
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-50 text-slate-400 hover:text-slate-600 hover:bg-slate-100 disabled:opacity-40 rounded-2xl font-normal transition-all active:scale-95 uppercase"
+                style={{ fontSize: `${fontSize}px` }}
               >
                 <Clock size={13} strokeWidth={2.5} />
                 {t('spellCheck.skipLater')}
@@ -478,7 +522,8 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
                 onClick={() => handleIgnore(activeIssue.id)}
                 disabled={isBusy}
                 title={t('spellCheck.ignoreTooltip')}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-50 text-slate-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-40 rounded-2xl font-normal text-sm transition-all active:scale-95 uppercase"
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-50 text-slate-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-40 rounded-2xl font-normal transition-all active:scale-95 uppercase"
+                style={{ fontSize: `${fontSize}px` }}
               >
                 <X size={13} strokeWidth={2.5} />
                 {t('spellCheck.ignore')}

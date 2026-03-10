@@ -176,18 +176,6 @@ export const PersistenceService = {
     }
   },
 
-  async reprocessBook(bookId: string): Promise<void> {
-    const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess`, {
-      method: 'POST',
-    });
-    if (!response.ok) {
-      if (response.status === 403) {
-        throw new Error("Permission denied: Editor access required");
-      }
-      throw new Error("Failed to start reprocessing");
-    }
-  },
-
   async triggerSpellCheck(bookId: string): Promise<{ queued: number }> {
     const response = await authFetch(`${API_BASE}/books/${bookId}/spell-check/trigger`, {
       method: 'POST',
@@ -208,6 +196,18 @@ export const PersistenceService = {
         throw new Error("Permission denied: Editor access required");
       }
       throw new Error("Failed to start reindexing");
+    }
+  },
+
+  async reprocessBook(bookId: string): Promise<void> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Admin access required");
+      }
+      throw new Error("Failed to start re-OCR");
     }
   },
 

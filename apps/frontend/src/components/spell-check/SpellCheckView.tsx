@@ -4,6 +4,7 @@ import { useI18n } from '../../i18n/I18nContext';
 import { useAppContext } from '../../context/AppContext';
 import { useIsEditor } from '../../hooks/useAuth';
 import { authFetch } from '../../services/authService';
+import { PersistenceService } from '../../services/persistenceService';
 import { useSpellCheck } from '../../hooks/useSpellCheck';
 import { usePendingCorrections } from '../../hooks/usePendingCorrections';
 import { SpellCheckPanel } from './SpellCheckPanel';
@@ -369,10 +370,16 @@ export const SpellCheckView: React.FC = () => {
                 isScanning={spellCheck.isScanning}
                 hasLoaded={spellCheck.hasLoaded}
                 navigationMode="auto"
-                onApplyCorrection={async (id, word, options) => {
-                  // Only phrase edits use this path — apply immediately, reload from DB
-                  const success = await spellCheck.applyCorrection(id, word, options);
-                  if (success) spellCheck.loadIssues();
+                onUpdatePageText={async (text) => {
+                  if (!bookMeta) return false;
+                  try {
+                    await PersistenceService.updatePage(bookMeta.book_id, currentPage, text);
+                    pendingCorrections.clearPagePending(bookMeta.book_id, currentPage);
+                    await spellCheck.triggerRecheck();
+                    return true;
+                  } catch {
+                    return false;
+                  }
                 }}
                 onAddPending={handleAddPending}
                 pendingIssueIds={pendingCorrections.pending.filter(p => p.bookId === bookMeta.book_id).map(p => p.issueId)}

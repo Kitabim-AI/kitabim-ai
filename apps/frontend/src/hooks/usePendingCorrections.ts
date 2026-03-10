@@ -62,6 +62,10 @@ export const usePendingCorrections = () => {
     setPending([]);
   }, []);
 
+  const clearPagePending = useCallback((bookId: string, pageNum: number) => {
+    setPending(prev => prev.filter(p => !(p.bookId === bookId && p.pageNum === pageNum)));
+  }, []);
+
   const confirmAll = useCallback(async (): Promise<ConfirmResult> => {
     if (pending.length === 0) {
       return { succeededIds: [], failedPageNums: [] };
@@ -136,6 +140,7 @@ export const usePendingCorrections = () => {
     addPending,
     removePending,
     clearAll,
+    clearPagePending,
     confirmAll,
   };
 };
