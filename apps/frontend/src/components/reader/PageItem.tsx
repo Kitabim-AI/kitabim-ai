@@ -1,8 +1,7 @@
 import React from 'react';
-import { RotateCcw, Edit3, Wand2, CheckCircle2, Save, Loader2 } from 'lucide-react';
+import { RotateCcw, Edit3, CheckCircle2, Save, Loader2 } from 'lucide-react';
 import { useI18n } from '../../i18n/I18nContext';
 import { MarkdownContent } from '../common/MarkdownContent';
-import { HighlightedText } from '../spell-check/HighlightedText';
 import { useIsEditor } from '../../hooks/useAuth';
 
 interface PageItemProps {
@@ -13,30 +12,30 @@ interface PageItemProps {
   onSetActive: () => void;
   onEdit: () => void;
   onReprocess: () => void;
-  onSpellCheck: () => void;
+
   tempText: string;
   onTempTextChange: (text: string) => void;
   onSave: () => void;
   onCancel: () => void;
-  spellCheckResult: any;
   isLoading: boolean;
   isSaving?: boolean;
+  isFullscreen?: boolean;
 }
 
 export const PageItem: React.FC<PageItemProps> = ({
-  page, isActive, isEditing, fontSize, onSetActive, onEdit, onReprocess, onSpellCheck,
-  tempText, onTempTextChange, onSave, onCancel, spellCheckResult, isLoading, isSaving
+  page, isActive, isEditing, fontSize, onSetActive, onEdit, onReprocess,
+  tempText, onTempTextChange, onSave, onCancel, isLoading, isSaving, isFullscreen
 }) => {
   const { t } = useI18n();
   const isEditor = useIsEditor();
 
   return (
-    <div onMouseEnter={onSetActive} className={`group relative p-6 rounded-[24px] transition-all duration-300 ${isActive ? 'bg-white shadow-xl border border-[#0369a1]/10' : 'opacity-80'}`}>
+    <div onMouseEnter={onSetActive} className={`group relative p-6 rounded-[24px] transition-all duration-300 ${isEditing ? 'flex-1 flex flex-col min-h-0' : ''} ${isActive ? 'bg-white shadow-xl border border-[#0369a1]/10' : 'opacity-80'}`}>
       <div className="flex items-center justify-between mb-4 border-b border-[#0369a1]/5 pb-3">
         <div className="flex items-center gap-2">
           {isEditor && !isEditing && (
-            <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
-              <button onClick={onReprocess} className="p-2 bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white rounded-lg"><RotateCcw size={14} /></button>
+            <div className={`flex items-center gap-2 transition-all ${isFullscreen ? 'hidden' : `${isActive ? 'opacity-100' : 'opacity-0'} sm:group-hover:opacity-100`}`}>
+              <button onClick={onReprocess} className="p-2 bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white rounded-lg" title={t('reader.reprocessPage')}><RotateCcw size={14} /></button>
               <button onClick={onEdit} className="flex items-center gap-2 px-3 py-1.5 bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white rounded-lg text-xs font-bold uppercase"><Edit3 size={12} /> {t('reader.editPage')}</button>
             </div>
           )}
@@ -48,14 +47,9 @@ export const PageItem: React.FC<PageItemProps> = ({
       </div>
 
       {isEditing ? (
-        <div className="flex flex-col gap-4">
-          <div className="relative w-full">
-            {spellCheckResult?.corrections.length > 0 && (
-              <div className="absolute inset-0 p-4 pointer-events-none overflow-hidden">
-                <HighlightedText text={tempText} corrections={spellCheckResult.corrections} className="uyghur-text leading-relaxed" style={{ fontSize: `${fontSize}px` }} isLayer={true} />
-              </div>
-            )}
-            <textarea value={tempText} onChange={(e) => onTempTextChange(e.target.value)} className="w-full p-4 uyghur-text border-2 border-[#0369a1] rounded-xl outline-none resize-none bg-white relative z-10" style={{ fontSize: `${fontSize}px` }} dir="rtl" rows={Math.min(20, tempText.split('\n').length + 2)} />
+        <div className="flex-1 flex flex-col gap-4 min-h-0">
+          <div className="relative flex-1 flex flex-col min-h-0">
+            <textarea value={tempText} onChange={(e) => onTempTextChange(e.target.value)} className="flex-1 w-full p-4 uyghur-text border-2 border-[#0369a1] rounded-xl outline-none resize-none bg-white relative z-10 min-h-0 custom-scrollbar" style={{ fontSize: `${fontSize}px` }} dir="rtl" />
           </div>
           <div className="flex items-center gap-3">
             <button

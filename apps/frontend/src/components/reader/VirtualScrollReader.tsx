@@ -26,51 +26,45 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
   const { t } = useI18n();
   const [pages, setPages] = useState<Map<number, any>>(new Map());
   const [currentCenterPage, setCurrentCenterPage] = useState(initialPage);
-  const [loadingPages, setLoadingPages] = useState<Set<number>>(new Set());
 
+  // Refs for transient tracking — mutations here never cause observer rebuilds
+  const loadingPagesRef = useRef<Set<number>>(new Set());
+  const loadedPagesRef = useRef<Set<number>>(new Set());
+  const currentCenterPageRef = useRef(initialPage);
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const lastFetchTimeRef = useRef<Map<number, number>>(new Map());
-  const lastSyncTimeRef = useRef<number>(0);
   const isInitialMount = useRef(true);
   const isProgrammaticScroll = useRef(false);
 
   const RATE_LIMIT_MS = 300;
 
+  // fetchPage only depends on bookId — stable across page/loading state changes,
+  // so the loading observer is never torn down just because a page finished loading.
   const fetchPage = useCallback(async (pageNumber: number) => {
     const now = Date.now();
     const lastFetch = lastFetchTimeRef.current.get(pageNumber) || 0;
 
     if (now - lastFetch < RATE_LIMIT_MS) return;
-    if (loadingPages.has(pageNumber) || pages.has(pageNumber)) return;
+    if (loadingPagesRef.current.has(pageNumber) || loadedPagesRef.current.has(pageNumber)) return;
 
-    setLoadingPages(prev => new Set(prev).add(pageNumber));
+    loadingPagesRef.current.add(pageNumber);
     lastFetchTimeRef.current.set(pageNumber, now);
 
     try {
       const result = await PersistenceService.getBookPages(bookId, pageNumber - 1, 1);
       if (result && result.length > 0) {
+        loadedPagesRef.current.add(pageNumber);
         setPages(prev => new Map(prev).set(pageNumber, result[0]));
       }
     } catch (error) {
       console.error(`Failed to fetch page ${pageNumber}:`, error);
     } finally {
-      setLoadingPages(prev => {
-        const next = new Set(prev);
-        next.delete(pageNumber);
-        return next;
-      });
+      loadingPagesRef.current.delete(pageNumber);
     }
-  }, [bookId, pages, loadingPages]);
+  }, [bookId]);
 
-  // Handle intersection for page detection AND lazy loading
+  // Loading observer — only rebuilt when scroll root or page count changes
   useEffect(() => {
-    const options = {
-      root: scrollParentRef?.current || null,
-      rootMargin: '1000px 0px 1000px 0px', // Large margin for proactive loading
-      threshold: 0
-    };
-
-    // We use two observers: one for loading (wide margin) and one for center detection (narrow margin)
     const loadObserver = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
         if (entry.isIntersecting) {
@@ -78,8 +72,20 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
           if (pageNum > 0) fetchPage(pageNum);
         }
       });
-    }, options);
+    }, {
+      root: scrollParentRef?.current || null,
+      rootMargin: '1000px 0px 1000px 0px',
+      threshold: 0,
+    });
 
+    const currentRefs = pageRefs.current;
+    currentRefs.forEach(el => { if (el) loadObserver.observe(el); });
+    return () => loadObserver.disconnect();
+  }, [totalPages, scrollParentRef, fetchPage]);
+
+  // Center detection observer — reads currentCenterPageRef so it never needs
+  // to be rebuilt when the visible page changes (no currentCenterPage in deps)
+  useEffect(() => {
     const centerObserver = new IntersectionObserver((entries) => {
       if (isProgrammaticScroll.current) return;
 
@@ -96,44 +102,32 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
         }
       });
 
-      if (mostVisiblePage !== -1 && mostVisiblePage !== currentCenterPage) {
+      if (mostVisiblePage !== -1 && mostVisiblePage !== currentCenterPageRef.current) {
+        currentCenterPageRef.current = mostVisiblePage;
         setCurrentCenterPage(mostVisiblePage);
-        const now = Date.now();
-        if (now - lastSyncTimeRef.current > 1000) {
-          onPageChange?.(mostVisiblePage);
-          lastSyncTimeRef.current = now;
-        }
+        onPageChange?.(mostVisiblePage);
       }
     }, {
       root: scrollParentRef?.current || null,
       rootMargin: '-45% 0px -45% 0px',
-      threshold: [0, 0.5, 1]
+      threshold: [0, 0.5, 1],
     });
 
     const currentRefs = pageRefs.current;
-    currentRefs.forEach(el => {
-      if (el) {
-        loadObserver.observe(el);
-        centerObserver.observe(el);
-      }
-    });
-
-    return () => {
-      loadObserver.disconnect();
-      centerObserver.disconnect();
-    };
-  }, [totalPages, scrollParentRef, onPageChange, fetchPage, currentCenterPage]);
+    currentRefs.forEach(el => { if (el) centerObserver.observe(el); });
+    return () => centerObserver.disconnect();
+  }, [totalPages, scrollParentRef, onPageChange]);
 
   // Handle initialPage changes (Jump support)
   useEffect(() => {
-    if (isInitialMount.current || initialPage !== currentCenterPage) {
+    if (isInitialMount.current || initialPage !== currentCenterPageRef.current) {
       const target = pageRefs.current.get(initialPage);
       if (target) {
         isProgrammaticScroll.current = true;
         target.scrollIntoView({ behavior: isInitialMount.current ? 'auto' : 'smooth', block: 'start' });
+        currentCenterPageRef.current = initialPage;
         setCurrentCenterPage(initialPage);
 
-        // Reset the flag after scroll animation
         setTimeout(() => {
           isProgrammaticScroll.current = false;
         }, 1000);
@@ -146,8 +140,6 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
 
   return (
     <div className="w-full max-w-4xl mx-auto select-none flex flex-col items-center" onContextMenu={(e) => e.preventDefault()}>
-
-
       <div className="w-full space-y-16 pb-64 flex flex-col items-center">
         {allPageNumbers.map(pageNum => {
           const page = pages.get(pageNum);
@@ -167,14 +159,14 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
                   onSetActive={() => { }}
                   onEdit={() => { }}
                   onReprocess={() => { }}
-                  onSpellCheck={() => { }}
                   tempText=""
                   onTempTextChange={() => { }}
                   onSave={() => { }}
                   onCancel={() => { }}
-                  spellCheckResult={null}
+                  spellIssues={[]}
                   isLoading={false}
                   isSaving={false}
+                  isFullscreen={isFullscreen}
                 />
               ) : (
                 <div className="flex flex-col items-center justify-center min-h-[400px] bg-white/30 rounded-[32px] border border-dashed border-[#0369a1]/10 animate-pulse">

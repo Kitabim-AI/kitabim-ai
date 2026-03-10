@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { BookOpen, Library, Bot, LayoutDashboard, Search, Upload, Users, Menu, X, RefreshCw } from 'lucide-react';
+import { BookOpen, Library, Bot, LayoutDashboard, Search, Upload, Users, Menu, X, RefreshCw, BookOpenCheck } from 'lucide-react';
 import { AuthButton } from '../auth';
 import { useAuth, useIsEditor } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
@@ -30,8 +30,8 @@ export const Navbar: React.FC = () => {
           style={{ background: 'linear-gradient(270deg, transparent, rgba(255, 193, 7, 0.5), rgba(156, 39, 176, 0.3), transparent)' }} />
 
         <div className="relative flex items-center gap-3 sm:gap-4 md:gap-3 lg:gap-8">
-          <div className="flex items-center gap-2 sm:gap-3 cursor-pointer group transition-transform duration-300 hover:-translate-y-0.5" onClick={() => setView('home')}>
-            <div className="p-2 sm:p-2.5 md:p-3 rounded-xl sm:rounded-2xl shadow-[0_4px_20px_rgba(255,193,7,0.4),0_8px_40px_rgba(156,39_176,0.2),inset_0_1px_0_rgba(255,255,255,0.4)] transition-all duration-300 relative overflow-hidden group-hover:shadow-[0_6px_20px_rgba(3,105,161,0.5)] group-hover:-rotate-6"
+          <div className="flex items-center h-[48px] gap-2 sm:gap-3 cursor-pointer group transition-transform duration-300 hover:-translate-y-0.5" onClick={() => setView('home')}>
+            <div className="flex-shrink-0 p-2 md:p-3 rounded-xl md:rounded-2xl shadow-[0_4px_20px_rgba(255,193,7,0.4),0_8px_40px_rgba(156,39_176,0.2),inset_0_1px_0_rgba(255,255,255,0.4)] transition-all duration-300 relative overflow-hidden group-hover:shadow-[0_6px_20px_rgba(3,105,161,0.5)] icon-shake"
               style={{
                 background: 'linear-gradient(135deg, #FFD54F 0%, #FF9800 50%, #9C27B0 100%)'
               }}>
@@ -39,9 +39,9 @@ export const Navbar: React.FC = () => {
                 style={{
                   background: 'repeating-conic-gradient(from 0deg at 50% 50%, transparent 0deg, transparent 10deg, rgba(255, 255, 255, 0.1) 10deg, rgba(255, 255, 255, 0.1) 20deg)'
                 }} />
-              <BookOpen size={20} className="sm:w-[24px] sm:h-[24px] md:w-[24px] md:h-[24px] text-white relative z-10" strokeWidth={2} />
+              <BookOpen size={20} className="md:w-6 md:h-6 text-white relative z-10" strokeWidth={2} />
             </div>
-            <span className="font-normal text-[#1a1a1a] text-lg sm:text-xl md:text-base lg:text-2xl tracking-tight hidden sm:block transition-all">
+            <span dir="ltr" className="flex items-center font-semibold text-[#1a1a1a] text-[30px] mt-[20px] md:text-[40px] tracking-tight">
               Kitabim<span className="text-[#0369a1]">.AI</span>
             </span>
           </div>
@@ -66,6 +66,14 @@ export const Navbar: React.FC = () => {
               icon={<Bot size={24} strokeWidth={2.5} />}
               label={t('nav.globalChat')}
             />
+            {isEditor && (
+              <NavButton
+                active={view === 'spell-check'}
+                onClick={() => setView('spell-check')}
+                icon={<BookOpenCheck size={20} strokeWidth={2.5} />}
+                label={t('nav.spellCheck')}
+              />
+            )}
             {isEditor && (
               <NavButton
                 active={view === 'admin'}
@@ -180,6 +188,14 @@ export const Navbar: React.FC = () => {
               />
               {isEditor && (
                 <MobileNavButton
+                  active={view === 'spell-check'}
+                  onClick={() => handleNavClick(() => setView('spell-check'))}
+                  icon={<BookOpenCheck size={20} strokeWidth={2.5} />}
+                  label={t('nav.spellCheck')}
+                />
+              )}
+              {isEditor && (
+                <MobileNavButton
                   active={view === 'admin'}
                   onClick={() => handleNavClick(() => { setView('admin'); setPage(1); })}
                   icon={<LayoutDashboard size={20} strokeWidth={2.5} />}
@@ -223,7 +239,7 @@ const NavButton: React.FC<{
       <span className={`${showIcon === 'lg' ? 'hidden lg:inline-flex' : 'inline-flex'} items-center transition-transform group-hover:scale-110 ${active ? 'text-[#0369a1]' : ''}`}>
         {icon}
       </span>
-      <span className={`transition-all duration-300 whitespace-nowrap ${active
+      <span className={`transition-all duration-300 whitespace-nowrap mt-[3px] ${active
         ? 'opacity-100 w-auto'
         : 'md:w-0 md:opacity-0 lg:w-auto lg:opacity-100 overflow-hidden'
         }`}>

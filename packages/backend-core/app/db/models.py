@@ -139,6 +139,12 @@ class Page(Base):
     pipeline_step: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     milestone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    spell_check_milestone: Mapped[Optional[str]] = mapped_column(
+        String(20), default="idle", server_default="idle", nullable=True
+    )
+    word_index_milestone: Mapped[str] = mapped_column(
+        String(20), default="idle", server_default="idle", nullable=False
+    )
 
     last_updated: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -362,6 +368,48 @@ class Word(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     word: Mapped[str] = mapped_column(String(255), nullable=False)
+
+
+class BookWordIndex(Base):
+    """Per-book word occurrence index for fast cross-book spell check lookups."""
+    __tablename__ = "book_word_index"
+
+    book_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("books.id", ondelete="CASCADE"), primary_key=True
+    )
+    word: Mapped[str] = mapped_column(Text, primary_key=True)
+
+
+class PageSpellIssue(Base):
+    """A single unknown-word occurrence detected by dictionary-based spell check"""
+    __tablename__ = "page_spell_issues"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    page_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("pages.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    word: Mapped[str] = mapped_column(Text, nullable=False)
+    char_offset: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    char_end: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    ocr_corrections: Mapped[List[str]] = mapped_column(
+        ARRAY(Text), default=list, server_default=text("'{}'")
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), default="open", server_default="open", nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('open', 'corrected', 'ignored')",
+            name="page_spell_issues_status_check",
+        ),
+    )
 
 
 class SystemConfig(Base):

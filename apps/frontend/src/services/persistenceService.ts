@@ -188,6 +188,17 @@ export const PersistenceService = {
     }
   },
 
+  async triggerSpellCheck(bookId: string): Promise<{ queued: number }> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/spell-check/trigger`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to trigger spell check");
+    }
+    return response.json();
+  },
+
   async reindexBook(bookId: string): Promise<void> {
     const response = await authFetch(`${API_BASE}/books/${bookId}/reindex`, {
       method: 'POST',
@@ -302,14 +313,14 @@ export const PersistenceService = {
     }
   },
 
-  async getTopCategories(limit: number = 10): Promise<string[]> {
+  async getTopCategories(limit: number = 100, sort: string = 'count'): Promise<string[]> {
     try {
-      const response = await authFetch(`${API_BASE}/books/top-categories?limit=${limit}`);
+      const response = await authFetch(`${API_BASE}/books/top-categories?limit=${limit}&sort=${sort}`);
       if (!response.ok) throw new Error("Failed to fetch categories");
       const data = await response.json();
       return data.categories || [];
     } catch (error) {
-      console.error("Failed to fetch top categories", error);
+      console.error("Failed to fetch categories", error);
       return [];
     }
   }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { BookOpen, RefreshCw, RotateCcw, Trash2, Image } from 'lucide-react';
+import { BookOpen, RefreshCw, RotateCcw, Trash2, Image, BookOpenCheck } from 'lucide-react';
 import { Book } from '@shared/types';
 import { useI18n } from '../../i18n/I18nContext';
 import { useAppContext } from '../../context/AppContext';
@@ -43,8 +43,9 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close }) => {
         <Image size={14} /> {t('admin.table.replaceCover') || 'مۇقاۋىنى ئالماشتۇرۇش'}
       </button>
       <div className="h-px bg-slate-100 my-1 mx-4" />
+      <button onClick={() => { bookActions.handleTriggerSpellCheck(book.id); close(); }} disabled={!canReindex} className="w-full flex items-center gap-3 px-4 py-2 text-sm font-black text-violet-600 hover:bg-violet-50 disabled:text-slate-200 transition-colors"><BookOpenCheck size={14} /> {t('admin.table.triggerSpellCheck')}</button>
       <button onClick={() => { bookActions.handleReindexBook(book.id); close(); }} disabled={!canReindex} className="w-full flex items-center gap-3 px-4 py-2 text-sm font-black text-blue-600 hover:bg-blue-50 disabled:text-slate-200 transition-colors"><RefreshCw size={14} /> {t('admin.table.reindex')}</button>
-      <button onClick={() => { bookActions.handleResetFailedPages(book.id); close(); }} disabled={!canResetFailed} className="w-full flex items-center gap-3 px-4 py-2 text-sm font-black text-amber-600 hover:bg-amber-50 disabled:text-slate-200 transition-colors"><RotateCcw size={14} /> {t('admin.table.resetFailed')}</button>
+      <button onClick={() => { bookActions.handleResetFailedPages(book.id); close(); }} disabled={!canResetFailed} className="w-full flex items-start gap-3 px-4 py-2 text-sm font-black text-amber-600 hover:bg-amber-50 disabled:text-slate-200 transition-colors"><RotateCcw size={14} className="mt-0.5 shrink-0" /> {t('admin.table.resetFailed')}</button>
       <div className="h-px bg-slate-100 my-1 mx-4" />
       <button onClick={() => { bookActions.handleDeleteBook(book.id); close(); }} className="w-full flex items-center gap-3 px-4 py-2 text-sm font-black text-red-600 hover:bg-red-50 transition-colors"><Trash2 size={14} /> {t('admin.table.delete')}</button>
     </div>

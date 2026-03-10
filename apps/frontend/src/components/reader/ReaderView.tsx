@@ -1,13 +1,12 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   X, Type, Minus, Plus, Edit3, Save, Bot,
-  RotateCcw, Wand2, ChevronRight, ChevronLeft, CheckCircle2, Loader2, BookOpen,
+  RotateCcw, Loader2, BookOpen,
   Maximize2, Minimize2, Download
 } from 'lucide-react';
 import { Book } from '@shared/types';
 import { useI18n } from '../../i18n/I18nContext';
 import { ChatInterface } from '../chat/ChatInterface';
-import { useSpellCheck } from '../../hooks/useSpellCheck';
 import { GlassPanel } from '../ui/GlassPanel';
 import { useIsEditor, useAuth } from '../../hooks/useAuth';
 import { useAppContext } from '../../context/AppContext';
@@ -58,7 +57,6 @@ export const ReaderView: React.FC = () => {
   const [editingPageNum, setEditingPageNum] = useState<number | null>(null);
   const [tempPageText, setTempPageText] = useState('');
   const [pageInput, setPageInput] = useState((currentPage || 1).toString());
-  const [shouldRunSpellCheck, setShouldRunSpellCheck] = useState(false);
   const [loadedPages, setLoadedPages] = useState<any[]>(selectedBook.pages || []);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMorePages, setHasMorePages] = useState(true);
@@ -70,8 +68,15 @@ export const ReaderView: React.FC = () => {
   const observerTarget = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const mainScrollRef = useRef<HTMLDivElement>(null);
+  const lastEditedPageRef = useRef<number | null>(null);
 
   const onClose = () => setView(previousView);
+
+  // Prevent body-level scrollbar while reader is open (reader manages its own scroll).
+  useEffect(() => {
+    document.body.style.overflowY = 'hidden';
+    return () => { document.body.style.overflowY = ''; };
+  }, []);
 
   useEffect(() => {
     if (isGuestOrReader) {
@@ -104,6 +109,57 @@ export const ReaderView: React.FC = () => {
       setPageInput(currentPage.toString());
     }
   }, [currentPage]);
+
+  // When editing ends, scroll back to the page that was being edited.
+  useEffect(() => {
+    if (editingPageNum !== null) {
+      lastEditedPageRef.current = editingPageNum;
+    } else if (lastEditedPageRef.current !== null) {
+      const target = lastEditedPageRef.current;
+      lastEditedPageRef.current = null;
+      setTimeout(() => {
+        const el = pageRefs.current.get(target);
+        if (el) el.scrollIntoView({ block: 'start', behavior: 'instant' });
+      }, 50);
+    }
+  }, [editingPageNum]);
+
+  // Track current page from scrolling (admin/editor path)
+  useEffect(() => {
+    if (isGuestOrReader || !mainScrollRef.current) return;
+
+    const observer = new IntersectionObserver((entries) => {
+      let mostVisiblePage = -1;
+      let maxRatio = 0;
+      entries.forEach(entry => {
+        if (entry.isIntersecting && entry.intersectionRatio > maxRatio) {
+          const pageNum = parseInt(entry.target.getAttribute('data-page-number') || '0');
+          if (pageNum > 0) { maxRatio = entry.intersectionRatio; mostVisiblePage = pageNum; }
+        }
+      });
+      if (mostVisiblePage !== -1) setCurrentPage(mostVisiblePage);
+    }, { root: mainScrollRef.current, rootMargin: '-45% 0px -45% 0px', threshold: [0, 0.5, 1] });
+
+    pageRefs.current.forEach(el => { if (el) observer.observe(el); });
+    return () => observer.disconnect();
+  }, [loadedPages.length, isGuestOrReader]);
+
+  // Sync scroll position when switching tabs (not on every currentPage change)
+  const currentPageRef = useRef(currentPage);
+  currentPageRef.current = currentPage;
+
+  useEffect(() => {
+    const page = currentPageRef.current;
+    if (page !== null && !isEditing && editingPageNum === null) {
+      const el = pageRefs.current.get(page);
+      if (el) {
+        const timer = setTimeout(() => {
+          el.scrollIntoView({ block: 'start', behavior: 'instant' });
+        }, 50);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [mobileTab, isEditing, editingPageNum]);
 
   useEffect(() => {
     if (pageTextAreaRef.current) {
@@ -188,18 +244,6 @@ export const ReaderView: React.FC = () => {
       });
     }
   }, [selectedBook.pages, editingPageNum]);
-
-  const {
-    spellCheckResult,
-    runSpellCheck,
-  } = useSpellCheck(selectedBook.id, editingPageNum || 0);
-
-  useEffect(() => {
-    if (editingPageNum !== null && shouldRunSpellCheck && tempPageText) {
-      runSpellCheck(tempPageText);
-      setShouldRunSpellCheck(false);
-    }
-  }, [editingPageNum, shouldRunSpellCheck, tempPageText, runSpellCheck]);
 
   const handleEnterGlobalEdit = async () => {
     setIsEditing(true);
@@ -383,29 +427,35 @@ export const ReaderView: React.FC = () => {
               isFullscreen={isFullscreen}
             />
           ) : (
-            <div className={`w-full max-w-4xl mx-auto ${isGuestOrReader ? 'pt-8' : 'space-y-16 pb-40'}`}>
+            <div className={`w-full max-w-4xl mx-auto ${editingPageNum !== null ? 'h-full flex flex-col' : isGuestOrReader ? 'pt-8' : 'space-y-16 pb-40'}`}>
               {[...loadedPages]
                 .sort((a, b) => a.pageNumber - b.pageNumber)
                 .filter(page => isGuestOrReader ? Number(page.pageNumber) === Number(currentPage) : (editingPageNum === null || Number(page.pageNumber) === Number(editingPageNum)))
                 .map(page => (
-                  <PageItem
+                  <div
                     key={page.pageNumber}
-                    page={page}
-                    isActive={currentPage === page.pageNumber}
-                    isEditing={editingPageNum === page.pageNumber}
-                    fontSize={fontSize}
-                    onSetActive={() => !isGuestOrReader && setCurrentPage(page.pageNumber)}
-                    onEdit={() => { setEditingPageNum(page.pageNumber); setTempPageText(page.text || ''); }}
-                    onReprocess={() => bookActions.handleReProcessPage(selectedBook.id, page.pageNumber)}
-                    onSpellCheck={() => { setEditingPageNum(page.pageNumber); setTempPageText(page.text || ''); setShouldRunSpellCheck(true); }}
-                    tempText={tempPageText}
-                    onTempTextChange={setTempPageText}
-                    onSave={() => handleUpdatePage(selectedBook.id, page.pageNumber, tempPageText)}
-                    onCancel={() => setEditingPageNum(null)}
-                    spellCheckResult={spellCheckResult}
-                    isLoading={!page.text && (!page.pipelineStep && (page.status === 'ocr_processing' || page.status === 'indexing' || page.status === 'pending')) || (page.pipelineStep === 'ocr' && page.milestone !== 'succeeded')}
-                    isSaving={isSaving}
-                  />
+                    ref={el => { if (el) pageRefs.current.set(page.pageNumber, el); else pageRefs.current.delete(page.pageNumber); }}
+                    data-page-number={page.pageNumber}
+                    className={editingPageNum === page.pageNumber ? 'h-full flex flex-col' : ''}
+                  >
+                    <PageItem
+                      key={page.pageNumber}
+                      page={page}
+                      isActive={currentPage === page.pageNumber}
+                      isEditing={editingPageNum === page.pageNumber}
+                      fontSize={fontSize}
+                      onSetActive={() => !isGuestOrReader && setCurrentPage(page.pageNumber)}
+                      onEdit={() => { setEditingPageNum(page.pageNumber); setTempPageText(page.text || ''); }}
+                      onReprocess={() => bookActions.handleReProcessPage(selectedBook.id, page.pageNumber)}
+                      tempText={tempPageText}
+                      onTempTextChange={setTempPageText}
+                      onSave={() => handleUpdatePage(selectedBook.id, page.pageNumber, tempPageText)}
+                      onCancel={() => setEditingPageNum(null)}
+                      isLoading={!page.text && (!page.pipelineStep && (page.status === 'ocr_processing' || page.status === 'indexing' || page.status === 'pending')) || (page.pipelineStep === 'ocr' && page.milestone !== 'succeeded')}
+                      isSaving={isSaving}
+                      isFullscreen={isFullscreen}
+                    />
+                  </div>
                 ))}
               {!isEditing && !isGuestOrReader && hasMorePages && <div ref={observerTarget} className="h-20 flex items-center justify-center">{isLoadingMore && <Loader2 className="animate-spin text-[#0369a1]" />}</div>}
             </div>
@@ -416,18 +466,21 @@ export const ReaderView: React.FC = () => {
       {/* Sidebar Area */}
       <div className={`w-full xl:w-[500px] 2xl:w-[600px] flex-col gap-4 xl:gap-6 ${isFullscreen ? 'hidden' : mobileTab === 'chat' ? 'flex flex-grow' : 'hidden xl:flex'}`}>
         <GlassPanel className={`h-full flex flex-col overflow-hidden ${mobileTab === 'chat' ? 'rounded-[24px] border' : 'rounded-none xl:rounded-[32px] border'} p-3 sm:p-4 xl:p-6 shadow-xl border-[#0369a1]/10`}>
-          <ChatInterface
-            type="book"
-            chatMessages={chat.chatMessages}
-            chatInput={chat.chatInput}
-            setChatInput={chat.setChatInput}
-            onSendMessage={chat.handleSendMessage}
-            isChatting={chat.isChatting}
-            streamingMessage={chat.streamingMessage}
-            currentPage={currentPage}
-            usageStatus={chat.usageStatus}
-            chatContainerRef={chat.chatContainerRef}
-          />
+          {/* Panel content */}
+          <div className="flex-1 overflow-hidden">
+            <ChatInterface
+              type="book"
+              chatMessages={chat.chatMessages}
+              chatInput={chat.chatInput}
+              setChatInput={chat.setChatInput}
+              onSendMessage={chat.handleSendMessage}
+              isChatting={chat.isChatting}
+              streamingMessage={chat.streamingMessage}
+              currentPage={currentPage}
+              usageStatus={chat.usageStatus}
+              chatContainerRef={chat.chatContainerRef}
+            />
+          </div>
         </GlassPanel>
       </div>
     </div>
