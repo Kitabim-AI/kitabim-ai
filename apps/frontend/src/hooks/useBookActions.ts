@@ -137,6 +137,31 @@ export const useBookActions = (
 
 
 
+  const handleTriggerSpellCheck = (bookId: string) => {
+    setModal({
+      isOpen: true,
+      title: t('modal.triggerSpellCheck.title'),
+      message: t('modal.triggerSpellCheck.message'),
+      type: 'confirm',
+      confirmText: t('modal.triggerSpellCheck.confirm'),
+      onConfirm: async () => {
+        try {
+          const result = await PersistenceService.triggerSpellCheck(bookId);
+          setModal((prev: any) => ({ ...prev, isOpen: false }));
+          addNotification(t('common.spellCheckStarted', { count: result.queued }), "success");
+        } catch (err) {
+          const message = err instanceof Error ? err.message : t('modal.triggerSpellCheckError.message');
+          setModal({
+            isOpen: true,
+            title: t('modal.triggerSpellCheckError.title'),
+            message,
+            type: 'alert'
+          });
+        }
+      }
+    });
+  };
+
   const handleReindexBook = (bookId: string) => {
     setModal({
       isOpen: true,
@@ -448,6 +473,7 @@ export const useBookActions = (
     handleFileUpload,
     handleResetFailedPages,
     handleReProcessPage,
+    handleTriggerSpellCheck,
     handleReindexBook,
     handleUpdatePage,
     openReader,

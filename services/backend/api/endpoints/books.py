@@ -18,7 +18,6 @@ from app.db.repositories.pages import PagesRepository
 from app.db.models import Page, Chunk
 from app.models.schemas import Book, PaginatedBooks, ExtractionResult
 from app.models.user import User
-from app.services.spell_check_service import spell_check_service
 from app.services.storage_service import storage
 from app.services.chunking_service import chunking_service
 from app.utils.markdown import normalize_markdown, strip_markdown
@@ -62,6 +61,17 @@ def convert_dict_keys_to_snake(d: dict) -> dict:
         else:
             result[snake_key] = value
     return result
+
+def _normalize_categories(categories: Optional[List[str]]) -> List[str]:
+    """Strip quotes and whitespace from category strings."""
+    if not categories:
+        return []
+    return [
+        c.strip().strip('"').strip() 
+        for c in categories 
+        if isinstance(c, str) and c.strip()
+    ]
+
 
 router = APIRouter()
 
@@ -297,7 +307,7 @@ async def get_books(
                 "created_by": rep.created_by,
                 "cover_url": f"{storage.get_public_url(rep.cover_url)}?v={int(rep.last_updated.timestamp())}" if rep.cover_url and rep.last_updated else (storage.get_public_url(rep.cover_url) if rep.cover_url else None),
                 "visibility": rep.visibility,
-                "categories": rep.categories,
+                "categories": _normalize_categories(rep.categories),
                 "last_error": last_error_obj,
                 "read_count": rep.read_count or 0,
                 "file_name": rep.file_name,
@@ -335,7 +345,7 @@ async def get_books(
                 "created_by": b.created_by,
                 "cover_url": f"{storage.get_public_url(b.cover_url)}?v={int(b.last_updated.timestamp())}" if b.cover_url and b.last_updated else (storage.get_public_url(b.cover_url) if b.cover_url else None),
                 "visibility": b.visibility,
-                "categories": b.categories,
+                "categories": _normalize_categories(b.categories),
                 "last_error": b_last_error_obj,
                 "read_count": b.read_count or 0,
                 "file_name": b.file_name,
@@ -445,7 +455,7 @@ async def get_books(
                 "created_by": b.created_by,
                 "cover_url": f"{storage.get_public_url(b.cover_url)}?v={int(b.last_updated.timestamp())}" if b.cover_url and b.last_updated else (storage.get_public_url(b.cover_url) if b.cover_url else None),
                 "visibility": b.visibility,
-                "categories": b.categories,
+                "categories": _normalize_categories(b.categories),
                 "last_error": last_error_obj,
                 "read_count": b.read_count or 0,
                 "file_name": b.file_name,
@@ -511,12 +521,12 @@ async def get_random_proverb(
 
 @router.get("/top-categories")
 async def get_top_categories(
-    limit: int = 10,
+    limit: int = 100,
+    sort: str = "count",  # "count" or "alphabetical"
     current_user: Optional[User] = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_session),
 ):
-    """Get most popular categories with SQLAlchemy"""
-    # Build WHERE clause for guest access
+    """Get categories with optional sorting and limit"""
     where_conditions = []
     params = {"limit": limit}
 
@@ -527,20 +537,24 @@ async def get_top_categories(
 
     where_clause = " AND ".join(where_conditions) if where_conditions else "TRUE"
 
-    # SQL to unnest categories and count
+    order_by = "count DESC"
+    if sort == "alphabetical":
+        order_by = "category ASC"
+
+    # SQL to unnest categories and count while stripping quotes and whitespace
     sql = text(f"""
-        SELECT category, COUNT(*) as count
+        SELECT TRIM(BOTH ' "' FROM category) as clean_category, COUNT(*) as count
         FROM books,
         UNNEST(categories) AS category
         WHERE {where_clause}
-        GROUP BY category
-        ORDER BY count DESC
+        GROUP BY clean_category
+        ORDER BY {order_by.replace('category', 'clean_category')}
         LIMIT :limit
     """)
 
     result = await session.execute(sql, params)
     rows = result.fetchall()
-    categories = [row.category for row in rows]
+    categories = [row.clean_category for row in rows]
 
     return {"categories": categories}
 
@@ -608,7 +622,8 @@ async def suggest_books(
             suggestions.append({"text": author, "type": "author"})
             seen.add(author)
 
-        for cat in (categories or []):
+        normalized_cats = _normalize_categories(categories)
+        for cat in normalized_cats:
             if cat and search_re.search(cat) and cat not in seen:
                 suggestions.append({"text": cat, "type": "category"})
                 seen.add(cat)
@@ -696,7 +711,7 @@ async def get_book(
         "created_by": book_model.created_by,
         "cover_url": f"{storage.get_public_url(book_model.cover_url)}?v={int(book_model.last_updated.timestamp())}" if book_model.cover_url and book_model.last_updated else (storage.get_public_url(book_model.cover_url) if book_model.cover_url else None),
         "visibility": book_model.visibility,
-        "categories": book_model.categories,
+        "categories": _normalize_categories(book_model.categories),
         "last_error": last_error_obj,
         "read_count": book_model.read_count or 0,
         "file_name": book_model.file_name,
@@ -1246,6 +1261,12 @@ async def update_page_text(
         page.pipeline_step = 'chunking'
         page.milestone = 'succeeded'
 
+    # Invalidate word index so the scanner re-builds it with the updated content
+    await session.execute(
+        text("DELETE FROM book_word_index WHERE book_id = :book_id"),
+        {"book_id": book_id}
+    )
+
     await books_repo.update_one(
         book_id,
         last_updated=datetime.now(timezone.utc),
@@ -1272,6 +1293,9 @@ async def create_book(
     # Remove fields we don't want to store
     book_dict.pop("upload_date", None)
     book_dict.pop("content", None)
+    book_dict.pop("pipeline_stats", None)
+    book_dict.pop("page_stats", None)
+    book_dict.pop("completed_count", None)
     pages_input = book_dict.pop("pages", []) or []
 
     # Sync pages if they exist
@@ -1402,7 +1426,8 @@ async def update_book_details(
 
     # Remove computed/read-only fields (already in snake_case after conversion)
     read_only_fields = [
-        "upload_date", "created_by", "completed_count", "last_error"
+        "upload_date", "created_by", "completed_count", "last_error",
+        "pipeline_stats", "page_stats"
     ]
     for field in read_only_fields:
         book_update.pop(field, None)
@@ -1417,6 +1442,14 @@ async def update_book_details(
         match = re.search(r"covers/([^/?#]+)", book_update["cover_url"])
         if match:
             book_update["cover_url"] = f"covers/{match.group(1)}"
+
+    # Normalize categories: strip quotes and filter empties
+    if "categories" in book_update and isinstance(book_update["categories"], list):
+        book_update["categories"] = [
+            c.strip().strip('"').strip() 
+            for c in book_update["categories"] 
+            if isinstance(c, str) and c.strip()
+        ]
 
     await books_repo.update_one(book_id, **book_update)
     await session.commit()
@@ -1595,98 +1628,6 @@ async def update_book_cover(
         "bookId": book_id,
         "coverUrl": f"{storage.get_public_url(cover_url)}?v={int(datetime.now(timezone.utc).timestamp())}",
     }
-
-
-@router.post("/{book_id}/spell-check")
-async def check_book_spelling(
-    book_id: str,
-    current_user: User = Depends(require_editor),
-    session: AsyncSession = Depends(get_session),
-):
-    try:
-        results = await spell_check_service.check_book(book_id, session)
-        return {
-            "bookId": book_id,
-            "status": "success",
-            "totalPagesWithIssues": len(results),
-            "results": {
-                str(page_num): {
-                    "pageNumber": check.pageNumber,
-                    "corrections": [c.dict() for c in check.corrections],
-                    "totalIssues": check.totalIssues,
-                    "checkedAt": check.checkedAt,
-                }
-                for page_num, check in results.items()
-            },
-        }
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=t("errors.spell_check_failed", error=str(exc)))
-
-
-@router.post("/{book_id}/pages/{page_num}/spell-check")
-async def check_page_spelling(
-    book_id: str,
-    page_num: int,
-    current_user: User = Depends(require_editor),
-    session: AsyncSession = Depends(get_session),
-):
-    """Check spelling for a single page with SQLAlchemy"""
-    pages_repo = PagesRepository(session)
-
-    page = await pages_repo.find_one(book_id, page_num)
-    if not page:
-        raise HTTPException(status_code=404, detail=t("errors.page_not_found", page_num=page_num))
-
-    page_text = page.text or ""
-    if not page_text:
-        return {
-            "bookId": book_id,
-            "pageNumber": page_num,
-            "corrections": [],
-            "totalIssues": 0,
-            "message": t("messages.no_text_to_check"),
-        }
-
-    try:
-        spell_check = await spell_check_service.check_page_text(page_text, page_num)
-        return {
-            "bookId": book_id,
-            "pageNumber": spell_check.pageNumber,
-            "corrections": [c.dict() for c in spell_check.corrections],
-            "totalIssues": spell_check.totalIssues,
-            "checkedAt": spell_check.checkedAt,
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=t("errors.spell_check_failed", error=str(exc)))
-
-
-@router.post("/{book_id}/pages/{page_num}/apply-corrections")
-async def apply_spelling_corrections(
-    book_id: str,
-    page_num: int,
-    payload: dict,
-    current_user: User = Depends(require_editor),
-    session: AsyncSession = Depends(get_session),
-):
-    corrections = payload.get("corrections", [])
-    try:
-        success = await spell_check_service.apply_corrections(book_id, page_num, corrections, session, user_email=current_user.email)
-        if success:
-            await session.commit()
-            return {
-                "status": "success",
-                "bookId": book_id,
-                "pageNumber": page_num,
-                "correctionsApplied": len(corrections),
-                "message": t("messages.corrections_applied"),
-            }
-        raise HTTPException(status_code=404, detail=t("errors.book_or_page_not_found"))
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=t("errors.apply_corrections_failed", error=str(exc)))
 
 
 @router.get("/{book_id}/download")

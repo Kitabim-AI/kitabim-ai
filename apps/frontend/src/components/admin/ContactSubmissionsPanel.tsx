@@ -82,7 +82,7 @@ export function ContactSubmissionsPanel() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-6 border-b border-[#75C5F0]/20">
         <div className="flex items-center gap-3 md:gap-4 group">
-          <div className="p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:-rotate-6">
+          <div className="self-start mt-1 p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 icon-shake">
             <Mail size={20} className="md:w-6 md:h-6" />
           </div>
           <div>
@@ -108,8 +108,8 @@ export function ContactSubmissionsPanel() {
               key={filter}
               onClick={() => setStatusFilter(filter)}
               className={`px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-normal uppercase transition-all ${statusFilter === filter
-                  ? 'bg-[#0369a1] text-white shadow-sm'
-                  : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+                ? 'bg-[#0369a1] text-white shadow-sm'
+                : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
                 }`}
             >
               {t(`admin.contacts.filter${filter.charAt(0).toUpperCase() + filter.slice(1)}`)}

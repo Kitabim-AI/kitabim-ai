@@ -1,0 +1,400 @@
+"""
+Spell Check API — dictionary-based spell check results per book/page.
+
+All endpoints require editor or admin role.
+"""
+from __future__ import annotations
+
+import random
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import case, distinct, func, select, text, update, and_
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.session import get_session
+from app.db.models import Book, Page, PageSpellIssue
+from app.models.user import User
+from app.services.spell_check_service import run_spell_check_for_page
+from auth.dependencies import require_editor
+
+router = APIRouter()
+
+
+# ── Response schemas ──────────────────────────────────────────────────────────
+
+class SpellIssueOut(BaseModel):
+    id: int
+    word: str
+    char_offset: Optional[int]
+    char_end: Optional[int]
+    ocr_corrections: List[str]
+    status: str
+
+    model_config = {"from_attributes": True}
+
+
+class PageSpellCheckOut(BaseModel):
+    milestone: Optional[str]
+    issues: List[SpellIssueOut]
+
+
+class PageSpellSummary(BaseModel):
+    page_number: int
+    open_count: int
+    total_count: int
+    spell_check_milestone: Optional[str]
+
+
+class BookSpellSummaryOut(BaseModel):
+    total_open: int
+    total_issues: int
+    pages: List[PageSpellSummary]
+
+
+# ── Request schemas ───────────────────────────────────────────────────────────
+
+class CorrectionItem(BaseModel):
+    issue_id: int
+    corrected_word: str
+    range: Optional[List[int]] = None
+
+
+class ApplyCorrectionsRequest(BaseModel):
+    corrections: List[CorrectionItem]
+
+
+class IgnoreIssuesRequest(BaseModel):
+    issue_ids: List[int]
+
+
+class RandomBookOut(BaseModel):
+    book_id: str
+    title: str
+    author: Optional[str]
+    volume: Optional[int]
+    total_pages: int
+    total_issues: int
+    pages_with_issues: List[int]
+    first_issue_page: int
+
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
+
+@router.get("/spell-check/random-book", response_model=RandomBookOut)
+async def get_random_book_with_issues(
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """Return a random book that has at least one open spell check issue."""
+    # Find all book_ids that have open issues
+    book_ids_result = await session.execute(
+        select(distinct(Page.book_id))
+        .join(PageSpellIssue, PageSpellIssue.page_id == Page.id)
+        .where(PageSpellIssue.status == "open")
+    )
+    book_ids = [row[0] for row in book_ids_result.fetchall()]
+
+    if not book_ids:
+        raise HTTPException(status_code=404, detail="No books with open spell check issues found")
+
+    chosen_book_id = random.choice(book_ids)
+
+    book_result = await session.execute(select(Book).where(Book.id == chosen_book_id))
+    book = book_result.scalar_one_or_none()
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    pages_result = await session.execute(
+        select(Page.page_number)
+        .join(PageSpellIssue, PageSpellIssue.page_id == Page.id)
+        .where(Page.book_id == chosen_book_id, PageSpellIssue.status == "open")
+        .group_by(Page.page_number)
+        .order_by(Page.page_number)
+    )
+    pages_with_issues = [row[0] for row in pages_result.fetchall()]
+
+    total_issues_result = await session.execute(
+        select(func.count(PageSpellIssue.id))
+        .join(Page, PageSpellIssue.page_id == Page.id)
+        .where(Page.book_id == chosen_book_id, PageSpellIssue.status == "open")
+    )
+    total_issues = total_issues_result.scalar() or 0
+
+    return RandomBookOut(
+        book_id=book.id,
+        title=book.title,
+        author=book.author,
+        volume=book.volume,
+        total_pages=book.total_pages,
+        total_issues=total_issues,
+        pages_with_issues=pages_with_issues,
+        first_issue_page=pages_with_issues[0] if pages_with_issues else 1,
+    )
+
+
+@router.get("/{book_id}/spell-check/summary", response_model=BookSpellSummaryOut)
+async def get_spell_check_summary(
+    book_id: str,
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """Issue counts per page for a book. Accessible by editors and admins."""
+    pages_result = await session.execute(
+        select(Page.id, Page.page_number, Page.spell_check_milestone)
+        .where(Page.book_id == book_id)
+        .order_by(Page.page_number)
+    )
+    pages = pages_result.fetchall()
+
+    if not pages:
+        raise HTTPException(status_code=404, detail="Book not found or has no pages")
+
+    page_ids = [p.id for p in pages]
+
+    counts_result = await session.execute(
+        select(
+            PageSpellIssue.page_id,
+            func.count().label("total"),
+            func.sum(
+                case((PageSpellIssue.status == "open", 1), else_=0)
+            ).label("open"),
+        )
+        .where(PageSpellIssue.page_id.in_(page_ids))
+        .group_by(PageSpellIssue.page_id)
+    )
+    counts_by_page = {row.page_id: row for row in counts_result.fetchall()}
+
+    page_summaries = []
+    total_open = 0
+    total_issues = 0
+
+    for page in pages:
+        counts = counts_by_page.get(page.id)
+        open_count = int(counts.open or 0) if counts else 0
+        total_count = int(counts.total or 0) if counts else 0
+        total_open += open_count
+        total_issues += total_count
+        page_summaries.append(PageSpellSummary(
+            page_number=page.page_number,
+            open_count=open_count,
+            total_count=total_count,
+            spell_check_milestone=page.spell_check_milestone,
+        ))
+
+    return BookSpellSummaryOut(
+        total_open=total_open,
+        total_issues=total_issues,
+        pages=page_summaries,
+    )
+
+
+@router.get("/{book_id}/pages/{page_num}/spell-check", response_model=PageSpellCheckOut)
+async def get_page_spell_issues(
+    book_id: str,
+    page_num: int,
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """All spell check issues for a specific page, ordered by position."""
+    page_result = await session.execute(
+        select(Page).where(Page.book_id == book_id, Page.page_number == page_num)
+    )
+    page = page_result.scalar_one_or_none()
+    if not page:
+        raise HTTPException(status_code=404, detail="Page not found")
+
+    issues_result = await session.execute(
+        select(PageSpellIssue)
+        .where(PageSpellIssue.page_id == page.id)
+        .order_by(PageSpellIssue.char_offset)
+    )
+    return PageSpellCheckOut(
+        milestone=page.spell_check_milestone,
+        issues=list(issues_result.scalars().all()),
+    )
+
+
+@router.post("/{book_id}/pages/{page_num}/spell-check/apply")
+async def apply_spell_corrections(
+    book_id: str,
+    page_num: int,
+    body: ApplyCorrectionsRequest,
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Apply corrections to page text.
+
+    Replaces each corrected word by char offset (processed in reverse order so
+    earlier offsets are not invalidated by later replacements). Marks the page
+    as is_indexed=False to trigger re-embedding, and records the editor.
+    """
+    page_result = await session.execute(
+        select(Page).where(Page.book_id == book_id, Page.page_number == page_num)
+    )
+    page = page_result.scalar_one_or_none()
+    if not page:
+        raise HTTPException(status_code=404, detail="Page not found")
+
+    if not body.corrections:
+        return {"applied": 0}
+
+    issue_ids = [c.issue_id for c in body.corrections]
+    issues_result = await session.execute(
+        select(PageSpellIssue).where(
+            PageSpellIssue.id.in_(issue_ids),
+            PageSpellIssue.page_id == page.id,
+        )
+    )
+    issues_by_id = {issue.id: issue for issue in issues_result.scalars().all()}
+
+    # Sort by offset descending so we apply from end → start, preserving positions
+    replacements = []
+    for c in body.corrections:
+        issue = issues_by_id.get(c.issue_id)
+        if not issue:
+            continue
+            
+        # Use provided range if available (for phrase edits), otherwise use issue defaults
+        if c.range and len(c.range) == 2:
+            start, end = c.range
+        else:
+            if issue.char_offset is None or issue.char_end is None:
+                continue
+            start, end = issue.char_offset, issue.char_end
+            
+        replacements.append((start, end, c.corrected_word, issue.id))
+    
+    replacements.sort(key=lambda x: x[0], reverse=True)
+
+    page_text = page.text or ""
+    for start, end, corrected, _ in replacements:
+        page_text = page_text[:start] + corrected + page_text[end:]
+
+    corrected_ids = [r[3] for r in replacements]
+
+    await session.execute(
+        update(PageSpellIssue)
+        .where(PageSpellIssue.id.in_(corrected_ids))
+        .values(status="corrected")
+    )
+    await session.execute(
+        update(Page)
+        .where(Page.id == page.id)
+        .values(
+            text=page_text,
+            is_indexed=False,
+            is_verified=True,
+            updated_by=current_user.id,
+            last_updated=func.now(),
+        )
+    )
+    # Invalidate word index so the scanner re-builds it with the corrected words
+    await session.execute(
+        text("DELETE FROM book_word_index WHERE book_id = :book_id"),
+        {"book_id": book_id}
+    )
+    await session.commit()
+
+    return {"applied": len(corrected_ids)}
+
+
+@router.post("/{book_id}/spell-check/trigger")
+async def trigger_spell_check(
+    book_id: str,
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Reset spell_check_milestone to 'idle' for all OCR-complete pages in a book.
+    The spell check scanner will pick them up within its next cycle (~1 min).
+    Requires the spell_check_enabled system config to be set to 'true'.
+    """
+    from app.db.repositories.system_configs import SystemConfigsRepository
+    config_repo = SystemConfigsRepository(session)
+    if (await config_repo.get_value("spell_check_enabled", "false")) != "true":
+        raise HTTPException(status_code=400, detail="Spell check is disabled. Enable it in system configuration first.")
+
+    result = await session.execute(
+        update(Page)
+        .where(
+            and_(
+                Page.book_id == book_id,
+                Page.pipeline_step == "embedding",
+                Page.milestone == "succeeded",
+            )
+        )
+        .values(spell_check_milestone="idle")
+        .returning(Page.id)
+    )
+    queued = len(result.fetchall())
+    await session.commit()
+
+    if queued == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="No OCR-complete pages found for this book. Ensure the book has finished processing first.",
+        )
+
+    return {"queued": queued}
+
+
+@router.post("/{book_id}/pages/{page_num}/spell-check/trigger")
+async def trigger_page_spell_check(
+    book_id: str,
+    page_num: int,
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Run spell check on a single page immediately (inline, no worker needed).
+    Returns the number of issues found.
+    """
+    page_result = await session.execute(
+        select(Page).where(Page.book_id == book_id, Page.page_number == page_num)
+    )
+    page = page_result.scalar_one_or_none()
+    if not page:
+        raise HTTPException(status_code=404, detail="Page not found")
+
+    if page.milestone != "succeeded" or page.pipeline_step != "embedding":
+        raise HTTPException(
+            status_code=400,
+            detail="Page has not completed OCR/embedding pipeline yet.",
+        )
+
+    issue_count = await run_spell_check_for_page(session, page)
+    await session.commit()
+
+    return {"issues_found": issue_count}
+
+
+@router.post("/{book_id}/pages/{page_num}/spell-check/ignore")
+async def ignore_spell_issues(
+    book_id: str,
+    page_num: int,
+    body: IgnoreIssuesRequest,
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """Mark spell check issues as ignored (will not be re-flagged on next scan)."""
+    page_result = await session.execute(
+        select(Page).where(Page.book_id == book_id, Page.page_number == page_num)
+    )
+    page = page_result.scalar_one_or_none()
+    if not page:
+        raise HTTPException(status_code=404, detail="Page not found")
+
+    await session.execute(
+        update(PageSpellIssue)
+        .where(
+            PageSpellIssue.id.in_(body.issue_ids),
+            PageSpellIssue.page_id == page.id,
+        )
+        .values(status="ignored")
+    )
+    await session.commit()
+
+    return {"ignored": len(body.issue_ids)}

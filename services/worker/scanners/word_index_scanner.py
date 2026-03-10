@@ -1,0 +1,76 @@
+"""
+Word Index Scanner — builds book_word_index for cross-book spell check lookups.
+
+Processes up to BATCH_SIZE un-indexed pages per run. Each page is committed
+independently so a failure marks only that page as 'error' and does not affect
+others. Pages with word_index_milestone='error' are skipped on future runs.
+
+Runs every 1 minute.
+"""
+from __future__ import annotations
+
+import logging
+import traceback
+
+from sqlalchemy import select, update, func
+
+from app.db import session as db_session
+from app.db.models import Page
+from app.services.spell_check_service import index_book_words, tokenize
+from app.utils.observability import log_json
+
+logger = logging.getLogger("app.worker.word_index_scanner")
+
+BATCH_SIZE = 50
+
+
+async def run_word_index_scanner(ctx) -> None:
+    # Fetch a batch of pages that still need indexing.
+    async with db_session.async_session_factory() as session:
+        result = await session.execute(
+            select(Page)
+            .where(
+                Page.pipeline_step == "embedding",
+                Page.milestone == "succeeded",
+                Page.text.isnot(None),
+                Page.word_index_milestone == "idle",
+            )
+            .limit(BATCH_SIZE)
+        )
+        pages = result.scalars().all()
+
+    if not pages:
+        return
+
+    succeeded = 0
+    failed = 0
+
+    for page in pages:
+        try:
+            async with db_session.async_session_factory() as session:
+                tokens = tokenize(page.text or "")
+                unique_words = list({word_norm for word_norm, _raw, _s, _e in tokens})
+                await index_book_words(session, page.book_id, unique_words)
+                await session.execute(
+                    update(Page)
+                    .where(Page.id == page.id)
+                    .values(word_index_milestone="done", last_updated=func.now())
+                )
+                await session.commit()
+            succeeded += 1
+
+        except Exception as exc:
+            async with db_session.async_session_factory() as session:
+                await session.execute(
+                    update(Page)
+                    .where(Page.id == page.id)
+                    .values(word_index_milestone="error", last_updated=func.now())
+                )
+                await session.commit()
+            failed += 1
+            log_json(logger, logging.WARNING, "word index page failed",
+                     book_id=page.book_id, page=page.page_number,
+                     error=repr(exc), traceback=traceback.format_exc())
+
+    log_json(logger, logging.INFO, "word index scanner run complete",
+             batch=len(pages), succeeded=succeeded, failed=failed)

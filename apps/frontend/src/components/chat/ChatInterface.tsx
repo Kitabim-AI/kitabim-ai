@@ -36,7 +36,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onSendMessage,
   isChatting,
   streamingMessage = '',
-  currentPage,
   onClose,
   chatContainerRef,
   usageStatus,
@@ -57,7 +56,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         {/* Chat Header — hidden on md and smaller */}
         <div className="hidden lg:flex bg-white/60 backdrop-blur-2xl px-8 py-4 items-center justify-between border border-[#0369a1]/10 shadow-sm group" style={{ borderRadius: '32px' }}>
           <div className="flex items-center gap-5">
-            <div className="p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:-rotate-6">
+            <div className="p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 icon-shake">
               <Bot size={24} className="md:w-7 md:h-7" strokeWidth={2.5} />
             </div>
             <div>
@@ -240,30 +239,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   // Sidebar (Reader) Chat Version
   return (
     <div className="h-full flex flex-col gap-3 md:gap-6 relative" dir="rtl" lang="ug">
-      <div className="bg-white/60 backdrop-blur-xl p-3 md:p-5 flex items-center justify-between border border-[#0369a1]/10 shadow-sm rounded-xl md:rounded-[24px]">
-        <div className="flex items-center gap-4">
-          <div className="p-2.5 bg-[#0369a1] text-white rounded-2xl shadow-lg shadow-[#0369a1]/10">
-            <Bot size={22} strokeWidth={2.5} />
-          </div>
-          <div>
-            <h3
-              className="font-normal text-[#1a1a1a]"
-              style={{ fontSize: `${fontSize}px` }}
-            >
-              {t('chat.sidebarSubtitle')}
-            </h3>
-          </div>
-        </div>
-        {currentPage && (
-          <div
-            className="bg-[#0369a1]/10 text-[#0369a1] px-3 py-1 rounded-xl font-normal border border-[#0369a1]/10 shadow-inner"
-            style={{ fontSize: `${Math.max(12, fontSize - 4)}px` }}
-          >
-            {t('chat.pageNumber', { page: currentPage })}
-          </div>
-        )}
-      </div>
-
       <div
         ref={chatContainerRef}
         className="flex-grow overflow-y-auto space-y-6 px-4 custom-scrollbar-mini py-2 flex flex-col"

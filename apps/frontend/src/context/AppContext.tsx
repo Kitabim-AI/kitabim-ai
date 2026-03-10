@@ -5,10 +5,10 @@ import { useChat } from '../hooks/useChat';
 import { useBookActions } from '../hooks/useBookActions';
 
 interface AppContextType {
-  view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us';
-  setView: (view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us') => void;
-  previousView: 'home' | 'library' | 'admin' | 'global-chat' | 'join-us';
-  setPreviousView: (view: 'home' | 'library' | 'admin' | 'global-chat' | 'join-us') => void;
+  view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check';
+  setView: (view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check') => void;
+  previousView: 'home' | 'library' | 'admin' | 'global-chat' | 'join-us' | 'spell-check';
+  setPreviousView: (view: 'home' | 'library' | 'admin' | 'global-chat' | 'join-us' | 'spell-check') => void;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
   homeSearchQuery: string;
@@ -43,10 +43,10 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [view, setViewInternal] = useState<'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us'>('home');
-  const [previousView, setPreviousView] = useState<'home' | 'library' | 'admin' | 'global-chat' | 'join-us'>('home');
+  const [view, setViewInternal] = useState<'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check'>('home');
+  const [previousView, setPreviousView] = useState<'home' | 'library' | 'admin' | 'global-chat' | 'join-us' | 'spell-check'>('home');
 
-  const setView = (newView: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us') => {
+  const setView = (newView: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check') => {
     if (newView !== view) {
       // Clear search queries and categories when switching views
       setSearchQuery('');

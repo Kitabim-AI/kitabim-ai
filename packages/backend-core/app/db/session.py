@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlparse, urlunparse
 from typing import AsyncGenerator
 
 from sqlalchemy import text
@@ -50,7 +51,9 @@ async def init_db() -> None:
 
     database_url = get_database_url()
 
-    log_json(logger, logging.INFO, "Initializing SQLAlchemy", url=database_url[:50] + "...")
+    parsed = urlparse(database_url)
+    safe_url = urlunparse(parsed._replace(netloc=parsed.netloc.replace(f":{parsed.password}@", ":***@") if parsed.password else parsed.netloc))
+    log_json(logger, logging.INFO, "Initializing SQLAlchemy", url=safe_url)
 
     # Create async engine
     engine = create_async_engine(

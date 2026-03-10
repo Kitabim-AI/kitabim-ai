@@ -40,35 +40,37 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
   const visibleTabs = tabs.filter((tab) => !tab.adminOnly || isAdmin);
 
   return (
-    <div className="space-y-6 md:space-y-8 px-3 py-3 sm:px-6 md:px-0" dir="rtl" lang="ug">
+    <div className="space-y-0 px-3 py-3 sm:px-6 md:px-0" dir="rtl" lang="ug">
       {/* Tab Navigation */}
-      <div className="flex items-end overflow-x-auto scrollbar-hide">
-        {visibleTabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`
-              flex items-center gap-2 md:gap-3 px-3 sm:px-4 md:px-8 py-2.5 md:py-3.5 transition-all duration-300 relative
-              rounded-t-[14px] md:rounded-t-[18px] text-[13px] md:text-[15px] font-normal whitespace-nowrap
-              ${activeTab === tab.id
-                ? 'bg-white text-[#0369a1] shadow-[0_-4px_12px_-4px_rgba(3,105,161,0.08)] z-10'
-                : 'text-slate-500 hover:text-[#0369a1] hover:bg-[#0369a1]/5'
-              }
-            `}
-            title={tab.label}
-          >
-            <span className={`transition-all duration-300 ${activeTab === tab.id ? 'scale-110' : 'opacity-60'}`}>
-              {React.cloneElement(tab.icon as React.ReactElement, { size: 18, className: 'md:w-[20px] md:h-[20px]' })}
-            </span>
-            <span className={`hidden lg:inline transition-all duration-200 ${activeTab === tab.id ? 'font-bold' : ''}`}>
-              {tab.label}
-            </span>
-          </button>
-        ))}
+      <div className="border-b border-slate-200">
+        <div className="flex items-end overflow-x-auto overflow-y-hidden gap-1" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+          {visibleTabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`
+                flex items-center gap-2 md:gap-2.5 px-4 sm:px-5 md:px-6 py-2.5 md:py-3 transition-all duration-200
+                text-[13px] md:text-[14px] whitespace-nowrap rounded-t-xl font-normal
+                ${activeTab === tab.id
+                  ? 'bg-[#0369a1] text-white shadow-sm'
+                  : 'bg-white text-slate-600 border border-b-0 border-slate-200 hover:bg-slate-50 hover:text-slate-800'
+                }
+              `}
+              title={tab.label}
+            >
+              <span className="transition-all duration-200">
+                {React.cloneElement(tab.icon as React.ReactElement, { size: 16, className: 'md:w-[17px] md:h-[17px]' })}
+              </span>
+              <span className="hidden lg:inline mt-[3px]">
+                {tab.label}
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Tab Content */}
-      <div className="">
+      <div className="pt-6 md:pt-8">
         {activeTab === 'books' && bookManagementPanel}
         {activeTab === 'users' && isAdmin && <UserManagementPanel />}
         {activeTab === 'contacts' && isAdmin && <ContactSubmissionsPanel />}
