@@ -30,7 +30,7 @@ export const PageItem: React.FC<PageItemProps> = ({
   const isEditor = useIsEditor();
 
   return (
-    <div onMouseEnter={onSetActive} className={`group relative p-6 rounded-[24px] transition-all duration-300 ${isEditing ? 'flex-1 flex flex-col min-h-0' : ''} ${isActive ? 'bg-white shadow-xl border border-[#0369a1]/10' : 'opacity-80'}`}>
+    <div onMouseEnter={onSetActive} className={`group relative p-6 rounded-[24px] transition-all duration-300 border ${isEditing ? 'flex-1 flex flex-col min-h-0' : ''} ${isActive ? 'bg-white shadow-xl border-[#0369a1]/10' : 'border-transparent'}`}>
       <div className="flex items-center justify-between mb-4 border-b border-[#0369a1]/5 pb-3">
         <div className="flex items-center gap-2">
           {isEditor && !isEditing && (
@@ -73,7 +73,7 @@ export const PageItem: React.FC<PageItemProps> = ({
         isLoading ? (
           <div className="flex flex-col items-center justify-center py-10 opacity-50"><Loader2 className="animate-spin text-[#0369a1] mb-2" /><span className="text-xs uppercase">{t('admin.table.recognizing')}</span></div>
         ) : (
-          <MarkdownContent content={page.text || "..."} className="uyghur-text text-[#1a1a1a] leading-relaxed" style={{ fontSize: `${fontSize}px` }} />
+          <MarkdownContent content={page.text || "..."} className="uyghur-text text-[#1a1a1a]" style={{ fontSize: `${fontSize}px` }} />
         )
       )}
     </div>

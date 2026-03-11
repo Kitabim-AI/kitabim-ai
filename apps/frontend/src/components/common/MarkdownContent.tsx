@@ -112,7 +112,7 @@ const renderInline = (text: string, onReferenceClick?: (bookId: string, pageNums
 const renderParagraph = (text: string, key: string, onReferenceClick?: (bookId: string, pageNums: number[]) => void) => {
   const lines = text.split('\n');
   return (
-    <p key={key} className="leading-relaxed">
+    <p key={key}>
       {lines.map((line, idx) => (
         <React.Fragment key={`${key}-line-${idx}`}>
           {renderInline(line, onReferenceClick)}

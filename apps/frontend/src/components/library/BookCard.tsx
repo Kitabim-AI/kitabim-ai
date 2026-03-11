@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { BookOpen, Info, X } from 'lucide-react';
+import { BookOpen, Info, X, Sparkles } from 'lucide-react';
 import { Book } from '@shared/types';
 import { useI18n } from '../../i18n/I18nContext';
 import { PersistenceService } from '../../services/persistenceService';
@@ -171,9 +171,13 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick }) => {
                       <span className="text-base sm:text-lg text-slate-400 font-normal">({displayAuthor})</span>
                     )}
                   </h3>
-                  <div className="flex items-center gap-4 text-[#94a3b8] text-sm font-normal uppercase tracking-wider">
+                  <div className="flex items-center gap-2 text-[#94a3b8] text-sm font-normal uppercase tracking-wider">
                     <span className="flex items-center gap-1.5 px-3 py-1 bg-[#0369a1]/10 text-[#0369a1] rounded-full text-xs">
                       {t('bookCard.summary.title')}
+                    </span>
+                    <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 text-amber-600 rounded-full text-[10px] font-bold">
+                      <Sparkles size={12} strokeWidth={2.5} />
+                      {t('bookCard.summary.aiBadge')}
                     </span>
                   </div>
                 </div>
