@@ -8,7 +8,7 @@ from typing import Any, AsyncIterator, List
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.messages import HumanMessage
-from langchain_core.runnables import Runnable, RunnableConfig, RunnableLambda
+from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 
 from app.core.config import settings

@@ -12,14 +12,13 @@ from auth.jwt_handler import decode_jwt, TokenExpiredError, TokenInvalidError
 from app.models.user import User, UserRole
 from app.services.user_service import get_user_by_id
 
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.db.session import get_session
+
 logger = logging.getLogger(__name__)
 
 # HTTPBearer with auto_error=False to allow guest access
 security = HTTPBearer(auto_error=False)
-
-
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.session import get_session
 
 async def get_current_user_optional(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),

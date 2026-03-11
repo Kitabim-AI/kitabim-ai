@@ -1,8 +1,6 @@
 import json
 import os
-from functools import lru_cache
-from typing import Dict, Any, Optional
-from fastapi import Request
+from typing import Dict, Optional
 from contextvars import ContextVar
 
 # Context variable to store current language for the request

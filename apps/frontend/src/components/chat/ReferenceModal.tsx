@@ -24,6 +24,13 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+      return () => { document.body.style.overflow = ''; };
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
     if (isOpen && bookId && pageNumbers?.length > 0) {
       setLoading(true);
       Promise.all([

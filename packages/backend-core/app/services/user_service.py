@@ -96,7 +96,6 @@ async def update_user_login(session: AsyncSession, user_id: str, avatar_url: Opt
 async def update_user_role(session: AsyncSession, user_id: str, new_role: UserRole) -> Optional[User]:
     """Update a user's role."""
     repo = UsersRepository(session)
-    from uuid import UUID
     success = await repo.update_one(user_id, role=new_role.value, updated_at=datetime.now(timezone.utc))
     if not success:
         return None

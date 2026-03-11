@@ -18,7 +18,7 @@ async def record_book_error(
     if session is None or not book_id:
         return
 
-    error_event_json = {
+    {
         "ts": datetime.now(timezone.utc).isoformat(),
         "kind": kind,
         "message": message,

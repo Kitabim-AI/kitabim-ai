@@ -51,6 +51,11 @@ class Settings:
     rag_rerank_enabled: bool = os.getenv("RAG_RERANK_ENABLED", "false").lower() == "true"
     rag_rerank_top_n: int = int(os.getenv("RAG_RERANK_TOP_N", "6"))
 
+    # Book Summary / Hierarchical RAG Settings
+    summary_top_k: int = int(os.getenv("SUMMARY_TOP_K", "5"))
+    summary_threshold: float = float(os.getenv("SUMMARY_THRESHOLD", "0.30"))
+    summary_max_chars: int = int(os.getenv("SUMMARY_MAX_CHARS", "15000"))
+
     # Chunking Settings
     chunk_size: int = int(os.getenv("CHUNK_SIZE", "500"))
     chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "100"))

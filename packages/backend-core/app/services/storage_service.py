@@ -5,7 +5,6 @@ import os
 import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional
 
 from app.core.config import settings
 from app.utils.observability import log_json

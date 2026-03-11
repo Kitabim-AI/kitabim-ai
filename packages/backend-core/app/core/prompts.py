@@ -40,6 +40,23 @@ If the question is completely general or doesn't fit any category, return an emp
 
 {format_instructions}"""
 
+BOOK_SUMMARY_PROMPT = """You are indexing an Uyghur book for a semantic search system.
+Write a 500-word summary IN UYGHUR (Arabic script) that covers:
+- Main subject and scope of the book
+- Key themes, topics, and arguments presented
+- Time period or geographic focus (if applicable)
+- Notable people, places, concepts, or events discussed
+
+The summary will be embedded as a vector for retrieval — be specific and content-rich.
+
+Book title: {title}
+Author: {author}
+
+Book text (excerpts):
+{text}
+
+Summary:"""
+
 RAG_PROMPT_TEMPLATE = """
 [CONTEXT START]
 {context}

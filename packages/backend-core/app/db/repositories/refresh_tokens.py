@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Optional
 from uuid import UUID
 from datetime import datetime
 
@@ -25,7 +25,7 @@ class RefreshTokensRepository(BaseRepository[RefreshToken]):
             and_(
                 RefreshToken.jti == jti,
                 RefreshToken.token_hash == token_hash,
-                RefreshToken.revoked == False
+                not RefreshToken.revoked
             )
         )
         result = await self.session.execute(stmt)
@@ -44,7 +44,7 @@ class RefreshTokensRepository(BaseRepository[RefreshToken]):
     async def revoke_all_for_user(self, user_id: str | UUID) -> int:
         stmt = (
             update(RefreshToken)
-            .where(and_(RefreshToken.user_id == user_id, RefreshToken.revoked == False))
+            .where(and_(RefreshToken.user_id == user_id, not RefreshToken.revoked))
             .values(revoked=True)
         )
         result = await self.session.execute(stmt)
@@ -56,7 +56,7 @@ class RefreshTokensRepository(BaseRepository[RefreshToken]):
         stmt = delete(RefreshToken).where(
             or_(
                 RefreshToken.expires_at < now,
-                RefreshToken.revoked == True
+                RefreshToken.revoked
             )
         )
         result = await self.session.execute(stmt)

@@ -125,6 +125,11 @@
       "chunking": "Chunking",
       "embedding": "Embedding",
       "ready": "Ready"
+    },
+    "summary": {
+      "title": "Book Summary",
+      "loading": "Loading summary...",
+      "noSummary": "No summary available for this book."
     }
   },
   "chat": {

@@ -76,3 +76,4 @@ data/
 /output/
 /scripts/
 gcloud.txt
+.coverage

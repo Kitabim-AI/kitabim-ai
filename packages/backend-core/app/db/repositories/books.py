@@ -8,7 +8,6 @@ from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Book, Page
 from app.db.repositories.base import BaseRepository
-from typing import Dict
 
 
 PIPELINE_ORDER = ["ocr", "chunking", "embedding"]
@@ -145,7 +144,6 @@ class BooksRepository(BaseRepository[Book]):
 
         # Calculate cumulative pipeline stats
         pipeline_stats = {}
-        total_pages = book.total_pages or 0
 
         for i, step in enumerate(PIPELINE_ORDER):
             # A page is "done" with 'step' if:

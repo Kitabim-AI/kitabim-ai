@@ -16,7 +16,7 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
 
   // Helper to determine if we should use shelf-style (infinite scroll) behavior
   const isShelfView = useMemo(() => {
-    return view === 'library' || view === 'global-chat' || view === 'admin' || (view === 'home' && (searchQuery.trim().length > 0 || category));
+    return view === 'library' || view === 'global-chat' || view === 'admin' || (view === 'home' && (searchQuery.trim().length > 0 || !!category));
   }, [view, searchQuery, category]);
 
   // Reset shelf state whenever the search query or category changes

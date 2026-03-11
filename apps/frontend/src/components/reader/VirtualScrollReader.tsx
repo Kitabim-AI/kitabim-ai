@@ -163,7 +163,6 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
                   onTempTextChange={() => { }}
                   onSave={() => { }}
                   onCancel={() => { }}
-                  spellIssues={[]}
                   isLoading={false}
                   isSaving={false}
                   isFullscreen={isFullscreen}

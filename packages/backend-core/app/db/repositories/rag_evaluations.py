@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession

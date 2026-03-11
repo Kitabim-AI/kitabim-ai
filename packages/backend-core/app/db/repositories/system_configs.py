@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import SystemConfig
 from app.db.repositories.base import BaseRepository

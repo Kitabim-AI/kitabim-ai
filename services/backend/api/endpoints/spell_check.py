@@ -10,7 +10,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import case, distinct, func, select, text, update, and_
+from sqlalchemy import case, distinct, func, select, text, update, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
@@ -310,19 +310,16 @@ async def trigger_spell_check(
     """
     Reset spell_check_milestone to 'idle' for all OCR-complete pages in a book.
     The spell check scanner will pick them up within its next cycle (~1 min).
-    Requires the spell_check_enabled system config to be set to 'true'.
     """
-    from app.db.repositories.system_configs import SystemConfigsRepository
-    config_repo = SystemConfigsRepository(session)
-    if (await config_repo.get_value("spell_check_enabled", "false")) != "true":
-        raise HTTPException(status_code=400, detail="Spell check is disabled. Enable it in system configuration first.")
-
     result = await session.execute(
         update(Page)
         .where(
             and_(
                 Page.book_id == book_id,
-                Page.pipeline_step == "embedding",
+                or_(
+                    Page.pipeline_step == "embedding",
+                    Page.pipeline_step.is_(None),
+                ),
                 Page.milestone == "succeeded",
             )
         )
@@ -359,7 +356,7 @@ async def trigger_page_spell_check(
     if not page:
         raise HTTPException(status_code=404, detail="Page not found")
 
-    if page.milestone != "succeeded" or page.pipeline_step != "embedding":
+    if page.milestone != "succeeded" or (page.pipeline_step is not None and page.pipeline_step != "embedding"):
         raise HTTPException(
             status_code=400,
             detail="Page has not completed OCR/embedding pipeline yet.",

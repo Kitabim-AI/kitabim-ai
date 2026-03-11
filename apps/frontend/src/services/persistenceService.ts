@@ -5,6 +5,17 @@ import { authFetch, getAuthHeaders } from './authService';
 const API_BASE = '/api';
 
 export const PersistenceService = {
+  async getBookSummary(bookId: string): Promise<{ summary: string; generatedAt: string | null } | null> {
+    try {
+      const response = await authFetch(`${API_BASE}/books/${bookId}/summary`);
+      if (!response.ok) return null;
+      const data = await response.json();
+      return data.summary ? { summary: data.summary, generatedAt: data.generated_at || null } : null;
+    } catch {
+      return null;
+    }
+  },
+
   async getBookContent(id: string): Promise<string> {
     try {
       const response = await authFetch(`${API_BASE}/books/${id}/content`);
