@@ -256,8 +256,9 @@ async def oauth_callback(
                     httponly=True,
                     secure=settings.cookie_secure,
                     samesite="lax",
+                    path="/",
                 )
-                redirect_response.delete_cookie(OAUTH_STATE_COOKIE)
+                redirect_response.delete_cookie(OAUTH_STATE_COOKIE, path="/")
                 return redirect_response
 
         # Popup flow: return HTML that posts token to opener
@@ -353,8 +354,8 @@ async def logout(
             pass
     
     # Clear cookies
-    response.delete_cookie(REFRESH_TOKEN_COOKIE)
-    response.delete_cookie(OAUTH_STATE_COOKIE)
+    response.delete_cookie(REFRESH_TOKEN_COOKIE, path="/")
+    response.delete_cookie(OAUTH_STATE_COOKIE, path="/")
     
     return {"message": t("messages.logged_out")}
 
@@ -502,10 +503,11 @@ def _success_response(access_token: str, refresh_token: str) -> HTMLResponse:
         httponly=True,
         secure=settings.cookie_secure,
         samesite="lax",
+        path="/",
     )
     
     # Clear the OAuth state cookie
-    response.delete_cookie(OAUTH_STATE_COOKIE)
+    response.delete_cookie(OAUTH_STATE_COOKIE, path="/")
     
     return response
 
