@@ -20,7 +20,7 @@ export const Navbar: React.FC = () => {
 
   return (
     <>
-      <nav className="px-4 sm:px-6 md:px-10 lg:px-12 py-3 sm:py-4 flex items-center justify-between sticky top-0 z-[100] transition-all duration-300 relative" dir="rtl">
+      <nav className="px-4 sm:px-6 md:px-10 lg:px-12 py-3 sm:py-4 flex items-center justify-between sticky top-0 z-[100] transition-all duration-300" dir="rtl">
         {/* Glass Backdrop - Matching Prototype */}
         <div className="absolute inset-0 bg-white/75 backdrop-blur-[20px] border-b border-[rgba(255,193,7,0.2)] shadow-[0_4px_30px_rgba(117,197,240,0.1),0_1px_0_rgba(255,255,255,0.8)_inset]"
           style={{ backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)' }} />

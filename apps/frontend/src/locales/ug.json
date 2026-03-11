@@ -135,7 +135,8 @@
     "summary": {
       "title": "قىسقىچە مەزمۇنى",
       "loading": "سەل تەخىر قىلىڭ...",
-      "noSummary": "بۇ كىتابنىڭ قىسقىچە مەزمۇنى ھاسىل قىلىنمىدى."
+      "noSummary": "بۇ كىتابنىڭ قىسقىچە مەزمۇنى ھاسىل قىلىنمىدى.",
+      "aiBadge": "سۈنئىي ئىدراك"
     }
   },
   "chat": {
@@ -418,18 +419,18 @@
     "reviewedSwipe": "خاتالىقلار تۈگىدى — سىيرىڭ",
     "cleanSwipe": "خاتالىق يوق — سىيرىڭ",
     "viewPage": "ئەسلى مەنبە",
-    "reviewPending": "دەلىللەش ({{count}})",
+    "reviewPending": "جەزملەش ({{count}})",
     "queued": "تىزىملىككە قوشۇلدى",
     "queuedNote": "تاللاشلار ئاخىرلاشتى — ساقلاش ئۈچۈن جەزملەڭ",
     "removeFromQueue": "ئۆچۈرۈش",
     "reviewTitle": "توغرىلاش تىزىملىكى",
     "reviewEmpty": "ئۆزگىرىش يوق",
-    "reviewEmptyNote": "توغرىلاشنى جەزىملەڭ.",
+    "reviewEmptyNote": "توغرىلاشنى جەزملەڭ.",
     "confirmAll": "ھەممىنى جەزملەش ({{count}})",
-    "clearAll": "ھەممىنى تازىلاش",
+    "clearAll": "ھەممىنى بىكار قىلىش",
     "reviewPage": "بەت",
-    "reviewOriginal": "ئەسلى بەت",
-    "reviewReplacement": "توغرىلاش",
+    "reviewOriginal": "ئەسلى سۆز",
+    "reviewReplacement": "توغرىسى",
     "confirmError": "بەزى بەتلەر ساقلانمىدى. {{count}} تۈزىتىش قالدى."
   },
   "pagination": {

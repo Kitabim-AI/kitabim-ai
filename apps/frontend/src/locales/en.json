@@ -129,7 +129,8 @@
     "summary": {
       "title": "Book Summary",
       "loading": "Loading summary...",
-      "noSummary": "No summary available for this book."
+      "noSummary": "No summary available for this book.",
+      "aiBadge": "AI Generated"
     }
   },
   "chat": {

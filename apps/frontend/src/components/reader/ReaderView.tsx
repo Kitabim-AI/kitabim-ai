@@ -118,8 +118,26 @@ export const ReaderView: React.FC = () => {
       const target = lastEditedPageRef.current;
       lastEditedPageRef.current = null;
       setTimeout(() => {
+        // Enforce root scroll lock first (iOS Safari / Chromium textarea focus push prevention)
+        window.scrollTo(0, 0);
+        document.body.scrollTop = 0;
+        document.documentElement.scrollTop = 0;
+
         const el = pageRefs.current.get(target);
-        if (el) el.scrollIntoView({ block: 'start', behavior: 'instant' });
+        const container = mainScrollRef.current;
+        if (el && container) {
+          // scrollIntoView dynamically forces the window to scroll as well if there 
+          // are nested scrollbars or hidden overflow. This forcefully breaks the fixed/sticky 
+          // navbar by displacing the document. Calculating exactly where to scroll manually 
+          // completely isolates the scroll action boundaries.
+          const containerTop = container.getBoundingClientRect().top;
+          const elTop = el.getBoundingClientRect().top;
+          
+          container.scrollTo({
+             top: container.scrollTop + (elTop - containerTop) - 24,
+             behavior: 'instant'
+          });
+        }
       }, 50);
     }
   }, [editingPageNum]);
@@ -228,7 +246,7 @@ export const ReaderView: React.FC = () => {
                 hasChanges = true;
               }
             } else {
-              if (existing.text !== p.text || existing.isVerified !== p.isVerified ||
+              if (existing.text !== p.text || existing.isVerified !== (p as any).isVerified ||
                 existing.status !== p.status || existing.error !== p.error) {
                 prevMap.set(p.pageNumber, p);
                 hasChanges = true;
@@ -449,8 +467,14 @@ export const ReaderView: React.FC = () => {
                       onReprocess={() => bookActions.handleReProcessPage(selectedBook.id, page.pageNumber)}
                       tempText={tempPageText}
                       onTempTextChange={setTempPageText}
-                      onSave={() => handleUpdatePage(selectedBook.id, page.pageNumber, tempPageText)}
-                      onCancel={() => setEditingPageNum(null)}
+                      onSave={() => {
+                        handleUpdatePage(selectedBook.id, page.pageNumber, tempPageText);
+                        window.scrollTo(0, 0);
+                      }}
+                      onCancel={() => {
+                        setEditingPageNum(null);
+                        window.scrollTo(0, 0);
+                      }}
                       isLoading={!page.text && ((!page.pipelineStep && (page.status === 'ocr_processing' || page.status === 'indexing' || page.status === 'pending')) || (page.pipelineStep === 'ocr' && page.milestone !== 'succeeded'))}
                       isSaving={isSaving}
                       isFullscreen={isFullscreen}
