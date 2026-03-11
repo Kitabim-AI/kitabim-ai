@@ -1,5 +1,4 @@
 from typing import List, Optional, Callable
-import re
 from app.core.config import settings
 
 class RecursiveCharacterTextSplitter:

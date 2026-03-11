@@ -19,11 +19,11 @@ from sqlalchemy import update, select, func, case, or_, and_
 
 from app.db import session as db_session
 from app.db.models import Book, Page
+from app.db.repositories.system_configs import SystemConfigsRepository
+from app.utils.observability import log_json
 
 # Books already marked ready or failed — do not reprocess them.
 _V1_READY_STATUSES = ("ready", "error")
-from app.db.repositories.system_configs import SystemConfigsRepository
-from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.pipeline_driver")
 
@@ -35,10 +35,20 @@ async def run_pipeline_driver(ctx) -> None:
 
         # ── 1. Initialize ──────────────────────────────────────────────────────
         # Pages with no v2 state yet enter the pipeline at ocr/idle.
-        # Skip pages belonging to books v1 already marked ready — those books
-        # are fully processed and are already fully processed.
+        # Skip pages belonging to books that are truly done (v1 books with
+        # status=ready/error and no active pipeline_step, or v2 books fully
+        # finished). Re-OCR books keep status="ready" but set pipeline_step="ocr",
+        # so they must NOT be excluded here — otherwise their pages would be
+        # stuck at ocr/succeeded and never promoted.
         already_done_subq = (
-            select(Book.id).where(Book.status.in_(_V1_READY_STATUSES))
+            select(Book.id).where(
+                Book.status.in_(_V1_READY_STATUSES),
+                or_(
+                    Book.pipeline_step.is_(None),
+                    Book.pipeline_step == "ready",
+                    Book.pipeline_step == "failed",
+                ),
+            )
         )
         init_result = await session.execute(
             update(Page)
@@ -155,6 +165,22 @@ async def run_pipeline_driver(ctx) -> None:
         fully_ready_ids = [row.book_id for row in rows if row.failed_exhausted == 0]
         has_failures_ids = [row.book_id for row in rows if row.failed_exhausted > 0]
 
+        # Identify books about to transition to ready (not already ready).
+        # Captured before the UPDATE so we enqueue summary jobs only for
+        # truly newly-ready books, avoiding duplicates on re-runs.
+        newly_ready_ids: list = []
+        if fully_ready_ids:
+            nr_result = await session.execute(
+                select(Book.id).where(
+                    Book.id.in_(fully_ready_ids),
+                    or_(
+                        Book.pipeline_step != "ready",
+                        Book.pipeline_step.is_(None),
+                    ),
+                )
+            )
+            newly_ready_ids = [row[0] for row in nr_result.fetchall()]
+
         books_marked_ready = 0
         if fully_ready_ids:
             books_marked_ready = (await session.execute(
@@ -182,6 +208,12 @@ async def run_pipeline_driver(ctx) -> None:
 
         await session.commit()
 
+    # Enqueue summary jobs for books that just became ready (outside the session).
+    # summary_job generates and stores a semantic summary for hierarchical RAG.
+    redis = ctx["redis"]
+    for book_id in newly_ready_ids:
+        await redis.enqueue_job("summary_job", book_id=book_id)
+
     log_json(
         logger, logging.INFO, "pipeline driver ran",
         initialized=initialized,
@@ -190,4 +222,5 @@ async def run_pipeline_driver(ctx) -> None:
         chunk_promoted=chunk_promoted,
         books_marked_ready=books_marked_ready,
         books_marked_error=books_marked_error,
+        summary_jobs_enqueued=len(newly_ready_ids),
     )

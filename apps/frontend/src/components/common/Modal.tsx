@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { useI18n } from '../../i18n/I18nContext';
 
@@ -24,6 +24,14 @@ export const Modal: React.FC<ModalProps> = ({
   destructive = false,
 }) => {
   const { t } = useI18n();
+
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+      return () => { document.body.style.overflow = ''; };
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (

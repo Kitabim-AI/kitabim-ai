@@ -8,10 +8,13 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.db.repositories.refresh_tokens import RefreshTokensRepository
+from app.db.models import RefreshToken
+
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
-
 
 def hash_token(token: str) -> str:
     """
@@ -26,11 +29,6 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.repositories.refresh_tokens import RefreshTokensRepository
-from app.db.models import RefreshToken
-
-
 async def store_refresh_token(
     session: AsyncSession,
     user_id: str,
@@ -42,7 +40,7 @@ async def store_refresh_token(
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(days=settings.jwt_refresh_token_expire_days)
     
-    repo = RefreshTokensRepository(session)
+    RefreshTokensRepository(session)
     token_obj = RefreshToken(
         user_id=user_id,
         jti=jti,

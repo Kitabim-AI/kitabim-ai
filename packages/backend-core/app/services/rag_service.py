@@ -9,6 +9,7 @@ from langchain_core.output_parsers import PydanticOutputParser
 import numpy as np
 from langchain_core.documents import Document
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.db.models import Book
@@ -476,8 +477,8 @@ class RAGService:
         from app.db.repositories.pages import PagesRepository
         from app.db.repositories.chunks import ChunksRepository
         from app.db.repositories.system_configs import SystemConfigsRepository
-        from sqlalchemy import select, func, and_, or_
-        from app.db.models import Book, Page
+        from sqlalchemy import select, and_
+        from app.db.models import Book
 
         books_repo = BooksRepository(session)
         pages_repo = PagesRepository(session)
@@ -587,48 +588,61 @@ class RAGService:
                 book_ids = title_matched_ids
                 log_json(self.logger, logging.INFO, "Book title detected in global query, restricting search", count=len(title_matched_ids))
             else:
-                # Category-based search across library
-                stmt = select(Book.categories).where(Book.categories != None)
-                result = await session.execute(stmt)
-                all_categories = set()
-                for cats in result.scalars().all():
-                    if cats:
-                        all_categories.update(cats)
+                # 2. Summary-based book selection (stage 1 of hierarchical retrieval).
+                # query_vector is already computed and reused here — no extra API call.
+                if query_vector:
+                    try:
+                        from app.db.repositories.book_summaries import BookSummariesRepository
+                        summaries_repo = BookSummariesRepository(session)
+                        book_ids = await summaries_repo.summary_search(
+                            query_embedding=query_vector,
+                            limit=settings.summary_top_k,
+                            threshold=settings.summary_threshold,
+                        )
+                        if book_ids:
+                            log_json(self.logger, logging.INFO, "Summary search selected books", count=len(book_ids))
+                    except Exception as exc:
+                        log_json(self.logger, logging.WARNING, "Summary search failed, falling back to category search", error=str(exc))
+                        book_ids = []
 
-                relevant_categories = []
-                try:
-                    relevant_categories = await self._categorize_question(req.question, list(all_categories), category_chain)
-                    relevant_categories = self._expand_history_categories(relevant_categories)
-                except Exception as exc:
-                    log_json(self.logger, logging.WARNING, "Category routing failed", error=str(exc))
-                    relevant_categories = []
-
-                # Find books by category
-                if relevant_categories:
-                    # Use overlap (&& in Postgres) for categories
-                    from sqlalchemy import text
-                    stmt = select(Book.id, Book.title, Book.categories).where(
-                        text("categories && :cats").bindparams(cats=relevant_categories)
-                    ).limit(100)
+                # 3. Fallback: category-based search (when no summaries exist yet)
+                if not book_ids:
+                    stmt = select(Book.categories).where(Book.categories is not None)
                     result = await session.execute(stmt)
-                    all_books_recs = result.fetchall()
-                    # Track ئۇيغۇر تارىخى books for result prioritization
-                    if "ئۇيغۇر تارىخى" in relevant_categories:
-                        priority_book_ids = {
-                            str(b.id) for b in all_books_recs
-                            if b.categories and "ئۇيغۇر تارىخى" in b.categories
-                        }
-                else:
-                    all_books_recs = []
+                    all_categories = set()
+                    for cats in result.scalars().all():
+                        if cats:
+                            all_categories.update(cats)
 
-                if not all_books_recs:
-                    # Fallback to recent books
-                    stmt = select(Book.id, Book.title).order_by(Book.last_updated.desc()).limit(200)
-                    result = await session.execute(stmt)
-                    all_books_recs = result.fetchall()
+                    try:
+                        relevant_categories = await self._categorize_question(req.question, list(all_categories), category_chain)
+                        relevant_categories = self._expand_history_categories(relevant_categories)
+                    except Exception as exc:
+                        log_json(self.logger, logging.WARNING, "Category routing failed", error=str(exc))
+                        relevant_categories = []
 
-                book_id_to_title = {str(b.id): b.title for b in all_books_recs}
-                book_ids = list(book_id_to_title.keys())
+                    if relevant_categories:
+                        from sqlalchemy import text
+                        stmt = select(Book.id, Book.title, Book.categories).where(
+                            text("categories && :cats").bindparams(cats=relevant_categories)
+                        ).limit(100)
+                        result = await session.execute(stmt)
+                        all_books_recs = result.fetchall()
+                        if "ئۇيغۇر تارىخى" in relevant_categories:
+                            priority_book_ids = {
+                                str(b.id) for b in all_books_recs
+                                if b.categories and "ئۇيغۇر تارىخى" in b.categories
+                            }
+                    else:
+                        all_books_recs = []
+
+                    if not all_books_recs:
+                        stmt = select(Book.id, Book.title).order_by(Book.last_updated.desc()).limit(200)
+                        result = await session.execute(stmt)
+                        all_books_recs = result.fetchall()
+
+                    book_id_to_title = {str(b.id): b.title for b in all_books_recs}
+                    book_ids = list(book_id_to_title.keys())
         else:
             # Search the specific book and all its sibling volumes (same title + author)
             title = book.title
@@ -703,7 +717,7 @@ class RAGService:
                 )
 
                 # Store original vector scores for logging
-                original_scores = [r.get("score", 0.0) for r in top_results]
+                [r.get("score", 0.0) for r in top_results]
                 original_order = [i for i in range(len(top_results))]
 
                 # Convert to Documents for reranking
@@ -730,7 +744,7 @@ class RAGService:
                 # Rebuild top_results from reranked documents
                 reranked_results = []
                 for doc in reranked_docs:
-                    original_idx = doc.metadata.get("original_index", 0)
+                    doc.metadata.get("original_index", 0)
                     reranked_results.append({
                         "text": doc.page_content,
                         "score": doc.metadata.get("vector_score", 0.0),
@@ -837,8 +851,8 @@ class RAGService:
         from app.db.repositories.pages import PagesRepository
         from app.db.repositories.chunks import ChunksRepository
         from app.db.repositories.system_configs import SystemConfigsRepository
-        from sqlalchemy import select, func, and_, or_
-        from app.db.models import Book, Page
+        from sqlalchemy import select, and_
+        from app.db.models import Book
 
         books_repo = BooksRepository(session)
         pages_repo = PagesRepository(session)
@@ -954,47 +968,61 @@ class RAGService:
                 book_ids = title_matched_ids
                 log_json(self.logger, logging.INFO, "Book title detected in global query, restricting search", count=len(title_matched_ids))
             else:
-                # Category-based search across library
-                stmt = select(Book.categories).where(Book.categories != None)
-                result = await session.execute(stmt)
-                all_categories = set()
-                for cats in result.scalars().all():
-                    if cats:
-                        all_categories.update(cats)
+                # 2. Summary-based book selection (stage 1 of hierarchical retrieval).
+                # query_vector is already computed and reused here — no extra API call.
+                if query_vector:
+                    try:
+                        from app.db.repositories.book_summaries import BookSummariesRepository
+                        summaries_repo = BookSummariesRepository(session)
+                        book_ids = await summaries_repo.summary_search(
+                            query_embedding=query_vector,
+                            limit=settings.summary_top_k,
+                            threshold=settings.summary_threshold,
+                        )
+                        if book_ids:
+                            log_json(self.logger, logging.INFO, "Summary search selected books", count=len(book_ids))
+                    except Exception as exc:
+                        log_json(self.logger, logging.WARNING, "Summary search failed, falling back to category search", error=str(exc))
+                        book_ids = []
 
-                relevant_categories = []
-                try:
-                    relevant_categories = await self._categorize_question(req.question, list(all_categories), category_chain)
-                    relevant_categories = self._expand_history_categories(relevant_categories)
-                except Exception as exc:
-                    log_json(self.logger, logging.WARNING, "Category routing failed", error=str(exc))
-                    relevant_categories = []
-
-                # Find books by category
-                if relevant_categories:
-                    from sqlalchemy import text
-                    stmt = select(Book.id, Book.title, Book.categories).where(
-                        text("categories && :cats").bindparams(cats=relevant_categories)
-                    ).limit(100)
+                # 3. Fallback: category-based search (when no summaries exist yet)
+                if not book_ids:
+                    stmt = select(Book.categories).where(Book.categories is not None)
                     result = await session.execute(stmt)
-                    all_books_recs = result.fetchall()
-                    # Track ئۇيغۇر تارىخى books for result prioritization
-                    if "ئۇيغۇر تارىخى" in relevant_categories:
-                        priority_book_ids = {
-                            str(b.id) for b in all_books_recs
-                            if b.categories and "ئۇيغۇر تارىخى" in b.categories
-                        }
-                else:
-                    all_books_recs = []
+                    all_categories = set()
+                    for cats in result.scalars().all():
+                        if cats:
+                            all_categories.update(cats)
 
-                if not all_books_recs:
-                    # Fallback to recent books
-                    stmt = select(Book.id, Book.title).order_by(Book.last_updated.desc()).limit(200)
-                    result = await session.execute(stmt)
-                    all_books_recs = result.fetchall()
+                    try:
+                        relevant_categories = await self._categorize_question(req.question, list(all_categories), category_chain)
+                        relevant_categories = self._expand_history_categories(relevant_categories)
+                    except Exception as exc:
+                        log_json(self.logger, logging.WARNING, "Category routing failed", error=str(exc))
+                        relevant_categories = []
 
-                book_id_to_title = {str(b.id): b.title for b in all_books_recs}
-                book_ids = list(book_id_to_title.keys())
+                    if relevant_categories:
+                        from sqlalchemy import text
+                        stmt = select(Book.id, Book.title, Book.categories).where(
+                            text("categories && :cats").bindparams(cats=relevant_categories)
+                        ).limit(100)
+                        result = await session.execute(stmt)
+                        all_books_recs = result.fetchall()
+                        if "ئۇيغۇر تارىخى" in relevant_categories:
+                            priority_book_ids = {
+                                str(b.id) for b in all_books_recs
+                                if b.categories and "ئۇيغۇر تارىخى" in b.categories
+                            }
+                    else:
+                        all_books_recs = []
+
+                    if not all_books_recs:
+                        stmt = select(Book.id, Book.title).order_by(Book.last_updated.desc()).limit(200)
+                        result = await session.execute(stmt)
+                        all_books_recs = result.fetchall()
+
+                    book_id_to_title = {str(b.id): b.title for b in all_books_recs}
+                    book_ids = list(book_id_to_title.keys())
         else:
             # Search the specific book and all its sibling volumes (same title + author)
             title = book.title
@@ -1064,7 +1092,7 @@ class RAGService:
                     timestamp=datetime.utcnow().isoformat()
                 )
 
-                original_scores = [r.get("score", 0.0) for r in top_results]
+                [r.get("score", 0.0) for r in top_results]
                 original_order = [i for i in range(len(top_results))]
 
                 docs_for_rerank = [
@@ -1088,7 +1116,7 @@ class RAGService:
 
                 reranked_results = []
                 for doc in reranked_docs:
-                    original_idx = doc.metadata.get("original_index", 0)
+                    doc.metadata.get("original_index", 0)
                     reranked_results.append({
                         "text": doc.page_content,
                         "score": doc.metadata.get("vector_score", 0.0),

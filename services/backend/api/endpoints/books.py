@@ -5,7 +5,7 @@ import uuid
 import os
 import io
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Optional, List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
@@ -23,14 +23,12 @@ from app.services.chunking_service import chunking_service
 from app.utils.markdown import normalize_markdown, strip_markdown
 from app.langchain.models import GeminiEmbeddings
 from auth.dependencies import (
-    get_current_user,
     get_current_user_optional,
     require_admin,
     require_editor,
     require_reader,
 )
 import logging
-from app.utils.markdown import normalize_markdown
 from app.utils.text import generate_uyghur_regex, normalize_uyghur_chars
 from app.core.i18n import t
 from app.services.pdf_service import read_pdf_page_count, extract_pdf_cover, create_page_stubs
@@ -132,10 +130,10 @@ async def get_books(
     session: AsyncSession = Depends(get_session),
 ):
     """Get paginated books list with SQLAlchemy"""
-    from sqlalchemy import select, func, or_, and_, desc, asc, any_
+    from sqlalchemy import or_, and_, any_
     from app.db.models import Book as BookDB
     from app.db.models import Page as PageDB
-    from app.models.schemas import Book as BookSchema, ExtractionResult
+    from app.models.schemas import Book as BookSchema
 
     skip = (page - 1) * pageSize
 
@@ -149,7 +147,7 @@ async def get_books(
     # Guest access restriction
     if current_user is None:
         conditions.append(BookDB.status == "ready")
-        conditions.append(or_(BookDB.visibility == "public", BookDB.visibility == None))
+        conditions.append(or_(BookDB.visibility == "public", BookDB.visibility is None))
 
     # Category filter
     if category:
@@ -188,7 +186,7 @@ async def get_books(
         # For grouped view, count unique (title, author, volume) combinations
         subq_conditions = [
             BookDB.status == "ready",
-            or_(BookDB.visibility == "public", BookDB.visibility == None)
+            or_(BookDB.visibility == "public", BookDB.visibility is None)
         ]
         # Append search/category filters to the ready count too
         if category:
@@ -221,7 +219,7 @@ async def get_books(
         ready_stmt = select(func.count(BookDB.id)).where(
             and_(
                 BookDB.status == "ready",
-                or_(BookDB.visibility == "public", BookDB.visibility == None)
+                or_(BookDB.visibility == "public", BookDB.visibility is None)
             )
         )
     ready_res = await session.execute(ready_stmt)
@@ -285,7 +283,7 @@ async def get_books(
                 if isinstance(rep.last_error, str):
                     try:
                         last_error_obj = json.loads(rep.last_error)
-                    except:
+                    except Exception:
                         last_error_obj = None
                 else:
                     last_error_obj = rep.last_error
@@ -323,7 +321,7 @@ async def get_books(
                 if isinstance(b.last_error, str):
                     try:
                         b_last_error_obj = json.loads(b.last_error)
-                    except:
+                    except Exception:
                         b_last_error_obj = None
                 else:
                     b_last_error_obj = b.last_error
@@ -433,7 +431,7 @@ async def get_books(
                 if isinstance(b.last_error, str):
                     try:
                         last_error_obj = json.loads(b.last_error)
-                    except:
+                    except Exception:
                         last_error_obj = None
                 else:
                     last_error_obj = b.last_error
@@ -566,7 +564,7 @@ async def suggest_books(
     session: AsyncSession = Depends(get_session),
 ):
     """Provide autocomplete suggestions with SQLAlchemy"""
-    from sqlalchemy import select, or_, and_, func
+    from sqlalchemy import or_, and_
     from app.db.models import Book
 
     if not q or len(q) < 2:
@@ -586,7 +584,6 @@ async def suggest_books(
 
     # Define search filter using ILIKE for case-insensitive search
     normalized_q = generate_uyghur_regex(q)
-    search_pattern = f"%{normalized_q}%"
 
     search_conditions = or_(
         Book.title.op("~*")(normalized_q),  # PostgreSQL regex, case-insensitive
@@ -643,7 +640,6 @@ async def get_book(
     session: AsyncSession = Depends(get_session),
 ):
     """Get a single book by ID with SQLAlchemy - returns metadata only, no pages"""
-    from sqlalchemy import select, func
     from app.db.models import Page as PageDB
     repo = BooksRepository(session)
 
@@ -678,7 +674,7 @@ async def get_book(
         if isinstance(book_model.last_error, str):
             try:
                 last_error_obj = json.loads(book_model.last_error)
-            except:
+            except Exception:
                 last_error_obj = None
         else:
             last_error_obj = book_model.last_error
@@ -960,7 +956,7 @@ async def upload_pdf(
     now = datetime.now(timezone.utc)
     title_raw = file.filename[: file.filename.lower().rfind(ext)]
 
-    new_book = await books_repo.create(
+    await books_repo.create(
         id=book_id,
         content_hash=content_hash,
         title=normalize_uyghur_chars(title_raw),
@@ -1032,6 +1028,7 @@ async def reprocess_book(
             retry_count=0,
             is_indexed=False,
             status="pending",
+            spell_check_milestone="idle",
             last_updated=datetime.now(timezone.utc),
             updated_by=current_user.email,
         )
@@ -1360,7 +1357,7 @@ async def update_book_details(
 ):
     """Update book details with SQLAlchemy"""
     books_repo = BooksRepository(session)
-    pages_repo = PagesRepository(session)
+    PagesRepository(session)
 
     # Verify book exists
     book = await books_repo.get(book_id)
@@ -1374,7 +1371,6 @@ async def update_book_details(
     book_update.pop("upload_date", None)
     book_update.pop("content", None)
 
-    has_page_updates = False
     if "pages" in book_update:
         for result in book_update.get("pages") or []:
             if "text" in result:
@@ -1382,7 +1378,6 @@ async def update_book_details(
 
             # Sync to pages collection
             if "pageNumber" in result or "page_number" in result:
-                has_page_updates = True
                 page_number = result.get("pageNumber") or result.get("page_number")
                 new_text = result.get("text")
 
@@ -1462,6 +1457,21 @@ async def update_book_details(
     return {"status": "updated", "modified": True}
 
 
+@router.get("/{book_id}/summary")
+async def get_book_summary(
+    book_id: str,
+    current_user: User = Depends(require_reader),
+    session: AsyncSession = Depends(get_session),
+):
+    """Return the AI-generated semantic summary for a book."""
+    from app.db.repositories.book_summaries import BookSummariesRepository
+    summaries_repo = BookSummariesRepository(session)
+    summary = await summaries_repo.get_by_book_id(book_id)
+    if not summary:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+    return {"summary": summary.summary, "generated_at": summary.generated_at}
+
+
 @router.delete("/{book_id}")
 async def delete_book(
     book_id: str,
@@ -1522,7 +1532,6 @@ async def upload_cover(
 ):
     """Upload book cover with SQLAlchemy"""
     from PIL import Image
-    from sqlalchemy import select
     from app.db.models import Book as BookDB
 
     books_repo = BooksRepository(session)
@@ -1643,7 +1652,6 @@ async def download_book(
 ):
     """Download the original book file (PDF or DOCX) from storage."""
     from fastapi.responses import StreamingResponse
-    import io
 
     books_repo = BooksRepository(session)
     book = await books_repo.get(book_id)

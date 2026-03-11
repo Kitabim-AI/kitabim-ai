@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_session
 
-from auth.dependencies import get_current_user, get_current_user_optional
+from auth.dependencies import get_current_user
 from app.core.i18n import t
 from auth.jwt_handler import (
     create_access_token,

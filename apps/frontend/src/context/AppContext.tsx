@@ -13,6 +13,10 @@ interface AppContextType {
   setSearchQuery: (query: string) => void;
   homeSearchQuery: string;
   setHomeSearchQuery: (query: string) => void;
+  selectedCategory: string;
+  setSelectedCategory: (category: string) => void;
+  currentPage: number | null;
+  setCurrentPage: React.Dispatch<React.SetStateAction<number | null>>;
   selectedBook: Book | null;
   setSelectedBook: React.Dispatch<React.SetStateAction<Book | null>>;
   books: Book[];

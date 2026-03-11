@@ -34,10 +34,14 @@ async def run_spell_check_scanner(ctx) -> None:
         page_limit = int(await config_repo.get_value("scanner_page_limit", "100"))
 
         # Atomically claim idle spell-check pages whose OCR pipeline is done.
+        from sqlalchemy import or_
         id_stmt = (
             select(Page.id)
             .where(
-                Page.pipeline_step == "embedding",
+                or_(
+                    Page.pipeline_step == "embedding",
+                    Page.pipeline_step.is_(None),
+                ),
                 Page.milestone == "succeeded",
                 Page.spell_check_milestone == "idle",
             )

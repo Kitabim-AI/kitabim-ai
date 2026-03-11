@@ -8,7 +8,7 @@ import re
 import unicodedata
 from typing import List
 
-from sqlalchemy import delete, func, select, text, update
+from sqlalchemy import delete, func, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Page, PageSpellIssue

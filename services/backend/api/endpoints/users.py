@@ -6,9 +6,8 @@ Admin-only endpoints for managing users and their roles.
 
 import logging
 from typing import Optional, List
-from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from auth.dependencies import require_admin, get_current_user

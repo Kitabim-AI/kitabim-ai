@@ -97,6 +97,12 @@ class Book(Base):
         back_populates="book",
         cascade="all, delete-orphan"
     )
+    summary: Mapped[Optional["BookSummary"]] = relationship(
+        "BookSummary",
+        back_populates="book",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
 
     # Constraints
     __table_args__ = (
@@ -451,6 +457,28 @@ class UserChatUsage(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "usage_date", name="user_chat_usage_user_id_date_key"),
     )
+
+
+class BookSummary(Base):
+    """LLM-generated semantic summary + embedding for each ready book, used for hierarchical RAG retrieval."""
+    __tablename__ = "book_summaries"
+
+    book_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("books.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    )
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding: Mapped[List[float]] = mapped_column(Vector(768), nullable=False)
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    book: Mapped["Book"] = relationship("Book", back_populates="summary")
 
 
 class ContactSubmission(Base):
