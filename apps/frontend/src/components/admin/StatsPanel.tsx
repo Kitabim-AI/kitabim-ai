@@ -188,12 +188,12 @@ export const StatsPanel: React.FC = () => {
 
   // Label maps
   const bookStatusLabel: Record<string, string> = {
-    ready: t('bookCard.pipeline.ready'),
-    ocr: t('bookCard.pipeline.ocr'),
+    ready: t('common.done'),
+    ocr: t('admin.pipeline.ocr'),
     chunking: t('bookCard.pipeline.chunking'),
-    embedding: t('bookCard.pipeline.embedding'),
-    error: t('bookCard.error'),
-    pending: t('bookCard.pending'),
+    embedding: t('admin.pipeline.embedding'),
+    error: t('common.error'),
+    pending: t('common.pending'),
   };
 
   const pageStatusLabel: Record<string, string> = {
@@ -210,7 +210,7 @@ export const StatsPanel: React.FC = () => {
     'embedding:in_progress': `${t('bookCard.pipeline.embedding')}: ${t('bookCard.pipeline.in_progress')}`,
     'embedding:succeeded': `${t('bookCard.pipeline.embedding')}: ${t('bookCard.pipeline.succeeded')}`,
     failed: t('bookCard.pipeline.failed'),
-    error: t('bookCard.error'),
+    error: t('common.error'),
   };
 
   return (

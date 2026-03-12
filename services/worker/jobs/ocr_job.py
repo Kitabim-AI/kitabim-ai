@@ -14,7 +14,7 @@ import fitz
 
 from app.core.config import settings
 from app.db import session as db_session
-from app.db.models import Book, Page
+from app.db.models import Book, Page, PipelineEvent
 from app.services.ocr_service import ocr_page_with_gemini
 from app.services.storage_service import storage
 from app.utils.observability import log_json
@@ -74,11 +74,18 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
                 update(Page)
                 .where(Page.id.in_(page_ids))
                 .values(
-                    milestone="failed",
+                    ocr_milestone="failed",
                     retry_count=Page.retry_count + 1,
                     last_updated=func.now(),
                 )
             )
+            # Create events for failure
+            for pid in page_ids:
+                session.add(PipelineEvent(
+                    page_id=pid,
+                    event_type="ocr_failed",
+                    payload='{"error": "Failed to obtain PDF"}'
+                ))
             await session.commit()
         return
 
@@ -101,10 +108,15 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
                         .where(Page.id == page.id)
                         .values(
                             text=text,
-                            milestone="succeeded",
+                            ocr_milestone="succeeded",
                             last_updated=func.now(),
                         )
                     )
+                    # Emit event for chunking and word index to pick up
+                    session.add(PipelineEvent(
+                        page_id=page.id,
+                        event_type="ocr_succeeded"
+                    ))
                     await session.commit()
 
                 log_json(logger, logging.DEBUG, "OCR page succeeded",
@@ -112,16 +124,22 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
 
             except Exception as exc:
                 async with db_session.async_session_factory() as session:
+                    error_msg = str(exc)[:500]
                     await session.execute(
                         update(Page)
                         .where(Page.id == page.id)
                         .values(
-                            milestone="failed",
+                            ocr_milestone="failed",
                             retry_count=Page.retry_count + 1,
-                            error=str(exc)[:500],
+                            error=error_msg,
                             last_updated=func.now(),
                         )
                     )
+                    session.add(PipelineEvent(
+                        page_id=page.id,
+                        event_type="ocr_failed",
+                        payload=f'{{"error": "{error_msg}"}}'
+                    ))
                     await session.commit()
 
                 log_json(logger, logging.WARNING, "OCR page failed",

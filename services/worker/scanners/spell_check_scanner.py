@@ -38,11 +38,8 @@ async def run_spell_check_scanner(ctx) -> None:
         id_stmt = (
             select(Page.id)
             .where(
-                or_(
-                    Page.pipeline_step == "embedding",
-                    Page.pipeline_step.is_(None),
-                ),
-                Page.milestone == "succeeded",
+                Page.ocr_milestone == "succeeded",
+                Page.word_index_milestone == "done",
                 Page.spell_check_milestone == "idle",
             )
             .with_for_update(skip_locked=True)

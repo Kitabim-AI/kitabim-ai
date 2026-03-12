@@ -1,17 +1,14 @@
-# Worker v2 — Design Document
+# Worker Design — Event-Driven Pipeline
 
 ## Overview
 
-Worker v2 is a ground-up redesign of the book processing pipeline. The core problem with v1 is that **pipeline step** and **execution state** are collapsed into a single `status` field (e.g. `ocr_processing`, `ocr_done`, `indexing`). This makes it hard to answer basic questions like "which step failed?" or "is this page being worked on right now?", and makes stale detection and retry logic step-specific and scattered.
+The Kitabim.AI processing pipeline uses a **decoupled, event-driven architecture** based on the **Transactional Outbox Pattern**. This design ensures high reliability, observability, and responsiveness by separating the concern of "what work needs doing" from the "execution of that work."
 
-Worker v2 separates these two concerns explicitly:
-
-- **`pipeline_step`** — where the page is in the pipeline (`ocr | chunking | embedding`)
-- **`milestone`** — the execution state of that step (`idle | in_progress | succeeded | failed`)
-
-This makes state unambiguous, stale detection uniform, and adding new pipeline steps trivial.
-
-Worker v1 stays untouched. Worker v2 runs alongside it using new database columns.
+Key characteristics:
+- **`milestone` columns** — each stage (`ocr`, `chunking`, `embedding`, `word_index`, `spell_check`) has its own milestone in the `pages` table.
+- **States** — `idle | in_progress | succeeded | failed`.
+- **Transactional Outbox** — the `pipeline_events` table captures successful milestones within the same database transaction as the result application.
+- **Event Dispatcher** — a low-latency scanner that polls the outbox and immediately enqueues the next required job, bypasses traditional 1-minute cron delays.
 
 ---
 
@@ -61,7 +58,9 @@ worker_v2/
     ocr_scanner.py           ← claims idle ocr pages, dispatches OcrJob per book
     chunking_scanner.py      ← claims idle chunking pages, dispatches ChunkingJob
     embedding_scanner.py     ← claims idle embedding pages, dispatches EmbeddingJob
+    event_dispatcher.py      ← monitors outbox, triggers next-step jobs immediately
     stale_watchdog.py        ← resets stale in_progress pages to idle
+    maintenance_scanner.py   ← cleans up processed outbox events (daily)
   jobs/
     ocr_job.py            ← downloads PDF, OCRs pages via Gemini Vision
     chunking_job.py       ← chunks page text into DB records
@@ -238,7 +237,9 @@ Runs every 30 minutes.
 | `ocr_scanner` | Every 1 min | Groups by book |
 | `chunking_scanner` | Every 1 min | Cross-book |
 | `embedding_scanner` | Every 1 min | Cross-book |
+| `event_dispatcher` | Startup + 1 min (high frequency pool) | Triggers reactive progression |
 | `stale_watchdog` | Every 30 min | Uniform reset for all steps |
+| `maintenance_scanner`| Daily at 3 AM | Database house keeping |
 
 ---
 

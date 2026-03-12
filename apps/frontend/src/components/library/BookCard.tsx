@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { BookOpen, Info, X, Sparkles } from 'lucide-react';
+import { BookOpen, Wand2, X, Sparkles } from 'lucide-react';
 import { Book } from '@shared/types';
 import { useI18n } from '../../i18n/I18nContext';
 import { PersistenceService } from '../../services/persistenceService';
@@ -104,7 +104,7 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick }) => {
               title={t('bookCard.summary.title')}
               className="absolute top-2 left-2 p-1.5 bg-white/80 backdrop-blur-sm rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-[#0369a1] hover:bg-white shadow-sm z-10"
             >
-              <Info size={14} strokeWidth={2.5} />
+              <Wand2 size={14} strokeWidth={2.5} />
             </button>
           )}
         </div>

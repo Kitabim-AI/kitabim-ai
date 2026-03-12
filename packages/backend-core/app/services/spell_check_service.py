@@ -4,6 +4,7 @@ the API (on-demand) and the background worker (batch).
 """
 from __future__ import annotations
 
+from collections import Counter
 import re
 import unicodedata
 from typing import List
@@ -178,18 +179,24 @@ async def find_unknown_words(session: AsyncSession, words: list[str]) -> set[str
 
 
 async def index_book_words(
-    session: AsyncSession, book_id: str, words: list[str]
+    session: AsyncSession, book_id: str, word_counts: dict[str, int]
 ) -> None:
-    """Upsert normalized word forms into book_word_index for this book."""
-    if not words:
+    """Upsert normalized word forms and increment counts in book_word_index."""
+    if not word_counts:
         return
+
+    words = list(word_counts.keys())
+    counts = list(word_counts.values())
+
     await session.execute(
         text("""
-            INSERT INTO book_word_index (book_id, word)
-            SELECT :book_id, w FROM unnest(CAST(:words AS text[])) AS t(w)
-            ON CONFLICT DO NOTHING
+            INSERT INTO book_word_index (book_id, word, occurrence_count)
+            SELECT :book_id, t.w, t.c
+            FROM unnest(CAST(:words AS text[]), CAST(:counts AS int[])) AS t(w, c)
+            ON CONFLICT (book_id, word) DO UPDATE
+            SET occurrence_count = book_word_index.occurrence_count + EXCLUDED.occurrence_count
         """),
-        {"book_id": book_id, "words": words},
+        {"book_id": book_id, "words": words, "counts": counts},
     )
 
 
@@ -282,12 +289,13 @@ async def run_spell_check_for_page(session: AsyncSession, page: Page) -> int:
         return 0
 
     # tokens now yields (word_normalized, word_raw, start, end)
-    unique_words = list({word_norm for word_norm, _raw, _s, _e in tokens})
+    word_freq = Counter(word_norm for word_norm, _raw, _s, _e in tokens)
+    unique_words = list(word_freq.keys())
     unknown = await find_unknown_words(session, unique_words)
     ocr_cache = await get_ocr_corrections_batch(session, unknown)
 
     # Index all words on this page so cross-book lookups stay accurate.
-    await index_book_words(session, page.book_id, unique_words)
+    await index_book_words(session, page.book_id, word_freq)
 
     # Unknown words with no OCR correction candidates are checked against the
     # book_word_index. If a word never appears in any other book it is likely

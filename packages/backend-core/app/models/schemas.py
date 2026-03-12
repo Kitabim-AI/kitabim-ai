@@ -79,6 +79,7 @@ class Book(BaseModel):
     source: Optional[str] = None  # Document source (e.g., 'upload', 'gcs')
     pipeline_step: Optional[str] = None  # DB: pipeline_step, API: pipelineStep
     pipeline_stats: Optional[Dict[str, int]] = Field(default_factory=dict) # DB: pipeline_stats, API: pipelineStats
+    has_summary: bool = False  # API: hasSummary
 
 
 class PaginatedBooks(BaseModel):

@@ -14,6 +14,7 @@ Cron schedule:
   spell_check_scanner  every 1 min  — claim spell_check/idle pages + dispatch
   stale_watchdog       every 30 min — reset in_progress pages past timeout → idle
   summary_scanner      every 5 min  — backfill/retry book_summaries for ready books
+  maintenance_scanner  daily at 3AM — cleanup old processed events/logs
 """
 from arq.connections import RedisSettings
 from arq.cron import cron
@@ -29,6 +30,8 @@ from scanners.word_index_scanner import run_word_index_scanner
 from scanners.spell_check_scanner import run_spell_check_scanner
 from scanners.stale_watchdog import run_stale_watchdog
 from scanners.summary_scanner import run_summary_scanner
+from scanners.event_dispatcher import run_event_dispatcher
+from scanners.maintenance_scanner import run_maintenance_scanner
 from jobs.ocr_job import ocr_job
 from jobs.chunking_job import chunking_job
 from jobs.embedding_job import embedding_job
@@ -57,6 +60,8 @@ class WorkerSettings:
         cron(run_spell_check_scanner),
         cron(run_stale_watchdog, minute={0, 30}),
         cron(run_summary_scanner, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}),
+        cron(run_event_dispatcher, run_at_startup=True),
+        cron(run_maintenance_scanner, hour=3, minute=0),
     ]
 
     max_jobs = settings.queue_max_jobs
