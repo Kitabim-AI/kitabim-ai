@@ -20,7 +20,7 @@ Key characteristics:
 - Each component has a single responsibility
 - Adding a new pipeline step requires only a new scanner + job, nothing else changes
 
-## Non-Goals (v2)
+## Non-Goals
 
 - Gemini Batch API mode (realtime only)
 - Circuit breaker (deferred to a later iteration)
@@ -28,36 +28,40 @@ Key characteristics:
 
 ---
 
-## Schema Changes
-
-New columns added to existing tables. V1 columns are untouched.
+## Schema
+Current implementation uses granular milestone columns on the `pages` table and a `pipeline_step` column on the `books` table.
 
 ### `pages` table
 
 | Column | Type | Description |
 |---|---|---|
-| `v2_pipeline_step` | `varchar` | Current pipeline step: `ocr \| chunking \| embedding` |
-| `v2_milestone` | `varchar` | Execution state of that step: `idle \| in_progress \| succeeded \| failed` |
-| `v2_retry_count` | `integer` | Number of failed attempts for the current step. Default `0`. |
+| `ocr_milestone` | `varchar` | State of OCR: `idle \| in_progress \| succeeded \| failed` |
+| `chunking_milestone` | `varchar` | State of Chunking: `idle \| in_progress \| succeeded \| failed` |
+| `embedding_milestone` | `varchar` | State of Embedding: `idle \| in_progress \| succeeded \| failed` |
+| `word_index_milestone` | `varchar` | State of Word Index: `idle \| in_progress \| done \| failed` |
+| `spell_check_milestone` | `varchar` | State of Spell Check: `idle \| in_progress \| done \| failed` |
+| `retry_count` | `integer` | Number of failed attempts for the current step. |
 
 ### `books` table
 
 | Column | Type | Description |
 |---|---|---|
-| `v2_pipeline_step` | `varchar` | Active step for the book: `ocr \| chunking \| embedding \| ready`. `NULL` = not yet in v2 pipeline. |
+| `pipeline_step` | `varchar` | Primary step for progress tracking: `ocr \| chunking \| embedding \| word_index \| spell_check \| ready` |
 
 ---
 
 ## Architecture
 
 ```
-worker_v2/
+worker/
   scanners/
     gcs_discovery_scanner.py ← lists GCS uploads/, registers new books in DB
     pipeline_driver.py       ← state machine: initializes pages, advances steps, marks book ready
     ocr_scanner.py           ← claims idle ocr pages, dispatches OcrJob per book
     chunking_scanner.py      ← claims idle chunking pages, dispatches ChunkingJob
     embedding_scanner.py     ← claims idle embedding pages, dispatches EmbeddingJob
+    word_index_scanner.py    ← claims idle word_index pages, dispatches WordIndexJob
+    spell_check_scanner.py   ← claims idle spell_check pages, dispatches SpellCheckJob
     event_dispatcher.py      ← monitors outbox, triggers next-step jobs immediately
     stale_watchdog.py        ← resets stale in_progress pages to idle
     maintenance_scanner.py   ← cleans up processed outbox events (daily)
@@ -65,7 +69,9 @@ worker_v2/
     ocr_job.py            ← downloads PDF, OCRs pages via Gemini Vision
     chunking_job.py       ← chunks page text into DB records
     embedding_job.py      ← generates and stores embeddings
-  worker.py               ← ARQ WorkerSettings for v2
+    word_index_job.py     ← builds word frequency index
+    spell_check_job.py    ← identifies unknown words and suggests corrections
+  worker.py               ← ARQ WorkerSettings
 ```
 
 ---
@@ -93,28 +99,30 @@ The manual admin API (`POST /api/books/storage/sync`) continues to use the exist
 
 ### PipelineDriver
 
-The single entry point into the v2 pipeline and the only component that advances pipeline steps. Runs every minute as a cron job.
+The single entry point into the pipeline and the only component that advances pipeline steps. Runs every minute as a cron job.
 
 **Responsibilities:**
 
-1. **Initialize** — finds pages with `v2_pipeline_step IS NULL`, sets them to `ocr / idle`
+1. **Initialize** — finds pages with `pipeline_step IS NULL`, sets them to `ocr / idle`
 2. **Promote** — advances pages whose current step has succeeded to the next step
 3. **Book ready** — marks a book as `ready` when all its pages are terminal
 
 **Promotion rules:**
 
 ```
-ocr / succeeded       →  chunking / idle
-chunking / succeeded  →  embedding / idle
+ocr / succeeded        →  chunking / idle
+chunking / succeeded   →  embedding / idle
+embedding / succeeded  →  word_index / idle
+word_index / done      →  spell_check / idle
 ```
 
-Embedding is the end of the page pipeline. There is no further step — `embedding / succeeded` is the terminal success state for a page.
+Spell Check is the end of the page pipeline. There is no further step — `spell_check / done` (or `failed`) is the terminal success state for a page.
 
-**Book ready condition (option b — pragmatic):**
+**Book ready condition:**
 
-A book is marked `v2_pipeline_step = ready` when every page is in a terminal state:
-- `pipeline_step = embedding AND milestone = succeeded`  (processed successfully)
-- `milestone = failed AND v2_retry_count >= max_retries`  (exhausted, skipped)
+A book is marked `pipeline_step = ready` when every page is in a terminal state:
+- `pipeline_step = spell_check AND milestone = done`  (processed successfully)
+- `milestone = failed AND retry_count >= max_retries`  (exhausted, skipped)
 
 This means a book with a few permanently failed pages is still marked ready and searchable.
 
@@ -129,9 +137,8 @@ Each scanner is responsible for one step only: **claim idle pages atomically and
 ```sql
 -- Step 1: Atomic claim (prevents double-dispatch)
 UPDATE pages
-SET v2_milestone = 'in_progress'
-WHERE v2_pipeline_step = '<step>'
-  AND v2_milestone = 'idle'
+SET <step>_milestone = 'in_progress'
+WHERE <step>_milestone = 'idle'
 LIMIT <scanner_page_limit>
 RETURNING id
 ```
@@ -180,9 +187,9 @@ Jobs are pure executors — they process pages and report success or failure. Th
      d. Save extracted text to page record
      e. Set v2_milestone = 'succeeded'
    On failure:
-     f. v2_retry_count++
-     g. Set v2_milestone = 'failed'
-3. Update book.v2_pipeline_step = 'ocr' (marks book as actively in OCR step)
+     e.retry_count++
+     f. Set <step>_milestone = 'failed'
+3. Update book.pipeline_step = 'ocr' (marks book as actively in OCR step)
 ```
 
 **ChunkingJob(page_ids):**
@@ -192,10 +199,10 @@ Jobs are pure executors — they process pages and report success or failure. Th
      a. Load text from DB
      b. Apply recursive character text splitter
      c. Save Chunk records (embedding = NULL)
-     d. Set v2_milestone = 'succeeded'
+     d. Set chunking_milestone = 'succeeded'
    On failure:
-     e. v2_retry_count++
-     f. Set v2_milestone = 'failed'
+     e. retry_count++
+     f. Set chunking_milestone = 'failed'
 ```
 
 **EmbeddingJob(page_ids):**
@@ -205,10 +212,10 @@ Jobs are pure executors — they process pages and report success or failure. Th
      a. Load chunks from DB
      b. Generate 768-dim embeddings via Gemini Embeddings API
      c. Store vectors on chunk records
-     d. Set v2_milestone = 'succeeded'
+     d. Set embedding_milestone = 'succeeded'
    On failure:
-     e. v2_retry_count++
-     f. Set v2_milestone = 'failed'
+     e. retry_count++
+     f. Set embedding_milestone = 'failed'
 ```
 
 ---
@@ -219,8 +226,8 @@ Resets pages that are stuck in `in_progress` (e.g. job crashed, pod restarted). 
 
 ```sql
 UPDATE pages
-SET v2_milestone = 'idle'
-WHERE v2_milestone = 'in_progress'
+SET <step>_milestone = 'idle'
+WHERE <step>_milestone = 'in_progress'
   AND updated_at < NOW() - INTERVAL '30 minutes'
 ```
 
@@ -237,6 +244,8 @@ Runs every 30 minutes.
 | `ocr_scanner` | Every 1 min | Groups by book |
 | `chunking_scanner` | Every 1 min | Cross-book |
 | `embedding_scanner` | Every 1 min | Cross-book |
+| `word_index_scanner` | Every 1 min | Cross-book |
+| `spell_check_scanner`| Every 1 min | Cross-book |
 | `event_dispatcher` | Startup + 1 min (high frequency pool) | Triggers reactive progression |
 | `stale_watchdog` | Every 30 min | Uniform reset for all steps |
 | `maintenance_scanner`| Daily at 3 AM | Database house keeping |
@@ -247,7 +256,6 @@ Runs every 30 minutes.
 
 ```mermaid
 flowchart TD
-    NULL["v2_pipeline_step = NULL\n(new page, not yet in v2)"]
     OCR_IDLE["ocr / idle"]
     OCR_IP["ocr / in_progress"]
     OCR_OK["ocr / succeeded"]
@@ -258,11 +266,18 @@ flowchart TD
     CHUNK_FAIL["chunking / failed"]
     EMB_IDLE["embedding / idle"]
     EMB_IP["embedding / in_progress"]
-    EMB_OK["embedding / succeeded\n(terminal — page done)"]
+    EMB_OK["embedding / succeeded"]
     EMB_FAIL["embedding / failed"]
+    INDEX_IDLE["word_index / idle"]
+    INDEX_IP["word_index / in_progress"]
+    INDEX_OK["word_index / done"]
+    INDEX_FAIL["word_index / failed"]
+    SPELL_IDLE["spell_check / idle"]
+    SPELL_IP["spell_check / in_progress"]
+    SPELL_OK["spell_check / done\n(terminal — page done)"]
+    SPELL_FAIL["spell_check / failed"]
     TERMINAL["milestone = failed\nretry_count >= max\n(terminal — skipped)"]
 
-    NULL -->|PipelineDriver: initialize| OCR_IDLE
     OCR_IDLE -->|OcrScanner: claim| OCR_IP
     OCR_IP -->|OcrJob: success| OCR_OK
     OCR_IP -->|OcrJob: failure| OCR_FAIL
@@ -282,8 +297,22 @@ flowchart TD
     EMB_IP -->|EmbeddingJob: failure| EMB_FAIL
     EMB_FAIL -->|Scanner retry| EMB_IDLE
     EMB_FAIL -->|retry_count >= max| TERMINAL
+    EMB_OK -->|PipelineDriver: promote| INDEX_IDLE
 
-    EMB_OK -->|PipelineDriver: all pages terminal| BookReady([book.v2_pipeline_step = ready])
+    INDEX_IDLE -->|WordIndexScanner: claim| INDEX_IP
+    INDEX_IP -->|WordIndexJob: success| INDEX_OK
+    INDEX_IP -->|WordIndexJob: failure| INDEX_FAIL
+    INDEX_FAIL -->|Scanner retry| INDEX_IDLE
+    INDEX_FAIL -->|retry_count >= max| TERMINAL
+    INDEX_OK -->|PipelineDriver: promote| SPELL_IDLE
+
+    SPELL_IDLE -->|SpellCheckScanner: claim| SPELL_IP
+    SPELL_IP -->|SpellCheckJob: success| SPELL_OK
+    SPELL_IP -->|SpellCheckJob: failure| SPELL_FAIL
+    SPELL_FAIL -->|Scanner retry| SPELL_IDLE
+    SPELL_FAIL -->|retry_count >= max| TERMINAL
+
+    SPELL_OK -->|PipelineDriver: all pages terminal| BookReady([book.pipeline_step = ready])
     TERMINAL -->|PipelineDriver: all pages terminal| BookReady
 
     classDef idle fill:#e9edc9,stroke:#606c38
@@ -293,10 +322,10 @@ flowchart TD
     classDef terminal fill:#f1f1f1,stroke:#888,stroke-dasharray:4 4
     classDef book fill:#d4f1f4,stroke:#189ab4,stroke-width:2px
 
-    class OCR_IDLE,CHUNK_IDLE,EMB_IDLE idle
-    class OCR_IP,CHUNK_IP,EMB_IP active
-    class OCR_OK,CHUNK_OK,EMB_OK done
-    class OCR_FAIL,CHUNK_FAIL,EMB_FAIL fail
+    class OCR_IDLE,CHUNK_IDLE,EMB_IDLE,INDEX_IDLE,SPELL_IDLE idle
+    class OCR_IP,CHUNK_IP,EMB_IP,INDEX_IP,SPELL_IP active
+    class OCR_OK,CHUNK_OK,EMB_OK,INDEX_OK,SPELL_OK done
+    class OCR_FAIL,CHUNK_FAIL,EMB_FAIL,INDEX_FAIL,SPELL_FAIL fail
     class TERMINAL terminal
     class BookReady book
 ```
@@ -305,37 +334,26 @@ flowchart TD
 
 ## Retry Logic
 
-Retry state is tracked on the page row via `v2_retry_count`.
+Retry state is tracked on the page row via `retry_count`.
 
 | Scenario | Behaviour |
 |---|---|
-| Job sets `milestone = failed` | `v2_retry_count++` |
+| Job sets `milestone = failed` | `retry_count++` |
 | Scanner finds `milestone = failed AND retry_count < max` | Resets to `idle` — page will be retried |
 | Scanner finds `milestone = failed AND retry_count >= max` | Skips — page is terminal |
 | Stale watchdog fires | Resets `in_progress → idle`, does **not** increment `retry_count` (timeout ≠ failure) |
 
-Max retries is configurable via `system_configs` (e.g. `v2_ocr_max_retry_count`, default `10`).
+Max retries is configurable via `system_configs` (e.g. `ocr_max_retry_count`, default `10`).
 
 ---
 
-## Why This Is Better Than v1
+## Why This Is Better
 
-| Concern | v1 | v2 |
+| Concern | v1 | Implementation |
 |---|---|---|
-| Which step failed? | `status = error` — ambiguous | `pipeline_step = ocr, milestone = failed` — explicit |
+| Which step failed? | `status = error` — ambiguous | `milestone = failed` — explicit |
 | Stale detection | Step-specific hardcoded timeouts in `maintenance.py` | One rule: `in_progress + timeout → idle` |
 | Adding a new pipeline step | Touch `pdf_service`, `maintenance`, `queue`, `worker` | Add one scanner + one job, nothing else changes |
-| Per-page retry | Partial — mixed into OCR job logic | First-class: `v2_retry_count` on the row, checked by scanner |
-| Processing lock | TTL-based `processing_lock` column per book | `in_progress` milestone is the lock — no separate column |
-| Monolithic job | `pdf_service.py` does OCR + chunking + embedding | Three focused jobs, each does one thing |
+| Per-page retry | Partial — mixed into OCR job logic | First-class: `retry_count` on the row, checked by scanner |
+| Monolithic job | `pdf_service.py` does OCR + chunking + embedding | Focused jobs, each does one thing |
 | Batch vs realtime code paths | Two parallel code paths | One path — realtime only |
-
----
-
-## Migration Notes
-
-- V1 columns (`status`, `processing_lock`, etc.) are left untouched
-- V2 columns (`v2_pipeline_step`, `v2_milestone`, `v2_retry_count`) default to `NULL`
-- PipelineDriver initializes pages into the v2 pipeline on its first run
-- Both workers can run simultaneously during transition — they operate on different columns
-- Feature flag: `USE_WORKER_V2` in `system_configs` controls which worker deployment is active

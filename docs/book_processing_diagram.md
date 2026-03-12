@@ -20,6 +20,8 @@ flowchart TD
         S_OCR[OCR Scanner] -->|Claim idle| J_OCR[OCR Job]
         S_CH[Chunking Scanner] -->|Claim idle| J_CH[Chunking Job]
         S_EM[Embedding Scanner] -->|Claim idle| J_EM[Embedding Job]
+        S_WI[Word Index Scanner] -->|Claim idle| J_WI[Word Index Job]
+        S_SC[Spell Check Scanner] -->|Claim idle| J_SC[Spell Check Job]
     end
 
     InitDB --> S_OCR
@@ -28,15 +30,19 @@ flowchart TD
     subgraph Outbox [Transactional Outbox]
         J_OCR -->|Write Event| OB[(Pipeline Events)]
         J_CH -->|Write Event| OB
+        J_EM -->|Write Event| OB
+        J_WI -->|Write Event| OB
         
         OB -->|Poll| ED[Event Dispatcher]
         
         ED -->|Immediate Trigger| S_CH
         ED -->|Immediate Trigger| S_EM
+        ED -->|Immediate Trigger| S_WI
+        ED -->|Immediate Trigger| S_SC
     end
 
     %% Terminal states
-    J_EM -->|Success| Ready([Book: ready])
+    J_SC -->|Success| Ready([Book: ready])
     
     %% Monitoring
     Watchdog[Stale Watchdog] -.->|Reset in_progress > 30m| Pipeline
@@ -46,7 +52,7 @@ flowchart TD
     classDef event fill:#ffe8d6,stroke:#b5838d,stroke-dasharray: 5 5
 
     class InitDB,Ready stage
-    class J_OCR,J_CH,J_EM job
+    class J_OCR,J_CH,J_EM,J_WI,J_SC job
     class OB,ED event
 ```
 
@@ -129,13 +135,13 @@ flowchart TD
 
 ### Page Pipeline Steps
 
-| Step | Goal |
-|---|---|
-| `ocr` | Extraction of text from image/PDF |
-| `chunking` | Semantic splitting of text |
-| `embedding` | Generation of vector embeddings |
-| `word_index` | Building per-book word frequency index |
-| `spell_check` | Identifying unknown words |
+| Step | Goal | Terminal Success |
+|---|---|---|
+| `ocr` | Extraction of text from image/PDF | `succeeded` |
+| `chunking` | Semantic splitting of text | `succeeded` |
+| `embedding` | Generation of vector embeddings | `succeeded` |
+| `word_index` | Building per-book word frequency index | `done` |
+| `spell_check` | Identifying unknown words | `done` |
 
 ---
 

@@ -51,7 +51,7 @@ async def spell_check_job(ctx, page_ids: List[int]) -> None:
                 await session.execute(
                     update(Page)
                     .where(Page.id == page.id)
-                    .values(spell_check_milestone="error", last_updated=func.now())
+                    .values(spell_check_milestone="failed", last_updated=func.now())
                 )
                 session.add(PipelineEvent(
                     page_id=page.id,

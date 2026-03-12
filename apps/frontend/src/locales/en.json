@@ -235,6 +235,7 @@
     },
     "pipeline": {
       "ocr": "OCR",
+      "chunking": "Chunking",
       "embedding": "Vector Indices",
       "summary": "AI Summary",
       "wordIndex": "Word Index",
