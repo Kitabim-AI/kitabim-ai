@@ -237,6 +237,7 @@
       "ocr": "OCR",
       "embedding": "Vector Indices",
       "summary": "AI Summary",
+      "wordIndex": "Word Index",
       "spellCheck": "Spell check"
     },
     "table": {

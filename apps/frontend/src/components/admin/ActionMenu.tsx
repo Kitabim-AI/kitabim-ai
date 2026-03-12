@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { BookOpen, RefreshCw, RotateCcw, Trash2, Image, BookOpenCheck, ScanText, Cuboid } from 'lucide-react';
+import { BookOpen, RefreshCw, RotateCcw, Trash2, Image, BookOpenCheck, ScanText, Cuboid, Type } from 'lucide-react';
 import { Book } from '@shared/types';
 import { useI18n } from '../../i18n/I18nContext';
 import { useAppContext } from '../../context/AppContext';

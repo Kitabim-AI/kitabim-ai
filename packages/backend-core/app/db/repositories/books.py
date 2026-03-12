@@ -6,7 +6,7 @@ from typing import List, Optional
 
 from sqlalchemy import select, func, or_, and_, case, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.models import Book, Page
+from app.db.models import Book, Page, BookSummary
 from app.db.repositories.base import BaseRepository
 
 
@@ -163,8 +163,8 @@ class BooksRepository(BaseRepository[Book]):
         m_row = m_result.fetchone()
         
         # Determine if summary exists
-        summary_exists_stmt = select(func.count()).select_from(text("book_summaries")).where(text("book_id = :book_id"))
-        summary_res = await self.session.execute(summary_exists_stmt, {"book_id": book_id})
+        summary_stmt = select(func.count(BookSummary.book_id)).where(BookSummary.book_id == book_id)
+        summary_res = await self.session.execute(summary_stmt)
         has_summary = (summary_res.scalar() or 0) > 0
 
         # Calculate cumulative pipeline stats
