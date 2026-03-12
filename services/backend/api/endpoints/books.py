@@ -682,16 +682,10 @@ async def get_book(
         else:
             last_error_obj = book_model.last_error
 
-    # Get page stats for this book
-    stats_stmt = select(
-        PageDB.status,
-        func.count().label("count")
-    ).where(
-        PageDB.book_id == book_id
-    ).group_by(PageDB.status)
-
-    stats_result = await session.execute(stats_stmt)
-    stats = {row.status: row.count for row in stats_result.fetchall()}
+    # Get page stats for this book using repository method
+    stats_dict = await repo.get_with_page_stats(book_id)
+    pipeline_stats = stats_dict.get("pipeline_stats", {}) if stats_dict else {}
+    has_summary = stats_dict.get("has_summary", False) if stats_dict else False
 
     # Create a dict with only metadata
     book_dict = {
@@ -716,8 +710,8 @@ async def get_book(
         "file_name": book_model.file_name,
         "file_type": book_model.file_type,
         "source": book_model.source,
-        "pipeline_stats": stats.get("pipeline_stats", {}),
-        "has_summary": stats.get("has_summary", False)
+        "pipeline_stats": pipeline_stats,
+        "has_summary": has_summary
     }
 
     # Convert SQLAlchemy models to Pydantic (automatic camelCase conversion)

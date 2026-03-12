@@ -4,82 +4,50 @@ import { LibraryView } from '@/src/components/library/LibraryView';
 import { expect, test, vi } from 'vitest';
 import React from 'react';
 import { Book } from '@shared/types';
+import * as AppContextModule from '@/src/context/AppContext';
 
 const mockBooks: Book[] = [
   { id: '1', title: 'Book 1', author: 'Author 1', totalPages: 10, pages: [], status: 'ready', uploadDate: new Date(), lastUpdated: new Date(), contentHash: 'h1' },
   { id: '2', title: 'Book 2', author: 'Author 2', totalPages: 20, pages: [], status: 'ocr_processing', uploadDate: new Date(), lastUpdated: new Date(), contentHash: 'h2' }
 ];
 
-test.skip('LibraryView renders books and header', () => {
-  const ref = { current: document.createElement('div') };
-  render(
-    <LibraryView
-      books={mockBooks}
-      isInitialLoading={false}
-      isLoadingMore={false}
-      hasMore={false}
-      searchQuery=""
-      onBookClick={vi.fn()}
-      loaderRef={ref}
-      loadMore={vi.fn()}
-    />
-  );
+vi.mock('@/src/context/AppContext', async () => {
+  const actual = await vi.importActual('@/src/context/AppContext');
+  return {
+    ...actual as any,
+    useAppContext: vi.fn(),
+  };
+});
 
-  expect(screen.getByText(/Global Knowledge Base/i)).toBeInTheDocument();
+test('LibraryView renders books and header', () => {
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue({
+    sortedBooks: mockBooks,
+    totalReady: 2,
+    isLoading: false,
+    isLoadingMoreShelf: false,
+    hasMoreShelf: false,
+    loaderRef: { current: null },
+    bookActions: {},
+  } as any);
+
+  render(<LibraryView />);
+
+  expect(screen.getByText(/library\.title/i)).toBeInTheDocument();
   expect(screen.getAllByText('Book 1').length).toBeGreaterThan(0);
-  expect(screen.getAllByText('Book 2').length).toBeGreaterThan(0);
 });
 
-test.skip('LibraryView shows empty state', () => {
-  const ref = { current: document.createElement('div') };
-  render(
-    <LibraryView
-      books={[]}
-      isInitialLoading={false}
-      isLoadingMore={false}
-      hasMore={false}
-      searchQuery=""
-      onBookClick={vi.fn()}
-      loaderRef={ref}
-      loadMore={vi.fn()}
-    />
-  );
+test('LibraryView shows empty state', () => {
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue({
+    sortedBooks: [],
+    totalReady: 0,
+    isLoading: false,
+    isLoadingMoreShelf: false,
+    hasMoreShelf: false,
+    loaderRef: { current: null },
+    bookActions: {},
+  } as any);
 
-  expect(screen.getByText(/No books indexed in the global database yet/i)).toBeInTheDocument();
-});
+  render(<LibraryView />);
 
-test.skip('LibraryView shows search empty state', () => {
-  const ref = { current: document.createElement('div') };
-  render(
-    <LibraryView
-      books={[]}
-      isInitialLoading={false}
-      isLoadingMore={false}
-      hasMore={false}
-      searchQuery="unknown book"
-      onBookClick={vi.fn()}
-      loaderRef={ref}
-      loadMore={vi.fn()}
-    />
-  );
-
-  expect(screen.getByText(/No books match your search/i)).toBeInTheDocument();
-});
-
-test.skip('LibraryView shows loading state', () => {
-  const ref = { current: document.createElement('div') };
-  render(
-    <LibraryView
-      books={mockBooks}
-      isInitialLoading={false}
-      isLoadingMore={true}
-      hasMore={true}
-      searchQuery=""
-      onBookClick={vi.fn()}
-      loaderRef={ref}
-      loadMore={vi.fn()}
-    />
-  );
-
-  expect(screen.getByText(/Loading more treasures/i)).toBeInTheDocument();
+  expect(screen.getByText('library.empty.title')).toBeInTheDocument();
 });

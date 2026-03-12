@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Database, Book as BookIcon, User, Hash, BookOpen, MoreVertical, Save, X, Edit2, Check, Globe, Shield, Wand2, Search, Type, FileText, ScanText, RefreshCw, BookOpenCheck, Cuboid } from 'lucide-react';
+import { Database, Book as BookIcon, User, Hash, BookOpen, MoreVertical, Save, X, Edit2, Check, Globe, Shield, Wand2, Search, WholeWord, FileText, ScanText, RefreshCw, BookOpenCheck, Cuboid } from 'lucide-react';
 import { Pagination } from '../common/Pagination';
 
 import { useI18n } from '../../i18n/I18nContext';
@@ -234,6 +234,15 @@ export const AdminView: React.FC = () => {
                                 )}
                               </span>
                               <div className="text-[10px] md:text-[12px] font-bold text-slate-400 mt-0.5">{new Date(book.uploadDate).toLocaleDateString()}</div>
+                              
+                              {/* Mobile Pipeline Progress */}
+                              <div className="flex md:hidden items-center gap-1.5 mt-2 opacity-80">
+                                <ScanText size={14} className={`${(book.pipelineStats?.ocr_failed || 0) > 0 ? 'text-red-500' : (book.pipelineStats?.ocr || 0) === (book.totalPages || 0) && book.totalPages > 0 ? 'text-emerald-500' : 'text-slate-300'}`} />
+                                <Cuboid size={14} className={`${(book.pipelineStats?.embedding_failed || 0) > 0 ? 'text-red-500' : (book.pipelineStats?.embedding || 0) === (book.totalPages || 0) && book.totalPages > 0 ? 'text-emerald-500' : 'text-slate-300'}`} />
+                                <Wand2 size={14} className={`${book.hasSummary ? 'text-emerald-500' : 'text-slate-300'}`} />
+                                <WholeWord size={14} className={`${(book.pipelineStats?.word_index_failed || 0) > 0 ? 'text-red-500' : (book.pipelineStats?.word_index || 0) === (book.totalPages || 0) && book.totalPages > 0 ? 'text-emerald-500' : 'text-slate-300'}`} />
+                                <BookOpenCheck size={14} className={`${(book.pipelineStats?.spell_check_failed || 0) > 0 ? 'text-red-500' : (book.pipelineStats?.spell_check || 0) === (book.totalPages || 0) && book.totalPages > 0 ? 'text-emerald-500' : 'text-slate-300'}`} />
+                              </div>
                             </button>
                           )}
                         </div>
@@ -310,6 +319,13 @@ export const AdminView: React.FC = () => {
                               <Wand2 size={18} className={`${book.hasSummary ? 'text-emerald-500' : 'text-slate-300'} transition-colors duration-300`} />
                               <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-lg opacity-0 group-hover/status:opacity-100 transition-all duration-200 whitespace-nowrap pointer-events-none z-10 border border-slate-700">
                                 {t('admin.pipeline.summary')}: {book.hasSummary ? t('common.done') : t('common.pending')}
+                              </div>
+                            </div>
+                            <div className="group/status relative flex items-center">
+                              <WholeWord size={18} className={`${(book.pipelineStats?.word_index_failed || 0) > 0 ? 'text-red-500' : (book.pipelineStats?.word_index || 0) === (book.totalPages || 0) && book.totalPages > 0 ? 'text-emerald-500' : 'text-slate-300'} transition-colors duration-300`} />
+                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-lg opacity-0 group-hover/status:opacity-100 transition-all duration-200 whitespace-nowrap pointer-events-none z-10 border border-slate-700">
+                                {t('admin.pipeline.wordIndex')}: {book.pipelineStats?.word_index || 0}/{book.totalPages || 0}
+                                {(book.pipelineStats?.word_index_failed || 0) > 0 && <span className="text-red-400 ml-1">({book.pipelineStats?.word_index_failed} {t('common.error')})</span>}
                               </div>
                             </div>
                             <div className="group/status relative flex items-center">
