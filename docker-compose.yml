@@ -1,0 +1,91 @@
+services:
+  # ─── Redis (Job Queue + Cache) ────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ─── Backend API ──────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: kitabim-backend:local
+    restart: always
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://omarjan@host.docker.internal:5432/kitabim-ai
+      - REDIS_URL=redis://redis:6379/0
+      - DATA_DIR=/app/data
+      - GOOGLE_APPLICATION_CREDENTIALS=/etc/gcs/key.json
+    ports:
+      - "30800:8000"
+    volumes:
+      - ./data:/app/data
+      - ./gcs-key.json:/etc/gcs/key.json:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # ─── Worker (ARQ - always running) ───────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    image: kitabim-worker:local
+    restart: always
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://omarjan@host.docker.internal:5432/kitabim-ai
+      - REDIS_URL=redis://redis:6379/0
+      - DATA_DIR=/app/data
+      - GOOGLE_APPLICATION_CREDENTIALS=/etc/gcs/key.json
+    volumes:
+      - ./data:/app/data
+      - ./gcs-key.json:/etc/gcs/key.json:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # ─── Frontend (React/Vite served via Nginx) ───────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+    image: kitabim-frontend:local
+    restart: always
+    ports:
+      - "30080:80"
+    deploy:
+      resources:
+        limits:
+          memory: 256M

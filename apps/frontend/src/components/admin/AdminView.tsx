@@ -1,23 +1,73 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Database, Book as BookIcon, User, Hash, BookOpen, MoreVertical, Save, X, Edit2, Check, Globe, Shield } from 'lucide-react';
+import { Database, Book as BookIcon, User, Hash, BookOpen, MoreVertical, Save, X, Edit2, Check, Globe, Shield, Wand2, Search, WholeWord, FileText, ScanText, RefreshCw, BookOpenCheck, Cuboid, Scissors } from 'lucide-react';
 import { Pagination } from '../common/Pagination';
-import { NotificationContainer } from '../common/NotificationContainer';
+
 import { useI18n } from '../../i18n/I18nContext';
 import { useAppContext } from '../../context/AppContext';
 import { TagEditor } from './TagEditor';
 import { ProgressBar } from './ProgressBar';
 import { ActionMenu } from './ActionMenu';
+import { ProverbDisplay } from '../common/ProverbDisplay';
 
 const getStatusTextColor = (step: string | null) => {
   if (!step) return 'text-slate-400';
   switch (step.toLowerCase()) {
     case 'ready': return 'text-emerald-600 font-bold';
-    case 'embedding': return 'text-purple-600 font-bold';
+    case 'embedding': return 'text-orange-600 font-bold';
     case 'chunking': return 'text-indigo-600 font-bold';
     case 'ocr': return 'text-blue-600 font-bold';
     case 'error': return 'text-red-500 font-bold';
     default: return 'text-slate-400';
   }
+};
+
+const getStat = (stats: any, key: string): number => {
+  if (!stats) return 0;
+  if (typeof stats[key] === 'number') return stats[key];
+  // Convert snake_case to camelCase (e.g., spell_check_active -> spellCheckActive)
+  const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+  if (typeof stats[camelKey] === 'number') return stats[camelKey];
+  return 0;
+};
+
+const getPipelineIconClass = (
+  book: any,
+  stepKey: string,
+  isCompleteParam: boolean,
+  isFailedParam: boolean
+) => {
+  const doneCount = getStat(book.pipelineStats, stepKey);
+  const activeCount = getStat(book.pipelineStats, `${stepKey}_active`);
+  const failedCount = getStat(book.pipelineStats, `${stepKey}_failed`);
+  const total = book.totalPages || 0;
+  
+  // For page-level steps, use the aggregate counts to determine if finished
+  const isPageLevel = ['ocr', 'chunking', 'embedding', 'word_index', 'spell_check'].includes(stepKey);
+  
+  const isComplete = isPageLevel 
+    ? (total > 0 && doneCount + failedCount === total)
+    : isCompleteParam;
+    
+  const isFailed = isPageLevel
+    ? failedCount > 0
+    : isFailedParam;
+
+  // A step is considered "In Progress" (orange/blinking) if:
+  // 1. It's not complete AND
+  // 2. It has either started (doneCount > 0), is currently being worked on (activeCount > 0),
+  //    or the global book state explicitly says we are on this step.
+  const isInProgress = !isComplete && (
+    doneCount > 0 || 
+    activeCount > 0 || 
+    (book.pipelineStep === stepKey && book.status !== 'ready')
+  );
+
+  // Order matters: In Progress (blinking) takes precedence over a partial error
+  // so the user sees it's still moving even if some pages failed.
+  if (isInProgress) return 'text-[#FF9800] animate-pulse drop-shadow-[0_0_8px_rgba(255,152,0,0.4)]';
+  if (isFailed) return 'text-red-500';
+  if (isComplete) return 'text-emerald-500';
+  return 'text-slate-300';
 };
 
 export const AdminView: React.FC = () => {
@@ -29,11 +79,13 @@ export const AdminView: React.FC = () => {
     isLoadingMoreShelf: isLoadingMore,
     hasMoreShelf: hasMore,
     loadMoreShelf: loadMore,
-    isLoading: isInitialLoading
+    isLoading: isInitialLoading,
+    searchQuery
   } = useAppContext();
   const { t } = useI18n();
 
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [menuAnchorRect, setMenuAnchorRect] = useState<DOMRect | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -64,6 +116,7 @@ export const AdminView: React.FC = () => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setActiveMenuId(null);
+        setMenuAnchorRect(null);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -122,7 +175,7 @@ export const AdminView: React.FC = () => {
     <div className="space-y-8 animate-fade-in" lang="ug">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[#75C5F0]/20">
         <div className="flex items-center gap-3 md:gap-4 group">
-          <div className="p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:-rotate-6">
+          <div className="self-start mt-1 p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 icon-shake">
             <BookIcon size={20} className="md:w-6 md:h-6" />
           </div>
           <div>
@@ -131,7 +184,12 @@ export const AdminView: React.FC = () => {
             </h2>
             <div className="flex items-center gap-2 mt-1">
               <span className="w-6 md:w-8 h-[2px] bg-[#0369a1] rounded-full" />
-              <p className="text-[11px] md:text-[14px] font-normal text-[#94a3b8] uppercase">{t('admin.table.manageBooks')}</p>
+              <ProverbDisplay
+                keywords={t('proverbs.admin')}
+                size="sm"
+                className="opacity-70 mt-[-2px]"
+                defaultText={t('admin.table.manageBooks')}
+              />
             </div>
           </div>
         </div>
@@ -143,17 +201,25 @@ export const AdminView: React.FC = () => {
         </div>
       </div>
 
-      <NotificationContainer />
 
-      {(bookActions.isCheckingGlobal || isInitialLoading) && books.length === 0 && (
-        <div className="glass-panel p-20 flex flex-col items-center justify-center text-center animate-pulse">
-          <Database className="w-16 h-16 text-[#75C5F0] mb-6 animate-bounce" />
+
+      {(bookActions.isCheckingGlobal || (isInitialLoading && books.length === 0)) && (
+        <div className="glass-panel p-20 flex flex-col items-center justify-center text-center animate-pulse z-50">
+          <Database className="w-16 h-16 text-[#0369a1] mb-6 animate-bounce" />
           <h3 className="text-xl font-normal text-[#1a1a1a]">{t('common.loading')}</h3>
-          <p className="text-slate-500 font-normal">{t('admin.table.uploading')}</p>
+          <p className="text-slate-500 font-normal">{bookActions.isCheckingGlobal ? t('admin.table.uploading') : t('common.fetchingData')}</p>
         </div>
       )}
 
-      {(!bookActions.isCheckingGlobal && (!isInitialLoading || books.length > 0)) && (
+      {(!bookActions.isCheckingGlobal && !isInitialLoading && books.length === 0) && (
+        <div className="glass-panel p-20 flex flex-col items-center justify-center text-center">
+          <Database className="w-16 h-16 text-[#94a3b8] mb-6" />
+          <h3 className="text-xl font-normal text-[#1a1a1a]">{t(searchQuery ? 'admin.table.noResults' : 'admin.table.noBooks')}</h3>
+          <p className="text-slate-500 font-normal">{t(searchQuery ? 'admin.table.tryDifferent' : 'admin.table.uploadFirst')}</p>
+        </div>
+      )}
+
+      {!bookActions.isCheckingGlobal && books.length > 0 && (
         <div className="glass-panel overflow-hidden rounded-[16px] md:rounded-[24px] p-0 shadow-xl border border-[#0369a1]/10">
           <div className="overflow-x-auto custom-scrollbar">
             <table className="w-full text-right lg:min-w-[900px]" dir="rtl">
@@ -163,7 +229,7 @@ export const AdminView: React.FC = () => {
                   <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 w-20 md:w-28 text-right font-normal">{t('book.volumeLabel') || t('admin.table.pageCount')}</th>
                   <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 w-40 md:w-52 text-right font-normal">{t('admin.table.author')}</th>
                   <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 w-40 md:w-52 text-right font-normal">{t('admin.table.category')}</th>
-                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-right font-normal">{t('admin.table.progress')}</th>
+                  <th className="hidden md:table-cell px-3 md:px-6 py-3 md:py-5 text-right font-normal">{t('admin.table.progress')}</th>
                   <th className="px-3 md:px-6 py-3 md:py-5 text-left font-normal">{t('admin.table.actions')}</th>
                 </tr>
               </thead>
@@ -217,6 +283,16 @@ export const AdminView: React.FC = () => {
                                 )}
                               </span>
                               <div className="text-[10px] md:text-[12px] font-bold text-slate-400 mt-0.5">{new Date(book.uploadDate).toLocaleDateString()}</div>
+                              
+                              {/* Mobile Pipeline Progress */}
+                              <div className="flex md:hidden items-center gap-1.5 mt-2 opacity-80">
+                                <ScanText size={14} className={getPipelineIconClass(book, 'ocr', getStat(book.pipelineStats, 'ocr') === (book.totalPages || 0) && (book.totalPages || 0) > 0, getStat(book.pipelineStats, 'ocr_failed') > 0)} />
+                                <Scissors size={14} className={getPipelineIconClass(book, 'chunking', getStat(book.pipelineStats, 'chunking') === (book.totalPages || 0) && (book.totalPages || 0) > 0, getStat(book.pipelineStats, 'chunking_failed') > 0)} />
+                                <Cuboid size={14} className={getPipelineIconClass(book, 'embedding', getStat(book.pipelineStats, 'embedding') === (book.totalPages || 0) && (book.totalPages || 0) > 0, getStat(book.pipelineStats, 'embedding_failed') > 0)} />
+                                <Wand2 size={14} className={getPipelineIconClass(book, 'summary', !!book.hasSummary, false)} />
+                                <WholeWord size={14} className={getPipelineIconClass(book, 'word_index', getStat(book.pipelineStats, 'word_index') === (book.totalPages || 0) && (book.totalPages || 0) > 0, getStat(book.pipelineStats, 'word_index_failed') > 0)} />
+                                <BookOpenCheck size={14} className={getPipelineIconClass(book, 'spell_check', getStat(book.pipelineStats, 'spell_check') === (book.totalPages || 0) && (book.totalPages || 0) > 0, getStat(book.pipelineStats, 'spell_check_failed') > 0)} />
+                              </div>
                             </button>
                           )}
                         </div>
@@ -265,28 +341,57 @@ export const AdminView: React.FC = () => {
                             }
                           }}
                           onRemoveItem={(idx) => setEditData(prev => prev ? { ...prev, categories: prev.categories.filter((_, i) => i !== idx) } : null)}
+                          onClose={handleCancelEdit}
                           existingItems={book.categories || []}
                           placeholder={t('admin.categories.add')}
                           hideActions={true}
                         />
                       </td>
-                      <td className={`hidden lg:table-cell px-3 md:px-6 py-4 md:py-6 ${isEditing ? 'align-top' : ''}`}>
-                        <div className="flex flex-col gap-1 md:gap-2 min-w-[100px] md:min-w-[120px]">
-                          <ProgressBar book={book} />
-                          <div className="flex justify-between text-[10px] md:text-[12px] text-slate-400">
-                            <span>
-                              {book.pipelineStep && book.pipelineStats
-                                ? (book.pipelineStep === 'ready' ? (book.totalPages || 0) : (book.pipelineStats[book.pipelineStep] || 0))
-                                : 0
-                              }
-                              /
-                              {book.totalPages || 0}
-                            </span>
-                            <span className={`${getStatusTextColor(book.pipelineStep)} uppercase`}>
-                              {book.pipelineStep
-                                ? (t(`bookCard.pipeline.${book.pipelineStep}`) || book.pipelineStep)
-                                : '...'}
-                            </span>
+                      <td className={`hidden md:table-cell px-3 md:px-6 py-4 md:py-6 ${isEditing ? 'align-top' : ''}`}>
+                        <div className="flex flex-col gap-1.5 min-w-[120px] md:min-w-[150px]">
+                          <div className="flex items-center gap-2.5">
+                            {/* Baseline Pipeline Icons synced with ActionMenu */}
+                            <div className="group/status relative flex items-center">
+                              <ScanText size={18} className={`${getPipelineIconClass(book, 'ocr', getStat(book.pipelineStats, 'ocr') === (book.totalPages || 0) && (book.totalPages || 0) > 0, getStat(book.pipelineStats, 'ocr_failed') > 0)} transition-colors duration-300`} />
+                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-lg opacity-0 group-hover/status:opacity-100 transition-all duration-200 whitespace-nowrap pointer-events-none z-10 border border-slate-700">
+                                {t('admin.pipeline.ocr')}: {getStat(book.pipelineStats, 'ocr')}/{book.totalPages || 0}
+                                {getStat(book.pipelineStats, 'ocr_failed') > 0 && <span className="text-red-400 ml-1">({getStat(book.pipelineStats, 'ocr_failed')} {t('common.error')})</span>}
+                              </div>
+                            </div>
+                            <div className="group/status relative flex items-center">
+                              <Scissors size={18} className={`${getPipelineIconClass(book, 'chunking', getStat(book.pipelineStats, 'chunking') === (book.totalPages || 0) && (book.totalPages || 0) > 0, getStat(book.pipelineStats, 'chunking_failed') > 0)} transition-colors duration-300`} />
+                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-lg opacity-0 group-hover/status:opacity-100 transition-all duration-200 whitespace-nowrap pointer-events-none z-10 border border-slate-700">
+                                {t('admin.pipeline.chunking')}: {getStat(book.pipelineStats, 'chunking')}/{book.totalPages || 0}
+                                {getStat(book.pipelineStats, 'chunking_failed') > 0 && <span className="text-red-400 ml-1">({getStat(book.pipelineStats, 'chunking_failed')} {t('common.error')})</span>}
+                              </div>
+                            </div>
+                            <div className="group/status relative flex items-center">
+                              <Cuboid size={18} className={`${getPipelineIconClass(book, 'embedding', getStat(book.pipelineStats, 'embedding') === (book.totalPages || 0) && (book.totalPages || 0) > 0, getStat(book.pipelineStats, 'embedding_failed') > 0)} transition-colors duration-300`} />
+                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-lg opacity-0 group-hover/status:opacity-100 transition-all duration-200 whitespace-nowrap pointer-events-none z-10 border border-slate-700">
+                                {t('admin.pipeline.embedding')}: {getStat(book.pipelineStats, 'embedding')}/{book.totalPages || 0}
+                                {getStat(book.pipelineStats, 'embedding_failed') > 0 && <span className="text-red-400 ml-1">({getStat(book.pipelineStats, 'embedding_failed')} {t('common.error')})</span>}
+                              </div>
+                            </div>
+                            <div className="group/status relative flex items-center">
+                              <Wand2 size={18} className={`${getPipelineIconClass(book, 'summary', !!book.hasSummary, false)} transition-colors duration-300`} />
+                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-lg opacity-0 group-hover/status:opacity-100 transition-all duration-200 whitespace-nowrap pointer-events-none z-10 border border-slate-700">
+                                {t('admin.pipeline.summary')}: {book.hasSummary ? t('common.done') : t('common.pending')}
+                              </div>
+                            </div>
+                            <div className="group/status relative flex items-center">
+                              <WholeWord size={18} className={`${getPipelineIconClass(book, 'word_index', getStat(book.pipelineStats, 'word_index') === (book.totalPages || 0) && (book.totalPages || 0) > 0, getStat(book.pipelineStats, 'word_index_failed') > 0)} transition-colors duration-300`} />
+                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-lg opacity-0 group-hover/status:opacity-100 transition-all duration-200 whitespace-nowrap pointer-events-none z-10 border border-slate-700">
+                                {t('admin.pipeline.wordIndex')}: {getStat(book.pipelineStats, 'word_index')}/{book.totalPages || 0}
+                                {getStat(book.pipelineStats, 'word_index_failed') > 0 && <span className="text-red-400 ml-1">({getStat(book.pipelineStats, 'word_index_failed')} {t('common.error')})</span>}
+                              </div>
+                            </div>
+                            <div className="group/status relative flex items-center">
+                              <BookOpenCheck size={18} className={`${getPipelineIconClass(book, 'spell_check', getStat(book.pipelineStats, 'spell_check') === (book.totalPages || 0) && (book.totalPages || 0) > 0, getStat(book.pipelineStats, 'spell_check_failed') > 0)} transition-colors duration-300`} />
+                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-lg opacity-0 group-hover/status:opacity-100 transition-all duration-200 whitespace-nowrap pointer-events-none z-10 border border-slate-700">
+                                {t('admin.pipeline.spellCheck')}: {getStat(book.pipelineStats, 'spell_check')}/{book.totalPages || 0}
+                                {getStat(book.pipelineStats, 'spell_check_failed') > 0 && <span className="text-red-400 ml-1">({getStat(book.pipelineStats, 'spell_check_failed')} {t('common.error')})</span>}
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -330,14 +435,25 @@ export const AdminView: React.FC = () => {
                               </button>
                             </div>
                           )}
-                          <div className="relative" ref={activeMenuId === book.id ? menuRef : null}>
+                          <div className="relative">
                             <button
-                              onClick={() => setActiveMenuId(activeMenuId === book.id ? null : book.id)}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                if (activeMenuId === book.id) {
+                                  setActiveMenuId(null);
+                                  setMenuAnchorRect(null);
+                                } else {
+                                  setActiveMenuId(book.id);
+                                  setMenuAnchorRect(e.currentTarget.getBoundingClientRect());
+                                }
+                              }}
                               className={`p-2 hover:bg-[#0369a1]/10 rounded-xl transition-all ${activeMenuId === book.id ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-slate-400'}`}
                             >
                               <MoreVertical size={20} />
                             </button>
-                            {activeMenuId === book.id && <ActionMenu book={book} close={() => setActiveMenuId(null)} />}
+                            {activeMenuId === book.id && menuAnchorRect && (
+                              <ActionMenu book={book} close={() => { setActiveMenuId(null); setMenuAnchorRect(null); }} anchorRect={menuAnchorRect} menuRef={menuRef} />
+                            )}
                           </div>
                         </div>
                       </td>

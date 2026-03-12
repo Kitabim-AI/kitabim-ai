@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navbar } from './Navbar';
 import { Modal } from '../common/Modal';
+import { NotificationContainer } from '../common/NotificationContainer';
 import { RefreshCw } from 'lucide-react';
 import { useAppContext } from '../../context/AppContext';
 import { useI18n } from '../../i18n/I18nContext';
@@ -21,16 +22,36 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
     setPage,
     isLoading,
     modal,
-    setModal
+    setModal,
+    isReaderFullscreen,
   } = useAppContext();
   const { t } = useI18n();
 
-  return (
-    <div className="min-h-screen bg-transparent flex flex-col font-sans relative overflow-x-hidden" dir="rtl">
-      <Navbar />
+  // Fix iOS Safari keyboard dismiss leaving page scrolled with empty space at bottom
+  React.useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    let keyboardOpen = false;
+    const handleResize = () => {
+      const shrunk = vv.height < window.innerHeight * 0.85;
+      if (keyboardOpen && !shrunk) {
+        // keyboard just closed — reset scroll
+        requestAnimationFrame(() => window.scrollTo(0, 0));
+      }
+      keyboardOpen = shrunk;
+    };
+    vv.addEventListener('resize', handleResize);
+    return () => vv.removeEventListener('resize', handleResize);
+  }, []);
 
-      <main className="flex-grow p-8 max-w-[1600px] mx-auto w-full relative z-10">
-        {isLoading && view !== 'reader' && !searchQuery && !homeSearchQuery && (
+  return (
+    <div className="min-h-[100dvh] bg-transparent flex flex-col font-sans relative overflow-x-hidden notranslate" dir="rtl" translate="no">
+      <div className={isReaderFullscreen ? 'hidden lg:block' : ''}>
+        <Navbar />
+      </div>
+
+      <main className="flex-grow p-0 sm:p-2 md:p-4 lg:p-8 max-w-[1600px] mx-auto w-full relative z-10">
+        {(isLoading || bookActions?.isCheckingGlobal) && view !== 'reader' && !searchQuery && !homeSearchQuery && (
           <div className="absolute inset-0 bg-white/40 backdrop-blur-md z-40 flex items-center justify-center min-h-[400px] rounded-[40px]">
             <div className="flex flex-col items-center gap-6">
               <div className="relative">
@@ -45,18 +66,19 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
         )}
 
         {children}
-
-        <Modal
-          isOpen={modal.isOpen}
-          title={modal.title}
-          message={modal.message}
-          type={modal.type}
-          confirmText={modal.confirmText}
-          onConfirm={modal.onConfirm}
-          destructive={modal.destructive}
-          onClose={() => setModal({ ...modal, isOpen: false })}
-        />
       </main>
+
+      <Modal
+        isOpen={modal.isOpen}
+        title={modal.title}
+        message={modal.message}
+        type={modal.type}
+        confirmText={modal.confirmText}
+        onConfirm={modal.onConfirm}
+        destructive={modal.destructive}
+        onClose={() => setModal({ ...modal, isOpen: false })}
+      />
+      <NotificationContainer />
     </div>
   );
 };

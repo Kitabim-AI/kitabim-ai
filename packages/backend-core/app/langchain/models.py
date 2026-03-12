@@ -8,7 +8,7 @@ from typing import Any, AsyncIterator, List
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.messages import HumanMessage
-from langchain_core.runnables import Runnable, RunnableConfig, RunnableLambda
+from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 
 from app.core.config import settings
@@ -205,20 +205,36 @@ def _normalize_prompt_value(value) -> str:
     return str(value)
 
 
+_STREAM_FIRST_CHUNK_TIMEOUT = 60.0  # seconds to wait for the first chunk before treating as failure
+
+
 async def _stream_with_breaker(breaker: CircuitBreaker, fn, *args, **kwargs):
     allowed = await breaker._allow_call()
     if not allowed:
         raise CircuitBreakerOpen(f"Circuit breaker '{breaker.name}' is open")
 
     try:
-        # Get the async iterator (ensure we don't double-await if it's already an iterator)
         it = fn(*args, **kwargs)
-        started = False
-        async for chunk in it:
-            if not started:
-                await breaker._on_success()
-                started = True
+        aiter = it.__aiter__()
+        first = True
+        while True:
+            try:
+                if first:
+                    # Timeout only on the first chunk — if the model connects but never responds
+                    chunk = await asyncio.wait_for(aiter.__anext__(), timeout=_STREAM_FIRST_CHUNK_TIMEOUT)
+                    await breaker._on_success()
+                    first = False
+                else:
+                    chunk = await aiter.__anext__()
+            except asyncio.TimeoutError:
+                await breaker._on_failure()
+                log_json(_logger, logging.ERROR, "LLM stream timed out waiting for first chunk", timeout=_STREAM_FIRST_CHUNK_TIMEOUT, breaker=breaker.name)
+                raise TimeoutError(f"LLM did not respond within {_STREAM_FIRST_CHUNK_TIMEOUT}s")
+            except StopAsyncIteration:
+                break
             yield chunk
+    except (TimeoutError, asyncio.TimeoutError):
+        raise
     except Exception as exc:
         await breaker._on_failure()
         log_json(_logger, logging.ERROR, "LLM stream failed", error=str(exc), breaker=breaker.name)

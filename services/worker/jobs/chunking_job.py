@@ -14,7 +14,7 @@ from typing import List
 from sqlalchemy import select, update, delete, func
 
 from app.db import session as db_session
-from app.db.models import Book, Chunk, Page
+from app.db.models import Book, Chunk, Page, PipelineEvent
 from app.services.chunking_service import chunking_service
 from app.utils.observability import log_json
 
@@ -67,8 +67,12 @@ async def chunking_job(ctx, page_ids: List[int]) -> None:
                 await session.execute(
                     update(Page)
                     .where(Page.id == page.id)
-                    .values(milestone="succeeded", last_updated=func.now())
+                    .values(chunking_milestone="succeeded", last_updated=func.now())
                 )
+                session.add(PipelineEvent(
+                    page_id=page.id,
+                    event_type="chunking_succeeded"
+                ))
                 await session.commit()
 
             succeeded += 1
@@ -78,16 +82,22 @@ async def chunking_job(ctx, page_ids: List[int]) -> None:
 
         except Exception as exc:
             async with db_session.async_session_factory() as session:
+                error_msg = str(exc)[:500]
                 await session.execute(
                     update(Page)
                     .where(Page.id == page.id)
                     .values(
-                        milestone="failed",
+                        chunking_milestone="failed",
                         retry_count=Page.retry_count + 1,
-                        error=str(exc)[:500],
+                        error=error_msg,
                         last_updated=func.now(),
                     )
                 )
+                session.add(PipelineEvent(
+                    page_id=page.id,
+                    event_type="chunking_failed",
+                    payload=f'{{"error": "{error_msg}"}}'
+                ))
                 await session.commit()
 
             failed += 1

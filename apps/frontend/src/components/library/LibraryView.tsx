@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { Zap, Library, BookOpen } from 'lucide-react';
+import { ProverbDisplay } from '../common/ProverbDisplay';
 import { BookCard } from './BookCard';
 import { useI18n } from '../../i18n/I18nContext';
 import { useAppContext } from '../../context/AppContext';
@@ -33,19 +34,19 @@ export const LibraryView: React.FC = () => {
   }, [hasMore, isLoadingMore, loadMore, loaderRef, isInitialLoading]);
 
   return (
-    <div className="space-y-8 sm:space-y-10 md:space-y-12" dir="rtl">
+    <div className="space-y-8 sm:space-y-10 md:space-y-12 px-4 sm:px-6 md:px-0 py-4 sm:py-6 md:py-8" dir="rtl">
       {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 sm:gap-6 pb-8 sm:pb-10 md:pb-12 border-b border-[#0369a1]/10 relative">
         <header className="space-y-3 sm:space-y-4">
           <div className="flex items-center gap-3 sm:gap-4 group">
-            <div className="p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:-rotate-6">
+            <div className="p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 icon-shake">
               <Library size={20} className="md:w-6 md:h-6" strokeWidth={2.5} />
             </div>
             <div>
               <h2 className="text-2xl sm:text-3xl font-black text-[#1a1a1a]">{t('library.title')}</h2>
               <div className="flex items-center gap-2 mt-1 sm:mt-2">
                 <span className="w-6 sm:w-8 h-[2px] bg-[#0369a1] rounded-full" />
-                <p className="text-xs sm:text-sm font-black text-[#94a3b8] uppercase">{t('library.subtitle')}</p>
+                <ProverbDisplay size="sm" keywords={t('proverbs.library')} className="opacity-70 mt-[-2px]" />
               </div>
             </div>
           </div>
@@ -68,7 +69,7 @@ export const LibraryView: React.FC = () => {
       </div>
 
       {/* Grid Section */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-6 sm:gap-x-8 gap-y-10 sm:gap-y-12 justify-items-center">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-3 sm:gap-x-8 gap-y-8 sm:gap-y-12 justify-items-center">
         {books.map(book => (
           <BookCard
             key={book.id}
@@ -82,8 +83,8 @@ export const LibraryView: React.FC = () => {
             <div className="p-10 bg-[#0369a1]/10 rounded-[48px] mb-8 relative">
               <Library className="w-24 h-24 text-[#0369a1]" strokeWidth={1.5} />
             </div>
-            <h4 className="text-3xl font-black text-[#1a1a1a] mb-4">{t('library.empty.title')}</h4>
-            <p className="text-[#94a3b8] font-bold text-lg max-w-md text-center">{t('library.empty.message')}</p>
+            <h4 className="text-xl sm:text-2xl md:text-3xl font-black text-[#1a1a1a] mb-4">{t('library.empty.title')}</h4>
+            <p className="text-[#94a3b8] font-bold text-base sm:text-lg max-w-md text-center">{t('library.empty.message')}</p>
           </div>
         )}
       </div>
@@ -98,7 +99,7 @@ export const LibraryView: React.FC = () => {
         ) : !hasMore && books.length > 0 && (
           <div className="flex flex-col items-center gap-4 opacity-30">
             <div className="w-16 h-[1px] bg-[#94a3b8]" />
-            <p className="text-[12px] font-black text-[#94a3b8] uppercase">{t('common.endOfList')}</p>
+            <p className="text-xs font-black text-[#94a3b8] uppercase">{t('common.endOfList')}</p>
             <div className="w-16 h-[2px] bg-[#94a3b8]" />
           </div>
         )}

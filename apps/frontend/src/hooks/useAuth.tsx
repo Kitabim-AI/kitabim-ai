@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect, useCallback, createContext, useContext, ReactNode } from 'react';
-import { AuthService, User, getAccessToken, clearAccessToken } from '../services/authService';
+import { AuthService, User, getAccessToken, setAccessToken, clearAccessToken } from '../services/authService';
 
 interface AuthState {
   user: User | null;
@@ -34,6 +34,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Check for existing session on mount
   useEffect(() => {
     const initAuth = async () => {
+      // Handle token returned from mobile OAuth redirect flow (?access_token=...)
+      const params = new URLSearchParams(window.location.search);
+      const tokenFromUrl = params.get('access_token');
+      if (tokenFromUrl) {
+        setAccessToken(tokenFromUrl);
+        // Remove token from URL without triggering a page reload
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete('access_token');
+        window.history.replaceState({}, '', cleanUrl.toString());
+      }
+
       const token = getAccessToken();
       if (!token) {
         setState({

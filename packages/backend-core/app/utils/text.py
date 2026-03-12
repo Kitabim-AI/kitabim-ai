@@ -24,7 +24,7 @@ def clean_uyghur_text(text: str) -> str:
 
     dot_leader_pattern = re.compile(r"(?:[\.·•∙⋅․﹒｡]\s*){3,}|…{2,}")
     list_marker_pattern = re.compile(r"^\s*([-—–*•]|\d+[.)])\s+")
-    header_prefixes = ("[Header]", "[Footer]", "#")
+    header_prefixes = ("[Header]", "[Footer]", "#", "|")
 
     for block in blocks:
         if not block.strip():

@@ -3,6 +3,9 @@
     "volume": "Volume",
     "lastUpdated": "Last Updated",
     "loading": "Loading...",
+    "done": "Done",
+    "pending": "Pending",
+    "processing": "Processing",
     "error": "Error",
     "success": "Success",
     "noData": "No data available",
@@ -11,7 +14,9 @@
     "delete": "Delete",
     "edit": "Edit",
     "close": "Close",
+    "back": "Back",
     "search": "Search",
+    "download": "Download",
     "filter": "Filter",
     "clear": "Clear",
     "send": "Send",
@@ -31,11 +36,18 @@
     "active": "Active",
     "view": "View",
     "add": "Add",
+    "previous": "Previous",
+    "next": "Next",
     "loadingApp": "Library is loading...",
     "uploadSuccess": "Document uploaded successfully.",
-    "reindexStarted": "Book re-indexing started.",
+    "uploadExisting": "This book already exists in the library.",
+    "reindexStarted": "Book re-vectorization started.",
+    "redoOcrStarted": "Full OCR reprocess started. Book remains readable while pages update.",
+    "spellCheckStarted": "{{count}} page(s) queued for spell check.",
     "resetFailedSuccess": "{{count}} failed page(s) reset to OCR.",
     "noFailedPages": "No failed pages found for this book.",
+    "pageResetSuccess": "Page {{pageNum}} reset and queued for re-processing.",
+    "pageResetError": "Failed to reset page {{pageNum}}. Please try again.",
     "pageUpdated": "Page {{pageNum}} updated.",
     "noPagesToSave": "No pages found to save. Please try reloading the book.",
     "saveSuccess": "Global corrections saved.",
@@ -55,6 +67,7 @@
   },
   "book": {
     "volume": "Volume {{volume}}",
+    "volumeLabel": "Volume",
     "pagesCount": "{{count}} pages"
   },
   "app": {
@@ -70,6 +83,7 @@
     "home": "Home",
     "library": "Public Library",
     "globalChat": "Global Assistant",
+    "spellCheck": "Spell Check",
     "joinUs": "Join Us",
     "admin": "Admin",
     "addBook": "Add Book",
@@ -77,7 +91,7 @@
   },
   "home": {
     "searchPlaceholder": "Search books, authors or topics...",
-    "topCategories": "Top Categories",
+    "topCategories": "All Categories",
     "searchResults": "Search Results",
     "resultsFor": "Results for",
     "totalBooks": "books"
@@ -91,18 +105,14 @@
       "title": "Library is currently empty",
       "message": "There are no books here yet. Try exploring other pages."
     },
+    "noResults": {
+      "title": "No books found.",
+      "message": "Try searching with different keywords or categories."
+    },
     "loadingMore": "Loading more books...",
     "searchPlaceholder": "Search books..."
   },
   "bookCard": {
-    "ready": "Ready",
-    "ocr_processing": "OCR Processing",
-    "ocr_done": "OCR Done",
-    "chunked": "Waiting for Embedding",
-    "indexing": "Indexing",
-    "failed": "Failed",
-    "pending": "Pending",
-    "error": "Error",
     "public": "Public",
     "private": "Private",
     "category": "Category",
@@ -110,7 +120,18 @@
       "ocr": "OCR",
       "chunking": "Chunking",
       "embedding": "Embedding",
-      "ready": "Ready"
+      "ready": "Ready",
+      "idle": "Waiting",
+      "running": "Running",
+      "in_progress": "Processing",
+      "succeeded": "Succeeded",
+      "failed": "Failed"
+    },
+    "summary": {
+      "title": "Book Summary",
+      "loading": "Loading summary...",
+      "noSummary": "No summary available for this book.",
+      "aiBadge": "AI Generated"
     }
   },
   "chat": {
@@ -144,9 +165,9 @@
     "title": "Reader",
     "close": "Close",
     "fontSize": "Font Size",
-    "spellCheck": "Spell Check",
     "editBook": "Edit Book",
     "editPage": "Edit Page",
+    "spellCheck": "Spell Check",
     "pageNumber": "Page Number",
     "next": "Next",
     "previous": "Previous",
@@ -172,43 +193,20 @@
     "statsLabel": "Statistics",
     "configLabel": "Settings",
     "contactsLabel": "Contacts",
-    "bookManagement": "Book Management",
-    "userManagement": "User Management",
     "systemConfigLabel": "System Config",
     "stats": {
       "title": "System Statistics",
       "totalBooks": "Total Books",
-      "readyBooks": "Ready Books",
-      "llmAvailable": "LLM Available",
-      "llmUnavailable": "LLM Unavailable",
-      "processing": "Processing",
-      "bookOcrProcessing": "OCR Processing",
-      "pageOcrProcessing": "OCR Processing",
-      "pageChunked": "Waiting for Embedding",
-      "bookIndexing": "Indexing",
-      "pageIndexing": "Indexing",
-      "jobRunning": "Running",
-      "users": "Users",
-      "ready": "Ready",
-      "ocrDone": "OCR Done (not indexed)",
-      "error": "Error",
-      "pending": "Pending",
-      "bookPending": "Pending",
-      "pagePending": "Pending",
+      "llmAvailable": "AI Assistant Available",
+      "llmUnavailable": "AI Assistant Unavailable",
       "booksByStatus": "Books by Status",
       "pageStats": "Page Statistics",
       "totalPages": "Total Pages",
       "indexedPages": "Indexed Pages",
-      "unindexedPages": "Unindexed Pages",
-      "errorBooks": "Error Books",
-      "errorPages": "Error Pages",
-      "jobStats": "Job Statistics",
-      "totalJobs": "Total Jobs",
-      "jobSucceeded": "Succeeded",
-      "jobFailed": "Failed",
-      "jobSkipped": "Skipped",
-      "jobQueued": "Queued",
-      "jobRetrying": "Retrying"
+      "chunkStats": "Vector Chunk Statistics",
+      "totalChunks": "Total Chunks",
+      "embeddedChunks": "Vectorized Chunks",
+      "pendingChunks": "Pending Chunks"
     },
     "contacts": {
       "title": "Contact Submissions",
@@ -235,6 +233,14 @@
       "noSubmissions": "No contact submissions yet",
       "error": "Failed to load submissions"
     },
+    "pipeline": {
+      "ocr": "OCR",
+      "chunking": "Chunking",
+      "embedding": "Vector Indices",
+      "summary": "AI Summary",
+      "wordIndex": "Word Index",
+      "spellCheck": "Spell check"
+    },
     "table": {
       "name": "Name",
       "author": "Author",
@@ -245,8 +251,11 @@
       "view": "View",
       "edit": "Edit",
       "delete": "Delete",
-      "reindex": "Reindex",
+      "reindex": "Re-vectorize",
+      "triggerSpellCheck": "Spell Check",
+      "replaceCover": "Replace Cover",
       "resetFailed": "Reset Failed Pages",
+      "redoOcr": "Redo OCR",
       "showing": "Showing",
       "email": "Email",
       "role": "Role",
@@ -265,7 +274,11 @@
       "makePublic": "Make Public",
       "makePrivate": "Make Private",
       "recognizing": "Recognizing",
-      "waiting": "Waiting"
+      "waiting": "Waiting",
+      "noBooks": "No books yet.",
+      "uploadFirst": "Upload your first book to get started.",
+      "noResults": "No books found.",
+      "tryDifferent": "Try searching with different keywords."
     },
     "categories": {
       "title": "Categories",
@@ -347,20 +360,55 @@
   },
   "spellCheck": {
     "title": "Spell Check",
-    "subtitle": "AI-Powered Correction",
+    "subtitle": "Spell Check Results",
     "checking": "Checking...",
-    "analyzing": "Analyzing spellings...",
+    "analyzing": "Checking dictionary...",
     "runCheck": "Run Spell Check",
+    "refresh": "Refresh",
+    "rescan": "Re-scan page",
+    "rescanning": "Re-scanning page {{page}}...",
     "clickTip": "Click the button above to start checking",
-    "noErrors": "No errors found!",
+    "noErrors": "Page {{page}}: No errors found!",
     "noErrorsDetail": "The text on this page looks correct.",
-    "errorsCount": "Total {{count}} errors found",
-    "confidence": "Confidence: {{percent}}%",
     "suggestion": "Suggested Correction",
     "ignore": "Ignore",
     "applied": "Corrected",
     "ignored": "Ignored",
-    "apply": "Apply"
+    "skipped": "Skipped for now",
+    "apply": "Apply",
+    "typeCorrection": "Type correct spelling...",
+    "nextBook": "Next Book",
+    "loadingBook": "Finding a book with issues...",
+    "noBooks": "No spell check issues found",
+    "noBooksDetail": "All books are clean, or spell check has not been run yet.",
+    "issueCount": "{{count}} issues",
+    "loadError": "Could not load. Please try again.",
+    "pageProgress": "Page {{current}} of {{total}}",
+    "findingProgress": "Finding {{current}} of {{total}}",
+    "findingSkippedNote": "({{skipped}} skipped)",
+    "skipLater": "Later",
+    "undoSkip": "Undo",
+    "ignoreTooltip": "Mark as correct — won't be flagged again",
+    "unsavedEdit": "You have unsaved edits.",
+    "stayAndEdit": "Stay",
+    "discardEdit": "Discard",
+    "noContext": "(Context unavailable)",
+    "reviewedSwipe": "All reviewed — swipe to next page",
+    "cleanSwipe": "No issues — swipe to next page",
+    "viewPage": "View page",
+    "reviewPending": "Review ({{count}})",
+    "queued": "Queued for review",
+    "queuedNote": "All decisions made — confirm to save",
+    "removeFromQueue": "Remove",
+    "reviewTitle": "Pending Corrections",
+    "reviewEmpty": "No corrections queued",
+    "reviewEmptyNote": "Apply corrections to see them here before saving.",
+    "confirmAll": "Confirm All ({{count}})",
+    "clearAll": "Clear All",
+    "reviewPage": "Page",
+    "reviewOriginal": "Original",
+    "reviewReplacement": "Replacement",
+    "confirmError": "Some pages failed to save. {{count}} corrections remain."
   },
   "pagination": {
     "previous": "Previous",
@@ -399,18 +447,41 @@
       "title": "Reset Error",
       "message": "Failed to reset failed pages. Please try again."
     },
+    "resetPage": {
+      "title": "Reset Page",
+      "message": "Are you sure you want to reset page {{pageNum}}? This will clear the current text and queue it for re-processing. Any unsaved edits will be lost.",
+      "confirm": "Reset Page"
+    },
     "reOcrError": {
       "title": "Re-OCR Error",
       "message": "Failed to start re-OCR for this page. Please try again."
     },
+    "triggerSpellCheck": {
+      "title": "Run Spell Check",
+      "message": "This will queue all OCR-complete pages in this book for dictionary spell check. The worker will process them automatically.",
+      "confirm": "Run Spell Check"
+    },
+    "triggerSpellCheckError": {
+      "title": "Spell Check Error",
+      "message": "Failed to queue pages for spell check. Please try again."
+    },
     "reindex": {
-      "title": "Confirm Re-Index",
+      "title": "Confirm Re-vectorization",
       "message": "Are you sure you want to re-chunk and re-embed all pages in this book? This is useful for model upgrades or fixing search issues. Existing content will be preserved.",
-      "confirm": "Re-Index Book"
+      "confirm": "Re-vectorize Book"
     },
     "reindexError": {
-      "title": "Re-Index Error",
-      "message": "Failed to start re-indexing. Please try again."
+      "title": "Re-vectorization Error",
+      "message": "Failed to start re-vectorization. Please try again."
+    },
+    "redoOcr": {
+      "title": "Redo Full OCR",
+      "message": "This will re-run OCR on every page. Existing content is preserved and replaced page-by-page as new OCR completes — the book stays readable throughout. Continue?",
+      "confirm": "Redo OCR"
+    },
+    "redoOcrError": {
+      "title": "Re-OCR Error",
+      "message": "Failed to start re-OCR. Please try again."
     },
     "updateError": {
       "title": "Update Error",
@@ -441,7 +512,8 @@
     "loginWithTwitter": "Login with X",
     "loggingIn": "Logging in...",
     "logout": "Logout",
-    "yourRole": "Your Role:"
+    "yourRole": "Your Role:",
+    "signInMessage": "You need to sign in to use this feature."
   },
   "joinUs": {
     "hero": {
@@ -452,14 +524,12 @@
     "whoWeAre": {
       "title": "Who We Are",
       "paragraph1": "Kitabim.AI is a community-driven platform dedicated to preserving, digitizing, and making accessible Uyghur books and literature. We combine cutting-edge AI technology with human expertise to create the largest digital Uyghur library.",
-      "paragraph2": "Our mission is to ensure that Uyghur culture, knowledge, and literary heritage are preserved for future generations. We believe that access to knowledge in one's native language is a fundamental right.",
-      "paragraph3": "We are volunteers, developers, linguists, and book lovers working together to build something meaningful. Join us in this important mission!"
+      "paragraph2": "Our mission is to ensure that Uyghur culture, knowledge, and literary heritage are preserved for future generations. We believe that access to knowledge in one's native language is a fundamental right."
     },
     "spellingMistakes": {
       "title": "Why Do Books Have Spelling Mistakes?",
       "paragraph1": "Our books are digitized using Optical Character Recognition (OCR) technology powered by AI. While OCR has improved significantly, it's not perfect—especially with Uyghur script which has unique characteristics and multiple writing styles.",
-      "paragraph2": "Old books, faded text, different fonts, and printing variations can confuse OCR systems. That's where human editors come in! Our community of volunteer editors carefully review and correct these texts to ensure accuracy.",
-      "paragraph3": "Every correction you make helps improve our AI models and makes these books more accessible to everyone. Your contribution matters!"
+      "paragraph2": "Old books, faded text, different fonts, and printing variations can confuse OCR systems. That's where human editors come in! Our community of volunteer editors carefully review and correct these texts to ensure accuracy."
     },
     "smartLibrary": {
       "title": "Smart Library & Chat",
@@ -526,6 +596,17 @@
         "messageRequired": "Message is required",
         "messageMinLength": "Message must be at least 10 characters long"
       }
+    },
+    "sponsors": {
+      "title": "Our Sponsors",
+      "subtitle": "Organizations and communities supporting our mission"
     }
+  },
+  "proverbs": {
+    "home": "كىتاب,بىلىم",
+    "library": "كىتاب,بىلىم,ئوقۇش",
+    "admin": "ئەمگەك,تېرىش",
+    "chat": "ئەقىل,پاراسەت",
+    "joinUs": "ئۆملۈك,بىرلىك,ياردەم"
   }
 }

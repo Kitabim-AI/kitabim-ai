@@ -34,6 +34,20 @@ async def run_stale_watchdog(ctx) -> None:
             .returning(Page.id)
         )
         reset_count = len(result.fetchall())
+
+        # Also reset spell check pages stuck in_progress
+        sc_result = await session.execute(
+            update(Page)
+            .where(
+                Page.spell_check_milestone == "in_progress",
+                Page.last_updated < threshold,
+            )
+            .values(spell_check_milestone="idle", last_updated=func.now())
+            .returning(Page.id)
+        )
+        sc_reset_count = len(sc_result.fetchall())
+
         await session.commit()
 
-    log_json(logger, logging.INFO, "stale watchdog ran", pages_reset=reset_count)
+    log_json(logger, logging.INFO, "stale watchdog ran",
+             pages_reset=reset_count, spell_check_reset=sc_reset_count)

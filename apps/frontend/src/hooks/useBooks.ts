@@ -16,12 +16,25 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
 
   // Helper to determine if we should use shelf-style (infinite scroll) behavior
   const isShelfView = useMemo(() => {
-    return view === 'library' || view === 'global-chat' || view === 'admin' || (view === 'home' && (searchQuery.trim().length > 0 || category));
+    return view === 'library' || view === 'global-chat' || view === 'admin' || (view === 'home' && (searchQuery.trim().length > 0 || !!category));
   }, [view, searchQuery, category]);
+
+  // Reset shelf state whenever the search query or category changes
+  useEffect(() => {
+    if (isShelfView) {
+      setBooks([]);
+      setShelfPage(1);
+      setHasMoreShelf(true);
+    }
+  }, [searchQuery, category]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Internal Polling for Processing Books (only on admin page)
   useEffect(() => {
-    const hasProcessing = books.some(b => b.pipelineStep && b.pipelineStep !== 'ready');
+    const hasProcessing = books.some(b => 
+      (b.pipelineStep && b.pipelineStep !== 'ready') || 
+      (b.pipelineStats && Object.entries(b.pipelineStats).some(([k, v]) => k.endsWith('_active') && (v as number) > 0))
+    );
+    
     if (hasProcessing && view === 'admin') {
       const interval = setInterval(async () => {
         try {
@@ -32,15 +45,13 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
 
           const response = await PersistenceService.getGlobalLibrary(currentPage, currentSize, searchQuery, sortBy, order, isShelfView, category);
 
-          setBooks(prev => {
-            return response.books;
-          });
+          setBooks(response.books);
           setTotalBooks(response.total);
           setTotalReady(response.totalReady);
         } catch (e) {
           console.error("Polling failed", e);
         }
-      }, 10000);
+      }, 5000); // Poll every 5 seconds for better responsiveness
       return () => clearInterval(interval);
     }
   }, [view, books, isShelfView, searchQuery, sortConfig, pageSize, page, category]);
@@ -94,7 +105,7 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
     } finally {
       setIsLoadingMoreShelf(false);
     }
-  }, [shelfPage, hasMoreShelf, isLoadingMoreShelf, isShelfView, searchQuery]);
+  }, [shelfPage, hasMoreShelf, isLoadingMoreShelf, isShelfView, searchQuery, category]);
 
   const sortedBooks = useMemo(() => {
     if (isShelfView) {

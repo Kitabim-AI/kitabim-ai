@@ -7,10 +7,12 @@ import logging
 import secrets
 import hashlib
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlencode
 
 import httpx
+from jose import jwt, JWTError
 
 from app.core.config import settings
 
@@ -29,6 +31,7 @@ class OAuthState:
     state: str
     nonce: str
     code_verifier: Optional[str] = None  # For PKCE (Twitter)
+    redirect_uri: Optional[str] = None   # For mobile redirect flow
 
     @classmethod
     def generate(cls, use_pkce: bool = False) -> "OAuthState":
@@ -63,20 +66,24 @@ class OAuthState:
 
     def to_cookie_value(self) -> str:
         """
-        Encode state, nonce, and optional code_verifier for cookie storage.
+        Encode state, nonce, optional code_verifier, and optional redirect_uri for cookie storage.
 
         Returns:
-            Colon-separated string with state:nonce or state:nonce:code_verifier
+            Colon-separated string: state:nonce[:code_verifier[:redirect_uri_b64]]
         """
         parts = [self.state, self.nonce]
-        if self.code_verifier:
-            parts.append(self.code_verifier)
+        if self.code_verifier or self.redirect_uri:
+            parts.append(self.code_verifier or "")
+        if self.redirect_uri:
+            # base64url encode so colons in URLs don't break parsing
+            encoded = base64.urlsafe_b64encode(self.redirect_uri.encode()).decode().rstrip("=")
+            parts.append(encoded)
         return ":".join(parts)
 
     @classmethod
     def from_cookie_value(cls, value: str) -> Optional["OAuthState"]:
         """
-        Decode state, nonce, and optional code_verifier from cookie value.
+        Decode state, nonce, optional code_verifier, and optional redirect_uri from cookie value.
 
         Args:
             value: Colon-separated cookie value
@@ -88,10 +95,16 @@ class OAuthState:
             parts = value.split(":")
             if len(parts) < 2:
                 return None
+            redirect_uri = None
+            if len(parts) >= 4 and parts[3]:
+                # Re-add base64 padding before decoding
+                padded = parts[3] + "=" * (-len(parts[3]) % 4)
+                redirect_uri = base64.urlsafe_b64decode(padded).decode()
             return cls(
                 state=parts[0],
                 nonce=parts[1],
-                code_verifier=parts[2] if len(parts) > 2 else None
+                code_verifier=parts[2] if len(parts) > 2 and parts[2] else None,
+                redirect_uri=redirect_uri,
             )
         except Exception:
             return None
@@ -233,6 +246,54 @@ def get_admin_emails_list() -> list[str]:
     if not settings.admin_emails:
         return []
     return [email.strip().lower() for email in settings.admin_emails.split(",") if email.strip()]
+
+
+def create_oauth_state_token(oauth_state: OAuthState) -> str:
+    """
+    Encode OAuthState into a signed JWT for stateless CSRF protection.
+
+    The JWT is passed as the OAuth `state` parameter. Google returns it
+    unchanged in the callback, so no server-side cookie is needed.
+
+    Args:
+        oauth_state: The OAuthState to encode.
+
+    Returns:
+        Signed JWT string valid for 10 minutes.
+    """
+    payload: dict = {
+        "state": oauth_state.state,
+        "nonce": oauth_state.nonce,
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=10),
+        "iat": datetime.now(timezone.utc),
+    }
+    if oauth_state.code_verifier:
+        payload["cv"] = oauth_state.code_verifier
+    if oauth_state.redirect_uri:
+        payload["ru"] = oauth_state.redirect_uri
+    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
+def decode_oauth_state_token(token: str) -> Optional[OAuthState]:
+    """
+    Decode and verify a JWT OAuth state token.
+
+    Args:
+        token: The JWT string returned from the OAuth provider as `state`.
+
+    Returns:
+        OAuthState if valid, None if expired or tampered.
+    """
+    try:
+        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        return OAuthState(
+            state=payload["state"],
+            nonce=payload["nonce"],
+            code_verifier=payload.get("cv"),
+            redirect_uri=payload.get("ru"),
+        )
+    except JWTError:
+        return None
 
 
 def is_admin_email(email: str) -> bool:

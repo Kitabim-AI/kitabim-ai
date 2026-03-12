@@ -72,7 +72,7 @@ export function TwitterLoginButton({ className = '' }: LoginButtonProps) {
   );
 }
 
-export function OAuthButtonGroup({ className = '', align = 'down', side = 'left' }: { className?: string; align?: 'up' | 'down'; side?: 'left' | 'right' }) {
+export function OAuthButtonGroup({ className = '', align = 'down', side = 'left' }: { className?: string; align?: 'up' | 'down'; side?: 'left' | 'right' | 'center' }) {
   const { loginWithGoogle, loginWithFacebook, loginWithTwitter, isLoading } = useAuth();
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
@@ -145,7 +145,7 @@ export function OAuthButtonGroup({ className = '', align = 'down', side = 'left'
       </button>
 
       {isOpen && (
-        <div className={`absolute ${align === 'up' ? 'bottom-full mb-2' : 'top-full mt-2'} ${side === 'right' ? 'right-0' : 'left-0'} w-[280px] bg-white/95 backdrop-blur-2xl border border-[#0369a1]/20 rounded-2xl shadow-[0_16px_64px_rgba(3,105,161,0.15)] overflow-hidden animate-fade-in z-50`}>
+        <div className={`absolute ${align === 'up' ? 'bottom-full mb-2' : 'top-full mt-2'} ${side === 'right' ? 'right-0' : side === 'center' ? 'left-1/2 -translate-x-1/2' : 'left-0'} min-w-full bg-white/95 backdrop-blur-2xl border border-[#0369a1]/20 rounded-2xl shadow-[0_16px_64px_rgba(3,105,161,0.15)] overflow-hidden animate-fade-in z-50`}>
           {loginOptions.map((option, index) => (
             <button
               key={option.name}
@@ -162,7 +162,7 @@ export function OAuthButtonGroup({ className = '', align = 'down', side = 'left'
               }}
             >
               {option.icon}
-              <span className="uyghur-text flex-1 text-left whitespace-nowrap">
+              <span className="uyghur-text flex-1 text-right whitespace-nowrap">
                 {option.name} {t('auth.loginWithGoogle').split(' ')[0] !== 'Login' ? 'بىلەن كىرىش' : `with ${option.name}`}
               </span>
               <ChevronDown size={14} className="opacity-0 group-hover:opacity-100 -rotate-90 transition-all" style={{ color: option.color }} strokeWidth={3} />
@@ -175,7 +175,7 @@ export function OAuthButtonGroup({ className = '', align = 'down', side = 'left'
 }
 
 
-export function UserMenu({ onLogout }: { onLogout?: () => void }) {
+export function UserMenu({ onLogout, side = 'left', inline = false }: { onLogout?: () => void; side?: 'left' | 'right'; inline?: boolean }) {
   const { user, logout, isLoading } = useAuth();
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
@@ -216,6 +216,62 @@ export function UserMenu({ onLogout }: { onLogout?: () => void }) {
 
   const currentRole = roleInfo[user.role] || roleInfo.reader;
 
+  const menuContent = (
+    <>
+      {/* User Header */}
+      <div className="p-4 mb-2 bg-gradient-to-br from-[#0369a1]/5 to-[#0284c7]/5 rounded-[24px] flex items-center gap-4 text-right" dir="rtl">
+        <div className="relative flex-shrink-0">
+          <div className="w-14 h-14 rounded-[20px] shadow-xl overflow-hidden border-4 border-white bg-white">
+            <UserAvatar
+              url={user.avatarUrl}
+              name={user.displayName}
+              className="w-full h-full object-cover"
+            />
+          </div>
+          <div
+            className="absolute -bottom-1.5 -right-1.5 px-2 py-0.5 rounded-full text-[10px] font-normal uppercase text-white shadow-lg"
+            style={{ background: currentRole.bg }}
+          >
+            {currentRole.label}
+          </div>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-normal text-[#1a1a1a] text-base truncate">{user.displayName}</div>
+          <div className="text-[12px] font-normal text-slate-400 mt-0.5 truncate">{user.email}</div>
+        </div>
+      </div>
+
+      <div className="p-1 space-y-1">
+        <button
+          onClick={() => {
+            setIsOpen(false);
+            logout();
+            onLogout?.();
+          }}
+          disabled={isLoading}
+          className="w-full flex items-center justify-between px-4 py-3 text-[#1a1a1a] hover:bg-[#0369a1]/5 rounded-2xl transition-all font-normal text-sm active:scale-95 group"
+          dir="rtl"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-[#0369a1]/10 text-[#0369a1] rounded-xl group-hover:bg-[#0369a1] group-hover:text-white transition-all shadow-sm">
+              <LogOut size={16} strokeWidth={2.5} />
+            </div>
+            <span className="group-hover:text-[#0369a1] transition-colors uppercase font-normal uyghur-text">{t('auth.logout')}</span>
+          </div>
+          <ChevronDown size={14} className="opacity-0 group-hover:opacity-100 -rotate-90 transition-all text-[#0369a1]/30" strokeWidth={3} />
+        </button>
+      </div>
+    </>
+  );
+
+  if (inline) {
+    return (
+      <div className="bg-white/95 backdrop-blur-2xl border border-[#0369a1]/20 rounded-[24px] overflow-hidden p-2">
+        {menuContent}
+      </div>
+    );
+  }
+
   return (
     <div ref={menuRef} className="relative z-[1001]" dir="rtl">
       <button
@@ -238,54 +294,15 @@ export function UserMenu({ onLogout }: { onLogout?: () => void }) {
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-4 w-72 bg-white/95 backdrop-blur-2xl border border-[#0369a1]/20 rounded-[32px] shadow-[0_32px_128px_rgba(3,105,161,0.1)] overflow-hidden animate-fade-in p-2">
-          {/* User Header */}
-          <div className="p-6 mb-2 bg-gradient-to-br from-[#0369a1]/5 to-[#0284c7]/5 rounded-[24px] flex flex-col items-center text-center">
-            <div className="relative mb-4">
-              <div className="w-20 h-20 rounded-[28px] shadow-2xl overflow-hidden border-4 border-white bg-white transform rotate-3 transition-transform hover:rotate-0">
-                <UserAvatar
-                  url={user.avatarUrl}
-                  name={user.displayName}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <div
-                className="absolute -bottom-2 -right-2 px-3 py-1 rounded-full text-[11px] font-normal uppercase text-white shadow-lg"
-                style={{ background: currentRole.bg }}
-              >
-                {currentRole.label}
-              </div>
-            </div>
-            <div className="font-normal text-[#1a1a1a] text-lg">{user.displayName}</div>
-            <div className="text-[13px] font-normal text-slate-400 mt-1">{user.email}</div>
-          </div>
-
-          <div className="p-2 space-y-1">
-            <button
-              onClick={() => {
-                setIsOpen(false);
-                logout();
-                onLogout?.();
-              }}
-              disabled={isLoading}
-              className="w-full flex items-center justify-between px-5 py-4 text-[#1a1a1a] hover:bg-[#0369a1]/5 rounded-2xl transition-all font-normal text-sm active:scale-95 group"
-            >
-              <div className="flex items-center gap-4">
-                <div className="p-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-xl group-hover:bg-[#0369a1] group-hover:text-white transition-all shadow-sm">
-                  <LogOut size={18} strokeWidth={2.5} />
-                </div>
-                <span className="group-hover:text-[#0369a1] transition-colors uppercase font-normal">{t('auth.logout')}</span>
-              </div>
-              <ChevronDown size={14} className="opacity-0 group-hover:opacity-100 -rotate-90 transition-all text-[#0369a1]/30" strokeWidth={3} />
-            </button>
-          </div>
+        <div className={`absolute top-full ${side === 'right' ? 'right-0' : 'left-0'} mt-4 w-72 bg-white/95 backdrop-blur-2xl border border-[#0369a1]/20 rounded-[32px] shadow-[0_32px_128px_rgba(3,105,161,0.1)] overflow-hidden animate-fade-in p-2`}>
+          {menuContent}
         </div>
       )}
     </div>
   );
 }
 
-export function AuthButton({ onLogout }: { onLogout?: () => void }) {
+export function AuthButton({ onLogout, dropdownSide = 'left', inline = false }: { onLogout?: () => void; dropdownSide?: 'left' | 'right'; inline?: boolean }) {
   const { isAuthenticated, isLoading } = useAuth();
   const { t } = useI18n();
 
@@ -298,7 +315,7 @@ export function AuthButton({ onLogout }: { onLogout?: () => void }) {
     );
   }
 
-  return isAuthenticated ? <UserMenu onLogout={onLogout} /> : <OAuthButtonGroup />;
+  return isAuthenticated ? <UserMenu onLogout={onLogout} side={dropdownSide} inline={inline} /> : <OAuthButtonGroup side={dropdownSide} />;
 }
 
 export default AuthButton;

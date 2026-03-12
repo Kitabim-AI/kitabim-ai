@@ -5,14 +5,18 @@ import { useChat } from '../hooks/useChat';
 import { useBookActions } from '../hooks/useBookActions';
 
 interface AppContextType {
-  view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us';
-  setView: (view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us') => void;
-  previousView: 'home' | 'library' | 'admin' | 'global-chat' | 'join-us';
-  setPreviousView: (view: 'home' | 'library' | 'admin' | 'global-chat' | 'join-us') => void;
+  view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check';
+  setView: (view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check') => void;
+  previousView: 'home' | 'library' | 'admin' | 'global-chat' | 'join-us' | 'spell-check';
+  setPreviousView: (view: 'home' | 'library' | 'admin' | 'global-chat' | 'join-us' | 'spell-check') => void;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
   homeSearchQuery: string;
   setHomeSearchQuery: (query: string) => void;
+  selectedCategory: string;
+  setSelectedCategory: (category: string) => void;
+  currentPage: number | null;
+  setCurrentPage: React.Dispatch<React.SetStateAction<number | null>>;
   selectedBook: Book | null;
   setSelectedBook: React.Dispatch<React.SetStateAction<Book | null>>;
   books: Book[];
@@ -34,16 +38,25 @@ interface AppContextType {
   hasMoreShelf: boolean;
   isLoadingMoreShelf: boolean;
   loaderRef: React.RefObject<HTMLDivElement | null>;
+  isReaderFullscreen: boolean;
+  setIsReaderFullscreen: (v: boolean) => void;
+  fontSize: number;
+  setFontSize: React.Dispatch<React.SetStateAction<number>>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [view, setViewInternal] = useState<'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us'>('home');
-  const [previousView, setPreviousView] = useState<'home' | 'library' | 'admin' | 'global-chat' | 'join-us'>('home');
+  const [view, setViewInternal] = useState<'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check'>('home');
+  const [previousView, setPreviousView] = useState<'home' | 'library' | 'admin' | 'global-chat' | 'join-us' | 'spell-check'>('home');
 
-  const setView = (newView: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us') => {
+  const setView = (newView: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check') => {
     if (newView !== view) {
+      // Clear search queries and categories when switching views
+      setSearchQuery('');
+      setHomeSearchQuery('');
+      setSelectedCategory('');
+
       // Only set previousView if the current view is not 'reader'
       // This ensures we always return to a main navigation view
       if (view !== 'reader') {
@@ -59,6 +72,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [currentPage, setCurrentPage] = useState<number | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [isReaderFullscreen, setIsReaderFullscreen] = useState(false);
+  const [fontSize, setFontSize] = useState(18);
   const loaderRef = useRef<HTMLDivElement>(null);
 
   const [modal, setModal] = useState<{
@@ -135,7 +150,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     loadMoreShelf,
     hasMoreShelf,
     isLoadingMoreShelf,
-    loaderRef
+    loaderRef,
+    isReaderFullscreen,
+    setIsReaderFullscreen,
+    fontSize,
+    setFontSize,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

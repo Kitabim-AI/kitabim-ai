@@ -1,7 +1,6 @@
 """Database seeding logic"""
 import logging
 from app.db.repositories.system_configs import SystemConfigsRepository
-from app.core.config import settings
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.utils.observability import log_json
 
@@ -13,69 +12,34 @@ async def seed_system_configs(session: AsyncSession):
     
     defaults = [
         {
-            "key": "pdf_processing_enabled",
-            "value": "true",
-            "description": "Enable or disable PDF processing system-wide (true/false)"
-        },
-        {
-            "key": "llm_cb_failure_threshold",
-            "value": str(settings.llm_cb_failure_threshold),
-            "description": "Number of consecutive failures before opening circuit breaker"
-        },
-        {
-            "key": "llm_cb_recovery_seconds",
-            "value": str(settings.llm_cb_recovery_seconds),
-            "description": "Seconds to wait before attempting recovery (half-open)"
-        },
-        {
-            "key": "batch_polling_interval_minutes",
-            "value": "10",
-            "description": "How often (in minutes) the background worker polls Gemini for batch job updates"
-        },
-        {
-            "key": "batch_last_polled_at",
-            "value": "0",
-            "description": "Unix timestamp of the last time the worker polled for batch jobs"
-        },
-        {
-            "key": "batch_ocr_limit",
-            "value": "100",
-            "description": "Maximum number of pages per OCR batch job"
-        },
-        {
-            "key": "batch_embedding_limit",
-            "value": "100",
-            "description": "Maximum number of chunks per embedding batch job"
-        },
-        {
-            "key": "batch_chunking_limit",
-            "value": "100",
-            "description": "Maximum number of pages to chunk in one cycle"
-        },
-        {
-            "key": "batch_books_per_submission",
-            "value": "1",
-            "description": "Number of books to process per OCR batch submission. Next book is only picked up after the previous batch job is done or failed."
-        },
-        {
-            "key": "batch_ocr_retry_after",
-            "value": "0",
-            "description": "Unix timestamp after which OCR batch submission is allowed again. Set automatically on 429 quota errors. Google resets batch quotas every 24 hours."
-        },
-        {
             "key": "ocr_max_retry_count",
             "value": "10",
             "description": "Maximum number of OCR retry attempts per page before marking it as error/skipped."
         },
         {
-            "key": "batch_submission_interval_minutes",
-            "value": "15",
-            "description": "How often (in minutes) the worker runs chunking and realtime embedding. Lower = faster processing."
+            "key": "gemini_chat_model",
+            "value": "gemini-3.1-flash-lite-preview",
+            "description": "Gemini model used for chat responses (reader chat and global chat)."
         },
         {
-            "key": "batch_submission_last_run_at",
-            "value": "0",
-            "description": "Unix timestamp of the last time the submission cron ran. Managed automatically."
+            "key": "gemini_categorization_model",
+            "value": "gemini-3.1-flash-lite-preview",
+            "description": "Gemini model used for category routing in global search."
+        },
+        {
+            "key": "gemini_ocr_model",
+            "value": "gemini-2.0-flash",
+            "description": "Gemini model used for OCR page processing."
+        },
+        {
+            "key": "maintenance_retention_days",
+            "value": "7",
+            "description": "Number of days to retain processed pipeline events before automated cleanup."
+        },
+        {
+            "key": "spell_check_enabled",
+            "value": "true",
+            "description": "Globally enable/disable background spell check processing."
         }
     ]
     

@@ -42,27 +42,25 @@ kitabim-ai/
 ├── apps/                    # Application layer
 │   └── frontend/           # React/Vite UI application
 ├── packages/               # Shared code packages
-│   ├── backend-core/      # Shared Python backend logic
-│   └── shared/            # Shared TypeScript types/utils
+│   └── backend-core/      # Shared Python backend logic (Shared Core)
 ├── services/              # Microservices
 │   ├── backend/          # FastAPI REST API service
 │   └── worker/           # ARQ background job worker
-├── k8s/                  # Kubernetes manifests
-│   └── local/           # Local development k8s config
 ├── scripts/             # Utility scripts and migrations
-├── data/                # Processing Cache (gitignored)
-│   ├── uploads/        # Transient PDF storage during OCR
-│   └── covers/         # Transient cover storage
+├── data/                # Persistent Volume (gitignored)
+│   ├── uploads/        # PDF storage
+│   └── covers/         # Book cover storage
+├── docker-compose.yml   # Primary local development entry point
 └── docs/               # Documentation
 ```
 
 ### Design Principles
 
 1. **Shared Core Logic**: Both backend API and worker share code via `packages/backend-core`
-2. **Clear Boundaries**: Frontend, backend, and worker are separate services with well-defined interfaces
-3. **Local-First Development**: Kubernetes manifests for consistent local dev environment
-4. **Database-Centric**: PostgreSQL with pgvector for all persistence and vector search
-5. **Queue-Based Processing**: Redis + ARQ for async/background OCR and embedding jobs
+2. **Clear Boundaries**: Frontend, backend, and worker are separate services
+3. **Docker-First Development**: Docker Compose for uniform local dev
+4. **Database-Centric**: PostgreSQL with pgvector for all persistence
+5. **Event-Driven Processing**: Milestone-based pipeline with transactional outbox
 
 ---
 
@@ -101,25 +99,16 @@ apps/frontend/
 - pdf.js (PDF rendering)
 - Vitest (testing)
 
-### `/packages/backend-core` - Shared Python Backend
+### `/packages/backend-core` - Shared Logic & Data Layer
 
 ```
 packages/backend-core/
 └── app/
-    ├── api/                 # API endpoints
-    │   └── endpoints/       # Route handlers
-    │       ├── auth.py      # OAuth and JWT auth
-    │       ├── books.py     # Book CRUD, OCR, management
-    │       ├── chat.py      # RAG chat endpoints
-    │       ├── users.py     # User management
-    │       └── ai.py        # Direct AI utilities
-    ├── auth/                # Authentication logic
-    │   └── dependencies.py  # FastAPI auth dependencies
     ├── core/                # Configuration and constants
     │   ├── config.py        # Environment settings
     │   └── prompts.py       # AI prompts for OCR, RAG, etc.
     ├── db/                  # Database layer
-    │   ├── postgres.py      # PostgreSQL connection and session management
+    │   ├── postgres.py      # Connection and session management
     │   ├── repositories/    # Repository pattern implementations
     │   └── models.py        # SQLAlchemy models
     ├── langchain/           # LangChain integrations
@@ -129,21 +118,17 @@ packages/backend-core/
     ├── models/              # Pydantic schemas
     │   ├── schemas.py       # API request/response models
     │   └── user.py          # User models
-    ├── services/            # Business logic
+    ├── services/            # Shared Business services
     │   ├── pdf_service.py   # PDF upload, OCR orchestration
     │   ├── rag_service.py   # RAG retrieval and chat
     │   ├── ocr_service.py   # Gemini OCR calls
     │   ├── chunking_service.py  # Semantic text chunking
-    │   ├── spell_check_service.py  # OCR correction
-    │   ├── token_service.py # JWT token management
-    │   └── user_service.py  # User CRUD
+    │   └── token_service.py # JWT token management
     ├── utils/               # Utilities
     │   ├── errors.py        # Exception definitions
     │   └── text_helpers.py  # Text cleaning/normalization
-    ├── main.py              # FastAPI application
     ├── queue.py             # Redis/ARQ queue client
-    ├── jobs.py              # Background job definitions
-    └── worker.py            # ARQ worker settings
+    └── jobs.py              # Shared job utilities
 ```
 
 **Key Technologies:**
@@ -162,40 +147,35 @@ packages/backend-core/
 
 ```
 services/backend/
-├── scripts/              # Service-specific scripts
-├── requirements.txt      # Python dependencies
-├── requirements.postgres.txt  # PostgreSQL-specific deps
-├── AGENTS.md            # AI agent guidance
+├── api/                 # API route handlers
+│   └── endpoints/       
+│       ├── auth.py      # Google OAuth & Token endpoints
+│       ├── books.py     # Book & Page management
+│       ├── chat.py      # RAG chat interface
+│       └── spell_check.py # OCR correction API
+├── auth/                # Auth middleware & dependencies
+├── main.py              # FastAPI application entry point
+├── requirements.txt      # Service dependencies
 └── README.md
 ```
 
-**Purpose:** Runs the FastAPI REST API that consumes `packages/backend-core`. This is the main HTTP interface for the frontend.
+**Purpose:** The entry point for the REST API. It uses the business logic and database layer from `packages/backend-core`.
 
-### `/services/worker` - ARQ Background Worker
+### `/services/worker` - ARQ Task Worker
 
 ```
 services/worker/
-├── requirements.txt      # Python dependencies
-├── AGENTS.md            # AI agent guidance
+├── jobs/                # Asynchronous worker jobs (OCR, etc.)
+├── scanners/            # Specialized loop scanners (Polling)
+├── worker.py            # ARQ WorkerSettings entry point
+├── requirements.txt      # Service dependencies
 └── README.md
 ```
 
-**Purpose:** Runs ARQ worker processes that consume jobs from Redis. Handles OCR, embedding generation, and indexing asynchronously.
+**Purpose:** Runs the background scanners and jobs that power the event-driven pipeline. It consumes `packages/backend-core` for all database interactions.
 
-### `/k8s/local` - Kubernetes Configuration
-
-```
-k8s/local/
-├── backend.yaml         # Backend deployment + service
-├── worker.yaml          # Worker deployment
-├── frontend.yaml        # Frontend deployment + service
-├── redis.yaml           # Redis deployment + service
-├── configmap.yaml       # Non-secret configuration (example)
-├── secrets.yaml         # Secrets template
-└── README.md            # Deployment instructions
-```
-
-**Purpose:** Local Kubernetes manifests for Docker Desktop, minikube, or kind.
+### `/docker-compose.yml` - Local Development
+The primary entry point for starting the app locally. Defines all services (Postgres, Redis, Backend, Worker, Frontend) and their network/volume links.
 
 ### `/scripts` - Utility Scripts (Mandatory for Agents)
 
@@ -274,8 +254,7 @@ docs/
 
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
-| Orchestration | Kubernetes | Container orchestration |
-| Local Dev | Docker Desktop | K8s for local development |
+| Orchestration | Docker Compose | Local container orchestration |
 | Containerization | Docker | Application packaging |
 | Web Server (prod) | nginx | Frontend serving |
 
@@ -285,7 +264,7 @@ docs/
 
 ### 1. Frontend (React/Vite)
 
-**Port:** 30080 (Kubernetes NodePort)
+**Port:** 30080
 **Dev Port:** 5173 (Vite dev server)
 
 **Responsibilities:**
@@ -303,7 +282,7 @@ docs/
 
 ### 2. Backend API (FastAPI)
 
-**Port:** 30800 (Kubernetes NodePort)
+**Port:** 30800
 **Dev Port:** 8000
 
 **Responsibilities:**
@@ -498,35 +477,19 @@ GOOGLE_CLIENT_SECRET=your-secret
 DATA_DIR=/Users/Omarjan/Projects/kitabim-ai/data
 ```
 
-### Kubernetes (ConfigMap + Secrets)
+### Docker Compose Configuration (.env)
 
-Used in Docker Desktop/minikube/kind deployment:
+The `.env` file at the root contains secrets and environment-specific settings.
 
-**k8s/local/secrets.yaml:**
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: kitabim-secrets
-stringData:
-  GEMINI_API_KEY: "your-actual-key"
-  JWT_SECRET_KEY: "your-jwt-secret"
-  GOOGLE_CLIENT_ID: "..."
-  GOOGLE_CLIENT_SECRET: "..."
-```
-
-**k8s/local/configmap.yaml:**
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: kitabim-config
-data:
-  DATABASE_URL: "postgresql://user@host.docker.internal:5432/kitabim-ai"
-  REDIS_URL: "redis://redis:6379/0"
-  GEMINI_MODEL_NAME: "gemini-3-flash-preview"
-  DATA_DIR: "/app/data"
-  # ... other non-secret config
+**Example .env:**
+```bash
+DATABASE_URL=postgresql://omarjan@host.docker.internal:5432/kitabim-ai
+REDIS_URL=redis://redis:6379/0
+GEMINI_API_KEY=your-actual-key
+JWT_SECRET_KEY=your-jwt-secret
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+DATA_DIR=/app/data
 ```
 
 **Volume Mounts:**
@@ -592,21 +555,21 @@ npm run dev
 redis-server
 ```
 
-### Running with Kubernetes (Recommended)
+### Running with Docker Compose (Recommended)
 
-1. **Enable Kubernetes in Docker Desktop**
-   - Settings → Kubernetes → Enable Kubernetes
-
-2. **Build images**
+1. **Start all services**
    ```bash
-   docker build -t kitabim-backend:local -f Dockerfile.backend .
-   docker build -t kitabim-worker:local -f Dockerfile.worker .
-   docker build -t kitabim-frontend:local -f apps/frontend/Dockerfile .
+   docker compose up -d --build
    ```
 
-3. **Deploy**
+2. **Check status**
    ```bash
-   kubectl apply -f k8s/local/
+   docker compose ps
+   ```
+
+3. **Rebuild specific service**
+   ```bash
+   ./scripts/rebuild-and-restart.sh [frontend|backend|worker|all]
    ```
 
 4. **Access**
@@ -615,8 +578,8 @@ redis-server
 
 5. **Logs**
    ```bash
-   kubectl logs -f deployment/backend
-   kubectl logs -f deployment/worker
+   docker compose logs -f backend
+   docker compose logs -f worker
    ```
 
 ### Testing
@@ -636,22 +599,6 @@ python3.13 -m pytest services/backend/tests
 
 ## Deployment Architecture
 
-### Local Development (Docker Desktop Kubernetes)
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                     Docker Desktop                       │
-│  ┌────────────────────────────────────────────────────┐ │
-│  │              Kubernetes Cluster                     │ │
-│  │                                                     │ │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐         │ │
-│  │  │ Frontend │  │ Backend  │  │  Worker  │         │ │
-│  │  │ (nginx)  │  │ (FastAPI)│  │  (ARQ)   │         │ │
-│  │  │ :30080   │  │  :30800  │  │          │         │ │
-│  │  └────┬─────┘  └────┬─────┘  └────┬─────┘         │ │
-│  │       │             │              │               │ │
-│  │       └─────────────┼──────────────┘               │ │
-│  │                     │                              │ │
 │  │                ┌────▼─────┐          ┌───────┐     │ │
 │  │                │  Redis   │          │  GCS  │     │ │
 │  │                │  :6379   │          │CloudSt│     │ │
@@ -682,8 +629,7 @@ python3.13 -m pytest services/backend/tests
 - **Stateless Services**: Backend, worker, frontend are stateless (can scale horizontally)
 - **Stateful Data**: PostgreSQL on host; files in Google Cloud Storage (GCS)
 - **Shared Cache**: `data/` directory mounted for transient, high-speed file processing
-- **Service Discovery**: Kubernetes DNS (e.g., `redis:6379`, `backend:8000`)
-- **Load Balancing**: Kubernetes service layer (though only 1 replica in dev)
+- **Docker Networking**: Named service containers (e.g., `redis:6379`, `backend:8000`)
 
 ---
 
@@ -731,14 +677,14 @@ python3.13 -m pytest services/backend/tests
 | `src/services/authService.ts` | Authentication API client |
 | `src/hooks/useAuth.ts` | Authentication state hook |
 
-### Infrastructure
+### Deployment
 
 | File | Purpose |
 |------|---------|
-| `k8s/local/backend.yaml` | Backend deployment and service |
-| `k8s/local/worker.yaml` | Worker deployment |
-| `k8s/local/redis.yaml` | Redis deployment and service |
-| `scripts/init-db.sql` | PostgreSQL schema initialization |
+| `docker-compose.yml` | Main service orchestration |
+| `Dockerfile.backend` | Backend service container image |
+| `Dockerfile.worker` | Worker service container image |
+| `scripts/rebuild-and-restart.sh` | Shortcut script for updates |
 
 ---
 
@@ -749,7 +695,7 @@ Kitabim.AI is a **well-structured monorepo** with:
 ✅ **Clear separation of concerns** (frontend, backend, worker, shared packages)
 ✅ **Modern tech stack** (React 19, FastAPI, PostgreSQL with pgvector)
 ✅ **Scalable architecture** (queue-based processing, vector search)
-✅ **Local-first development** (Kubernetes for consistent environments)
+✅ **Local-first development** (Docker Compose for consistent environments)
 ✅ **Comprehensive documentation** (BRD, system design, OpenAPI spec)
 
 **Code Statistics:**

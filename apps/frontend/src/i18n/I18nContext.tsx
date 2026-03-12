@@ -7,7 +7,7 @@ interface I18nContextType {
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
-const I18nContext = createContext<I18nContextType | undefined>(undefined);
+export const I18nContext = createContext<I18nContextType | undefined>(undefined);
 
 export const I18nProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const savedLang = (localStorage.getItem('kitabim_language') as Language) || defaultLanguage;

@@ -6,6 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { Settings, Plus, Save, X, Edit2, RefreshCw } from 'lucide-react';
 import { authFetch } from '../../../services/authService';
 import { useI18n } from '../../../i18n/I18nContext';
+import { ProverbDisplay } from '../../common/ProverbDisplay';
 
 interface SystemConfig {
   key: string;
@@ -213,7 +214,7 @@ export function SystemConfigPanel() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[#75C5F0]/20">
         <div className="flex items-center gap-3 md:gap-4 group">
-          <div className="p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:rotate-6">
+          <div className="self-start mt-1 p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 icon-shake">
             <Settings size={20} className="md:w-6 md:h-6" />
           </div>
           <div>
@@ -222,9 +223,12 @@ export function SystemConfigPanel() {
             </h2>
             <div className="flex items-center gap-2 mt-1">
               <span className="w-6 md:w-8 h-[2px] bg-[#0369a1] rounded-full" />
-              <p className="text-[11px] md:text-[14px] font-normal text-[#94a3b8] uppercase">
-                {t('admin.systemConfig.subtitle')}
-              </p>
+              <ProverbDisplay
+                keywords={t('proverbs.admin')}
+                size="sm"
+                className="opacity-70 mt-[-2px]"
+                defaultText={t('admin.systemConfig.subtitle')}
+              />
             </div>
           </div>
         </div>

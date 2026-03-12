@@ -29,10 +29,15 @@ export interface Book {
   coverUrl?: string;
   visibility?: 'public' | 'private';
   categories?: string[];
+  tags?: string[];
   lastError?: ErrorEvent | null;
   readCount?: number;
-  pipelineStep?: 'ocr' | 'chunking' | 'embedding' | 'ready' | null;
+  fileType?: string;
+  fileName?: string;
+  source?: string;
+  pipelineStep?: 'ocr' | 'chunking' | 'embedding' | 'word_index' | 'spell_check' | 'ready' | null;
   pipelineStats?: Record<string, number>;
+  hasSummary?: boolean;
 }
 
 export interface PaginatedBooks {

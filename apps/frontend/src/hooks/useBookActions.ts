@@ -20,16 +20,22 @@ export const useBookActions = (
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file || file.type !== 'application/pdf') return;
+    const ALLOWED_TYPES = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    if (!file || (!ALLOWED_TYPES.includes(file.type) && !file.name.toLowerCase().endsWith('.docx'))) return;
 
     setIsCheckingGlobal(true);
     setView('admin');
 
     try {
-      await PersistenceService.uploadPdf(file);
+      const result = await PersistenceService.uploadPdf(file);
       await refreshLibrary();
       setIsCheckingGlobal(false);
-      addNotification(t('common.uploadSuccess'), "success");
+
+      if (result?.status === 'existing') {
+        addNotification(t('common.uploadExisting'), 'info');
+      } else {
+        addNotification(t('common.uploadSuccess'), 'success');
+      }
     } catch (err) {
       setIsCheckingGlobal(false);
       const errorMsg = err instanceof Error ? err.message : "An unknown error occurred.";
@@ -71,59 +77,90 @@ export const useBookActions = (
     });
   };
 
-  const handleReProcessPage = async (bookId: string, pageNum: number) => {
-    let previousSelected: Book | null = null;
-    let previousBooks: Book[] | null = null;
+  const handleReProcessPage = (bookId: string, pageNum: number) => {
+    setModal({
+      isOpen: true,
+      title: t('modal.resetPage.title'),
+      message: t('modal.resetPage.message', { pageNum }),
+      type: 'confirm',
+      confirmText: t('modal.resetPage.confirm'),
+      onConfirm: async () => {
+        let previousSelected: Book | null = null;
+        let previousBooks: Book[] | null = null;
 
-    setSelectedBook(prev => {
-      previousSelected = prev;
-      if (!prev || prev.id !== bookId) return prev;
-      return {
-        ...prev,
-        status: 'ocr_processing',
-        lastUpdated: new Date(),
-        pages: (prev.pages || []).map(r =>
-          r.pageNumber === pageNum
-            ? { ...r, status: 'pending', text: '', isVerified: false }
-            : r
-        ),
-      };
+        // Optimistic UI update: show spinner immediately
+        setSelectedBook(prev => {
+          previousSelected = prev;
+          if (!prev || prev.id !== bookId) return prev;
+          return {
+            ...prev,
+            status: 'pending', // Match backend
+            pages: (prev.pages || []).map(r =>
+              r.pageNumber === pageNum
+                ? { ...r, status: 'pending', text: '', isVerified: false, pipelineStep: null, milestone: null }
+                : r
+            ),
+          };
+        });
+
+        setBooks(prev => {
+          previousBooks = prev;
+          return prev.map(b => {
+            if (b.id !== bookId) return b;
+            return {
+              ...b,
+              status: 'pending',
+              pages: (b.pages || []).map(r =>
+                r.pageNumber === pageNum
+                  ? { ...r, status: 'pending', text: '', isVerified: false, pipelineStep: null, milestone: null }
+                  : r
+              ),
+            };
+          });
+        });
+
+        setModal(prev => ({ ...prev, isOpen: false }));
+
+        try {
+          await PersistenceService.resetPage(bookId, pageNum);
+          refreshLibrary();
+          addNotification(t('common.pageResetSuccess', { pageNum }), 'success');
+        } catch (err) {
+          if (previousSelected) setSelectedBook(previousSelected);
+          if (previousBooks) setBooks(previousBooks);
+          console.error("Failed to reset page", err);
+          addNotification(t('common.pageResetError', { pageNum }), 'error');
+        }
+      }
     });
-
-    setBooks(prev => {
-      previousBooks = prev;
-      return prev.map(b => {
-        if (b.id !== bookId) return b;
-        return {
-          ...b,
-          status: 'ocr_processing',
-          lastUpdated: new Date(),
-          pages: (b.pages || []).map(r =>
-            r.pageNumber === pageNum
-              ? { ...r, status: 'pending', text: '', isVerified: false }
-              : r
-          ),
-        };
-      });
-    });
-
-    try {
-      await PersistenceService.resetPage(bookId, pageNum);
-      refreshLibrary();
-    } catch (err) {
-      if (previousSelected) setSelectedBook(previousSelected);
-      if (previousBooks) setBooks(previousBooks);
-      console.error("Failed to reset page", err);
-      setModal({
-        isOpen: true,
-        title: t('modal.reOcrError.title'),
-        message: t('modal.reOcrError.message'),
-        type: 'alert'
-      });
-    }
   };
 
 
+
+  const handleTriggerSpellCheck = (bookId: string) => {
+    setModal({
+      isOpen: true,
+      title: t('modal.triggerSpellCheck.title'),
+      message: t('modal.triggerSpellCheck.message'),
+      type: 'confirm',
+      confirmText: t('modal.triggerSpellCheck.confirm'),
+      onConfirm: async () => {
+        try {
+          const result = await PersistenceService.triggerSpellCheck(bookId);
+          setModal((prev: any) => ({ ...prev, isOpen: false }));
+          addNotification(t('common.spellCheckStarted', { count: result.queued }), "success");
+        } catch (err) {
+          const message = err instanceof Error ? err.message : t('modal.triggerSpellCheckError.message');
+          setModal({
+            isOpen: true,
+            title: t('modal.triggerSpellCheckError.title'),
+            message,
+            type: 'alert'
+          });
+        }
+      }
+    });
+  };
 
   const handleReindexBook = (bookId: string) => {
     setModal({
@@ -420,11 +457,48 @@ export const useBookActions = (
     }
   };
 
+  const handleReprocessBook = (bookId: string) => {
+    setModal({
+      isOpen: true,
+      title: t('modal.redoOcr.title'),
+      message: t('modal.redoOcr.message'),
+      type: 'confirm',
+      confirmText: t('modal.redoOcr.confirm'),
+      onConfirm: async () => {
+        try {
+          await PersistenceService.reprocessBook(bookId);
+          await refreshLibrary();
+          setModal((prev: any) => ({ ...prev, isOpen: false }));
+          addNotification(t('common.redoOcrStarted'), "success");
+        } catch (err) {
+          setModal({
+            isOpen: true,
+            title: t('modal.redoOcrError.title'),
+            message: t('modal.redoOcrError.message'),
+            type: 'alert'
+          });
+        }
+      }
+    });
+  };
+
+  const handleReplaceCover = async (bookId: string, file: File) => {
+    try {
+      const { coverUrl } = await PersistenceService.updateBookCover(bookId, file);
+      setBooks(prev => prev.map(b => b.id === bookId ? { ...b, coverUrl, lastUpdated: new Date() } : b));
+      addNotification(t('common.saveSuccess'), "success");
+    } catch (err) {
+      console.error("Failed to replace cover", err);
+      addNotification(t('common.error'), "error");
+    }
+  };
+
   return {
     isCheckingGlobal,
     handleFileUpload,
     handleResetFailedPages,
     handleReProcessPage,
+    handleTriggerSpellCheck,
     handleReindexBook,
     handleUpdatePage,
     openReader,
@@ -437,5 +511,7 @@ export const useBookActions = (
     handleSaveVolume,
     handleSaveBookRow,
     handleToggleVisibility,
+    handleReplaceCover,
+    handleReprocessBook,
   };
 };

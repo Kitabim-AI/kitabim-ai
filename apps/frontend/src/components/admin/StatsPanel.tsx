@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Book, FileText, CheckCircle, XCircle, RefreshCw, BarChart3, Clock, AlertTriangle, Loader, Zap, Hash } from 'lucide-react';
 import { authFetch } from '../../services/authService';
 import { useI18n } from '../../i18n/I18nContext';
+import { ProverbDisplay } from '../common/ProverbDisplay';
 
 interface StatusCount {
   status: string;
@@ -36,7 +37,7 @@ const STATUS_STYLES: Record<string, { bg: string; border: string; text: string; 
   ready: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', bar: 'bg-green-500' },
   ocr: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', bar: 'bg-blue-500' },
   chunking: { bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-700', bar: 'bg-indigo-500' },
-  embedding: { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-700', bar: 'bg-purple-500' },
+  embedding: { bg: 'bg-orange-50', border: 'border-orange-100', text: 'text-orange-600', bar: 'bg-orange-500' },
   'ocr:idle': { bg: 'bg-blue-50', border: 'border-blue-100', text: 'text-blue-600', bar: 'bg-blue-400' },
   'ocr:running': { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', bar: 'bg-blue-500' },
   'ocr:in_progress': { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', bar: 'bg-blue-500' },
@@ -45,9 +46,9 @@ const STATUS_STYLES: Record<string, { bg: string; border: string; text: string; 
   'chunking:running': { bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-700', bar: 'bg-indigo-500' },
   'chunking:in_progress': { bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-700', bar: 'bg-indigo-500' },
   'chunking:succeeded': { bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-800', bar: 'bg-indigo-600' },
-  'embedding:idle': { bg: 'bg-purple-50', border: 'border-purple-100', text: 'text-purple-600', bar: 'bg-purple-400' },
-  'embedding:running': { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-700', bar: 'bg-purple-500' },
-  'embedding:in_progress': { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-700', bar: 'bg-purple-500' },
+  'embedding:idle': { bg: 'bg-orange-50', border: 'border-orange-100', text: 'text-orange-600', bar: 'bg-orange-400' },
+  'embedding:running': { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', bar: 'bg-orange-500' },
+  'embedding:in_progress': { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', bar: 'bg-orange-500' },
   'embedding:succeeded': { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', bar: 'bg-emerald-500' },
   failed: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', bar: 'bg-red-500' },
   error: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', bar: 'bg-red-500' },
@@ -187,12 +188,12 @@ export const StatsPanel: React.FC = () => {
 
   // Label maps
   const bookStatusLabel: Record<string, string> = {
-    ready: t('bookCard.pipeline.ready'),
-    ocr: t('bookCard.pipeline.ocr'),
+    ready: t('common.done'),
+    ocr: t('admin.pipeline.ocr'),
     chunking: t('bookCard.pipeline.chunking'),
-    embedding: t('bookCard.pipeline.embedding'),
-    error: t('bookCard.error'),
-    pending: t('bookCard.pending'),
+    embedding: t('admin.pipeline.embedding'),
+    error: t('common.error'),
+    pending: t('common.pending'),
   };
 
   const pageStatusLabel: Record<string, string> = {
@@ -209,7 +210,7 @@ export const StatsPanel: React.FC = () => {
     'embedding:in_progress': `${t('bookCard.pipeline.embedding')}: ${t('bookCard.pipeline.in_progress')}`,
     'embedding:succeeded': `${t('bookCard.pipeline.embedding')}: ${t('bookCard.pipeline.succeeded')}`,
     failed: t('bookCard.pipeline.failed'),
-    error: t('bookCard.error'),
+    error: t('common.error'),
   };
 
   return (
@@ -217,7 +218,7 @@ export const StatsPanel: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[#75C5F0]/20">
         <div className="flex items-center gap-4 group">
-          <div className="p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 transform transition-all duration-500 group-hover:-rotate-6">
+          <div className="self-start mt-1 p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 icon-shake">
             <BarChart3 size={24} />
           </div>
           <div>
@@ -226,9 +227,12 @@ export const StatsPanel: React.FC = () => {
             </h2>
             <div className="flex items-center gap-2 mt-1">
               <span className="w-8 h-[2px] bg-[#0369a1] rounded-full" />
-              <p className="text-[12px] md:text-[14px] font-normal text-[#94a3b8]">
-                {t('admin.stats.subtitle') || 'View system analytics and metrics'}
-              </p>
+              <ProverbDisplay
+                keywords={t('proverbs.admin')}
+                size="sm"
+                className="opacity-70 mt-[-2px]"
+                defaultText={t('admin.stats.subtitle') || 'View system analytics and metrics'}
+              />
             </div>
           </div>
         </div>
