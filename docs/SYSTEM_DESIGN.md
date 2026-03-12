@@ -26,9 +26,10 @@ Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered readi
 
 - **Worker (`services/worker`)**
   - ARQ worker process for background orchestration
-  - **Submission Cycle**: Collects pending work and submits to Gemini Batch API
-  - **Polling Cycle**: Checks Gemini for job completion and applies results
-  - **Local Processing**: Handles text cleaning and semantic chunking
+  - **Scanners**: Poll for idle work (OCR, Chunking, Embedding, Word Index, Spell Check)
+  - **Jobs**: Focused executors that perform the actual AI or data processing
+  - **Event Dispatcher**: Reacts to `PipelineEvent` entries to trigger next-step jobs immediately
+  - **Maintenance**: Automated cleanup and staleness watchdog
 
 - **Frontend (`apps/frontend`)**
   - React 19 + Vite UI
@@ -48,27 +49,24 @@ flowchart LR
   FE[Frontend<br/>React/Vite] -->|/api| BE[Backend API<br/>FastAPI]
   BE -->|jobs| RQ[(Redis/ARQ)]
   RQ --> WK[Worker<br/>ARQ]
-  WK --> GFA[Gemini File API<br/>Transient PDF/JSONL]
-  GFA <--> GBA[Gemini Batch API<br/>OCR/Embeddings]
+  WK --> GEM[Gemini API<br/>Vision/Embed/Chat]
   BE --> DB[(PostgreSQL<br/>pgvector)]
   WK --> DB
+  WK -.->|Transactional Outbox| DB
+  DB -.->|Poll Events| WK
   BE <-->|PDF/Covers| GCS[(Google Cloud Storage)]
   WK <-->|PDF/Covers| GCS
 ```
 
 ## 4) Monorepo Structure
 ```
-/apps
-  /frontend
-/services
-  /backend
-  /worker
-/packages
-  /shared
-  /backend-core
-/scripts         # All operational/diagnostic tools
-/docs            # All project documentation
-/k8s/local       # Kubernetes manifests
+/apps/frontend
+/services/backend
+/services/worker
+/packages/backend-core
+/scripts            # Operational/diagnostic tools
+/docs               # Architecture & design docs
+/docker-compose.yml # Primary local dev entry point
 ```
 
 ## 5) Data Model (PostgreSQL)
@@ -77,12 +75,13 @@ flowchart LR
 - `ocr_done_count`, `error_count` (counters for progress tracking)
 
 **Pages**
-- `status` statuses: `pending`, `ocr_processing`, `ocr_done`, `chunked`, `indexed`
+- `ocr_milestone`, `chunking_milestone`, `embedding_milestone`, etc.
+- Milestones: `idle`, `in_progress`, `succeeded`, `failed`
 - `text`, `is_indexed`, `is_verified`
 
-**Batch Jobs**
-- Tracks the lifecycle of a Gemini Batch Job (`ocr` or `embedding`)
-- `remote_job_id`, `status` (SUCCEEDED, FAILED, etc.), `input_file_uri`
+**Pipeline Events**
+- Transactional outbox pattern: `page_id`, `event_type`, `processed`
+- Used to trigger downstream processing immediately after a milestone succeeds
 
 **Batch Requests**
 - Maps individual JSONL requests back to specific `book_id` and `page_number`

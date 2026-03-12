@@ -79,6 +79,7 @@ class Settings:
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     queue_max_jobs: int = int(os.getenv("QUEUE_MAX_JOBS", "2"))
     queue_job_timeout: int = int(os.getenv("QUEUE_JOB_TIMEOUT", "7200"))
+    maintenance_retention_days: int = int(os.getenv("MAINTENANCE_RETENTION_DAYS", "7"))
 
     # Authentication / JWT
     jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "")

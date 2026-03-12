@@ -362,6 +362,7 @@ async def get_books(
             stats_dict = await repo.get_with_page_stats(str(pydantic_book.id))
             if stats_dict:
                 pydantic_book.pipeline_stats = stats_dict.get("pipeline_stats", {})
+                pydantic_book.has_summary = stats_dict.get("has_summary", False)
             books_data.append(pydantic_book)
     else:
         # Standard flat list query
@@ -425,6 +426,7 @@ async def get_books(
         books_data = []
         import json
         for b in books_objs:
+            stats_dict = await repo.get_with_page_stats(str(b.id)) if repo else None
             # Parse last_error from JSON string if needed
             last_error_obj = None
             if b.last_error:
@@ -459,7 +461,8 @@ async def get_books(
                 "file_name": b.file_name,
                 "file_type": b.file_type,
                 "source": b.source,
-                "pipeline_stats": (await repo.get_with_page_stats(str(b.id))).get("pipeline_stats", {}) if repo else {}
+                "pipeline_stats": stats_dict.get("pipeline_stats", {}) if stats_dict else {},
+                "has_summary": stats_dict.get("has_summary", False) if stats_dict else False
             }
             s_data = BookSchema.model_validate(b_dict)
             books_data.append(s_data)
@@ -713,7 +716,8 @@ async def get_book(
         "file_name": book_model.file_name,
         "file_type": book_model.file_type,
         "source": book_model.source,
-        "pipeline_stats": stats.get("pipeline_stats", {})
+        "pipeline_stats": stats.get("pipeline_stats", {}),
+        "has_summary": stats.get("has_summary", False)
     }
 
     # Convert SQLAlchemy models to Pydantic (automatic camelCase conversion)

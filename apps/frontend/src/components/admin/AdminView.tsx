@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Database, Book as BookIcon, User, Hash, BookOpen, MoreVertical, Save, X, Edit2, Check, Globe, Shield } from 'lucide-react';
+import { Database, Book as BookIcon, User, Hash, BookOpen, MoreVertical, Save, X, Edit2, Check, Globe, Shield, Wand2, Search, Type, FileText, ScanText, RefreshCw, BookOpenCheck, Cuboid } from 'lucide-react';
 import { Pagination } from '../common/Pagination';
 
 import { useI18n } from '../../i18n/I18nContext';
@@ -282,28 +282,43 @@ export const AdminView: React.FC = () => {
                             }
                           }}
                           onRemoveItem={(idx) => setEditData(prev => prev ? { ...prev, categories: prev.categories.filter((_, i) => i !== idx) } : null)}
+                          onClose={handleCancelEdit}
                           existingItems={book.categories || []}
                           placeholder={t('admin.categories.add')}
                           hideActions={true}
                         />
                       </td>
                       <td className={`hidden md:table-cell px-3 md:px-6 py-4 md:py-6 ${isEditing ? 'align-top' : ''}`}>
-                        <div className="flex flex-col gap-1 md:gap-2 min-w-[100px] md:min-w-[120px]">
-                          <ProgressBar book={book} />
-                          <div className="flex justify-between text-[10px] md:text-[12px] text-slate-400">
-                            <span>
-                              {book.pipelineStep && book.pipelineStats
-                                ? (book.pipelineStep === 'ready' ? (book.totalPages || 0) : (book.pipelineStats[book.pipelineStep] || 0))
-                                : 0
-                              }
-                              /
-                              {book.totalPages || 0}
-                            </span>
-                            <span className={`${getStatusTextColor(book.pipelineStep)} uppercase`}>
-                              {book.pipelineStep
-                                ? (t(`bookCard.pipeline.${book.pipelineStep}`) || book.pipelineStep)
-                                : '...'}
-                            </span>
+                        <div className="flex flex-col gap-1.5 min-w-[120px] md:min-w-[150px]">
+                          <div className="flex items-center gap-2.5">
+                            {/* Baseline Pipeline Icons synced with ActionMenu */}
+                            <div className="group/status relative flex items-center">
+                              <ScanText size={18} className={`${(book.pipelineStats?.ocr_failed || 0) > 0 ? 'text-red-500' : (book.pipelineStats?.ocr || 0) === (book.totalPages || 0) && book.totalPages > 0 ? 'text-emerald-500' : 'text-slate-300'} transition-colors duration-300`} />
+                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-lg opacity-0 group-hover/status:opacity-100 transition-all duration-200 whitespace-nowrap pointer-events-none z-10 border border-slate-700">
+                                {t('admin.pipeline.ocr')}: {book.pipelineStats?.ocr || 0}/{book.totalPages || 0}
+                                {(book.pipelineStats?.ocr_failed || 0) > 0 && <span className="text-red-400 ml-1">({book.pipelineStats?.ocr_failed} {t('common.error')})</span>}
+                              </div>
+                            </div>
+                            <div className="group/status relative flex items-center">
+                              <Cuboid size={18} className={`${(book.pipelineStats?.embedding_failed || 0) > 0 ? 'text-red-500' : (book.pipelineStats?.embedding || 0) === (book.totalPages || 0) && book.totalPages > 0 ? 'text-emerald-500' : 'text-slate-300'} transition-colors duration-300`} />
+                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-lg opacity-0 group-hover/status:opacity-100 transition-all duration-200 whitespace-nowrap pointer-events-none z-10 border border-slate-700">
+                                {t('admin.pipeline.embedding')}: {book.pipelineStats?.embedding || 0}/{book.totalPages || 0}
+                                {(book.pipelineStats?.embedding_failed || 0) > 0 && <span className="text-red-400 ml-1">({book.pipelineStats?.embedding_failed} {t('common.error')})</span>}
+                              </div>
+                            </div>
+                            <div className="group/status relative flex items-center">
+                              <Wand2 size={18} className={`${book.hasSummary ? 'text-emerald-500' : 'text-slate-300'} transition-colors duration-300`} />
+                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-lg opacity-0 group-hover/status:opacity-100 transition-all duration-200 whitespace-nowrap pointer-events-none z-10 border border-slate-700">
+                                {t('admin.pipeline.summary')}: {book.hasSummary ? t('common.done') : t('common.pending')}
+                              </div>
+                            </div>
+                            <div className="group/status relative flex items-center">
+                              <BookOpenCheck size={18} className={`${(book.pipelineStats?.spell_check_failed || 0) > 0 ? 'text-red-500' : (book.pipelineStats?.spell_check || 0) === (book.totalPages || 0) && book.totalPages > 0 ? 'text-emerald-500' : 'text-slate-300'} transition-colors duration-300`} />
+                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-lg opacity-0 group-hover/status:opacity-100 transition-all duration-200 whitespace-nowrap pointer-events-none z-10 border border-slate-700">
+                                {t('admin.pipeline.spellCheck')}: {book.pipelineStats?.spell_check || 0}/{book.totalPages || 0}
+                                {(book.pipelineStats?.spell_check_failed || 0) > 0 && <span className="text-red-400 ml-1">({book.pipelineStats?.spell_check_failed} {t('common.error')})</span>}
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </td>

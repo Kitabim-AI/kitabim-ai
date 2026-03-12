@@ -11,17 +11,18 @@ from __future__ import annotations
 
 import logging
 import traceback
+from collections import Counter
 
 from sqlalchemy import select, update, func
 
 from app.db import session as db_session
-from app.db.models import Page
+from app.db.models import Page, PipelineEvent
 from app.services.spell_check_service import index_book_words, tokenize
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.word_index_scanner")
 
-BATCH_SIZE = 50
+BATCH_SIZE = 1000
 
 
 async def run_word_index_scanner(ctx) -> None:
@@ -30,8 +31,7 @@ async def run_word_index_scanner(ctx) -> None:
         result = await session.execute(
             select(Page)
             .where(
-                Page.pipeline_step == "embedding",
-                Page.milestone == "succeeded",
+                Page.ocr_milestone == "succeeded",
                 Page.text.isnot(None),
                 Page.word_index_milestone == "idle",
             )
@@ -49,13 +49,17 @@ async def run_word_index_scanner(ctx) -> None:
         try:
             async with db_session.async_session_factory() as session:
                 tokens = tokenize(page.text or "")
-                unique_words = list({word_norm for word_norm, _raw, _s, _e in tokens})
-                await index_book_words(session, page.book_id, unique_words)
+                word_freq = Counter(word_norm for word_norm, _raw, _s, _e in tokens)
+                await index_book_words(session, page.book_id, word_freq)
                 await session.execute(
                     update(Page)
                     .where(Page.id == page.id)
                     .values(word_index_milestone="done", last_updated=func.now())
                 )
+                session.add(PipelineEvent(
+                    page_id=page.id,
+                    event_type="word_index_succeeded"
+                ))
                 await session.commit()
             succeeded += 1
 

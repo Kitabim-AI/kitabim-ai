@@ -31,6 +31,16 @@ async def seed_system_configs(session: AsyncSession):
             "value": "gemini-2.0-flash",
             "description": "Gemini model used for OCR page processing."
         },
+        {
+            "key": "maintenance_retention_days",
+            "value": "7",
+            "description": "Number of days to retain processed pipeline events before automated cleanup."
+        },
+        {
+            "key": "spell_check_enabled",
+            "value": "true",
+            "description": "Globally enable/disable background spell check processing."
+        }
     ]
     
     for item in defaults:

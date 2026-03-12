@@ -13,7 +13,7 @@ from typing import List
 from sqlalchemy import select, update, func
 
 from app.db import session as db_session
-from app.db.models import Page
+from app.db.models import Page, PipelineEvent
 from app.services.spell_check_service import run_spell_check_for_page
 from app.utils.observability import log_json
 
@@ -34,6 +34,11 @@ async def spell_check_job(ctx, page_ids: List[int]) -> None:
         try:
             async with db_session.async_session_factory() as session:
                 issue_count = await run_spell_check_for_page(session, page)
+                session.add(PipelineEvent(
+                    page_id=page.id,
+                    event_type="spell_check_succeeded",
+                    payload=f'{{"issues": {issue_count}}}'
+                ))
                 await session.commit()
 
             succeeded += 1
@@ -42,11 +47,17 @@ async def spell_check_job(ctx, page_ids: List[int]) -> None:
 
         except Exception as exc:
             async with db_session.async_session_factory() as session:
+                error_msg = repr(exc)[:500]
                 await session.execute(
                     update(Page)
                     .where(Page.id == page.id)
                     .values(spell_check_milestone="error", last_updated=func.now())
                 )
+                session.add(PipelineEvent(
+                    page_id=page.id,
+                    event_type="spell_check_failed",
+                    payload=f'{{"error": "{error_msg}"}}'
+                ))
                 await session.commit()
             failed += 1
             log_json(logger, logging.WARNING, "spell check page failed",

@@ -145,6 +145,17 @@ class Page(Base):
     pipeline_step: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     milestone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    
+    # New decoupled milestones
+    ocr_milestone: Mapped[str] = mapped_column(
+        String(20), default="idle", server_default="idle", nullable=False
+    )
+    chunking_milestone: Mapped[str] = mapped_column(
+        String(20), default="idle", server_default="idle", nullable=False
+    )
+    embedding_milestone: Mapped[str] = mapped_column(
+        String(20), default="idle", server_default="idle", nullable=False
+    )
     spell_check_milestone: Mapped[Optional[str]] = mapped_column(
         String(20), default="idle", server_default="idle", nullable=True
     )
@@ -384,6 +395,7 @@ class BookWordIndex(Base):
         String(64), ForeignKey("books.id", ondelete="CASCADE"), primary_key=True
     )
     word: Mapped[str] = mapped_column(Text, primary_key=True)
+    occurrence_count: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
 
 
 class PageSpellIssue(Base):
@@ -524,3 +536,23 @@ class ContactSubmission(Base):
             name="contact_submissions_status_check"
         ),
     )
+
+
+class PipelineEvent(Base):
+    """Transactional outbox for pipeline state transitions"""
+    __tablename__ = "pipeline_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    page_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("pages.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    payload: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON blob
+    processed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+

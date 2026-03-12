@@ -6,181 +6,111 @@ The intelligent Uyghur Digital Library platform for OCR, curation, and RAG-power
 
 - `/services/backend`: FastAPI API service (runs shared backend core).
 - `/packages/backend-core`: Shared Python backend package.
-  - `app/api`: Book and chat endpoints.
-  - `app/services`: PDF OCR, embeddings, spell check, and AI helpers.
-  - `app/langchain`: LangChain-native chains and model/embedding adapters.
-  - `app/core`: Settings and prompts.
-  - `app/db`: PostgreSQL repositories and connection logic.
-  - `app/models`: Pydantic schemas.
-  - `app/utils`: Text cleaning helpers.
 - `/services/worker`: ARQ worker that processes background OCR/embedding/RAG jobs (uses backend-core).
 - `/apps/frontend`: React UI (Vite).
-  - `src/components`: Library, Reader, Admin, Chat, Spell Check, layout/common UI.
-  - `src/hooks`: Global state and data fetching.
-  - `src/services`: API clients and Gemini helpers.
 - `/packages/shared`: Shared TS types/utilities.
 - `/data`: Persistent storage created at runtime (ignored by git).
   - `uploads/`: Original PDF files.
   - `covers/`: Extracted book cover images.
-- `/k8s/local`: Local Kubernetes manifests (PostgreSQL on host).
 
 - `AGENTS.md` files in the repo root and each service provide guidance for automated changes.
 
-### Backend Core Layout
-```
-/packages/backend-core
-  /app
-    /api
-    /services
-    /langchain
-    /core
-    /db
-    /models
-    /utils
-```
-
-### Architecture Diagram
-```mermaid
-flowchart LR
-  FE[Frontend<br/>React/Vite] -->|/api| BE[Backend API<br/>FastAPI]
-  BE -->|jobs| RQ[(Redis/ARQ)]
-  RQ --> WK[Worker<br/>ARQ]
-  BE --> DB[(PostgreSQL)]
-  WK --> DB
-  BE <-->|PDF/Covers| GCS[(Google Cloud Storage)]
-  WK <-->|PDF/Covers| GCS
-  BE -.->|Processing Cache| DATA[(Local data/)]
-  WK -.->|Processing Cache| DATA
-```
-
-## Core Features
-
-- **GCS Dual-Bucket Storage**: Private bucket for PDFs, Public-CDN bucket for covers.
-- **Auto-Cleanup**: Local storage is used as a high-speed processing cache and automatically cleared after cloud sync.
-- **SHA-256 deduplication** to avoid re-processing identical PDFs.
-- **Gemini OCR pipeline** with resumable tasks, cover extraction, and batch embeddings.
-- **RAG chat** per book or global, with work-aware context and citations by page.
-- **Spell check & correction workflow** for OCR cleanup and embedding regeneration.
-- **RTL reader** with direct GCS cover serving and inline page editing.
-
-## Local Development (Docker Desktop Kubernetes)
+## Local Development (Docker Compose)
 
 ### Prerequisites
 
-- **Docker Desktop** with Kubernetes enabled + **kubectl**
-- **Note**: Use Docker Desktop Kubernetes for local development.
+- **Docker Desktop** (or Docker Engine + Docker Compose)
 
-### Environment Variables (Kubernetes)
+### Environment Variables
 
-All configuration is managed via Kubernetes:
-
-- Secrets: `k8s/local/secrets.yaml`
-- Non‑secrets: `k8s/local/configmap.yaml`
-- Example secret template: `k8s/local/secrets.yaml` (edit the file directly)
+All configuration is managed via the root-level `.env` file. See `.env.template` for available variables.
 
 Notes:
 - `DATABASE_URL` connects to your **host PostgreSQL** via `host.docker.internal:5432`.
-- `GEMINI_API_KEY` is used by the backend only. The frontend proxies AI calls to the backend.
-- Use only `GEMINI_API_KEY` (Google’s recommended env var). Do not also set `GOOGLE_API_KEY` to avoid client warnings.
-- `.env` files can be used for local script execution, but Kubernetes uses the manifests in `k8s/local`.
+- `GEMINI_API_KEY` is required for AI features.
+- Local storage at `./data` is mounted to the containers for persistent uploads and covers.
 
-### Docker Desktop Kubernetes Quickstart
+### Quickstart: Start the App Locally
 
-1. Enable Kubernetes in Docker Desktop (Settings → Kubernetes) and set your context:
+Follow these steps to get the environment running on your machine:
 
+**1. Prepare Environment**
+Copy the template and fill in your keys (especially `GEMINI_API_KEY`):
 ```bash
-kubectl config use-context docker-desktop
+cp .env.template .env
 ```
 
-2. Update `k8s/local/backend.yaml` and `k8s/local/worker.yaml` if your repo path differs (for the shared `/data` mount).
-3. Build images:
+**2. Database Prerequisites**
+Ensure **PostgreSQL** is running on your host machine at port `5432`. The app connects via `host.docker.internal`.
 
+**3. Launch Services**
+Build and start all services in the background:
 ```bash
-docker build -t kitabim-backend:local -f Dockerfile.backend .
-docker build -t kitabim-worker:local -f Dockerfile.worker .
-docker build -t kitabim-frontend:local -f apps/frontend/Dockerfile .
+docker compose up -d --build
 ```
+*Tip: Use `./scripts/rebuild-and-restart.sh all` to rebuild later.*
 
-4. Apply manifests:
+**4. Access the App**
+- **Web UI**: [http://localhost:30080](http://localhost:30080)
+- **API Docs**: [http://localhost:30800/docs](http://localhost:30800/docs)
+- **Health Check**: [http://localhost:30800/health](http://localhost:30800/health)
 
-```bash
-kubectl apply -f k8s/local/
-```
-
-5. Update `k8s/local/secrets.yaml` with your `GEMINI_API_KEY` and re-apply if needed.
-6. Access services:
-   - Frontend: `http://localhost:30080`
-   - Backend API: `http://localhost:30800`
+---
 
 ### Start / Stop / Restart
 
 ```bash
-# Start (apply manifests)
-kubectl apply -f k8s/local/
+# Start
+docker compose up -d
 
 # Stop
-kubectl delete -f k8s/local/
+docker compose down
 
-# Restart (rolling restart all deployments)
-kubectl rollout restart deployment/backend deployment/worker deployment/frontend deployment/redis
+# Restart a specific service
+docker compose restart backend
+
+# Rebuild and restart services
+./scripts/rebuild-and-restart.sh all
 ```
 
 ### Logs
 
 ```bash
-# Backend
-kubectl logs -f deployment/backend
+# All services
+docker compose logs -f
 
-# Worker
-kubectl logs -f deployment/worker
-
-# Frontend (nginx)
-kubectl logs -f deployment/frontend
-
-# Redis
-kubectl logs -f deployment/redis
+# Specific service
+docker compose logs -f backend
 ```
 
 ### Status
 
 ```bash
-kubectl -n kitabim get pods
-kubectl -n kitabim get svc
-```
-
-### Port-Forward (Backend)
-
-```bash
-kubectl -n kitabim port-forward svc/backend 8000:8000
+docker compose ps
 ```
 
 ### Health Checks
 
 ```bash
-curl -s http://localhost:8000/health
-curl -s http://localhost:8000/ready
+curl -s http://localhost:30800/health
 ```
 
 ### Tests
 
 ```bash
 npm test
-```
-
-```bash
 python3.13 -m pytest services/backend/tests
 ```
 
 ### Troubleshooting
 
-- **docker-desktop context missing**: Enable Kubernetes in Docker Desktop (Settings → Kubernetes), then run `kubectl config get-contexts` and `kubectl config use-context docker-desktop`.
-- **Pods stuck in Pending**: Check `k8s/local/backend.yaml` and `k8s/local/worker.yaml` hostPath matches your repo path and that Docker Desktop has file sharing enabled for that path.
-- **Backend not ready**: Confirm `kubectl -n kitabim get pods` and check logs with `kubectl -n kitabim logs deployment/backend`.
+- **host.docker.internal not resolving**: Ensure you are using Docker Desktop or have configured the `host-gateway` in your Docker setup.
+- **Backend not ready**: Check logs with `docker compose logs backend`.
 
-## Technology Stack
+# Technology Stack
 
 - **Frontend**: React 19, Vite 6, Tailwind (CDN), Lucide, pdf.js.
 - **Backend**: FastAPI, PostgreSQL (asyncpg), pgvector, PyMuPDF, LangChain, `langchain-google-genai`, `httpx`, `numpy`.
 - **Queue/Worker**: Redis + ARQ.
 - **Microservices**: Backend (FastAPI), Worker (ARQ).
-- **Local Dev**: Docker Desktop Kubernetes.
+- **Production**: Docker Compose on GCE.

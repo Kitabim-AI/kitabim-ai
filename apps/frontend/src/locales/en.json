@@ -3,6 +3,9 @@
     "volume": "Volume",
     "lastUpdated": "Last Updated",
     "loading": "Loading...",
+    "done": "Done",
+    "pending": "Pending",
+    "processing": "Processing",
     "error": "Error",
     "success": "Success",
     "noData": "No data available",
@@ -38,7 +41,7 @@
     "loadingApp": "Library is loading...",
     "uploadSuccess": "Document uploaded successfully.",
     "uploadExisting": "This book already exists in the library.",
-    "reindexStarted": "Book re-indexing started.",
+    "reindexStarted": "Book re-vectorization started.",
     "redoOcrStarted": "Full OCR reprocess started. Book remains readable while pages update.",
     "spellCheckStarted": "{{count}} page(s) queued for spell check.",
     "resetFailedSuccess": "{{count}} failed page(s) reset to OCR.",
@@ -64,6 +67,7 @@
   },
   "book": {
     "volume": "Volume {{volume}}",
+    "volumeLabel": "Volume",
     "pagesCount": "{{count}} pages"
   },
   "app": {
@@ -109,14 +113,6 @@
     "searchPlaceholder": "Search books..."
   },
   "bookCard": {
-    "ready": "Ready",
-    "ocr_processing": "OCR Processing",
-    "ocr_done": "OCR Done",
-    "chunked": "Waiting for Embedding",
-    "indexing": "Indexing",
-    "failed": "Failed",
-    "pending": "Pending",
-    "error": "Error",
     "public": "Public",
     "private": "Private",
     "category": "Category",
@@ -124,7 +120,12 @@
       "ocr": "OCR",
       "chunking": "Chunking",
       "embedding": "Embedding",
-      "ready": "Ready"
+      "ready": "Ready",
+      "idle": "Waiting",
+      "running": "Running",
+      "in_progress": "Processing",
+      "succeeded": "Succeeded",
+      "failed": "Failed"
     },
     "summary": {
       "title": "Book Summary",
@@ -192,43 +193,20 @@
     "statsLabel": "Statistics",
     "configLabel": "Settings",
     "contactsLabel": "Contacts",
-    "bookManagement": "Book Management",
-    "userManagement": "User Management",
     "systemConfigLabel": "System Config",
     "stats": {
       "title": "System Statistics",
       "totalBooks": "Total Books",
-      "readyBooks": "Ready Books",
-      "llmAvailable": "LLM Available",
-      "llmUnavailable": "LLM Unavailable",
-      "processing": "Processing",
-      "bookOcrProcessing": "OCR Processing",
-      "pageOcrProcessing": "OCR Processing",
-      "pageChunked": "Waiting for Embedding",
-      "bookIndexing": "Indexing",
-      "pageIndexing": "Indexing",
-      "jobRunning": "Running",
-      "users": "Users",
-      "ready": "Ready",
-      "ocrDone": "OCR Done (not indexed)",
-      "error": "Error",
-      "pending": "Pending",
-      "bookPending": "Pending",
-      "pagePending": "Pending",
+      "llmAvailable": "AI Assistant Available",
+      "llmUnavailable": "AI Assistant Unavailable",
       "booksByStatus": "Books by Status",
       "pageStats": "Page Statistics",
       "totalPages": "Total Pages",
       "indexedPages": "Indexed Pages",
-      "unindexedPages": "Unindexed Pages",
-      "errorBooks": "Error Books",
-      "errorPages": "Error Pages",
-      "jobStats": "Job Statistics",
-      "totalJobs": "Total Jobs",
-      "jobSucceeded": "Succeeded",
-      "jobFailed": "Failed",
-      "jobSkipped": "Skipped",
-      "jobQueued": "Queued",
-      "jobRetrying": "Retrying"
+      "chunkStats": "Vector Chunk Statistics",
+      "totalChunks": "Total Chunks",
+      "embeddedChunks": "Vectorized Chunks",
+      "pendingChunks": "Pending Chunks"
     },
     "contacts": {
       "title": "Contact Submissions",
@@ -255,6 +233,12 @@
       "noSubmissions": "No contact submissions yet",
       "error": "Failed to load submissions"
     },
+    "pipeline": {
+      "ocr": "OCR",
+      "embedding": "Vector Indices",
+      "summary": "AI Summary",
+      "spellCheck": "Spell check"
+    },
     "table": {
       "name": "Name",
       "author": "Author",
@@ -265,7 +249,7 @@
       "view": "View",
       "edit": "Edit",
       "delete": "Delete",
-      "reindex": "Reindex",
+      "reindex": "Re-vectorize",
       "triggerSpellCheck": "Spell Check",
       "replaceCover": "Replace Cover",
       "resetFailed": "Reset Failed Pages",
@@ -480,13 +464,13 @@
       "message": "Failed to queue pages for spell check. Please try again."
     },
     "reindex": {
-      "title": "Confirm Re-Index",
+      "title": "Confirm Re-vectorization",
       "message": "Are you sure you want to re-chunk and re-embed all pages in this book? This is useful for model upgrades or fixing search issues. Existing content will be preserved.",
-      "confirm": "Re-Index Book"
+      "confirm": "Re-vectorize Book"
     },
     "reindexError": {
-      "title": "Re-Index Error",
-      "message": "Failed to start re-indexing. Please try again."
+      "title": "Re-vectorization Error",
+      "message": "Failed to start re-vectorization. Please try again."
     },
     "redoOcr": {
       "title": "Redo Full OCR",
@@ -538,14 +522,12 @@
     "whoWeAre": {
       "title": "Who We Are",
       "paragraph1": "Kitabim.AI is a community-driven platform dedicated to preserving, digitizing, and making accessible Uyghur books and literature. We combine cutting-edge AI technology with human expertise to create the largest digital Uyghur library.",
-      "paragraph2": "Our mission is to ensure that Uyghur culture, knowledge, and literary heritage are preserved for future generations. We believe that access to knowledge in one's native language is a fundamental right.",
-      "paragraph3": "We are volunteers, developers, linguists, and book lovers working together to build something meaningful. Join us in this important mission!"
+      "paragraph2": "Our mission is to ensure that Uyghur culture, knowledge, and literary heritage are preserved for future generations. We believe that access to knowledge in one's native language is a fundamental right."
     },
     "spellingMistakes": {
       "title": "Why Do Books Have Spelling Mistakes?",
       "paragraph1": "Our books are digitized using Optical Character Recognition (OCR) technology powered by AI. While OCR has improved significantly, it's not perfect—especially with Uyghur script which has unique characteristics and multiple writing styles.",
-      "paragraph2": "Old books, faded text, different fonts, and printing variations can confuse OCR systems. That's where human editors come in! Our community of volunteer editors carefully review and correct these texts to ensure accuracy.",
-      "paragraph3": "Every correction you make helps improve our AI models and makes these books more accessible to everyone. Your contribution matters!"
+      "paragraph2": "Old books, faded text, different fonts, and printing variations can confuse OCR systems. That's where human editors come in! Our community of volunteer editors carefully review and correct these texts to ensure accuracy."
     },
     "smartLibrary": {
       "title": "Smart Library & Chat",
@@ -612,6 +594,10 @@
         "messageRequired": "Message is required",
         "messageMinLength": "Message must be at least 10 characters long"
       }
+    },
+    "sponsors": {
+      "title": "Our Sponsors",
+      "subtitle": "Organizations and communities supporting our mission"
     }
   },
   "proverbs": {

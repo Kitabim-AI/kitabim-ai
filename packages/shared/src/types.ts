@@ -35,8 +35,9 @@ export interface Book {
   fileType?: string;
   fileName?: string;
   source?: string;
-  pipelineStep?: 'ocr' | 'chunking' | 'embedding' | 'ready' | null;
+  pipelineStep?: 'ocr' | 'chunking' | 'embedding' | 'word_index' | 'spell_check' | 'ready' | null;
   pipelineStats?: Record<string, number>;
+  hasSummary?: boolean;
 }
 
 export interface PaginatedBooks {

@@ -1,15 +1,14 @@
 """
-Pipeline Driver — the state machine for the worker.
+Pipeline Driver — the state machine for the decoupled worker.
 
 Responsibilities (runs every 1 minute):
-  1. Initialize  — pages with NULL pipeline_step → ocr / idle
-  2. Reset       — failed pages with retries remaining → idle (same step)
-  3. Promote     — ocr/succeeded → chunking/idle
-                   chunking/succeeded → embedding/idle
-  4. Book ready  — marks book.pipeline_step = 'ready' when all pages are terminal
-                   Terminal = embedding/succeeded OR failed with exhausted retries
-                   If any pages failed (exhausted retries) → status='error', pipeline_step='failed'
-                   Only marks 'ready' when ALL pages are embedding/succeeded
+  1. Initialize  — pages with status='pending' and ocr_milestone='idle' (if needed)
+  2. Reset       — failed milestones with retries remaining → idle
+  3. Book ready  — marks book.pipeline_step = 'ready' when all mandatory 
+                   milestones (OCR, Chunking, Embedding) are terminal.
+                   Terminal = succeeded OR failed with exhausted retries.
+                   If any pages failed (exhausted retries) → book.status='error'
+                   Only marks book.status='ready' when ALL pages are ocr/chunking/embedding/succeeded.
 """
 from __future__ import annotations
 
@@ -34,12 +33,8 @@ async def run_pipeline_driver(ctx) -> None:
         max_retries = int(await config_repo.get_value("ocr_max_retry_count", "3"))
 
         # ── 1. Initialize ──────────────────────────────────────────────────────
-        # Pages with no v2 state yet enter the pipeline at ocr/idle.
-        # Skip pages belonging to books that are truly done (v1 books with
-        # status=ready/error and no active pipeline_step, or v2 books fully
-        # finished). Re-OCR books keep status="ready" but set pipeline_step="ocr",
-        # so they must NOT be excluded here — otherwise their pages would be
-        # stuck at ocr/succeeded and never promoted.
+        # Ensure ocr_milestone is 'idle' for pages that need processing.
+        # This is the entry point for the pipeline.
         already_done_subq = (
             select(Book.id).where(
                 Book.status.in_(_V1_READY_STATUSES),
@@ -50,65 +45,66 @@ async def run_pipeline_driver(ctx) -> None:
                 ),
             )
         )
+        
+        # We also keep pipeline_step = 'ocr' for legacy/internal tracking if useful,
+        # but the logic now drives via ocr_milestone.
         init_result = await session.execute(
             update(Page)
             .where(
-                Page.pipeline_step.is_(None),
+                Page.ocr_milestone == "idle",
+                Page.milestone != "succeeded",
                 Page.book_id.not_in(already_done_subq),
             )
-            .values(pipeline_step="ocr", milestone="idle", retry_count=0)
+            .values(
+                retry_count=0,
+                pipeline_step=case((Page.pipeline_step.is_(None), "ocr"), else_=Page.pipeline_step)
+            )
         )
         initialized = init_result.rowcount
 
-        # ── 2. Reset failed pages that still have retries remaining ────────────
-        # The scanner only claims idle pages, so failed pages must be reset here
-        # before the scanner runs. Pages with exhausted retries are left as-is
-        # (they are terminal and counted for book-ready detection).
+        # ── 2. Reset failed milestones that still have retries remaining ───────
+        # If any milestone failed but we have retries left, reset ALL milestones 
+        # to ensure a clean retry of the whole page (or just the failing ones).
+        # Typically OCR is the most critical to reset.
         reset_result = await session.execute(
             update(Page)
             .where(
-                Page.milestone == "failed",
+                or_(
+                    Page.ocr_milestone == "failed",
+                    Page.chunking_milestone == "failed",
+                    Page.embedding_milestone == "failed"
+                ),
                 Page.retry_count < max_retries,
             )
-            .values(milestone="idle")
+            .values(
+                ocr_milestone=case((Page.ocr_milestone == "failed", "idle"), else_=Page.ocr_milestone),
+                chunking_milestone=case((Page.chunking_milestone == "failed", "idle"), else_=Page.chunking_milestone),
+                embedding_milestone=case((Page.embedding_milestone == "failed", "idle"), else_=Page.embedding_milestone),
+                # If we reset any, we are effectively trying again
+            )
         )
         reset = reset_result.rowcount
 
-        # ── 3. Promote succeeded pages to the next step ────────────────────────
-        # Same guard as initialization: never promote pages from v1-ready books.
-        # ocr/succeeded → chunking/idle
-        ocr_promoted = (await session.execute(
-            update(Page)
-            .where(
-                Page.pipeline_step == "ocr",
-                Page.milestone == "succeeded",
-                Page.book_id.not_in(already_done_subq),
-            )
-            .values(pipeline_step="chunking", milestone="idle")
-        )).rowcount
-
-        # chunking/succeeded → embedding/idle
-        chunk_promoted = (await session.execute(
-            update(Page)
-            .where(
-                Page.pipeline_step == "chunking",
-                Page.milestone == "succeeded",
-                Page.book_id.not_in(already_done_subq),
-            )
-            .values(pipeline_step="embedding", milestone="idle")
-        )).rowcount
+        # ── 3. (REMOVED) Sequential Promotion ──────────────────────────────────
+        # Scanners now look for their own work based on dependencies:
+        # - OCR: ocr_milestone == 'idle'
+        # - Chunking: ocr_milestone == 'succeeded' AND chunking_milestone == 'idle'
+        # - Embedding: chunking_milestone == 'succeeded' AND embedding_milestone == 'idle'
+        ocr_promoted = 0
+        chunk_promoted = 0
 
         # ── 4. Detect books where all pages are terminal ───────────────────────
-        # Terminal page: embedding/succeeded  OR  failed with retry_count >= max
+        # Terminal page: embedding_milestone/succeeded  OR any mandatory step failed with exhausted retries
         terminal_case = case(
             (
                 or_(
+                    Page.embedding_milestone == "succeeded",
                     and_(
-                        Page.pipeline_step == "embedding",
-                        Page.milestone == "succeeded",
-                    ),
-                    and_(
-                        Page.milestone == "failed",
+                        or_(
+                            Page.ocr_milestone == "failed",
+                            Page.chunking_milestone == "failed",
+                            Page.embedding_milestone == "failed"
+                        ),
                         Page.retry_count >= max_retries,
                     ),
                 ),
@@ -120,10 +116,7 @@ async def run_pipeline_driver(ctx) -> None:
         # Count pages that completed successfully (embedding/succeeded)
         success_case = case(
             (
-                and_(
-                    Page.pipeline_step == "embedding",
-                    Page.milestone == "succeeded",
-                ),
+                Page.embedding_milestone == "succeeded",
                 Page.id,
             ),
             else_=None,
@@ -133,7 +126,11 @@ async def run_pipeline_driver(ctx) -> None:
         failed_case = case(
             (
                 and_(
-                    Page.milestone == "failed",
+                    or_(
+                        Page.ocr_milestone == "failed",
+                        Page.chunking_milestone == "failed",
+                        Page.embedding_milestone == "failed"
+                    ),
                     Page.retry_count >= max_retries,
                 ),
                 Page.id,
@@ -149,12 +146,16 @@ async def run_pipeline_driver(ctx) -> None:
                 func.count(success_case).label("succeeded"),
                 func.count(failed_case).label("failed_exhausted"),
             )
-            .where(Page.pipeline_step.is_not(None))
+            .join(Book, Page.book_id == Book.id)
+            .where(
+                or_(
+                    Book.pipeline_step != "ready",
+                    Book.pipeline_step.is_(None),
+                )
+            )
             .group_by(Page.book_id)
             .having(
-                # Every page is terminal
                 func.count(Page.id) == func.count(terminal_case),
-                # At least one page exists (exclude empty books)
                 func.count(Page.id) > 0,
             )
         )
