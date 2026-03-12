@@ -235,6 +235,7 @@
     },
     "pipeline": {
       "ocr": "OCR",
+      "chunking": "پارچىلاش",
       "embedding": "ۋېكتورلاش",
       "summary": "قىسقىچە مەزمۇن",
       "wordIndex": "سۆز سىتاتىسكىسى",

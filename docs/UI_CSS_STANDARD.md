@@ -39,11 +39,10 @@ To be added to `tailwind.config.js` under `theme.extend.colors`.
 
 | Token | Tailwind Equivalent | Usage |
 |---|---|---|
-| `status-ready` | `emerald-500` | Book is ready / published |
-| `status-processing` | `blue-500` | OCR in progress |
-| `status-indexing` | `indigo-500` | Chunking / embedding |
-| `status-pending` | `orange-400` | Waiting / queued |
-| `status-error` | `red-500` | Error state |
+| `status-ready` | `emerald-500` | Step or Book is 100% complete |
+| `status-active` | `[#FF9800]` | Step is in progress / started (Blinking) |
+| `status-pending` | `slate-300` | Step is waiting/idle |
+| `status-error` | `red-500` | Step encountered an error |
 
 ---
 
