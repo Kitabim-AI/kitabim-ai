@@ -24,7 +24,7 @@ async def worker_startup(ctx):
     await init_db()
 
     try:
-        from app.db.repositories.seeds import seed_system_configs
+        from app.db.seeds import seed_system_configs
         async with db_session.async_session_factory() as session:
             await seed_system_configs(session)
     except Exception as exc:

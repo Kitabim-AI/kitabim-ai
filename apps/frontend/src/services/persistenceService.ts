@@ -5,6 +5,17 @@ import { authFetch, getAuthHeaders } from './authService';
 const API_BASE = '/api';
 
 export const PersistenceService = {
+  async getBookSummary(bookId: string): Promise<{ summary: string; generatedAt: string | null } | null> {
+    try {
+      const response = await authFetch(`${API_BASE}/books/${bookId}/summary`);
+      if (!response.ok) return null;
+      const data = await response.json();
+      return data.summary ? { summary: data.summary, generatedAt: data.generated_at || null } : null;
+    } catch {
+      return null;
+    }
+  },
+
   async getBookContent(id: string): Promise<string> {
     try {
       const response = await authFetch(`${API_BASE}/books/${id}/content`);
@@ -130,7 +141,7 @@ export const PersistenceService = {
   /**
    * Uploads a PDF to the backend for server-side processing.
    */
-  async uploadPdf(file: File): Promise<string> {
+  async uploadPdf(file: File): Promise<{ bookId: string; status: string }> {
     const formData = new FormData();
     formData.append('file', file);
 
@@ -148,19 +159,43 @@ export const PersistenceService = {
     }
 
     const data = await response.json();
-    return data.bookId;
+    return { bookId: data.bookId, status: data.status };
   },
 
-  async reprocessBook(bookId: string): Promise<void> {
-    const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess`, {
+  async downloadBook(bookId: string, fileName: string): Promise<void> {
+    try {
+      const response = await authFetch(`${API_BASE}/books/${bookId}/download`);
+      if (!response.ok) {
+        if (response.status === 401) throw new Error("Authentication required");
+        if (response.status === 403) throw new Error("Permission denied");
+        if (response.status === 404) throw new Error("File not found");
+        throw new Error("Failed to download book");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error("Download failed:", error);
+      throw error;
+    }
+  },
+
+  async triggerSpellCheck(bookId: string): Promise<{ queued: number }> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/spell-check/trigger`, {
       method: 'POST',
     });
     if (!response.ok) {
-      if (response.status === 403) {
-        throw new Error("Permission denied: Editor access required");
-      }
-      throw new Error("Failed to start reprocessing");
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to trigger spell check");
     }
+    return response.json();
   },
 
   async reindexBook(bookId: string): Promise<void> {
@@ -172,6 +207,18 @@ export const PersistenceService = {
         throw new Error("Permission denied: Editor access required");
       }
       throw new Error("Failed to start reindexing");
+    }
+  },
+
+  async reprocessBook(bookId: string): Promise<void> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Admin access required");
+      }
+      throw new Error("Failed to start re-OCR");
     }
   },
 
@@ -224,6 +271,26 @@ export const PersistenceService = {
     }
   },
 
+  async updateBookCover(bookId: string, file: File): Promise<{ coverUrl: string }> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await authFetch(`${API_BASE}/books/${bookId}/cover`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Editor access required");
+      }
+      const errorText = await response.text();
+      throw new Error(`Upload failed: ${response.status} ${errorText}`);
+    }
+
+    return response.json();
+  },
+
   async updateBookTags(bookId: string, tags: string[]): Promise<void> {
     // Legacy support or specific tag update
     return this.updateBookMetadata(bookId, { tags });
@@ -241,9 +308,14 @@ export const PersistenceService = {
     }
   },
 
-  async getRandomProverb(): Promise<{ text: string; volume: number; pageNumber: number }> {
+  async getRandomProverb(keywords?: string | string[]): Promise<{ text: string; volume: number; pageNumber: number }> {
     try {
-      const response = await authFetch(`${API_BASE}/books/random-proverb`);
+      let url = `${API_BASE}/books/random-proverb`;
+      if (keywords) {
+        const keywordParam = Array.isArray(keywords) ? keywords.join(',') : keywords;
+        url += `?keyword=${encodeURIComponent(keywordParam)}`;
+      }
+      const response = await authFetch(url);
       if (!response.ok) throw new Error("Failed to fetch proverb");
       return await response.json();
     } catch (error) {
@@ -252,14 +324,14 @@ export const PersistenceService = {
     }
   },
 
-  async getTopCategories(limit: number = 10): Promise<string[]> {
+  async getTopCategories(limit: number = 100, sort: string = 'count'): Promise<string[]> {
     try {
-      const response = await authFetch(`${API_BASE}/books/top-categories?limit=${limit}`);
+      const response = await authFetch(`${API_BASE}/books/top-categories?limit=${limit}&sort=${sort}`);
       if (!response.ok) throw new Error("Failed to fetch categories");
       const data = await response.json();
       return data.categories || [];
     } catch (error) {
-      console.error("Failed to fetch top categories", error);
+      console.error("Failed to fetch categories", error);
       return [];
     }
   }

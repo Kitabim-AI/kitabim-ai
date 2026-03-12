@@ -29,8 +29,7 @@ async def run_ocr_scanner(ctx) -> None:
         book_ids_stmt = (
             select(Page.book_id)
             .where(
-                Page.pipeline_step == "ocr",
-                Page.milestone == "idle",
+                Page.ocr_milestone == "idle",
             )
             .distinct()
             .limit(max_books)
@@ -48,8 +47,7 @@ async def run_ocr_scanner(ctx) -> None:
                 select(Page.id)
                 .where(
                     Page.book_id == book_id,
-                    Page.pipeline_step == "ocr",
-                    Page.milestone == "idle",
+                    Page.ocr_milestone == "idle",
                 )
                 .with_for_update(skip_locked=True)
             )
@@ -62,7 +60,7 @@ async def run_ocr_scanner(ctx) -> None:
             await session.execute(
                 update(Page)
                 .where(Page.id.in_(page_ids))
-                .values(milestone="in_progress", last_updated=func.now())
+                .values(ocr_milestone="in_progress", last_updated=func.now())
             )
             await session.commit()
 

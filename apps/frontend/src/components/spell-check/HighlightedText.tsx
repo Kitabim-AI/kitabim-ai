@@ -1,9 +1,9 @@
 import React from 'react';
-import { SpellCorrection } from './SpellCheckPanel';
+import { SpellIssue } from '../../hooks/useSpellCheck';
 
 interface HighlightedTextProps {
   text: string;
-  corrections: SpellCorrection[];
+  issues: SpellIssue[];
   className?: string;
   style?: React.CSSProperties;
   isLayer?: boolean;
@@ -11,12 +11,12 @@ interface HighlightedTextProps {
 
 export const HighlightedText: React.FC<HighlightedTextProps> = ({
   text,
-  corrections,
+  issues,
   className = '',
   style = {},
   isLayer = false,
 }) => {
-  if (!corrections || corrections.length === 0) {
+  if (!issues || issues.length === 0) {
     return (
       <div className={`${className} ${isLayer ? 'text-transparent select-none' : ''}`} style={style} dir="rtl">
         {text}
@@ -24,57 +24,35 @@ export const HighlightedText: React.FC<HighlightedTextProps> = ({
     );
   }
 
-  // Create a map of positions where errors occur
-  const errorPositions: { start: number; end: number; correction: SpellCorrection }[] = [];
+  // Find all occurrences of each unknown word in the text (word-based search,
+  // since text may have been edited after offsets were computed)
+  const errorPositions: { start: number; end: number; word: string }[] = [];
 
-  corrections.forEach((correction) => {
+  issues.forEach((issue) => {
     let searchPos = 0;
     while (searchPos < text.length) {
-      const pos = text.indexOf(correction.original, searchPos);
+      const pos = text.indexOf(issue.word, searchPos);
       if (pos === -1) break;
-
-      errorPositions.push({
-        start: pos,
-        end: pos + correction.original.length,
-        correction,
-      });
-
+      errorPositions.push({ start: pos, end: pos + issue.word.length, word: issue.word });
       searchPos = pos + 1;
     }
   });
 
-  // Sort by start position
   errorPositions.sort((a, b) => a.start - b.start);
 
-  // Build segments
-  const segments: Array<{ text: string; isError: boolean; correction?: SpellCorrection }> = [];
+  const segments: Array<{ text: string; isError: boolean; word?: string }> = [];
   let lastPos = 0;
 
-  errorPositions.forEach(({ start, end, correction }) => {
-    // Add normal text before error
+  errorPositions.forEach(({ start, end, word }) => {
     if (start > lastPos) {
-      segments.push({
-        text: text.substring(lastPos, start),
-        isError: false,
-      });
+      segments.push({ text: text.substring(lastPos, start), isError: false });
     }
-
-    // Add error text
-    segments.push({
-      text: text.substring(start, end),
-      isError: true,
-      correction,
-    });
-
+    segments.push({ text: text.substring(start, end), isError: true, word });
     lastPos = end;
   });
 
-  // Add remaining text
   if (lastPos < text.length) {
-    segments.push({
-      text: text.substring(lastPos),
-      isError: false,
-    });
+    segments.push({ text: text.substring(lastPos), isError: false });
   }
 
   return (
@@ -88,7 +66,7 @@ export const HighlightedText: React.FC<HighlightedTextProps> = ({
               : ''
           }
           style={segment.isError && isLayer ? { color: 'transparent', textDecorationColor: '#ef4444' } : {}}
-          title={segment.correction?.reason}
+          title={segment.word}
         >
           {segment.text}
         </span>

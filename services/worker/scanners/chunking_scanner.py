@@ -30,8 +30,8 @@ async def run_chunking_scanner(ctx) -> None:
         id_stmt = (
             select(Page.id)
             .where(
-                Page.pipeline_step == "chunking",
-                Page.milestone == "idle",
+                Page.ocr_milestone == "succeeded",
+                Page.chunking_milestone == "idle",
             )
             .with_for_update(skip_locked=True)
             .limit(page_limit)
@@ -45,7 +45,7 @@ async def run_chunking_scanner(ctx) -> None:
         await session.execute(
             update(Page)
             .where(Page.id.in_(page_ids))
-            .values(milestone="in_progress", last_updated=func.now())
+            .values(chunking_milestone="in_progress", last_updated=func.now())
         )
         await session.commit()
 

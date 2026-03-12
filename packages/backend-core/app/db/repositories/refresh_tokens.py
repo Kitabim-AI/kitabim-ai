@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Optional
 from uuid import UUID
 from datetime import datetime
 
@@ -52,7 +52,8 @@ class RefreshTokensRepository(BaseRepository[RefreshToken]):
         return result.rowcount
 
     async def delete_expired_or_revoked(self) -> int:
-        now = datetime.utcnow()
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
         stmt = delete(RefreshToken).where(
             or_(
                 RefreshToken.expires_at < now,

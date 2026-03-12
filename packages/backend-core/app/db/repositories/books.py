@@ -4,14 +4,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import select, func, or_, and_
+from sqlalchemy import select, func, or_, and_, case, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.models import Book, Page
+from app.db.models import Book, Page, BookSummary
 from app.db.repositories.base import BaseRepository
-from typing import Dict
 
 
-PIPELINE_ORDER = ["ocr", "chunking", "embedding"]
+PIPELINE_ORDER = ["ocr", "chunking", "embedding", "word_index", "spell_check"]
 
 
 class BooksRepository(BaseRepository[Book]):
@@ -142,10 +141,39 @@ class BooksRepository(BaseRepository[Book]):
         stats_result = await self.session.execute(stats_stmt)
         # Stats is a dict of {(pipeline_step, milestone): count}
         stats_data = {(row.pipeline_step, row.milestone): row.count for row in stats_result}
+        
+        # Add new milestone counts to stats_data for decoupled columns
+        milestone_stats_stmt = (
+            select(
+                func.count(Page.id).label("total"),
+                func.count(case((Page.ocr_milestone == "succeeded", Page.id), else_=None)).label("ocr_done"),
+                func.count(case((Page.ocr_milestone.in_(["failed", "error"]), Page.id), else_=None)).label("ocr_failed"),
+                func.count(case((Page.ocr_milestone == "in_progress", Page.id), else_=None)).label("ocr_active"),
+                func.count(case((Page.chunking_milestone == "succeeded", Page.id), else_=None)).label("chunking_done"),
+                func.count(case((Page.chunking_milestone.in_(["failed", "error"]), Page.id), else_=None)).label("chunking_failed"),
+                func.count(case((Page.chunking_milestone == "in_progress", Page.id), else_=None)).label("chunking_active"),
+                func.count(case((Page.embedding_milestone == "succeeded", Page.id), else_=None)).label("embedding_done"),
+                func.count(case((Page.embedding_milestone.in_(["failed", "error"]), Page.id), else_=None)).label("embedding_failed"),
+                func.count(case((Page.embedding_milestone == "in_progress", Page.id), else_=None)).label("embedding_active"),
+                func.count(case((Page.word_index_milestone == "done", Page.id), else_=None)).label("word_index_done"),
+                func.count(case((Page.word_index_milestone.in_(["failed", "error"]), Page.id), else_=None)).label("word_index_failed"),
+                func.count(case((Page.word_index_milestone == "in_progress", Page.id), else_=None)).label("word_index_active"),
+                func.count(case((Page.spell_check_milestone == "done", Page.id), else_=None)).label("spell_check_done"),
+                func.count(case((Page.spell_check_milestone.in_(["failed", "error"]), Page.id), else_=None)).label("spell_check_failed"),
+                func.count(case((Page.spell_check_milestone == "in_progress", Page.id), else_=None)).label("spell_check_active"),
+            )
+            .where(Page.book_id == book_id)
+        )
+        m_result = await self.session.execute(milestone_stats_stmt)
+        m_row = m_result.fetchone()
+        
+        # Determine if summary exists
+        summary_stmt = select(func.count(BookSummary.book_id)).where(BookSummary.book_id == book_id)
+        summary_res = await self.session.execute(summary_stmt)
+        has_summary = (summary_res.scalar() or 0) > 0
 
         # Calculate cumulative pipeline stats
         pipeline_stats = {}
-        total_pages = book.total_pages or 0
 
         for i, step in enumerate(PIPELINE_ORDER):
             # A page is "done" with 'step' if:
@@ -177,8 +205,25 @@ class BooksRepository(BaseRepository[Book]):
         return {
             "book": book,
             "page_stats": {f"{s or 'none'}_{m or 'none'}": c for (s, m), c in stats_data.items()},
-            "pipeline_stats": pipeline_stats,
-            "ocr_done_count": pipeline_stats.get("ocr", 0),
+            "pipeline_stats": {
+                "ocr": m_row.ocr_done if m_row else 0,
+                "ocr_failed": m_row.ocr_failed if m_row else 0,
+                "ocr_active": m_row.ocr_active if m_row else 0,
+                "chunking": m_row.chunking_done if m_row else 0,
+                "chunking_failed": m_row.chunking_failed if m_row else 0,
+                "chunking_active": m_row.chunking_active if m_row else 0,
+                "embedding": m_row.embedding_done if m_row else 0,
+                "embedding_failed": m_row.embedding_failed if m_row else 0,
+                "embedding_active": m_row.embedding_active if m_row else 0,
+                "word_index": m_row.word_index_done if m_row else 0,
+                "word_index_failed": m_row.word_index_failed if m_row else 0,
+                "word_index_active": m_row.word_index_active if m_row else 0,
+                "spell_check": m_row.spell_check_done if m_row else 0,
+                "spell_check_failed": m_row.spell_check_failed if m_row else 0,
+                "spell_check_active": m_row.spell_check_active if m_row else 0,
+            },
+            "has_summary": has_summary,
+            "ocr_done_count": m_row.ocr_done if m_row else 0,
             "error_count": sum(count for (s, m), count in stats_data.items() if m == "failed"),
             "pending_count": sum(count for (s, m), count in stats_data.items() if m == "idle"),
             "ocr_processing_count": sum(count for (s, m), count in stats_data.items() if m == "in_progress"),

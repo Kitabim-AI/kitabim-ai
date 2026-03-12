@@ -7,6 +7,7 @@ import { AdminTabs } from './components/admin/AdminTabs';
 import { ReaderView } from './components/reader/ReaderView';
 import { ChatInterface } from './components/chat/ChatInterface';
 import JoinUsView from './components/pages/JoinUsView';
+import { SpellCheckView } from './components/spell-check';
 import { AppProvider, useAppContext } from './context/AppContext';
 import { PersistenceService } from './services/persistenceService';
 
@@ -88,6 +89,7 @@ const AppContent: React.FC = () => {
         />
       )}
       {view === 'join-us' && <JoinUsView />}
+      {view === 'spell-check' && <SpellCheckView />}
     </Shell>
   );
 };

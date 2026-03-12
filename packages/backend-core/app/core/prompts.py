@@ -7,34 +7,27 @@ OCR_PROMPT = (
     "3. Preserve punctuation exactly and keep Uyghur symbols & Arabic script. "
     "4. Identify and preserve structure: "
     "use Markdown headings for titles/headers/chapters, "
-    "render table of contents as a Markdown list, "
+    "if a table of contents is detected render it as a Markdown pipe table "
+    "(data rows only, no header row and no separator line, one row per entry), "
     "keep poems with their original line breaks, "
     "and include header/footer text (if present) on separate lines, prefixed with "
     "\"[Header]\" or \"[Footer]\". "
-    "5. Output ONLY the recognized Uyghur text with the minimal Markdown needed for structure. "
+    "5. If the page contains no readable text, output nothing at all — no placeholders, "
+    "no explanations, no filler text. "
+    "6. Output ONLY the recognized Uyghur text with the minimal Markdown needed for structure. "
+    "7. CRITICAL — Uyghur Arabic-script character accuracy. "
+    "These character pairs are visually similar but distinct; choose carefully based on context: "
+    "Waw-family vowels: و (waw) vs ۇ (oe/u) vs ۆ (ö) vs ۋ (ve) — "
+    "ۇ and ۆ carry diacritics above and are common Uyghur vowels; و without diacritic is rare in native Uyghur words. "
+    "Kaf/Gaf/Ng: ك (k) vs گ (g) vs ڭ (ng) — "
+    "ڭ is the Uyghur velar nasal, distinct from both ك and گ. "
+    "Nun vs Kaf/Ng: ن (n) must not be read as ك or ڭ. "
+    "Reh vs Zain: ر (r) vs ز (z) — these look similar; use word context to decide. "
+    "He variants: ە (ae/open-he) vs ھ (dotless-he/h) — both are common in Uyghur, context-dependent. "
+    "Ain vs Ghain: ع vs غ — غ has a dot above; do not omit it. "
+    "He vs Ha: ح vs خ — خ has a dot above; do not omit it. "
+    "Fa vs Qaf: ف (f) vs ق (q) — ق has two dots below; do not confuse with ف which has one dot above. "
 )
-
-SPELL_CHECK_PROMPT = """You are an expert {language} language and OCR error detection specialist.
-
-Analyze the following text for:
-1. Spelling errors
-2. OCR recognition errors (common for scanned documents)
-3. Grammar issues that might be OCR-related
-4. Character confusion (similar-looking characters)
-
-Text to analyze:
-{text}
-
-Return a JSON array of corrections. Each correction should have:
-- "original": the incorrect text as it appears
-- "corrected": the suggested correction
-- "confidence": a number from 0 to 1 indicating how confident you are
-- "context": a short snippet showing the surrounding text (max 50 chars)
-
-Only include corrections where confidence >= 0.6.
-If no issues found, return an empty list.
-
-{format_instructions}"""
 
 CATEGORY_PROMPT = """You are a librarian efficiently categorizing a user's question to find the right section of the library.
 
@@ -46,6 +39,23 @@ Task: Identify which of the available categories are most relevant to this *New 
 If the question is completely general or doesn't fit any category, return an empty list.
 
 {format_instructions}"""
+
+BOOK_SUMMARY_PROMPT = """You are indexing an Uyghur book for a semantic search system.
+Write a 500-word summary IN UYGHUR (Arabic script) that covers:
+- Main subject and scope of the book
+- Key themes, topics, and arguments presented
+- Time period or geographic focus (if applicable)
+- Notable people, places, concepts, or events discussed
+
+The summary will be embedded as a vector for retrieval — be specific and content-rich.
+
+Book title: {title}
+Author: {author}
+
+Book text (excerpts):
+{text}
+
+Summary:"""
 
 RAG_PROMPT_TEMPLATE = """
 [CONTEXT START]

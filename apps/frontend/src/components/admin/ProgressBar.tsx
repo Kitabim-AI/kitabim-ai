@@ -29,8 +29,8 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({ book }) => {
     color = 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]';
     bgColor = 'bg-emerald-100/80';
   } else if (step === 'embedding') {
-    color = 'bg-purple-500 animate-pulse shadow-[0_0_6px_rgba(168,85,247,0.3)]';
-    bgColor = 'bg-purple-100/80';
+    color = 'bg-orange-500 animate-pulse shadow-[0_0_8px_rgba(249,115,22,0.4)]';
+    bgColor = 'bg-orange-100/80';
   } else if (step === 'chunking') {
     color = 'bg-indigo-500 animate-pulse shadow-[0_0_6px_rgba(99,102,241,0.3)]';
     bgColor = 'bg-indigo-100/80';

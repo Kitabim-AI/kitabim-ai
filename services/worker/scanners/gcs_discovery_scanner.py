@@ -17,9 +17,9 @@ from datetime import datetime, timezone
 from sqlalchemy.exc import IntegrityError
 
 from app.db import session as db_session
-from app.db.models import Page
 from app.db.repositories.books import BooksRepository
 from app.services.storage_service import storage
+from app.services.pdf_service import create_page_stubs, extract_pdf_cover
 from app.core.config import settings
 from app.utils.observability import log_json
 from app.utils.text import normalize_uyghur_chars
@@ -79,7 +79,7 @@ async def run_gcs_discovery_scanner(ctx) -> None:
             # ── Extract cover (first page) ───────────────────────────────────
             cover_temp_path = settings.data_dir / f".cover_{book_id}.jpg"
             cover_url = None
-            if _extract_pdf_cover(temp_path, cover_temp_path):
+            if extract_pdf_cover(temp_path, cover_temp_path):
                 remote_cover_path = f"covers/{book_id}.jpg"
                 await storage.upload_file(cover_temp_path, remote_cover_path)
                 cover_url = storage.get_public_url(remote_cover_path)
@@ -119,10 +119,7 @@ async def run_gcs_discovery_scanner(ctx) -> None:
                     )
                     # Create one page stub per PDF page so PipelineDriver can
                     # pick them up and set them to ocr/idle on its next run.
-                    session.add_all([
-                        Page(book_id=book_id, page_number=n)
-                        for n in range(1, page_count + 1)
-                    ])
+                    create_page_stubs(session, book_id, page_count)
                     await session.commit()
                     new_count += 1
                     log_json(logger, logging.INFO, "discovery: registered new book",
@@ -172,19 +169,3 @@ def _pick_title(title_from_pdf: str | None, file_name: str) -> str:
     return file_name.removesuffix(".pdf")
 
 
-def _extract_pdf_cover(pdf_path: Path, cover_path: Path) -> bool:
-    try:
-        import fitz
-        doc = fitz.open(pdf_path)
-        if len(doc) > 0:
-            page = doc.load_page(0)
-            # Use 1.5x zoom for better cover quality
-            pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
-            pix.save(str(cover_path))
-            doc.close()
-            return True
-        doc.close()
-    except Exception as e:
-        log_json(logger, logging.WARNING, "discovery: failed to extract PDF cover",
-                 path=str(pdf_path), error=str(e))
-    return False

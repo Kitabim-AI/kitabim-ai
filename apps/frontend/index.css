@@ -2,44 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+
 @font-face {
-  font-family: "UKIJ Nasq";
-  src: url("https://db.onlinewebfonts.com/t/a8e0cad8b667b481bffead364267971f.woff2") format("woff2"),
-    url("https://db.onlinewebfonts.com/t/a8e0cad8b667b481bffead364267971f.woff") format("woff");
+  font-family: "ALKATIP Basma";
+  src: url("https://db.onlinewebfonts.com/t/3c16518f40da2fc2901f37666c0556a7.woff2") format("woff2"),
+    url("https://db.onlinewebfonts.com/t/3c16518f40da2fc2901f37666c0556a7.woff") format("woff");
 }
 
 @font-face {
-  font-family: "UKIJ Basma Tuz";
-  src: url("https://db.onlinewebfonts.com/t/986df8736e8a110a1fb0b3b0f4280462.woff2") format("woff2"),
-    url("https://db.onlinewebfonts.com/t/986df8736e8a110a1fb0b3b0f4280462.woff") format("woff");
-}
-
-@font-face {
-  font-family: "UKIJ Tuz Tom";
-  src: url("https://db.onlinewebfonts.com/t/064458dac48a6d2319d9a4f921784196.woff2") format("woff2"),
-    url("https://db.onlinewebfonts.com/t/064458dac48a6d2319d9a4f921784196.woff") format("woff");
-}
-
-@font-face {
-  font-family: "UKIJ Ekran";
-  src: url("https://db.onlinewebfonts.com/t/a0e437afd7da4e1d1acc2ba3dc2a87a1.woff2") format("woff2"),
-    url("https://db.onlinewebfonts.com/t/a0e437afd7da4e1d1acc2ba3dc2a87a1.woff") format("woff");
-}
-
-@font-face {
-  font-family: "UKIJ Tuz";
-  src: url("https://db.onlinewebfonts.com/t/b77eb95a066dd6c2a86e18c9bce699cc.woff2") format("woff2"),
-    url("https://db.onlinewebfonts.com/t/b77eb95a066dd6c2a86e18c9bce699cc.woff") format("woff");
-}
-
-
-
-
-
-@font-face {
-  font-family: "ALKATIP Tor";
-  src: url("https://db.onlinewebfonts.com/t/ca5d7c89a2f6c1eb8b9bdabca06339b7.woff2") format("woff2"),
-    url("https://db.onlinewebfonts.com/t/ca5d7c89a2f6c1eb8b9bdabca06339b7.woff") format("woff");
+  font-family: "ALKATIP Basma Tom";
+  src: url("https://db.onlinewebfonts.com/t/451d7d8a0df1cd2255ef501335c9ba07.woff2") format("woff2"),
+    url("https://db.onlinewebfonts.com/t/451d7d8a0df1cd2255ef501335c9ba07.woff") format("woff");
 }
 
 
@@ -60,9 +33,9 @@ html {
   --glass-blur: blur(20px) saturate(180%);
   --glass-border: 1px solid rgba(255, 193, 7, 0.15);
 
-  --font-uyghur: "UKIJ Basma Tuz", "ALKATIP Tor", "Noto Naskh Arabic", "Arabic Typesetting", "Traditional Arabic", serif;
-  --font-headers: "UKIJ Basma Tuz", "ALKATIP Tor", "Noto Naskh Arabic", "Arabic Typesetting", "Traditional Arabic", serif;
-  --font-nav: "UKIJ Tuz Tom", "UKIJ Basma Tuz", "ALKATIP Tor", "Noto Naskh Arabic", "Arabic Typesetting", "Traditional Arabic", serif;
+  --font-uyghur: "ALKATIP Basma", serif;
+  --font-headers: "ALKATIP Basma", serif;
+  --font-nav: "ALKATIP Basma", serif;
 }
 
 @keyframes float {
@@ -121,6 +94,20 @@ html {
   animation: shimmer 1s linear infinite;
 }
 
+@keyframes icon-shake {
+  0%, 100% { transform: rotate(0deg); }
+  15%       { transform: rotate(-12deg); }
+  30%       { transform: rotate(10deg); }
+  45%       { transform: rotate(-8deg); }
+  60%       { transform: rotate(6deg); }
+  75%       { transform: rotate(-4deg); }
+  90%       { transform: rotate(2deg); }
+}
+
+.group:hover .icon-shake {
+  animation: icon-shake 0.5s ease-in-out;
+}
+
 *,
 body,
 button,
@@ -145,7 +132,7 @@ h5,
 h6 {
   font-family: var(--font-headers) !important;
   font-weight: normal !important;
-  letter-spacing: normal !important;
+  letter-spacing: 0 !important;
 }
 
 nav *,
@@ -217,9 +204,32 @@ body::after {
   direction: rtl;
   line-height: 1.8;
   text-rendering: optimizeLegibility;
-  font-variant-ligatures: common-ligatures;
+  /* Reset to standard features to ensure 'LA' (لا) connects correctly. */
+  font-variant-ligatures: common-ligatures contextual !important;
+  font-feature-settings: "kern" 1, "liga" 1, "calt" 1, "ccmp" 1 !important;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  letter-spacing: 0;
+  word-spacing: 0;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+/* Book headings use the display weight — !important to beat the global h1-h6 rule */
+.uyghur-text h1,
+.uyghur-text h2,
+.uyghur-text h3,
+.uyghur-text h4,
+.uyghur-text h5,
+.uyghur-text h6 {
+  font-family: "ALKATIP Basma Tom", serif !important;
+}
+
+/* Italics break connections in almost all Uyghur webfonts. */
+.uyghur-text i,
+.uyghur-text em,
+.uyghur-text .italic {
+  font-style: normal !important;
 }
 
 /* Custom Scrollbars */
@@ -232,8 +242,13 @@ body::after {
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(3, 105, 161, 0.2);
+  background: transparent;
   border-radius: 10px;
+  transition: background 0.2s;
+}
+
+.custom-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: rgba(3, 105, 161, 0.2);
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {

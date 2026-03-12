@@ -1,46 +1,47 @@
 # System Design — Kitabim.AI
 
 ## 1) Overview
-Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered reading of Uyghur books. The system uses **Gemini Batch API** for high-throughput OCR and embeddings, a FastAPI backend with an asynchronous processing pipeline, and a React/Vite frontend. Background orchestration is handled through a Redis-backed queue with a dedicated worker service. The backend API and worker share a common Python package (`packages/backend-core`).
+Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered reading of Uyghur books. The system uses the **Gemini 2.0 Flash** model for high-throughput OCR and embeddings, a FastAPI backend with an asynchronous processing pipeline, and a React/Vite frontend. Background orchestration is handled through a Redis-backed queue with a dedicated worker service. The backend API and worker share a common Python package (`packages/backend-core`).
 
 ## 2) Goals & Non‑Goals
 **Goals**
-- Cost-effective, bulk OCR and indexing of PDFs using Gemini Batch API
-- High-quality RAG for book- and library-level Q&A
-- Maintainable, modular architecture with clear boundaries
-- Standardized file management (scripts in `scripts/`, docs in `docs/`)
-- Observability (logging, health checks, batch job tracking)
+- Efficient, per-page OCR and indexing of PDFs using Gemini API.
+- High-quality RAG for book- and library-level Q&A.
+- Maintainable, modular architecture with clear boundaries.
+- Standardized file management (scripts in `scripts/`, docs in `docs/`).
+- Observability (logging, health checks, detailed pipeline statistics).
 
 **Non‑Goals (current)**
-- Multi-tenant auth and billing
-- Real-time OCR (Batch is preferred for its 50% cost reduction)
+- Multi-tenant auth and billing.
+- Use of Gemini Batch API (real-time/interactive API is preferred for lower latency).
 
 ## 3) Architecture (High-Level)
 
 ### Core Services
 - **Backend API (`services/backend`)**
-  - FastAPI application built on shared backend core
-  - Orchestrates upload, batch job management, and RAG chat
-  - Exposes REST endpoints for books, chat, and admin batch monitoring
-  - Uses PostgreSQL for metadata + embeddings (pgvector)
+  - FastAPI application built on shared backend core.
+  - Orchestrates upload, job management, and RAG chat.
+  - Exposes REST endpoints for books, chat, and admin dashboard.
+  - Uses PostgreSQL for metadata + embeddings (pgvector).
 
 - **Worker (`services/worker`)**
-  - ARQ worker process for background orchestration
-  - **Submission Cycle**: Collects pending work and submits to Gemini Batch API
-  - **Polling Cycle**: Checks Gemini for job completion and applies results
-  - **Local Processing**: Handles text cleaning and semantic chunking
+  - ARQ worker process for background orchestration.
+  - **Scanners**: Poll for idle work (OCR, Chunking, Embedding, Word Index, Spell Check).
+  - **Jobs**: Focused executors that perform the actual AI or data processing in realtime.
+  - **Event Dispatcher**: Reacts to `PipelineEvent` entries to trigger next-step jobs immediately.
+  - **Maintenance**: Automated cleanup and staleness watchdog.
 
 - **Frontend (`apps/frontend`)**
-  - React 19 + Vite UI
-  - Real-time status updates for books and individual pages
+  - React 19 + Vite UI.
+  - Real-time status updates for books and individual page milestones.
 
 - **Gemini Infrastructure**
-  - **Batch API**: Asynchronous processing of OCR and Embedding requests
-  - **File API**: Transient storage for input PDFs and JSONL request/response files
+  - **Interactive API**: Real-time processing of OCR, Embedding, and Spell Check requests.
+  - **File API**: Transient storage for input images during OCR.
 
 - **Google Cloud Storage (GCS)**
-  - Private bucket for original PDFs (source of truth)
-  - Public bucket (CDN-enabled) for book covers
+  - Private bucket for original PDFs (source of truth).
+  - Public bucket (CDN-enabled) for book covers.
 
 ### Architecture Diagram
 ```mermaid
@@ -48,58 +49,54 @@ flowchart LR
   FE[Frontend<br/>React/Vite] -->|/api| BE[Backend API<br/>FastAPI]
   BE -->|jobs| RQ[(Redis/ARQ)]
   RQ --> WK[Worker<br/>ARQ]
-  WK --> GFA[Gemini File API<br/>Transient PDF/JSONL]
-  GFA <--> GBA[Gemini Batch API<br/>OCR/Embeddings]
+  WK --> GEM[Gemini API<br/>Vision/Embed/Chat]
   BE --> DB[(PostgreSQL<br/>pgvector)]
   WK --> DB
+  WK -.->|Transactional Outbox| DB
+  DB -.->|Poll Events| WK
   BE <-->|PDF/Covers| GCS[(Google Cloud Storage)]
   WK <-->|PDF/Covers| GCS
 ```
 
 ## 4) Monorepo Structure
 ```
-/apps
-  /frontend
-/services
-  /backend
-  /worker
-/packages
-  /shared
-  /backend-core
-/scripts         # All operational/diagnostic tools
-/docs            # All project documentation
-/k8s/local       # Kubernetes manifests
+/apps/frontend       # UI Application
+/services/backend    # API Service
+/services/worker     # Pipeline Worker
+/packages/backend-core # Shared logic & models
+/scripts            # Operational/diagnostic tools
+/docs               # Architecture & design docs
+/docker-compose.yml # Primary local dev entry point
 ```
 
 ## 5) Data Model (PostgreSQL)
 **Books**
-- `status` statuses: `pending`, `ocr_processing`, `ocr_done`, `ready`
-- `ocr_done_count`, `error_count` (counters for progress tracking)
+- `status` statuses: `pending`, `ready`, `error`
+- `pipeline_step`: Active pipeline stage (`ocr`, `chunking`, `embedding`, `word_index`, `spell_check`)
+- `pipeline_stats`: JSONB blob containing page counts per milestone (e.g., `spell_check_active`, `ocr_failed`)
 
 **Pages**
-- `status` statuses: `pending`, `ocr_processing`, `ocr_done`, `chunked`, `indexed`
-- `text`, `is_indexed`, `is_verified`
+- **Milestones**: `ocr_milestone`, `chunking_milestone`, `embedding_milestone`, `word_index_milestone`, `spell_check_milestone`.
+- Milestone States: `idle`, `in_progress`, `succeeded`, `failed`, `done`.
+- `text`, `is_indexed`, `is_verified`.
 
-**Batch Jobs**
-- Tracks the lifecycle of a Gemini Batch Job (`ocr` or `embedding`)
-- `remote_job_id`, `status` (SUCCEEDED, FAILED, etc.), `input_file_uri`
-
-**Batch Requests**
-- Maps individual JSONL requests back to specific `book_id` and `page_number`
+**Pipeline Events**
+- Transactional outbox pattern: `page_id`, `event_type`, `processed`.
+- Used to trigger downstream processing immediately after a milestone succeeds.
 
 **Chunks**
-- Semantic units with `pgvector(768)` embeddings
+- Semantic units with `pgvector(768)` embeddings.
 
 ## 6) Key Flows
 
-### A) PDF Processing Workflow (Async Batch)
+### A) PDF Processing Workflow (Realtime Pipeline)
 1. **Upload**: User uploads PDF to Backend → Saved to GCS.
-2. **OCR Submission**: Worker picks up `pending` pages, uploads PDF to Gemini File API, submits Batch Job.
-3. **Polling**: Worker polls Gemini. On `SUCCEEDED`, downloads JSONL result.
-4. **OCR Application**: Worker applies text to `pages`, set status to `ocr_done`.
-5. **Local Chunking**: Worker cleans `ocr_done` text and creates `chunks`.
-6. **Embedding Submission**: Worker submits batch job for chunks with `NULL` embeddings.
-7. **Finalization**: Results applied; book marked `ready` when all pages are `indexed`.
+2. **OCR Submission**: Worker picks up `idle` pages, renders pdf to images, and calls Gemini Vision API.
+3. **OCR Application**: Worker applies text to `pages`, sets `ocr_milestone` to `succeeded`.
+4. **Local Chunking**: Worker cleans text and creates `chunks`. Sets `chunking_milestone` to `succeeded`.
+5. **Embedding**: Worker generates and stores vectors for chunks. Sets `embedding_milestone` to `succeeded`.
+6. **Indexing & AI Polish**: Worker builds word frequency index and performs spell-check identification.
+7. **Finalization**: Book marked `ready` when all pages reach their terminal milestones.
 
 ### B) RAG Chat
 1. Backend embeds query using interactive Gemini API (LangChain).
@@ -111,13 +108,13 @@ flowchart LR
 - **LangChain**: Used for **Interactive Chat**, **Spell Check**, and **Categorization** (LCEL pipelines, structured output parsing).
 
 ## 8) Reliability & Observability
-- **Idempotency**: All batch requests use a `custom_id` (e.g., `ocr_{book}_{page}`) to ensure results are mapped correctly even if retried.
+- **Idempotency**: All jobs use standardized identifiers (e.g., `ocr_{book}_{page}`) to ensure results are mapped correctly even if retried.
 - **Cleanup**: Transient files in Gemini File API and local cache are deleted automatically after processing.
 - **Circuit Breaker**: Protects interactive services from LLM outages.
-- **Batch Tracking**: Admin endpoints allow monitoring of remote job states.
+- **Worker Tracking**: Admin dashboard allows monitoring of real-time job states and detailed page-level progress.
 
 ## 9) Scalability
-- **Batching**: Reduces API overhead and provides higher throughput compared to sequential page processing.
+- **Concurrency**: ARQ worker processes handles page-level tasks in parallel, providing high throughput.
 - **Cloud Storage**: GCS handles the heavy lifting for binary artifacts.
 - **Vector Search**: pgvector in PostgreSQL allows scaling retrieval without a separate vector database (using HNSW indexes).
 

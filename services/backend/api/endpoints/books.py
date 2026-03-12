@@ -5,7 +5,7 @@ import uuid
 import os
 import io
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Optional, List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
@@ -18,22 +18,21 @@ from app.db.repositories.pages import PagesRepository
 from app.db.models import Page, Chunk
 from app.models.schemas import Book, PaginatedBooks, ExtractionResult
 from app.models.user import User
-from app.services.spell_check_service import spell_check_service
 from app.services.storage_service import storage
 from app.services.chunking_service import chunking_service
 from app.utils.markdown import normalize_markdown, strip_markdown
 from app.langchain.models import GeminiEmbeddings
 from auth.dependencies import (
-    get_current_user,
     get_current_user_optional,
     require_admin,
     require_editor,
     require_reader,
 )
 import logging
-from app.utils.markdown import normalize_markdown
 from app.utils.text import generate_uyghur_regex, normalize_uyghur_chars
 from app.core.i18n import t
+from app.services.pdf_service import read_pdf_page_count, extract_pdf_cover, create_page_stubs
+from app.services.docx_service import extract_docx_pages, extract_docx_cover
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +59,17 @@ def convert_dict_keys_to_snake(d: dict) -> dict:
         else:
             result[snake_key] = value
     return result
+
+def _normalize_categories(categories: Optional[List[str]]) -> List[str]:
+    """Strip quotes and whitespace from category strings."""
+    if not categories:
+        return []
+    return [
+        c.strip().strip('"').strip() 
+        for c in categories 
+        if isinstance(c, str) and c.strip()
+    ]
+
 
 router = APIRouter()
 
@@ -120,10 +130,10 @@ async def get_books(
     session: AsyncSession = Depends(get_session),
 ):
     """Get paginated books list with SQLAlchemy"""
-    from sqlalchemy import select, func, or_, and_, desc, asc, any_
+    from sqlalchemy import or_, and_, any_
     from app.db.models import Book as BookDB
     from app.db.models import Page as PageDB
-    from app.models.schemas import Book as BookSchema, ExtractionResult
+    from app.models.schemas import Book as BookSchema
 
     skip = (page - 1) * pageSize
 
@@ -137,7 +147,7 @@ async def get_books(
     # Guest access restriction
     if current_user is None:
         conditions.append(BookDB.status == "ready")
-        conditions.append(or_(BookDB.visibility == "public", BookDB.visibility == None))
+        conditions.append(or_(BookDB.visibility == "public", BookDB.visibility is None))
 
     # Category filter
     if category:
@@ -176,7 +186,7 @@ async def get_books(
         # For grouped view, count unique (title, author, volume) combinations
         subq_conditions = [
             BookDB.status == "ready",
-            or_(BookDB.visibility == "public", BookDB.visibility == None)
+            or_(BookDB.visibility == "public", BookDB.visibility is None)
         ]
         # Append search/category filters to the ready count too
         if category:
@@ -209,7 +219,7 @@ async def get_books(
         ready_stmt = select(func.count(BookDB.id)).where(
             and_(
                 BookDB.status == "ready",
-                or_(BookDB.visibility == "public", BookDB.visibility == None)
+                or_(BookDB.visibility == "public", BookDB.visibility is None)
             )
         )
     ready_res = await session.execute(ready_stmt)
@@ -273,7 +283,7 @@ async def get_books(
                 if isinstance(rep.last_error, str):
                     try:
                         last_error_obj = json.loads(rep.last_error)
-                    except:
+                    except Exception:
                         last_error_obj = None
                 else:
                     last_error_obj = rep.last_error
@@ -293,11 +303,14 @@ async def get_books(
                 "last_updated": rep.last_updated,
                 "updated_by": rep.updated_by,
                 "created_by": rep.created_by,
-                "cover_url": rep.cover_url,
+                "cover_url": f"{storage.get_public_url(rep.cover_url)}?v={int(rep.last_updated.timestamp())}" if rep.cover_url and rep.last_updated else (storage.get_public_url(rep.cover_url) if rep.cover_url else None),
                 "visibility": rep.visibility,
-                "categories": rep.categories,
+                "categories": _normalize_categories(rep.categories),
                 "last_error": last_error_obj,
                 "read_count": rep.read_count or 0,
+                "file_name": rep.file_name,
+                "file_type": rep.file_type,
+                "source": rep.source,
             }
             works_list.append(BookSchema.model_validate(rep_dict))
 
@@ -308,7 +321,7 @@ async def get_books(
                 if isinstance(b.last_error, str):
                     try:
                         b_last_error_obj = json.loads(b.last_error)
-                    except:
+                    except Exception:
                         b_last_error_obj = None
                 else:
                     b_last_error_obj = b.last_error
@@ -328,11 +341,14 @@ async def get_books(
                 "last_updated": b.last_updated,
                 "updated_by": b.updated_by,
                 "created_by": b.created_by,
-                "cover_url": b.cover_url,
+                "cover_url": f"{storage.get_public_url(b.cover_url)}?v={int(b.last_updated.timestamp())}" if b.cover_url and b.last_updated else (storage.get_public_url(b.cover_url) if b.cover_url else None),
                 "visibility": b.visibility,
-                "categories": b.categories,
+                "categories": _normalize_categories(b.categories),
                 "last_error": b_last_error_obj,
                 "read_count": b.read_count or 0,
+                "file_name": b.file_name,
+                "file_type": b.file_type,
+                "source": b.source,
             }
             works_list.append(BookSchema.model_validate(b_dict))
 
@@ -346,6 +362,7 @@ async def get_books(
             stats_dict = await repo.get_with_page_stats(str(pydantic_book.id))
             if stats_dict:
                 pydantic_book.pipeline_stats = stats_dict.get("pipeline_stats", {})
+                pydantic_book.has_summary = stats_dict.get("has_summary", False)
             books_data.append(pydantic_book)
     else:
         # Standard flat list query
@@ -409,13 +426,14 @@ async def get_books(
         books_data = []
         import json
         for b in books_objs:
+            stats_dict = await repo.get_with_page_stats(str(b.id)) if repo else None
             # Parse last_error from JSON string if needed
             last_error_obj = None
             if b.last_error:
                 if isinstance(b.last_error, str):
                     try:
                         last_error_obj = json.loads(b.last_error)
-                    except:
+                    except Exception:
                         last_error_obj = None
                 else:
                     last_error_obj = b.last_error
@@ -435,12 +453,16 @@ async def get_books(
                 "last_updated": b.last_updated,
                 "updated_by": b.updated_by,
                 "created_by": b.created_by,
-                "cover_url": b.cover_url,
+                "cover_url": f"{storage.get_public_url(b.cover_url)}?v={int(b.last_updated.timestamp())}" if b.cover_url and b.last_updated else (storage.get_public_url(b.cover_url) if b.cover_url else None),
                 "visibility": b.visibility,
-                "categories": b.categories,
+                "categories": _normalize_categories(b.categories),
                 "last_error": last_error_obj,
                 "read_count": b.read_count or 0,
-                "pipeline_stats": (await repo.get_with_page_stats(str(b.id))).get("pipeline_stats", {}) if repo else {}
+                "file_name": b.file_name,
+                "file_type": b.file_type,
+                "source": b.source,
+                "pipeline_stats": stats_dict.get("pipeline_stats", {}) if stats_dict else {},
+                "has_summary": stats_dict.get("has_summary", False) if stats_dict else False
             }
             s_data = BookSchema.model_validate(b_dict)
             books_data.append(s_data)
@@ -457,20 +479,30 @@ async def get_books(
 
 @router.get("/random-proverb")
 async def get_random_proverb(
+    keyword: Optional[str] = None,
     session: AsyncSession = Depends(get_session),
 ):
     """Fetch a random proverb with SQLAlchemy"""
     from app.db.repositories.proverbs import ProverbsRepository
 
     proverbs_repo = ProverbsRepository(session)
-    keywords = ["كىتاب", "بىلىم", "ئەقىل", "پاراسەت"]
+    
+    if keyword:
+        # Use provided keywords (supports comma-separated list)
+        keywords = [k.strip() for k in keyword.split(",") if k.strip()]
+        patterns = [generate_uyghur_regex(k) for k in keywords]
+    else:
+        # Use default keywords
+        keywords = ["كىتاب", "بىلىم", "ئەقىل", "پاراسەت"]
+        patterns = [generate_uyghur_regex(k) for k in keywords]
 
-    # Build regex pattern for all keywords (OR condition)
-    # Pattern: (keyword1|keyword2|keyword3|keyword4)
-    patterns = [generate_uyghur_regex(k) for k in keywords]
-    combined_pattern = "(" + "|".join(patterns) + ")"
+    # Build regex pattern (OR condition)
+    if patterns:
+        combined_pattern = "(" + "|".join(patterns) + ")"
+    else:
+        combined_pattern = ".*" # Match everything if somehow patterns is empty
 
-    # Get random proverb matching any of the keywords
+    # Get random proverb matching the pattern
     proverb = await proverbs_repo.get_random_proverb(text_pattern=combined_pattern)
 
     if proverb:
@@ -490,12 +522,12 @@ async def get_random_proverb(
 
 @router.get("/top-categories")
 async def get_top_categories(
-    limit: int = 10,
+    limit: int = 100,
+    sort: str = "count",  # "count" or "alphabetical"
     current_user: Optional[User] = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_session),
 ):
-    """Get most popular categories with SQLAlchemy"""
-    # Build WHERE clause for guest access
+    """Get categories with optional sorting and limit"""
     where_conditions = []
     params = {"limit": limit}
 
@@ -506,20 +538,24 @@ async def get_top_categories(
 
     where_clause = " AND ".join(where_conditions) if where_conditions else "TRUE"
 
-    # SQL to unnest categories and count
+    order_by = "count DESC"
+    if sort == "alphabetical":
+        order_by = "category ASC"
+
+    # SQL to unnest categories and count while stripping quotes and whitespace
     sql = text(f"""
-        SELECT category, COUNT(*) as count
+        SELECT TRIM(BOTH ' "' FROM category) as clean_category, COUNT(*) as count
         FROM books,
         UNNEST(categories) AS category
         WHERE {where_clause}
-        GROUP BY category
-        ORDER BY count DESC
+        GROUP BY clean_category
+        ORDER BY {order_by.replace('category', 'clean_category')}
         LIMIT :limit
     """)
 
     result = await session.execute(sql, params)
     rows = result.fetchall()
-    categories = [row.category for row in rows]
+    categories = [row.clean_category for row in rows]
 
     return {"categories": categories}
 
@@ -531,7 +567,7 @@ async def suggest_books(
     session: AsyncSession = Depends(get_session),
 ):
     """Provide autocomplete suggestions with SQLAlchemy"""
-    from sqlalchemy import select, or_, and_, func
+    from sqlalchemy import or_, and_
     from app.db.models import Book
 
     if not q or len(q) < 2:
@@ -551,7 +587,6 @@ async def suggest_books(
 
     # Define search filter using ILIKE for case-insensitive search
     normalized_q = generate_uyghur_regex(q)
-    search_pattern = f"%{normalized_q}%"
 
     search_conditions = or_(
         Book.title.op("~*")(normalized_q),  # PostgreSQL regex, case-insensitive
@@ -587,7 +622,8 @@ async def suggest_books(
             suggestions.append({"text": author, "type": "author"})
             seen.add(author)
 
-        for cat in (categories or []):
+        normalized_cats = _normalize_categories(categories)
+        for cat in normalized_cats:
             if cat and search_re.search(cat) and cat not in seen:
                 suggestions.append({"text": cat, "type": "category"})
                 seen.add(cat)
@@ -607,7 +643,6 @@ async def get_book(
     session: AsyncSession = Depends(get_session),
 ):
     """Get a single book by ID with SQLAlchemy - returns metadata only, no pages"""
-    from sqlalchemy import select, func
     from app.db.models import Page as PageDB
     repo = BooksRepository(session)
 
@@ -642,21 +677,15 @@ async def get_book(
         if isinstance(book_model.last_error, str):
             try:
                 last_error_obj = json.loads(book_model.last_error)
-            except:
+            except Exception:
                 last_error_obj = None
         else:
             last_error_obj = book_model.last_error
 
-    # Get page stats for this book
-    stats_stmt = select(
-        PageDB.status,
-        func.count().label("count")
-    ).where(
-        PageDB.book_id == book_id
-    ).group_by(PageDB.status)
-
-    stats_result = await session.execute(stats_stmt)
-    stats = {row.status: row.count for row in stats_result.fetchall()}
+    # Get page stats for this book using repository method
+    stats_dict = await repo.get_with_page_stats(book_id)
+    pipeline_stats = stats_dict.get("pipeline_stats", {}) if stats_dict else {}
+    has_summary = stats_dict.get("has_summary", False) if stats_dict else False
 
     # Create a dict with only metadata
     book_dict = {
@@ -673,12 +702,16 @@ async def get_book(
         "last_updated": book_model.last_updated,
         "updated_by": book_model.updated_by,
         "created_by": book_model.created_by,
-        "cover_url": book_model.cover_url,
+        "cover_url": f"{storage.get_public_url(book_model.cover_url)}?v={int(book_model.last_updated.timestamp())}" if book_model.cover_url and book_model.last_updated else (storage.get_public_url(book_model.cover_url) if book_model.cover_url else None),
         "visibility": book_model.visibility,
-        "categories": book_model.categories,
+        "categories": _normalize_categories(book_model.categories),
         "last_error": last_error_obj,
         "read_count": book_model.read_count or 0,
-        "pipeline_stats": stats.get("pipeline_stats", {})
+        "file_name": book_model.file_name,
+        "file_type": book_model.file_type,
+        "source": book_model.source,
+        "pipeline_stats": pipeline_stats,
+        "has_summary": has_summary
     }
 
     # Convert SQLAlchemy models to Pydantic (automatic camelCase conversion)
@@ -851,13 +884,19 @@ async def upload_pdf(
     current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
-    """Upload PDF with SQLAlchemy"""
+    """Upload a PDF or DOCX book file."""
     books_repo = BooksRepository(session)
 
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail=t("errors.invalid_file_type", allowed=".pdf"))
+    fname_lower = file.filename.lower()
+    if fname_lower.endswith(".pdf"):
+        file_type = "pdf"
+    elif fname_lower.endswith(".docx"):
+        file_type = "docx"
+    else:
+        raise HTTPException(status_code=400, detail=t("errors.invalid_file_type", allowed=".pdf, .docx"))
 
-    temp_path = settings.uploads_dir / f".upload_{uuid.uuid4().hex}.pdf"
+    ext = "." + file_type
+    temp_path = settings.uploads_dir / f".upload_{uuid.uuid4().hex}{ext}"
     hasher = hashlib.sha256()
 
     try:
@@ -878,25 +917,53 @@ async def upload_pdf(
             return {"bookId": str(existing.id), "status": "existing"}
 
         book_id = hashlib.md5(f"{file.filename}{datetime.now(timezone.utc)}".encode()).hexdigest()[:12]
-        remote_path = f"uploads/{book_id}.pdf"
-        await storage.upload_file(temp_path, remote_path)
-        temp_path.unlink(missing_ok=True)
+        remote_path = f"uploads/{book_id}{ext}"
+        cover_url = None
+        cover_temp_path = settings.uploads_dir / f".cover_{book_id}.jpg"
+
+        if file_type == "pdf":
+            page_count = read_pdf_page_count(temp_path)
+            if extract_pdf_cover(temp_path, cover_temp_path):
+                try:
+                    remote_cover_path = f"covers/{book_id}.jpg"
+                    await storage.upload_file(cover_temp_path, remote_cover_path)
+                    cover_url = remote_cover_path
+                finally:
+                    cover_temp_path.unlink(missing_ok=True)
+            await storage.upload_file(temp_path, remote_path)
+            temp_path.unlink(missing_ok=True)
+        else:
+            # DOCX: extract pages immediately, skip OCR
+            docx_pages = extract_docx_pages(temp_path)
+            page_count = len(docx_pages)
+            if extract_docx_cover(temp_path, cover_temp_path):
+                try:
+                    remote_cover_path = f"covers/{book_id}.jpg"
+                    await storage.upload_file(cover_temp_path, remote_cover_path)
+                    cover_url = remote_cover_path
+                finally:
+                    cover_temp_path.unlink(missing_ok=True)
+            await storage.upload_file(temp_path, remote_path)
+            temp_path.unlink(missing_ok=True)
+
     except Exception:
         if temp_path.exists():
             temp_path.unlink(missing_ok=True)
         raise
 
     now = datetime.now(timezone.utc)
+    title_raw = file.filename[: file.filename.lower().rfind(ext)]
 
-    # Create book using repository
-    new_book = await books_repo.create(
+    await books_repo.create(
         id=book_id,
         content_hash=content_hash,
-        title=normalize_uyghur_chars(file.filename.replace(".pdf", "")),
+        title=normalize_uyghur_chars(title_raw),
         file_name=file.filename,
+        file_type=file_type,
         author="",
         volume=None,
-        total_pages=0,
+        total_pages=page_count,
+        cover_url=cover_url,
         status="pending",
         upload_date=now,
         last_updated=now,
@@ -907,6 +974,22 @@ async def upload_pdf(
         source="upload",
     )
 
+    if file_type == "pdf":
+        create_page_stubs(session, book_id, page_count)
+    else:
+        # Pre-populate page text; start pipeline at chunking (skip OCR)
+        session.add_all([
+            Page(
+                book_id=book_id,
+                page_number=i + 1,
+                text=text,
+                pipeline_step="chunking",
+                milestone="idle",
+                status="ocr_done",
+            )
+            for i, text in enumerate(docx_pages)
+        ])
+
     await session.commit()
 
     return {"bookId": book_id, "status": "uploaded"}
@@ -915,17 +998,25 @@ async def upload_pdf(
 @router.post("/{book_id}/reprocess")
 async def reprocess_book(
     book_id: str,
-    current_user: User = Depends(require_editor),
+    current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
-    """Reset book to the beginning of the pipeline (OCR step)."""
+    """Gracefully reprocess book from OCR step.
+
+    Existing page text and chunks are preserved and replaced per-page as new
+    OCR completes, so the book remains fully readable during reprocessing.
+    The pipeline handles replacement atomically: OCR overwrites text per page,
+    chunking replaces chunks per page, embedding re-embeds per page.
+    """
     books_repo = BooksRepository(session)
 
     book = await books_repo.get(book_id)
     if not book:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
-    # Reset all pages to ocr/idle so the OCR scanner re-processes from scratch
+    # Reset all pages to ocr/idle but DO NOT clear text or delete chunks.
+    # Existing content stays available for reading until new OCR replaces it
+    # page-by-page through the normal pipeline flow.
     await session.execute(
         update(Page)
         .where(Page.book_id == book_id)
@@ -933,21 +1024,19 @@ async def reprocess_book(
             pipeline_step="ocr",
             milestone="idle",
             retry_count=0,
-            text=None,
             is_indexed=False,
             status="pending",
+            spell_check_milestone="idle",
             last_updated=datetime.now(timezone.utc),
             updated_by=current_user.email,
         )
     )
 
-    # Delete existing chunks
-    await session.execute(delete(Chunk).where(Chunk.book_id == book_id))
-
+    # Keep book status "ready" so the book stays accessible to readers.
+    # Update pipeline_step to "ocr" to signal reprocessing has started.
     await books_repo.update_one(
         book_id,
-        status="pending",
-        pipeline_step=None,
+        pipeline_step="ocr",
         last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email,
     )
@@ -1038,6 +1127,7 @@ async def reset_failed_pages(
 
     await books_repo.update_one(
         book_id,
+        status="pending",
         pipeline_step=None,
         last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email,
@@ -1171,6 +1261,12 @@ async def update_page_text(
         page.pipeline_step = 'chunking'
         page.milestone = 'succeeded'
 
+    # Invalidate word index so the scanner re-builds it with the updated content
+    await session.execute(
+        text("DELETE FROM book_word_index WHERE book_id = :book_id"),
+        {"book_id": book_id}
+    )
+
     await books_repo.update_one(
         book_id,
         last_updated=datetime.now(timezone.utc),
@@ -1197,6 +1293,9 @@ async def create_book(
     # Remove fields we don't want to store
     book_dict.pop("upload_date", None)
     book_dict.pop("content", None)
+    book_dict.pop("pipeline_stats", None)
+    book_dict.pop("page_stats", None)
+    book_dict.pop("completed_count", None)
     pages_input = book_dict.pop("pages", []) or []
 
     # Sync pages if they exist
@@ -1256,7 +1355,7 @@ async def update_book_details(
 ):
     """Update book details with SQLAlchemy"""
     books_repo = BooksRepository(session)
-    pages_repo = PagesRepository(session)
+    PagesRepository(session)
 
     # Verify book exists
     book = await books_repo.get(book_id)
@@ -1270,7 +1369,6 @@ async def update_book_details(
     book_update.pop("upload_date", None)
     book_update.pop("content", None)
 
-    has_page_updates = False
     if "pages" in book_update:
         for result in book_update.get("pages") or []:
             if "text" in result:
@@ -1278,7 +1376,6 @@ async def update_book_details(
 
             # Sync to pages collection
             if "pageNumber" in result or "page_number" in result:
-                has_page_updates = True
                 page_number = result.get("pageNumber") or result.get("page_number")
                 new_text = result.get("text")
 
@@ -1327,7 +1424,8 @@ async def update_book_details(
 
     # Remove computed/read-only fields (already in snake_case after conversion)
     read_only_fields = [
-        "upload_date", "created_by", "completed_count", "last_error"
+        "upload_date", "created_by", "completed_count", "last_error",
+        "pipeline_stats", "page_stats"
     ]
     for field in read_only_fields:
         book_update.pop(field, None)
@@ -1336,10 +1434,40 @@ async def update_book_details(
     book_update["last_updated"] = datetime.now(timezone.utc)
     book_update["updated_by"] = current_user.email
 
+    # Normalize cover_url to relative path if it contains covers/
+    if "cover_url" in book_update and book_update["cover_url"]:
+        import re
+        match = re.search(r"covers/([^/?#]+)", book_update["cover_url"])
+        if match:
+            book_update["cover_url"] = f"covers/{match.group(1)}"
+
+    # Normalize categories: strip quotes and filter empties
+    if "categories" in book_update and isinstance(book_update["categories"], list):
+        book_update["categories"] = [
+            c.strip().strip('"').strip() 
+            for c in book_update["categories"] 
+            if isinstance(c, str) and c.strip()
+        ]
+
     await books_repo.update_one(book_id, **book_update)
     await session.commit()
 
     return {"status": "updated", "modified": True}
+
+
+@router.get("/{book_id}/summary")
+async def get_book_summary(
+    book_id: str,
+    current_user: User = Depends(require_reader),
+    session: AsyncSession = Depends(get_session),
+):
+    """Return the AI-generated semantic summary for a book."""
+    from app.db.repositories.book_summaries import BookSummariesRepository
+    summaries_repo = BookSummariesRepository(session)
+    summary = await summaries_repo.get_by_book_id(book_id)
+    if not summary:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+    return {"summary": summary.summary, "generated_at": summary.generated_at}
 
 
 @router.delete("/{book_id}")
@@ -1402,7 +1530,6 @@ async def upload_cover(
 ):
     """Upload book cover with SQLAlchemy"""
     from PIL import Image
-    from sqlalchemy import select
     from app.db.models import Book as BookDB
 
     books_repo = BooksRepository(session)
@@ -1426,12 +1553,21 @@ async def upload_cover(
         img = Image.open(io.BytesIO(image_data))
         if img.mode in ("RGBA", "P", "LA"):
             img = img.convert("RGB")
-        cover_path = settings.covers_dir / f"{book_id}.jpg"
-        img.save(cover_path, "JPEG", quality=90)
+        # Save to temp file first for storage provider to upload
+        temp_cover_path = settings.uploads_dir / f".cover_upload_{book_id}.jpg"
+        img.save(temp_cover_path, "JPEG", quality=90)
+        
+        # Upload to storage (works with GCS or Local)
+        remote_cover_path = f"covers/{book_id}.jpg"
+        await storage.upload_file(temp_cover_path, remote_cover_path)
+        cover_url = remote_cover_path
+        
+        # Cleanup temp file
+        temp_cover_path.unlink(missing_ok=True)
+        
     except Exception as exc:
         raise HTTPException(status_code=500, detail=t("errors.image_process_failed", error=str(exc)))
 
-    cover_url = f"/api/covers/{book_id}.jpg"
     await books_repo.update_one(
         book_id,
         cover_url=cover_url,
@@ -1444,99 +1580,120 @@ async def upload_cover(
         "status": "success",
         "bookId": book_id,
         "title": book.title,
-        "coverUrl": cover_url,
+        "coverUrl": f"{storage.get_public_url(cover_url)}?v={int(datetime.now(timezone.utc).timestamp())}",
     }
 
 
-@router.post("/{book_id}/spell-check")
-async def check_book_spelling(
+@router.post("/{book_id}/cover")
+async def update_book_cover(
+    book_id: str,
+    file: UploadFile = File(...),
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """Update book cover by book ID with SQLAlchemy and storage service"""
+    from PIL import Image
+    
+    books_repo = BooksRepository(session)
+    book = await books_repo.get(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+
+    allowed_types = ["image/png", "image/jpeg", "image/jpg", "image/webp", "application/octet-stream"]
+    if file.content_type not in allowed_types:
+        # Some browsers might send image/jpg as application/octet-stream for some reason, 
+        # but let's be strict for now or trust PIL to check.
+        pass
+
+    try:
+        image_data = await file.read()
+        img = Image.open(io.BytesIO(image_data))
+        if img.mode in ("RGBA", "P", "LA"):
+            img = img.convert("RGB")
+        
+        # Save to temp file first for storage provider to upload
+        temp_cover_path = settings.uploads_dir / f".cover_update_{book_id}.jpg"
+        img.save(temp_cover_path, "JPEG", quality=90)
+        
+        # Upload to storage (works with GCS or Local)
+        remote_cover_path = f"covers/{book_id}.jpg"
+        await storage.upload_file(temp_cover_path, remote_cover_path)
+        cover_url = remote_cover_path
+        
+        # Cleanup temp file
+        temp_cover_path.unlink(missing_ok=True)
+        
+    except Exception as exc:
+        logger.error(f"Failed to process cover for book {book_id}: {exc}")
+        raise HTTPException(status_code=500, detail=t("errors.image_process_failed", error=str(exc)))
+
+    await books_repo.update_one(
+        book_id,
+        cover_url=cover_url,
+        last_updated=datetime.now(timezone.utc),
+        updated_by=current_user.email
+    )
+    await session.commit()
+
+    return {
+        "status": "success",
+        "bookId": book_id,
+        "coverUrl": f"{storage.get_public_url(cover_url)}?v={int(datetime.now(timezone.utc).timestamp())}",
+    }
+
+
+@router.get("/{book_id}/download")
+async def download_book(
     book_id: str,
     current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
-    try:
-        results = await spell_check_service.check_book(book_id, session)
-        return {
-            "bookId": book_id,
-            "status": "success",
-            "totalPagesWithIssues": len(results),
-            "results": {
-                str(page_num): {
-                    "pageNumber": check.pageNumber,
-                    "corrections": [c.dict() for c in check.corrections],
-                    "totalIssues": check.totalIssues,
-                    "checkedAt": check.checkedAt,
-                }
-                for page_num, check in results.items()
-            },
-        }
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=t("errors.spell_check_failed", error=str(exc)))
+    """Download the original book file (PDF or DOCX) from storage."""
+    from fastapi.responses import StreamingResponse
 
+    books_repo = BooksRepository(session)
+    book = await books_repo.get(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
-@router.post("/{book_id}/pages/{page_num}/spell-check")
-async def check_page_spelling(
-    book_id: str,
-    page_num: int,
-    current_user: User = Depends(require_editor),
-    session: AsyncSession = Depends(get_session),
-):
-    """Check spelling for a single page with SQLAlchemy"""
-    pages_repo = PagesRepository(session)
+    # Determine remote path (standardized or original)
+    ext = f".{book.file_type}"
+    remote_path = f"uploads/{book_id}{ext}"
+    
+    # Check if standardized path exists, fallback to original file_name
+    if not storage.exists(remote_path) and book.file_name:
+        remote_path = f"uploads/{book.file_name}"
 
-    page = await pages_repo.find_one(book_id, page_num)
-    if not page:
-        raise HTTPException(status_code=404, detail=t("errors.page_not_found", page_num=page_num))
-
-    page_text = page.text or ""
-    if not page_text:
-        return {
-            "bookId": book_id,
-            "pageNumber": page_num,
-            "corrections": [],
-            "totalIssues": 0,
-            "message": t("messages.no_text_to_check"),
-        }
+    if not storage.exists(remote_path):
+        raise HTTPException(status_code=404, detail=t("errors.file_not_found_in_storage"))
 
     try:
-        spell_check = await spell_check_service.check_page_text(page_text, page_num)
-        return {
-            "bookId": book_id,
-            "pageNumber": spell_check.pageNumber,
-            "corrections": [c.dict() for c in spell_check.corrections],
-            "totalIssues": spell_check.totalIssues,
-            "checkedAt": spell_check.checkedAt,
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=t("errors.spell_check_failed", error=str(exc)))
+        # Get a readable stream directly from storage (doesn't load entire file into memory)
+        stream = storage.get_stream(remote_path)
+        media_type = "application/pdf" if book.file_type == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        
+        # Use a safe filename for the download, handling non-ASCII characters for RFC 5987
+        from urllib.parse import quote
+        download_name = book.file_name or f"{book.title or book_id}{ext}"
+        if not download_name.lower().endswith(ext):
+            download_name += ext
 
+        # Sanitize fallback filename for standard 'filename' (latin-1 only)
+        # We replace non-latin characters with underscores or similar for the fallback
+        safe_fallback = "".join(c if ord(c) < 128 else "_" for c in download_name)
+        encoded_filename = quote(download_name)
 
-@router.post("/{book_id}/pages/{page_num}/apply-corrections")
-async def apply_spelling_corrections(
-    book_id: str,
-    page_num: int,
-    payload: dict,
-    current_user: User = Depends(require_editor),
-    session: AsyncSession = Depends(get_session),
-):
-    corrections = payload.get("corrections", [])
-    try:
-        success = await spell_check_service.apply_corrections(book_id, page_num, corrections, session, user_email=current_user.email)
-        if success:
-            await session.commit()
-            return {
-                "status": "success",
-                "bookId": book_id,
-                "pageNumber": page_num,
-                "correctionsApplied": len(corrections),
-                "message": t("messages.corrections_applied"),
-            }
-        raise HTTPException(status_code=404, detail=t("errors.book_or_page_not_found"))
-    except HTTPException:
-        raise
+        def iter_file():
+            yield from stream
+            stream.close()
+
+        return StreamingResponse(
+            iter_file(),
+            media_type=media_type,
+            headers={"Content-Disposition": f"attachment; filename=\"{safe_fallback}\"; filename*=UTF-8''{encoded_filename}"}
+        )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=t("errors.apply_corrections_failed", error=str(exc)))
+        logger.error(f"Failed to download book {book_id}: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
 
 

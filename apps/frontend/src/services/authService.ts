@@ -129,9 +129,29 @@ export const AuthService = {
   },
 
   /**
+   * Detect iOS/iPadOS Safari (popup flow is unreliable — use redirect instead).
+   * iPadOS 13+ in "Request Desktop Website" mode reports a Mac UA, so we also
+   * check for maxTouchPoints > 1 to catch iPads masquerading as desktop.
+   */
+  _isMobileSafari(): boolean {
+    const ua = navigator.userAgent;
+    const isIOS = /iPhone|iPad|iPod/i.test(ua);
+    const isIPadDesktopMode = /Macintosh/i.test(ua) && navigator.maxTouchPoints > 1;
+    const isSafari = /Safari/i.test(ua) && !/CriOS|FxiOS|OPiOS|EdgiOS|Chrome/i.test(ua);
+    return (isIOS || isIPadDesktopMode) && isSafari;
+  },
+
+  /**
    * Generic OAuth login handler (private method).
    */
   _loginWithProvider(provider: 'google' | 'facebook' | 'twitter'): Promise<User | null> {
+    // iOS Safari: popup flow breaks due to ITP cookie restrictions — use full-page redirect
+    if (this._isMobileSafari()) {
+      const next = encodeURIComponent(window.location.origin + '/');
+      window.location.href = `${API_BASE}/${provider}/login?next=${next}`;
+      return new Promise(() => {}); // Page navigates away; promise intentionally never resolves
+    }
+
     return new Promise((resolve, reject) => {
       const width = 500;
       const height = 600;

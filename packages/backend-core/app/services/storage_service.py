@@ -5,7 +5,6 @@ import os
 import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional
 
 from app.core.config import settings
 from app.utils.observability import log_json
@@ -60,6 +59,11 @@ class StorageProvider(ABC):
         """List files in storage matching a prefix"""
         pass
 
+    @abstractmethod
+    def get_stream(self, remote_path: str):
+        """Get a readable stream for the file"""
+        pass
+
 
 class FileSystemStorageProvider(StorageProvider):
     """Legacy storage provider using local filesystem"""
@@ -101,6 +105,12 @@ class FileSystemStorageProvider(StorageProvider):
             path.unlink()
 
     def get_public_url(self, remote_path: str) -> str:
+        if not remote_path:
+            return None
+        # Handle cases where the path is already a full URL or API path
+        if remote_path.startswith(("http://", "https://", "/api/")):
+            return remote_path
+
         # Assuming covers are served via /api/covers route
         if remote_path.startswith("covers/"):
             return f"/api/covers/{remote_path.replace('covers/', '')}"
@@ -123,6 +133,12 @@ class FileSystemStorageProvider(StorageProvider):
             if p.is_file():
                 results.append(str(p.relative_to(self.base_dir)))
         return results
+
+    def get_stream(self, remote_path: str):
+        src_path = self._get_full_path(remote_path)
+        if not src_path.exists():
+            raise FileNotFoundError(f"Source file {src_path} does not exist")
+        return open(src_path, "rb")
 
 
 class GCSStorageProvider(StorageProvider):
@@ -177,6 +193,12 @@ class GCSStorageProvider(StorageProvider):
             log_json(logger, logging.DEBUG, "File deleted from GCS", bucket=bucket_name, path=final_path)
 
     def get_public_url(self, remote_path: str) -> str:
+        if not remote_path:
+            return None
+        # Handle cases where the path is already a full URL or API path
+        if remote_path.startswith(("http://", "https://", "/api/")):
+            return remote_path
+
         bucket, bucket_name, final_path = self._get_bucket_and_path(remote_path)
         # For the media bucket, return the direct public URL
         if bucket_name == self.media_bucket_name:
@@ -197,6 +219,13 @@ class GCSStorageProvider(StorageProvider):
         bucket, _, final_prefix = self._get_bucket_and_path(prefix)
         blobs = self.client.list_blobs(bucket, prefix=final_prefix)
         return [blob.name for blob in blobs]
+
+    def get_stream(self, remote_path: str):
+        bucket, _, final_path = self._get_bucket_and_path(remote_path)
+        blob = bucket.blob(final_path)
+        if not blob.exists():
+            raise FileNotFoundError(f"Blob {final_path} does not exist in bucket {bucket.name}")
+        return blob.open("rb")
 
 
 def get_storage_provider() -> StorageProvider:

@@ -8,8 +8,11 @@ from langchain_core.output_parsers import PydanticOutputParser
 
 import numpy as np
 from langchain_core.documents import Document
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.db.models import Book
 from app.core.prompts import CATEGORY_PROMPT, RAG_PROMPT_TEMPLATE
 
 from app.langchain import GeminiEmbeddings, build_structured_chain, build_text_chain
@@ -35,30 +38,34 @@ class CategoryResponse(BaseModel):
 
 class RAGService:
     def __init__(self) -> None:
-        parser = PydanticOutputParser(pydantic_object=CategoryResponse)
         self.embeddings = GeminiEmbeddings()
-        self.category_chain = build_structured_chain(
-            CATEGORY_PROMPT,
-            settings.gemini_categorization_model,
-            parser,
-            run_name="category_chain",
-        )
-        self.rag_chain = build_text_chain(
-            RAG_PROMPT_TEMPLATE,
-            settings.gemini_model_name,
-            run_name="rag_chain",
-        )
+        self._parser = PydanticOutputParser(pydantic_object=CategoryResponse)
+        self._rag_chains: dict = {}
+        self._category_chains: dict = {}
         self.logger = logging.getLogger("app.rag")
 
-        # Initialize reranker if enabled and available
+        # Initialize reranker if available (toggled at request-time via system_configs)
         self.reranker: Optional[FlashrankRerank] = None
-        if settings.rag_rerank_enabled and FLASHRANK_AVAILABLE:
+        if FLASHRANK_AVAILABLE:
             try:
                 self.reranker = FlashrankRerank(top_n=settings.rag_rerank_top_n)
                 log_json(self.logger, logging.INFO, "Flashrank reranker initialized", top_n=settings.rag_rerank_top_n)
             except Exception as exc:
                 log_json(self.logger, logging.WARNING, "Failed to initialize reranker", error=str(exc))
-                self.reranker = None
+
+    def _get_rag_chain(self, model_name: str):
+        if model_name not in self._rag_chains:
+            self._rag_chains[model_name] = build_text_chain(
+                RAG_PROMPT_TEMPLATE, model_name, run_name="rag_chain"
+            )
+        return self._rag_chains[model_name]
+
+    def _get_category_chain(self, model_name: str):
+        if model_name not in self._category_chains:
+            self._category_chains[model_name] = build_structured_chain(
+                CATEGORY_PROMPT, model_name, self._parser, run_name="category_chain"
+            )
+        return self._category_chains[model_name]
 
     @staticmethod
     def _is_current_volume_query(question: str) -> bool:
@@ -75,6 +82,174 @@ class RAGService:
         q = question.strip()
         keywords = ["ئۇشبۇ بەتتە", "مەزكور بەتتە", "بۇ بەتتە"]
         return any(k in q for k in keywords)
+
+    @staticmethod
+    def _normalize_uyghur(text: str) -> str:
+        """Normalize Uyghur character variants for reliable keyword matching.
+        ې (U+06D0) and ي (U+064A) are often used interchangeably with ى (U+06CC)
+        depending on keyboard/input method.
+        """
+        return text.replace("\u06D0", "\u06CC").replace("\u0649", "\u06CC").replace("\u064A", "\u06CC")
+
+    @staticmethod
+    def _is_author_or_catalog_query(question: str) -> bool:
+        """Detect if the question is about book authors or which books exist in the library."""
+        if not question:
+            return False
+        q = RAGService._normalize_uyghur(question.strip())
+        keywords = [
+            # Author-related — "who wrote X" / "author of X"
+            "مۇئەللىپ", "مۇئەللىپى", "يازغۇچى", "يازغۇچىسى", "ئاپتور", "ئاپتورى",
+            "كىم يازغان", "يازغان كىشى", "يازغان كىم",
+            "كىم تەرىپىدىن", "يازغانلىقى", "كىمنىڭ", "كىمنىكى",
+            # Author-related — "X's books / works"
+            "ئەسەر يازغان", "ئەسەرلىرى", "كىتابلىرى",
+            # Catalog / book-list related
+            "كىتابلىرىڭىز", "كىتاب بارمۇ", "كىتابخانىڭىز",
+            "كىتاب تىزىملىكى", "قانچە كىتاب", "نەچچە كىتاب",
+            "قايسى كىتابلار", "قايسى ئەسەر",
+        ]
+        normalized_keywords = [RAGService._normalize_uyghur(k) for k in keywords]
+        return any(k in q for k in normalized_keywords)
+
+    @staticmethod
+    def _format_book_catalog(books) -> str:
+        """Format a list of (title, author) rows as LLM context."""
+        if not books:
+            return "NO BOOKS FOUND IN THE LIBRARY."
+        lines = ["Library catalog — available books:"]
+        for book in books:
+            title = book.title or "Unknown"
+            author = book.author
+            if author:
+                lines.append(f"- {title} (Author: {author})")
+            else:
+                lines.append(f"- {title}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _entity_matches_question(entity: str, question: str) -> bool:
+        """
+        Check if an author name or book title is referenced in the question,
+        handling Uyghur agglutinative suffixes (e.g. 'سابىر' matches 'سابىرنىڭ').
+        Each word of the entity must appear as a prefix of at least one word in the question.
+        Requires at least 2 words to match to avoid false positives on common single words.
+        Normalizes ى/ې/ي variants before comparison.
+        """
+        normalize = RAGService._normalize_uyghur
+        entity_words = normalize(entity.strip()).split()
+        if len(entity_words) < 2:
+            return False
+        q_words = normalize(question.strip()).split()
+        return all(
+            any(q_word.startswith(e_word) for q_word in q_words)
+            for e_word in entity_words
+        )
+
+    @staticmethod
+    async def _build_catalog_context(question: str, session) -> tuple[str, int]:
+        """
+        Build the most specific context possible from the books table:
+        - If a known book title is referenced in the question → return info for that book
+        - Elif a known author name is referenced → return that author's books
+        - Else → return the full library catalog
+        Returns (context_str, retrieved_count).
+        """
+        q = question.strip()
+
+        # 1. Try to match a book title (word-prefix match to handle Uyghur suffixes)
+        title_result = await session.execute(
+            select(Book.title).where(Book.status != "error")
+        )
+        titles = [row[0] for row in title_result.fetchall() if row[0]]
+        matched_title = next((t for t in titles if RAGService._entity_matches_question(t, q)), None)
+
+        if matched_title:
+            stmt = select(Book.title, Book.author, Book.volume, Book.total_pages, Book.status).where(
+                Book.status != "error",
+                Book.title == matched_title,
+            ).order_by(Book.volume)
+            result = await session.execute(stmt)
+            books = result.fetchall()
+            if books:
+                lines = [f"Information about '{matched_title}':"]
+                for book in books:
+                    author = book.author or "Unknown"
+                    volume = f", Volume {book.volume}" if book.volume is not None else ""
+                    pages = f", {book.total_pages} pages" if book.total_pages else ""
+                    status_tag = f" [Status: {book.status}]" if book.status != "ready" else ""
+                    lines.append(f"- Title: {book.title}{volume}, Author: {author}{pages}{status_tag}")
+                return "\n".join(lines), len(books)
+
+        # 2. Try to match an author name (word-prefix match to handle Uyghur suffixes)
+        author_result = await session.execute(
+            select(Book.author).where(Book.author.isnot(None), Book.status != "error").distinct()
+        )
+        authors = [row[0] for row in author_result.fetchall() if row[0]]
+        matched_author = next((a for a in authors if RAGService._entity_matches_question(a, q)), None)
+
+        if matched_author:
+            stmt = select(Book.title, Book.author, Book.volume, Book.total_pages, Book.status).where(
+                Book.status != "error",
+                Book.author == matched_author,
+            ).order_by(Book.volume, Book.title)
+            result = await session.execute(stmt)
+            books = result.fetchall()
+            lines = [f"Books by author '{matched_author}' in the library:"]
+            for book in books:
+                volume = f", Volume {book.volume}" if book.volume is not None else ""
+                pages = f", {book.total_pages} pages" if book.total_pages else ""
+                status_tag = f" [Status: {book.status}]" if book.status != "ready" else ""
+                lines.append(f"- {book.title}{volume}{pages}{status_tag}")
+            return "\n".join(lines), len(books)
+
+        # 3. Fall back to full catalog
+        stmt = select(Book.title, Book.author, Book.status).where(Book.status != "error").order_by(Book.title)
+        result = await session.execute(stmt)
+        all_books = result.fetchall()
+        
+        if not all_books:
+            return "NO BOOKS FOUND IN THE LIBRARY.", 0
+            
+        lines = ["Library catalog — available books:"]
+        for book in all_books:
+            title = book.title or "Unknown"
+            author = book.author
+            status_tag = f" [Status: {book.status}]" if book.status != "ready" else ""
+            if author:
+                lines.append(f"- {title} (Author: {author}){status_tag}")
+            else:
+                lines.append(f"- {title}{status_tag}")
+        return "\n".join(lines), len(all_books)
+
+    @staticmethod
+    async def _find_books_by_title_in_question(question: str, session) -> Optional[List[str]]:
+        """
+        Detect if the question mentions a known book title and return matching book IDs.
+        Handles Uyghur agglutinative suffixes via word-prefix matching.
+        Returns all volume IDs for the matched title, or None if no match.
+        """
+        from sqlalchemy import select
+        from app.db.models import Book
+
+        q = question.strip()
+        title_result = await session.execute(
+            select(Book.id, Book.title).where(Book.status != "error")
+        )
+        rows = title_result.fetchall()
+
+        # Group IDs by title (handles multi-volume books)
+        title_to_ids: dict = {}
+        for row in rows:
+            book_id, title = str(row[0]), row[1]
+            if title:
+                title_to_ids.setdefault(title, []).append(book_id)
+
+        matched_title = next(
+            (t for t in title_to_ids if RAGService._entity_matches_question(t, q)),
+            None,
+        )
+        return title_to_ids[matched_title] if matched_title else None
 
     @staticmethod
     def _build_empty_response_message() -> str:
@@ -112,8 +287,9 @@ class RAGService:
             "   You MUST use the EXACT author name from the 'Author:' field in that header. If there is no 'Author:' field in the header, omit the author from the citation entirely — do NOT write any 'unknown' or placeholder text for the author.\n"
             "5. Format citations in Uyghur as a markdown link. The link URL MUST be in the format 'ref:book_id:page_number'.\n"
             "   If multiple pages are referenced, separate the page numbers with commas in the URL (e.g. 'ref:book_id:9,10').\n"
+            "   STRICT RULE: Do NOT include the 'BookID: abc123' part in the visible text label of the link! Keep the book ID ONLY in the URL parenthesis.\n"
             "   Example: **مەنبە:** [ئانا يۇرت (زوردۇن سابىر)، 1-توم، 25-بەت](ref:abc123:25)\n"
-            "6. Replace 'abc123' with the actual BookID and the author/title with the exact values from the context header. **Citations must be placed immediately after the relevant sentence or paragraph they support. NEVER group all citations at the end of your response.**\n"
+            "6. Replace 'abc123' with the actual BookID in the URL, and use the exact values from the context header for the author/title. **Citations must be placed immediately after the relevant sentence or paragraph they support. NEVER group all citations at the end of your response.**\n"
             "7. If the context is marked as 'NO RELEVANT DOCUMENTS FOUND' or does not contain the answer:\n"
             "   - Politely explain that you couldn't find a specific match in the indexed books.\n"
             "   - If it's a general question or greeting, respond naturally but maintain your persona as a librarian advisor.\n"
@@ -160,10 +336,19 @@ class RAGService:
         tokens = [re.sub(r"[^\w]", "", k, flags=re.UNICODE).strip() for k in question.split()]
         return [k for k in tokens if len(k) > 2]
 
-    async def _categorize_question(self, question: str, categories: List[str]) -> List[str]:
+    @staticmethod
+    def _expand_history_categories(categories: List[str]) -> List[str]:
+        """When تارىخ is matched, also include ئۇيغۇر تارىخى and ئىسلام تارىخى so those books are always searched.
+        ئۇيغۇر تارىخى is prioritized over ئىسلام تارىخى in result ordering (see priority_book_ids logic)."""
+        if "تارىخ" in categories:
+            extra = [c for c in ["ئۇيغۇر تارىخى", "ئىسلام تارىخى"] if c not in categories]
+            return categories + extra
+        return categories
+
+    async def _categorize_question(self, question: str, categories: List[str], chain) -> List[str]:
         if not categories:
             return []
-        response = await self.category_chain.ainvoke(
+        response = await chain.ainvoke(
             {
                 "categories": categories,
                 "question": question,
@@ -189,12 +374,13 @@ class RAGService:
         self,
         context: str,
         question: str,
+        chain,
         chat_history: str = "",
         strict_no_answer: bool = False,
         suppress_page_notice: bool = False,
     ) -> str:
         instructions = self._build_instructions(strict_no_answer, suppress_page_notice)
-        response_text = await self.rag_chain.ainvoke(
+        response_text = await chain.ainvoke(
             {
                 "context": context,
                 "instructions": instructions,
@@ -208,6 +394,7 @@ class RAGService:
         self,
         context: str,
         question: str,
+        chain,
         chat_history: str = "",
         strict_no_answer: bool = False,
         suppress_page_notice: bool = False,
@@ -217,7 +404,7 @@ class RAGService:
         has_content = False
         chunk_count = 0
 
-        async for chunk in self.rag_chain.astream(
+        async for chunk in chain.astream(
             {
                 "context": context,
                 "instructions": instructions,
@@ -283,17 +470,27 @@ class RAGService:
         start_ts = time.monotonic()
         is_global = req.book_id == "global"
         relevant_categories: List[str] = []
+        priority_book_ids: set = set()
         book = None
 
         from app.db.repositories.books import BooksRepository
         from app.db.repositories.pages import PagesRepository
         from app.db.repositories.chunks import ChunksRepository
-        from sqlalchemy import select, func, and_, or_
-        from app.db.models import Book, Page
+        from app.db.repositories.system_configs import SystemConfigsRepository
+        from sqlalchemy import select, and_
+        from app.db.models import Book
 
         books_repo = BooksRepository(session)
         pages_repo = PagesRepository(session)
         chunks_repo = ChunksRepository(session)
+        configs_repo = SystemConfigsRepository(session)
+
+        chat_model = await configs_repo.get_value("gemini_chat_model", default=settings.gemini_chat_model)
+        categorization_model = await configs_repo.get_value("gemini_categorization_model", default=settings.gemini_categorization_model)
+        rerank_enabled_str = await configs_repo.get_value("rag_rerank_enabled", default=str(settings.rag_rerank_enabled).lower())
+        rerank_enabled = rerank_enabled_str == "true"
+        rag_chain = self._get_rag_chain(chat_model)
+        category_chain = self._get_category_chain(categorization_model)
 
         if not is_global:
             book = await books_repo.get(req.book_id)
@@ -324,6 +521,7 @@ class RAGService:
             return await self._generate_answer(
                 context,
                 req.question,
+                rag_chain,
                 chat_history=chat_history_str,
                 strict_no_answer=False,
                 suppress_page_notice=False,
@@ -341,45 +539,112 @@ class RAGService:
         book_ids = []
         book_id_to_title = {}
 
+        # 0. Check if the user is asking about book authors or the general catalog
+        if self._is_author_or_catalog_query(req.question):
+            context, retrieved_count = await self._build_catalog_context(req.question, session)
+            
+            # If we are in a specific book, also include its metadata specifically
+            # This handles cases like "Who is the author of this book?" when in reader
+            if not is_global and book:
+                author_info = f", Author: {book.author}" if book.author else ""
+                volume_info = f", Volume {book.volume}" if book.volume is not None else ""
+                pages_info = f", {book.total_pages} pages" if book.total_pages else ""
+                status_info = f" [Status: {book.status}]" if book.status != "ready" else ""
+                
+                current_book_intro = "Information about the book the user is currently reading:\n"
+                current_book_intro += f"- Title: {book.title or 'Unknown'}{author_info}{volume_info}{pages_info}{status_info}\n\n---\n\n"
+                context = current_book_intro + context
+
+            answer = await self._generate_answer(
+                context,
+                req.question,
+                rag_chain,
+                chat_history=chat_history_str,
+                strict_no_answer=False,
+                suppress_page_notice=True,
+            )
+            await self._record_eval(
+                session,
+                {
+                    "bookId": req.book_id,
+                    "isGlobal": is_global,
+                    "question": req.question,
+                    "currentPage": req.current_page,
+                    "retrievedCount": retrieved_count,
+                    "contextChars": len(context),
+                    "scores": [],
+                    "categoryFilter": [],
+                    "latencyMs": int((time.monotonic() - start_ts) * 1000),
+                    "answer_chars": len(answer),
+                },
+                user_id=user_id,
+            )
+            return answer
+
         if is_global:
-            # Global search - categorize to narrow down books
-            # Get all unique categories from books table
-            stmt = select(Book.categories).where(Book.categories != None)
-            result = await session.execute(stmt)
-            all_categories = set()
-            for cats in result.scalars().all():
-                if cats:
-                    all_categories.update(cats)
-
-            relevant_categories = []
-            try:
-                relevant_categories = await self._categorize_question(req.question, list(all_categories))
-            except Exception as exc:
-                log_json(self.logger, logging.WARNING, "Category routing failed", error=str(exc))
-                relevant_categories = []
-
-            # Find books by category
-            if relevant_categories:
-                # Use overlap (&& in Postgres) for categories
-                from sqlalchemy import text
-                stmt = select(Book.id, Book.title).where(
-                    text("categories && :cats").bindparams(cats=relevant_categories)
-                ).limit(100)
-                result = await session.execute(stmt)
-                all_books_recs = result.fetchall()
+            # 1. Check if the question references a specific book title
+            title_matched_ids = await self._find_books_by_title_in_question(req.question, session)
+            if title_matched_ids:
+                book_ids = title_matched_ids
+                log_json(self.logger, logging.INFO, "Book title detected in global query, restricting search", count=len(title_matched_ids))
             else:
-                all_books_recs = []
+                # 2. Summary-based book selection (stage 1 of hierarchical retrieval).
+                # query_vector is already computed and reused here — no extra API call.
+                if query_vector:
+                    try:
+                        from app.db.repositories.book_summaries import BookSummariesRepository
+                        summaries_repo = BookSummariesRepository(session)
+                        book_ids = await summaries_repo.summary_search(
+                            query_embedding=query_vector,
+                            limit=settings.summary_top_k,
+                            threshold=settings.summary_threshold,
+                        )
+                        if book_ids:
+                            log_json(self.logger, logging.INFO, "Summary search selected books", count=len(book_ids))
+                    except Exception as exc:
+                        log_json(self.logger, logging.WARNING, "Summary search failed, falling back to category search", error=str(exc))
+                        book_ids = []
 
-            if not all_books_recs:
-                # Fallback to recent books
-                stmt = select(Book.id, Book.title).order_by(Book.last_updated.desc()).limit(200)
-                result = await session.execute(stmt)
-                all_books_recs = result.fetchall()
+                # 3. Fallback: category-based search (when no summaries exist yet)
+                if not book_ids:
+                    stmt = select(Book.categories).where(Book.categories is not None)
+                    result = await session.execute(stmt)
+                    all_categories = set()
+                    for cats in result.scalars().all():
+                        if cats:
+                            all_categories.update(cats)
 
-            book_id_to_title = {str(b.id): b.title for b in all_books_recs}
-            book_ids = list(book_id_to_title.keys())
+                    try:
+                        relevant_categories = await self._categorize_question(req.question, list(all_categories), category_chain)
+                        relevant_categories = self._expand_history_categories(relevant_categories)
+                    except Exception as exc:
+                        log_json(self.logger, logging.WARNING, "Category routing failed", error=str(exc))
+                        relevant_categories = []
+
+                    if relevant_categories:
+                        from sqlalchemy import text
+                        stmt = select(Book.id, Book.title, Book.categories).where(
+                            text("categories && :cats").bindparams(cats=relevant_categories)
+                        ).limit(100)
+                        result = await session.execute(stmt)
+                        all_books_recs = result.fetchall()
+                        if "ئۇيغۇر تارىخى" in relevant_categories:
+                            priority_book_ids = {
+                                str(b.id) for b in all_books_recs
+                                if b.categories and "ئۇيغۇر تارىخى" in b.categories
+                            }
+                    else:
+                        all_books_recs = []
+
+                    if not all_books_recs:
+                        stmt = select(Book.id, Book.title).order_by(Book.last_updated.desc()).limit(200)
+                        result = await session.execute(stmt)
+                        all_books_recs = result.fetchall()
+
+                    book_id_to_title = {str(b.id): b.title for b in all_books_recs}
+                    book_ids = list(book_id_to_title.keys())
         else:
-            # Search specific book and siblings
+            # Search the specific book and all its sibling volumes (same title + author)
             title = book.title
             author = book.author
 
@@ -396,7 +661,7 @@ class RAGService:
                 )
                 if author:
                     stmt = stmt.where(Book.author == author)
-                
+
                 result = await session.execute(stmt)
                 siblings = result.fetchall()
                 for s in siblings:
@@ -440,7 +705,7 @@ class RAGService:
                 top_results = []
 
         # Apply reranking if enabled and we have results
-        if self.reranker and top_results and len(top_results) > 1:
+        if self.reranker and rerank_enabled and top_results and len(top_results) > 1:
             try:
                 rerank_start = time.monotonic()
                 log_json(
@@ -452,7 +717,7 @@ class RAGService:
                 )
 
                 # Store original vector scores for logging
-                original_scores = [r.get("score", 0.0) for r in top_results]
+                [r.get("score", 0.0) for r in top_results]
                 original_order = [i for i in range(len(top_results))]
 
                 # Convert to Documents for reranking
@@ -479,7 +744,7 @@ class RAGService:
                 # Rebuild top_results from reranked documents
                 reranked_results = []
                 for doc in reranked_docs:
-                    original_idx = doc.metadata.get("original_index", 0)
+                    doc.metadata.get("original_index", 0)
                     reranked_results.append({
                         "text": doc.page_content,
                         "score": doc.metadata.get("vector_score", 0.0),
@@ -512,6 +777,10 @@ class RAGService:
             except Exception as exc:
                 log_json(self.logger, logging.WARNING, "Reranking failed, using original order", error=str(exc))
 
+        # Prioritize ئۇيغۇر تارىخى books when تارىخ was matched (stable sort)
+        if priority_book_ids:
+            top_results.sort(key=lambda r: 0 if str(r.get("book_id", "")) in priority_book_ids else 1)
+
         context_parts = []
         if current_page_context:
             context_parts.append(current_page_context)
@@ -543,6 +812,7 @@ class RAGService:
         answer = await self._generate_answer(
             context,
             req.question,
+            rag_chain,
             chat_history=chat_history_str,
             strict_no_answer=False,
             suppress_page_notice=False,
@@ -574,17 +844,27 @@ class RAGService:
         start_ts = time.monotonic()
         is_global = req.book_id == "global"
         relevant_categories: List[str] = []
+        priority_book_ids: set = set()
         book = None
 
         from app.db.repositories.books import BooksRepository
         from app.db.repositories.pages import PagesRepository
         from app.db.repositories.chunks import ChunksRepository
-        from sqlalchemy import select, func, and_, or_
-        from app.db.models import Book, Page
+        from app.db.repositories.system_configs import SystemConfigsRepository
+        from sqlalchemy import select, and_
+        from app.db.models import Book
 
         books_repo = BooksRepository(session)
         pages_repo = PagesRepository(session)
         chunks_repo = ChunksRepository(session)
+        configs_repo = SystemConfigsRepository(session)
+
+        chat_model = await configs_repo.get_value("gemini_chat_model", default=settings.gemini_chat_model)
+        categorization_model = await configs_repo.get_value("gemini_categorization_model", default=settings.gemini_categorization_model)
+        rerank_enabled_str = await configs_repo.get_value("rag_rerank_enabled", default=str(settings.rag_rerank_enabled).lower())
+        rerank_enabled = rerank_enabled_str == "true"
+        rag_chain = self._get_rag_chain(chat_model)
+        category_chain = self._get_category_chain(categorization_model)
 
         if not is_global:
             book = await books_repo.get(req.book_id)
@@ -615,6 +895,7 @@ class RAGService:
             async for chunk in self._generate_answer_stream(
                 context,
                 req.question,
+                rag_chain,
                 chat_history=chat_history_str,
                 strict_no_answer=False,
                 suppress_page_notice=False,
@@ -634,43 +915,116 @@ class RAGService:
         book_ids = []
         book_id_to_title = {}
 
+        # 0. Check if the user is asking about book authors or the general catalog
+        if self._is_author_or_catalog_query(req.question):
+            context, retrieved_count = await self._build_catalog_context(req.question, session)
+            
+            # If we are in a specific book, also include its metadata specifically
+            if not is_global and book:
+                author_info = f", Author: {book.author}" if book.author else ""
+                volume_info = f", Volume {book.volume}" if book.volume is not None else ""
+                pages_info = f", {book.total_pages} pages" if book.total_pages else ""
+                status_info = f" [Status: {book.status}]" if book.status != "ready" else ""
+                
+                current_book_intro = "Information about the book the user is currently reading:\n"
+                current_book_intro += f"- Title: {book.title or 'Unknown'}{author_info}{volume_info}{pages_info}{status_info}\n\n---\n\n"
+                context = current_book_intro + context
+
+            answer_chunks = []
+            async for chunk in self._generate_answer_stream(
+                context,
+                req.question,
+                rag_chain,
+                chat_history=chat_history_str,
+                strict_no_answer=False,
+                suppress_page_notice=True,
+            ):
+                answer_chunks.append(chunk)
+                yield chunk
+            
+            full_answer = "".join(answer_chunks)
+            await self._record_eval(
+                session,
+                {
+                    "bookId": req.book_id,
+                    "isGlobal": is_global,
+                    "question": req.question,
+                    "currentPage": req.current_page,
+                    "retrievedCount": retrieved_count,
+                    "contextChars": len(context),
+                    "scores": [],
+                    "categoryFilter": [],
+                    "latencyMs": int((time.monotonic() - start_ts) * 1000),
+                    "answer_chars": len(full_answer),
+                },
+                user_id=user_id,
+            )
+            return
+
         if is_global:
-            # Global search - categorize to narrow down books
-            stmt = select(Book.categories).where(Book.categories != None)
-            result = await session.execute(stmt)
-            all_categories = set()
-            for cats in result.scalars().all():
-                if cats:
-                    all_categories.update(cats)
-
-            relevant_categories = []
-            try:
-                relevant_categories = await self._categorize_question(req.question, list(all_categories))
-            except Exception as exc:
-                log_json(self.logger, logging.WARNING, "Category routing failed", error=str(exc))
-                relevant_categories = []
-
-            # Find books by category
-            if relevant_categories:
-                from sqlalchemy import text
-                stmt = select(Book.id, Book.title).where(
-                    text("categories && :cats").bindparams(cats=relevant_categories)
-                ).limit(100)
-                result = await session.execute(stmt)
-                all_books_recs = result.fetchall()
+            # 1. Check if the question references a specific book title
+            title_matched_ids = await self._find_books_by_title_in_question(req.question, session)
+            if title_matched_ids:
+                book_ids = title_matched_ids
+                log_json(self.logger, logging.INFO, "Book title detected in global query, restricting search", count=len(title_matched_ids))
             else:
-                all_books_recs = []
+                # 2. Summary-based book selection (stage 1 of hierarchical retrieval).
+                # query_vector is already computed and reused here — no extra API call.
+                if query_vector:
+                    try:
+                        from app.db.repositories.book_summaries import BookSummariesRepository
+                        summaries_repo = BookSummariesRepository(session)
+                        book_ids = await summaries_repo.summary_search(
+                            query_embedding=query_vector,
+                            limit=settings.summary_top_k,
+                            threshold=settings.summary_threshold,
+                        )
+                        if book_ids:
+                            log_json(self.logger, logging.INFO, "Summary search selected books", count=len(book_ids))
+                    except Exception as exc:
+                        log_json(self.logger, logging.WARNING, "Summary search failed, falling back to category search", error=str(exc))
+                        book_ids = []
 
-            if not all_books_recs:
-                # Fallback to recent books
-                stmt = select(Book.id, Book.title).order_by(Book.last_updated.desc()).limit(200)
-                result = await session.execute(stmt)
-                all_books_recs = result.fetchall()
+                # 3. Fallback: category-based search (when no summaries exist yet)
+                if not book_ids:
+                    stmt = select(Book.categories).where(Book.categories is not None)
+                    result = await session.execute(stmt)
+                    all_categories = set()
+                    for cats in result.scalars().all():
+                        if cats:
+                            all_categories.update(cats)
 
-            book_id_to_title = {str(b.id): b.title for b in all_books_recs}
-            book_ids = list(book_id_to_title.keys())
+                    try:
+                        relevant_categories = await self._categorize_question(req.question, list(all_categories), category_chain)
+                        relevant_categories = self._expand_history_categories(relevant_categories)
+                    except Exception as exc:
+                        log_json(self.logger, logging.WARNING, "Category routing failed", error=str(exc))
+                        relevant_categories = []
+
+                    if relevant_categories:
+                        from sqlalchemy import text
+                        stmt = select(Book.id, Book.title, Book.categories).where(
+                            text("categories && :cats").bindparams(cats=relevant_categories)
+                        ).limit(100)
+                        result = await session.execute(stmt)
+                        all_books_recs = result.fetchall()
+                        if "ئۇيغۇر تارىخى" in relevant_categories:
+                            priority_book_ids = {
+                                str(b.id) for b in all_books_recs
+                                if b.categories and "ئۇيغۇر تارىخى" in b.categories
+                            }
+                    else:
+                        all_books_recs = []
+
+                    if not all_books_recs:
+                        stmt = select(Book.id, Book.title).order_by(Book.last_updated.desc()).limit(200)
+                        result = await session.execute(stmt)
+                        all_books_recs = result.fetchall()
+
+                    book_id_to_title = {str(b.id): b.title for b in all_books_recs}
+                    book_ids = list(book_id_to_title.keys())
         else:
-            # Search specific book and siblings
+            # Search the specific book and all its sibling volumes (same title + author)
             title = book.title
             author = book.author
 
@@ -727,7 +1081,7 @@ class RAGService:
                 top_results = []
 
         # Apply reranking if enabled and we have results
-        if self.reranker and top_results and len(top_results) > 1:
+        if self.reranker and rerank_enabled and top_results and len(top_results) > 1:
             try:
                 rerank_start = time.monotonic()
                 log_json(
@@ -738,7 +1092,7 @@ class RAGService:
                     timestamp=datetime.utcnow().isoformat()
                 )
 
-                original_scores = [r.get("score", 0.0) for r in top_results]
+                [r.get("score", 0.0) for r in top_results]
                 original_order = [i for i in range(len(top_results))]
 
                 docs_for_rerank = [
@@ -762,7 +1116,7 @@ class RAGService:
 
                 reranked_results = []
                 for doc in reranked_docs:
-                    original_idx = doc.metadata.get("original_index", 0)
+                    doc.metadata.get("original_index", 0)
                     reranked_results.append({
                         "text": doc.page_content,
                         "score": doc.metadata.get("vector_score", 0.0),
@@ -793,6 +1147,10 @@ class RAGService:
 
             except Exception as exc:
                 log_json(self.logger, logging.WARNING, "Reranking failed, using original order", error=str(exc))
+
+        # Prioritize ئۇيغۇر تارىخى books when تارىخ was matched (stable sort)
+        if priority_book_ids:
+            top_results.sort(key=lambda r: 0 if str(r.get("book_id", "")) in priority_book_ids else 1)
 
         context_parts = []
         if current_page_context:
@@ -827,6 +1185,7 @@ class RAGService:
         async for chunk in self._generate_answer_stream(
             context,
             req.question,
+            rag_chain,
             chat_history=chat_history_str,
             strict_no_answer=False,
             suppress_page_notice=False,

@@ -75,3 +75,5 @@ data/
 /UyghurOCR/
 /output/
 /scripts/
+gcloud.txt
+.coverage

@@ -11,5 +11,8 @@
     "preview": "npm --workspace apps/frontend run preview",
     "test": "npm --workspace apps/frontend run test",
     "test:coverage": "npm --workspace apps/frontend run test:coverage"
+  },
+  "devDependencies": {
+    "@types/react-dom": "^19.2.3"
   }
 }

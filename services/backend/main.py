@@ -7,14 +7,17 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from api.endpoints import ai, auth, books, chat, users, system_configs, stats, contact
+from api.endpoints import ai, auth, books, chat, users, system_configs, stats, contact, spell_check
 from app.core.config import settings
 from app.db.session import init_db, close_db  # SQLAlchemy session management
-from app.core.i18n import I18n, set_current_lang
+from app.core.i18n import I18n, set_current_lang, t
 
 from app.langchain import configure_langchain
 from app.utils.observability import configure_logging, log_json, request_id_var
 from auth.jwt_handler import validate_jwt_secret
+
+from app.services.storage_service import storage
+from fastapi.responses import RedirectResponse, FileResponse
 
 import os as _os
 # Locales live next to main.py in services/backend/, not in packages/backend-core
@@ -102,9 +105,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from app.services.storage_service import storage
-from fastapi.responses import RedirectResponse, FileResponse
-
 @app.get("/api/covers/{book_id}.jpg")
 async def get_cover(book_id: str, request: Request):
     local_path = settings.covers_dir / f"{book_id}.jpg"
@@ -138,6 +138,7 @@ app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(system_configs.router, prefix="/api/system-configs", tags=["system-configs"])
 app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 app.include_router(contact.router, prefix="/api/contact", tags=["contact"])
+app.include_router(spell_check.router, prefix="/api/books", tags=["spell-check"])
 
 
 @app.get("/")
