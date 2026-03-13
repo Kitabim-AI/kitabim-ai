@@ -75,9 +75,9 @@ flowchart TD
     in_proc -->|Job failure| fail
     fail -->|Retry count < max| idle
 
-    %% Admin: Reprocess / Retry OCR
+    %% Admin: Reprocess / Retry
     fail -->|"Reset Failed Pages\n(set milestone → idle)"| idle
-    succ -->|"Reprocess Book\n(set all pages ocr/idle)"| idle
+    succ -->|"Reprocess Step (OCR/Chunk/Embed/...)\n(set milestone → idle at that step)"| idle
     in_proc -->|"Stale Watchdog\n(timeout: set milestone → idle)"| idle
 
     %% Admin: Reindex
@@ -145,18 +145,18 @@ flowchart TD
 
 ---
 
-### Reprocess Book
+### Reprocess Step
 | Field | Value |
 |---|---|
-| Trigger | Admin "Reprocess" button |
-| Effect | All pages → `pipeline_step: ocr`, `milestone: idle`, `status: pending` |
-| Logic | Preserves text until replaced page-by-page |
+| Trigger | Admin context menu step reprocess |
+| Effect | Target step milestone → `idle`. Downstream steps reset. |
+| Logic | Preserves existing data until newer results are applied page-by-page. |
 
 ### Reindex
 | Field | Value |
 |---|---|
-| Trigger | Admin "Reindex" button |
-| Effect | Post-OCR pages → `pipeline_step: chunking`, `milestone: idle`, `is_indexed: false`. Chunks deleted. |
+| Trigger | Admin "Reindex" button (legacy) or Step Reprocess: chunking |
+| Effect | Target pages → `chunking_milestone: idle`. New chunks/embeddings will be generated. |
 
 ### Reset Failed Pages
 | Field | Value |

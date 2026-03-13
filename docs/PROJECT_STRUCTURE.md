@@ -46,12 +46,15 @@ kitabim-ai/
 ├── services/              # Microservices
 │   ├── backend/          # FastAPI REST API service
 │   └── worker/           # ARQ background job worker
-├── scripts/             # Utility scripts and migrations
-├── data/                # Persistent Volume (gitignored)
-│   ├── uploads/        # PDF storage
-│   └── covers/         # Book cover storage
-├── docker-compose.yml   # Primary local development entry point
-└── docs/               # Documentation
+├── deploy/                # Deployment & Infrastructure
+│   ├── local/            # Local dev scripts
+│   └── gcp/              # GCP deployment configs
+├── scripts/               # Diagnostic & Operational scripts
+├── data/                  # Persistent Volume (gitignored)
+│   ├── uploads/          # PDF storage
+│   └── covers/           # Book cover storage
+├── docker-compose.yml     # Primary local development entry point
+└── docs/                  # Documentation
 ```
 
 ### Design Principles
@@ -94,7 +97,7 @@ apps/frontend/
 - React 19
 - Vite 6
 - TypeScript 5.8
-- Tailwind CSS 3.4 (CDN)
+- Tailwind CSS 3.4 (Bundled)
 - Lucide React (icons)
 - pdf.js (PDF rendering)
 - Vitest (testing)
@@ -228,7 +231,7 @@ docs/
 | Framework | React 19 | UI library |
 | Build Tool | Vite 6 | Fast dev server and bundler |
 | Language | TypeScript 5.8 | Type-safe JavaScript |
-| Styling | Tailwind CSS 3.4 | Utility-first CSS |
+| Styling | Tailwind CSS 3.4 | PostCSS bundled |
 | Icons | Lucide React | Icon library |
 | PDF Rendering | pdf.js | Display PDF pages |
 | Testing | Vitest + Testing Library | Unit and integration tests |
@@ -569,7 +572,7 @@ redis-server
 
 3. **Rebuild specific service**
    ```bash
-   ./scripts/rebuild-and-restart.sh [frontend|backend|worker|all]
+   ./deploy/local/rebuild-and-restart.sh [frontend|backend|worker|all]
    ```
 
 4. **Access**
@@ -684,7 +687,7 @@ python3.13 -m pytest services/backend/tests
 | `docker-compose.yml` | Main service orchestration |
 | `Dockerfile.backend` | Backend service container image |
 | `Dockerfile.worker` | Worker service container image |
-| `scripts/rebuild-and-restart.sh` | Shortcut script for updates |
+| `deploy/local/rebuild-and-restart.sh` | Shortcut script for updates |
 
 ---
 

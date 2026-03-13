@@ -263,6 +263,10 @@ class User(Base):
         DateTime(timezone=True),
         nullable=True
     )
+    last_login_ip: Mapped[Optional[str]] = mapped_column(
+        String(45),
+        nullable=True
+    )
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
 

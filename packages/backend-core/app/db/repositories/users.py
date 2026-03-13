@@ -68,9 +68,12 @@ class UsersRepository(BaseRepository[User]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def update_last_login(self, user_id: UUID) -> None:
-        """Update user's last login timestamp"""
-        await self.update_one(user_id, last_login_at=datetime.now(timezone.utc))
+    async def update_last_login(self, user_id: UUID, ip_address: Optional[str] = None) -> None:
+        """Update user's last login timestamp and IP address"""
+        updates = {"last_login_at": datetime.now(timezone.utc)}
+        if ip_address:
+            updates["last_login_ip"] = ip_address
+        await self.update_one(user_id, **updates)
 
     async def count_by_role(self, role: Optional[str] = None, is_active: Optional[bool] = None, search: Optional[str] = None) -> int:
         """Count users, optionally filtered by role, active status, and search query"""

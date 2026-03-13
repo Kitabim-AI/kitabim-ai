@@ -89,7 +89,7 @@ Polls the GCS bucket and registers books that aren't yet in the database. Runs e
 3. Download unknown files to compute SHA-256 hash and extract PDF metadata
 4. Skip content-hash duplicates (same file under a different name)
 5. Standardize the GCS path to `uploads/{book_id}.pdf` (rename if needed)
-6. Insert a `Book` record with `status='pending'` and `v2_pipeline_step=NULL`
+6. Insert a `Book` record with `status='pending'` and `pipeline_step=NULL`
 
 PipelineDriver picks up the new book on its next run and initializes its pages into `ocr / idle`. No explicit OCR triggering is needed.
 
@@ -185,7 +185,7 @@ Jobs are pure executors — they process pages and report success or failure. Th
      b. Call Gemini Vision API
      c. Normalize text (Uyghur character normalization, markdown cleanup)
      d. Save extracted text to page record
-     e. Set v2_milestone = 'succeeded'
+     e. Set <step>_milestone = 'succeeded'
    On failure:
      e.retry_count++
      f. Set <step>_milestone = 'failed'

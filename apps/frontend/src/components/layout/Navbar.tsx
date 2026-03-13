@@ -12,6 +12,22 @@ export const Navbar: React.FC = () => {
   const { t } = useI18n();
   const { view, setView, searchQuery, setSearchQuery, homeSearchQuery, setHomeSearchQuery, bookActions, chat, setPage, isLoading } = useAppContext();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [localSearch, setLocalSearch] = useState(searchQuery);
+
+  // Sync local search when global search is cleared or changed externally
+  React.useEffect(() => {
+    setLocalSearch(searchQuery);
+  }, [searchQuery]);
+
+  // Debounce global search update
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      if (localSearch !== searchQuery) {
+        setSearchQuery(localSearch);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [localSearch, searchQuery, setSearchQuery]);
 
   const handleNavClick = (callback: () => void) => {
     callback();
@@ -97,21 +113,21 @@ export const Navbar: React.FC = () => {
               <input
                 type="text"
                 placeholder={t('library.searchPlaceholder')}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                value={localSearch}
+                onChange={(e) => setLocalSearch(e.target.value)}
                 className="pr-11 pl-11 py-2.5 bg-white/50 backdrop-blur-md border-2 border-[#0369a1]/10 rounded-2xl text-sm font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none focus:border-[#0369a1] transition-all w-64 shadow-sm uyghur-text"
                 dir="rtl"
               />
               <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1]">
-                {isLoading && searchQuery ? (
+                {isLoading && localSearch ? (
                   <RefreshCw size={18} strokeWidth={3} className="animate-spin" />
                 ) : (
                   <Search size={18} strokeWidth={3} />
                 )}
               </div>
-              {searchQuery && (
+              {localSearch && (
                 <button
-                  onClick={() => setSearchQuery('')}
+                  onClick={() => { setLocalSearch(''); setSearchQuery(''); }}
                   className="absolute inset-y-0 left-4 flex items-center text-slate-400 hover:text-[#0369a1] transition-all active:scale-90"
                 >
                   <X size={16} strokeWidth={3} />

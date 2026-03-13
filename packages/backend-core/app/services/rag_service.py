@@ -23,13 +23,7 @@ from app.core.i18n import t
 import logging
 import time
 
-# Import reranker
-try:
-    from langchain_community.document_compressors import FlashrankRerank
-    FLASHRANK_AVAILABLE = True
-except ImportError:
-    FLASHRANK_AVAILABLE = False
-    logging.warning("FlashrankRerank not available. Install langchain-community and flashrank to enable reranking.")
+
 
 
 class CategoryResponse(BaseModel):
@@ -44,14 +38,7 @@ class RAGService:
         self._category_chains: dict = {}
         self.logger = logging.getLogger("app.rag")
 
-        # Initialize reranker if available (toggled at request-time via system_configs)
-        self.reranker: Optional[FlashrankRerank] = None
-        if FLASHRANK_AVAILABLE:
-            try:
-                self.reranker = FlashrankRerank(top_n=settings.rag_rerank_top_n)
-                log_json(self.logger, logging.INFO, "Flashrank reranker initialized", top_n=settings.rag_rerank_top_n)
-            except Exception as exc:
-                log_json(self.logger, logging.WARNING, "Failed to initialize reranker", error=str(exc))
+
 
     def _get_rag_chain(self, model_name: str):
         if model_name not in self._rag_chains:
@@ -487,8 +474,6 @@ class RAGService:
 
         chat_model = await configs_repo.get_value("gemini_chat_model", default=settings.gemini_chat_model)
         categorization_model = await configs_repo.get_value("gemini_categorization_model", default=settings.gemini_categorization_model)
-        rerank_enabled_str = await configs_repo.get_value("rag_rerank_enabled", default=str(settings.rag_rerank_enabled).lower())
-        rerank_enabled = rerank_enabled_str == "true"
         rag_chain = self._get_rag_chain(chat_model)
         category_chain = self._get_category_chain(categorization_model)
 
@@ -704,78 +689,6 @@ class RAGService:
                 # TODO: Implement full-text search fallback in Postgres
                 top_results = []
 
-        # Apply reranking if enabled and we have results
-        if self.reranker and rerank_enabled and top_results and len(top_results) > 1:
-            try:
-                rerank_start = time.monotonic()
-                log_json(
-                    self.logger,
-                    logging.INFO,
-                    "Starting reranking",
-                    candidate_count=len(top_results),
-                    timestamp=datetime.utcnow().isoformat()
-                )
-
-                # Store original vector scores for logging
-                [r.get("score", 0.0) for r in top_results]
-                original_order = [i for i in range(len(top_results))]
-
-                # Convert to Documents for reranking
-                docs_for_rerank = [
-                    Document(
-                        page_content=r["text"],
-                        metadata={
-                            "title": r.get("title") or "Unknown",
-                            "volume": r.get("volume"),
-                            "page": r.get("page"),
-                            "book_id": r.get("book_id"),
-                            "vector_score": r.get("score", 0.0),
-                            "original_index": i
-                        }
-                    ) for i, r in enumerate(top_results)
-                ]
-
-                # Apply reranking
-                reranked_docs = await self.reranker.acompress_documents(docs_for_rerank, req.question)
-
-                rerank_end = time.monotonic()
-                rerank_duration_ms = int((rerank_end - rerank_start) * 1000)
-
-                # Rebuild top_results from reranked documents
-                reranked_results = []
-                for doc in reranked_docs:
-                    doc.metadata.get("original_index", 0)
-                    reranked_results.append({
-                        "text": doc.page_content,
-                        "score": doc.metadata.get("vector_score", 0.0),
-                        "page": doc.metadata.get("page"),
-                        "title": doc.metadata.get("title") or "Unknown",
-                        "volume": doc.metadata.get("volume"),
-                        "author": doc.metadata.get("author") or None,
-                        "book_id": doc.metadata.get("book_id"),
-                    })
-
-                # Log reranking impact
-                if reranked_results:
-                    reranked_indices = [
-                        top_results.index(next(r for r in top_results if r["text"] == rr["text"]))
-                        for rr in reranked_results
-                    ]
-                    log_json(
-                        self.logger,
-                        logging.INFO,
-                        "Reranking completed",
-                        original_count=len(top_results),
-                        reranked_count=len(reranked_results),
-                        original_top_3=original_order[:3],
-                        reranked_top_3=reranked_indices[:3] if len(reranked_indices) >= 3 else reranked_indices,
-                        duration_ms=rerank_duration_ms,
-                        timestamp=datetime.utcnow().isoformat()
-                    )
-                    top_results = reranked_results
-
-            except Exception as exc:
-                log_json(self.logger, logging.WARNING, "Reranking failed, using original order", error=str(exc))
 
         # Prioritize ئۇيغۇر تارىخى books when تارىخ was matched (stable sort)
         if priority_book_ids:
@@ -861,8 +774,6 @@ class RAGService:
 
         chat_model = await configs_repo.get_value("gemini_chat_model", default=settings.gemini_chat_model)
         categorization_model = await configs_repo.get_value("gemini_categorization_model", default=settings.gemini_categorization_model)
-        rerank_enabled_str = await configs_repo.get_value("rag_rerank_enabled", default=str(settings.rag_rerank_enabled).lower())
-        rerank_enabled = rerank_enabled_str == "true"
         rag_chain = self._get_rag_chain(chat_model)
         category_chain = self._get_category_chain(categorization_model)
 
@@ -1080,73 +991,6 @@ class RAGService:
                 log_json(self.logger, logging.INFO, "Using keyword fallback search")
                 top_results = []
 
-        # Apply reranking if enabled and we have results
-        if self.reranker and rerank_enabled and top_results and len(top_results) > 1:
-            try:
-                rerank_start = time.monotonic()
-                log_json(
-                    self.logger,
-                    logging.INFO,
-                    "Starting reranking",
-                    candidate_count=len(top_results),
-                    timestamp=datetime.utcnow().isoformat()
-                )
-
-                [r.get("score", 0.0) for r in top_results]
-                original_order = [i for i in range(len(top_results))]
-
-                docs_for_rerank = [
-                    Document(
-                        page_content=r["text"],
-                        metadata={
-                            "title": r.get("title") or "Unknown",
-                            "volume": r.get("volume"),
-                            "page": r.get("page"),
-                            "book_id": r.get("book_id"),
-                            "vector_score": r.get("score", 0.0),
-                            "original_index": i
-                        }
-                    ) for i, r in enumerate(top_results)
-                ]
-
-                reranked_docs = await self.reranker.acompress_documents(docs_for_rerank, req.question)
-
-                rerank_end = time.monotonic()
-                rerank_duration_ms = int((rerank_end - rerank_start) * 1000)
-
-                reranked_results = []
-                for doc in reranked_docs:
-                    doc.metadata.get("original_index", 0)
-                    reranked_results.append({
-                        "text": doc.page_content,
-                        "score": doc.metadata.get("vector_score", 0.0),
-                        "page": doc.metadata.get("page"),
-                        "title": doc.metadata.get("title") or "Unknown",
-                        "volume": doc.metadata.get("volume"),
-                        "author": doc.metadata.get("author") or None,
-                        "book_id": doc.metadata.get("book_id"),
-                    })
-
-                if reranked_results:
-                    reranked_indices = [
-                        top_results.index(next(r for r in top_results if r["text"] == rr["text"]))
-                        for rr in reranked_results
-                    ]
-                    log_json(
-                        self.logger,
-                        logging.INFO,
-                        "Reranking completed",
-                        original_count=len(top_results),
-                        reranked_count=len(reranked_results),
-                        original_top_3=original_order[:3],
-                        reranked_top_3=reranked_indices[:3] if len(reranked_indices) >= 3 else reranked_indices,
-                        duration_ms=rerank_duration_ms,
-                        timestamp=datetime.utcnow().isoformat()
-                    )
-                    top_results = reranked_results
-
-            except Exception as exc:
-                log_json(self.logger, logging.WARNING, "Reranking failed, using original order", error=str(exc))
 
         # Prioritize ئۇيغۇر تارىخى books when تارىخ was matched (stable sort)
         if priority_book_ids:

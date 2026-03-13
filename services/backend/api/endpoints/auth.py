@@ -210,6 +210,7 @@ async def oauth_callback(
             role = UserRole.ADMIN if is_admin_email(user_info.email) else UserRole.READER
 
             # Create new user
+            client_ip = request.client.host if request.client else None
             user = await create_user(
                 session=session,
                 email=user_info.email,
@@ -218,12 +219,14 @@ async def oauth_callback(
                 provider_id=user_info.provider_id,
                 role=role,
                 avatar_url=user_info.picture,
+                last_login_ip=client_ip,
             )
             logger.info(f"Created new user from {provider} OAuth: {user.id} ({user.email})")
         else:
             # Update last login and avatar
-            await update_user_login(session, user.id, user_info.picture)
-            logger.info(f"User logged in via {provider} OAuth: {user.id} ({user.email})")
+            client_ip = request.client.host if request.client else None
+            await update_user_login(session, user.id, user_info.picture, client_ip)
+            logger.info(f"User logged in via {provider} OAuth: {user.id} ({user.email}) from {client_ip}")
 
         # Check if user is active
         if not user.is_active:

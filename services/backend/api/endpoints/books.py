@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Optional, List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy import text, and_, delete, func, select, update
+from sqlalchemy import text, and_, or_, case, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.db.session import get_session
@@ -180,292 +180,133 @@ async def get_books(
     
     total_res = await session.execute(total_stmt)
     total = total_res.scalar() or 0
+    # Query for total ready (publicly accessible) books count for UI stats
+    subq_ready_cond = [
+        BookDB.status == "ready",
+        or_(BookDB.visibility == "public", BookDB.visibility is None)
+    ]
+    if category:
+        subq_ready_cond.append(category == any_(BookDB.categories))
+    if q:
+        q_alt = q.replace('\u0626', '\u064A\u0654') if '\u0626' in q else (q.replace('\u064A\u0654', '\u0626') if '\u064A\u0654' in q else q)
+        subq_ready_cond.append(or_(
+            BookDB.title.ilike(f"%{q}%"), BookDB.author.ilike(f"%{q}%"),
+            BookDB.title.ilike(f"%{q_alt}%"), BookDB.author.ilike(f"%{q_alt}%"),
+            q == any_(BookDB.categories), q_alt == any_(BookDB.categories)
+        ))
 
-    # Query for total ready (publicly accessible) books
     if groupByWork:
-        # For grouped view, count unique (title, author, volume) combinations
-        subq_conditions = [
-            BookDB.status == "ready",
-            or_(BookDB.visibility == "public", BookDB.visibility is None)
-        ]
-        # Append search/category filters to the ready count too
-        if category:
-            subq_conditions.append(category == any_(BookDB.categories))
-        if q:
-             if '\u0626' in q:
-                q_alt = q.replace('\u0626', '\u064A\u0654')
-             elif '\u064A\u0654' in q:
-                q_alt = q.replace('\u064A\u0654', '\u0626')
-             else:
-                q_alt = q
-                
-             subq_conditions.append(or_(
-                BookDB.title.ilike(f"%{q}%"),
-                BookDB.author.ilike(f"%{q}%"),
-                BookDB.title.ilike(f"%{q_alt}%"),
-                BookDB.author.ilike(f"%{q_alt}%"),
-                q == any_(BookDB.categories),
-                q_alt == any_(BookDB.categories)
-             ))
-
-        subq = (
+        ready_stmt = select(func.count()).select_from(
             select(BookDB.title, BookDB.author, BookDB.volume)
-            .where(and_(*subq_conditions))
+            .where(and_(*subq_ready_cond))
             .group_by(BookDB.title, BookDB.author, BookDB.volume)
             .subquery()
         )
-        ready_stmt = select(func.count()).select_from(subq)
     else:
-        ready_stmt = select(func.count(BookDB.id)).where(
-            and_(
-                BookDB.status == "ready",
-                or_(BookDB.visibility == "public", BookDB.visibility is None)
-            )
-        )
-    ready_res = await session.execute(ready_stmt)
-    total_ready = ready_res.scalar() or 0
+        ready_stmt = select(func.count(BookDB.id)).where(and_(*subq_ready_cond))
+    
+    total_ready_res = await session.execute(ready_stmt)
+    total_ready = total_ready_res.scalar() or 0
     logger.info(f"Total ready count: {total_ready}")
 
+    # Main data fetching
     if groupByWork:
-        # Get ALL matching books for grouping
-        stmt = select(BookDB)
-        if conditions:
-            stmt = stmt.where(and_(*conditions))
+        # Optimized grouping: Pick one representative book per (title, author, volume)
+        from sqlalchemy.orm import aliased
         
-        # Enhanced sorting: Group by (title, author) but sort groups by latest arrival,
-        # and then sort volumes within each group.
-        # This uses a window function to find the max upload date for each 'Work' (Series)
-        series_latest = func.max(BookDB.upload_date).over(partition_by=[BookDB.title, BookDB.author])
+        inner_stmt = (
+            select(
+                BookDB,
+                func.max(BookDB.upload_date).over(partition_by=[BookDB.title, BookDB.author]).label("series_latest")
+            )
+            .where(and_(*conditions))
+            .distinct(BookDB.title, BookDB.author, BookDB.volume)
+            .order_by(BookDB.title, BookDB.author, BookDB.volume, BookDB.upload_date.desc())
+        ).subquery()
         
+        # This allows us to select full Book objects from the subquery result
+        book_alias = aliased(BookDB, inner_stmt)
+        
+        # Calculate total work count for pagination
+        total_stmt = select(func.count()).select_from(inner_stmt)
+        total_res = await session.execute(total_stmt)
+        total = total_res.scalar() or 0
+
+        # Fetch paginated works as ORM objects (scalars works now)
+        main_stmt = select(book_alias)
         if order == -1:
-            stmt = stmt.order_by(
-                series_latest.desc(), 
-                BookDB.title.asc(), 
-                BookDB.author.asc(),
-                BookDB.volume.asc().nulls_first()
+            main_stmt = main_stmt.order_by(
+                inner_stmt.c.series_latest.desc(), 
+                inner_stmt.c.title.asc(), 
+                inner_stmt.c.author.asc(),
+                inner_stmt.c.volume.asc().nulls_first()
             )
         else:
-            stmt = stmt.order_by(
-                series_latest.asc(), 
-                BookDB.title.asc(), 
-                BookDB.author.asc(),
-                BookDB.volume.asc().nulls_first()
+            main_stmt = main_stmt.order_by(
+                inner_stmt.c.series_latest.asc(), 
+                inner_stmt.c.title.asc(), 
+                inner_stmt.c.author.asc(),
+                inner_stmt.c.volume.asc().nulls_first()
             )
-
-        result = await session.execute(stmt)
-        all_books_models = result.scalars().all()
-
-        # Group by work (title and author)
-        work_groups = {}
-        no_work_books = []
         
-        for b in all_books_models:
-            book_title = b.title
-            book_author = b.author or ""
-            
-            if book_title:
-                # Include volume in work_key to treat different volumes as separate works for deduplication
-                work_key = (book_title, book_author, b.volume)
-                if work_key not in work_groups:
-                    work_groups[work_key] = []
-                work_groups[work_key].append(b)
-            else:
-                no_work_books.append(b)
-
-        # Build list of works (using newest/oldest book as representative)
-        works_list = []
-        import json
-        for work_key, volumes in work_groups.items():
-            rep = volumes[0]
-            # Parse last_error from JSON string if needed
-            last_error_obj = None
-            if rep.last_error:
-                if isinstance(rep.last_error, str):
-                    try:
-                        last_error_obj = json.loads(rep.last_error)
-                    except Exception:
-                        last_error_obj = None
-                else:
-                    last_error_obj = rep.last_error
-
-            # Convert ORM object to dict
-            rep_dict = {
-                "id": rep.id,
-                "content_hash": rep.content_hash,
-                "title": rep.title,
-                "author": rep.author or "",
-                "volume": rep.volume,
-                "total_pages": sum(v.total_pages or 0 for v in volumes),
-                "pages": [],
-                "status": rep.status,
-                "pipeline_step": rep.pipeline_step,
-                "upload_date": rep.upload_date,
-                "last_updated": rep.last_updated,
-                "updated_by": rep.updated_by,
-                "created_by": rep.created_by,
-                "cover_url": f"{storage.get_public_url(rep.cover_url)}?v={int(rep.last_updated.timestamp())}" if rep.cover_url and rep.last_updated else (storage.get_public_url(rep.cover_url) if rep.cover_url else None),
-                "visibility": rep.visibility,
-                "categories": _normalize_categories(rep.categories),
-                "last_error": last_error_obj,
-                "read_count": rep.read_count or 0,
-                "file_name": rep.file_name,
-                "file_type": rep.file_type,
-                "source": rep.source,
-            }
-            works_list.append(BookSchema.model_validate(rep_dict))
-
-        for b in no_work_books:
-            # Parse last_error from JSON string if needed
-            b_last_error_obj = None
-            if b.last_error:
-                if isinstance(b.last_error, str):
-                    try:
-                        b_last_error_obj = json.loads(b.last_error)
-                    except Exception:
-                        b_last_error_obj = None
-                else:
-                    b_last_error_obj = b.last_error
-
-            # Convert ORM object to dict
-            b_dict = {
-                "id": b.id,
-                "content_hash": b.content_hash,
-                "title": b.title,
-                "author": b.author or "",
-                "volume": b.volume,
-                "total_pages": b.total_pages or 0,
-                "pages": [],
-                "status": b.status,
-                "pipeline_step": b.pipeline_step,
-                "upload_date": b.upload_date,
-                "last_updated": b.last_updated,
-                "updated_by": b.updated_by,
-                "created_by": b.created_by,
-                "cover_url": f"{storage.get_public_url(b.cover_url)}?v={int(b.last_updated.timestamp())}" if b.cover_url and b.last_updated else (storage.get_public_url(b.cover_url) if b.cover_url else None),
-                "visibility": b.visibility,
-                "categories": _normalize_categories(b.categories),
-                "last_error": b_last_error_obj,
-                "read_count": b.read_count or 0,
-                "file_name": b.file_name,
-                "file_type": b.file_type,
-                "source": b.source,
-            }
-            works_list.append(BookSchema.model_validate(b_dict))
-
-        # Paginate results
-        paginated_works = works_list[skip : skip + pageSize]
-        total = len(works_list)
-        
-        books_data = []
-        repo = BooksRepository(session)
-        for pydantic_book in paginated_works:
-            stats_dict = await repo.get_with_page_stats(str(pydantic_book.id))
-            if stats_dict:
-                pydantic_book.pipeline_stats = stats_dict.get("pipeline_stats", {})
-                pydantic_book.has_summary = stats_dict.get("has_summary", False)
-            books_data.append(pydantic_book)
+        main_stmt = main_stmt.offset(skip).limit(pageSize)
+        result = await session.execute(main_stmt)
+        books_objs = result.scalars().all()
     else:
-        # Standard flat list query
-        repo = BooksRepository(session)
+        # Standard flat list fetch
         stmt = select(BookDB)
         if conditions:
             stmt = stmt.where(and_(*conditions))
         
-        # Mapping sorting
         if sortBy == "uploadDate":
-            # Enhanced sorting: Keep series together
+            # Keep series (works) together even in flat list
             series_latest = func.max(BookDB.upload_date).over(partition_by=[BookDB.title, BookDB.author])
             if order == -1:
-                stmt = stmt.order_by(
-                    series_latest.desc(), 
-                    BookDB.title.asc(), 
-                    BookDB.author.asc(),
-                    BookDB.volume.asc().nulls_first()
-                )
+                stmt = stmt.order_by(series_latest.desc(), BookDB.title.asc(), BookDB.volume.asc().nulls_first())
             else:
-                stmt = stmt.order_by(
-                    series_latest.asc(), 
-                    BookDB.title.asc(), 
-                    BookDB.author.asc(),
-                    BookDB.volume.asc().nulls_first()
-                )
+                stmt = stmt.order_by(series_latest.asc(), BookDB.title.asc(), BookDB.volume.asc().nulls_first())
         else:
-            sort_map = {
-                "title": BookDB.title,
-                "author": BookDB.author,
-                "lastUpdated": BookDB.last_updated
-            }
+            sort_map = {"title": BookDB.title, "author": BookDB.author, "lastUpdated": BookDB.last_updated}
             sort_col = sort_map.get(sortBy, BookDB.upload_date)
-            if order == -1:
-                stmt = stmt.order_by(sort_col.desc())
-            else:
-                stmt = stmt.order_by(sort_col.asc())
+            stmt = stmt.order_by(sort_col.desc() if order == -1 else sort_col.asc())
 
         stmt = stmt.offset(skip).limit(pageSize)
         result = await session.execute(stmt)
         books_objs = result.scalars().all()
 
-        # Get page stats for these books
-        book_ids = [str(b.id) for b in books_objs]
-        stats_by_book = {}
-        if book_ids:
-            stats_stmt = select(
-                PageDB.book_id,
-                PageDB.status,
-                func.count().label("count")
-            ).where(
-                PageDB.book_id.in_(book_ids)
-            ).group_by(PageDB.book_id, PageDB.status)
+    # Step 3: Efficiently model validation and batch stats fetch
+    import json
+    books_data = []
+    repo = BooksRepository(session)
+    
+    for b in books_objs:
+        last_error_obj = None
+        if b.last_error:
+            if isinstance(b.last_error, str):
+                try: last_error_obj = json.loads(b.last_error)
+                except Exception: last_error_obj = None
+            else: last_error_obj = b.last_error
 
-            stats_result = await session.execute(stats_stmt)
-            for row in stats_result.fetchall():
-                if row.book_id not in stats_by_book:
-                    stats_by_book[row.book_id] = {}
-                stats_by_book[row.book_id][row.status] = row.count
+        b_dict = {
+            "id": b.id, "content_hash": b.content_hash, "title": b.title, "author": b.author or "",
+            "volume": b.volume, "total_pages": b.total_pages or 0, "pages": [], "status": b.status,
+            "pipeline_step": b.pipeline_step, "upload_date": b.upload_date, "last_updated": b.last_updated,
+            "updated_by": b.updated_by, "created_by": b.created_by,
+            "cover_url": f"{storage.get_public_url(b.cover_url)}?v={int(b.last_updated.timestamp())}" if b.cover_url and b.last_updated else (storage.get_public_url(b.cover_url) if b.cover_url else None),
+            "visibility": b.visibility, "categories": _normalize_categories(b.categories),
+            "last_error": last_error_obj, "read_count": b.read_count or 0, "file_name": b.file_name,
+            "file_type": b.file_type, "source": b.source, "pipeline_stats": {}, "has_summary": False
+        }
+        books_data.append(BookSchema.model_validate(b_dict))
 
-        books_data = []
-        import json
-        for b in books_objs:
-            stats_dict = await repo.get_with_page_stats(str(b.id)) if repo else None
-            # Parse last_error from JSON string if needed
-            last_error_obj = None
-            if b.last_error:
-                if isinstance(b.last_error, str):
-                    try:
-                        last_error_obj = json.loads(b.last_error)
-                    except Exception:
-                        last_error_obj = None
-                else:
-                    last_error_obj = b.last_error
-
-            # Create dict from ORM object, excluding lazy-loaded pages relationship
-            b_dict = {
-                "id": b.id,
-                "content_hash": b.content_hash,
-                "title": b.title,
-                "author": b.author or "",
-                "volume": b.volume,
-                "total_pages": b.total_pages,
-                "pages": [],  # We don't load pages in this endpoint
-                "status": b.status,
-                "pipeline_step": b.pipeline_step,
-                "upload_date": b.upload_date,
-                "last_updated": b.last_updated,
-                "updated_by": b.updated_by,
-                "created_by": b.created_by,
-                "cover_url": f"{storage.get_public_url(b.cover_url)}?v={int(b.last_updated.timestamp())}" if b.cover_url and b.last_updated else (storage.get_public_url(b.cover_url) if b.cover_url else None),
-                "visibility": b.visibility,
-                "categories": _normalize_categories(b.categories),
-                "last_error": last_error_obj,
-                "read_count": b.read_count or 0,
-                "file_name": b.file_name,
-                "file_type": b.file_type,
-                "source": b.source,
-                "pipeline_stats": stats_dict.get("pipeline_stats", {}) if stats_dict else {},
-                "has_summary": stats_dict.get("has_summary", False) if stats_dict else False
-            }
-            s_data = BookSchema.model_validate(b_dict)
-            books_data.append(s_data)
+    # --- PART 4: Optimized Batch Stats Fetching (Solves N+1 Problem) ---
+    if books_data:
+        book_ids = [str(b.id) for b in books_data]
+        batch_stats = await repo.get_batch_stats(book_ids)
+        for pydantic_book in books_data:
+            stats = batch_stats.get(str(pydantic_book.id), {})
+            pydantic_book.pipeline_stats = stats.get("pipeline_stats", {})
+            pydantic_book.has_summary = stats.get("has_summary", False)
 
     return {
         "books": books_data,
@@ -995,126 +836,242 @@ async def upload_pdf(
     return {"bookId": book_id, "status": "uploaded"}
 
 
-@router.post("/{book_id}/reprocess")
-async def reprocess_book(
+@router.post("/{book_id}/reprocess/ocr")
+async def reprocess_ocr(
     book_id: str,
     current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
-    """Gracefully reprocess book from OCR step.
-
-    Existing page text and chunks are preserved and replaced per-page as new
-    OCR completes, so the book remains fully readable during reprocessing.
-    The pipeline handles replacement atomically: OCR overwrites text per page,
-    chunking replaces chunks per page, embedding re-embeds per page.
-    """
+    """Full reprocess from OCR. Clears everything downstream but preserves text until replaced."""
     books_repo = BooksRepository(session)
-
     book = await books_repo.get(book_id)
     if not book:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
-    # Reset all pages to ocr/idle but DO NOT clear text or delete chunks.
-    # Existing content stays available for reading until new OCR replaces it
-    # page-by-page through the normal pipeline flow.
     await session.execute(
         update(Page)
         .where(Page.book_id == book_id)
         .values(
-            pipeline_step="ocr",
-            milestone="idle",
-            retry_count=0,
-            is_indexed=False,
-            status="pending",
+            ocr_milestone="idle",
+            chunking_milestone="idle",
+            embedding_milestone="idle",
+            word_index_milestone="idle",
             spell_check_milestone="idle",
-            last_updated=datetime.now(timezone.utc),
-            updated_by=current_user.email,
-        )
-    )
-
-    # Keep book status "ready" so the book stays accessible to readers.
-    # Update pipeline_step to "ocr" to signal reprocessing has started.
-    await books_repo.update_one(
-        book_id,
-        pipeline_step="ocr",
-        last_updated=datetime.now(timezone.utc),
-        updated_by=current_user.email,
-    )
-    await session.commit()
-    return {"status": "reprocessing_started"}
-
-
-@router.post("/{book_id}/reindex")
-async def reindex_book(
-    book_id: str,
-    current_user: User = Depends(require_editor),
-    session: AsyncSession = Depends(get_session),
-):
-    """Reset post-OCR pages to chunking/idle so the worker re-chunks and re-embeds."""
-    books_repo = BooksRepository(session)
-
-    book = await books_repo.get(book_id)
-    if not book:
-        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
-
-    # Reset all post-OCR pages to chunking/idle (text is intact, skip re-OCR)
-    await session.execute(
-        update(Page)
-        .where(and_(
-            Page.book_id == book_id,
-            Page.pipeline_step.in_(['chunking', 'embedding', 'ready'])
-        ))
-        .values(
-            is_indexed=False,
-            pipeline_step='chunking',
-            milestone='idle',
             retry_count=0,
+            is_indexed=False,
             last_updated=datetime.now(timezone.utc),
             updated_by=current_user.email,
         )
     )
-
-    # Delete existing chunks to force re-creation
+    # We delete chunks because they depend on text which will be replaced
     await session.execute(delete(Chunk).where(Chunk.book_id == book_id))
 
     await books_repo.update_one(
         book_id,
         status="pending",
-        pipeline_step=None,
+        pipeline_step="ocr",
         last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email,
     )
     await session.commit()
-    return {"status": "reindex_started"}
+    return {"status": "ocr_reprocess_started"}
 
 
-@router.post("/{book_id}/reset-failed-pages")
-async def reset_failed_pages(
+@router.post("/{book_id}/reprocess/chunking")
+async def reprocess_chunking(
     book_id: str,
     current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
-    """Reset all exhausted-retry pages (milestone='failed') back to ocr/idle.
-
-    Used when the worker has given up on pages after max retries and an admin
-    wants to force another attempt from the OCR step.
-    """
+    """Reprocess from Chunking. Preserves OCR text but re-splits into chunks."""
     books_repo = BooksRepository(session)
-
     book = await books_repo.get(book_id)
     if not book:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
+    await session.execute(
+        update(Page)
+        .where(Page.book_id == book_id)
+        .values(
+            chunking_milestone="idle",
+            embedding_milestone="idle",
+            word_index_milestone="idle",
+            spell_check_milestone="idle",
+            retry_count=0,
+            is_indexed=False,
+            last_updated=datetime.now(timezone.utc),
+            updated_by=current_user.email,
+        )
+    )
+    await session.execute(delete(Chunk).where(Chunk.book_id == book_id))
+
+    await books_repo.update_one(
+        book_id,
+        status="pending",
+        pipeline_step="chunking",
+        last_updated=datetime.now(timezone.utc),
+        updated_by=current_user.email,
+    )
+    await session.commit()
+    return {"status": "chunking_reprocess_started"}
+
+
+@router.post("/{book_id}/reprocess/embedding")
+async def reprocess_embedding(
+    book_id: str,
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """Reprocess from Embedding. Preserves text and chunks, just re-generates vectors."""
+    books_repo = BooksRepository(session)
+    book = await books_repo.get(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+
+    await session.execute(
+        update(Page)
+        .where(Page.book_id == book_id)
+        .values(
+            embedding_milestone="idle",
+            word_index_milestone="idle",
+            spell_check_milestone="idle",
+            retry_count=0,
+            is_indexed=False,
+            last_updated=datetime.now(timezone.utc),
+            updated_by=current_user.email,
+        )
+    )
+    # Mark chunks as needing embedding without deleting them
+    await session.execute(
+        update(Chunk).where(Chunk.book_id == book_id).values(embedding=None)
+    )
+
+    await books_repo.update_one(
+        book_id,
+        status="pending",
+        pipeline_step="embedding",
+        last_updated=datetime.now(timezone.utc),
+        updated_by=current_user.email,
+    )
+    await session.commit()
+    return {"status": "embedding_reprocess_started"}
+
+
+@router.post("/{book_id}/reprocess/word-index")
+async def reprocess_word_index(
+    book_id: str,
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """Reprocess Word Index and Spell Check."""
+    books_repo = BooksRepository(session)
+    book = await books_repo.get(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+
+    await session.execute(
+        update(Page)
+        .where(Page.book_id == book_id)
+        .values(
+            word_index_milestone="idle",
+            spell_check_milestone="idle",
+            retry_count=0,
+            last_updated=datetime.now(timezone.utc),
+            updated_by=current_user.email,
+        )
+    )
+    # Clear existing index for this book
+    await session.execute(
+        text("DELETE FROM book_word_index WHERE book_id = :book_id"),
+        {"book_id": book_id}
+    )
+
+    await books_repo.update_one(
+        book_id,
+        pipeline_step="word_index",
+        last_updated=datetime.now(timezone.utc),
+        updated_by=current_user.email,
+    )
+    await session.commit()
+    return {"status": "word_index_reprocess_started"}
+
+
+@router.post("/{book_id}/reprocess/spell-check")
+async def reprocess_spell_check(
+    book_id: str,
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """Reprocess Spell Check only."""
+    books_repo = BooksRepository(session)
+    book = await books_repo.get(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+
+    await session.execute(
+        update(Page)
+        .where(Page.book_id == book_id)
+        .values(
+            spell_check_milestone="idle",
+            retry_count=0,
+            last_updated=datetime.now(timezone.utc),
+            updated_by=current_user.email,
+        )
+    )
+
+    await books_repo.update_one(
+        book_id,
+        pipeline_step="spell_check",
+        last_updated=datetime.now(timezone.utc),
+        updated_by=current_user.email,
+    )
+    await session.commit()
+    return {"status": "spell_check_reprocess_started"}
+
+
+@router.post("/{book_id}/retry-failed")
+async def retry_failed_pages(
+    book_id: str,
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """Smart Retry: Reset failed milestones to 'idle' at their current step."""
+    books_repo = BooksRepository(session)
+    book = await books_repo.get(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+
+    # Reset any milestone that is in 'failed' state back to 'idle'
+    # This allows the scanners to pick up where they left off.
     result = await session.execute(
         update(Page)
-        .where(and_(
+        .where(
             Page.book_id == book_id,
-            Page.milestone == "failed",
-        ))
+            or_(
+                Page.ocr_milestone.in_(["failed", "error"]),
+                Page.chunking_milestone.in_(["failed", "error"]),
+                Page.embedding_milestone.in_(["failed", "error"]),
+                Page.word_index_milestone.in_(["failed", "error"]),
+                Page.spell_check_milestone.in_(["failed", "error"]),
+            )
+        )
         .values(
-            pipeline_step="ocr",
-            milestone="idle",
-            retry_count=0,
+            ocr_milestone=case(
+                (Page.ocr_milestone.in_(["failed", "error"]), text("'idle'")), else_=Page.ocr_milestone
+            ),
+            chunking_milestone=case(
+                (Page.chunking_milestone.in_(["failed", "error"]), text("'idle'")), else_=Page.chunking_milestone
+            ),
+            embedding_milestone=case(
+                (Page.embedding_milestone.in_(["failed", "error"]), text("'idle'")), else_=Page.embedding_milestone
+            ),
+            word_index_milestone=case(
+                (Page.word_index_milestone.in_(["failed", "error"]), text("'idle'")), else_=Page.word_index_milestone
+            ),
+            spell_check_milestone=case(
+                (Page.spell_check_milestone.in_(["failed", "error"]), text("'idle'")), else_=Page.spell_check_milestone
+            ),
+            retry_count=0, # Reset retries for manual intervention
             last_updated=datetime.now(timezone.utc),
             updated_by=current_user.email,
         )
@@ -1122,19 +1079,17 @@ async def reset_failed_pages(
     )
     reset_count = len(result.fetchall())
 
-    if reset_count == 0:
-        return {"status": "no_failed_pages", "count": 0}
+    if reset_count > 0:
+        await books_repo.update_one(
+            book_id,
+            status="pending",
+            last_updated=datetime.now(timezone.utc),
+            updated_by=current_user.email,
+        )
+        await session.commit()
+        return {"status": "retry_started", "count": reset_count}
 
-    await books_repo.update_one(
-        book_id,
-        status="pending",
-        pipeline_step=None,
-        last_updated=datetime.now(timezone.utc),
-        updated_by=current_user.email,
-    )
-    await session.commit()
-    logger.info(f"Reset {reset_count} failed v2 pages for book {book_id} by {current_user.email}")
-    return {"status": "reset", "count": reset_count}
+    return {"status": "no_failed_pages", "count": 0}
 
 
 @router.post("/{book_id}/pages/{page_num}/reset")

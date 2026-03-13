@@ -57,14 +57,14 @@ export const PersistenceService = {
     }
   },
 
-  async getGlobalLibrary(page: number = 1, pageSize: number = 10, q?: string, sortBy: string = 'title', order: number = 1, groupByWork: boolean = false, category?: string): Promise<PaginatedBooks> {
+  async getGlobalLibrary(page: number = 1, pageSize: number = 10, q?: string, sortBy: string = 'title', order: number = 1, groupByWork: boolean = false, category?: string, signal?: AbortSignal): Promise<PaginatedBooks> {
     try {
       let url = `${API_BASE}/books/?page=${page}&pageSize=${pageSize}&sortBy=${sortBy}&order=${order}`;
       if (q && q.trim()) url += `&q=${encodeURIComponent(q.trim())}`;
       if (category && category.trim()) url += `&category=${encodeURIComponent(category.trim())}`;
       if (groupByWork) url += `&groupByWork=true`;
 
-      const response = await authFetch(url);
+      const response = await authFetch(url, { signal });
       if (!response.ok) throw new Error("Failed to fetch");
       const data = await response.json();
       return {
@@ -198,20 +198,8 @@ export const PersistenceService = {
     return response.json();
   },
 
-  async reindexBook(bookId: string): Promise<void> {
-    const response = await authFetch(`${API_BASE}/books/${bookId}/reindex`, {
-      method: 'POST',
-    });
-    if (!response.ok) {
-      if (response.status === 403) {
-        throw new Error("Permission denied: Editor access required");
-      }
-      throw new Error("Failed to start reindexing");
-    }
-  },
-
-  async reprocessBook(bookId: string): Promise<void> {
-    const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess`, {
+  async reprocessOcr(bookId: string): Promise<void> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/ocr`, {
       method: 'POST',
     });
     if (!response.ok) {
@@ -222,8 +210,56 @@ export const PersistenceService = {
     }
   },
 
-  async resetFailedPages(bookId: string): Promise<{ status: string; count: number }> {
-    const response = await authFetch(`${API_BASE}/books/${bookId}/reset-failed-pages`, {
+  async reprocessChunking(bookId: string): Promise<void> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/chunking`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Editor access required");
+      }
+      throw new Error("Failed to start re-chunking");
+    }
+  },
+
+  async reprocessEmbedding(bookId: string): Promise<void> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/embedding`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Editor access required");
+      }
+      throw new Error("Failed to start re-embedding");
+    }
+  },
+
+  async reprocessWordIndex(bookId: string): Promise<void> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/word-index`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Editor access required");
+      }
+      throw new Error("Failed to start re-indexing");
+    }
+  },
+
+  async reprocessSpellCheck(bookId: string): Promise<void> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/spell-check`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Editor access required");
+      }
+      throw new Error("Failed to start re-spell-check");
+    }
+  },
+
+  async retryFailedPages(bookId: string): Promise<{ status: string; count: number }> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/retry-failed`, {
       method: 'POST',
     });
     if (!response.ok) {
@@ -231,7 +267,7 @@ export const PersistenceService = {
         throw new Error("Permission denied: Editor access required");
       }
       const err = await response.json().catch(() => ({}));
-      throw new Error(err.detail || "Failed to reset failed pages");
+      throw new Error(err.detail || "Failed to retry failed pages");
     }
     return response.json();
   },

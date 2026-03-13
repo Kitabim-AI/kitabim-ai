@@ -50,6 +50,7 @@ async def create_user(
     provider_id: str,
     role: UserRole = UserRole.READER,
     avatar_url: Optional[str] = None,
+    last_login_ip: Optional[str] = None,
 ) -> User:
     """Create a new user in the database."""
     now = datetime.now(timezone.utc)
@@ -66,6 +67,7 @@ async def create_user(
         created_at=now,
         updated_at=now,
         last_login_at=now,
+        last_login_ip=last_login_ip,
         is_active=True,
     )
     
@@ -76,13 +78,15 @@ async def create_user(
     return _model_to_user(user_obj)
 
 
-async def update_user_login(session: AsyncSession, user_id: str, avatar_url: Optional[str] = None) -> None:
-    """Update user's last login time and optionally their avatar."""
+async def update_user_login(session: AsyncSession, user_id: str, avatar_url: Optional[str] = None, ip_address: Optional[str] = None) -> None:
+    """Update user's last login time, IP address and optionally their avatar."""
     repo = UsersRepository(session)
     update_data = {
         "last_login_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
     }
+    if ip_address:
+        update_data["last_login_ip"] = ip_address
     if avatar_url:
         update_data["avatar_url"] = avatar_url
     

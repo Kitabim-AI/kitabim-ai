@@ -278,12 +278,12 @@ const JoinUsView: React.FC = () => {
               href="https://www.dallasuyghurcommunity.org"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center p-4 sm:p-6 bg-white/40 backdrop-blur-sm rounded-[24px] border border-[#0369a1]/10 shadow-sm hover:shadow-md hover:bg-white/60 transition-all z-10 active:scale-95 group/logo"
+              className="flex items-center justify-center p-2 z-10 active:scale-95 group/logo"
             >
               <img
                 src="https://dallasuyghurcommunity.org/wp-content/uploads/2025/01/DUC_Logo_3ai_Artboard-2-photoaidcom-cropped-1.png"
                 alt="Dallas Uyghur Community Logo"
-                className="h-16 md:h-24 w-auto object-contain group-hover/logo:scale-105 transition-transform"
+                className="h-24 md:h-32 lg:h-40 w-auto object-contain group-hover/logo:scale-105 transition-transform"
               />
             </a>
           </div>

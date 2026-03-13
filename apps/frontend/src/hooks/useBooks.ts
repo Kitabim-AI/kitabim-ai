@@ -16,7 +16,8 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
 
   // Helper to determine if we should use shelf-style (infinite scroll) behavior
   const isShelfView = useMemo(() => {
-    return view === 'library' || view === 'global-chat' || view === 'admin' || (view === 'home' && (searchQuery.trim().length > 0 || !!category));
+    const trimmedQuery = searchQuery.trim();
+    return view === 'library' || view === 'global-chat' || view === 'admin' || (view === 'home' && (trimmedQuery.length >= 3 || !!category));
   }, [view, searchQuery, category]);
 
   // Reset shelf state whenever the search query or category changes
@@ -56,7 +57,31 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
     }
   }, [view, books, isShelfView, searchQuery, sortConfig, pageSize, page, category]);
 
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
   const refreshLibrary = useCallback(async () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
+    const trimmedQuery = searchQuery.trim();
+    if (trimmedQuery.length > 0 && trimmedQuery.length < 3) {
+      setBooks([]);
+      setTotalBooks(0);
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     try {
       const currentViewSize = isShelfView ? COLLECTION_PAGE_SIZE : pageSize;
@@ -65,7 +90,10 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
       const sortBy = isShelfView ? 'uploadDate' : sortConfig.key;
       const order = isShelfView ? -1 : (sortConfig.direction === 'asc' ? 1 : -1);
 
-      const response = await PersistenceService.getGlobalLibrary(currentViewPage, currentViewSize, searchQuery, sortBy, order, isShelfView, category);
+      const response = await PersistenceService.getGlobalLibrary(currentViewPage, currentViewSize, searchQuery, sortBy, order, isShelfView, category, abortController.signal);
+
+      if (abortController.signal.aborted) return;
+
       setBooks(response.books);
       setTotalBooks(response.total);
       setTotalReady(response.totalReady);
@@ -75,19 +103,38 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
         setHasMoreShelf(response.books.length < response.total);
       }
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        return;
+      }
       console.error("Manual refresh failed", err);
     } finally {
-      setIsLoading(false);
+      if (!abortController.signal.aborted) {
+        setIsLoading(false);
+      }
     }
   }, [isShelfView, page, pageSize, searchQuery, sortConfig, category]);
 
   const loadMoreShelf = useCallback(async () => {
     if (isLoadingMoreShelf || !hasMoreShelf || !isShelfView) return;
 
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
+    const trimmedQuery = searchQuery.trim();
+    if (trimmedQuery.length > 0 && trimmedQuery.length < 3) {
+      return;
+    }
+
     setIsLoadingMoreShelf(true);
     const nextPage = shelfPage + 1;
     try {
-      const response = await PersistenceService.getGlobalLibrary(nextPage, COLLECTION_PAGE_SIZE, searchQuery, 'uploadDate', -1, true, category);
+      const response = await PersistenceService.getGlobalLibrary(nextPage, COLLECTION_PAGE_SIZE, searchQuery, 'uploadDate', -1, true, category, abortController.signal);
+      
+      if (abortController.signal.aborted) return;
+
       if (response.books.length > 0) {
         setBooks(prev => {
           const existingIds = prev.map(b => b.id);
@@ -101,9 +148,14 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
         setHasMoreShelf(false);
       }
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        return;
+      }
       console.error("Failed to load more items", err);
     } finally {
-      setIsLoadingMoreShelf(false);
+      if (!abortController.signal.aborted) {
+        setIsLoadingMoreShelf(false);
+      }
     }
   }, [shelfPage, hasMoreShelf, isLoadingMoreShelf, isShelfView, searchQuery, category]);
 

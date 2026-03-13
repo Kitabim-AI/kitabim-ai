@@ -8,7 +8,7 @@ Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered readi
 - Efficient, per-page OCR and indexing of PDFs using Gemini API.
 - High-quality RAG for book- and library-level Q&A.
 - Maintainable, modular architecture with clear boundaries.
-- Standardized file management (scripts in `scripts/`, docs in `docs/`).
+- Standardized file management (operational scripts in `scripts/`, deployment scripts in `deploy/`, docs in `docs/`).
 - Observability (logging, health checks, detailed pipeline statistics).
 
 **Non‑Goals (current)**
@@ -64,7 +64,8 @@ flowchart LR
 /services/backend    # API Service
 /services/worker     # Pipeline Worker
 /packages/backend-core # Shared logic & models
-/scripts            # Operational/diagnostic tools
+/scripts            # Diagnostic & operational scripts
+/deploy             # Deployment infrastructure & local dev scripts
 /docs               # Architecture & design docs
 /docker-compose.yml # Primary local dev entry point
 ```
@@ -104,7 +105,7 @@ flowchart LR
 3. Context + prompt passed to LLM via LangChain pipeline for answer generation.
 
 ## 7) Gemini Integration Strategy
-- **Official SDK (`google-genai`)**: Used for **Batch API** and **File API** operations where LangChain support is limited or direct control is required.
+- **Official SDK (`google-genai`)**: Used for **File API** operations where LangChain support is limited or direct control is required.
 - **LangChain**: Used for **Interactive Chat**, **Spell Check**, and **Categorization** (LCEL pipelines, structured output parsing).
 
 ## 8) Reliability & Observability

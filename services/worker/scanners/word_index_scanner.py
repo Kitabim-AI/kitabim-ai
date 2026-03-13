@@ -68,7 +68,11 @@ async def run_word_index_scanner(ctx) -> None:
                 await session.execute(
                     update(Page)
                     .where(Page.id == page.id)
-                    .values(word_index_milestone="error", last_updated=func.now())
+                    .values(
+                        word_index_milestone="failed",
+                        retry_count=Page.retry_count + 1,
+                        last_updated=func.now()
+                    )
                 )
                 await session.commit()
             failed += 1

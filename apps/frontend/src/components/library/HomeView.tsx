@@ -28,9 +28,18 @@ export const HomeView: React.FC = () => {
 
   // Debounce: only update context (triggers API call) after 300ms of no typing
   useEffect(() => {
-    const timer = setTimeout(() => setSearchQuery(localSearch), 300);
+    const timer = setTimeout(() => {
+      if (localSearch !== searchQuery) {
+        setSearchQuery(localSearch);
+      }
+    }, 300);
     return () => clearTimeout(timer);
-  }, [localSearch]);
+  }, [localSearch, searchQuery, setSearchQuery]);
+
+  // Sync local search when global search is cleared or changed externally
+  useEffect(() => {
+    setLocalSearch(searchQuery);
+  }, [searchQuery]);
 
   useEffect(() => {
     const fetchCategories = async () => {
@@ -47,7 +56,8 @@ export const HomeView: React.FC = () => {
   const { loadMoreShelf } = useAppContext();
   const { fontSize } = useAppContext();
 
-  const hasSearch = searchQuery.length > 0 || selectedCategory.length > 0;
+  // Search is active if we have a category OR at least 3 characters
+  const hasSearch = (searchQuery.length >= 3) || selectedCategory.length > 0;
 
   useEffect(() => {
     if (!hasSearch) return;

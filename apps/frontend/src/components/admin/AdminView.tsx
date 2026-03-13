@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Database, Book as BookIcon, User, Hash, BookOpen, MoreVertical, Save, X, Edit2, Check, Globe, Shield, Wand2, Search, WholeWord, FileText, ScanText, RefreshCw, BookOpenCheck, Cuboid, Scissors } from 'lucide-react';
+import { authFetch } from '../../services/authService';
 import { Pagination } from '../common/Pagination';
 
 import { useI18n } from '../../i18n/I18nContext';
@@ -71,6 +72,7 @@ const getPipelineIconClass = (
 };
 
 export const AdminView: React.FC = () => {
+  const [spellCheckEnabled, setSpellCheckEnabled] = React.useState(true);
   const {
     books,
     totalBooks,
@@ -111,7 +113,6 @@ export const AdminView: React.FC = () => {
     categories: string[];
     tempCategory: string;
   } | null>(null);
-
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -120,6 +121,21 @@ export const AdminView: React.FC = () => {
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
+    
+    // Fetch system configurations
+    const fetchConfigs = async () => {
+      try {
+        const res = await authFetch('/api/system-configs/spell_check_enabled');
+        if (res.ok) {
+          const data = await res.json();
+          setSpellCheckEnabled(data.value === 'true');
+        }
+      } catch (err) {
+        console.error('Failed to fetch spell check config:', err);
+      }
+    };
+    fetchConfigs();
+
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
@@ -452,7 +468,13 @@ export const AdminView: React.FC = () => {
                               <MoreVertical size={20} />
                             </button>
                             {activeMenuId === book.id && menuAnchorRect && (
-                              <ActionMenu book={book} close={() => { setActiveMenuId(null); setMenuAnchorRect(null); }} anchorRect={menuAnchorRect} menuRef={menuRef} />
+                              <ActionMenu 
+                                book={book} 
+                                close={() => { setActiveMenuId(null); setMenuAnchorRect(null); }} 
+                                anchorRect={menuAnchorRect} 
+                                menuRef={menuRef}
+                                spellCheckEnabled={spellCheckEnabled}
+                              />
                             )}
                           </div>
                         </div>
