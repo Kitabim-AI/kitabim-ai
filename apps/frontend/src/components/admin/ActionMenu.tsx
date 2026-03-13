@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { BookOpen, RefreshCw, RotateCcw, Trash2, Image, BookOpenCheck, ScanText, Cuboid, Type } from 'lucide-react';
+import { BookOpen, RotateCcw, Trash2, Image, BookOpenCheck, ScanText, Cuboid, Scissors, WholeWord } from 'lucide-react';
 import { Book } from '@shared/types';
 import { useI18n } from '../../i18n/I18nContext';
 import { useAppContext } from '../../context/AppContext';
@@ -11,19 +11,21 @@ interface ActionMenuProps {
   close: () => void;
   anchorRect: DOMRect;
   menuRef: React.RefObject<HTMLDivElement>;
+  spellCheckEnabled?: boolean;
 }
 
-export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect, menuRef }) => {
+export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect, menuRef, spellCheckEnabled = true }) => {
   const { bookActions } = useAppContext();
   const { t } = useI18n();
   const isAdmin = useIsAdmin();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  // Reindex: re-embed a ready book without re-doing OCR
-  const canReindex = book.pipelineStep === 'ready';
-  // Reset Failed Pages: available when there are failed pages (in-progress or error state)
+  const hasFailures = Object.entries(book.pipelineStats || {}).some(([k, v]) => 
+    k.toLowerCase().includes('failed') && typeof v === 'number' && v > 0
+  );
+
   const canResetFailed = book.pipelineStep !== null
-    && (book.pipelineStep !== 'ready' || book.status === 'error');
+    && (book.pipelineStep !== 'ready' || book.status === 'error' || hasFailures);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -76,41 +78,61 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
         <div className="h-px bg-slate-100/60 my-1.5 mx-2" />
 
         <button 
-          onClick={() => { bookActions.handleTriggerSpellCheck(book.id); close(); }} 
-          disabled={!canReindex} 
-          className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-violet-600 hover:bg-violet-50 disabled:opacity-30 rounded-xl transition-all active:scale-[0.98]"
-        >
-          <BookOpenCheck size={16} />
-          <span className="flex-1 text-right">{t('admin.table.triggerSpellCheck')}</span>
-        </button>
-
-        <button 
-          onClick={() => { bookActions.handleReindexBook(book.id); close(); }} 
-          disabled={!canReindex} 
-          className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-30 rounded-xl transition-all active:scale-[0.98]"
-        >
-          <Cuboid size={16} />
-          <span className="flex-1 text-right">{t('admin.table.reindex')}</span>
-        </button>
-
-        <button 
-          onClick={() => { bookActions.handleResetFailedPages(book.id); close(); }} 
+          onClick={() => { bookActions.handleRetryFailedPages(book.id); close(); }} 
           disabled={!canResetFailed} 
           className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-amber-600 hover:bg-amber-50 disabled:opacity-30 rounded-xl transition-all active:scale-[0.98]"
         >
           <RotateCcw size={16} className="shrink-0" />
-          <span className="flex-1 text-right">{t('admin.table.resetFailed')}</span>
+          <span className="flex-1 text-right">{t('admin.table.retryFailed') || 'مەغلۇپ بەتلەرنى قايتا سىناش'}</span>
         </button>
+
+        <div className="h-px bg-slate-100/60 my-1.5 mx-2" />
 
         {isAdmin && (
           <button 
-            onClick={() => { bookActions.handleReprocessBook(book.id); close(); }} 
+            onClick={() => { bookActions.handleReprocessStep(book.id, 'ocr'); close(); }} 
             className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-orange-600 hover:bg-orange-50 rounded-xl transition-all active:scale-[0.98]"
           >
             <ScanText size={16} />
-            <span className="flex-1 text-right">{t('admin.table.redoOcr')}</span>
+            <span className="flex-1 text-right">{t('admin.table.reprocess.ocr') || 'قايتا OCR'}</span>
           </button>
         )}
+
+        <button 
+          onClick={() => { bookActions.handleReprocessStep(book.id, 'chunking'); close(); }} 
+          disabled={book.pipelineStep === null}
+          className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-30 rounded-xl transition-all active:scale-[0.98]"
+        >
+          <Scissors size={16} />
+          <span className="flex-1 text-right">{t('admin.table.reprocess.chunking') || 'قايتا پارچىلاش'}</span>
+        </button>
+
+        <button 
+          onClick={() => { bookActions.handleReprocessStep(book.id, 'embedding'); close(); }} 
+          disabled={book.pipelineStep === null}
+          className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-indigo-600 hover:bg-indigo-50 disabled:opacity-30 rounded-xl transition-all active:scale-[0.98]"
+        >
+          <Cuboid size={16} />
+          <span className="flex-1 text-right">{t('admin.table.reprocess.embedding') || 'قايتا ۋېكتورلاش'}</span>
+        </button>
+
+        <button 
+          onClick={() => { bookActions.handleReprocessStep(book.id, 'word-index'); close(); }} 
+          disabled={book.pipelineStep === null}
+          className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-emerald-600 hover:bg-emerald-50 disabled:opacity-30 rounded-xl transition-all active:scale-[0.98]"
+        >
+          <WholeWord size={16} />
+          <span className="flex-1 text-right">{t('admin.table.reprocess.word_index') || 'قايتا سۆز تىزىملىكى ھاسىللاش'}</span>
+        </button>
+
+        <button 
+          onClick={() => { bookActions.handleReprocessStep(book.id, 'spell-check'); close(); }} 
+          disabled={book.pipelineStep === null || !spellCheckEnabled}
+          className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-violet-600 hover:bg-violet-50 disabled:opacity-30 rounded-xl transition-all active:scale-[0.98]"
+        >
+          <BookOpenCheck size={16} />
+          <span className="flex-1 text-right">{t('admin.table.reprocess.spell_check') || 'قايتا ئىملا تەكشۈرۈش'}</span>
+        </button>
 
         <div className="h-px bg-slate-100/60 my-1.5 mx-2" />
 

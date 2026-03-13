@@ -48,8 +48,6 @@ class Settings:
     rag_score_threshold: float = float(os.getenv("RAG_SCORE_THRESHOLD", "0.50"))
     rag_top_k: int = int(os.getenv("RAG_TOP_K", "16"))
     rag_max_chars_per_book: int = int(os.getenv("RAG_MAX_CHARS_PER_BOOK", "6000"))
-    rag_rerank_enabled: bool = os.getenv("RAG_RERANK_ENABLED", "false").lower() == "true"
-    rag_rerank_top_n: int = int(os.getenv("RAG_RERANK_TOP_N", "6"))
 
     # Book Summary / Hierarchical RAG Settings
     summary_top_k: int = int(os.getenv("SUMMARY_TOP_K", "5"))

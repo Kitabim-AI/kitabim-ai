@@ -185,8 +185,10 @@ async def index_book_words(
     if not word_counts:
         return
 
-    words = list(word_counts.keys())
-    counts = list(word_counts.values())
+    # Sort items by word to ensure consistent lock acquisition order and prevent deadlocks
+    sorted_items = sorted(word_counts.items())
+    words = [item[0] for item in sorted_items]
+    counts = [item[1] for item in sorted_items]
 
     await session.execute(
         text("""
@@ -205,19 +207,22 @@ async def find_words_unique_to_book(
 ) -> set[str]:
     """
     Return the subset of `words` that do not appear in book_word_index for any
-    book other than `book_id`. Uses an indexed lookup — O(words × log N).
-    Words absent from every other book are likely genuine misspellings.
+    book other than `book_id`, AND appear less than 3 times in the current book.
+    Words meeting both criteria are likely genuine misspellings.
     """
     if not words:
         return set()
     result = await session.execute(
         text("""
-            SELECT w
+            SELECT t.w
             FROM unnest(CAST(:words AS text[])) AS t(w)
-            WHERE NOT EXISTS (
-                SELECT 1 FROM book_word_index bwi
-                WHERE bwi.word = t.w
-                  AND bwi.book_id != :book_id
+            LEFT JOIN book_word_index bwi_local
+              ON bwi_local.word = t.w AND bwi_local.book_id = :book_id
+            WHERE (COALESCE(bwi_local.occurrence_count, 0) < 3)
+              AND NOT EXISTS (
+                SELECT 1 FROM book_word_index bwi_other
+                WHERE bwi_other.word = t.w
+                  AND bwi_other.book_id != :book_id
             )
         """),
         {"words": list(words), "book_id": book_id},

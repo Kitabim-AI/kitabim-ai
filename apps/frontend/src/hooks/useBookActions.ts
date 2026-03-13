@@ -48,34 +48,6 @@ export const useBookActions = (
     }
   };
 
-  const handleResetFailedPages = (bookId: string) => {
-    setModal({
-      isOpen: true,
-      title: t('modal.resetFailed.title'),
-      message: t('modal.resetFailed.message'),
-      type: 'confirm',
-      confirmText: t('modal.resetFailed.confirm'),
-      onConfirm: async () => {
-        try {
-          const result = await PersistenceService.resetFailedPages(bookId);
-          await refreshLibrary();
-          setModal((prev: any) => ({ ...prev, isOpen: false }));
-          if (result.count === 0) {
-            addNotification(t('common.noFailedPages'), "info");
-          } else {
-            addNotification(t('common.resetFailedSuccess', { count: result.count }), "success");
-          }
-        } catch (err) {
-          setModal({
-            isOpen: true,
-            title: t('modal.resetFailedError.title'),
-            message: t('modal.resetFailedError.message'),
-            type: 'alert'
-          });
-        }
-      }
-    });
-  };
 
   const handleReProcessPage = (bookId: string, pageNum: number) => {
     setModal({
@@ -162,31 +134,6 @@ export const useBookActions = (
     });
   };
 
-  const handleReindexBook = (bookId: string) => {
-    setModal({
-      isOpen: true,
-      title: t('modal.reindex.title'),
-      message: t('modal.reindex.message'),
-      type: 'confirm',
-      confirmText: t('modal.reindex.confirm'),
-      onConfirm: async () => {
-        try {
-          await PersistenceService.reindexBook(bookId);
-          setBooks(prev => prev.map(b => b.id === bookId ? { ...b, status: 'ocr_processing', processingStep: 'rag' } : b));
-          await refreshLibrary();
-          setModal((prev: any) => ({ ...prev, isOpen: false }));
-          addNotification(t('common.reindexStarted'), "success");
-        } catch (err) {
-          setModal({
-            isOpen: true,
-            title: t('modal.reindexError.title'),
-            message: t('modal.reindexError.message'),
-            type: 'alert'
-          });
-        }
-      }
-    });
-  };
 
   const handleUpdatePage = async (bookId: string, pageNum: number, newText: string, setEditingPageNum: any) => {
     try {
@@ -457,30 +404,6 @@ export const useBookActions = (
     }
   };
 
-  const handleReprocessBook = (bookId: string) => {
-    setModal({
-      isOpen: true,
-      title: t('modal.redoOcr.title'),
-      message: t('modal.redoOcr.message'),
-      type: 'confirm',
-      confirmText: t('modal.redoOcr.confirm'),
-      onConfirm: async () => {
-        try {
-          await PersistenceService.reprocessBook(bookId);
-          await refreshLibrary();
-          setModal((prev: any) => ({ ...prev, isOpen: false }));
-          addNotification(t('common.redoOcrStarted'), "success");
-        } catch (err) {
-          setModal({
-            isOpen: true,
-            title: t('modal.redoOcrError.title'),
-            message: t('modal.redoOcrError.message'),
-            type: 'alert'
-          });
-        }
-      }
-    });
-  };
 
   const handleReplaceCover = async (bookId: string, file: File) => {
     try {
@@ -493,13 +416,71 @@ export const useBookActions = (
     }
   };
 
+  const handleRetryFailedPages = (bookId: string) => {
+    setModal({
+      isOpen: true,
+      title: t('modal.retryFailed.title') || 'خاتالاشقان بەتلەرنى قايتا سىناش',
+      message: t('modal.retryFailed.message') || 'خاتالاشقان بەتلەرنى ئۆز قەدىمىدىن باشلاپ قايتا بىر تەرەپ قىلامسىز؟',
+      type: 'confirm',
+      confirmText: t('modal.retryFailed.confirm') || 'قايتا سىناش',
+      onConfirm: async () => {
+        try {
+          const result = await PersistenceService.retryFailedPages(bookId);
+          await refreshLibrary();
+          setModal((prev: any) => ({ ...prev, isOpen: false }));
+          if (result.count === 0) {
+            addNotification(t('common.noFailedPages'), "info");
+          } else {
+            addNotification(t('common.retryStartedSuccess', { count: result.count }) || `${result.count} بەتنى قايتا سىناش باشلاندى.`, "success");
+          }
+        } catch (err) {
+          addNotification(t('common.retryFailedError') || 'قايتا سىناش مەغلۇپ بولدى.', 'error');
+        }
+      }
+    });
+  };
+
+  const handleReprocessStep = (bookId: string, step: 'ocr' | 'chunking' | 'embedding' | 'word-index' | 'spell-check') => {
+    const titles: Record<string, string> = {
+      ocr: t('modal.reprocessOcr.title') || 'OCR نى قايتا ئىشلەش',
+      chunking: t('modal.reprocessChunking.title') || 'پارچىلاشنى قايتا ئىشلەش',
+      embedding: t('modal.reprocessEmbedding.title') || 'ۋېكتورلاشتۇرۇشنى قايتا ئىشلەش',
+      'word-index': t('modal.reprocessWordIndex.title') || 'سۆز تىزىملىكىنى قايتا ئىشلەش',
+      'spell-check': t('modal.reprocessSpellCheck.title') || 'ئىملا تەكشۈرۈشنى قايتا ئىشلەش'
+    };
+
+    setModal({
+      isOpen: true,
+      title: titles[step],
+      message: t(`modal.reprocess.${step}.message`) || 'بۇ جەرياننى باشتىن باشلاپ قايتا ئىشلىمەكمۇ؟',
+      type: 'confirm',
+      confirmText: t('common.confirm') || 'جەزملەش',
+      onConfirm: async () => {
+        try {
+          switch (step) {
+            case 'ocr': await PersistenceService.reprocessOcr(bookId); break;
+            case 'chunking': await PersistenceService.reprocessChunking(bookId); break;
+            case 'embedding': await PersistenceService.reprocessEmbedding(bookId); break;
+            case 'word-index': await PersistenceService.reprocessWordIndex(bookId); break;
+            case 'spell-check': await PersistenceService.reprocessSpellCheck(bookId); break;
+          }
+          await refreshLibrary();
+          setModal((prev: any) => ({ ...prev, isOpen: false }));
+          addNotification(t('common.reprocessStarted'), "success");
+        } catch (err) {
+          addNotification(t('common.error'), 'error');
+        }
+      }
+    });
+  };
+
   return {
     isCheckingGlobal,
     handleFileUpload,
-    handleResetFailedPages,
+    handleRetryFailedPages,
+    handleReprocessStep,
     handleReProcessPage,
     handleTriggerSpellCheck,
-    handleReindexBook,
     handleUpdatePage,
     openReader,
     saveCorrections,
@@ -512,6 +493,5 @@ export const useBookActions = (
     handleSaveBookRow,
     handleToggleVisibility,
     handleReplaceCover,
-    handleReprocessBook,
   };
 };

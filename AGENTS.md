@@ -20,10 +20,10 @@ This file provides guidance for automated agents working in this repo.
 ## Local Dev (Docker Compose)
 - Build images and start services using `docker compose up -d`.
 - The application connects to PostgreSQL on your local host via `host.docker.internal:5432`.
-- **CRITICAL DEPLOYMENT RULE**: Do not rely on local dev servers (like `npm run dev`) for final change application. You MUST always use Docker Compose to ensure changes are reflected. Run `./scripts/rebuild-and-restart.sh [frontend|backend|worker|all]` to rebuild and restart services after modifying files.
+- **CRITICAL DEPLOYMENT RULE**: Do not rely on local dev servers (like `npm run dev`) for final change application. You MUST always use Docker Compose to ensure changes are reflected. Run `./deploy/local/rebuild-and-restart.sh [frontend|backend|worker|all]` to rebuild and restart services after modifying files.
 
 ## File Management & Tooling
-- **SCRIPTS**: All scripts (operational, debugging, diagnostic, or testing) MUST be placed in the `scripts/` folder at the repo root. Never create ad-hoc scripts in the root or service-specific folders.
+- **SCRIPTS**: Operational, diagnostic, and testing scripts MUST be placed in the `scripts/` folder. Local deployment and rebuild scripts MUST be placed in `deploy/local/`. Never create ad-hoc scripts in the root or service-specific folders.
 - **DOCUMENTATION**: All documentation (other than root-level `README.md` and `AGENTS.md`) MUST be placed in the `docs/` folder.
 - **CLEANUP**: Always clean up temporary files, scratchpads, or logs immediately after use. Do not leave `.txt` or `.json` artifacts in the root.
 

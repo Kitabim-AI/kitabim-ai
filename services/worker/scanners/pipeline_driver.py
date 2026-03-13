@@ -70,17 +70,34 @@ async def run_pipeline_driver(ctx) -> None:
             update(Page)
             .where(
                 or_(
-                    Page.ocr_milestone == "failed",
-                    Page.chunking_milestone == "failed",
-                    Page.embedding_milestone == "failed"
+                    Page.ocr_milestone.in_(["failed", "error"]),
+                    Page.chunking_milestone.in_(["failed", "error"]),
+                    Page.embedding_milestone.in_(["failed", "error"]),
+                    Page.word_index_milestone.in_(["failed", "error"]),
+                    Page.spell_check_milestone.in_(["failed", "error"]),
                 ),
                 Page.retry_count < max_retries,
             )
             .values(
-                ocr_milestone=case((Page.ocr_milestone == "failed", "idle"), else_=Page.ocr_milestone),
-                chunking_milestone=case((Page.chunking_milestone == "failed", "idle"), else_=Page.chunking_milestone),
-                embedding_milestone=case((Page.embedding_milestone == "failed", "idle"), else_=Page.embedding_milestone),
-                # If we reset any, we are effectively trying again
+                ocr_milestone=case(
+                    (Page.ocr_milestone.in_(["failed", "error"]), "idle"), else_=Page.ocr_milestone
+                ),
+                chunking_milestone=case(
+                    (Page.chunking_milestone.in_(["failed", "error"]), "idle"),
+                    else_=Page.chunking_milestone,
+                ),
+                embedding_milestone=case(
+                    (Page.embedding_milestone.in_(["failed", "error"]), "idle"),
+                    else_=Page.embedding_milestone,
+                ),
+                word_index_milestone=case(
+                    (Page.word_index_milestone.in_(["failed", "error"]), "idle"),
+                    else_=Page.word_index_milestone,
+                ),
+                spell_check_milestone=case(
+                    (Page.spell_check_milestone.in_(["failed", "error"]), "idle"),
+                    else_=Page.spell_check_milestone,
+                ),
             )
         )
         reset = reset_result.rowcount
@@ -101,9 +118,9 @@ async def run_pipeline_driver(ctx) -> None:
                     Page.embedding_milestone == "succeeded",
                     and_(
                         or_(
-                            Page.ocr_milestone == "failed",
-                            Page.chunking_milestone == "failed",
-                            Page.embedding_milestone == "failed"
+                            Page.ocr_milestone.in_(["failed", "error"]),
+                            Page.chunking_milestone.in_(["failed", "error"]),
+                            Page.embedding_milestone.in_(["failed", "error"])
                         ),
                         Page.retry_count >= max_retries,
                     ),
@@ -127,9 +144,9 @@ async def run_pipeline_driver(ctx) -> None:
             (
                 and_(
                     or_(
-                        Page.ocr_milestone == "failed",
-                        Page.chunking_milestone == "failed",
-                        Page.embedding_milestone == "failed"
+                        Page.ocr_milestone.in_(["failed", "error"]),
+                        Page.chunking_milestone.in_(["failed", "error"]),
+                        Page.embedding_milestone.in_(["failed", "error"])
                     ),
                     Page.retry_count >= max_retries,
                 ),

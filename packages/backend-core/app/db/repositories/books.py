@@ -224,10 +224,84 @@ class BooksRepository(BaseRepository[Book]):
             },
             "has_summary": has_summary,
             "ocr_done_count": m_row.ocr_done if m_row else 0,
-            "error_count": sum(count for (s, m), count in stats_data.items() if m == "failed"),
+            "error_count": sum(count for (s, m), count in stats_data.items() if m in ["failed", "error"]),
             "pending_count": sum(count for (s, m), count in stats_data.items() if m == "idle"),
             "ocr_processing_count": sum(count for (s, m), count in stats_data.items() if m == "in_progress"),
         }
+
+    async def get_batch_stats(self, book_ids: List[str]) -> dict[str, dict]:
+        """
+        Fetch pipeline statistics and summary status for multiple books in batch.
+        Replaces N+1 calls to get_with_page_stats for much better performance.
+        """
+        if not book_ids:
+            return {}
+
+        # 1. Fetch milestone stats for all books at once
+        milestone_stats_stmt = (
+            select(
+                Page.book_id,
+                func.count(case((Page.ocr_milestone == "succeeded", Page.id), else_=None)).label("ocr"),
+                func.count(case((Page.ocr_milestone.in_(["failed", "error"]), Page.id), else_=None)).label("ocr_failed"),
+                func.count(case((Page.ocr_milestone == "in_progress", Page.id), else_=None)).label("ocr_active"),
+                func.count(case((Page.chunking_milestone == "succeeded", Page.id), else_=None)).label("chunking"),
+                func.count(case((Page.chunking_milestone.in_(["failed", "error"]), Page.id), else_=None)).label("chunking_failed"),
+                func.count(case((Page.chunking_milestone == "in_progress", Page.id), else_=None)).label("chunking_active"),
+                func.count(case((Page.embedding_milestone == "succeeded", Page.id), else_=None)).label("embedding"),
+                func.count(case((Page.embedding_milestone.in_(["failed", "error"]), Page.id), else_=None)).label("embedding_failed"),
+                func.count(case((Page.embedding_milestone == "in_progress", Page.id), else_=None)).label("embedding_active"),
+                func.count(case((Page.word_index_milestone == "done", Page.id), else_=None)).label("word_index"),
+                func.count(case((Page.word_index_milestone.in_(["failed", "error"]), Page.id), else_=None)).label("word_index_failed"),
+                func.count(case((Page.word_index_milestone == "in_progress", Page.id), else_=None)).label("word_index_active"),
+                func.count(case((Page.spell_check_milestone == "done", Page.id), else_=None)).label("spell_check"),
+                func.count(case((Page.spell_check_milestone.in_(["failed", "error"]), Page.id), else_=None)).label("spell_check_failed"),
+                func.count(case((Page.spell_check_milestone == "in_progress", Page.id), else_=None)).label("spell_check_active"),
+            )
+            .where(Page.book_id.in_(book_ids))
+            .group_by(Page.book_id)
+        )
+        m_result = await self.session.execute(milestone_stats_stmt)
+        m_rows = m_result.fetchall()
+
+        # 2. Determine which books have summaries in one query
+        summary_stmt = select(BookSummary.book_id).where(BookSummary.book_id.in_(book_ids))
+        summary_res = await self.session.execute(summary_stmt)
+        books_with_summary = {row[0] for row in summary_res.fetchall()}
+
+        # Assemble results
+        results = {}
+        for row in m_rows:
+            bid = str(row.book_id)
+            results[bid] = {
+                "pipeline_stats": {
+                    "ocr": row.ocr,
+                    "ocr_failed": row.ocr_failed,
+                    "ocr_active": row.ocr_active,
+                    "chunking": row.chunking,
+                    "chunking_failed": row.chunking_failed,
+                    "chunking_active": row.chunking_active,
+                    "embedding": row.embedding,
+                    "embedding_failed": row.embedding_failed,
+                    "embedding_active": row.embedding_active,
+                    "word_index": row.word_index,
+                    "word_index_failed": row.word_index_failed,
+                    "word_index_active": row.word_index_active,
+                    "spell_check": row.spell_check,
+                    "spell_check_failed": row.spell_check_failed,
+                    "spell_check_active": row.spell_check_active,
+                },
+                "has_summary": bid in books_with_summary
+            }
+
+        # Ensure every requested book ID has an entry
+        for bid in book_ids:
+            if bid not in results:
+                results[bid] = {
+                    "pipeline_stats": {},
+                    "has_summary": bid in books_with_summary
+                }
+
+        return results
 
     async def count_by_status(self, status: str) -> int:
         """Count books by status"""

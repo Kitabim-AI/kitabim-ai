@@ -69,7 +69,7 @@ An editor is a signed-in user responsible for content management.
 - Can **upload** new PDF books to the library.
 - Can **start, retry, and monitor OCR processing** for uploaded books.
 - Can **edit page content** directly within the reader.
-- Can **reprocess** or **reindex** existing books.
+- Can **reprocess specific steps** (OCR, Chunking, Embedding, Word Index, or Spell Check) or **reindex** existing books.
 - Can **run spell check** and **apply corrections**.
 - Can **edit book metadata** (title, author, volume, categories).
 - Can **upload custom cover images**.
@@ -213,8 +213,8 @@ If OCR processing is interrupted (e.g., due to a system restart or timeout), it 
 **REQ-OCR-010: Retry Failed Pages**  
 Editors can retry OCR for books that encountered errors. Only the failed pages are re-processed; successfully completed pages are preserved.
 
-**REQ-OCR-011: Full Reprocessing**  
-Editors can trigger a complete reprocessing of a book, which re-runs OCR on all pages. By default, the system protects human effort by skipping pages that have been manually verified or corrected (see REQ-READER-006), unless the editor explicitly chooses to override this protection.
+**REQ-OCR-011: Granular Reprocessing**  
+Editors can trigger a reprocessing of specific pipeline steps (e.g., re-running only chunking or re-running OCR). By default, the system protects human effort by skipping pages that have been manually verified or corrected (see REQ-READER-006), unless the editor explicitly chooses to override this protection.
 
 **REQ-OCR-012: Reindex Without Re-OCR**  
 Editors can regenerate the search index for a book without re-running OCR. This is useful when the indexing algorithm improves or when corrections have been made to page text.
@@ -459,7 +459,7 @@ Each book in the table has a context menu with available actions:
 - Open in Reader
 - Start OCR (for pending books)
 - Retry OCR (for books with errors)
-- Reprocess (for ready books)
+- Reprocess Step (OCR, Chunking, Embedding, Word Index, or Spell Check)
 - Reindex (regenerate search index)
 - Toggle Visibility (public ↔ private)
 - Delete (admin only)

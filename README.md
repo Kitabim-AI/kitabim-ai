@@ -48,7 +48,7 @@ Build and start all services in the background:
 ```bash
 docker compose up -d --build
 ```
-*Tip: Use `./scripts/rebuild-and-restart.sh all` to rebuild later.*
+*Tip: Use `./deploy/local/rebuild-and-restart.sh all` to rebuild later.*
 
 **4. Access the App**
 - **Web UI**: [http://localhost:30080](http://localhost:30080)
@@ -70,7 +70,7 @@ docker compose down
 docker compose restart backend
 
 # Rebuild and restart services
-./scripts/rebuild-and-restart.sh all
+./deploy/local/rebuild-and-restart.sh all
 ```
 
 ### Logs

@@ -38,6 +38,7 @@ class User(UserBase):
     created_at: datetime
     updated_at: datetime
     last_login_at: Optional[datetime] = None
+    last_login_ip: Optional[str] = None
     is_active: bool = True
 
     class Config:
@@ -54,6 +55,7 @@ class UserPublic(BaseModel):
     is_active: bool = True
     created_at: Optional[datetime] = None
     last_login_at: Optional[datetime] = None
+    last_login_ip: Optional[str] = None
 
     @classmethod
     def from_user(cls, user: "User") -> "UserPublic":
@@ -67,6 +69,7 @@ class UserPublic(BaseModel):
             is_active=user.is_active,
             created_at=user.created_at,
             last_login_at=user.last_login_at,
+            last_login_ip=user.last_login_ip,
         )
 
 

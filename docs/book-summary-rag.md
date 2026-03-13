@@ -1,8 +1,7 @@
 # Design: Hierarchical RAG with Book Summaries
 
-**Status:** Draft
+**Status:** Implemented
 **Date:** 2026-03-10
-**Branch:** kitabim-db-migration
 
 ---
 
