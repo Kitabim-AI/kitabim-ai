@@ -29,25 +29,29 @@ async def run_word_index_scanner(ctx) -> None:
     # Fetch a batch of pages that still need indexing.
     async with db_session.async_session_factory() as session:
         result = await session.execute(
-            select(Page)
+            select(Page.id)
             .where(
                 Page.ocr_milestone == "succeeded",
                 Page.text.isnot(None),
                 Page.word_index_milestone == "idle",
             )
+            .with_for_update(skip_locked=True)
             .limit(BATCH_SIZE)
         )
-        pages = result.scalars().all()
+        page_ids = [row[0] for row in result.fetchall()]
 
-    if not pages:
+    if not page_ids:
         return
 
     succeeded = 0
     failed = 0
 
-    for page in pages:
+    for page_id in page_ids:
         try:
             async with db_session.async_session_factory() as session:
+                # Reload page within the processing transaction
+                res = await session.execute(select(Page).where(Page.id == page_id))
+                page = res.scalar_one()
                 tokens = tokenize(page.text or "")
                 word_freq = Counter(word_norm for word_norm, _raw, _s, _e in tokens)
                 await index_book_words(session, page.book_id, word_freq)
@@ -81,4 +85,4 @@ async def run_word_index_scanner(ctx) -> None:
                      error=repr(exc), traceback=traceback.format_exc())
 
     log_json(logger, logging.INFO, "word index scanner run complete",
-             batch=len(pages), succeeded=succeeded, failed=failed)
+             batch=len(page_ids), succeeded=succeeded, failed=failed)

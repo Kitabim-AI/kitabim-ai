@@ -63,8 +63,9 @@ async def chat_with_book_api(
 
         # 3. Increment usage on successful answer
         await chat_limit_service.increment_usage(current_user, session)
+        usage_status = await chat_limit_service.get_user_usage_status(current_user, session)
 
-        return {"answer": answer}
+        return {"answer": answer, "usage": usage_status}
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
@@ -114,9 +115,8 @@ async def chat_with_book_stream(
         return StreamingResponse(error_stream(), media_type="text/event-stream")
 
     async def event_generator():
-        stream_completed = False
-        accumulated_response = ""
         try:
+            accumulated_response = ""
             # Stream chunks from RAG service
             async for chunk in rag_service.answer_question_stream(req, session, user_id=current_user.id):
                 accumulated_response += chunk
@@ -129,8 +129,11 @@ async def chat_with_book_stream(
                 log_json(logger, logging.INFO, "Citations were fixed in stream", user_id=current_user.id)
                 yield f'data: {json.dumps({"correction": fixed_response})}\n\n'
 
-            stream_completed = True
-            yield f'data: {json.dumps({"done": True})}\n\n'
+            # Increment usage on successful stream completion
+            await chat_limit_service.increment_usage(current_user, session)
+            updated_usage = await chat_limit_service.get_user_usage_status(current_user, session)
+            
+            yield f'data: {json.dumps({"done": True, "usage": updated_usage})}\n\n'
 
         except ValueError as exc:
             # Book not found or validation error
@@ -145,11 +148,6 @@ async def chat_with_book_stream(
 
             yield f'data: {json.dumps({"error": error_msg})}\n\n'
             await record_book_error(session, req.book_id, "chat_stream", error_str)
-        finally:
-            # Only increment usage if stream completed successfully
-            if stream_completed:
-                await chat_limit_service.increment_usage(current_user, session)
-                log_json(logger, logging.INFO, "Chat stream completed successfully", user_id=current_user.id)
 
     return StreamingResponse(
         event_generator(),

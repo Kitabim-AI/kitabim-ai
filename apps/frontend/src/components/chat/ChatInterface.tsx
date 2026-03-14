@@ -212,12 +212,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               )}
             </div>
           ) : (
-            <div className="flex flex-row items-center justify-between gap-6 px-5 py-4 sm:px-8 sm:py-5">
-              <div className="flex items-center">
-                <p className="text-[#1a1a1a] font-normal text-sm sm:text-base leading-relaxed">
-                  {t('auth.signInToUseChat')}
-                </p>
-              </div>
+            <div className="flex flex-row items-center justify-between gap-4 sm:gap-6 px-5 py-4 sm:px-8 sm:py-5">
+              <p className="text-[#1a1a1a] font-normal text-sm sm:text-base leading-relaxed">
+                {t('auth.signInToUseChat')}
+              </p>
               <OAuthButtonGroup align="up" side="right" className="shrink-0" />
             </div>
           )}
@@ -360,13 +358,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             )}
           </div>
         ) : (
-          <div className="flex items-center justify-start px-4 py-2.5 sm:py-3 min-h-[52px] sm:min-h-[60px]">
-            <p className="flex-1 text-[#1a1a1a] font-normal text-[11px] sm:text-sm leading-relaxed pl-14 sm:pl-20 text-right">
+          <div className="flex items-center justify-between gap-2 px-4 py-2.5 sm:py-3 min-h-[52px] sm:min-h-[60px]">
+            <p className="text-[#1a1a1a] font-normal text-[11px] sm:text-sm leading-relaxed text-right">
               {t('auth.signInToUseChat')}
             </p>
-            <div className="absolute left-[12px] sm:left-[24px] top-1/2 -translate-y-1/2">
-              <OAuthButtonGroup align="up" side="right" />
-            </div>
+            <OAuthButtonGroup align="up" side="right" className="shrink-0" />
           </div>
         )}
       </div>

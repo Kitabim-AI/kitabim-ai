@@ -22,7 +22,7 @@ export const LibraryView: React.FC = () => {
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && !isInitialLoading && hasMore && !isLoadingMore) {
+        if (entries[0].isIntersecting && !isInitialLoading && hasMore && !isLoadingMore && books.length > 0) {
           loadMore();
         }
       },

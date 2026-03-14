@@ -111,6 +111,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     answer: str
+    usage: Optional[ChatUsageStatus] = None
 
 
 class ChatUsageStatus(BaseModel):

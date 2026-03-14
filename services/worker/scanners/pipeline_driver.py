@@ -230,7 +230,11 @@ async def run_pipeline_driver(ctx) -> None:
     # summary_job generates and stores a semantic summary for hierarchical RAG.
     redis = ctx["redis"]
     for book_id in newly_ready_ids:
-        await redis.enqueue_job("summary_job", book_id=book_id)
+        await redis.enqueue_job(
+            "summary_job",
+            book_id=book_id,
+            _job_id=f"summary:{book_id}"
+        )
 
     log_json(
         logger, logging.INFO, "pipeline driver ran",

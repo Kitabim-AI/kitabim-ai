@@ -7,6 +7,8 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request, Cookie
 from fastapi.responses import HTMLResponse, RedirectResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_session
@@ -48,6 +50,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Rate limiter instance
+limiter = Limiter(key_func=get_remote_address)
+
 # Cookie settings
 OAUTH_STATE_COOKIE = "kitabim_oauth_state"
 REFRESH_TOKEN_COOKIE = "kitabim_refresh_token"
@@ -76,7 +81,8 @@ async def get_current_user_profile(
 
 
 @router.get("/{provider}/login")
-async def oauth_login(provider: str, response: Response, next: Optional[str] = None):
+@limiter.limit("10/minute")  # Max 10 login attempts per minute per IP
+async def oauth_login(request: Request, provider: str, response: Response, next: Optional[str] = None):
     """
     Initiate OAuth login flow for any provider.
 
@@ -134,6 +140,7 @@ async def oauth_login(provider: str, response: Response, next: Optional[str] = N
 
 
 @router.get("/{provider}/callback")
+@limiter.limit("20/minute")  # Allow more callbacks but still rate limit
 async def oauth_callback(
     provider: str,
     request: Request,
@@ -268,11 +275,14 @@ async def oauth_callback(
         return _success_response(access_token, refresh_token)
         
     except Exception as e:
-        logger.exception(f"OAuth callback error: {e}")
-        return _error_response(t("errors.google_login_failed", error=str(e)))
+        # Log detailed error for debugging but don't expose to user
+        logger.exception(f"OAuth callback error for {provider}: {e}")
+        # Return generic error message to prevent information leakage
+        return _error_response(t("errors.oauth_login_failed"))
 
 
 @router.post("/refresh")
+@limiter.limit("30/minute")  # Allow 30 refresh attempts per minute
 async def refresh_access_token(
     request: Request,
     refresh_token: Optional[str] = Cookie(None, alias=REFRESH_TOKEN_COOKIE),
@@ -387,6 +397,10 @@ def _success_response(access_token: str, refresh_token: str) -> HTMLResponse:
     """
     Generate HTML response for successful OAuth that posts token to opener.
     """
+    # Get allowed origins for secure postMessage (no wildcards)
+    allowed_origins_list = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
+    allowed_origins_json = str(allowed_origins_list).replace("'", '"')
+
     html = f"""
     <!DOCTYPE html>
     <html>
@@ -430,17 +444,28 @@ def _success_response(access_token: str, refresh_token: str) -> HTMLResponse:
         </div>
         <script>
             const accessToken = "{access_token}";
-            
+            const allowedOrigins = {allowed_origins_json};
+
             function notifyAndClose() {{
                 console.log('[Kitabim Auth] Attempting to notify opener...');
-                
+
                 // Try to post to opener (popup flow)
                 if (window.opener && !window.opener.closed) {{
                     try {{
+                        // Get opener's origin securely
+                        const openerOrigin = window.opener.location.origin;
+
+                        // Verify opener origin is in allowed list
+                        if (!allowedOrigins.includes(openerOrigin)) {{
+                            console.error('[Kitabim Auth] Opener origin not allowed:', openerOrigin);
+                            return false;
+                        }}
+
+                        // Post message to specific origin only
                         window.opener.postMessage({{
                             type: 'OAUTH_SUCCESS',
                             accessToken: accessToken
-                        }}, '*');
+                        }}, openerOrigin);
                         
                         console.log('[Kitabim Auth] Message posted, closing in 500ms...');
                         setTimeout(() => window.close(), 500);

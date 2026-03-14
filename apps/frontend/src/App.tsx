@@ -58,9 +58,7 @@ const AppContent: React.FC = () => {
     };
   }, [view, selectedBook?.id, selectedBook?.status, setSelectedBook]);
 
-  useEffect(() => {
-    refreshLibrary();
-  }, [refreshLibrary]);
+
 
   return (
     <Shell>

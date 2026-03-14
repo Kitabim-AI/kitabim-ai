@@ -24,16 +24,14 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     scrollToBottom();
   }, [chatMessages, isChatting, view, streamingMessage]);
 
-  // Fetch usage status on mount and when chatting status changes
+  // Fetch usage status once when in a chat-capable view
   useEffect(() => {
-    if (isAuthenticated) {
-      if (!isChatting && !streamingMessage) {
-        getChatUsage().then(setUsageStatus);
-      }
-    } else {
+    if (isAuthenticated && (view === 'global-chat' || view === 'reader')) {
+      getChatUsage().then(setUsageStatus);
+    } else if (!isAuthenticated) {
       setUsageStatus(null);
     }
-  }, [isAuthenticated, chatMessages, isChatting, streamingMessage]);
+  }, [isAuthenticated, view]);
 
   const abortOngoingChat = () => {
     if (abortControllerRef.current) {
@@ -116,6 +114,10 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
           // Replace the streaming message with the corrected version
           setStreamingMessage(correctedText);
           streamingMessageRef.current = correctedText;
+        },
+        // onUsageUpdate
+        (usage: any) => {
+          setUsageStatus(usage);
         }
       );
     } catch (err: any) {

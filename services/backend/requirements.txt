@@ -13,6 +13,7 @@ langchain-community
 langchain-google-genai
 arq
 python-jose[cryptography]
+slowapi>=0.1.9
 asyncpg==0.31.0
 pgvector==0.4.2
 tqdm==4.66.1

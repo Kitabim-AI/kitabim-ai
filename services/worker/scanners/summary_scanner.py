@@ -40,6 +40,10 @@ async def run_summary_scanner(ctx) -> None:
         return
 
     for book_id in book_ids:
-        await redis.enqueue_job("summary_job", book_id=book_id)
+        await redis.enqueue_job(
+            "summary_job",
+            book_id=book_id,
+            _job_id=f"summary:{book_id}"
+        )
 
     log_json(logger, logging.INFO, "summary scanner enqueued jobs", count=len(book_ids))
