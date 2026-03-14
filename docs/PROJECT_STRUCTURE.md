@@ -193,7 +193,9 @@ scripts/
 ├── init-db.sql                    # PostgreSQL schema
 ├── add-missing-columns.sql        # Schema migrations
 ├── backup_db.sh                   # Database backup
-├── deploy_changes.sh              # Deploy to k8s
+├── deploy/                        # Deployment & Infrastructure
+│   ├── local/                    # Local dev scripts
+│   │   └── rebuild-and-restart.sh # Local redeploy script
 ├── fix-*.py                       # Data migration scripts
 ├── check_*.py                     # Diagnostic scripts
 ├── migrate_*.py                   # Data transformation scripts
@@ -465,7 +467,7 @@ docs/
 
 ### Local Development (.env file)
 
-Used when running services manually (outside Kubernetes):
+Used when running services manually (outside Docker Compose):
 
 ```bash
 # Database

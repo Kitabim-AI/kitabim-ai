@@ -12,7 +12,7 @@ npm run dev
 ## Notes
 - Vite dev server proxies `/api` to the backend.
 - Do not add AI keys or other secrets to client code.
-- Local dev uses Docker Desktop Kubernetes (see `k8s/local`).
+- Local dev uses Docker Compose.
 
 ## Standard Rules
 - **GLOBAL RULES**: Refer to the root `AGENTS.md` for standardized project rules.

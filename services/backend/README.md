@@ -23,7 +23,7 @@
 - Queue worker (required): `PYTHONPATH=packages/backend-core python -m arq app.worker.WorkerSettings`
 
 ## Notes
-- Local dev uses Kubernetes manifests in `/k8s/local`.
+- Local dev uses Docker Compose.
 - Uses PostgreSQL from `DATABASE_URL` and the shared `data/` folder for uploads/covers.
 - Override the data location with `DATA_DIR` (useful for Docker/K8s).
 - The Gemini API key stays on the backend; the frontend proxies AI calls via `/api/ai`.

@@ -28,7 +28,7 @@ This document summarizes the critical and high-severity security fixes applied t
 
 **Configuration Required:**
 ```bash
-# In .env or k8s/secrets.yaml
+# In .env or production environment variables
 CORS_ORIGINS=http://localhost:3000,http://localhost:30080,https://yourdomain.com
 ```
 

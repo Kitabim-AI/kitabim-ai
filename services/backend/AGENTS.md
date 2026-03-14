@@ -29,7 +29,7 @@ PYTHONPATH=packages/backend-core:services/backend uvicorn main:app --reload --po
 ## Notes
 - Do not move secrets into the frontend; backend owns all AI keys.
 - Backend-specific code belongs in `services/backend/`. Shared code belongs in `packages/backend-core/app/`.
-- Local dev uses Kubernetes (see `k8s/local`).
+- Local dev uses Docker Compose.
 
 ## Standard Rules
 - **GLOBAL RULES**: Refer to the root `AGENTS.md` for standardized project rules.

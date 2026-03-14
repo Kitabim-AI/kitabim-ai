@@ -2,7 +2,7 @@
 
 Shared backend Python package used by the API service and the worker.
 
-Local dev uses Docker Desktop Kubernetes manifests in `/k8s/local`.
+Local dev uses Docker Compose.
 
 ## Run (Dev)
 

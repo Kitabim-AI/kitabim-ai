@@ -29,7 +29,7 @@ PYTHONPATH=packages/backend-core:services/worker arq worker.WorkerSettings
 
 ## Notes
 - Queue is required; there is no local fallback.
-- Local dev uses Kubernetes (see `k8s/local`).
+- Local dev uses Docker Compose.
 - Worker-specific code belongs in `services/worker/`. Shared code belongs in `packages/backend-core/app/`.
 
 ## Standard Rules
