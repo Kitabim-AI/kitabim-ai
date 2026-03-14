@@ -450,8 +450,22 @@ def _success_response(access_token: str, refresh_token: str) -> HTMLResponse:
             const accessToken = "{access_token}";
             const allowedOrigins = {allowed_origins_json};
 
+            // Use BroadcastChannel as a robust alternative to postMessage
+            const authChannel = new BroadcastChannel('kitabim_auth');
+
             function notifyAndClose() {{
                 console.log('[Kitabim Auth] Attempting to notify opener...');
+
+                // 1. Notify via BroadcastChannel (works even if opener is null)
+                try {{
+                    authChannel.postMessage({{
+                        type: 'OAUTH_SUCCESS',
+                        accessToken: accessToken
+                    }});
+                    console.log('[Kitabim Auth] Broadcast success via BroadcastChannel');
+                }} catch (e) {{
+                    console.error('[Kitabim Auth] BroadcastChannel error:', e);
+                }}
 
                 // Try to post to opener (popup flow)
                 if (window.opener && !window.opener.closed) {{
