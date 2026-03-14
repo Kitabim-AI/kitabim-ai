@@ -115,16 +115,20 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
     if settings.environment == "production":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    # Content Security Policy - adjust as needed for your frontend
+    
+    # Content Security Policy
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com; "
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data: https:; "
         "font-src 'self' data:; "
-        "connect-src 'self' https://accounts.google.com https://graph.facebook.com"
+        "connect-src 'self' https://accounts.google.com https://graph.facebook.com; "
+        "frame-src 'self' https://accounts.google.com; "
+        "object-src 'none';"
     )
     return response
 
