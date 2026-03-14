@@ -51,19 +51,6 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
       </div>
 
       <main className="flex-grow p-0 sm:p-2 md:p-4 lg:p-8 max-w-[1600px] mx-auto w-full relative z-10">
-        {(isLoading || bookActions?.isCheckingGlobal) && view !== 'reader' && !searchQuery && !homeSearchQuery && (
-          <div className="absolute inset-0 bg-white/40 backdrop-blur-md z-40 flex items-center justify-center min-h-[400px] rounded-[40px]">
-            <div className="flex flex-col items-center gap-6">
-              <div className="relative">
-                <div className="w-16 h-16 border-4 border-[#0369a1]/10 border-t-[#0369a1] rounded-full animate-spin"></div>
-                <div className="absolute inset-0 flex items-center justify-center text-[#0369a1]">
-                  <RefreshCw size={24} className="animate-pulse" />
-                </div>
-              </div>
-              <span className="text-sm font-normal text-[#0369a1] uppercase animate-pulse">{t('common.loadingApp')}</span>
-            </div>
-          </div>
-        )}
 
         {children}
       </main>

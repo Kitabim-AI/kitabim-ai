@@ -12,9 +12,12 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
   const [isLoading, setIsLoading] = useState(true);
   const [hasMoreShelf, setHasMoreShelf] = useState(true);
   const [shelfPage, setShelfPage] = useState(1);
-  const COLLECTION_PAGE_SIZE = 40; 
+  const COLLECTION_PAGE_SIZE = 40;
 
   const [sortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'uploadDate', direction: 'desc' });
+
+  // Only include pipeline stats on admin view (book management page)
+  const includeStats = view === 'admin';
 
   // Helper to determine if we should use shelf-style (infinite scroll) behavior
   const isShelfView = useMemo(() => {
@@ -42,7 +45,7 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
           const sortBy = isShelfView ? 'uploadDate' : sortConfig.key;
           const order = isShelfView ? -1 : (sortConfig.direction === 'asc' ? 1 : -1);
 
-          const response = await PersistenceService.getGlobalLibrary(currentPage, currentSize, searchQuery, sortBy, order, groupByWork, category);
+          const response = await PersistenceService.getGlobalLibrary(currentPage, currentSize, searchQuery, sortBy, order, groupByWork, category, includeStats);
 
           setBooks(response.books);
           setTotalBooks(response.total);
@@ -61,14 +64,15 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
 
   const fetchBooks = useCallback(async (isManualRefresh = false) => {
     const trimmedQuery = searchQuery.trim();
+    const currentParams = `${view}-${searchQuery}-${pageSize}-${page}-${category}-${groupByWork}-${isAuthenticated}`;
 
     // Skip loading books for views that don't need them
     if (view === 'global-chat' || view === 'reader' || view === 'join-us' || view === 'spell-check') {
-      setIsLoading(false);
       setBooks([]);
       setTotalBooks(0);
       setTotalReady(0);
-      lastParamsRef.current = view; // Still record that we've seen this view
+      lastParamsRef.current = view;
+      setIsLoading(false);
       return;
     }
 
@@ -78,8 +82,8 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
         setBooks([]);
         setTotalBooks(0);
         setTotalReady(0);
-        setIsLoading(false);
         lastParamsRef.current = `home-empty`;
+        setIsLoading(false);
         return;
       }
     }
@@ -88,13 +92,11 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
       setBooks([]);
       setTotalBooks(0);
       setTotalReady(0);
-      setIsLoading(false);
       lastParamsRef.current = `query-short`;
+      setIsLoading(false);
       return;
     }
 
-    // Prevent duplicate identical calls
-    const currentParams = `${view}-${searchQuery}-${pageSize}-${page}-${category}-${groupByWork}-${isAuthenticated}`;
     if (!isManualRefresh && currentParams === lastParamsRef.current) {
       return;
     }
@@ -106,9 +108,9 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
     
     if (!isManualRefresh) {
       setBooks([]);
-      setShelfPage(1);
       setTotalBooks(0);
       setTotalReady(0);
+      setShelfPage(1);
     }
 
     try {
@@ -118,13 +120,14 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
       const order = isShelfView ? -1 : (sortConfig.direction === 'asc' ? 1 : -1);
 
       const response = await PersistenceService.getGlobalLibrary(
-        currentViewPage, 
-        currentViewSize, 
-        searchQuery, 
-        sortBy, 
-        order, 
-        groupByWork, 
-        category
+        currentViewPage,
+        currentViewSize,
+        searchQuery,
+        sortBy,
+        order,
+        groupByWork,
+        category,
+        includeStats
       );
 
       if (requestId !== lastRequestIdRef.current) return;
@@ -169,13 +172,14 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
       const order = isShelfView ? -1 : (sortConfig.direction === 'asc' ? 1 : -1);
 
       const response = await PersistenceService.getGlobalLibrary(
-        nextPage, 
-        COLLECTION_PAGE_SIZE, 
-        searchQuery, 
-        sortBy, 
-        order, 
-        groupByWork, 
-        category
+        nextPage,
+        COLLECTION_PAGE_SIZE,
+        searchQuery,
+        sortBy,
+        order,
+        groupByWork,
+        category,
+        includeStats
       );
       
       if (requestId !== lastRequestIdRef.current) return;

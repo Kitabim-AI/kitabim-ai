@@ -130,6 +130,7 @@ async def get_books(
     sortBy: str = "title",
     order: int = 1,
     groupByWork: bool = False,
+    includeStats: bool = False,
     current_user: Optional[User] = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_session),
 ):
@@ -149,6 +150,7 @@ async def get_books(
         "sortBy": sortBy,
         "order": order,
         "groupByWork": groupByWork,
+        "includeStats": includeStats,
         "user_role": current_user.role if current_user else "guest"
     }
     param_hash = hashlib.md5(json.dumps(cache_params, sort_keys=True).encode()).hexdigest()
@@ -291,10 +293,19 @@ async def get_books(
         result = await session.execute(stmt)
         books_objs = result.scalars().all()
 
-    # --- PART 4: Asset Serialization & Batch Stats ---
+    # --- PART 4: Asset Serialization (Optimized for List View) ---
     books_data = []
     repo = BooksRepository(session)
-    
+
+    # Only include expensive pipeline stats when explicitly requested via includeStats=true
+    # This is needed only on the admin book management page, not on library/home views
+    # Huge performance gain: Avoids expensive JOIN + GROUP BY on pages table for every book
+    should_include_stats = (
+        includeStats and
+        current_user and
+        current_user.role in ['admin', 'editor']
+    )
+
     for b in books_objs:
         last_error_obj = None
         if b.last_error:
@@ -315,7 +326,8 @@ async def get_books(
         }
         books_data.append(BookSchema.model_validate(b_dict))
 
-    if books_data:
+    # Only fetch expensive stats if explicitly requested (book management page only)
+    if should_include_stats and books_data:
         book_ids = [str(b.id) for b in books_data]
         batch_stats = await repo.get_batch_stats(book_ids)
         for pydantic_book in books_data:
@@ -332,8 +344,9 @@ async def get_books(
     }
 
     if not skip_cache:
-        # Cache list results for 10 minutes
-        await cache_service.set(cache_key, result, ttl=600)
+        # Cache list results: 30 minutes for guests (stable data), 10 minutes for authenticated users
+        cache_ttl = 1800 if current_user is None else 600
+        await cache_service.set(cache_key, result, ttl=cache_ttl)
 
     return result
 

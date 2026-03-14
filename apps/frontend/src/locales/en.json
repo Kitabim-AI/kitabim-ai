@@ -40,6 +40,7 @@
     "previous": "Previous",
     "next": "Next",
     "loadingApp": "Library is loading...",
+    "fetchingData": "Fetching data...",
     "uploadSuccess": "Document uploaded successfully.",
     "uploadExisting": "This book already exists in the library.",
     "reindexStarted": "Book re-vectorization started.",

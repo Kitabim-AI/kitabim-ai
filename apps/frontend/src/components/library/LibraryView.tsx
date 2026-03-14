@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Zap, Library, BookOpen } from 'lucide-react';
+import { Zap, Library, BookOpen, RefreshCw } from 'lucide-react';
 import { ProverbDisplay } from '../common/ProverbDisplay';
 import { BookCard } from './BookCard';
 import { useI18n } from '../../i18n/I18nContext';
@@ -8,7 +8,7 @@ import { useAppContext } from '../../context/AppContext';
 export const LibraryView: React.FC = () => {
   const {
     sortedBooks: books,
-    totalReady,
+    totalBooks,
     isLoading: isInitialLoading,
     isLoadingMoreShelf: isLoadingMore,
     hasMoreShelf: hasMore,
@@ -26,7 +26,7 @@ export const LibraryView: React.FC = () => {
           loadMore();
         }
       },
-      { threshold: 0.1, rootMargin: '200px' }
+      { threshold: 0.1, rootMargin: '1200px' }
     );
 
     if (loaderRef.current) observer.observe(loaderRef.current);
@@ -52,20 +52,20 @@ export const LibraryView: React.FC = () => {
           </div>
         </header>
 
-        <div className="flex items-center gap-4">
-          <div className="flex md:hidden items-center gap-2 px-4 py-2 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner">
-            <BookOpen size={16} strokeWidth={2.5} />
-            <span className="text-xs font-normal uppercase">
-              {totalReady} {t('home.totalBooks')}
-            </span>
-          </div>
-          <div className="hidden md:flex items-center gap-3 px-6 py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner">
-            <BookOpen size={18} strokeWidth={2.5} />
-            <span className="text-sm font-normal uppercase">
-              {t('chat.libraryBookCount', { count: totalReady })}
-            </span>
-          </div>
+      <div className="flex items-center gap-4">
+        <div className="flex md:hidden items-center gap-2 px-4 py-2 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner">
+          <BookOpen size={16} strokeWidth={2.5} />
+          <span className="text-xs font-normal uppercase">
+            {isInitialLoading ? <RefreshCw size={12} className="animate-spin" /> : `${totalBooks} ${t('home.totalBooks')}`}
+          </span>
         </div>
+        <div className="hidden md:flex items-center gap-3 px-6 py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner">
+          <BookOpen size={18} strokeWidth={2.5} />
+          <span className="text-sm font-normal uppercase">
+            {isInitialLoading ? <RefreshCw size={14} className="animate-spin" /> : t('chat.libraryBookCount', { count: totalBooks })}
+          </span>
+        </div>
+      </div>
       </div>
 
       {/* Grid Section */}
@@ -77,6 +77,18 @@ export const LibraryView: React.FC = () => {
             onClick={bookActions.openReader}
           />
         ))}
+
+        {isInitialLoading && books.length === 0 && (
+          <div className="col-span-full py-40 w-full flex flex-col items-center justify-center">
+            <div className="relative mb-6">
+              <div className="w-16 h-16 border-4 border-[#0369a1]/10 border-t-[#0369a1] rounded-full animate-spin"></div>
+              <div className="absolute inset-0 flex items-center justify-center text-[#0369a1]">
+                <Library className="w-8 h-8 animate-pulse" />
+              </div>
+            </div>
+            <h3 className="text-xl font-normal text-[#1a1a1a]">{t('common.loading')}</h3>
+          </div>
+        )}
 
         {books.length === 0 && !isInitialLoading && !isLoadingMore && (
           <div className="col-span-full py-40 w-full flex flex-col items-center justify-center glass-panel rounded-[48px]">

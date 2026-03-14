@@ -97,7 +97,7 @@ export const AdminView: React.FC = () => {
           loadMore();
         }
       },
-      { threshold: 0.1, rootMargin: '200px' }
+      { threshold: 0.1, rootMargin: '1200px' }
     );
 
     if (loaderRef.current) observer.observe(loaderRef.current);
@@ -212,7 +212,7 @@ export const AdminView: React.FC = () => {
         <div className="flex items-center gap-2 md:gap-3 px-4 md:px-6 py-2 md:py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner w-fit">
           <BookOpen size={16} strokeWidth={2.5} className="md:w-[18px] md:h-[18px]" />
           <span className="text-xs md:text-sm font-normal uppercase">
-            {t('chat.libraryBookCount', { count: totalBooks })}
+            {isInitialLoading ? <RefreshCw size={14} className="animate-spin inline-block" /> : t('chat.libraryBookCount', { count: totalBooks })}
           </span>
         </div>
       </div>
@@ -220,10 +220,9 @@ export const AdminView: React.FC = () => {
 
 
       {(bookActions.isCheckingGlobal || (isInitialLoading && books.length === 0)) && (
-        <div className="glass-panel p-20 flex flex-col items-center justify-center text-center animate-pulse z-50">
+        <div className="p-20 flex flex-col items-center justify-center text-center z-50">
           <Database className="w-16 h-16 text-[#0369a1] mb-6 animate-bounce" />
           <h3 className="text-xl font-normal text-[#1a1a1a]">{t('common.loading')}</h3>
-          <p className="text-slate-500 font-normal">{bookActions.isCheckingGlobal ? t('admin.table.uploading') : t('common.fetchingData')}</p>
         </div>
       )}
 

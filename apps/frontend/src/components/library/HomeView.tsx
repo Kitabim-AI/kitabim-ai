@@ -9,6 +9,7 @@ import { useAppContext } from '../../context/AppContext';
 export const HomeView: React.FC = () => {
   const {
     sortedBooks: books,
+    totalBooks,
     isLoading: isInitialLoading,
     isLoadingMoreShelf: isLoadingMore,
     hasMoreShelf: hasMore,
@@ -67,7 +68,7 @@ export const HomeView: React.FC = () => {
           loadMoreShelf();
         }
       },
-      { threshold: 0.1, rootMargin: '200px' }
+      { threshold: 0.1, rootMargin: '1200px' }
     );
     if (loaderRef.current) observer.observe(loaderRef.current);
     return () => observer.disconnect();
@@ -176,7 +177,7 @@ export const HomeView: React.FC = () => {
               </div>
             </div>
             <div className="px-4 sm:px-6 py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl text-xs sm:text-sm font-normal shadow-inner border border-[#0369a1]/5 w-fit">
-              <span className="opacity-60">{t('common.total')}</span> {books.length} <span className="opacity-60">{t('home.totalBooks')}</span>
+              <span className="opacity-60">{t('common.total')}</span> {isInitialLoading ? <RefreshCw size={12} className="inline-block animate-spin mx-1" /> : totalBooks} <span className="opacity-60">{t('home.totalBooks')}</span>
             </div>
           </div>
 
@@ -188,6 +189,18 @@ export const HomeView: React.FC = () => {
                 onClick={bookActions.openReader}
               />
             ))}
+
+            {isInitialLoading && books.length === 0 && (
+              <div className="col-span-full py-20 w-full flex flex-col items-center justify-center">
+                <div className="relative mb-6">
+                  <div className="w-16 h-16 border-4 border-[#0369a1]/10 border-t-[#0369a1] rounded-full animate-spin"></div>
+                  <div className="absolute inset-0 flex items-center justify-center text-[#0369a1]">
+                    <RefreshCw className="w-8 h-8 animate-pulse" />
+                  </div>
+                </div>
+                <h3 className="text-xl font-normal text-[#1a1a1a]">{t('common.loading')}</h3>
+              </div>
+            )}
           </div>
 
           {books.length === 0 && !isInitialLoading && (

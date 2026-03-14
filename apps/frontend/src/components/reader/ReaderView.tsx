@@ -217,7 +217,7 @@ export const ReaderView: React.FC = () => {
           fetchMorePages();
         }
       },
-      { threshold: 0.1, rootMargin: '400px' }
+      { threshold: 0.1, rootMargin: '1200px' }
     );
 
     if (observerTarget.current) {
