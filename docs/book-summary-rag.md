@@ -285,3 +285,15 @@ Steps 1–4 can be done without affecting production behavior. Step 5 is the liv
 - Chapter-level or section-level embeddings (can be added later as a third tier)
 - Summary regeneration when book content is edited (not currently supported anyway)
 - Exposing summaries via API or UI
+
+---
+
+## Caching Strategy
+
+The hierarchical RAG pipeline utilizes a 3-layer caching strategy via `CacheService`:
+
+1.  **Level 1: Embeddings**: Question embeddings are cached per query string (TTL: 1 hour).
+2.  **Level 2: Summary Search**: The set of `book_ids` returned from Stage 1 is cached (TTL: 1 hour).
+3.  **Level 3: Final Answer**: The complete LLM response and retrieved chunks are cached (TTL: 1 hour).
+
+Caching is automatically invalidated for a book when its content is modified or its summary is regenerated.

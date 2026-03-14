@@ -249,48 +249,90 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
 
   const renderPanelHeader = () => {
     return (
-      <div className="flex items-center justify-between gap-2 flex-shrink-0">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between px-1 sm:px-2 gap-3 flex-shrink-0 mb-2">
+        <div className="flex items-center gap-2 sm:gap-3">
           {issues.length > 0 && (
-            <span className="px-3 py-1 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl text-xs font-bold">
+            <span className="px-3 py-1.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl text-[10px] sm:text-xs font-bold whitespace-nowrap">
               {t('spellCheck.findingProgress', {
                 current: globalIssueOffset + stepperIndex + 1,
                 total: totalBookIssues ?? issues.length,
               })}
             </span>
           )}
-          {totalPages && (
-            <span className="px-3 py-1 bg-slate-100 text-slate-400 rounded-2xl text-xs font-bold">
-              {t('chat.pageNumber', { page: pageNumber })}
-              {' / '}
-              {totalPages}
-            </span>
+          
+          {/* Action buttons moved from context section */}
+          {!isEditingPhrase && pageText !== undefined && (
+            <div className="hidden sm:flex items-center gap-1.5">
+              <button
+                onClick={() => setShowPageModal(true)}
+                className="text-[10px] font-bold text-slate-400 px-3 py-1.5 bg-slate-100 rounded-xl hover:bg-slate-200 transition-all uppercase flex items-center gap-1.5 whitespace-nowrap"
+              >
+                <FileText size={12} />
+                {t('spellCheck.viewPage')} ({t('chat.pageNumber', { page: pageNumber })})
+              </button>
+              <button
+                onClick={() => {
+                  setIsEditingPhrase(true);
+                  setPhraseEdit(pageText || '');
+                }}
+                className="text-[10px] font-bold text-[#0369a1] px-3 py-1.5 bg-[#0369a1]/10 rounded-xl hover:bg-[#0369a1] hover:text-white transition-all uppercase flex items-center gap-1.5 whitespace-nowrap"
+              >
+                <Edit3 size={12} />
+                {t('common.edit')}
+              </button>
+            </div>
           )}
         </div>
-        {(onPrevPage) && (
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => {
-                if (isEditingPhrase) { setShowUnsavedGuard(true); setPendingNavAction(() => onPrevPage); }
-                else onPrevPage?.();
-              }}
-              className="p-1.5 text-slate-400 hover:text-[#0369a1] hover:bg-[#0369a1]/10 rounded-lg transition-all"
-              title={t('common.previous')}
-            >
-              <ChevronRight size={16} />
-            </button>
-            <button
-              onClick={() => {
-                if (isEditingPhrase) { setShowUnsavedGuard(true); setPendingNavAction(() => onNextPage); }
-                else onNextPage();
-              }}
-              className="p-1.5 text-slate-400 hover:text-[#0369a1] hover:bg-[#0369a1]/10 rounded-lg transition-all"
-              title={t('common.next')}
-            >
-              <ChevronLeft size={16} />
-            </button>
-          </div>
-        )}
+
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Mobile version of action buttons */}
+          {!isEditingPhrase && pageText !== undefined && (
+            <div className="sm:hidden flex items-center gap-1.5 mr-1">
+              <button
+                onClick={() => setShowPageModal(true)}
+                className="p-1.5 bg-slate-100 text-slate-400 rounded-lg hover:bg-slate-200 transition-all"
+                title={`${t('spellCheck.viewPage')} (${t('chat.pageNumber', { page: pageNumber })})`}
+              >
+                <FileText size={16} />
+              </button>
+              <button
+                onClick={() => {
+                  setIsEditingPhrase(true);
+                  setPhraseEdit(pageText || '');
+                }}
+                className="p-1.5 bg-[#0369a1]/10 text-[#0369a1] rounded-lg hover:bg-[#0369a1] hover:text-white transition-all"
+                title={t('common.edit')}
+              >
+                <Edit3 size={16} />
+              </button>
+            </div>
+          )}
+
+          {onPrevPage && (
+            <div className="flex items-center gap-1 border-r border-slate-100 pr-1.5 sm:pr-2 sm:mr-1">
+              <button
+                onClick={() => {
+                  if (isEditingPhrase) { setShowUnsavedGuard(true); setPendingNavAction(() => onPrevPage); }
+                  else onPrevPage?.();
+                }}
+                className="p-1.5 text-slate-400 hover:text-[#0369a1] hover:bg-[#0369a1]/10 rounded-lg transition-all"
+                title={t('common.previous')}
+              >
+                <ChevronRight size={18} />
+              </button>
+              <button
+                onClick={() => {
+                  if (isEditingPhrase) { setShowUnsavedGuard(true); setPendingNavAction(() => onNextPage); }
+                  else onNextPage();
+                }}
+                className="p-1.5 text-slate-400 hover:text-[#0369a1] hover:bg-[#0369a1]/10 rounded-lg transition-all"
+                title={t('common.next')}
+              >
+                <ChevronLeft size={18} />
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     );
   };
@@ -353,25 +395,6 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-2">
           <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">{t('chat.referenceTitle')}</span>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setShowPageModal(true)}
-              className="text-xs font-bold text-slate-400 px-3 py-1.5 bg-slate-100 rounded-lg hover:bg-slate-200 transition-all uppercase flex items-center gap-2"
-            >
-              <FileText size={12} />
-              {t('spellCheck.viewPage')}
-            </button>
-            <button
-              onClick={() => {
-                setIsEditingPhrase(true);
-                setPhraseEdit(pageText || '');
-              }}
-              className="text-xs font-bold text-[#0369a1] px-3 py-1.5 bg-[#0369a1]/10 rounded-lg hover:bg-[#0369a1] hover:text-white transition-all uppercase flex items-center gap-2"
-            >
-              <Edit3 size={12} />
-              {t('common.edit')}
-            </button>
-          </div>
         </div>
         <div className="uyghur-text leading-loose text-[#1a1a1a] whitespace-pre-wrap animate-fade-in" dir="rtl" style={{ fontSize: `${fontSize}px` }}>
           {ctx.before && <span>{ctx.before}</span>}
@@ -442,7 +465,7 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
     const visibleSuggestions = showMoreSuggestions ? suggestions : suggestions.slice(0, 3);
 
     return (
-      <div className={`bg-white/80 backdrop-blur-md border border-[#0369a1]/10 rounded-3xl p-4 sm:p-5 shadow-sm animate-fade-in${isEditingPhrase ? ' flex-1 flex flex-col min-h-0' : ' space-y-4'}`}>
+      <div className={`bg-white/80 backdrop-blur-md border border-[#0369a1]/10 rounded-3xl p-4 sm:p-6 shadow-sm animate-fade-in${isEditingPhrase ? ' flex-1 flex flex-col min-h-0' : ' flex flex-col gap-4'}`}>
         {/* Context section */}
         {renderContextSection()}
 
@@ -516,7 +539,7 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
             </div>
 
             {/* Skip / Ignore */}
-            <div className="flex gap-2">
+            <div className="flex gap-3">
               <button
                 onClick={() => handleSkip(activeIssue.id)}
                 disabled={isBusy}
@@ -585,7 +608,7 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
       )}
 
       {/* Body */}
-      <div className={`flex flex-col gap-3${isEditingPhrase ? ' flex-1 min-h-0' : ''}`}>
+      <div className={`flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden pr-0.5`}>
 
         {/* Rescanning spinner — no issues visible yet */}
         {isScanning && issues.length === 0 && (
@@ -624,6 +647,8 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
               </div>
             )}
             {renderActiveCard()}
+            {/* Safe area at the bottom to ensure buttons have space */}
+            <div className="h-6 sm:h-8 flex-shrink-0" />
           </div>
         )}
 

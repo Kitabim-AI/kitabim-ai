@@ -531,8 +531,9 @@ The system should target a total response latency of under **5 seconds** for typ
 **REQ-SCALE-005: Bulk Processing Efficiency**  
 The backend processing pipeline (OCR and Indexing) must support horizontally scalable workers. The system must be capable of processing a batch of 100 new books simultaneously without degrading the performance of the front-facing reading and chat applications.
 
-**REQ-SCALE-006: Semantic Caching**  
-The system should have the capability to cache answers to frequently asked or semantically similar questions across the corpus to reduce operational costs and provide near-instantaneous responses for common queries.
+**REQ-SCALE-006: Semantic Caching** (Implemented)  
+The system includes a Redis-backed caching layer that caches answers to frequently asked or semantically similar questions, as well as intermediate query embeddings and similarity search results. This reduces operational costs and provides near-instantaneous responses for common queries.
+
 
 ---
 

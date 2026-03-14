@@ -23,6 +23,9 @@ Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered readi
   - Orchestrates upload, job management, and RAG chat.
   - Exposes REST endpoints for books, chat, and admin dashboard.
   - Uses PostgreSQL for metadata + embeddings (pgvector).
+  - **Redis Caching Layer**: High-performance caching for books, categories, and RAG results.
+  - **Circuit Breaker**: Resilient protection for Redis and external AI services.
+
 
 - **Worker (`services/worker`)**
   - ARQ worker process for background orchestration.
@@ -56,7 +59,9 @@ flowchart LR
   DB -.->|Poll Events| WK
   BE <-->|PDF/Covers| GCS[(Google Cloud Storage)]
   WK <-->|PDF/Covers| GCS
+  BE <--Cache--> CACHE[(Redis Cache)]
 ```
+
 
 ## 4) Monorepo Structure
 ```
@@ -100,9 +105,10 @@ flowchart LR
 7. **Finalization**: Book marked `ready` when all pages reach their terminal milestones.
 
 ### B) RAG Chat
-1. Backend embeds query using interactive Gemini API (LangChain).
-2. Performs vector similarity search in PostgreSQL.
-3. Context + prompt passed to LLM via LangChain pipeline for answer generation.
+1. Backend embeds query using interactive Gemini API (LangChain). **(Level 1 Cache)**
+2. Performs vector similarity search in PostgreSQL. **(Level 2 Cache)**
+3. Context + prompt passed to LLM via LangChain pipeline for answer generation. **(Level 3 Cache)**
+
 
 ## 7) Gemini Integration Strategy
 - **Official SDK (`google-genai`)**: Used for **File API** operations where LangChain support is limited or direct control is required.
@@ -111,8 +117,10 @@ flowchart LR
 ## 8) Reliability & Observability
 - **Idempotency**: All jobs use standardized identifiers (e.g., `ocr_{book}_{page}`) to ensure results are mapped correctly even if retried.
 - **Cleanup**: Transient files in Gemini File API and local cache are deleted automatically after processing.
-- **Circuit Breaker**: Protects interactive services from LLM outages.
+- **Circuit Breaker**: Protects interactive services from LLM outages and Redis failures.
+- **Cache Service**: Centralized caching with lazy-loading and monitoring (`get_stats`).
 - **Worker Tracking**: Admin dashboard allows monitoring of real-time job states and detailed page-level progress.
+
 
 ## 9) Scalability
 - **Concurrency**: ARQ worker processes handles page-level tasks in parallel, providing high throughput.

@@ -168,8 +168,9 @@ test('Edit button opens page text editor with full page text', () => {
       pageText="teh quick brown fox"
     />
   );
-  const editBtn = screen.getByRole('button', { name: /common\.edit/i });
-  fireEvent.click(editBtn);
+  // Desktop view button has text, mobile has title. Both match.
+  const editBtns = screen.getAllByRole('button', { name: /common\.edit/i });
+  fireEvent.click(editBtns[0]);
   const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
   expect(textarea.value).toBe('teh quick brown fox');
 });

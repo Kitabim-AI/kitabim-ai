@@ -2,16 +2,32 @@ import { renderHook, act } from '@testing-library/react';
 import { useBooks } from '@/src/hooks/useBooks';
 import { PersistenceService } from '@/src/services/persistenceService';
 import { expect, test, vi, beforeEach } from 'vitest';
+import React from 'react';
+import { AuthProvider } from '@/src/hooks/useAuth';
+import { AppProvider } from '@/src/context/AppContext';
+import { NotificationProvider } from '@/src/context/NotificationContext';
 
 vi.mock('@/src/services/persistenceService', () => ({
   PersistenceService: {
-    getGlobalLibrary: vi.fn()
+    getGlobalLibrary: vi.fn(),
+    getRandomProverb: vi.fn().mockResolvedValue({ text: 'Test Proverb', author: 'Author' })
   }
 }));
+
+const Wrapper = ({ children }: { children: React.ReactNode }) => (
+  <NotificationProvider>
+    <AuthProvider>
+      <AppProvider>
+        {children}
+      </AppProvider>
+    </AuthProvider>
+  </NotificationProvider>
+);
 
 beforeEach(() => {
   vi.clearAllMocks();
   sessionStorage.clear();
+  (PersistenceService.getRandomProverb as any).mockResolvedValue({ text: 'Mock Proverb', author: 'Author' });
 });
 
 test('useBooks fetches library data on refresh', async () => {
@@ -22,7 +38,13 @@ test('useBooks fetches library data on refresh', async () => {
   };
   (PersistenceService.getGlobalLibrary as any).mockResolvedValue(mockResponse);
 
-  const { result } = renderHook(() => useBooks('library', '', 10, 1));
+  const { result } = renderHook(() => useBooks('library', '', 10, 1), { wrapper: Wrapper });
+
+  // Initial call from useEffect will consume one mock or the default mockResolvedValue
+  // Wait for loading to finish
+  await act(async () => {
+    // Wait for the effect
+  });
 
   await act(async () => {
     await result.current.refreshLibrary();
@@ -34,19 +56,7 @@ test('useBooks fetches library data on refresh', async () => {
 });
 
 test.skip('useBooks handles sorting', () => {
-  const { result } = renderHook(() => useBooks('admin', '', 10, 1));
-
-  act(() => {
-    result.current.toggleSort('title');
-  });
-
-  expect(result.current.sortConfig.key).toBe('title');
-  expect(sessionStorage.getItem('kitabim_sort_config')).toContain('title');
-
-  act(() => {
-    result.current.toggleSort('title');
-  });
-  expect(result.current.sortConfig.direction).toBe('asc');
+  // Skipping as useBooks no longer supports toggleSort
 });
 
 test('useBooks handles loadMoreShelf', async () => {
@@ -61,14 +71,17 @@ test('useBooks handles loadMoreShelf', async () => {
     totalReady: 24
   };
 
-  (PersistenceService.getGlobalLibrary as any)
-    .mockResolvedValueOnce(firstBatch)
-    .mockResolvedValueOnce(secondBatch);
+  (PersistenceService.getGlobalLibrary as any).mockImplementation((page: number) => {
+    if (page === 1) return Promise.resolve(firstBatch);
+    if (page === 2) return Promise.resolve(secondBatch);
+    return Promise.resolve({ books: [], total: 24, totalReady: 24 });
+  });
 
-  const { result } = renderHook(() => useBooks('library', '', 10, 1));
+  const { result } = renderHook(() => useBooks('library', '', 10, 1), { wrapper: Wrapper });
 
+  // Wait for initial load
   await act(async () => {
-    await result.current.refreshLibrary();
+    // useEffect load
   });
 
   expect(result.current.books).toHaveLength(12);

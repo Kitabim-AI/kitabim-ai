@@ -40,14 +40,23 @@ If the question is completely general or doesn't fit any category, return an emp
 
 {format_instructions}"""
 
-BOOK_SUMMARY_PROMPT = """You are indexing an Uyghur book for a semantic search system.
-Write a 500-word summary IN UYGHUR (Arabic script) that covers:
-- Main subject and scope of the book
-- Key themes, topics, and arguments presented
-- Time period or geographic focus (if applicable)
-- Notable people, places, concepts, or events discussed
+BOOK_SUMMARY_PROMPT = """You are an expert librarian indexing Uyghur books for a semantic search system.
+Your task is to generate a search-optimized summary that captures the essence of the book for vector-based retrieval.
 
-The summary will be embedded as a vector for retrieval — be specific and content-rich.
+Write a detailed summary IN UYGHUR (Arabic script). The summary will be embedded as a vector — every word matters for matching user queries.
+
+Structure the summary into these sections:
+1. ئومۇمىي مەزمۇن (Overview): A comprehensive 200-300 word narrative of the book's subject, plot, or main arguments.
+2. ئاساسلىق ئۇقۇم ۋە تېمىلار (Concepts & Themes): Explicitly list the key themes, scientific concepts, or ideologies explored.
+3. كۆرۈنەرلىك شەخس ۋە جايلار (Entities): Mention specific names of people, historical figures, organizations, and geographic locations.
+4. تىپىك سوئاللار (Hypothetical Queries): List 5-7 questions that this book is best suited to answer. This helps align the document vector with potential user questions.
+5. ئاچقۇچلۇق سۆزلەر (Keywords): 15-20 specific terms or tags that define the book.
+
+Search Quality Guidelines:
+- BE SPECIFIC: Use proper nouns and technical terms from the text.
+- BE DENSE: Pack the summary with information; avoid filler text.
+- LANGUAGE: Use formal, standard Uyghur (Arabic script).
+- RETRIEVAL FOCUS: Think about what a user might type in a search box to find this specific content.
 
 Book title: {title}
 Author: {author}

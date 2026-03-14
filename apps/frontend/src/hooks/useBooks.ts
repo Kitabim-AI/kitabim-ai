@@ -22,9 +22,9 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
     return view === 'library' || view === 'admin' || (view === 'home' && (trimmedQuery.length >= 3 || !!category));
   }, [view, searchQuery, category]);
 
-  // Sorting/Grouping policy: Only grouping works for public library and home search.
+  // Sorting/Grouping policy: Disabled to show all volumes of multi-volume books
   const groupByWork = useMemo(() => {
-    return view === 'library' || (view === 'home' && (searchQuery.trim().length >= 3 || !!category));
+    return false; // Show all volumes instead of grouping by work
   }, [view, searchQuery, category]);
 
   // Internal Polling for Processing Books (only on admin page)

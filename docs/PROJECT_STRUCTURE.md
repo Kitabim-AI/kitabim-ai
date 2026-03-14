@@ -109,7 +109,9 @@ packages/backend-core/
 └── app/
     ├── core/                # Configuration and constants
     │   ├── config.py        # Environment settings
+    │   ├── cache_config.py  # Redis key patterns and TTLs
     │   └── prompts.py       # AI prompts for OCR, RAG, etc.
+
     ├── db/                  # Database layer
     │   ├── postgres.py      # Connection and session management
     │   ├── repositories/    # Repository pattern implementations
@@ -122,13 +124,17 @@ packages/backend-core/
     │   ├── schemas.py       # API request/response models
     │   └── user.py          # User models
     ├── services/            # Shared Business services
+    │   ├── cache_service.py # Redis-backed caching with circuit breaker
     │   ├── pdf_service.py   # PDF upload, OCR orchestration
+
     │   ├── rag_service.py   # RAG retrieval and chat
     │   ├── ocr_service.py   # Gemini OCR calls
     │   ├── chunking_service.py  # Semantic text chunking
     │   └── token_service.py # JWT token management
     ├── utils/               # Utilities
+    │   ├── circuit_breaker.py # Redis-backed asynchronous circuit breaker
     │   ├── errors.py        # Exception definitions
+
     │   └── text_helpers.py  # Text cleaning/normalization
     ├── queue.py             # Redis/ARQ queue client
     └── jobs.py              # Shared job utilities
@@ -246,7 +252,9 @@ docs/
 | Validation | Pydantic | Request/response validation |
 | Database | PostgreSQL 16+ | Primary data store |
 | Vector Search | pgvector | Semantic similarity search |
+| Caching | Redis | High-speed cache for books/RAG |
 | Queue | Redis + ARQ | Background job processing |
+
 | AI Platform | Google Gemini | OCR and chat LLM |
 | AI Framework | LangChain | AI orchestration |
 | PDF Processing | PyMuPDF (fitz) | PDF parsing and rendering |
@@ -716,4 +724,5 @@ All services communicate via well-defined interfaces (REST API, Redis queue, Pos
 
 ---
 
-*Last Updated: 2026-02-19*
+*Last Updated: 2026-03-14*
+

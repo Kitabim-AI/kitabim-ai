@@ -7,6 +7,7 @@ from typing import Optional
 from urllib.parse import urlencode
 
 import httpx
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from app.core.config import settings
 from .base import OAuthProvider, ProviderUserInfo
@@ -65,6 +66,12 @@ class GoogleOAuthProvider(OAuthProvider):
         }
         return f"{self.AUTH_URL}?{urlencode(params)}"
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type((httpx.TimeoutException, httpx.ConnectTimeout, httpx.ReadTimeout)),
+        reraise=True
+    )
     async def exchange_code_for_tokens(self, code: str, code_verifier: Optional[str] = None) -> dict:
         """
         Exchange authorization code for access and ID tokens.
@@ -79,7 +86,9 @@ class GoogleOAuthProvider(OAuthProvider):
         Raises:
             httpx.HTTPStatusError: If token exchange fails
         """
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        # Increase timeout to 60 seconds to handle slow networks and Google API delays
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            logger.debug(f"Exchanging OAuth code with Google (timeout=60s)...")
             response = await client.post(
                 self.TOKEN_URL,
                 data={
@@ -96,8 +105,15 @@ class GoogleOAuthProvider(OAuthProvider):
                 logger.error(f"Google token exchange failed: {response.status_code} - {response.text}")
                 response.raise_for_status()
 
+            logger.debug("Google token exchange successful")
             return response.json()
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type((httpx.TimeoutException, httpx.ConnectTimeout, httpx.ReadTimeout)),
+        reraise=True
+    )
     async def get_user_info(self, access_token: str) -> ProviderUserInfo:
         """
         Fetch user profile from Google using access token.
@@ -112,7 +128,9 @@ class GoogleOAuthProvider(OAuthProvider):
             httpx.HTTPStatusError: If user info fetch fails
             ValueError: If response is missing required fields
         """
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        # Increase timeout to 60 seconds to handle slow networks and Google API delays
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            logger.debug(f"Fetching user info from Google (timeout=60s)...")
             response = await client.get(
                 self.USERINFO_URL,
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -128,6 +146,7 @@ class GoogleOAuthProvider(OAuthProvider):
             if not data.get("id") or not data.get("email"):
                 raise ValueError("Missing required user info fields from Google")
 
+            logger.debug(f"Google user info fetch successful for: {data['email']}")
             return ProviderUserInfo(
                 provider_id=data["id"],
                 email=data["email"],

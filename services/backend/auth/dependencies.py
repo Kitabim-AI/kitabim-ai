@@ -14,8 +14,12 @@ from app.services.user_service import get_user_by_id
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_session
+from app.services.cache_service import cache_service
+from app.core import cache_config
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
 
 # HTTPBearer with auto_error=False to allow guest access
 security = HTTPBearer(auto_error=False)
@@ -45,7 +49,16 @@ async def get_current_user_optional(
     
     try:
         payload = decode_jwt(credentials.credentials, expected_type="access")
-        user = await get_user_by_id(db, payload["sub"])
+        user_id = payload["sub"]
+        
+        # Cache Lookup
+        cache_key = cache_config.KEY_USER.format(user_id=user_id)
+        cached_user = await cache_service.get(cache_key)
+        if cached_user:
+            return User.model_validate(cached_user)
+
+        # DB Fetch
+        user = await get_user_by_id(db, user_id)
         
         if not user:
             raise HTTPException(
@@ -54,7 +67,15 @@ async def get_current_user_optional(
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
+        # Cache User Result
+        await cache_service.set(
+            cache_key, 
+            user.model_dump(mode='json'), 
+            ttl=settings.cache_ttl_user_profile
+        )
+
         if not user.is_active:
+
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="User account is disabled",
