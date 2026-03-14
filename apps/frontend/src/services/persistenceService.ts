@@ -57,14 +57,14 @@ export const PersistenceService = {
     }
   },
 
-  async getGlobalLibrary(page: number = 1, pageSize: number = 10, q?: string, sortBy: string = 'title', order: number = 1, groupByWork: boolean = false, category?: string, signal?: AbortSignal): Promise<PaginatedBooks> {
+  async getGlobalLibrary(page: number = 1, pageSize: number = 10, q?: string, sortBy: string = 'title', order: number = 1, groupByWork: boolean = false, category?: string): Promise<PaginatedBooks> {
     try {
       let url = `${API_BASE}/books/?page=${page}&pageSize=${pageSize}&sortBy=${sortBy}&order=${order}`;
       if (q && q.trim()) url += `&q=${encodeURIComponent(q.trim())}`;
       if (category && category.trim()) url += `&category=${encodeURIComponent(category.trim())}`;
       if (groupByWork) url += `&groupByWork=true`;
 
-      const response = await authFetch(url, { signal });
+      const response = await authFetch(url);
       if (!response.ok) throw new Error("Failed to fetch");
       const data = await response.json();
       return {

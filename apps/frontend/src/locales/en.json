@@ -496,17 +496,37 @@
       "message": "Are you sure you want to retry failed pages from their current step?",
       "confirm": "Retry Now"
     },
-    "reprocessOcr": { "title": "Reprocess OCR" },
-    "reprocessChunking": { "title": "Reprocess Chunking" },
-    "reprocessEmbedding": { "title": "Reprocess Embedding" },
-    "reprocessWordIndex": { "title": "Reprocess Word Index" },
-    "reprocessSpellCheck": { "title": "Reprocess Spell Check" },
+    "reprocessOcr": {
+      "title": "Reprocess OCR"
+    },
+    "reprocessChunking": {
+      "title": "Reprocess Chunking"
+    },
+    "reprocessEmbedding": {
+      "title": "Reprocess Embedding"
+    },
+    "reprocessWordIndex": {
+      "title": "Reprocess Word Index"
+    },
+    "reprocessSpellCheck": {
+      "title": "Reprocess Spell Check"
+    },
     "reprocess": {
-      "ocr": { "message": "Are you sure you want to reprocess all pages from the OCR step? All current text will be deleted." },
-      "chunking": { "message": "Are you sure you want to reprocess all pages from the Chunking step? Existing chunks will be deleted." },
-      "embedding": { "message": "Are you sure you want to reprocess all pages and chunks from the Embedding step?" },
-      "word-index": { "message": "Are you sure you want to regenerate the Word Index?" },
-      "spell-check": { "message": "Are you sure you want to re-run Spell Check?" }
+      "ocr": {
+        "message": "Are you sure you want to reprocess all pages from the OCR step? All current text will be deleted."
+      },
+      "chunking": {
+        "message": "Are you sure you want to reprocess all pages from the Chunking step? Existing chunks will be deleted."
+      },
+      "embedding": {
+        "message": "Are you sure you want to reprocess all pages and chunks from the Embedding step?"
+      },
+      "word-index": {
+        "message": "Are you sure you want to regenerate the Word Index?"
+      },
+      "spell-check": {
+        "message": "Are you sure you want to re-run Spell Check?"
+      }
     },
     "redoOcrError": {
       "title": "Re-OCR Error",
@@ -537,6 +557,7 @@
   "auth": {
     "signIn": "Sign In",
     "loginWithGoogle": "Login with Google",
+    "loginWith": "with",
     "loginWithFacebook": "Login with Facebook",
     "loginWithTwitter": "Login with X",
     "loggingIn": "Logging in...",

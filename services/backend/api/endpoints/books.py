@@ -135,33 +135,19 @@ async def get_books(
     from app.db.models import Page as PageDB
     from app.models.schemas import Book as BookSchema
 
-    skip = (page - 1) * pageSize
-
-    # Build base query conditions
+    # --- PART 1: Define Filters ---
+    # conditions: for the main list (total)
+    # ready_conditions: for the 'ready' list (total_ready) - only relevant for admins/editors
     conditions = []
-    
-    import logging
-    logger = logging.getLogger("app.api.books")
-    logger.info(f"Search request: q={repr(q)}, category={repr(category)}, groupByWork={groupByWork}")
-
-    # Guest access restriction
     if current_user is None:
         conditions.append(BookDB.status == "ready")
         conditions.append(or_(BookDB.visibility == "public", BookDB.visibility is None))
-
-    # Category filter
+    
     if category:
         conditions.append(category == any_(BookDB.categories))
 
-    # Search filter
     if q:
-        if '\u0626' in q:
-            q_alt = q.replace('\u0626', '\u064A\u0654')
-        elif '\u064A\u0654' in q:
-            q_alt = q.replace('\u064A\u0654', '\u0626')
-        else:
-            q_alt = q
-        
+        q_alt = q.replace('\u0626', '\u064A\u0654') if '\u0626' in q else (q.replace('\u064A\u0654', '\u0626') if '\u064A\u0654' in q else q)
         search_filter = or_(
             BookDB.title.ilike(f"%{q}%"),
             BookDB.author.ilike(f"%{q}%"),
@@ -171,47 +157,67 @@ async def get_books(
             q_alt == any_(BookDB.categories)
         )
         conditions.append(search_filter)
-        logger.info(f"Applied search filter: q={repr(q)}, q_alt={repr(q_alt)}")
 
-    # Base query for counting
-    total_stmt = select(func.count(BookDB.id))
-    if conditions:
-        total_stmt = total_stmt.where(and_(*conditions))
+    # --- PART 2: Optimized Counting ---
+    # Only calculate total_ready if the user can see more than just ready books
+    can_see_all = current_user and current_user.role in ['admin', 'editor']
     
-    total_res = await session.execute(total_stmt)
-    total = total_res.scalar() or 0
-    # Query for total ready (publicly accessible) books count for UI stats
-    subq_ready_cond = [
-        BookDB.status == "ready",
-        or_(BookDB.visibility == "public", BookDB.visibility is None)
-    ]
-    if category:
-        subq_ready_cond.append(category == any_(BookDB.categories))
-    if q:
-        q_alt = q.replace('\u0626', '\u064A\u0654') if '\u0626' in q else (q.replace('\u064A\u0654', '\u0626') if '\u064A\u0654' in q else q)
-        subq_ready_cond.append(or_(
-            BookDB.title.ilike(f"%{q}%"), BookDB.author.ilike(f"%{q}%"),
-            BookDB.title.ilike(f"%{q_alt}%"), BookDB.author.ilike(f"%{q_alt}%"),
-            q == any_(BookDB.categories), q_alt == any_(BookDB.categories)
-        ))
-
     if groupByWork:
-        ready_stmt = select(func.count()).select_from(
-            select(BookDB.title, BookDB.author, BookDB.volume)
-            .where(and_(*subq_ready_cond))
-            .group_by(BookDB.title, BookDB.author, BookDB.volume)
+        # Count unique works (title, author)
+        count_stmt = select(func.count()).select_from(
+            select(BookDB.title, BookDB.author)
+            .where(and_(*conditions))
+            .distinct()
             .subquery()
         )
+        total_res = await session.execute(count_stmt)
+        total = total_res.scalar() or 0
+        
+        if can_see_all:
+            # Admins need total_ready as well (filtered for only 'ready' books)
+            ready_conditions = [BookDB.status == "ready", or_(BookDB.visibility == "public", BookDB.visibility is None)]
+            if category: ready_conditions.append(category == any_(BookDB.categories))
+            if q:
+                q_alt = q.replace('\u0626', '\u064A\u0654') if '\u0626' in q else (q.replace('\u064A\u0654', '\u0626') if '\u064A\u0654' in q else q)
+                ready_conditions.append(or_(
+                    BookDB.title.ilike(f"%{q}%"), BookDB.author.ilike(f"%{q}%"),
+                    BookDB.title.ilike(f"%{q_alt}%"), BookDB.author.ilike(f"%{q_alt}%"),
+                    q == any_(BookDB.categories), q_alt == any_(BookDB.categories)
+                ))
+            
+            ready_count_stmt = select(func.count()).select_from(
+                select(BookDB.title, BookDB.author)
+                .where(and_(*ready_conditions))
+                .distinct()
+                .subquery()
+            )
+            total_ready_res = await session.execute(ready_count_stmt)
+            total_ready = total_ready_res.scalar() or 0
+        else:
+            total_ready = total
     else:
-        ready_stmt = select(func.count(BookDB.id)).where(and_(*subq_ready_cond))
-    
-    total_ready_res = await session.execute(ready_stmt)
-    total_ready = total_ready_res.scalar() or 0
-    logger.info(f"Total ready count: {total_ready}")
+        # Standard flat count
+        total_res = await session.execute(select(func.count(BookDB.id)).where(and_(*conditions)))
+        total = total_res.scalar() or 0
+        if can_see_all:
+            ready_conditions = [BookDB.status == "ready", or_(BookDB.visibility == "public", BookDB.visibility is None)]
+            if category: ready_conditions.append(category == any_(BookDB.categories))
+            if q:
+                q_alt = q.replace('\u0626', '\u064A\u0654') if '\u0626' in q else (q.replace('\u064A\u0654', '\u0626') if '\u064A\u0654' in q else q)
+                ready_conditions.append(or_(
+                    BookDB.title.ilike(f"%{q}%"), BookDB.author.ilike(f"%{q}%"),
+                    BookDB.title.ilike(f"%{q_alt}%"), BookDB.author.ilike(f"%{q_alt}%"),
+                    q == any_(BookDB.categories), q_alt == any_(BookDB.categories)
+                ))
+            total_ready_res = await session.execute(select(func.count(BookDB.id)).where(and_(*ready_conditions)))
+            total_ready = total_ready_res.scalar() or 0
+        else:
+            total_ready = total
 
-    # Main data fetching
+    # --- PART 3: Main Data Fetching ---
     if groupByWork:
-        # Optimized grouping: Pick one representative book per (title, author, volume)
+        # Optimized grouping: Pick the LATEST volume per (title, author)
+        # and attach the series arrival date for sorting.
         from sqlalchemy.orm import aliased
         
         inner_stmt = (
@@ -220,46 +226,26 @@ async def get_books(
                 func.max(BookDB.upload_date).over(partition_by=[BookDB.title, BookDB.author]).label("series_latest")
             )
             .where(and_(*conditions))
-            .distinct(BookDB.title, BookDB.author, BookDB.volume)
-            .order_by(BookDB.title, BookDB.author, BookDB.volume, BookDB.upload_date.desc())
+            .distinct(BookDB.title, BookDB.author) # Truly group works
+            .order_by(BookDB.title, BookDB.author, BookDB.upload_date.desc())
         ).subquery()
         
-        # This allows us to select full Book objects from the subquery result
         book_alias = aliased(BookDB, inner_stmt)
-        
-        # Calculate total work count for pagination
-        total_stmt = select(func.count()).select_from(inner_stmt)
-        total_res = await session.execute(total_stmt)
-        total = total_res.scalar() or 0
-
-        # Fetch paginated works as ORM objects (scalars works now)
         main_stmt = select(book_alias)
+        
         if order == -1:
-            main_stmt = main_stmt.order_by(
-                inner_stmt.c.series_latest.desc(), 
-                inner_stmt.c.title.asc(), 
-                inner_stmt.c.author.asc(),
-                inner_stmt.c.volume.asc().nulls_first()
-            )
+            main_stmt = main_stmt.order_by(inner_stmt.c.series_latest.desc(), inner_stmt.c.title.asc())
         else:
-            main_stmt = main_stmt.order_by(
-                inner_stmt.c.series_latest.asc(), 
-                inner_stmt.c.title.asc(), 
-                inner_stmt.c.author.asc(),
-                inner_stmt.c.volume.asc().nulls_first()
-            )
+            main_stmt = main_stmt.order_by(inner_stmt.c.series_latest.asc(), inner_stmt.c.title.asc())
         
         main_stmt = main_stmt.offset(skip).limit(pageSize)
         result = await session.execute(main_stmt)
         books_objs = result.scalars().all()
     else:
         # Standard flat list fetch
-        stmt = select(BookDB)
-        if conditions:
-            stmt = stmt.where(and_(*conditions))
+        stmt = select(BookDB).where(and_(*conditions))
         
         if sortBy == "uploadDate":
-            # Keep series (works) together even in flat list
             series_latest = func.max(BookDB.upload_date).over(partition_by=[BookDB.title, BookDB.author])
             if order == -1:
                 stmt = stmt.order_by(series_latest.desc(), BookDB.title.asc(), BookDB.volume.asc().nulls_first())
@@ -274,7 +260,7 @@ async def get_books(
         result = await session.execute(stmt)
         books_objs = result.scalars().all()
 
-    # Step 3: Efficiently model validation and batch stats fetch
+    # --- PART 4: Asset Serialization & Batch Stats ---
     import json
     books_data = []
     repo = BooksRepository(session)
@@ -299,7 +285,6 @@ async def get_books(
         }
         books_data.append(BookSchema.model_validate(b_dict))
 
-    # --- PART 4: Optimized Batch Stats Fetching (Solves N+1 Problem) ---
     if books_data:
         book_ids = [str(b.id) for b in books_data]
         batch_stats = await repo.get_batch_stats(book_ids)
@@ -1413,15 +1398,34 @@ async def update_book_details(
 @router.get("/{book_id}/summary")
 async def get_book_summary(
     book_id: str,
-    current_user: User = Depends(require_reader),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_session),
 ):
-    """Return the AI-generated semantic summary for a book."""
+    """Return the AI-generated semantic summary for a book.
+
+    Allows guest access for public books.
+    """
     from app.db.repositories.book_summaries import BookSummariesRepository
+    from app.db.repositories.books import BooksRepository
+
+    # Check if book exists and is accessible to current user
+    books_repo = BooksRepository(session)
+    book_obj = await books_repo.get(book_id)
+    if not book_obj:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+
+    # Check access permission for guests (directly access book attributes)
+    if not current_user:
+        # Guest access: only allow if book is public and ready
+        book_status = getattr(book_obj, 'status', None)
+        book_visibility = getattr(book_obj, 'visibility', 'public')
+        if book_status != 'ready' or book_visibility != 'public':
+            raise HTTPException(status_code=401, detail=t("errors.authentication_required"))
+
     summaries_repo = BookSummariesRepository(session)
     summary = await summaries_repo.get_by_book_id(book_id)
     if not summary:
-        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+        raise HTTPException(status_code=404, detail=t("errors.book_summary_not_found"))
     return {"summary": summary.summary, "generated_at": summary.generated_at}
 
 

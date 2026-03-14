@@ -11,6 +11,7 @@ from app.models.user import User, UserRole
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.repositories.users import UsersRepository
 from app.db.models import User as UserDB
+from app.utils.security import hash_ip_if_present
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +53,21 @@ async def create_user(
     avatar_url: Optional[str] = None,
     last_login_ip: Optional[str] = None,
 ) -> User:
-    """Create a new user in the database."""
+    """Create a new user in the database.
+
+    Args:
+        session: Database session
+        email: User email
+        display_name: User display name
+        provider: OAuth provider name
+        provider_id: Provider-specific user ID
+        role: User role
+        avatar_url: Optional avatar URL
+        last_login_ip: Optional raw IP address (will be hashed before storage)
+    """
     now = datetime.now(timezone.utc)
     user_id = str(uuid.uuid4())
-    
+
     user_obj = UserDB(
         id=user_id,
         email=email.lower(),
@@ -67,7 +79,7 @@ async def create_user(
         created_at=now,
         updated_at=now,
         last_login_at=now,
-        last_login_ip=last_login_ip,
+        last_login_ip=hash_ip_if_present(last_login_ip),  # Hash for privacy
         is_active=True,
     )
     
@@ -79,17 +91,25 @@ async def create_user(
 
 
 async def update_user_login(session: AsyncSession, user_id: str, avatar_url: Optional[str] = None, ip_address: Optional[str] = None) -> None:
-    """Update user's last login time, IP address and optionally their avatar."""
+    """Update user's last login time, IP address (hashed) and optionally their avatar.
+
+    Args:
+        session: Database session
+        user_id: User ID to update
+        avatar_url: Optional new avatar URL
+        ip_address: Optional raw IP address (will be hashed before storage for privacy)
+    """
     repo = UsersRepository(session)
     update_data = {
         "last_login_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
     }
     if ip_address:
-        update_data["last_login_ip"] = ip_address
+        # Hash IP address for privacy compliance (GDPR, etc.)
+        update_data["last_login_ip"] = hash_ip_if_present(ip_address)
     if avatar_url:
         update_data["avatar_url"] = avatar_url
-    
+
     try:
         await repo.update_one(user_id, **update_data)
         await session.flush()

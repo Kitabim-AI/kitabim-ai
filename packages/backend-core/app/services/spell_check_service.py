@@ -164,8 +164,10 @@ def insertion_variants(word: str) -> list[str]:
 # ── DB helpers ─────────────────────────────────────────────────────────────────
 
 async def find_unknown_words(session: AsyncSession, words: list[str]) -> set[str]:
+    """Find words not in dictionary. Uses parameterized query (safe from SQL injection)."""
     if not words:
         return set()
+    # Safe: words is bound as a parameter, not interpolated into SQL string
     result = await session.execute(
         text(
             "SELECT unnest(CAST(:words AS text[])) AS w "
@@ -181,7 +183,10 @@ async def find_unknown_words(session: AsyncSession, words: list[str]) -> set[str
 async def index_book_words(
     session: AsyncSession, book_id: str, word_counts: dict[str, int]
 ) -> None:
-    """Upsert normalized word forms and increment counts in book_word_index."""
+    """Upsert normalized word forms and increment counts in book_word_index.
+
+    Uses parameterized query (safe from SQL injection).
+    """
     if not word_counts:
         return
 
@@ -190,6 +195,7 @@ async def index_book_words(
     words = [item[0] for item in sorted_items]
     counts = [item[1] for item in sorted_items]
 
+    # Safe: all values are bound as parameters, not interpolated
     await session.execute(
         text("""
             INSERT INTO book_word_index (book_id, word, occurrence_count)

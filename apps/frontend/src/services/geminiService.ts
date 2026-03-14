@@ -32,7 +32,13 @@ export const extractUyghurText = async (base64Image: string, retries = 5): Promi
   return '';
 };
 
-export const chatWithBook = async (question: string, bookId: string, currentPage?: number, history: { role: string, text: string }[] = []): Promise<string> => {
+export const chatWithBook = async (
+  question: string, 
+  bookId: string, 
+  currentPage?: number, 
+  history: { role: string, text: string }[] = [],
+  onUsageUpdate?: (usage: any) => void
+): Promise<string> => {
   try {
     const response = await authFetch(`${API_BASE}/chat/`, {
       method: 'POST',
@@ -60,6 +66,9 @@ export const chatWithBook = async (question: string, bookId: string, currentPage
       return "كەچۈرۈڭ، سېستىما خاتالىقى كۆرۈلدى (500).";
     }
     const data = await response.json();
+    if (onUsageUpdate && data.usage) {
+      onUsageUpdate(data.usage);
+    }
     return data.answer;
   } catch (err) {
     console.error("Chat Error:", err);
@@ -76,7 +85,8 @@ export const chatWithBookStream = async (
   onComplete: () => void,
   onError: (error: string) => void,
   signal?: AbortSignal,
-  onCorrection?: (correctedText: string) => void
+  onCorrection?: (correctedText: string) => void,
+  onUsageUpdate?: (usage: any) => void
 ): Promise<void> => {
   try {
     const response = await authFetch(`${API_BASE}/chat/stream`, {
@@ -148,6 +158,9 @@ export const chatWithBookStream = async (
                 onCorrection(data.correction);
               }
             } else if (data.done) {
+              if (onUsageUpdate && data.usage) {
+                onUsageUpdate(data.usage);
+              }
               onComplete();
               return;
             }

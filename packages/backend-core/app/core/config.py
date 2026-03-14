@@ -27,6 +27,8 @@ class Settings:
 
     # Database
     database_url: str | None = os.getenv("DATABASE_URL")  # PostgreSQL connection string
+    db_pool_size: int = int(os.getenv("DB_POOL_SIZE", "10"))
+    db_max_overflow: int = int(os.getenv("DB_MAX_OVERFLOW", "10"))
 
     # Storage
     storage_backend: str = os.getenv("STORAGE_BACKEND", "local")
@@ -106,6 +108,15 @@ class Settings:
 
     # Cookie Security (set COOKIE_SECURE=false for local HTTP dev)
     cookie_secure: bool = os.getenv("COOKIE_SECURE", "true").lower() == "true"
+
+    # CORS Settings - Allowed origins for API access
+    cors_origins: str = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:30080")
+
+    # Environment (development, staging, production)
+    environment: str = os.getenv("ENVIRONMENT", "development")
+
+    # IP hashing salt (for privacy-compliant IP storage)
+    ip_salt: str = os.getenv("IP_SALT", "")
 
 
 settings = Settings()

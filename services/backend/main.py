@@ -6,6 +6,9 @@ import uuid
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from api.endpoints import ai, auth, books, chat, users, system_configs, stats, contact, spell_check
 from app.core.config import settings
@@ -30,13 +33,16 @@ async def lifespan(app: FastAPI):
     configure_langchain()
     I18n.load_translations()
     
-    # Validate JWT secret key at startup
+    # Validate JWT secret key at startup (fail fast in production)
     logger = logging.getLogger("app.startup")
     try:
         validate_jwt_secret()
     except ValueError as e:
-        log_json(logger, logging.WARNING, "JWT secret validation warning", error=str(e))
-        log_json(logger, logging.WARNING, "Authentication features will not work properly")
+        log_json(logger, logging.ERROR, "JWT secret validation failed", error=str(e))
+        if settings.environment == "production":
+            raise RuntimeError(f"Cannot start in production without valid JWT secret: {e}")
+        else:
+            log_json(logger, logging.WARNING, "Authentication features will not work properly")
 
     # Initialize SQLAlchemy (replaces db_manager.connect_to_storage())
     await init_db()
@@ -58,6 +64,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title=settings.project_name, lifespan=lifespan)
+
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 @app.middleware("http")
 async def add_request_id(request: Request, call_next):
@@ -97,12 +108,43 @@ async def add_language_header(request: Request, call_next):
     response = await call_next(request)
     return response
 
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Add security headers to all responses"""
+    response = await call_next(request)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    if settings.environment == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    # Content Security Policy - adjust as needed for your frontend
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https:; "
+        "font-src 'self' data:; "
+        "connect-src 'self' https://accounts.google.com https://graph.facebook.com"
+    )
+    return response
+
+@app.middleware("http")
+async def enforce_https(request: Request, call_next):
+    """Redirect HTTP to HTTPS in production"""
+    if settings.environment == "production" and request.url.scheme != "https":
+        https_url = str(request.url).replace("http://", "https://", 1)
+        return RedirectResponse(url=https_url, status_code=301)
+    return await call_next(request)
+
+# CORS Configuration - Allow only specific origins
+allowed_origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "Accept-Language", "X-Request-ID"],
+    expose_headers=["X-Request-ID"],
 )
 
 @app.get("/api/covers/{book_id}.jpg")

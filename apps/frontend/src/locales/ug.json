@@ -554,8 +554,9 @@
     }
   },
   "auth": {
-    "signIn": "سېستىمىغا كىرىڭ",
+    "signIn": "كىرىڭ",
     "loginWithGoogle": "Google بىلەن كىرىش",
+    "loginWith": "بىلەن",
     "loginWithFacebook": "Facebook بىلەن كىرىش",
     "loginWithTwitter": "X بىلەن كىرىش",
     "loggingIn": "كىرىۋاتىدۇ...",
