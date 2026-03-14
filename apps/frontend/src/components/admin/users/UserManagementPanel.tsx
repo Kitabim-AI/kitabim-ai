@@ -461,22 +461,22 @@ export function UserManagementPanel() {
       {/* Search and Filters Bar */}
       <div className="flex flex-col md:flex-row gap-3 md:gap-4">
         <div className="relative flex-1 group">
-          <div className="absolute inset-y-0 right-0 pr-3 md:pr-4 flex items-center pointer-events-none text-[#94a3b8] group-focus-within:text-[#0369a1] transition-colors">
-            <Search size={16} strokeWidth={3} className="md:w-[18px] md:h-[18px]" />
+          <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1] transition-colors">
+            <Search size={18} strokeWidth={3} />
           </div>
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('admin.users.searchPlaceholder') || "ئابونتلارنى ئىزدەش (نامى ياكى ئېلخەت)..."}
-            className="w-full pr-10 md:pr-12 pl-8 md:pl-10 py-2 md:py-2.5 bg-white border-2 border-[#0369a1]/10 rounded-2xl outline-none focus:border-[#0369a1] focus:ring-4 focus:ring-[#0369a1]/10 transition-all uyghur-text-small shadow-sm text-sm md:text-base"
+            className="w-full pr-12 pl-12 py-2.5 bg-white border-2 border-[#0369a1]/10 rounded-2xl outline-none focus:border-[#0369a1] transition-all uyghur-text shadow-sm text-sm"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute inset-y-0 left-3 md:left-4 flex items-center text-[#94a3b8] hover:text-[#0369a1] transition-colors"
+              className="absolute inset-y-0 left-4 flex items-center text-[#94a3b8] hover:text-[#0369a1] transition-colors active:scale-95"
             >
-              <X size={14} className="md:w-4 md:h-4" />
+              <X size={16} strokeWidth={3} />
             </button>
           )}
         </div>

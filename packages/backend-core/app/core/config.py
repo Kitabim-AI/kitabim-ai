@@ -110,13 +110,32 @@ class Settings:
     cookie_secure: bool = os.getenv("COOKIE_SECURE", "true").lower() == "true"
 
     # CORS Settings - Allowed origins for API access
-    cors_origins: str = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:30080")
+    cors_origins: str = os.getenv("CORS_ORIGINS", "https://kitabim.ai,https://www.kitabim.ai,http://localhost:3000,http://localhost:30080")
 
     # Environment (development, staging, production)
     environment: str = os.getenv("ENVIRONMENT", "development")
 
     # IP hashing salt (for privacy-compliant IP storage)
     ip_salt: str = os.getenv("IP_SALT", "")
+
+    # Redis Cache
+    redis_cache_enabled: bool = os.getenv("REDIS_CACHE_ENABLED", "true").lower() == "true"
+    redis_cache_default_ttl: int = int(os.getenv("REDIS_CACHE_DEFAULT_TTL", "300"))
+    redis_cache_key_prefix: str = os.getenv("REDIS_CACHE_KEY_PREFIX", "kitabim:cache:")
+
+    # Per-feature TTLs (seconds)
+    cache_ttl_books: int = int(os.getenv("CACHE_TTL_BOOKS", "900"))
+    cache_ttl_system_config: int = int(os.getenv("CACHE_TTL_SYSTEM_CONFIG", "600"))
+    cache_ttl_categories: int = int(os.getenv("CACHE_TTL_CATEGORIES", "900"))
+    cache_ttl_rag_query: int = int(os.getenv("CACHE_TTL_RAG_QUERY", "3600"))
+    cache_ttl_user_profile: int = int(os.getenv("CACHE_TTL_USER_PROFILE", "300"))
+    cache_ttl_stats: int = int(os.getenv("CACHE_TTL_STATS", "120"))
+    cache_ttl_summary_search: int = int(os.getenv("CACHE_TTL_SUMMARY_SEARCH", "1800"))
+
+    # Cache behavior
+    cache_skip_for_admins: bool = os.getenv("CACHE_SKIP_FOR_ADMINS", "true").lower() == "true"
+    cache_max_keys_per_pattern: int = int(os.getenv("CACHE_MAX_KEYS_PER_PATTERN", "1000"))
+
 
 
 settings = Settings()

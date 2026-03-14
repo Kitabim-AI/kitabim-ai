@@ -174,11 +174,14 @@ export const AuthService = {
       // Listen for message from popup
       const handleMessage = async (event: MessageEvent) => {
         // Allow messages from same origin OR backend origin
+        // Local dev: Vite dev server (localhost:3000) or Docker frontend (localhost:30080)
+        // Production: kitabim.ai and www.kitabim.ai
         const allowedOrigins = [
-          window.location.origin,
-          'http://localhost:30080',
-          'http://localhost:30800',
-          'http://localhost:8000'
+          window.location.origin,           // Current origin (always allowed)
+          'http://localhost:3000',          // Vite dev server
+          'http://localhost:30080',         // Docker frontend
+          'https://kitabim.ai',             // Production
+          'https://www.kitabim.ai'          // Production www subdomain
         ];
         if (!allowedOrigins.includes(event.origin)) {
           console.log(`[OAuth ${provider}] Ignored message from origin:`, event.origin);

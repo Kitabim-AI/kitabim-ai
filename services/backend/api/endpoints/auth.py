@@ -185,6 +185,7 @@ async def oauth_callback(
 
     try:
         # Exchange code for tokens (with PKCE code_verifier for Twitter)
+        logger.info(f"Exchanging OAuth code for {provider} tokens...")
         token_response = await oauth_provider.exchange_code_for_tokens(
             code,
             code_verifier=saved_state.code_verifier
@@ -192,10 +193,13 @@ async def oauth_callback(
         access_token = token_response.get("access_token")
 
         if not access_token:
+            logger.error(f"No access token in {provider} response: {token_response}")
             return _error_response(t("errors.no_access_token"))
 
         # Get user info from provider
+        logger.info(f"Fetching user info from {provider}...")
         user_info = await oauth_provider.get_user_info(access_token)
+        logger.info(f"User info retrieved for {provider}: {user_info.email}")
 
         # Check if email is verified (skip for Twitter placeholder emails)
         if not user_info.email_verified and not user_info.email.endswith("@twitter.placeholder"):
@@ -455,10 +459,37 @@ def _success_response(access_token: str, refresh_token: str) -> HTMLResponse:
                         // Get opener's origin securely
                         const openerOrigin = window.opener.location.origin;
 
+                        console.log('[Kitabim Auth] Opener origin:', openerOrigin);
+                        console.log('[Kitabim Auth] Allowed origins:', allowedOrigins);
+
                         // Verify opener origin is in allowed list
                         if (!allowedOrigins.includes(openerOrigin)) {{
                             console.error('[Kitabim Auth] Opener origin not allowed:', openerOrigin);
-                            return false;
+                            
+                            // If we are on production domain, we can trust the opener if it's also on our domain
+                            const isProd = window.location.hostname.endsWith('kitabim.ai');
+                            const isOpenerProd = openerOrigin.endsWith('kitabim.ai');
+                            
+                            if (isProd && isOpenerProd) {{
+                                console.log('[Kitabim Auth] Both are prod domains, allowing postMessage');
+                            }} else {{
+                                // Try posting to all allowed origins as fallback
+                                console.log('[Kitabim Auth] Attempting broadcast to all allowed origins...');
+                                for (const origin of allowedOrigins) {{
+                                    try {{
+                                        window.opener.postMessage({{
+                                            type: 'OAUTH_SUCCESS',
+                                            accessToken: accessToken
+                                        }}, origin);
+                                        console.log('[Kitabim Auth] Posted to:', origin);
+                                    }} catch (e) {{
+                                        console.error('[Kitabim Auth] Failed to post to', origin, e);
+                                    }}
+                                }}
+                                console.log('[Kitabim Auth] Broadcast complete, closing in 1000ms...');
+                                setTimeout(() => window.close(), 1000);
+                                return true;
+                            }}
                         }}
 
                         // Post message to specific origin only
@@ -466,62 +497,84 @@ def _success_response(access_token: str, refresh_token: str) -> HTMLResponse:
                             type: 'OAUTH_SUCCESS',
                             accessToken: accessToken
                         }}, openerOrigin);
-                        
-                        console.log('[Kitabim Auth] Message posted, closing in 500ms...');
-                        setTimeout(() => window.close(), 500);
+
+                        console.log('[Kitabim Auth] Message posted to opener origin, closing in 1000ms...');
+                        setTimeout(() => window.close(), 1000);
                         return true;
                     }} catch (err) {{
-                        console.error('[Kitabim Auth] Failed to post message:', err);
+                        console.error('[Kitabim Auth] Failed to access opener.location (cross-origin):', err);
+                        // Cross-origin error - try posting to all allowed origins
+                        console.log('[Kitabim Auth] Attempting broadcast to all allowed origins due to cross-origin error...');
+                        try {{
+                            for (const origin of allowedOrigins) {{
+                                window.opener.postMessage({{
+                                    type: 'OAUTH_SUCCESS',
+                                    accessToken: accessToken
+                                }}, origin);
+                                console.log('[Kitabim Auth] Posted to:', origin);
+                            }}
+                            console.log('[Kitabim Auth] Broadcast complete, closing in 1000ms...');
+                            setTimeout(() => window.close(), 1000);
+                            return true;
+                        }} catch (e) {{
+                            console.error('[Kitabim Auth] Broadcast failed:', e);
+                        }}
                     }}
                 }}
+                console.log('[Kitabim Auth] No opener window found or opener is closed');
                 return false;
             }}
 
             // Run immediately
-            const notified = notifyAndClose();
-            
-            if (!notified) {{
-                console.log('[Kitabim Auth] Opener not found, storing token and redirecting to app');
-                // Store token in localStorage then redirect back to the app.
-                // window.close() is blocked by Safari when not opened via window.open(),
-                // so we navigate back to the app root instead.
-                localStorage.setItem('kitabim_access_token', accessToken);
+            let notified = notifyAndClose();
 
-                // Update UI while redirecting
-                const container = document.querySelector('.container');
-                const p = container.querySelector('p');
-                const h2 = container.querySelector('h2');
-
-                h2.textContent = 'Login Successful!';
-                p.textContent = 'Redirecting you back to the app\u2026';
-
-                // Redirect — useAuth will pick up the token from localStorage on load
-                setTimeout(() => window.location.replace('/'), 800);
-
-                // Fallback button in case redirect is blocked
-                const btn = document.createElement('button');
-                btn.textContent = 'Continue to App';
-                btn.style.cssText = 'margin-top: 1.5rem; padding: 0.75rem 2rem; background: white; color: #667eea; border: none; border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 1rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1);';
-                btn.onclick = () => window.location.replace('/');
-                container.appendChild(btn);
-            }}
-
-            // Also try periodically in case opener wasn't ready
+            // Also try periodically in case opener wasn't ready initially
             let attempts = 0;
+            const maxAttempts = 5;
             const interval = setInterval(() => {{
                 attempts++;
-                if (notifyAndClose() || attempts > 10) {{
+                if (notifyAndClose()) {{
+                    notified = true;
                     clearInterval(interval);
+                }} else if (attempts >= maxAttempts) {{
+                    clearInterval(interval);
+
+                    // After all attempts, if still no opener, handle the fallback
+                    if (!notified) {{
+                        console.log('[Kitabim Auth] Opener not found after retries, storing token and redirecting to app');
+                        // Store token in localStorage then redirect back to the app.
+                        // window.close() is blocked by Safari when not opened via window.open(),
+                        // so we navigate back to the app root instead.
+                        localStorage.setItem('kitabim_access_token', accessToken);
+
+                        // Update UI while redirecting
+                        const container = document.querySelector('.container');
+                        const p = container.querySelector('p');
+                        const h2 = container.querySelector('h2');
+
+                        h2.textContent = 'Login Successful!';
+                        p.textContent = 'Redirecting you back to the app\u2026';
+
+                        // Redirect — useAuth will pick up the token from localStorage on load
+                        setTimeout(() => window.location.replace('/'), 800);
+
+                        // Fallback button in case redirect is blocked
+                        const btn = document.createElement('button');
+                        btn.textContent = 'Continue to App';
+                        btn.style.cssText = 'margin-top: 1.5rem; padding: 0.75rem 2rem; background: white; color: #667eea; border: none; border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 1rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1);';
+                        btn.onclick = () => window.location.replace('/');
+                        container.appendChild(btn);
+                    }}
                 }}
-            }}, 1000);
+            }}, 500);
         </script>
     </body>
     </html>
     """
     
     response = HTMLResponse(content=html)
-    # Removing COOP header to ensure window.opener is available across ports in dev
-    # response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
+    # Setting COOP header to ensure window.opener is available across ports and origins
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
     
     # Set refresh token as httpOnly cookie
     response.set_cookie(
@@ -621,6 +674,6 @@ def _error_response(message: str) -> HTMLResponse:
         content=html, 
         status_code=400,
         headers={
-            # "Cross-Origin-Opener-Policy": "same-origin-allow-popups"
+            "Cross-Origin-Opener-Policy": "same-origin-allow-popups"
         }
     )

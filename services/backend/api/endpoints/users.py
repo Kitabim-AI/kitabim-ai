@@ -21,6 +21,9 @@ from app.services.user_service import (
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_session
 from app.core.i18n import t
+from app.services.cache_service import cache_service
+from app.core import cache_config
+
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -135,8 +138,10 @@ async def change_user_role(
         raise HTTPException(status_code=500, detail=t("errors.failed_update_role"))
     
     await session.commit()
+    await cache_service.delete(cache_config.KEY_USER.format(user_id=user_id))
     
     logger.info(
+
         f"Admin {current_user.email} changed role of {updated_user.email} "
         f"from {user.role.value} to {role_update.role.value}"
     )
@@ -172,8 +177,10 @@ async def change_user_status(
         raise HTTPException(status_code=500, detail=t("errors.failed_update_status"))
     
     await session.commit()
+    await cache_service.delete(cache_config.KEY_USER.format(user_id=user_id))
     
     action = "enabled" if status_update.is_active else "disabled"
+
     logger.info(f"Admin {current_user.email} {action} user {updated_user.email}")
     
     return UserPublic.from_user(updated_user)

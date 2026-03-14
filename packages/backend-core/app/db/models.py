@@ -383,23 +383,42 @@ class RAGEvaluation(Base):
 
 
 
-class Word(Base):
-    """Word model for storing individual words"""
-    __tablename__ = "words"
+class Dictionary(Base):
+    """Dictionary model for Uyghur language spell checking"""
+    __tablename__ = "dictionary"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     word: Mapped[str] = mapped_column(String(255), nullable=False)
 
 
+class Word(Base):
+    """Normalized word vocabulary table for efficient storage and lookup"""
+    __tablename__ = "words"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    word: Mapped[str] = mapped_column(Text, nullable=False, unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False
+    )
+
+
 class BookWordIndex(Base):
-    """Per-book word occurrence index for fast cross-book spell check lookups."""
+    """Per-book word occurrence index using normalized word IDs for 60-80% storage reduction."""
     __tablename__ = "book_word_index"
 
     book_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("books.id", ondelete="CASCADE"), primary_key=True
     )
-    word: Mapped[str] = mapped_column(Text, primary_key=True)
+    word_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("words.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
     occurrence_count: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
+
+    # Relationship to Word table for joins
+    word: Mapped["Word"] = relationship("Word")
 
 
 class PageSpellIssue(Base):

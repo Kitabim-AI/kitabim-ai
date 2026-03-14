@@ -33,6 +33,10 @@ from app.utils.text import generate_uyghur_regex, normalize_uyghur_chars
 from app.core.i18n import t
 from app.services.pdf_service import read_pdf_page_count, extract_pdf_cover, create_page_stubs
 from app.services.docx_service import extract_docx_pages, extract_docx_cover
+from app.services.cache_service import cache_service
+from app.core import cache_config
+import json
+
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +138,33 @@ async def get_books(
     from app.db.models import Book as BookDB
     from app.db.models import Page as PageDB
     from app.models.schemas import Book as BookSchema
+
+    skip = (page - 1) * pageSize
+    # --- PART 0: Cache Lookup ---
+    cache_params = {
+        "page": page,
+        "pageSize": pageSize,
+        "q": q,
+        "category": category,
+        "sortBy": sortBy,
+        "order": order,
+        "groupByWork": groupByWork,
+        "user_role": current_user.role if current_user else "guest"
+    }
+    param_hash = hashlib.md5(json.dumps(cache_params, sort_keys=True).encode()).hexdigest()
+    cache_key = cache_config.KEY_BOOKS_LIST.format(hash=param_hash)
+
+    skip_cache = (
+        settings.cache_skip_for_admins and 
+        current_user and 
+        current_user.role == "admin"
+    )
+
+    if not skip_cache:
+        cached_result = await cache_service.get(cache_key)
+        if cached_result:
+            return PaginatedBooks.model_validate(cached_result)
+
 
     # --- PART 1: Define Filters ---
     # conditions: for the main list (total)
@@ -261,7 +292,6 @@ async def get_books(
         books_objs = result.scalars().all()
 
     # --- PART 4: Asset Serialization & Batch Stats ---
-    import json
     books_data = []
     repo = BooksRepository(session)
     
@@ -293,13 +323,20 @@ async def get_books(
             pydantic_book.pipeline_stats = stats.get("pipeline_stats", {})
             pydantic_book.has_summary = stats.get("has_summary", False)
 
-    return {
+    result = {
         "books": books_data,
         "total": total,
         "total_ready": total_ready,
         "page": page,
         "page_size": pageSize,
     }
+
+    if not skip_cache:
+        # Cache list results for 10 minutes
+        await cache_service.set(cache_key, result, ttl=600)
+
+    return result
+
 
 
 
@@ -312,6 +349,13 @@ async def get_random_proverb(
     from app.db.repositories.proverbs import ProverbsRepository
 
     proverbs_repo = ProverbsRepository(session)
+
+    # Cache Lookup
+    keyword_hash = hashlib.md5((keyword or "default").encode()).hexdigest()[:8]
+    cache_key = cache_config.KEY_PROVERB.format(hash=keyword_hash)
+    cached_proverb = await cache_service.get(cache_key)
+    if cached_proverb:
+        return cached_proverb
     
     if keyword:
         # Use provided keywords (supports comma-separated list)
@@ -332,18 +376,25 @@ async def get_random_proverb(
     proverb = await proverbs_repo.get_random_proverb(text_pattern=combined_pattern)
 
     if proverb:
-        return {
+        result = {
             "text": proverb.text,
             "volume": proverb.volume,
             "pageNumber": proverb.page_number
         }
+    else:
+        # Fallback if no proverbs found
+        result = {
+            "text": "كىتاب — بىلىم بۇلىقى.",
+            "volume": 1,
+            "pageNumber": 1
+        }
 
-    # Fallback if no proverbs found
-    return {
-        "text": "كىتاب — بىلىم بۇلىقى.",
-        "volume": 1,
-        "pageNumber": 1
-    }
+    # Cache result for 5 minutes (rotates proverb every 5 mins)
+    # NOTE: This means all users see the same proverb for 5 mins for same keyword.
+    await cache_service.set(cache_key, result, ttl=300)
+
+    return result
+
 
 
 @router.get("/top-categories")
@@ -354,6 +405,19 @@ async def get_top_categories(
     session: AsyncSession = Depends(get_session),
 ):
     """Get categories with optional sorting and limit"""
+    # Cache Lookup
+    cache_params = {
+        "limit": limit,
+        "sort": sort,
+        "is_guest": current_user is None
+    }
+    param_hash = hashlib.md5(json.dumps(cache_params, sort_keys=True).encode()).hexdigest()[:8]
+    cache_key = cache_config.KEY_CATEGORY.format(type="top", params=param_hash)
+
+    cached_result = await cache_service.get(cache_key)
+    if cached_result:
+        return cached_result
+
     where_conditions = []
     params = {"limit": limit}
 
@@ -382,8 +446,14 @@ async def get_top_categories(
     result = await session.execute(sql, params)
     rows = result.fetchall()
     categories = [row.clean_category for row in rows]
+    
+    response = {"categories": categories}
+    
+    # Store in cache
+    await cache_service.set(cache_key, response, ttl=settings.cache_ttl_categories)
 
-    return {"categories": categories}
+    return response
+
 
 
 @router.get("/suggest")
@@ -399,7 +469,18 @@ async def suggest_books(
     if not q or len(q) < 2:
         return {"suggestions": []}
 
+    # Cache Lookup
+    # Limit to first 10 chars to increase hit rate, hash to prevent key injection 
+    q_prefix = hashlib.md5(q[:10].encode()).hexdigest()[:8]
+    user_role = current_user.role if current_user else "guest"
+    cache_key = f"suggestions:{q_prefix}:{user_role}"
+
+    cached_result = await cache_service.get(cache_key)
+    if cached_result:
+        return cached_result
+
     # Build base query for guest access
+
     conditions = []
     if current_user is None:
         # Guests can only see public ready books
@@ -458,7 +539,12 @@ async def suggest_books(
     type_priority = {"title": 0, "author": 1, "category": 2}
     suggestions.sort(key=lambda x: type_priority.get(x["type"], 3))
 
-    return {"suggestions": suggestions[:10]}
+    result = {"suggestions": suggestions[:10]}
+    # Cache for 30 seconds (autocomplete changes fast)
+    await cache_service.set(cache_key, result, ttl=30)
+
+    return result
+
 
 
 @router.get("/{book_id}", response_model=Book)
@@ -472,8 +558,24 @@ async def get_book(
     from app.db.models import Page as PageDB
     repo = BooksRepository(session)
 
+    # --- PART 0: Cache Lookup ---
+    skip_cache = (
+        settings.cache_skip_for_admins and 
+        current_user and 
+        current_user.role == "admin"
+    )
+
+    if not skip_cache:
+        cache_key = cache_config.KEY_BOOK.format(book_id=book_id)
+        cached_book = await cache_service.get(cache_key)
+        if cached_book:
+            # Increment read counter asynchronously even on cache hit
+            background_tasks.add_task(_increment_read_count, book_id)
+            return Book.model_validate(cached_book)
+
     # Get book from SQLAlchemy with stats
     stats = await repo.get_with_page_stats(book_id)
+
     if not stats:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
     
@@ -497,7 +599,6 @@ async def get_book(
     # This saves a wasteful DB query for up to 10,000 rows we were discarding
 
     # Parse last_error from JSON string if needed
-    import json
     last_error_obj = None
     if book_model.last_error:
         if isinstance(book_model.last_error, str):
@@ -547,7 +648,16 @@ async def get_book(
     # via the /content endpoint or paginated API.
     book_response.pages = []
 
+    # Cache only if status is 'ready'
+    if book_model.status == "ready" and not skip_cache:
+        await cache_service.set(
+            cache_config.KEY_BOOK.format(book_id=book_id), 
+            book_dict, 
+            ttl=settings.cache_ttl_books
+        )
+
     return book_response
+
 
 
 @router.get("/stats")
@@ -818,7 +928,12 @@ async def upload_pdf(
 
     await session.commit()
 
+    # Invalidate lists
+    await cache_service.delete_pattern("books:list:*")
+    await cache_service.delete_pattern("category:*")
+
     return {"bookId": book_id, "status": "uploaded"}
+
 
 
 @router.post("/{book_id}/reprocess/ocr")
@@ -859,7 +974,14 @@ async def reprocess_ocr(
         updated_by=current_user.email,
     )
     await session.commit()
+
+    # Invalidate cache
+    await cache_service.delete(f"book:{book_id}")
+    await cache_service.delete_pattern(f"rag:search:{book_id}:*")
+    await cache_service.delete_pattern("rag:summary_search:*")
+
     return {"status": "ocr_reprocess_started"}
+
 
 
 @router.post("/{book_id}/reprocess/chunking")
@@ -898,7 +1020,14 @@ async def reprocess_chunking(
         updated_by=current_user.email,
     )
     await session.commit()
+
+    # Invalidate cache
+    await cache_service.delete(f"book:{book_id}")
+    await cache_service.delete_pattern(f"rag:search:{book_id}:*")
+    await cache_service.delete_pattern("rag:summary_search:*")
+
     return {"status": "chunking_reprocess_started"}
+
 
 
 @router.post("/{book_id}/reprocess/embedding")
@@ -939,7 +1068,13 @@ async def reprocess_embedding(
         updated_by=current_user.email,
     )
     await session.commit()
+
+    # Invalidate RAG cache (vectors will change)
+    await cache_service.delete_pattern(f"rag:search:{book_id}:*")
+    await cache_service.delete_pattern("rag:summary_search:*")
+
     return {"status": "embedding_reprocess_started"}
+
 
 
 @router.post("/{book_id}/reprocess/word-index")
@@ -1214,7 +1349,12 @@ async def update_page_text(
     )
     await session.commit()
 
+    # Invalidate book and RAG cache
+    await cache_service.delete(f"book:{book_id}")
+    await cache_service.delete_pattern(f"rag:search:{book_id}:*")
+
     return {"status": "page_updated", "requires_rag": True, "synchronous": page.status == 'indexed'}
+
 
 
 @router.post("/")
@@ -1283,7 +1423,14 @@ async def create_book(
         )
 
     await session.commit()
+
+    # Invalidate cache
+    await cache_service.delete(f"book:{book_id}")
+    await cache_service.delete_pattern("books:list:*")
+    await cache_service.delete_pattern("category:*")
+
     return {"status": "success"}
+
 
 
 @router.put("/{book_id}")
@@ -1392,7 +1539,14 @@ async def update_book_details(
     await books_repo.update_one(book_id, **book_update)
     await session.commit()
 
+    # Invalidate cache
+    await cache_service.delete(f"book:{book_id}")
+    await cache_service.delete_pattern("books:list:*")
+    if "categories" in book_update:
+        await cache_service.delete_pattern("category:*")
+
     return {"status": "updated", "modified": True}
+
 
 
 @router.get("/{book_id}/summary")
@@ -1476,8 +1630,15 @@ async def delete_book(
     await session.commit()
 
     if deleted:
+        # Invalidate cache
+        await cache_service.delete(f"book:{book_id}")
+        await cache_service.delete_pattern("books:list:*")
+        await cache_service.delete_pattern("category:*")
+        await cache_service.delete_pattern(f"rag:search:{book_id}:*")
+        await cache_service.delete_pattern("rag:summary_search:*")
         return {"status": "deleted"}
     raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+
 
 
 @router.post("/upload-cover")

@@ -256,7 +256,7 @@ export const SpellCheckView: React.FC = () => {
       </div>
 
       {/* Mobile header */}
-      <div className="lg:hidden flex items-center justify-between px-1">
+      <div className="lg:hidden flex items-center justify-between px-2 py-1">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20">
             <BookOpenCheck size={18} strokeWidth={2.5} />

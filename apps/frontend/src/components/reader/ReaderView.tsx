@@ -445,7 +445,7 @@ export const ReaderView: React.FC = () => {
               isFullscreen={isFullscreen}
             />
           ) : (
-            <div className={`w-full max-w-4xl mx-auto ${editingPageNum !== null ? 'h-full flex flex-col' : isGuestOrReader ? 'pt-8' : 'space-y-16 pb-40'}`}>
+            <div className={`w-full max-w-4xl mx-auto ${editingPageNum !== null ? 'h-full flex flex-col' : isGuestOrReader ? 'pt-8' : 'space-y-4 pb-40'}`}>
               {[...loadedPages]
                 .sort((a, b) => a.pageNumber - b.pageNumber)
                 .filter(page => isGuestOrReader ? Number(page.pageNumber) === Number(currentPage) : (editingPageNum === null || Number(page.pageNumber) === Number(editingPageNum)))

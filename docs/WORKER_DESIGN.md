@@ -23,8 +23,9 @@ Key characteristics:
 ## Non-Goals
 
 - Gemini Batch API mode (realtime only)
-- Circuit breaker (deferred to a later iteration)
+- **Circuit breaker** — Implemented for AI services and Redis.
 - Backwards compatibility with v1 status columns
+
 
 ---
 
@@ -71,7 +72,9 @@ worker/
     embedding_job.py      ← generates and stores embeddings
     word_index_job.py     ← builds word frequency index
     spell_check_job.py    ← identifies unknown words and suggests corrections
+    summary_job.py        ← generates semantic book summaries for RAG routing
   worker.py               ← ARQ WorkerSettings
+
 ```
 
 ---
@@ -249,6 +252,8 @@ Runs every 30 minutes.
 | `event_dispatcher` | Startup + 1 min (high frequency pool) | Triggers reactive progression |
 | `stale_watchdog` | Every 30 min | Uniform reset for all steps |
 | `maintenance_scanner`| Daily at 3 AM | Database house keeping |
+| `summary_scanner`     | Every 5 min | Regenerates missing book summaries |
+
 
 ---
 

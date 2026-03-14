@@ -20,8 +20,13 @@ from app.models.schemas import ChatRequest
 from app.utils.markdown import strip_markdown
 from app.utils.observability import log_json
 from app.core.i18n import t
+from app.services.cache_service import cache_service
+from app.core import cache_config
 import logging
 import time
+import hashlib
+import json
+
 
 
 
@@ -512,13 +517,21 @@ class RAGService:
                 suppress_page_notice=False,
             )
 
-        # Get query embedding for vector search
+        # Get query embedding for vector search (Level 1 Cache)
         query_vector = []
+        q_hash = hashlib.md5(req.question.strip().encode()).hexdigest()
+        emb_cache_key = cache_config.KEY_RAG_EMBEDDING.format(hash=q_hash)
+        
         try:
-            query_vector = await self.embeddings.aembed_query(req.question)
+            query_vector = await cache_service.get(emb_cache_key)
+            if not query_vector:
+                query_vector = await self.embeddings.aembed_query(req.question)
+                if query_vector:
+                    await cache_service.set(emb_cache_key, query_vector, ttl=settings.cache_ttl_rag_query)
         except Exception as exc:
-            log_json(self.logger, logging.WARNING, "Embedding generation failed", error=str(exc))
+            log_json(self.logger, logging.WARNING, "Embedding retrieval/generation failed", error=str(exc))
             query_vector = []
+
 
         # Determine which books to search
         book_ids = []
@@ -579,13 +592,26 @@ class RAGService:
                     try:
                         from app.db.repositories.book_summaries import BookSummariesRepository
                         summaries_repo = BookSummariesRepository(session)
-                        book_ids = await summaries_repo.summary_search(
-                            query_embedding=query_vector,
-                            limit=settings.summary_top_k,
-                            threshold=settings.summary_threshold,
-                        )
+
+                        # Cache Lookup (Level 3)
+                        # Hash the query vector to get a stable key
+                        emb_hash = hashlib.md5(str(query_vector).encode()).hexdigest()
+                        summary_cache_key = cache_config.KEY_RAG_SUMMARY_SEARCH.format(hash=emb_hash)
+                        
+                        book_ids = await cache_service.get(summary_cache_key)
+                        if not book_ids:
+                            book_ids = await summaries_repo.summary_search(
+                                query_embedding=query_vector,
+                                limit=settings.summary_top_k,
+                                threshold=settings.summary_threshold,
+                            )
+                            if book_ids is not None:
+                                # Cache the resulting book_ids list
+                                await cache_service.set(summary_cache_key, book_ids, ttl=settings.cache_ttl_rag_query)
+
                         if book_ids:
                             log_json(self.logger, logging.INFO, "Summary search selected books", count=len(book_ids))
+
                     except Exception as exc:
                         log_json(self.logger, logging.WARNING, "Summary search failed, falling back to category search", error=str(exc))
                         book_ids = []
@@ -653,32 +679,57 @@ class RAGService:
                     book_ids.append(str(s.id))
                     book_id_to_title[str(s.id)] = s.title
 
-        # Use PostgreSQL pgvector for similarity search
+        # Use PostgreSQL pgvector for similarity search (Level 2 Cache)
         top_results = []
         if query_vector:
-            try:
-                # Perform vector similarity search using PostgreSQL
-                similar_chunks = await chunks_repo.similarity_search(
-                    query_embedding=query_vector,
-                    book_ids=book_ids if book_ids else None,
-                    limit=settings.rag_top_k,
-                    threshold=settings.rag_score_threshold
+            # Generate Cache Key (Level 2)
+            emb_hash = hashlib.md5(str(query_vector).encode()).hexdigest()
+            # Sort IDs for stable hash
+            sorted_book_ids = sorted(book_ids) if book_ids else []
+            book_ids_hash = hashlib.md5(",".join(sorted_book_ids).encode()).hexdigest() if sorted_book_ids else "all"
+            
+            if not is_global and len(sorted_book_ids) == 1:
+                search_cache_key = cache_config.KEY_RAG_SEARCH_SINGLE.format(
+                    book_id=sorted_book_ids[0], 
+                    hash=emb_hash
+                )
+            else:
+                search_cache_key = cache_config.KEY_RAG_SEARCH_MULTI.format(
+                    book_ids_hash=book_ids_hash, 
+                    hash=emb_hash
                 )
 
-                # Format results with book titles and volume
-                for chunk in similar_chunks:
-                    top_results.append({
-                        "text": chunk.get("text", ""),
-                        "score": chunk.get("similarity", 0.0),
-                        "page": chunk.get("page_number"),
-                        "title": chunk.get("title") or "Unknown",
-                        "volume": chunk.get("volume"),
-                        "author": chunk.get("author") or None,
-                        "book_id": chunk.get("book_id"),
-                    })
+            try:
+                top_results = await cache_service.get(search_cache_key)
+                if not top_results:
+                    # Perform vector similarity search using PostgreSQL
+                    similar_chunks = await chunks_repo.similarity_search(
+                        query_embedding=query_vector,
+                        book_ids=book_ids if book_ids else None,
+                        limit=settings.rag_top_k,
+                        threshold=settings.rag_score_threshold
+                    )
+
+                    # Format results with book titles and volume
+                    top_results = []
+                    for chunk in similar_chunks:
+                        top_results.append({
+                            "text": chunk.get("text", ""),
+                            "score": chunk.get("similarity", 0.0),
+                            "page": chunk.get("page_number"),
+                            "title": chunk.get("title") or "Unknown",
+                            "volume": chunk.get("volume"),
+                            "author": chunk.get("author") or None,
+                            "book_id": chunk.get("book_id"),
+                        })
+                    
+                    if top_results is not None:
+                        await cache_service.set(search_cache_key, top_results, ttl=settings.cache_ttl_rag_query)
+                
             except Exception as exc:
                 log_json(self.logger, logging.WARNING, "Vector search failed", error=str(exc))
                 top_results = []
+
 
         # Fallback if no results or no embedding
         if not top_results and book_ids:
@@ -814,13 +865,21 @@ class RAGService:
                 yield chunk
             return
 
-        # Get query embedding for vector search
+        # Get query embedding for vector search (Level 1 Cache)
         query_vector = []
+        q_hash = hashlib.md5(req.question.strip().encode()).hexdigest()
+        emb_cache_key = cache_config.KEY_RAG_EMBEDDING.format(hash=q_hash)
+        
         try:
-            query_vector = await self.embeddings.aembed_query(req.question)
+            query_vector = await cache_service.get(emb_cache_key)
+            if not query_vector:
+                query_vector = await self.embeddings.aembed_query(req.question)
+                if query_vector:
+                    await cache_service.set(emb_cache_key, query_vector, ttl=settings.cache_ttl_rag_query)
         except Exception as exc:
-            log_json(self.logger, logging.WARNING, "Embedding generation failed", error=str(exc))
+            log_json(self.logger, logging.WARNING, "Embedding retrieval/generation failed", error=str(exc))
             query_vector = []
+
 
         # Determine which books to search
         book_ids = []
@@ -884,14 +943,23 @@ class RAGService:
                 if query_vector:
                     try:
                         from app.db.repositories.book_summaries import BookSummariesRepository
-                        summaries_repo = BookSummariesRepository(session)
-                        book_ids = await summaries_repo.summary_search(
-                            query_embedding=query_vector,
-                            limit=settings.summary_top_k,
-                            threshold=settings.summary_threshold,
-                        )
+                        # Cache Lookup (Level 3)
+                        emb_hash = hashlib.md5(str(query_vector).encode()).hexdigest()
+                        summary_cache_key = cache_config.KEY_RAG_SUMMARY_SEARCH.format(hash=emb_hash)
+                        
+                        book_ids = await cache_service.get(summary_cache_key)
+                        if not book_ids:
+                            book_ids = await summaries_repo.summary_search(
+                                query_embedding=query_vector,
+                                limit=settings.summary_top_k,
+                                threshold=settings.summary_threshold,
+                            )
+                            if book_ids is not None:
+                                await cache_service.set(summary_cache_key, book_ids, ttl=settings.cache_ttl_rag_query)
+
                         if book_ids:
                             log_json(self.logger, logging.INFO, "Summary search selected books", count=len(book_ids))
+
                     except Exception as exc:
                         log_json(self.logger, logging.WARNING, "Summary search failed, falling back to category search", error=str(exc))
                         book_ids = []
@@ -959,30 +1027,54 @@ class RAGService:
                     book_ids.append(str(s.id))
                     book_id_to_title[str(s.id)] = s.title
 
-        # Use PostgreSQL pgvector for similarity search
+        # Use PostgreSQL pgvector for similarity search (Level 2 Cache)
         top_results = []
         if query_vector:
-            try:
-                similar_chunks = await chunks_repo.similarity_search(
-                    query_embedding=query_vector,
-                    book_ids=book_ids if book_ids else None,
-                    limit=settings.rag_top_k,
-                    threshold=settings.rag_score_threshold
+            # Generate Cache Key (Level 2)
+            emb_hash = hashlib.md5(str(query_vector).encode()).hexdigest()
+            sorted_book_ids = sorted(book_ids) if book_ids else []
+            book_ids_hash = hashlib.md5(",".join(sorted_book_ids).encode()).hexdigest() if sorted_book_ids else "all"
+            
+            if not is_global and len(sorted_book_ids) == 1:
+                search_cache_key = cache_config.KEY_RAG_SEARCH_SINGLE.format(
+                    book_id=sorted_book_ids[0], 
+                    hash=emb_hash
+                )
+            else:
+                search_cache_key = cache_config.KEY_RAG_SEARCH_MULTI.format(
+                    book_ids_hash=book_ids_hash, 
+                    hash=emb_hash
                 )
 
-                for chunk in similar_chunks:
-                    top_results.append({
-                        "text": chunk.get("text", ""),
-                        "score": chunk.get("similarity", 0.0),
-                        "page": chunk.get("page_number"),
-                        "title": chunk.get("title") or "Unknown",
-                        "volume": chunk.get("volume"),
-                        "author": chunk.get("author") or None,
-                        "book_id": chunk.get("book_id"),
-                    })
+            try:
+                top_results = await cache_service.get(search_cache_key)
+                if not top_results:
+                    similar_chunks = await chunks_repo.similarity_search(
+                        query_embedding=query_vector,
+                        book_ids=book_ids if book_ids else None,
+                        limit=settings.rag_top_k,
+                        threshold=settings.rag_score_threshold
+                    )
+
+                    top_results = []
+                    for chunk in similar_chunks:
+                        top_results.append({
+                            "text": chunk.get("text", ""),
+                            "score": chunk.get("similarity", 0.0),
+                            "page": chunk.get("page_number"),
+                            "title": chunk.get("title") or "Unknown",
+                            "volume": chunk.get("volume"),
+                            "author": chunk.get("author") or None,
+                            "book_id": chunk.get("book_id"),
+                        })
+                    
+                    if top_results is not None:
+                        await cache_service.set(search_cache_key, top_results, ttl=settings.cache_ttl_rag_query)
+                
             except Exception as exc:
                 log_json(self.logger, logging.WARNING, "Vector search failed", error=str(exc))
                 top_results = []
+
 
         # Fallback if no results or no embedding
         if not top_results and book_ids:

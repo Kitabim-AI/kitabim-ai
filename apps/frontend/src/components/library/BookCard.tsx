@@ -35,16 +35,44 @@ const parseBold = (str: string): React.ReactNode[] =>
 
 const renderSummary = (text: string): React.ReactNode =>
   text.split('\n').filter(l => l.trim()).map((line, i) => {
+    // 1. Check for numbered sections (likely the major summary headers)
     const listMatch = line.match(/^(\d+)\.\s+(.*)/);
     if (listMatch) {
+      const parts = listMatch[2].split(':');
+      if (parts.length > 1) {
+        return (
+          <div key={i} className="mb-6 last:mb-0">
+            <h4 className="text-[#0369a1] font-bold text-base sm:text-lg mb-2 flex items-center gap-2">
+              <span className="w-6 h-6 rounded-lg bg-[#0369a1]/10 flex items-center justify-center text-xs shrink-0">{listMatch[1]}</span>
+              {parseBold(parts[0])}
+            </h4>
+            <div className="text-slate-700 leading-relaxed pr-1 sm:pr-2">
+              {parseBold(parts.slice(1).join(':').trim())}
+            </div>
+          </div>
+        );
+      }
       return (
-        <div key={i} className="flex gap-3 mb-3">
+        <div key={i} className="flex gap-3 mb-4">
           <span className="text-[#0369a1] font-bold shrink-0 mt-0.5">{listMatch[1]}.</span>
-          <span>{parseBold(listMatch[2])}</span>
+          <span className="text-slate-700">{parseBold(listMatch[2])}</span>
         </div>
       );
     }
-    return <p key={i} className="mb-3 last:mb-0">{parseBold(line)}</p>;
+
+    // 2. Check for bullet points (often used in themes or keywords)
+    const bulletMatch = line.match(/^([-*•])\s+(.*)/);
+    if (bulletMatch) {
+      return (
+        <div key={i} className="flex gap-3 mb-2 pr-2 sm:pr-4">
+          <span className="text-[#0369a1] font-bold shrink-0 mt-2.5 w-1.5 h-1.5 rounded-full bg-[#0369a1]/30" />
+          <span className="text-slate-600">{parseBold(bulletMatch[2])}</span>
+        </div>
+      );
+    }
+
+    // 3. Default paragraph
+    return <p key={i} className="mb-4 last:mb-0 text-slate-700 leading-relaxed">{parseBold(line)}</p>;
   });
 
 export const BookCard: React.FC<BookCardProps> = ({ book, onClick }) => {

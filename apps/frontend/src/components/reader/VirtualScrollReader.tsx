@@ -140,7 +140,7 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
 
   return (
     <div className="w-full max-w-4xl mx-auto select-none flex flex-col items-center" onContextMenu={(e) => e.preventDefault()}>
-      <div className="w-full space-y-16 pb-64 flex flex-col items-center">
+      <div className="w-full space-y-4 pb-64 flex flex-col items-center">
         {allPageNumbers.map(pageNum => {
           const page = pages.get(pageNum);
           return (

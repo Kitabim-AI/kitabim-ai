@@ -111,6 +111,8 @@ python3.13 -m pytest services/backend/tests
 
 - **Frontend**: React 19, Vite 6, Tailwind (CDN), Lucide, pdf.js.
 - **Backend**: FastAPI, PostgreSQL (asyncpg), pgvector, PyMuPDF, LangChain, `langchain-google-genai`, `httpx`, `numpy`.
-- **Queue/Worker**: Redis + ARQ.
+- **Queue/Worker**: Redis 7+ + ARQ.
+- **Caching**: Redis (shared with queue).
 - **Microservices**: Backend (FastAPI), Worker (ARQ).
+
 - **Production**: Docker Compose on GCE.
