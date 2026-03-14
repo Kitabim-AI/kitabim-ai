@@ -158,6 +158,10 @@ export const AuthService = {
       const left = window.screenX + (window.outerWidth - width) / 2;
       const top = window.screenY + (window.outerHeight - height) / 2;
 
+      // Use BroadcastChannel as a more robust alternative to window.postMessage
+      // that doesn't depend on the fragile window.opener link.
+      const authChannel = new BroadcastChannel('kitabim_auth');
+
       const popup = window.open(
         `${API_BASE}/${provider}/login`,
         `${provider}-login`,
@@ -165,13 +169,43 @@ export const AuthService = {
       );
 
       if (!popup) {
+        authChannel.close();
         reject(new Error('Popup blocked. Please allow popups for this site.'));
         return;
       }
 
       let messageReceived = false;
 
-      // Listen for message from popup
+      // Shared logic to finalize login
+      const finalizeLogin = async (token: string) => {
+        if (messageReceived) return;
+        console.log(`[OAuth ${provider}] Login success! Finalizing session...`);
+        messageReceived = true;
+        
+        setAccessToken(token);
+        authChannel.close();
+        window.removeEventListener('message', handleMessage);
+
+        try {
+          if (popup && !popup.closed) {
+            popup.close();
+          }
+        } catch (e) {
+          console.warn(`[OAuth ${provider}] Could not close popup:`, e);
+        }
+
+        const user = await this.getCurrentUser();
+        resolve(user);
+      };
+
+      // Listen for BroadcastChannel messages
+      authChannel.onmessage = (event) => {
+        if (event.data?.type === 'OAUTH_SUCCESS' && event.data?.accessToken) {
+          finalizeLogin(event.data.accessToken);
+        }
+      };
+
+      // Listen for postMessage from popup (legacy/fallback)
       const handleMessage = async (event: MessageEvent) => {
         // Allow messages from same origin OR backend origin
         // Local dev: Vite dev server (localhost:3000) or Docker frontend (localhost:30080)
@@ -189,28 +223,11 @@ export const AuthService = {
         }
 
         if (event.data?.type === 'OAUTH_SUCCESS') {
-          console.log(`[OAuth ${provider}] Received success message`);
-          messageReceived = true;
-          window.removeEventListener('message', handleMessage);
-
-          const { accessToken } = event.data;
-          setAccessToken(accessToken);
-
-          // Close popup if still open
-          try {
-            if (popup && !popup.closed) {
-              popup.close();
-            }
-          } catch (e) {
-            console.warn(`[OAuth ${provider}] Could not close popup:`, e);
-          }
-
-          // Fetch user profile
-          const user = await this.getCurrentUser();
-          resolve(user);
+          finalizeLogin(event.data.accessToken);
         } else if (event.data?.type === 'OAUTH_ERROR') {
           console.log(`[OAuth ${provider}] Received error message`);
           messageReceived = true;
+          authChannel.close();
           window.removeEventListener('message', handleMessage);
           reject(new Error(event.data.error));
         }
@@ -233,10 +250,12 @@ export const AuthService = {
                 const user = await this.getCurrentUser();
                 if (user) {
                   console.log(`[OAuth ${provider}] Found token in localStorage, login successful`);
+                  authChannel.close();
                   resolve(user);
                   return;
                 }
               }
+              authChannel.close();
               reject(new Error('Login cancelled or popup closed without authentication'));
             }
           }
