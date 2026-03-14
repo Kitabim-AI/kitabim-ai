@@ -253,16 +253,15 @@ const JoinUsView: React.FC = () => {
                   <li>• {t('joinUs.howToHelp.donate.benefit2')}</li>
                   <li>• {t('joinUs.howToHelp.donate.benefit3')}</li>
                 </ul>
-                <button
-                  disabled
-                  className="w-full py-4 min-h-[48px] bg-rose-200 text-rose-400 rounded-2xl font-bold cursor-not-allowed opacity-60"
-                  title={t('joinUs.howToHelp.donate.comingSoon')}
+                <a
+                  href="https://www.paypal.com/donate/?hosted_button_id=TKHXS8HCDUEJA"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-4 min-h-[48px] bg-rose-600 text-white rounded-2xl font-bold hover:shadow-lg hover:shadow-rose-500/30 transition-all active:scale-95 flex items-center justify-center gap-3"
                 >
-                  <div className="flex items-center justify-center gap-3">
-                    <Heart size={20} className="fill-current" />
-                    <span>{t('joinUs.howToHelp.donate.button')}</span>
-                  </div>
-                </button>
+                  <Heart size={20} className="fill-current" />
+                  <span>{t('joinUs.howToHelp.donate.button')}</span>
+                </a>
               </div>
             </div>
           </div>
@@ -283,7 +282,7 @@ const JoinUsView: React.FC = () => {
               <img
                 src="https://dallasuyghurcommunity.org/wp-content/uploads/2025/01/DUC_Logo_3ai_Artboard-2-photoaidcom-cropped-1.png"
                 alt="Dallas Uyghur Community Logo"
-                className="h-24 md:h-32 lg:h-40 w-auto object-contain group-hover/logo:scale-105 transition-transform"
+                className="h-20 md:h-24 lg:h-32 w-auto object-contain group-hover/logo:scale-105 transition-transform"
               />
             </a>
           </div>

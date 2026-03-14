@@ -371,7 +371,7 @@ export function UserManagementPanel() {
           loadUsers(false);
         }
       },
-      { threshold: 0.1, rootMargin: '200px' }
+      { threshold: 0.1, rootMargin: '1200px' }
     );
 
     if (loaderRef.current) observer.observe(loaderRef.current);

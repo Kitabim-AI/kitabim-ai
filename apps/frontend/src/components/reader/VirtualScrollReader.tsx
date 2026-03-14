@@ -74,7 +74,7 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
       });
     }, {
       root: scrollParentRef?.current || null,
-      rootMargin: '1000px 0px 1000px 0px',
+      rootMargin: '1200px 0px 1200px 0px',
       threshold: 0,
     });
 
