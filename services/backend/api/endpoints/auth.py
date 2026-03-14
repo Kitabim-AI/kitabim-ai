@@ -476,41 +476,11 @@ def _success_response(access_token: str, refresh_token: str) -> HTMLResponse:
                         console.log('[Kitabim Auth] Opener origin:', openerOrigin);
                         console.log('[Kitabim Auth] Allowed origins:', allowedOrigins);
 
-                        // Verify opener origin is in allowed list
-                        if (!allowedOrigins.includes(openerOrigin)) {{
-                            console.error('[Kitabim Auth] Opener origin not allowed:', openerOrigin);
-                            
-                            // If we are on production domain, we can trust the opener if it's also on our domain
-                            const isProd = window.location.hostname.endsWith('kitabim.ai');
-                            const isOpenerProd = openerOrigin.endsWith('kitabim.ai');
-                            
-                            if (isProd && isOpenerProd) {{
-                                console.log('[Kitabim Auth] Both are prod domains, allowing postMessage');
-                            }} else {{
-                                // Try posting to all allowed origins as fallback
-                                console.log('[Kitabim Auth] Attempting broadcast to all allowed origins...');
-                                for (const origin of allowedOrigins) {{
-                                    try {{
-                                        window.opener.postMessage({{
-                                            type: 'OAUTH_SUCCESS',
-                                            accessToken: accessToken
-                                        }}, origin);
-                                        console.log('[Kitabim Auth] Posted to:', origin);
-                                    }} catch (e) {{
-                                        console.error('[Kitabim Auth] Failed to post to', origin, e);
-                                    }}
-                                }}
-                                console.log('[Kitabim Auth] Broadcast complete, closing in 1000ms...');
-                                setTimeout(() => window.close(), 1000);
-                                return true;
-                            }}
-                        }}
-
-                        // Post message to specific origin only
+                        // Post message to opener
                         window.opener.postMessage({{
                             type: 'OAUTH_SUCCESS',
                             accessToken: accessToken
-                        }}, openerOrigin);
+                        }}, '*');
 
                         console.log('[Kitabim Auth] Message posted to opener origin, closing in 1000ms...');
                         setTimeout(() => window.close(), 1000);
@@ -587,8 +557,6 @@ def _success_response(access_token: str, refresh_token: str) -> HTMLResponse:
     """
     
     response = HTMLResponse(content=html)
-    # Setting COOP header to ensure window.opener is available across ports and origins
-    response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
     
     # Set refresh token as httpOnly cookie
     response.set_cookie(
@@ -688,6 +656,6 @@ def _error_response(message: str) -> HTMLResponse:
         content=html, 
         status_code=400,
         headers={
-            "Cross-Origin-Opener-Policy": "same-origin-allow-popups"
+            # "Cross-Origin-Opener-Policy": "same-origin-allow-popups"
         }
     )

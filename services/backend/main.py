@@ -115,7 +115,6 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
     if settings.environment == "production":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     
