@@ -65,7 +65,7 @@ services:
     networks:
       - internal
     deploy:
-      replicas: 3
+      replicas: 1
       resources:
         limits:
           memory: 1G
