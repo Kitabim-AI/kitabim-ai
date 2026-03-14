@@ -1,30 +1,33 @@
 ---
-description: How to deploy changes to Kubernetes
+description: How to deploy changes locally using Docker Compose
 ---
 
-# Deploying to Kubernetes
+# Local Deployment (Redeploy)
 
-When you make changes to the codebase, they must be deployed to Kubernetes to be visible. Do not rely on local `npm run dev` servers to verify the changes if you are acting on behalf of the user, as the user is testing via the deployed Kubernetes cluster.
+When you make changes to the codebase, they must be rebuilt and restarted within the Docker Compose environment to be visible. Do not rely on local `npm run dev` or `uvicorn` processes to verify the final application state, as the Docker environment may have different configurations.
 
 ## Deployment Steps
 
-To deploy the changes to Kubernetes, you should use the provided wrapper script from the repository root:
+To rebuild and restart specific services in the local Docker environment, use the provided script:
 
 // turbo
 1. Rebuild and restart the necessary component:
 ```bash
-./scripts/rebuild-and-restart.sh [component]
+./deploy/local/rebuild-and-restart.sh [component]
 ```
 
 Where `[component]` is one of:
-- `backend` - To rebuild and restart the backend API container
-- `worker` - To rebuild and restart the background worker task container
+- `backend` - To rebuild and restart the backend FastAPI container
+- `worker` - To rebuild and restart the ARQ background worker container
 - `frontend` - To rebuild and restart the frontend React container
-- `all` - To rebuild and restart all components (default)
+- `all` - To rebuild and restart all components
 
 For example, to deploy a frontend UI change:
 ```bash
-./scripts/rebuild-and-restart.sh frontend
+./deploy/local/rebuild-and-restart.sh frontend
 ```
 
-2. Wait for the pod to successfully recycle and start running. The script will automatically trigger a `kubectl rollout restart` and then display the pod deployment status.
+2. The script will:
+- Rebuild the Docker image for that specific service.
+- Re-create and restart the container using `docker compose up -d`.
+- Display the status of the containers once finished.
