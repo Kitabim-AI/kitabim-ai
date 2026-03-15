@@ -41,12 +41,7 @@ async def run_pipeline_driver(ctx) -> None:
             .join(Book, Page.book_id == Book.id)
             .where(
                 Page.ocr_milestone == "idle",
-                Page.milestone != "succeeded",
-                ~Book.status.in_(_V1_READY_STATUSES),
-                or_(
-                    Book.pipeline_step.is_(None),
-                    ~Book.pipeline_step.in_(["ready", "failed"])
-                )
+                ~Book.status.in_(_V1_READY_STATUSES)
             )
             .limit(5000)
         )
@@ -179,10 +174,7 @@ async def run_pipeline_driver(ctx) -> None:
             )
             .join(Book, Page.book_id == Book.id)
             .where(
-                or_(
-                    Book.pipeline_step != "ready",
-                    Book.pipeline_step.is_(None),
-                )
+                ~Book.status.in_(_V1_READY_STATUSES)
             )
             .group_by(Page.book_id)
             .having(

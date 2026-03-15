@@ -11,30 +11,37 @@ import logging
 from sqlalchemy import select, update, func
 
 from app.db import session as db_session
-from app.db.models import Page
+from app.db.models import Page, Book
 from app.db.repositories.system_configs import SystemConfigsRepository
+from app.services.book_milestone_service import BookMilestoneService
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.ocr_scanner")
 
 
 async def run_ocr_scanner(ctx) -> None:
+    log_json(logger, logging.INFO, "OCR scanner started")
     redis = ctx["redis"]
 
     async with db_session.async_session_factory() as session:
         config_repo = SystemConfigsRepository(session)
         max_books = int(await config_repo.get_value("scanner_book_limit", "10"))
 
-        # Find distinct books that have idle OCR pages
+        # Find distinct books that have idle OCR pages.
+        # Filter for non-terminal books to avoid waste, and sort by upload date
+        # so oldest books are processed first (preventing starvation).
         book_ids_stmt = (
             select(Page.book_id)
+            .join(Book, Page.book_id == Book.id)
             .where(
                 Page.ocr_milestone == "idle",
             )
-            .distinct()
+            .group_by(Page.book_id, Book.upload_date)
+            .order_by(Book.upload_date.asc())
             .limit(max_books)
         )
         result = await session.execute(book_ids_stmt)
+
         book_ids = [row[0] for row in result.fetchall()]
 
     dispatched = 0
@@ -63,6 +70,9 @@ async def run_ocr_scanner(ctx) -> None:
                 .values(ocr_milestone="in_progress", last_updated=func.now())
             )
             await session.commit()
+            
+            # Update book-level OCR milestone to 'in_progress' immediately
+            await BookMilestoneService.update_book_milestone_for_step(session, book_id, 'ocr')
 
         await redis.enqueue_job(
             "ocr_job",
