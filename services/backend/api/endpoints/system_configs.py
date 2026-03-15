@@ -45,7 +45,7 @@ class SystemConfigUpdate(BaseModel):
 
 @router.get("/", response_model=List[SystemConfigResponse])
 async def list_configs(
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     """List all system configurations (admin only)"""
@@ -67,7 +67,7 @@ async def list_configs(
 @router.get("/{key}", response_model=SystemConfigResponse)
 async def get_config(
     key: str,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     """Get a specific system configuration (admin only)"""

@@ -18,6 +18,7 @@ from sqlalchemy import select, update, func
 from app.db import session as db_session
 from app.db.models import Page, PipelineEvent
 from app.services.spell_check_service import index_book_words, tokenize
+from app.services.book_milestone_service import BookMilestoneService
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.word_index_scanner")
@@ -83,6 +84,14 @@ async def run_word_index_scanner(ctx) -> None:
             log_json(logger, logging.WARNING, "word index page failed",
                      book_id=page.book_id, page=page.page_number,
                      error=repr(exc), traceback=traceback.format_exc())
+
+    # Update book-level word_index milestone after processing batch
+    # Get unique book IDs from processed pages
+    if pages:
+        book_ids = {page.book_id for page in pages}
+        for book_id in book_ids:
+            async with db_session.async_session_factory() as session:
+                await BookMilestoneService.update_book_milestone_for_step(session, book_id, 'word_index')
 
     log_json(logger, logging.INFO, "word index scanner run complete",
              batch=len(page_ids), succeeded=succeeded, failed=failed)

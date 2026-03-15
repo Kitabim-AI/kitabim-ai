@@ -27,8 +27,10 @@ class Settings:
 
     # Database
     database_url: str | None = os.getenv("DATABASE_URL")  # PostgreSQL connection string
-    db_pool_size: int = int(os.getenv("DB_POOL_SIZE", "10"))
-    db_max_overflow: int = int(os.getenv("DB_MAX_OVERFLOW", "10"))
+    # Pool size increased to handle concurrent spell check processing (MAX_CONCURRENT_PAGES=20)
+    # Each concurrent page needs its own connection
+    db_pool_size: int = int(os.getenv("DB_POOL_SIZE", "25"))
+    db_max_overflow: int = int(os.getenv("DB_MAX_OVERFLOW", "15"))
 
     # Storage
     storage_backend: str = os.getenv("STORAGE_BACKEND", "local")

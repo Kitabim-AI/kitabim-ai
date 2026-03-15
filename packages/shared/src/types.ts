@@ -38,6 +38,12 @@ export interface Book {
   pipelineStep?: 'ocr' | 'chunking' | 'embedding' | 'word_index' | 'spell_check' | 'ready' | null;
   pipelineStats?: Record<string, number>;
   hasSummary?: boolean;
+  // Book-level milestones (denormalized from pages for performance)
+  ocrMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';
+  chunkingMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';
+  embeddingMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';
+  wordIndexMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';
+  spellCheckMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';
 }
 
 export interface PaginatedBooks {

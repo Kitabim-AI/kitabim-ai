@@ -16,6 +16,7 @@ from sqlalchemy import select, update, delete, func
 from app.db import session as db_session
 from app.db.models import Book, Chunk, Page, PipelineEvent
 from app.services.chunking_service import chunking_service
+from app.services.book_milestone_service import BookMilestoneService
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.chunking_job")
@@ -103,6 +104,13 @@ async def chunking_job(ctx, page_ids: List[int]) -> None:
             failed += 1
             log_json(logger, logging.WARNING, "chunking page failed",
                      book_id=page.book_id, page=page.page_number, error=str(exc))
+
+    # Update book-level chunking milestone after processing batch
+    # Get book_id from first page
+    if pages:
+        book_id = pages[0].book_id
+        async with db_session.async_session_factory() as session:
+            await BookMilestoneService.update_book_milestone_for_step(session, book_id, 'chunking')
 
     log_json(logger, logging.INFO, "chunking job completed",
              succeeded=succeeded, failed=failed)

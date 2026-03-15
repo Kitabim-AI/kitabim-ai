@@ -53,40 +53,34 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   if (isGlobal) {
     return (
       <div className="h-[calc(100dvh-72px)] sm:h-[calc(100dvh-88px)] md:h-[calc(100dvh-120px)] lg:h-[calc(100dvh-140px)] w-full lg:max-w-5xl lg:mx-auto flex flex-col gap-3 md:gap-4 lg:gap-6 px-3 py-3 sm:px-6 md:px-0 lg:py-4" dir="rtl" lang="ug">
-        {/* Chat Header — hidden on md and smaller */}
-        <div className="hidden lg:flex bg-white/60 backdrop-blur-2xl px-8 py-4 items-center justify-between border border-[#0369a1]/10 shadow-sm group" style={{ borderRadius: '32px' }}>
-          <div className="flex items-center gap-5">
+        {/* Chat Header */}
+        <div className="flex bg-white/60 backdrop-blur-2xl px-4 sm:px-8 py-3 sm:py-4 items-center justify-between border border-[#0369a1]/10 shadow-sm group" style={{ borderRadius: '32px' }}>
+          <div className="flex items-center gap-3 sm:gap-5">
             <div className="p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 icon-shake">
-              <Bot size={24} className="md:w-7 md:h-7" strokeWidth={2.5} />
+              <Bot size={20} className="sm:w-7 sm:h-7" strokeWidth={2.5} />
             </div>
             <div>
               <h1
-                className="font-normal text-[#1a1a1a]"
-                style={{ fontSize: `${fontSize + 4}px` }}
+                className="font-normal text-[#1a1a1a] text-base sm:text-xl lg:text-2xl"
+                style={{ fontSize: `${fontSize + 2}px` }}
               >
                 {t('chat.globalAssistant')}
               </h1>
               <ProverbDisplay
                 size="xs"
                 keywords={t('proverbs.chat')}
-                className="opacity-70 uppercase mt-[-2px]"
+                className="opacity-70 uppercase mt-[-2px] hidden sm:flex"
                 defaultText={t('chat.subtitle')}
               />
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <div className="hidden md:flex items-center gap-3 px-6 py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner">
-              <BookOpen size={18} strokeWidth={2.5} />
-              <span className="text-sm font-normal uppercase">
-                {t('chat.libraryBookCount', { count: totalReady || books.filter(b => b.status === 'ready').length })}
-              </span>
-            </div>
             {onClose && (
               <button
                 onClick={onClose}
-                className="p-3 hover:bg-red-50 text-slate-300 hover:text-red-500 rounded-2xl transition-all active:scale-90"
+                className="p-2 sm:p-3 hover:bg-red-50 text-slate-300 hover:text-red-500 rounded-2xl transition-all active:scale-90"
               >
-                <X size={24} strokeWidth={3} />
+                <X size={20} className="sm:w-6 sm:h-6" strokeWidth={3} />
               </button>
             )}
           </div>

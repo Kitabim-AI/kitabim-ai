@@ -7,9 +7,10 @@ async def main():
     await init_db()
     ctx = {"redis": None} # Scanners might need redis to enqueue jobs
     # Actually scanners need redis ctx
-    import redis.asyncio as redis
+    from arq import create_pool
+    from arq.connections import RedisSettings
     from app.core.config import settings
-    r = await redis.from_url(settings.redis_url)
+    r = await create_pool(RedisSettings.from_dsn(settings.redis_url))
     ctx["redis"] = r
     
     print("Running Word Index Scanner manually...")

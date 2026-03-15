@@ -53,6 +53,23 @@ class Book(Base):
     )
     pipeline_step: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
 
+    # Book-level milestones (denormalized from pages for performance)
+    ocr_milestone: Mapped[str] = mapped_column(
+        String(20), default="idle", server_default="idle", nullable=False
+    )
+    chunking_milestone: Mapped[str] = mapped_column(
+        String(20), default="idle", server_default="idle", nullable=False
+    )
+    embedding_milestone: Mapped[str] = mapped_column(
+        String(20), default="idle", server_default="idle", nullable=False
+    )
+    word_index_milestone: Mapped[str] = mapped_column(
+        String(20), default="idle", server_default="idle", nullable=False
+    )
+    spell_check_milestone: Mapped[str] = mapped_column(
+        String(20), default="idle", server_default="idle", nullable=False
+    )
+
     # Arrays (PostgreSQL)
     categories: Mapped[List[str]] = mapped_column(
         ARRAY(Text),
@@ -444,11 +461,48 @@ class PageSpellIssue(Base):
         server_default=func.now(),
         nullable=False,
     )
+    auto_corrected_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     __table_args__ = (
         CheckConstraint(
             "status IN ('open', 'corrected', 'ignored')",
             name="page_spell_issues_status_check",
+        ),
+    )
+
+
+class SpellCheckCorrection(Base):
+    """Auto-correction rules for spell check issues"""
+    __tablename__ = "spell_check_corrections"
+
+    misspelled_word: Mapped[str] = mapped_column(Text, primary_key=True)
+    corrected_word: Mapped[str] = mapped_column(Text, nullable=False)
+    auto_apply: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        onupdate=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+    created_by: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "misspelled_word != corrected_word",
+            name="spell_check_corrections_different_words",
         ),
     )
 

@@ -17,6 +17,7 @@ from app.db import session as db_session
 from app.db.models import Book, Page, PipelineEvent
 from app.services.ocr_service import ocr_page_with_gemini
 from app.services.storage_service import storage
+from app.services.book_milestone_service import BookMilestoneService
 from app.utils.observability import log_json
 from sqlalchemy import select, update, func
 
@@ -149,6 +150,10 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
         await asyncio.gather(*[process_page(p) for p in pages])
     finally:
         doc.close()
+
+    # Update book-level OCR milestone after processing batch
+    async with db_session.async_session_factory() as session:
+        await BookMilestoneService.update_book_milestone_for_step(session, book_id, 'ocr')
 
     log_json(logger, logging.INFO, "OCR job completed",
              book_id=book_id, page_count=len(page_ids))
