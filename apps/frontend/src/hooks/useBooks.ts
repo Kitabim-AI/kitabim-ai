@@ -16,8 +16,8 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
 
   const [sortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'uploadDate', direction: 'desc' });
 
-  // Only include pipeline stats on admin view (book management page)
-  const includeStats = view === 'admin';
+  // Pipeline stats are now lazy-loaded on-demand (click refresh button) for performance
+  const includeStats = false;
 
   // Helper to determine if we should use shelf-style (infinite scroll) behavior
   const isShelfView = useMemo(() => {
@@ -29,34 +29,6 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
   const groupByWork = useMemo(() => {
     return false; // Show all volumes instead of grouping by work
   }, [view, searchQuery, category]);
-
-  // Internal Polling for Processing Books (only on admin page)
-  useEffect(() => {
-    const hasProcessing = books.some(b => 
-      (b.pipelineStep && b.pipelineStep !== 'ready') || 
-      (b.pipelineStats && Object.entries(b.pipelineStats).some(([k, v]) => k.endsWith('_active') && (v as number) > 0))
-    );
-    
-    if (hasProcessing && view === 'admin') {
-      const interval = setInterval(async () => {
-        try {
-          const currentSize = isShelfView ? Math.max(books.length, COLLECTION_PAGE_SIZE) : pageSize;
-          const currentPage = isShelfView ? 1 : page;
-          const sortBy = isShelfView ? 'uploadDate' : sortConfig.key;
-          const order = isShelfView ? -1 : (sortConfig.direction === 'asc' ? 1 : -1);
-
-          const response = await PersistenceService.getGlobalLibrary(currentPage, currentSize, searchQuery, sortBy, order, groupByWork, category, includeStats);
-
-          setBooks(response.books);
-          setTotalBooks(response.total);
-          setTotalReady(response.totalReady);
-        } catch (e) {
-          console.error("Polling failed", e);
-        }
-      }, 5000); 
-      return () => clearInterval(interval);
-    }
-  }, [view, books, isShelfView, groupByWork, searchQuery, sortConfig, pageSize, page, category]);
 
   const lastRequestIdRef = useRef(0);
   const lastParamsRef = useRef('');

@@ -15,7 +15,7 @@ from app.core.config import settings
 from app.db.session import get_session
 from app.db.repositories.books import BooksRepository
 from app.db.repositories.pages import PagesRepository
-from app.db.models import Page, Chunk
+from app.db.models import Page, Chunk, BookSummary
 from app.models.schemas import Book, PaginatedBooks, ExtractionResult
 from app.models.user import User
 from app.services.storage_service import storage
@@ -140,9 +140,15 @@ async def get_books(
     from app.db.models import Page as PageDB
     from app.models.schemas import Book as BookSchema
 
+    # Cap pageSize to prevent extreme batch operations and connection pool exhaustion
+    pageSize = min(max(1, pageSize), 50)
+    
     skip = (page - 1) * pageSize
+    repo = BooksRepository(session)
     # --- PART 0: Cache Lookup ---
-    cache_params = {
+    # Dual-track caching: Separate metadata cache from real-time stats
+    # When includeStats=true (admin page), we need fresh stats but can cache book metadata
+    cache_params_base = {
         "page": page,
         "pageSize": pageSize,
         "q": q,
@@ -150,23 +156,61 @@ async def get_books(
         "sortBy": sortBy,
         "order": order,
         "groupByWork": groupByWork,
-        "includeStats": includeStats,
         "user_role": current_user.role if current_user else "guest"
     }
-    param_hash = hashlib.md5(json.dumps(cache_params, sort_keys=True).encode()).hexdigest()
+
+    # Create separate cache keys for requests with/without stats
+    # This allows caching metadata while keeping stats fresh
+    cache_params_with_stats = {**cache_params_base, "includeStats": True}
+    cache_params_no_stats = {**cache_params_base, "includeStats": False}
+
+    param_hash = hashlib.md5(json.dumps(cache_params_with_stats if includeStats else cache_params_no_stats, sort_keys=True).encode()).hexdigest()
     cache_key = cache_config.KEY_BOOKS_LIST.format(hash=param_hash)
 
     skip_cache = (
-        settings.cache_skip_for_admins and 
-        current_user and 
+        settings.cache_skip_for_admins and
+        current_user and
         current_user.role == "admin"
     )
 
-    if not skip_cache:
+    # For admin page with stats, try to load cached metadata (without stats)
+    # Then append fresh stats afterwards to avoid stale pipeline progress
+    cached_metadata = None
+    if not skip_cache and includeStats and current_user and current_user.role in ['admin', 'editor']:
+        # Try loading from metadata-only cache (excludeStats version)
+        metadata_hash = hashlib.md5(json.dumps(cache_params_no_stats, sort_keys=True).encode()).hexdigest()
+        metadata_cache_key = cache_config.KEY_BOOKS_LIST.format(hash=metadata_hash)
+        cached_metadata = await cache_service.get(metadata_cache_key)
+
+    if not skip_cache and not includeStats:
+        # For non-stats requests, use normal caching
         cached_result = await cache_service.get(cache_key)
         if cached_result:
             return PaginatedBooks.model_validate(cached_result)
 
+
+    # If we have cached metadata for admin stats request, use it and only fetch fresh stats
+    if cached_metadata and includeStats:
+        # Reuse cached book list, counts, etc.
+        cached_books = [Book.model_validate(b) for b in cached_metadata.get("books", [])]
+
+        # Fetch ONLY fresh stats for the cached books
+        if cached_books:
+            book_ids = [str(b.id) for b in cached_books]
+            batch_stats = await repo.get_batch_stats(book_ids)
+            for book in cached_books:
+                stats = batch_stats.get(str(book.id), {})
+                book.pipeline_stats = stats.get("pipeline_stats", {})
+                book.has_summary = stats.get("has_summary", False)
+
+        # Return immediately with cached metadata + fresh stats
+        return PaginatedBooks.model_validate({
+            "books": cached_books,
+            "total": cached_metadata.get("total", 0),
+            "total_ready": cached_metadata.get("total_ready", 0),
+            "page": page,
+            "page_size": pageSize,
+        })
 
     # --- PART 1: Define Filters ---
     # conditions: for the main list (total)
@@ -192,60 +236,44 @@ async def get_books(
         conditions.append(search_filter)
 
     # --- PART 2: Optimized Counting ---
-    # Only calculate total_ready if the user can see more than just ready books
+    # Merge total and total_ready counts into a single query for better performance
     can_see_all = current_user and current_user.role in ['admin', 'editor']
     
     if groupByWork:
         # Count unique works (title, author)
-        count_stmt = select(func.count()).select_from(
-            select(BookDB.title, BookDB.author)
+        count_stmt = select(
+            func.count().label("total"),
+            func.count(case((
+                and_(
+                    BookDB.status == "ready", 
+                    or_(BookDB.visibility == "public", BookDB.visibility == None)
+                ), 1
+            ))).label("total_ready")
+        ).select_from(
+            select(BookDB.title, BookDB.author, BookDB.status, BookDB.visibility)
             .where(and_(*conditions))
             .distinct()
             .subquery()
         )
-        total_res = await session.execute(count_stmt)
-        total = total_res.scalar() or 0
-        
-        if can_see_all:
-            # Admins need total_ready as well (filtered for only 'ready' books)
-            ready_conditions = [BookDB.status == "ready", or_(BookDB.visibility == "public", BookDB.visibility is None)]
-            if category: ready_conditions.append(category == any_(BookDB.categories))
-            if q:
-                q_alt = q.replace('\u0626', '\u064A\u0654') if '\u0626' in q else (q.replace('\u064A\u0654', '\u0626') if '\u064A\u0654' in q else q)
-                ready_conditions.append(or_(
-                    BookDB.title.ilike(f"%{q}%"), BookDB.author.ilike(f"%{q}%"),
-                    BookDB.title.ilike(f"%{q_alt}%"), BookDB.author.ilike(f"%{q_alt}%"),
-                    q == any_(BookDB.categories), q_alt == any_(BookDB.categories)
-                ))
-            
-            ready_count_stmt = select(func.count()).select_from(
-                select(BookDB.title, BookDB.author)
-                .where(and_(*ready_conditions))
-                .distinct()
-                .subquery()
-            )
-            total_ready_res = await session.execute(ready_count_stmt)
-            total_ready = total_ready_res.scalar() or 0
-        else:
-            total_ready = total
     else:
         # Standard flat count
-        total_res = await session.execute(select(func.count(BookDB.id)).where(and_(*conditions)))
-        total = total_res.scalar() or 0
-        if can_see_all:
-            ready_conditions = [BookDB.status == "ready", or_(BookDB.visibility == "public", BookDB.visibility is None)]
-            if category: ready_conditions.append(category == any_(BookDB.categories))
-            if q:
-                q_alt = q.replace('\u0626', '\u064A\u0654') if '\u0626' in q else (q.replace('\u064A\u0654', '\u0626') if '\u064A\u0654' in q else q)
-                ready_conditions.append(or_(
-                    BookDB.title.ilike(f"%{q}%"), BookDB.author.ilike(f"%{q}%"),
-                    BookDB.title.ilike(f"%{q_alt}%"), BookDB.author.ilike(f"%{q_alt}%"),
-                    q == any_(BookDB.categories), q_alt == any_(BookDB.categories)
-                ))
-            total_ready_res = await session.execute(select(func.count(BookDB.id)).where(and_(*ready_conditions)))
-            total_ready = total_ready_res.scalar() or 0
-        else:
-            total_ready = total
+        count_stmt = select(
+            func.count(BookDB.id).label("total"),
+            func.count(case((
+                and_(
+                    BookDB.status == "ready", 
+                    or_(BookDB.visibility == "public", BookDB.visibility == None)
+                ), 1
+            ))).label("total_ready")
+        ).where(and_(*conditions))
+    
+    count_res = await session.execute(count_stmt)
+    row = count_res.fetchone()
+    total = row.total if row else 0
+    total_ready = row.total_ready if row else 0
+    
+    if not can_see_all:
+        total_ready = total
 
     # --- PART 3: Main Data Fetching ---
     if groupByWork:
@@ -295,7 +323,6 @@ async def get_books(
 
     # --- PART 4: Asset Serialization (Optimized for List View) ---
     books_data = []
-    repo = BooksRepository(session)
 
     # Only include expensive pipeline stats when explicitly requested via includeStats=true
     # This is needed only on the admin book management page, not on library/home views
@@ -322,18 +349,37 @@ async def get_books(
             "cover_url": f"{storage.get_public_url(b.cover_url)}?v={int(b.last_updated.timestamp())}" if b.cover_url and b.last_updated else (storage.get_public_url(b.cover_url) if b.cover_url else None),
             "visibility": b.visibility, "categories": _normalize_categories(b.categories),
             "last_error": last_error_obj, "read_count": b.read_count or 0, "file_name": b.file_name,
-            "file_type": b.file_type, "source": b.source, "pipeline_stats": {}, "has_summary": False
+            "file_type": b.file_type, "source": b.source, "pipeline_stats": {}, "has_summary": False,
+            # Book-level milestones for accurate icon colors
+            "ocr_milestone": b.ocr_milestone,
+            "chunking_milestone": b.chunking_milestone,
+            "embedding_milestone": b.embedding_milestone,
+            "word_index_milestone": b.word_index_milestone,
+            "spell_check_milestone": b.spell_check_milestone
         }
         books_data.append(BookSchema.model_validate(b_dict))
 
-    # Only fetch expensive stats if explicitly requested (book management page only)
+    # Batch-fetch summary status for all books in the list (very cheap)
+    summary_ids = set()
+    if books_data:
+        bid_list = [str(b.id) for b in books_objs]
+        s_stmt = select(BookSummary.book_id).where(BookSummary.book_id.in_(bid_list))
+        s_res = await session.execute(s_stmt)
+        summary_ids = {str(row[0]) for row in s_res.fetchall()}
+        for pydantic_book in books_data:
+            if str(pydantic_book.id) in summary_ids:
+                pydantic_book.has_summary = True
+
+    # Only fetch expensive pipeline stats if explicitly requested (non-lite)
     if should_include_stats and books_data:
         book_ids = [str(b.id) for b in books_data]
         batch_stats = await repo.get_batch_stats(book_ids)
         for pydantic_book in books_data:
             stats = batch_stats.get(str(pydantic_book.id), {})
             pydantic_book.pipeline_stats = stats.get("pipeline_stats", {})
-            pydantic_book.has_summary = stats.get("has_summary", False)
+            # has_summary is already set above, but stats might have a more recent view
+            if stats.get("has_summary"):
+                pydantic_book.has_summary = True
 
     result = {
         "books": books_data,
@@ -344,9 +390,35 @@ async def get_books(
     }
 
     if not skip_cache:
-        # Cache list results: 30 minutes for guests (stable data), 10 minutes for authenticated users
+        # Dual-track caching strategy:
+        # 1. Always cache the full result (with or without stats) for normal requests
+        # 2. For admin stats requests, ALSO cache a metadata-only version (no stats)
+        #    This allows future requests to reuse book list + counts and only fetch fresh stats
+
         cache_ttl = 1800 if current_user is None else 600
-        await cache_service.set(cache_key, result, ttl=cache_ttl)
+
+        if includeStats and current_user and current_user.role in ['admin', 'editor']:
+            # Create metadata-only version (strip out stats)
+            metadata_result = {
+                "books": [
+                    {**book.model_dump(), "pipeline_stats": {}, "has_summary": False}
+                    for book in books_data
+                ],
+                "total": total,
+                "total_ready": total_ready,
+                "page": page,
+                "page_size": pageSize,
+            }
+
+            # Cache metadata version (longer TTL since metadata is stable)
+            metadata_hash = hashlib.md5(json.dumps(cache_params_no_stats, sort_keys=True).encode()).hexdigest()
+            metadata_cache_key = cache_config.KEY_BOOKS_LIST.format(hash=metadata_hash)
+            await cache_service.set(metadata_cache_key, metadata_result, ttl=cache_ttl * 2)  # 20 min for metadata
+
+            # Note: We do NOT cache the full stats result to ensure stats are always fresh
+        else:
+            # For non-stats requests, cache normally
+            await cache_service.set(cache_key, result, ttl=cache_ttl)
 
     return result
 
@@ -622,10 +694,9 @@ async def get_book(
         else:
             last_error_obj = book_model.last_error
 
-    # Get page stats for this book using repository method
-    stats_dict = await repo.get_with_page_stats(book_id)
-    pipeline_stats = stats_dict.get("pipeline_stats", {}) if stats_dict else {}
-    has_summary = stats_dict.get("has_summary", False) if stats_dict else False
+    # Reuse previously fetched stats for the book metadata
+    pipeline_stats = stats.get("pipeline_stats", {})
+    has_summary = stats.get("has_summary", False)
 
     # Create a dict with only metadata
     book_dict = {
@@ -670,6 +741,30 @@ async def get_book(
         )
 
     return book_response
+
+
+@router.get("/{book_id}/pipeline-stats")
+async def get_book_pipeline_stats(
+    book_id: str,
+    step: Optional[str] = None,  # Optional: ocr, chunking, embedding, word_index, spell_check, summary
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """Fetch detailed page-level pipeline statistics for a single book (for UI hover)
+
+    If step is provided, only fetches stats for that specific pipeline step for performance.
+    """
+    repo = BooksRepository(session)
+    # Using existing repo method that returns {book, page_stats, pipeline_stats, has_summary}
+    stats = await repo.get_with_page_stats(book_id, step=step)
+    if not stats:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    return {
+        "pipeline_stats": stats.get("pipeline_stats", {}),
+        "has_summary": stats.get("has_summary", False),
+        "total_pages": stats["book"].total_pages
+    }
 
 
 

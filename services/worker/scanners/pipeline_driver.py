@@ -14,11 +14,12 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import update, select, func, case, or_, and_
+from sqlalchemy import update, select, func, case, or_, and_, union_all
 
 from app.db import session as db_session
-from app.db.models import Book, Page
+from app.db.models import Book, Page, BookSummary
 from app.db.repositories.system_configs import SystemConfigsRepository
+from app.services.book_milestone_service import BookMilestoneService
 from app.utils.observability import log_json
 
 # Books already marked ready or failed — do not reprocess them.
@@ -34,73 +35,86 @@ async def run_pipeline_driver(ctx) -> None:
 
         # ── 1. Initialize ──────────────────────────────────────────────────────
         # Ensure ocr_milestone is 'idle' for pages that need processing.
-        # This is the entry point for the pipeline.
-        already_done_subq = (
-            select(Book.id).where(
-                Book.status.in_(_V1_READY_STATUSES),
-                or_(
-                    Book.pipeline_step.is_(None),
-                    Book.pipeline_step == "ready",
-                    Book.pipeline_step == "failed",
-                ),
-            )
-        )
-        
-        # We also keep pipeline_step = 'ocr' for legacy/internal tracking if useful,
-        # but the logic now drives via ocr_milestone.
-        init_result = await session.execute(
-            update(Page)
+        # Use a join instead of not_in for better performance in production.
+        init_ids_stmt = (
+            select(Page.id)
+            .join(Book, Page.book_id == Book.id)
             .where(
                 Page.ocr_milestone == "idle",
                 Page.milestone != "succeeded",
-                Page.book_id.not_in(already_done_subq),
+                ~Book.status.in_(_V1_READY_STATUSES),
+                or_(
+                    Book.pipeline_step.is_(None),
+                    ~Book.pipeline_step.in_(["ready", "failed"])
+                )
             )
-            .values(
-                retry_count=0,
-                pipeline_step=case((Page.pipeline_step.is_(None), "ocr"), else_=Page.pipeline_step)
-            )
+            .limit(5000)
         )
-        initialized = init_result.rowcount
+        init_ids_result = await session.execute(init_ids_stmt)
+        init_page_ids = [row[0] for row in init_ids_result.fetchall()]
+
+        initialized = 0
+        if init_page_ids:
+            init_update_stmt = (
+                update(Page)
+                .where(Page.id.in_(init_page_ids))
+                .values(
+                    retry_count=0,
+                    pipeline_step=case((Page.pipeline_step.is_(None), "ocr"), else_=Page.pipeline_step)
+                )
+            )
+            init_exec = await session.execute(init_update_stmt)
+            initialized = init_exec.rowcount
 
         # ── 2. Reset failed milestones that still have retries remaining ───────
         # If any milestone failed but we have retries left, reset ALL milestones 
         # to ensure a clean retry of the whole page (or just the failing ones).
-        # Typically OCR is the most critical to reset.
-        reset_result = await session.execute(
-            update(Page)
-            .where(
-                or_(
-                    Page.ocr_milestone.in_(["failed", "error"]),
-                    Page.chunking_milestone.in_(["failed", "error"]),
-                    Page.embedding_milestone.in_(["failed", "error"]),
-                    Page.word_index_milestone.in_(["failed", "error"]),
-                    Page.spell_check_milestone.in_(["failed", "error"]),
-                ),
-                Page.retry_count < max_retries,
+        # We fetch IDs first and then update them to avoid a massive sequential 
+        # scan update that locks the table and times out in production.
+        # UNION ALL of internal queries to force partial index usage for each leg.
+        # This is much faster than OR across different columns.
+        reset_ids_stmt = (
+            union_all(
+                select(Page.id).where(Page.ocr_milestone.in_(["failed", "error"]), Page.retry_count < max_retries).limit(5000),
+                select(Page.id).where(Page.chunking_milestone.in_(["failed", "error"]), Page.retry_count < max_retries).limit(5000),
+                select(Page.id).where(Page.embedding_milestone.in_(["failed", "error"]), Page.retry_count < max_retries).limit(5000),
+                select(Page.id).where(Page.word_index_milestone.in_(["failed", "error"]), Page.retry_count < max_retries).limit(5000),
+                select(Page.id).where(Page.spell_check_milestone.in_(["failed", "error"]), Page.retry_count < max_retries).limit(5000),
             )
-            .values(
-                ocr_milestone=case(
-                    (Page.ocr_milestone.in_(["failed", "error"]), "idle"), else_=Page.ocr_milestone
-                ),
-                chunking_milestone=case(
-                    (Page.chunking_milestone.in_(["failed", "error"]), "idle"),
-                    else_=Page.chunking_milestone,
-                ),
-                embedding_milestone=case(
-                    (Page.embedding_milestone.in_(["failed", "error"]), "idle"),
-                    else_=Page.embedding_milestone,
-                ),
-                word_index_milestone=case(
-                    (Page.word_index_milestone.in_(["failed", "error"]), "idle"),
-                    else_=Page.word_index_milestone,
-                ),
-                spell_check_milestone=case(
-                    (Page.spell_check_milestone.in_(["failed", "error"]), "idle"),
-                    else_=Page.spell_check_milestone,
-                ),
-            )
+            .limit(5000)
         )
-        reset = reset_result.rowcount
+        reset_ids_result = await session.execute(reset_ids_stmt)
+        reset_page_ids = [row[0] for row in reset_ids_result.fetchall()]
+
+        reset = 0
+        if reset_page_ids:
+            reset_update_stmt = (
+                update(Page)
+                .where(Page.id.in_(reset_page_ids))
+                .values(
+                    ocr_milestone=case(
+                        (Page.ocr_milestone.in_(["failed", "error"]), "idle"), else_=Page.ocr_milestone
+                    ),
+                    chunking_milestone=case(
+                        (Page.chunking_milestone.in_(["failed", "error"]), "idle"),
+                        else_=Page.chunking_milestone,
+                    ),
+                    embedding_milestone=case(
+                        (Page.embedding_milestone.in_(["failed", "error"]), "idle"),
+                        else_=Page.embedding_milestone,
+                    ),
+                    word_index_milestone=case(
+                        (Page.word_index_milestone.in_(["failed", "error"]), "idle"),
+                        else_=Page.word_index_milestone,
+                    ),
+                    spell_check_milestone=case(
+                        (Page.spell_check_milestone.in_(["failed", "error"]), "idle"),
+                        else_=Page.spell_check_milestone,
+                    ),
+                )
+            )
+            reset_exec = await session.execute(reset_update_stmt)
+            reset = reset_exec.rowcount
 
         # ── 3. (REMOVED) Sequential Promotion ──────────────────────────────────
         # Scanners now look for their own work based on dependencies:
@@ -188,13 +202,19 @@ async def run_pipeline_driver(ctx) -> None:
         # truly newly-ready books, avoiding duplicates on re-runs.
         newly_ready_ids: list = []
         if fully_ready_ids:
+            # newly_ready_ids filters fully_ready_ids for those that either:
+            # 1. Are not yet marked as 'ready' in the pipeline_step column
+            # 2. DO NOT have a summary yet (to avoid re-enqueuing during spell-check updates)
             nr_result = await session.execute(
-                select(Book.id).where(
+                select(Book.id)
+                .outerjoin(BookSummary, Book.id == BookSummary.book_id)
+                .where(
                     Book.id.in_(fully_ready_ids),
                     or_(
                         Book.pipeline_step != "ready",
                         Book.pipeline_step.is_(None),
                     ),
+                    BookSummary.book_id.is_(None)
                 )
             )
             newly_ready_ids = [row[0] for row in nr_result.fetchall()]
@@ -213,6 +233,10 @@ async def run_pipeline_driver(ctx) -> None:
                 .values(pipeline_step="ready", status="ready")
             )).rowcount
 
+            # Update book-level milestones for ready books
+            for book_id in fully_ready_ids:
+                await BookMilestoneService.update_book_milestones(session, book_id)
+
         books_marked_error = 0
         if has_failures_ids:
             books_marked_error = (await session.execute(
@@ -223,6 +247,10 @@ async def run_pipeline_driver(ctx) -> None:
                 )
                 .values(pipeline_step="failed", status="error")
             )).rowcount
+
+            # Update book-level milestones for error books
+            for book_id in has_failures_ids:
+                await BookMilestoneService.update_book_milestones(session, book_id)
 
         await session.commit()
 

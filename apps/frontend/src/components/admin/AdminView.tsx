@@ -41,26 +41,27 @@ const getPipelineIconClass = (
   const activeCount = getStat(book.pipelineStats, `${stepKey}_active`);
   const failedCount = getStat(book.pipelineStats, `${stepKey}_failed`);
   const total = book.totalPages || 0;
-  
+
   // For page-level steps, use the aggregate counts to determine if finished
   const isPageLevel = ['ocr', 'chunking', 'embedding', 'word_index', 'spell_check'].includes(stepKey);
-  
-  const isComplete = isPageLevel 
-    ? (total > 0 && doneCount + failedCount === total)
-    : isCompleteParam;
-    
+
+  // Special case: Summary is determined by hasSummary flag
+  const isComplete = stepKey === 'summary'
+    ? !!book.hasSummary
+    : isPageLevel
+      ? (total > 0 && doneCount + failedCount === total)
+      : isCompleteParam;
+
   const isFailed = isPageLevel
     ? failedCount > 0
     : isFailedParam;
 
   // A step is considered "In Progress" (orange/blinking) if:
   // 1. It's not complete AND
-  // 2. It has either started (doneCount > 0), is currently being worked on (activeCount > 0),
-  //    or the global book state explicitly says we are on this step.
+  // 2. It has either started (doneCount > 0) or is currently being worked on (activeCount > 0)
   const isInProgress = !isComplete && (
-    doneCount > 0 || 
-    activeCount > 0 || 
-    (book.pipelineStep === stepKey && book.status !== 'ready')
+    doneCount > 0 ||
+    activeCount > 0
   );
 
   // Order matters: In Progress (blinking) takes precedence over a partial error
@@ -69,6 +70,50 @@ const getPipelineIconClass = (
   if (isFailed) return 'text-red-500';
   if (isComplete) return 'text-emerald-500';
   return 'text-slate-300';
+};
+
+const getMilestoneColor = (book: any, stepKey: string) => {
+  // Map step key to milestone field
+  const milestoneFieldMap: Record<string, string> = {
+    'ocr': 'ocrMilestone',
+    'chunking': 'chunkingMilestone',
+    'embedding': 'embeddingMilestone',
+    'word_index': 'wordIndexMilestone',
+    'spell_check': 'spellCheckMilestone',
+    'summary': 'hasSummary', // Special case
+  };
+
+  const milestoneField = milestoneFieldMap[stepKey];
+  if (!milestoneField) return 'text-slate-300';
+
+  // Special case for summary: use boolean flag
+  if (stepKey === 'summary') {
+    return book.hasSummary ? 'text-emerald-500' : 'text-slate-300';
+  }
+
+  const milestone = book[milestoneField];
+
+  switch (milestone) {
+    case 'complete':
+      return 'text-emerald-500';
+    case 'partial_failure':
+      return 'text-yellow-500'; // Yellow for partial failures
+    case 'failed':
+      return 'text-red-500';
+    case 'in_progress':
+      return 'text-[#FF9800] animate-pulse drop-shadow-[0_0_8px_rgba(255,152,0,0.4)]';
+    case 'idle':
+    default:
+      return 'text-slate-300';
+  }
+};
+
+const isBookReadable = (book: any): boolean => {
+  // A book is readable if OCR has started (not idle) or if status is ready
+  // This replaces the old check: !book.pipelineStep && book.status === 'pending'
+  return book.status === 'ready' ||
+         book.ocrMilestone !== 'idle' ||
+         (book.status !== 'pending');
 };
 
 export const AdminView: React.FC = () => {
@@ -113,6 +158,31 @@ export const AdminView: React.FC = () => {
     categories: string[];
     tempCategory: string;
   } | null>(null);
+
+  // Lazy loading stats state (cached on hover for performance)
+  // Cache key: `${bookId}:${step}` for per-step caching
+  const [detailedStats, setDetailedStats] = useState<Record<string, any>>({});
+  const [loadingStats, setLoadingStats] = useState<Record<string, boolean>>({});
+
+  const fetchBookStats = async (bookId: string, step: string) => {
+    const cacheKey = `${bookId}:${step}`;
+
+    // Skip if already loaded or currently loading
+    if (detailedStats[cacheKey] || loadingStats[cacheKey]) return;
+
+    setLoadingStats(prev => ({ ...prev, [cacheKey]: true }));
+    try {
+      const res = await authFetch(`/api/books/${bookId}/pipeline-stats?step=${step}`);
+      if (res.ok) {
+        const data = await res.json();
+        setDetailedStats(prev => ({ ...prev, [cacheKey]: data }));
+      }
+    } catch (err) {
+      console.error('Failed to fetch book stats:', err);
+    } finally {
+      setLoadingStats(prev => ({ ...prev, [cacheKey]: false }));
+    }
+  };
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -257,8 +327,8 @@ export const AdminView: React.FC = () => {
                         <div className="flex items-center gap-2 md:gap-4">
                           <button
                             onClick={() => bookActions.openReader(book)}
-                            disabled={!book.pipelineStep && book.status === 'pending' || isEditing}
-                            className={`p-2 md:p-3 rounded-xl transition-all shadow-sm active:scale-90 ${(!book.pipelineStep && book.status === 'pending') || isEditing
+                            disabled={!isBookReadable(book) || isEditing}
+                            className={`p-2 md:p-3 rounded-xl transition-all shadow-sm active:scale-90 ${!isBookReadable(book) || isEditing
                               ? 'bg-slate-100 text-slate-300 cursor-not-allowed'
                               : 'bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white group-hover/row:scale-110'
                               }`}
@@ -283,13 +353,13 @@ export const AdminView: React.FC = () => {
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                if ((!book.pipelineStep && book.status === 'pending') && !isEditing) return;
+                                if (!isBookReadable(book) && !isEditing) return;
                                 bookActions.openReader(book);
                               }}
-                              className={`text-right group/title transition-all duration-300 block ${(!book.pipelineStep && book.status !== 'pending') || book.pipelineStep && !isEditing ? 'cursor-pointer hover:translate-x-[-4px]' : 'cursor-default'}`}
-                              disabled={(!book.pipelineStep && book.status === 'pending') || isEditing}
+                              className={`text-right group/title transition-all duration-300 block ${isBookReadable(book) && !isEditing ? 'cursor-pointer hover:translate-x-[-4px]' : 'cursor-default'}`}
+                              disabled={!isBookReadable(book) || isEditing}
                             >
-                              <span className={`font-black text-[14px] md:text-[16px] lg:text-[18px] transition-colors block ${(!book.pipelineStep && book.status !== 'pending') || book.pipelineStep && !isEditing ? 'text-[#1a1a1a] group-hover/title:text-[#0369a1]' : 'text-slate-400'}`}>
+                              <span className={`font-black text-[14px] md:text-[16px] lg:text-[18px] transition-colors block ${isBookReadable(book) && !isEditing ? 'text-[#1a1a1a] group-hover/title:text-[#0369a1]' : 'text-slate-400'}`}>
                                 {book.title}
                                 {book.volume !== null && (
                                   <span className="lg:hidden text-[#0369a1] mr-2">
@@ -297,16 +367,16 @@ export const AdminView: React.FC = () => {
                                   </span>
                                 )}
                               </span>
-                              <div className="text-[10px] md:text-[12px] font-bold text-slate-400 mt-0.5">{new Date(book.uploadDate).toLocaleDateString()}</div>
+                              <div className="text-[10px] md:text-[12px] font-bold text-slate-400 mt-0.5">{t('book.pagesCount', { count: book.totalPages || 0 })}</div>
                               
                               {/* Mobile Pipeline Progress */}
                               <div className="flex md:hidden items-center gap-1.5 mt-2 opacity-80">
-                                <ScanText size={14} className={getPipelineIconClass(book, 'ocr', getStat(book.pipelineStats, 'ocr') === (book.totalPages || 0) && (book.totalPages || 0) > 0, getStat(book.pipelineStats, 'ocr_failed') > 0)} />
-                                <Scissors size={14} className={getPipelineIconClass(book, 'chunking', getStat(book.pipelineStats, 'chunking') === (book.totalPages || 0) && (book.totalPages || 0) > 0, getStat(book.pipelineStats, 'chunking_failed') > 0)} />
-                                <Cuboid size={14} className={getPipelineIconClass(book, 'embedding', getStat(book.pipelineStats, 'embedding') === (book.totalPages || 0) && (book.totalPages || 0) > 0, getStat(book.pipelineStats, 'embedding_failed') > 0)} />
-                                <Wand2 size={14} className={getPipelineIconClass(book, 'summary', !!book.hasSummary, false)} />
-                                <WholeWord size={14} className={getPipelineIconClass(book, 'word_index', getStat(book.pipelineStats, 'word_index') === (book.totalPages || 0) && (book.totalPages || 0) > 0, getStat(book.pipelineStats, 'word_index_failed') > 0)} />
-                                <BookOpenCheck size={14} className={getPipelineIconClass(book, 'spell_check', getStat(book.pipelineStats, 'spell_check') === (book.totalPages || 0) && (book.totalPages || 0) > 0, getStat(book.pipelineStats, 'spell_check_failed') > 0)} />
+                                <ScanText size={14} className={getMilestoneColor(book, 'ocr')} />
+                                <Scissors size={14} className={getMilestoneColor(book, 'chunking')} />
+                                <Cuboid size={14} className={getMilestoneColor(book, 'embedding')} />
+                                <Wand2 size={14} className={getMilestoneColor(book, 'summary')} />
+                                <WholeWord size={14} className={getMilestoneColor(book, 'word_index')} />
+                                <BookOpenCheck size={14} className={getMilestoneColor(book, 'spell_check')} />
                               </div>
                             </button>
                           )}
@@ -365,48 +435,62 @@ export const AdminView: React.FC = () => {
                       <td className={`hidden md:table-cell px-3 md:px-6 py-4 md:py-6 ${isEditing ? 'align-top' : ''}`}>
                         <div className="flex flex-col gap-1.5 min-w-[120px] md:min-w-[150px]">
                           <div className="flex items-center gap-2.5">
-                            {/* Baseline Pipeline Icons synced with ActionMenu */}
-                            <div className="group/status relative flex items-center">
-                              <ScanText size={18} className={`${getPipelineIconClass(book, 'ocr', getStat(book.pipelineStats, 'ocr') === (book.totalPages || 0) && (book.totalPages || 0) > 0, getStat(book.pipelineStats, 'ocr_failed') > 0)} transition-colors duration-300`} />
-                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-lg opacity-0 group-hover/status:opacity-100 transition-all duration-200 whitespace-nowrap pointer-events-none z-10 border border-slate-700">
-                                {t('admin.pipeline.ocr')}: {getStat(book.pipelineStats, 'ocr')}/{book.totalPages || 0}
-                                {getStat(book.pipelineStats, 'ocr_failed') > 0 && <span className="text-red-400 ml-1">({getStat(book.pipelineStats, 'ocr_failed')} {t('common.error')})</span>}
-                              </div>
-                            </div>
-                            <div className="group/status relative flex items-center">
-                              <Scissors size={18} className={`${getPipelineIconClass(book, 'chunking', getStat(book.pipelineStats, 'chunking') === (book.totalPages || 0) && (book.totalPages || 0) > 0, getStat(book.pipelineStats, 'chunking_failed') > 0)} transition-colors duration-300`} />
-                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-lg opacity-0 group-hover/status:opacity-100 transition-all duration-200 whitespace-nowrap pointer-events-none z-10 border border-slate-700">
-                                {t('admin.pipeline.chunking')}: {getStat(book.pipelineStats, 'chunking')}/{book.totalPages || 0}
-                                {getStat(book.pipelineStats, 'chunking_failed') > 0 && <span className="text-red-400 ml-1">({getStat(book.pipelineStats, 'chunking_failed')} {t('common.error')})</span>}
-                              </div>
-                            </div>
-                            <div className="group/status relative flex items-center">
-                              <Cuboid size={18} className={`${getPipelineIconClass(book, 'embedding', getStat(book.pipelineStats, 'embedding') === (book.totalPages || 0) && (book.totalPages || 0) > 0, getStat(book.pipelineStats, 'embedding_failed') > 0)} transition-colors duration-300`} />
-                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-lg opacity-0 group-hover/status:opacity-100 transition-all duration-200 whitespace-nowrap pointer-events-none z-10 border border-slate-700">
-                                {t('admin.pipeline.embedding')}: {getStat(book.pipelineStats, 'embedding')}/{book.totalPages || 0}
-                                {getStat(book.pipelineStats, 'embedding_failed') > 0 && <span className="text-red-400 ml-1">({getStat(book.pipelineStats, 'embedding_failed')} {t('common.error')})</span>}
-                              </div>
-                            </div>
-                            <div className="group/status relative flex items-center">
-                              <Wand2 size={18} className={`${getPipelineIconClass(book, 'summary', !!book.hasSummary, false)} transition-colors duration-300`} />
-                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-lg opacity-0 group-hover/status:opacity-100 transition-all duration-200 whitespace-nowrap pointer-events-none z-10 border border-slate-700">
-                                {t('admin.pipeline.summary')}: {book.hasSummary ? t('common.done') : t('common.pending')}
-                              </div>
-                            </div>
-                            <div className="group/status relative flex items-center">
-                              <WholeWord size={18} className={`${getPipelineIconClass(book, 'word_index', getStat(book.pipelineStats, 'word_index') === (book.totalPages || 0) && (book.totalPages || 0) > 0, getStat(book.pipelineStats, 'word_index_failed') > 0)} transition-colors duration-300`} />
-                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-lg opacity-0 group-hover/status:opacity-100 transition-all duration-200 whitespace-nowrap pointer-events-none z-10 border border-slate-700">
-                                {t('admin.pipeline.wordIndex')}: {getStat(book.pipelineStats, 'word_index')}/{book.totalPages || 0}
-                                {getStat(book.pipelineStats, 'word_index_failed') > 0 && <span className="text-red-400 ml-1">({getStat(book.pipelineStats, 'word_index_failed')} {t('common.error')})</span>}
-                              </div>
-                            </div>
-                            <div className="group/status relative flex items-center">
-                              <BookOpenCheck size={18} className={`${getPipelineIconClass(book, 'spell_check', getStat(book.pipelineStats, 'spell_check') === (book.totalPages || 0) && (book.totalPages || 0) > 0, getStat(book.pipelineStats, 'spell_check_failed') > 0)} transition-colors duration-300`} />
-                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-lg opacity-0 group-hover/status:opacity-100 transition-all duration-200 whitespace-nowrap pointer-events-none z-10 border border-slate-700">
-                                {t('admin.pipeline.spellCheck')}: {getStat(book.pipelineStats, 'spell_check')}/{book.totalPages || 0}
-                                {getStat(book.pipelineStats, 'spell_check_failed') > 0 && <span className="text-red-400 ml-1">({getStat(book.pipelineStats, 'spell_check_failed')} {t('common.error')})</span>}
-                              </div>
-                            </div>
+                            {/* Baseline Pipeline Icons with Lazy Loading Tooltips */}
+                            {[
+                              { key: 'ocr', icon: ScanText, label: 'admin.pipeline.ocr' },
+                              { key: 'chunking', icon: Scissors, label: 'admin.pipeline.chunking' },
+                              { key: 'embedding', icon: Cuboid, label: 'admin.pipeline.embedding' },
+                              { key: 'summary', icon: Wand2, label: 'admin.pipeline.summary' },
+                              { key: 'word_index', icon: WholeWord, label: 'admin.pipeline.wordIndex' },
+                              { key: 'spell_check', icon: BookOpenCheck, label: 'admin.pipeline.spellCheck' }
+                            ].map(({ key, icon: Icon, label }) => {
+                              const cacheKey = `${book.id}:${key}`;
+                              const stats = detailedStats[cacheKey];
+                              const isLoading = loadingStats[cacheKey];
+                              const isLoaded = !!stats;
+
+                              const colorClass = isLoaded
+                                ? getPipelineIconClass(
+                                    { ...book, pipelineStats: stats.pipeline_stats, hasSummary: stats.has_summary, totalPages: stats.total_pages },
+                                    key,
+                                    false, // handled inside getPipelineIconClass for page levels
+                                    false  // handled inside getPipelineIconClass for page levels
+                                  )
+                                : getMilestoneColor(book, key);
+
+                              return (
+                                <div
+                                  key={key}
+                                  className="group/status relative flex items-center"
+                                  onMouseEnter={() => fetchBookStats(book.id, key)}
+                                >
+                                  <Icon size={18} className={`${colorClass} transition-colors duration-300`} />
+                                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-lg opacity-0 group-hover/status:opacity-100 transition-all duration-200 whitespace-nowrap pointer-events-none z-10 border border-slate-700">
+                                    <div className="flex flex-col gap-0.5">
+                                      <span className="font-bold border-b border-slate-700 pb-0.5 mb-0.5">{t(label)}</span>
+                                      {isLoading ? (
+                                        <span className="text-slate-400 animate-pulse">{t('common.loading')}...</span>
+                                      ) : isLoaded ? (
+                                        <>
+                                          {key === 'summary' ? (
+                                            <span>{stats.has_summary ? t('common.done') : t('common.pending')}</span>
+                                          ) : (
+                                            <span>
+                                              {getStat(stats.pipeline_stats, key)}/{stats.total_pages}
+                                              {getStat(stats.pipeline_stats, `${key}_failed`) > 0 && (
+                                                <span className="text-red-400 ml-1">
+                                                  ({getStat(stats.pipeline_stats, `${key}_failed`)} {t('common.error')})
+                                                </span>
+                                              )}
+                                            </span>
+                                          )}
+                                        </>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       </td>

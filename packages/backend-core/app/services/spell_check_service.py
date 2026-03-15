@@ -4,16 +4,77 @@ the API (on-demand) and the background worker (batch).
 """
 from __future__ import annotations
 
+import asyncio
 from collections import Counter
 import re
 import unicodedata
-from typing import List
+from typing import List, TypedDict, Dict
 
 from sqlalchemy import delete, func, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Page, PageSpellIssue
 from app.utils.text import normalize_uyghur_chars
+
+class SpellCheckCache(TypedDict, total=False):
+    """Optional per-job cache to avoid redundant DB lookups."""
+    unknown_words: Dict[str, bool]  # word -> is_unknown
+    ocr_corrections: Dict[str, list[str]] # word -> corrections
+    unique_to_book: Dict[str, bool] # word -> is_unique
+    _locks: Dict[str, asyncio.Lock]  # Internal locks for thread safety
+    _stats: Dict[str, int]  # Cache hit/miss statistics
+
+
+class ThreadSafeSpellCheckCache:
+    """Thread-safe wrapper for spell check cache with hit rate tracking."""
+
+    def __init__(self):
+        self.unknown_words: Dict[str, bool] = {}
+        self.ocr_corrections: Dict[str, list[str]] = {}
+        self.unique_to_book: Dict[str, bool] = {}
+        self._locks = {
+            'unknown': asyncio.Lock(),
+            'ocr': asyncio.Lock(),
+            'unique': asyncio.Lock()
+        }
+        self._stats = {
+            'unknown_hits': 0,
+            'unknown_misses': 0,
+            'ocr_hits': 0,
+            'ocr_misses': 0,
+            'unique_hits': 0,
+            'unique_misses': 0
+        }
+
+    def get_stats(self) -> dict:
+        """Return cache statistics including hit rates."""
+        total_unknown = self._stats['unknown_hits'] + self._stats['unknown_misses']
+        total_ocr = self._stats['ocr_hits'] + self._stats['ocr_misses']
+        total_unique = self._stats['unique_hits'] + self._stats['unique_misses']
+
+        return {
+            'unknown_words': {
+                'hits': self._stats['unknown_hits'],
+                'misses': self._stats['unknown_misses'],
+                'hit_rate': self._stats['unknown_hits'] / total_unknown if total_unknown > 0 else 0
+            },
+            'ocr_corrections': {
+                'hits': self._stats['ocr_hits'],
+                'misses': self._stats['ocr_misses'],
+                'hit_rate': self._stats['ocr_hits'] / total_ocr if total_ocr > 0 else 0
+            },
+            'unique_to_book': {
+                'hits': self._stats['unique_hits'],
+                'misses': self._stats['unique_misses'],
+                'hit_rate': self._stats['unique_hits'] / total_unique if total_unique > 0 else 0
+            },
+            'total_lookups': total_unknown + total_ocr + total_unique,
+            'overall_hit_rate': (
+                (self._stats['unknown_hits'] + self._stats['ocr_hits'] + self._stats['unique_hits']) /
+                (total_unknown + total_ocr + total_unique)
+                if (total_unknown + total_ocr + total_unique) > 0 else 0
+            )
+        }
 
 # ── Tokenizer ──────────────────────────────────────────────────────────────────
 
@@ -160,23 +221,71 @@ def insertion_variants(word: str) -> list[str]:
                 results.append(variant)
     return results
 
-
 # ── DB helpers ─────────────────────────────────────────────────────────────────
 
-async def find_unknown_words(session: AsyncSession, words: list[str]) -> set[str]:
+async def find_unknown_words(
+    session: AsyncSession,
+    words: list[str],
+    cache: SpellCheckCache | ThreadSafeSpellCheckCache | None = None
+) -> set[str]:
     """Find words not in dictionary. Uses parameterized query (safe from SQL injection)."""
     if not words:
         return set()
-    # Safe: words is bound as a parameter, not interpolated into SQL string
-    result = await session.execute(
-        text(
-            "SELECT unnest(CAST(:words AS text[])) AS w "
-            "EXCEPT "
-            "SELECT word FROM dictionary"
-        ),
-        {"words": words},
-    )
-    return {row[0] for row in result.fetchall()}
+
+    unknown = set()
+    to_query = []
+
+    # Handle both legacy dict cache and new thread-safe cache
+    is_thread_safe = isinstance(cache, ThreadSafeSpellCheckCache)
+
+    if cache is not None:
+        if is_thread_safe:
+            # Thread-safe cache with locking and statistics
+            async with cache._locks['unknown']:
+                for w in words:
+                    if w in cache.unknown_words:
+                        cache._stats['unknown_hits'] += 1
+                        if cache.unknown_words[w]:
+                            unknown.add(w)
+                    else:
+                        cache._stats['unknown_misses'] += 1
+                        to_query.append(w)
+        else:
+            # Legacy TypedDict cache (backwards compatible)
+            if "unknown_words" not in cache:
+                cache["unknown_words"] = {}
+            for w in words:
+                if w in cache["unknown_words"]:
+                    if cache["unknown_words"][w]:
+                        unknown.add(w)
+                else:
+                    to_query.append(w)
+    else:
+        to_query = words
+
+    if to_query:
+        # Safe: words is bound as a parameter, not interpolated into SQL string
+        result = await session.execute(
+            text(
+                "SELECT unnest(CAST(:words AS text[])) AS w "
+                "EXCEPT "
+                "SELECT word FROM dictionary"
+            ),
+            {"words": to_query},
+        )
+        queried_unknown = {row[0] for row in result.fetchall()}
+        unknown.update(queried_unknown)
+
+        if cache is not None:
+            if is_thread_safe:
+                async with cache._locks['unknown']:
+                    for w in to_query:
+                        cache.unknown_words[w] = (w in queried_unknown)
+            else:
+                for w in to_query:
+                    cache["unknown_words"][w] = (w in queried_unknown)
+
+    return unknown
 
 
 
@@ -187,6 +296,10 @@ async def index_book_words(
 
     Uses word IDs instead of TEXT for 60-80% storage reduction.
     Uses parameterized query (safe from SQL injection).
+    Optimized with smaller batches to reduce lock contention and timeout risks.
+
+    NOTE: If this function times out, it will raise an exception that should be
+    caught by the caller (spell_check_job) which will retry the entire page.
     """
     if not word_counts:
         return
@@ -196,33 +309,53 @@ async def index_book_words(
     words = [item[0] for item in sorted_items]
     counts = [item[1] for item in sorted_items]
 
-    # Step 1: Insert unique words into words table first (idempotent)
-    await session.execute(
-        text("""
-            INSERT INTO words (word)
-            SELECT unnest(CAST(:words AS text[]))
-            ON CONFLICT (word) DO NOTHING
-        """),
-        {"words": words}
-    )
+    # Use smaller batches to reduce lock duration and avoid timeout on large pages
+    # Smaller batches = less time holding locks = less contention
+    BATCH_SIZE = 100
 
-    # Step 2: Upsert into book_word_index using word IDs
-    # Safe: all values are bound as parameters, not interpolated
-    await session.execute(
-        text("""
-            INSERT INTO book_word_index (book_id, word_id, occurrence_count)
-            SELECT :book_id, w.id, t.c
-            FROM unnest(CAST(:words AS text[]), CAST(:counts AS int[])) AS t(word, c)
-            INNER JOIN words w ON w.word = t.word
-            ON CONFLICT (book_id, word_id) DO UPDATE
-            SET occurrence_count = book_word_index.occurrence_count + EXCLUDED.occurrence_count
-        """),
-        {"book_id": book_id, "words": words, "counts": counts},
-    )
+    for i in range(0, len(words), BATCH_SIZE):
+        batch_words = words[i:i + BATCH_SIZE]
+        batch_counts = counts[i:i + BATCH_SIZE]
+
+        # Step 1: Insert unique words into words table first (idempotent)
+        await session.execute(
+            text("""
+                INSERT INTO words (word)
+                SELECT unnest(CAST(:words AS text[]))
+                ON CONFLICT (word) DO NOTHING
+            """),
+            {"words": batch_words}
+        )
+
+        # Step 2: Upsert into book_word_index using word IDs
+        # Use a more aggressive timeout that will fail fast instead of blocking
+        # Safe: all values are bound as parameters, not interpolated
+        await session.execute(
+            text("""
+                WITH word_batch AS (
+                    SELECT unnest(CAST(:words AS text[])) AS word,
+                           unnest(CAST(:counts AS int[])) AS cnt
+                ),
+                word_ids AS (
+                    SELECT w.id, wb.cnt
+                    FROM word_batch wb
+                    INNER JOIN words w ON w.word = wb.word
+                )
+                INSERT INTO book_word_index (book_id, word_id, occurrence_count)
+                SELECT :book_id, word_ids.id, word_ids.cnt
+                FROM word_ids
+                ON CONFLICT (book_id, word_id) DO UPDATE
+                SET occurrence_count = book_word_index.occurrence_count + EXCLUDED.occurrence_count
+            """),
+            {"book_id": book_id, "words": batch_words, "counts": batch_counts},
+        )
 
 
 async def find_words_unique_to_book(
-    session: AsyncSession, book_id: str, words: set[str]
+    session: AsyncSession,
+    book_id: str,
+    words: set[str],
+    cache: SpellCheckCache | ThreadSafeSpellCheckCache | None = None
 ) -> set[str]:
     """
     Return the subset of `words` that do not appear in book_word_index for any
@@ -231,42 +364,128 @@ async def find_words_unique_to_book(
     """
     if not words:
         return set()
-    result = await session.execute(
-        text("""
-            SELECT t.w
-            FROM unnest(CAST(:words AS text[])) AS t(w)
-            LEFT JOIN words word_tbl ON word_tbl.word = t.w
-            LEFT JOIN book_word_index bwi_local
-              ON bwi_local.word_id = word_tbl.id AND bwi_local.book_id = :book_id
-            WHERE (COALESCE(bwi_local.occurrence_count, 0) < 3)
-              AND NOT EXISTS (
-                SELECT 1 FROM book_word_index bwi_other
-                WHERE bwi_other.word_id = word_tbl.id
-                  AND bwi_other.book_id != :book_id
-            )
-        """),
-        {"words": list(words), "book_id": book_id},
-    )
-    return {row[0] for row in result.fetchall()}
+
+    unique = set()
+    to_query = []
+
+    # Handle both legacy dict cache and new thread-safe cache
+    is_thread_safe = isinstance(cache, ThreadSafeSpellCheckCache)
+
+    if cache is not None:
+        if is_thread_safe:
+            async with cache._locks['unique']:
+                for w in words:
+                    if w in cache.unique_to_book:
+                        cache._stats['unique_hits'] += 1
+                        if cache.unique_to_book[w]:
+                            unique.add(w)
+                    else:
+                        cache._stats['unique_misses'] += 1
+                        to_query.append(w)
+        else:
+            if "unique_to_book" not in cache:
+                cache["unique_to_book"] = {}
+            for w in words:
+                if w in cache["unique_to_book"]:
+                    if cache["unique_to_book"][w]:
+                        unique.add(w)
+                else:
+                    to_query.append(w)
+    else:
+        to_query = list(words)
+
+    if to_query:
+        result = await session.execute(
+            text("""
+                SELECT t.w
+                FROM unnest(CAST(:words AS text[])) AS t(w)
+                LEFT JOIN words word_tbl ON word_tbl.word = t.w
+                LEFT JOIN book_word_index bwi_local
+                  ON bwi_local.word_id = word_tbl.id AND bwi_local.book_id = :book_id
+                WHERE (COALESCE(bwi_local.occurrence_count, 0) < 3)
+                  AND NOT EXISTS (
+                    SELECT 1 FROM book_word_index bwi_other
+                    WHERE bwi_other.word_id = word_tbl.id
+                      AND bwi_other.book_id != :book_id
+                )
+            """),
+            {"words": to_query, "book_id": book_id},
+        )
+        queried_unique = {row[0] for row in result.fetchall()}
+        unique.update(queried_unique)
+
+        if cache is not None:
+            if is_thread_safe:
+                async with cache._locks['unique']:
+                    for w in to_query:
+                        cache.unique_to_book[w] = (w in queried_unique)
+            else:
+                for w in to_query:
+                    cache["unique_to_book"][w] = (w in queried_unique)
+
+    return unique
 
 
 async def get_ocr_corrections_batch(
-    session: AsyncSession, unknowns: set[str]
+    session: AsyncSession,
+    unknowns: set[str],
+    cache: SpellCheckCache | ThreadSafeSpellCheckCache | None = None
 ) -> dict[str, list[str]]:
     """
     Batch correction lookup combining substitution and insertion variants.
     Returns {unknown_word: [corrected_word, ...]} for words that have at least
     one correction found in the dictionary.
     """
+    corrections: dict[str, list[str]] = {}
+    to_lookup_unknowns = set()
+
+    # Handle both legacy dict cache and new thread-safe cache
+    is_thread_safe = isinstance(cache, ThreadSafeSpellCheckCache)
+
+    if cache is not None:
+        if is_thread_safe:
+            async with cache._locks['ocr']:
+                for w in unknowns:
+                    if w in cache.ocr_corrections:
+                        cache._stats['ocr_hits'] += 1
+                        if cache.ocr_corrections[w]:
+                            corrections[w] = cache.ocr_corrections[w]
+                    else:
+                        cache._stats['ocr_misses'] += 1
+                        to_lookup_unknowns.add(w)
+        else:
+            if "ocr_corrections" not in cache:
+                cache["ocr_corrections"] = {}
+            for w in unknowns:
+                if w in cache["ocr_corrections"]:
+                    if cache["ocr_corrections"][w]:
+                        corrections[w] = cache["ocr_corrections"][w]
+                else:
+                    to_lookup_unknowns.add(w)
+    else:
+        to_lookup_unknowns = unknowns
+
+    if not to_lookup_unknowns:
+        return corrections
+
     variant_to_originals: dict[str, list[str]] = {}
-    for word in unknowns:
+    for word in to_lookup_unknowns:
         for variant in ocr_variants(word):
             variant_to_originals.setdefault(variant, []).append(word)
         for variant in insertion_variants(word):
             variant_to_originals.setdefault(variant, []).append(word)
 
     if not variant_to_originals:
-        return {}
+        # Mark all as having no corrections in cache
+        if cache is not None:
+            if is_thread_safe:
+                async with cache._locks['ocr']:
+                    for w in to_lookup_unknowns:
+                        cache.ocr_corrections[w] = []
+            else:
+                for w in to_lookup_unknowns:
+                    cache["ocr_corrections"][w] = []
+        return corrections
 
     result = await session.execute(
         text("SELECT word FROM dictionary WHERE word = ANY(CAST(:variants AS text[]))"),
@@ -274,19 +493,31 @@ async def get_ocr_corrections_batch(
     )
     found = {row[0] for row in result.fetchall()}
 
-    corrections: dict[str, list[str]] = {}
     for variant, originals in variant_to_originals.items():
         if variant in found:
             for orig in originals:
-                if variant not in corrections.get(orig, []):
-                    corrections.setdefault(orig, []).append(variant)
+                if variant not in corrections.setdefault(orig, []):
+                    corrections[orig].append(variant)
+
+    if cache is not None:
+        if is_thread_safe:
+            async with cache._locks['ocr']:
+                for w in to_lookup_unknowns:
+                    cache.ocr_corrections[w] = corrections.get(w, [])
+        else:
+            for w in to_lookup_unknowns:
+                cache["ocr_corrections"][w] = corrections.get(w, [])
 
     return corrections
 
 
 # ── Core per-page function ─────────────────────────────────────────────────────
 
-async def run_spell_check_for_page(session: AsyncSession, page: Page) -> int:
+async def run_spell_check_for_page(
+    session: AsyncSession,
+    page: Page,
+    cache: SpellCheckCache | None = None
+) -> int:
     """
     Run spell check for a single page within the given session.
 
@@ -316,17 +547,15 @@ async def run_spell_check_for_page(session: AsyncSession, page: Page) -> int:
     # tokens now yields (word_normalized, word_raw, start, end)
     word_freq = Counter(word_norm for word_norm, _raw, _s, _e in tokens)
     unique_words = list(word_freq.keys())
-    unknown = await find_unknown_words(session, unique_words)
-    ocr_cache = await get_ocr_corrections_batch(session, unknown)
-
-    # Index all words on this page so cross-book lookups stay accurate.
-    await index_book_words(session, page.book_id, word_freq)
+    unknown = await find_unknown_words(session, unique_words, cache=cache)
+    ocr_cache = await get_ocr_corrections_batch(session, unknown, cache=cache)
 
     # Unknown words with no OCR correction candidates are checked against the
     # book_word_index. If a word never appears in any other book it is likely
     # a genuine misspelling, not just an OCR substitution artifact.
+    # NOTE: word_index is built by word_index_scanner BEFORE spell check runs
     no_ocr_unknown = unknown - set(ocr_cache.keys())
-    unique_to_book = await find_words_unique_to_book(session, page.book_id, no_ocr_unknown)
+    unique_to_book = await find_words_unique_to_book(session, page.book_id, no_ocr_unknown, cache=cache)
 
     issues: List[PageSpellIssue] = [
         PageSpellIssue(

@@ -87,50 +87,92 @@ async def get_random_book_with_issues(
     current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
-    """Return a random book that has at least one open spell check issue."""
-    # Find all book_ids that have open issues
-    book_ids_result = await session.execute(
-        select(distinct(Page.book_id))
-        .join(PageSpellIssue, PageSpellIssue.page_id == Page.id)
-        .where(PageSpellIssue.status == "open")
-    )
-    book_ids = [row[0] for row in book_ids_result.fetchall()]
+    """Return a random book that has at least one open spell check issue.
 
-    if not book_ids:
+    Uses a two-step approach for better performance:
+    1. Fast random sampling to get candidate book IDs
+    2. Detailed query for the selected book
+    """
+    # Step 1: Get a random book ID with open issues using a faster approach
+    # We pick a random open issue and get its book_id.
+    # This is much faster than GROUP BY + ORDER BY RANDOM() on large datasets.
+    book_id_result = await session.execute(
+        text("""
+            WITH random_id AS (
+                SELECT floor(random() * (max(id) - min(id) + 1) + min(id)) as target_id
+                FROM page_spell_issues
+                WHERE status = 'open'
+            ),
+            selected_issue AS (
+                SELECT page_id
+                FROM page_spell_issues
+                WHERE status = 'open'
+                  AND id >= (SELECT target_id FROM random_id)
+                ORDER BY id
+                LIMIT 1
+            )
+            SELECT book_id
+            FROM pages
+            WHERE id = (SELECT page_id FROM selected_issue)
+        """)
+    )
+
+    book_row = book_id_result.fetchone()
+    if not book_row:
         raise HTTPException(status_code=404, detail="No books with open spell check issues found")
 
-    chosen_book_id = random.choice(book_ids)
+    selected_book_id = book_row.book_id
 
-    book_result = await session.execute(select(Book).where(Book.id == chosen_book_id))
-    book = book_result.scalar_one_or_none()
-    if not book:
-        raise HTTPException(status_code=404, detail="Book not found")
-
-    pages_result = await session.execute(
-        select(Page.page_number)
-        .join(PageSpellIssue, PageSpellIssue.page_id == Page.id)
-        .where(Page.book_id == chosen_book_id, PageSpellIssue.status == "open")
-        .group_by(Page.page_number)
-        .order_by(Page.page_number)
+    # Step 2: Get all the details for this specific book
+    result = await session.execute(
+        text("""
+            WITH pages_with_issues AS (
+                SELECT DISTINCT p.page_number
+                FROM pages p
+                INNER JOIN page_spell_issues psi ON psi.page_id = p.id
+                WHERE p.book_id = :book_id AND psi.status = 'open'
+            ),
+            issue_count AS (
+                SELECT COUNT(psi.id) as total
+                FROM pages p
+                INNER JOIN page_spell_issues psi ON psi.page_id = p.id
+                WHERE p.book_id = :book_id AND psi.status = 'open'
+            )
+            SELECT
+                b.id as book_id,
+                b.title,
+                b.author,
+                b.volume,
+                b.total_pages,
+                COALESCE(ic.total, 0) as total_issues,
+                COALESCE(
+                    (SELECT json_agg(page_number ORDER BY page_number)
+                     FROM pages_with_issues),
+                    '[]'::json
+                ) as pages_with_issues
+            FROM books b
+            CROSS JOIN issue_count ic
+            WHERE b.id = :book_id
+        """),
+        {"book_id": selected_book_id}
     )
-    pages_with_issues = [row[0] for row in pages_result.fetchall()]
 
-    total_issues_result = await session.execute(
-        select(func.count(PageSpellIssue.id))
-        .join(Page, PageSpellIssue.page_id == Page.id)
-        .where(Page.book_id == chosen_book_id, PageSpellIssue.status == "open")
-    )
-    total_issues = total_issues_result.scalar() or 0
+    row = result.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="No books with open spell check issues found")
+
+    pages_list = row.pages_with_issues if row.pages_with_issues else []
 
     return RandomBookOut(
-        book_id=book.id,
-        title=book.title,
-        author=book.author,
-        volume=book.volume,
-        total_pages=book.total_pages,
-        total_issues=total_issues,
-        pages_with_issues=pages_with_issues,
-        first_issue_page=pages_with_issues[0] if pages_with_issues else 1,
+        book_id=row.book_id,
+        title=row.title,
+        author=row.author,
+        volume=row.volume,
+        total_pages=row.total_pages,
+        total_issues=row.total_issues,
+        pages_with_issues=pages_list,
+        first_issue_page=pages_list[0] if pages_list else 1,
     )
 
 
