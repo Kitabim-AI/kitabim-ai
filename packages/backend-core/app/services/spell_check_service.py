@@ -20,7 +20,6 @@ class SpellCheckCache(TypedDict, total=False):
     """Optional per-job cache to avoid redundant DB lookups."""
     unknown_words: Dict[str, bool]  # word -> is_unknown
     ocr_corrections: Dict[str, list[str]] # word -> corrections
-    unique_to_book: Dict[str, bool] # word -> is_unique
     _locks: Dict[str, asyncio.Lock]  # Internal locks for thread safety
     _stats: Dict[str, int]  # Cache hit/miss statistics
 
@@ -31,26 +30,21 @@ class ThreadSafeSpellCheckCache:
     def __init__(self):
         self.unknown_words: Dict[str, bool] = {}
         self.ocr_corrections: Dict[str, list[str]] = {}
-        self.unique_to_book: Dict[str, bool] = {}
         self._locks = {
             'unknown': asyncio.Lock(),
-            'ocr': asyncio.Lock(),
-            'unique': asyncio.Lock()
+            'ocr': asyncio.Lock()
         }
         self._stats = {
             'unknown_hits': 0,
             'unknown_misses': 0,
             'ocr_hits': 0,
-            'ocr_misses': 0,
-            'unique_hits': 0,
-            'unique_misses': 0
+            'ocr_misses': 0
         }
 
     def get_stats(self) -> dict:
         """Return cache statistics including hit rates."""
         total_unknown = self._stats['unknown_hits'] + self._stats['unknown_misses']
         total_ocr = self._stats['ocr_hits'] + self._stats['ocr_misses']
-        total_unique = self._stats['unique_hits'] + self._stats['unique_misses']
 
         return {
             'unknown_words': {
@@ -63,16 +57,11 @@ class ThreadSafeSpellCheckCache:
                 'misses': self._stats['ocr_misses'],
                 'hit_rate': self._stats['ocr_hits'] / total_ocr if total_ocr > 0 else 0
             },
-            'unique_to_book': {
-                'hits': self._stats['unique_hits'],
-                'misses': self._stats['unique_misses'],
-                'hit_rate': self._stats['unique_hits'] / total_unique if total_unique > 0 else 0
-            },
-            'total_lookups': total_unknown + total_ocr + total_unique,
+            'total_lookups': total_unknown + total_ocr,
             'overall_hit_rate': (
-                (self._stats['unknown_hits'] + self._stats['ocr_hits'] + self._stats['unique_hits']) /
-                (total_unknown + total_ocr + total_unique)
-                if (total_unknown + total_ocr + total_unique) > 0 else 0
+                (self._stats['unknown_hits'] + self._stats['ocr_hits']) /
+                (total_unknown + total_ocr)
+                if (total_unknown + total_ocr) > 0 else 0
             )
         }
 
@@ -269,141 +258,9 @@ async def find_unknown_words(
 
 
 
-async def index_book_words(
-    session: AsyncSession, book_id: str, word_counts: dict[str, int]
-) -> None:
-    """Upsert normalized word forms and increment counts in book_word_index.
-
-    Uses word IDs instead of TEXT for 60-80% storage reduction.
-    Uses parameterized query (safe from SQL injection).
-    Optimized with smaller batches to reduce lock contention and timeout risks.
-
-    NOTE: If this function times out, it will raise an exception that should be
-    caught by the caller (spell_check_job) which will retry the entire page.
-    """
-    if not word_counts:
-        return
-
-    # Sort items by word to ensure consistent lock acquisition order and prevent deadlocks
-    sorted_items = sorted(word_counts.items())
-    words = [item[0] for item in sorted_items]
-    counts = [item[1] for item in sorted_items]
-
-    # Use smaller batches to reduce lock duration and avoid timeout on large pages
-    # Smaller batches = less time holding locks = less contention
-    BATCH_SIZE = 100
-
-    for i in range(0, len(words), BATCH_SIZE):
-        batch_words = words[i:i + BATCH_SIZE]
-        batch_counts = counts[i:i + BATCH_SIZE]
-
-        # Step 1: Insert unique words into words table first (idempotent)
-        await session.execute(
-            text("""
-                INSERT INTO words (word)
-                SELECT unnest(CAST(:words AS text[]))
-                ON CONFLICT (word) DO NOTHING
-            """),
-            {"words": batch_words}
-        )
-
-        # Step 2: Upsert into book_word_index using word IDs
-        # Use a more aggressive timeout that will fail fast instead of blocking
-        # Safe: all values are bound as parameters, not interpolated
-        await session.execute(
-            text("""
-                WITH word_batch AS (
-                    SELECT unnest(CAST(:words AS text[])) AS word,
-                           unnest(CAST(:counts AS int[])) AS cnt
-                ),
-                word_ids AS (
-                    SELECT w.id, wb.cnt
-                    FROM word_batch wb
-                    INNER JOIN words w ON w.word = wb.word
-                )
-                INSERT INTO book_word_index (book_id, word_id, occurrence_count)
-                SELECT :book_id, word_ids.id, word_ids.cnt
-                FROM word_ids
-                ON CONFLICT (book_id, word_id) DO UPDATE
-                SET occurrence_count = book_word_index.occurrence_count + EXCLUDED.occurrence_count
-            """),
-            {"book_id": book_id, "words": batch_words, "counts": batch_counts},
-        )
-
-
-async def find_words_unique_to_book(
-    session: AsyncSession,
-    book_id: str,
-    words: set[str],
-    cache: SpellCheckCache | ThreadSafeSpellCheckCache | None = None
-) -> set[str]:
-    """
-    Return the subset of `words` that do not appear in book_word_index for any
-    book other than `book_id`, AND appear less than 3 times in the current book.
-    Words meeting both criteria are likely genuine misspellings.
-    """
-    if not words:
-        return set()
-
-    unique = set()
-    to_query = []
-
-    # Handle both legacy dict cache and new thread-safe cache
-    is_thread_safe = isinstance(cache, ThreadSafeSpellCheckCache)
-
-    if cache is not None:
-        if is_thread_safe:
-            async with cache._locks['unique']:
-                for w in words:
-                    if w in cache.unique_to_book:
-                        cache._stats['unique_hits'] += 1
-                        if cache.unique_to_book[w]:
-                            unique.add(w)
-                    else:
-                        cache._stats['unique_misses'] += 1
-                        to_query.append(w)
-        else:
-            if "unique_to_book" not in cache:
-                cache["unique_to_book"] = {}
-            for w in words:
-                if w in cache["unique_to_book"]:
-                    if cache["unique_to_book"][w]:
-                        unique.add(w)
-                else:
-                    to_query.append(w)
-    else:
-        to_query = list(words)
-
-    if to_query:
-        result = await session.execute(
-            text("""
-                SELECT t.w
-                FROM unnest(CAST(:words AS text[])) AS t(w)
-                LEFT JOIN words word_tbl ON word_tbl.word = t.w
-                LEFT JOIN book_word_index bwi_local
-                  ON bwi_local.word_id = word_tbl.id AND bwi_local.book_id = :book_id
-                WHERE (COALESCE(bwi_local.occurrence_count, 0) < 3)
-                  AND NOT EXISTS (
-                    SELECT 1 FROM book_word_index bwi_other
-                    WHERE bwi_other.word_id = word_tbl.id
-                      AND bwi_other.book_id != :book_id
-                )
-            """),
-            {"words": to_query, "book_id": book_id},
-        )
-        queried_unique = {row[0] for row in result.fetchall()}
-        unique.update(queried_unique)
-
-        if cache is not None:
-            if is_thread_safe:
-                async with cache._locks['unique']:
-                    for w in to_query:
-                        cache.unique_to_book[w] = (w in queried_unique)
-            else:
-                for w in to_query:
-                    cache["unique_to_book"][w] = (w in queried_unique)
-
-    return unique
+# NOTE: index_book_words and find_words_unique_to_book functions have been
+# removed as the spell check logic no longer uses word index for validation.
+# Only OCR corrections from the dictionary are now used to identify issues.
 
 
 async def get_ocr_corrections_batch(
@@ -505,6 +362,13 @@ async def run_spell_check_for_page(
     into page.text exactly as stored in the DB and displayed on the frontend.
     The normalized word form is used only for dictionary lookup.
 
+    UPDATED LOGIC: Only creates spell check issues for words that:
+    1. Are NOT in the dictionary (unknown words)
+    2. Have at least one OCR correction candidate found in the dictionary
+
+    This ensures we only flag words that are likely OCR errors with valid
+    dictionary corrections, eliminating false positives from rare/valid words.
+
     Replaces all existing issues for the page, sets spell_check_milestone='done',
     and returns the number of issues found.
     Does NOT commit — caller is responsible for committing.
@@ -527,13 +391,9 @@ async def run_spell_check_for_page(
     unknown = await find_unknown_words(session, unique_words, cache=cache)
     ocr_cache = await get_ocr_corrections_batch(session, unknown, cache=cache)
 
-    # Unknown words with no OCR correction candidates are checked against the
-    # book_word_index. If a word never appears in any other book it is likely
-    # a genuine misspelling, not just an OCR substitution artifact.
-    # NOTE: word_index is built by word_index_scanner BEFORE spell check runs
-    no_ocr_unknown = unknown - set(ocr_cache.keys())
-    unique_to_book = await find_words_unique_to_book(session, page.book_id, no_ocr_unknown, cache=cache)
-
+    # SIMPLIFIED LOGIC: Only create issues for words with OCR corrections
+    # No need to check word_index or uniqueness - if a word has a valid
+    # dictionary correction via OCR substitution/insertion, it's likely an error
     issues: List[PageSpellIssue] = [
         PageSpellIssue(
             page_id=page.id,
@@ -545,7 +405,7 @@ async def run_spell_check_for_page(
             status="open",
         )
         for word_norm, word_raw, start, end in tokens
-        if word_norm in unknown and (ocr_cache.get(word_norm) or word_norm in unique_to_book)
+        if word_norm in ocr_cache and ocr_cache[word_norm]  # Only if corrections exist
     ]
 
     await session.execute(

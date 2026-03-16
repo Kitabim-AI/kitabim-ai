@@ -41,11 +41,14 @@ def get_database_url() -> str:
     return url
 
 
-async def init_db() -> None:
+async def init_db(service_name: str = "backend") -> None:
     """
     Initialize database engine and session factory.
 
-    Called from FastAPI lifespan on application startup.
+    Called from FastAPI lifespan on application startup or worker startup.
+
+    Args:
+        service_name: "backend" or "worker" - determines pool size and app name
     """
     global engine, async_session_factory
 
@@ -53,20 +56,33 @@ async def init_db() -> None:
 
     parsed = urlparse(database_url)
     safe_url = urlunparse(parsed._replace(netloc=parsed.netloc.replace(f":{parsed.password}@", ":***@") if parsed.password else parsed.netloc))
-    log_json(logger, logging.INFO, "Initializing SQLAlchemy", url=safe_url)
+
+    # Use service-specific pool configuration
+    if service_name == "worker":
+        pool_size = settings.worker_db_pool_size
+        max_overflow = settings.worker_db_max_overflow
+        app_name = "kitabim-ai-worker"
+    else:
+        pool_size = settings.db_pool_size
+        max_overflow = settings.db_max_overflow
+        app_name = "kitabim-ai-backend"
+
+    log_json(logger, logging.INFO, "Initializing SQLAlchemy",
+             url=safe_url, service=service_name,
+             pool_size=pool_size, max_overflow=max_overflow)
 
     # Create async engine
     engine = create_async_engine(
         database_url,
         echo=False,  # Set to True for SQL query logging
-        pool_size=settings.db_pool_size,
-        max_overflow=settings.db_max_overflow,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
         pool_timeout=60,  # Timeout waiting for connection from pool (seconds)
         pool_pre_ping=True,  # Verify connections before using
         pool_recycle=3600,  # Recycle connections after 1 hour
         connect_args={
             "server_settings": {
-                "application_name": "kitabim-ai-backend"
+                "application_name": app_name
             },
             "command_timeout": 120,
         }

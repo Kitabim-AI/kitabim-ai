@@ -114,5 +114,4 @@ async def spell_check_job(ctx, page_ids: List[int]) -> None:
              cache_overall_hit_rate=cache_stats["overall_hit_rate"],
              cache_total_lookups=cache_stats["total_lookups"],
              cache_unknown_hit_rate=cache_stats["unknown_words"]["hit_rate"],
-             cache_ocr_hit_rate=cache_stats["ocr_corrections"]["hit_rate"],
-             cache_unique_hit_rate=cache_stats["unique_to_book"]["hit_rate"])
+             cache_ocr_hit_rate=cache_stats["ocr_corrections"]["hit_rate"])

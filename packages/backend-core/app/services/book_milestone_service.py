@@ -2,6 +2,7 @@
 from sqlalchemy import select, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Book, Page
+from app.core.config import settings
 
 
 class BookMilestoneService:
@@ -116,7 +117,8 @@ class BookMilestoneService:
             book.ocr_milestone = ocr_milestone
             book.chunking_milestone = chunking_milestone
             book.embedding_milestone = embedding_milestone
-            book.word_index_milestone = word_index_milestone
+            if settings.enable_word_index:
+                book.word_index_milestone = word_index_milestone
             book.spell_check_milestone = spell_check_milestone
 
             await db.commit()

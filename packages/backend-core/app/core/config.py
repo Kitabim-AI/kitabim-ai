@@ -28,10 +28,13 @@ class Settings:
     # Database
     database_url: str | None = os.getenv("DATABASE_URL")  # PostgreSQL connection string
     # Pool configuration (production-optimized)
-    # Default 10+15=25 max per service handles concurrent worker tasks (10 jobs * 8 pages)
-    # and typical API load.
+    # Backend pool: Serves web requests (should have priority)
+    # Worker pool: Background processing (limited to reserve connections for backend)
     db_pool_size: int = int(os.getenv("DB_POOL_SIZE", "10"))
     db_max_overflow: int = int(os.getenv("DB_MAX_OVERFLOW", "15"))
+    # Worker-specific pool limits (smaller to reserve connections for backend)
+    worker_db_pool_size: int = int(os.getenv("WORKER_DB_POOL_SIZE", "5"))
+    worker_db_max_overflow: int = int(os.getenv("WORKER_DB_MAX_OVERFLOW", "10"))
 
     # Storage
     storage_backend: str = os.getenv("STORAGE_BACKEND", "local")
@@ -46,6 +49,7 @@ class Settings:
     # Parallel Processing
     max_parallel_pages: int = int(os.getenv("MAX_PARALLEL_PAGES", "4")) # OCR concurrency
     max_parallel_spell_check: int = int(os.getenv("MAX_PARALLEL_SPELL_CHECK", "6"))
+    max_concurrent_spell_check_books: int = int(os.getenv("MAX_CONCURRENT_SPELL_CHECK_BOOKS", "3"))
     max_parallel_auto_correct: int = int(os.getenv("MAX_PARALLEL_AUTO_CORRECT", "10"))
 
     # Batch Sizes
@@ -88,6 +92,9 @@ class Settings:
     queue_max_jobs: int = int(os.getenv("QUEUE_MAX_JOBS", "2"))
     queue_job_timeout: int = int(os.getenv("QUEUE_JOB_TIMEOUT", "7200"))
     maintenance_retention_days: int = int(os.getenv("MAINTENANCE_RETENTION_DAYS", "7"))
+
+    # Pipeline Feature Flags
+    enable_word_index: bool = os.getenv("ENABLE_WORD_INDEX", "true").lower() == "true"
 
     # Authentication / JWT
     jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "")

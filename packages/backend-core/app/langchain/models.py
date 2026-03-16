@@ -14,8 +14,13 @@ from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmb
 from app.core.config import settings
 from app.utils.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitBreakerOpen
 from app.utils.observability import log_json
+from app.utils.rate_limiter import RedisRateLimiter
 
 _logger = logging.getLogger("app.llm")
+
+# Rate limit for Gemini API (Total across all workers)
+# The user's quota is 25 RPM; we use 20 to be safe.
+_GEMINI_LIMITER = RedisRateLimiter("gemini_api", limit=20, window=60)
 
 _TEXT_BREAKER = CircuitBreaker(
     "llm_generate",
@@ -156,6 +161,9 @@ def _extract_message_text(response) -> str:
 
 
 async def _call_with_breaker(breaker: CircuitBreaker, fn, *args, **kwargs):
+    # Apply global rate limiting before attempting the call
+    await _GEMINI_LIMITER.wait()
+    
     try:
         return await breaker.call(fn, *args, **kwargs)
     except CircuitBreakerOpen as exc:

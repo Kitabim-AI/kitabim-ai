@@ -21,7 +21,7 @@ async def worker_startup(ctx):
     log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
     configure_logging(level=log_level)
     configure_langchain()
-    await init_db()
+    await init_db(service_name="worker")
 
     try:
         from app.db.seeds import seed_system_configs

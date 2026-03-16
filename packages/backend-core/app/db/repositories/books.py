@@ -152,7 +152,7 @@ class BooksRepository(BaseRepository[Book]):
             sc_res = await self.session.execute(sc_stmt)
             sc_row = sc_res.fetchone()
             
-            sc_done = sc_row.done if sc_row else tp
+            sc_done = sc_row.done if sc_row else 0
             sc_failed = sc_row.failed if sc_row else 0
             sc_active = sc_row.active if sc_row else 0
 
@@ -348,56 +348,53 @@ class BooksRepository(BaseRepository[Book]):
         books_res = await self.session.execute(books_stmt)
         books_info = {str(row.id): {"status": row.status, "total_pages": row.total_pages} for row in books_res.fetchall()}
         
-        processing_ids = [bid for bid, info in books_info.items() if info["status"] != "ready"]
-        
-        results = {}
-        
-        # 1. Fetch milestone stats for processing books ONLY
-        if processing_ids:
-            milestone_stats_stmt = (
-                select(
-                    Page.book_id,
-                    func.count(case((Page.ocr_milestone == "succeeded", 1))).label("ocr"),
-                    func.count(case((Page.ocr_milestone.in_(["failed", "error"]), 1))).label("ocr_failed"),
-                    func.count(case((Page.ocr_milestone == "in_progress", 1))).label("ocr_active"),
-                    func.count(case((Page.chunking_milestone == "succeeded", 1))).label("chunking"),
-                    func.count(case((Page.chunking_milestone.in_(["failed", "error"]), 1))).label("chunking_failed"),
-                    func.count(case((Page.chunking_milestone == "in_progress", 1))).label("chunking_active"),
-                    func.count(case((Page.embedding_milestone == "succeeded", 1))).label("embedding"),
-                    func.count(case((Page.embedding_milestone.in_(["failed", "error"]), 1))).label("embedding_failed"),
-                    func.count(case((Page.embedding_milestone == "in_progress", 1))).label("embedding_active"),
-                    func.count(case((Page.word_index_milestone == "done", 1))).label("word_index"),
-                    func.count(case((Page.word_index_milestone.in_(["failed", "error"]), 1))).label("word_index_failed"),
-                    func.count(case((Page.word_index_milestone == "in_progress", 1))).label("word_index_active"),
-                    func.count(case((Page.spell_check_milestone == "done", 1))).label("spell_check"),
-                    func.count(case((Page.spell_check_milestone.in_(["failed", "error"]), 1))).label("spell_check_failed"),
-                    func.count(case((Page.spell_check_milestone == "in_progress", 1))).label("spell_check_active"),
-                )
-                .where(Page.book_id.in_(processing_ids))
-                .group_by(Page.book_id)
+        # 1. Fetch milestone stats for ALL requested books
+        # Note: We must scan all books because 'ready' books may still have background 
+        # spell-check or word-indexing tasks running (or reset to idle).
+        milestone_stats_stmt = (
+            select(
+                Page.book_id,
+                func.count(case((Page.ocr_milestone == "succeeded", 1))).label("ocr"),
+                func.count(case((Page.ocr_milestone.in_(["failed", "error"]), 1))).label("ocr_failed"),
+                func.count(case((Page.ocr_milestone == "in_progress", 1))).label("ocr_active"),
+                func.count(case((Page.chunking_milestone == "succeeded", 1))).label("chunking"),
+                func.count(case((Page.chunking_milestone.in_(["failed", "error"]), 1))).label("chunking_failed"),
+                func.count(case((Page.chunking_milestone == "in_progress", 1))).label("chunking_active"),
+                func.count(case((Page.embedding_milestone == "succeeded", 1))).label("embedding"),
+                func.count(case((Page.embedding_milestone.in_(["failed", "error"]), 1))).label("embedding_failed"),
+                func.count(case((Page.embedding_milestone == "in_progress", 1))).label("embedding_active"),
+                func.count(case((Page.word_index_milestone == "done", 1))).label("word_index"),
+                func.count(case((Page.word_index_milestone.in_(["failed", "error"]), 1))).label("word_index_failed"),
+                func.count(case((Page.word_index_milestone == "in_progress", 1))).label("word_index_active"),
+                func.count(case((Page.spell_check_milestone == "done", 1))).label("spell_check"),
+                func.count(case((Page.spell_check_milestone.in_(["failed", "error"]), 1))).label("spell_check_failed"),
+                func.count(case((Page.spell_check_milestone == "in_progress", 1))).label("spell_check_active"),
             )
-            m_result = await self.session.execute(milestone_stats_stmt)
-            for row in m_result.fetchall():
-                bid = str(row.book_id)
-                results[bid] = {
-                    "pipeline_stats": {
-                        "ocr": row.ocr,
-                        "ocr_failed": row.ocr_failed,
-                        "ocr_active": row.ocr_active,
-                        "chunking": row.chunking,
-                        "chunking_failed": row.chunking_failed,
-                        "chunking_active": row.chunking_active,
-                        "embedding": row.embedding,
-                        "embedding_failed": row.embedding_failed,
-                        "embedding_active": row.embedding_active,
-                        "word_index": row.word_index,
-                        "word_index_failed": row.word_index_failed,
-                        "word_index_active": row.word_index_active,
-                        "spell_check": row.spell_check,
-                        "spell_check_failed": row.spell_check_failed,
-                        "spell_check_active": row.spell_check_active,
-                    }
+            .where(Page.book_id.in_(book_ids))
+            .group_by(Page.book_id)
+        )
+        m_result = await self.session.execute(milestone_stats_stmt)
+        for row in m_result.fetchall():
+            bid = str(row.book_id)
+            results[bid] = {
+                "pipeline_stats": {
+                    "ocr": row.ocr,
+                    "ocr_failed": row.ocr_failed,
+                    "ocr_active": row.ocr_active,
+                    "chunking": row.chunking,
+                    "chunking_failed": row.chunking_failed,
+                    "chunking_active": row.chunking_active,
+                    "embedding": row.embedding,
+                    "embedding_failed": row.embedding_failed,
+                    "embedding_active": row.embedding_active,
+                    "word_index": row.word_index,
+                    "word_index_failed": row.word_index_failed,
+                    "word_index_active": row.word_index_active,
+                    "spell_check": row.spell_check,
+                    "spell_check_failed": row.spell_check_failed,
+                    "spell_check_active": row.spell_check_active,
                 }
+            }
         
         # 2. Determine which books have summaries in one query
         summary_stmt = select(BookSummary.book_id).where(BookSummary.book_id.in_(book_ids))
@@ -407,26 +404,29 @@ class BooksRepository(BaseRepository[Book]):
         # 3. Assemble final results
         final_results = {}
         for bid in book_ids:
+            info = books_info.get(bid, {})
+            status = info.get("status")
+            tp = info.get("total_pages") or 0
+
             # Get stats (either from DB for processing or 100% for ready)
             if bid in results:
-                # Stats from DB scan (processing)
+                # Stats from DB scan
                 stats = results[bid]["pipeline_stats"]
             else:
-                # Assume 100% for ready books OR default 0 for missing ones
-                info = books_info.get(bid, {})
-                status = info.get("status")
-                tp = info.get("total_pages") or 0
-                
-                if status == "ready":
-                    stats = {
-                        "ocr": tp, "ocr_failed": 0, "ocr_active": 0,
-                        "chunking": tp, "chunking_failed": 0, "chunking_active": 0,
-                        "embedding": tp, "embedding_failed": 0, "embedding_active": 0,
-                        "word_index": tp, "word_index_failed": 0, "word_index_active": 0,
-                        "spell_check": tp, "spell_check_failed": 0, "spell_check_active": 0,
-                    }
-                else:
-                    stats = {}
+                # Default fallback for missing books (should not happen if pages exist)
+                # If a book is 'ready' but has no page records found (orphaned book record)
+                # we still assume 0 to be safe
+                stats = {
+                    "ocr": tp if status == "ready" else 0,
+                    "ocr_failed": 0, "ocr_active": 0,
+                    "chunking": tp if status == "ready" else 0,
+                    "chunking_failed": 0, "chunking_active": 0,
+                    "embedding": tp if status == "ready" else 0,
+                    "embedding_failed": 0, "embedding_active": 0,
+                    "word_index": 0, "word_index_failed": 0, "word_index_active": 0,
+                    "spell_check": 0, "spell_check_failed": 0, "spell_check_active": 0,
+                }
+
             
             final_results[bid] = {
                 "pipeline_stats": stats,

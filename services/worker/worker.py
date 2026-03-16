@@ -10,7 +10,6 @@ Cron schedule:
   ocr_scanner          every 1 min  — claim ocr/idle pages (per book) + dispatch
   chunking_scanner     every 1 min  — claim chunking/idle pages + dispatch
   embedding_scanner    every 1 min  — claim embedding/idle pages + dispatch
-  word_index_scanner   every 1 min  — index one un-indexed book into book_word_index
   spell_check_scanner  every 1 min  — claim spell_check/idle pages + dispatch
   auto_correct_scanner every 5 min  — apply auto-corrections to pages with matching rules
   stale_watchdog       every 30 min — reset in_progress pages past timeout → idle
@@ -27,7 +26,6 @@ from scanners.pipeline_driver import run_pipeline_driver
 from scanners.ocr_scanner import run_ocr_scanner
 from scanners.chunking_scanner import run_chunking_scanner
 from scanners.embedding_scanner import run_embedding_scanner
-from scanners.word_index_scanner import run_word_index_scanner
 from scanners.spell_check_scanner import run_spell_check_scanner
 from scanners.stale_watchdog import run_stale_watchdog
 from scanners.summary_scanner import run_summary_scanner
@@ -54,13 +52,13 @@ class WorkerSettings:
         auto_correct_job,
     ]
 
+    # Build cron jobs list conditionally based on feature flags
     cron_jobs = [
         cron(run_gcs_discovery_scanner, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}),
         cron(run_pipeline_driver, run_at_startup=True),
         cron(run_ocr_scanner),
         cron(run_chunking_scanner),
         cron(run_embedding_scanner),
-        cron(run_word_index_scanner),
         cron(run_spell_check_scanner),
         cron(run_auto_correct_scanner, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}),
         cron(run_stale_watchdog, minute={0, 30}),
@@ -68,6 +66,8 @@ class WorkerSettings:
         cron(run_event_dispatcher, run_at_startup=True),
         cron(run_maintenance_scanner, hour=3, minute=0),
     ]
+
+
 
     max_jobs = settings.queue_max_jobs
     job_timeout = settings.queue_job_timeout

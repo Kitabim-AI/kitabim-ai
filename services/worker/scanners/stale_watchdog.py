@@ -13,6 +13,7 @@ from sqlalchemy import update, func
 
 from app.db import session as db_session
 from app.db.models import Page
+from app.core.config import settings
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.stale_watchdog")
@@ -27,29 +28,35 @@ async def run_stale_watchdog(ctx) -> None:
     async with db_session.async_session_factory() as session:
         from sqlalchemy import or_, case
         
-        # Identify pages with ANY decoupled milestone stuck in_progress
+        # Build conditions and update values dynamically based on feature flags
+        where_conditions = [
+            Page.ocr_milestone == "in_progress",
+            Page.chunking_milestone == "in_progress",
+            Page.embedding_milestone == "in_progress",
+            Page.spell_check_milestone == "in_progress",
+            Page.milestone == "in_progress"  # Legacy support
+        ]
+        
+        update_values = {
+            "ocr_milestone": case((Page.ocr_milestone == "in_progress", "idle"), else_=Page.ocr_milestone),
+            "chunking_milestone": case((Page.chunking_milestone == "in_progress", "idle"), else_=Page.chunking_milestone),
+            "embedding_milestone": case((Page.embedding_milestone == "in_progress", "idle"), else_=Page.embedding_milestone),
+            "spell_check_milestone": case((Page.spell_check_milestone == "in_progress", "idle"), else_=Page.spell_check_milestone),
+            "milestone": case((Page.milestone == "in_progress", "idle"), else_=Page.milestone),
+            "last_updated": now
+        }
+
+        if settings.enable_word_index:
+            where_conditions.append(Page.word_index_milestone == "in_progress")
+            update_values["word_index_milestone"] = case((Page.word_index_milestone == "in_progress", "idle"), else_=Page.word_index_milestone)
+
         stmt = (
             update(Page)
             .where(
-                or_(
-                    Page.ocr_milestone == "in_progress",
-                    Page.chunking_milestone == "in_progress",
-                    Page.embedding_milestone == "in_progress",
-                    Page.word_index_milestone == "in_progress",
-                    Page.spell_check_milestone == "in_progress",
-                    Page.milestone == "in_progress"  # Legacy support
-                ),
+                or_(*where_conditions),
                 Page.last_updated < threshold
             )
-            .values(
-                ocr_milestone=case((Page.ocr_milestone == "in_progress", "idle"), else_=Page.ocr_milestone),
-                chunking_milestone=case((Page.chunking_milestone == "in_progress", "idle"), else_=Page.chunking_milestone),
-                embedding_milestone=case((Page.embedding_milestone == "in_progress", "idle"), else_=Page.embedding_milestone),
-                word_index_milestone=case((Page.word_index_milestone == "in_progress", "idle"), else_=Page.word_index_milestone),
-                spell_check_milestone=case((Page.spell_check_milestone == "in_progress", "idle"), else_=Page.spell_check_milestone),
-                milestone=case((Page.milestone == "in_progress", "idle"), else_=Page.milestone),
-                last_updated=now
-            )
+            .values(**update_values)
             .returning(Page.id)
         )
         
