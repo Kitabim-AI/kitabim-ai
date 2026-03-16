@@ -16,6 +16,7 @@ from sqlalchemy import select, update, func
 
 from app.db import session as db_session
 from app.db.models import Book, Chunk, Page, PipelineEvent
+from app.db.repositories.system_configs import SystemConfigsRepository
 from app.langchain.models import GeminiEmbeddings
 from app.services.book_milestone_service import BookMilestoneService
 from app.utils.observability import log_json
@@ -28,6 +29,13 @@ EMBED_BATCH_SIZE = 50
 
 async def embedding_job(ctx, page_ids: List[int]) -> None:
     log_json(logger, logging.INFO, "embedding job started", page_count=len(page_ids))
+
+    # Fetch embedding model from system_configs (no fallback — must be configured in DB)
+    async with db_session.async_session_factory() as session:
+        config_repo = SystemConfigsRepository(session)
+        gemini_embedding_model = await config_repo.get_value("gemini_embedding_model")
+        if not gemini_embedding_model:
+            raise RuntimeError("system_config 'gemini_embedding_model' is not set")
 
     # Load page records
     async with db_session.async_session_factory() as session:
@@ -44,7 +52,7 @@ async def embedding_job(ctx, page_ids: List[int]) -> None:
         )
         await session.commit()
 
-    embeddings_model = GeminiEmbeddings()
+    embeddings_model = GeminiEmbeddings(gemini_embedding_model)
     succeeded = 0
     failed = 0
 

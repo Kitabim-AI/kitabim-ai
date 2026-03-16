@@ -131,13 +131,6 @@ async def add_security_headers(request: Request, call_next):
     )
     return response
 
-@app.middleware("http")
-async def enforce_https(request: Request, call_next):
-    """Redirect HTTP to HTTPS in production"""
-    if settings.environment == "production" and request.url.scheme != "https":
-        https_url = str(request.url).replace("http://", "https://", 1)
-        return RedirectResponse(url=https_url, status_code=301)
-    return await call_next(request)
 
 # CORS Configuration - Allow only specific origins
 allowed_origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]

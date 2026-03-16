@@ -20,17 +20,18 @@ class Settings:
 
     # API Keys / Models
     gemini_api_key: str | None = os.getenv("GEMINI_API_KEY")
-    gemini_model_name: str = os.getenv("GEMINI_MODEL_NAME", "gemini-2.0-flash")
-    gemini_chat_model: str = os.getenv("GEMINI_CHAT_MODEL_NAME", "gemini-3.1-flash-lite-preview")
-    gemini_categorization_model: str = os.getenv("GEMINI_CATEGORIZATION_MODEL", "gemini-3.1-flash-lite-preview")
-    gemini_embedding_model: str = os.getenv("GEMINI_EMBEDDING_MODEL", "models/gemini-embedding-001")
+    # OCR, chat, categorization, and embedding models are ONLY configured
+    # via the system_configs table. There are NO env-var or hardcoded fallbacks
+    # for model names — if a key is missing from system_configs the call will
+    # raise a RuntimeError so the misconfiguration is immediately visible.
 
     # Database
     database_url: str | None = os.getenv("DATABASE_URL")  # PostgreSQL connection string
-    # Pool size increased to handle concurrent spell check processing (MAX_CONCURRENT_PAGES=20)
-    # Each concurrent page needs its own connection
-    db_pool_size: int = int(os.getenv("DB_POOL_SIZE", "25"))
-    db_max_overflow: int = int(os.getenv("DB_MAX_OVERFLOW", "15"))
+    # Pool configuration (production-optimized)
+    # Default 5+7=12 max per service handles concurrent worker tasks (10 pages)
+    # and typical API load (~10 concurrent requests). Total 24 connections.
+    db_pool_size: int = int(os.getenv("DB_POOL_SIZE", "5"))
+    db_max_overflow: int = int(os.getenv("DB_MAX_OVERFLOW", "7"))
 
     # Storage
     storage_backend: str = os.getenv("STORAGE_BACKEND", "local")

@@ -61,6 +61,7 @@ async def init_db() -> None:
         echo=False,  # Set to True for SQL query logging
         pool_size=settings.db_pool_size,
         max_overflow=settings.db_max_overflow,
+        pool_timeout=30,  # Timeout waiting for connection from pool (seconds)
         pool_pre_ping=True,  # Verify connections before using
         pool_recycle=3600,  # Recycle connections after 1 hour
         connect_args={

@@ -15,6 +15,7 @@ import fitz
 from app.core.config import settings
 from app.db import session as db_session
 from app.db.models import Book, Page, PipelineEvent
+from app.db.repositories.system_configs import SystemConfigsRepository
 from app.services.ocr_service import ocr_page_with_gemini
 from app.services.storage_service import storage
 from app.services.book_milestone_service import BookMilestoneService
@@ -27,6 +28,13 @@ logger = logging.getLogger("app.worker.ocr_job")
 async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
     log_json(logger, logging.INFO, "OCR job started",
              book_id=book_id, page_count=len(page_ids))
+
+    # Fetch OCR model from system_configs (no fallback — must be configured in DB)
+    async with db_session.async_session_factory() as session:
+        config_repo = SystemConfigsRepository(session)
+        gemini_ocr_model = await config_repo.get_value("gemini_ocr_model")
+        if not gemini_ocr_model:
+            raise RuntimeError("system_config 'gemini_ocr_model' is not set")
 
     # Mark book's active step
     async with db_session.async_session_factory() as session:
@@ -101,7 +109,7 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
         async with sem:
             try:
                 fitz_page = doc.load_page(page.page_number - 1)  # fitz is 0-indexed
-                text = await ocr_page_with_gemini(fitz_page)
+                text = await ocr_page_with_gemini(fitz_page, gemini_ocr_model)
 
                 async with db_session.async_session_factory() as session:
                     await session.execute(

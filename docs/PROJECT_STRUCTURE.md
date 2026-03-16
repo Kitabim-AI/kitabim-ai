@@ -478,8 +478,9 @@ REDIS_URL=redis://localhost:6379/0
 
 # AI
 GEMINI_API_KEY=your-key
-GEMINI_MODEL_NAME=gemini-3-flash-preview
 GEMINI_EMBEDDING_MODEL=models/gemini-embedding-001
+# Note: OCR/chat/categorization model names are configured via the
+# system_configs table in the database, NOT via environment variables.
 
 # Auth
 JWT_SECRET_KEY=random-32-char-secret

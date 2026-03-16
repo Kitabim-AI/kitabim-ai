@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import uuid
 import os
@@ -8,7 +9,7 @@ import re
 from datetime import datetime, timezone
 from typing import Optional, List
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
 from sqlalchemy import text, and_, or_, case, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
@@ -427,6 +428,7 @@ async def get_books(
 
 @router.get("/random-proverb")
 async def get_random_proverb(
+    response: Response,
     keyword: Optional[str] = None,
     session: AsyncSession = Depends(get_session),
 ):
@@ -434,6 +436,13 @@ async def get_random_proverb(
     from app.db.repositories.proverbs import ProverbsRepository
 
     proverbs_repo = ProverbsRepository(session)
+
+    # Add HTTP cache headers for browser caching (5 minutes)
+    # Set this early so it applies to both cached and fresh responses
+    # public = cacheable by browsers and CDNs
+    # max-age = browser caches for 5 minutes (300 seconds)
+    # stale-while-revalidate = browser can use stale cache for 60s while fetching new data in background
+    response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=60"
 
     # Cache Lookup
     keyword_hash = hashlib.md5((keyword or "default").encode()).hexdigest()[:8]
@@ -484,12 +493,20 @@ async def get_random_proverb(
 
 @router.get("/top-categories")
 async def get_top_categories(
+    response: Response,
     limit: int = 100,
     sort: str = "count",  # "count" or "alphabetical"
     current_user: Optional[User] = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_session),
 ):
     """Get categories with optional sorting and limit"""
+    # Add HTTP cache headers for browser caching (15 minutes = 900 seconds)
+    # Set this early so it applies to both cached and fresh responses
+    # public = cacheable by browsers and CDNs (categories change infrequently)
+    # max-age = browser caches for 15 minutes
+    # stale-while-revalidate = browser can use stale cache for 120s while fetching new data in background
+    response.headers["Cache-Control"] = f"public, max-age={settings.cache_ttl_categories}, stale-while-revalidate=120"
+
     # Cache Lookup
     cache_params = {
         "limit": limit,
@@ -532,12 +549,12 @@ async def get_top_categories(
     rows = result.fetchall()
     categories = [row.clean_category for row in rows]
     
-    response = {"categories": categories}
-    
-    # Store in cache
-    await cache_service.set(cache_key, response, ttl=settings.cache_ttl_categories)
+    result = {"categories": categories}
 
-    return response
+    # Store in cache
+    await cache_service.set(cache_key, result, ttl=settings.cache_ttl_categories)
+
+    return result
 
 
 
@@ -1050,12 +1067,20 @@ async def reprocess_ocr(
     current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
-    """Full reprocess from OCR. Clears everything downstream but preserves text until replaced."""
+    """Reprocess OCR by resetting milestones. Text will be overwritten by OCR scanner.
+
+    This is a non-destructive operation that:
+    - Resets OCR and downstream milestones to 'idle'
+    - Preserves existing text until OCR scanner overwrites it
+    - Preserves chunks until chunking scanner processes the new text
+    - Allows scanners to handle data updates atomically
+    """
     books_repo = BooksRepository(session)
     book = await books_repo.get(book_id)
     if not book:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
+    # Reset milestones - scanners will handle data updates
     await session.execute(
         update(Page)
         .where(Page.book_id == book_id)
@@ -1071,11 +1096,15 @@ async def reprocess_ocr(
             updated_by=current_user.email,
         )
     )
-    # We delete chunks because they depend on text which will be replaced
-    await session.execute(delete(Chunk).where(Chunk.book_id == book_id))
 
+    # Update book-level milestones
     await books_repo.update_one(
         book_id,
+        ocr_milestone="idle",
+        chunking_milestone="idle",
+        embedding_milestone="idle",
+        word_index_milestone="idle",
+        spell_check_milestone="idle",
         status="pending",
         pipeline_step="ocr",
         last_updated=datetime.now(timezone.utc),
@@ -1083,12 +1112,12 @@ async def reprocess_ocr(
     )
     await session.commit()
 
-    # Invalidate cache
+    # Invalidate cache - fresh data will be cached after reprocessing
     await cache_service.delete(f"book:{book_id}")
     await cache_service.delete_pattern(f"rag:search:{book_id}:*")
     await cache_service.delete_pattern("rag:summary_search:*")
 
-    return {"status": "ocr_reprocess_started"}
+    return {"status": "ocr_reprocess_started", "message": "OCR milestones reset. Scanner will reprocess pages."}
 
 
 
@@ -1098,12 +1127,20 @@ async def reprocess_chunking(
     current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
-    """Reprocess from Chunking. Preserves OCR text but re-splits into chunks."""
+    """Reprocess chunking by resetting milestones. Chunks will be recreated by chunking scanner.
+
+    This is a non-destructive operation that:
+    - Resets chunking and downstream milestones to 'idle'
+    - Preserves OCR text (not re-OCR'd)
+    - Preserves chunks until chunking scanner deletes and recreates them atomically
+    - Allows chunking scanner to handle chunk updates per-page
+    """
     books_repo = BooksRepository(session)
     book = await books_repo.get(book_id)
     if not book:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
+    # Reset milestones - chunking scanner will handle chunk recreation
     await session.execute(
         update(Page)
         .where(Page.book_id == book_id)
@@ -1118,10 +1155,14 @@ async def reprocess_chunking(
             updated_by=current_user.email,
         )
     )
-    await session.execute(delete(Chunk).where(Chunk.book_id == book_id))
 
+    # Update book-level milestones
     await books_repo.update_one(
         book_id,
+        chunking_milestone="idle",
+        embedding_milestone="idle",
+        word_index_milestone="idle",
+        spell_check_milestone="idle",
         status="pending",
         pipeline_step="chunking",
         last_updated=datetime.now(timezone.utc),
@@ -1129,12 +1170,12 @@ async def reprocess_chunking(
     )
     await session.commit()
 
-    # Invalidate cache
+    # Invalidate cache - fresh data will be cached after reprocessing
     await cache_service.delete(f"book:{book_id}")
     await cache_service.delete_pattern(f"rag:search:{book_id}:*")
     await cache_service.delete_pattern("rag:summary_search:*")
 
-    return {"status": "chunking_reprocess_started"}
+    return {"status": "chunking_reprocess_started", "message": "Chunking milestones reset. Scanner will recreate chunks."}
 
 
 
@@ -1144,12 +1185,20 @@ async def reprocess_embedding(
     current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
-    """Reprocess from Embedding. Preserves text and chunks, just re-generates vectors."""
+    """Reprocess embeddings by resetting milestones. Preserves text and chunks.
+
+    This is a non-destructive operation that:
+    - Resets embedding and downstream milestones to 'idle'
+    - Clears chunk embeddings (vectors) to trigger regeneration
+    - Preserves chunk text and all other data
+    - Allows embedding scanner to regenerate vectors in place
+    """
     books_repo = BooksRepository(session)
     book = await books_repo.get(book_id)
     if not book:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
+    # Reset page milestones
     await session.execute(
         update(Page)
         .where(Page.book_id == book_id)
@@ -1163,13 +1212,18 @@ async def reprocess_embedding(
             updated_by=current_user.email,
         )
     )
-    # Mark chunks as needing embedding without deleting them
+
+    # Clear embeddings to trigger regeneration (preserves chunk text)
     await session.execute(
         update(Chunk).where(Chunk.book_id == book_id).values(embedding=None)
     )
 
+    # Update book-level milestones
     await books_repo.update_one(
         book_id,
+        embedding_milestone="idle",
+        word_index_milestone="idle",
+        spell_check_milestone="idle",
         status="pending",
         pipeline_step="embedding",
         last_updated=datetime.now(timezone.utc),
@@ -1181,7 +1235,7 @@ async def reprocess_embedding(
     await cache_service.delete_pattern(f"rag:search:{book_id}:*")
     await cache_service.delete_pattern("rag:summary_search:*")
 
-    return {"status": "embedding_reprocess_started"}
+    return {"status": "embedding_reprocess_started", "message": "Embedding milestones reset. Scanner will regenerate vectors."}
 
 
 
@@ -1191,12 +1245,20 @@ async def reprocess_word_index(
     current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
-    """Reprocess Word Index and Spell Check."""
+    """Reprocess word index by resetting milestones. Preserves text and chunks.
+
+    This operation:
+    - Resets word-index and spell-check milestones to 'idle'
+    - Clears existing word index data for the book
+    - Preserves all text and chunks
+    - Allows word-index scanner to rebuild index from existing text
+    """
     books_repo = BooksRepository(session)
     book = await books_repo.get(book_id)
     if not book:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
+    # Reset page milestones
     await session.execute(
         update(Page)
         .where(Page.book_id == book_id)
@@ -1208,20 +1270,25 @@ async def reprocess_word_index(
             updated_by=current_user.email,
         )
     )
-    # Clear existing index for this book
+
+    # Clear existing word index (will be rebuilt by scanner)
     await session.execute(
         text("DELETE FROM book_word_index WHERE book_id = :book_id"),
         {"book_id": book_id}
     )
 
+    # Update book-level milestones
     await books_repo.update_one(
         book_id,
+        word_index_milestone="idle",
+        spell_check_milestone="idle",
         pipeline_step="word_index",
         last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email,
     )
     await session.commit()
-    return {"status": "word_index_reprocess_started"}
+
+    return {"status": "word_index_reprocess_started", "message": "Word index milestones reset. Scanner will rebuild index."}
 
 
 @router.post("/{book_id}/reprocess/spell-check")
@@ -1230,12 +1297,19 @@ async def reprocess_spell_check(
     current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
-    """Reprocess Spell Check only."""
+    """Reprocess spell check by resetting milestones. Preserves all existing data.
+
+    This operation:
+    - Resets spell-check milestone to 'idle'
+    - Preserves all text, chunks, embeddings, and word index
+    - Allows spell-check scanner to reprocess pages
+    """
     books_repo = BooksRepository(session)
     book = await books_repo.get(book_id)
     if not book:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
+    # Reset page milestones
     await session.execute(
         update(Page)
         .where(Page.book_id == book_id)
@@ -1247,14 +1321,17 @@ async def reprocess_spell_check(
         )
     )
 
+    # Update book-level milestone
     await books_repo.update_one(
         book_id,
+        spell_check_milestone="idle",
         pipeline_step="spell_check",
         last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email,
     )
     await session.commit()
-    return {"status": "spell_check_reprocess_started"}
+
+    return {"status": "spell_check_reprocess_started", "message": "Spell check milestone reset. Scanner will reprocess."}
 
 
 @router.post("/{book_id}/retry-failed")
@@ -1368,6 +1445,12 @@ async def update_page_text(
     """Update page text with SQLAlchemy and synchronously re-chunk/re-embed (Edge Case #4a)"""
     books_repo = BooksRepository(session)
     pages_repo = PagesRepository(session)
+    configs_repo = SystemConfigsRepository(session)
+
+    # Fetch embedding model from system_configs (no fallback — must be configured in DB)
+    gemini_embedding_model = await configs_repo.get_value("gemini_embedding_model")
+    if not gemini_embedding_model:
+        raise HTTPException(status_code=500, detail="system_config 'gemini_embedding_model' is not set")
 
     new_text = normalize_markdown(payload.get("text", ""))
 
@@ -1416,7 +1499,7 @@ async def update_page_text(
         
         # 3. Synchronous Embedding (Instant Feedback)
         try:
-            embedder = GeminiEmbeddings()
+            embedder = GeminiEmbeddings(gemini_embedding_model)
             vectors = await embedder.aembed_documents([c.text for c in chunk_records])
             for chunk, vector in zip(chunk_records, vectors):
                 chunk.embedding = vector

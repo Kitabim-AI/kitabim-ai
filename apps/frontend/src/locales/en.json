@@ -124,6 +124,8 @@
       "ocr": "OCR",
       "chunking": "Chunking",
       "embedding": "Embedding",
+      "word_index": "Word index",
+      "spell_check": "Spell check",
       "ready": "Ready",
       "idle": "Waiting",
       "running": "Running",

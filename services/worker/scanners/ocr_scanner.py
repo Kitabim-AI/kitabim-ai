@@ -27,16 +27,13 @@ async def run_ocr_scanner(ctx) -> None:
         config_repo = SystemConfigsRepository(session)
         max_books = int(await config_repo.get_value("scanner_book_limit", "10"))
 
-        # Find distinct books that have idle OCR pages.
-        # Filter for non-terminal books to avoid waste, and sort by upload date
-        # so oldest books are processed first (preventing starvation).
+        # Find books that have idle OCR work.
+        # We use the denormalized ocr_milestone on Book to avoid a massive join with Pages.
         book_ids_stmt = (
-            select(Page.book_id)
-            .join(Book, Page.book_id == Book.id)
+            select(Book.id)
             .where(
-                Page.ocr_milestone == "idle",
+                Book.ocr_milestone.in_(["idle", "in_progress", "partial_failure"]),
             )
-            .group_by(Page.book_id, Book.upload_date)
             .order_by(Book.upload_date.asc())
             .limit(max_books)
         )
