@@ -19,12 +19,12 @@ from app.db.models import Book, Chunk, Page, PipelineEvent
 from app.db.repositories.system_configs import SystemConfigsRepository
 from app.langchain.models import GeminiEmbeddings
 from app.services.book_milestone_service import BookMilestoneService
+from app.core.config import settings
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.embedding_job")
 
-# Increased from 20 to 50 for 2.5x fewer API calls (safe: Gemini supports up to 100)
-EMBED_BATCH_SIZE = 50
+# Batch size for Gemini API embeddings (managed via Settings)
 
 
 async def embedding_job(ctx, page_ids: List[int]) -> None:
@@ -92,8 +92,8 @@ async def embedding_job(ctx, page_ids: List[int]) -> None:
 
                 # Embed in batches to respect API limits
                 all_vectors: List[List[float]] = []
-                for i in range(0, len(chunks), EMBED_BATCH_SIZE):
-                    batch = chunks[i : i + EMBED_BATCH_SIZE]
+                for i in range(0, len(chunks), settings.embed_batch_size):
+                    batch = chunks[i : i + settings.embed_batch_size]
                     vectors = await embeddings_model.aembed_documents(
                         [c.text for c in batch]
                     )

@@ -1,11 +1,36 @@
 import re
+import unicodedata
+
+# ── Arabic Presentation Forms Normalization ───────────────────────────────────
+# Pre-calculate mapping for performance. range(0xFB50, 0xFE00) and range(0xFE70, 0xFF00)
+# contain the Arabic presentation forms A and B.
+_PRES_FORM_MAP: dict[int, str] = {}
+for _cp in range(0xFB50, 0xFE00):
+    _nf = unicodedata.normalize("NFKC", chr(_cp))
+    if _nf != chr(_cp):
+        _PRES_FORM_MAP[_cp] = _nf
+for _cp in range(0xFE70, 0xFF00):
+    _nf = unicodedata.normalize("NFKC", chr(_cp))
+    if _nf != chr(_cp):
+        _PRES_FORM_MAP[_cp] = _nf
 
 
 def normalize_uyghur_chars(text: str) -> str:
     if not text:
         return ""
-    # Normalize common OCR character variants
-    return text.replace("ی", "ي").replace("ه", "ە").replace("\u064A\u0654", "\u0626")
+    
+    # 1. Standardize presentation forms (ﻼ -> لا) BEFORE anything else
+    # This is critical for search consistency but changes string length.
+    text = "".join(_PRES_FORM_MAP.get(ord(c), c) for c in text)
+
+    # 2. Normalize common OCR artifacts (invisible characters)
+    return (
+        text.replace("\u064A\u0654", "\u0626")  # ئ (Yeh + Hamza) -> ئ (Hamza seat)
+        .replace("\u200C", "")   # Remove ZWNJ
+        .replace("\u200D", "")   # Remove ZWJ
+        .replace("\u200B", "")   # Remove Zero-width space
+        .replace("\u0640", "")   # Remove Tatweel/Kashida
+    )
 
 def clean_uyghur_text(text: str) -> str:
     if not text:
@@ -86,10 +111,6 @@ def generate_uyghur_regex(q: str) -> str:
     norm_map = {
         re.escape("\u0626"): "(\u0626|\u064A\u0654)",
         re.escape("\u064A\u0654"): "(\u0626|\u064A\u0654)",
-        re.escape("\u0648"): "(\u0648|\u06C7)",
-        re.escape("\u06C7"): "(\u0648|\u06C7)",
-        re.escape("\u0649"): "(\u0649|\u064A)",
-        re.escape("\u064A"): "(\u0649|\u064A)",
     }
     
     # Use a single-pass regex substitution to avoid nested/double replacements

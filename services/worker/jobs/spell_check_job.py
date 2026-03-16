@@ -17,13 +17,12 @@ from app.db import session as db_session
 from app.db.models import Page, PipelineEvent, Book
 from app.services.spell_check_service import run_spell_check_for_page, ThreadSafeSpellCheckCache
 from app.services.book_milestone_service import BookMilestoneService
+from app.core.config import settings
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.spell_check_job")
 
-# Limit concurrency to stay safely within DB connection limits (max_connections=100 in prod).
-# 3 workers * 2 jobs/worker * 6 concurrency = 36 connections + others = safe.
-MAX_CONCURRENT_PAGES = 6
+# Limit concurrency to stay safely within DB connection limits.
 
 async def spell_check_job(ctx, page_ids: List[int]) -> None:
     log_json(logger, logging.INFO, "spell check job started", page_count=len(page_ids))
@@ -32,10 +31,8 @@ async def spell_check_job(ctx, page_ids: List[int]) -> None:
         result = await session.execute(select(Page).where(Page.id.in_(page_ids)))
         pages = list(result.scalars().all())
 
-    # Thread-safe shared cache for the entire job to avoid redundant dictionary/OCR lookups
-    # Includes automatic hit rate tracking for performance monitoring
     cache = ThreadSafeSpellCheckCache()
-    semaphore = asyncio.Semaphore(MAX_CONCURRENT_PAGES)
+    semaphore = asyncio.Semaphore(settings.max_parallel_spell_check)
 
     results = {"succeeded": 0, "failed": 0}
 

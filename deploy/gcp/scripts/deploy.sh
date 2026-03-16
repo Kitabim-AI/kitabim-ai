@@ -69,6 +69,10 @@ docker push "${REGISTRY}/kitabim-frontend:latest"
 
 # ─── Deploy to VM ─────────────────────────────────────────────────────────
 echo "==> [3/3] Deploying to VM: $VM_INSTANCE"
+
+echo "--> Syncing production .env"
+gcloud compute scp "deploy/gcp/.env" "${VM_INSTANCE}:${APP_DIR}/deploy/gcp/.env" --zone="$VM_ZONE"
+
 gcloud compute ssh "$VM_INSTANCE" --zone="$VM_ZONE" --command="
     set -e
 

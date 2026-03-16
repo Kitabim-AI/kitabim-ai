@@ -28,10 +28,10 @@ class Settings:
     # Database
     database_url: str | None = os.getenv("DATABASE_URL")  # PostgreSQL connection string
     # Pool configuration (production-optimized)
-    # Default 5+7=12 max per service handles concurrent worker tasks (10 pages)
-    # and typical API load (~10 concurrent requests). Total 24 connections.
-    db_pool_size: int = int(os.getenv("DB_POOL_SIZE", "5"))
-    db_max_overflow: int = int(os.getenv("DB_MAX_OVERFLOW", "7"))
+    # Default 10+15=25 max per service handles concurrent worker tasks (10 jobs * 8 pages)
+    # and typical API load.
+    db_pool_size: int = int(os.getenv("DB_POOL_SIZE", "10"))
+    db_max_overflow: int = int(os.getenv("DB_MAX_OVERFLOW", "15"))
 
     # Storage
     storage_backend: str = os.getenv("STORAGE_BACKEND", "local")
@@ -44,7 +44,12 @@ class Settings:
     covers_dir: Path = data_dir / "covers"
 
     # Parallel Processing
-    max_parallel_pages: int = int(os.getenv("MAX_PARALLEL_PAGES", "4"))
+    max_parallel_pages: int = int(os.getenv("MAX_PARALLEL_PAGES", "4")) # OCR concurrency
+    max_parallel_spell_check: int = int(os.getenv("MAX_PARALLEL_SPELL_CHECK", "6"))
+    max_parallel_auto_correct: int = int(os.getenv("MAX_PARALLEL_AUTO_CORRECT", "10"))
+
+    # Batch Sizes
+    embed_batch_size: int = int(os.getenv("EMBED_BATCH_SIZE", "50"))
 
     # OCR Settings
     ocr_max_retries: int = int(os.getenv("OCR_MAX_RETRIES", "4"))
@@ -134,6 +139,7 @@ class Settings:
     cache_ttl_user_profile: int = int(os.getenv("CACHE_TTL_USER_PROFILE", "300"))
     cache_ttl_stats: int = int(os.getenv("CACHE_TTL_STATS", "120"))
     cache_ttl_summary_search: int = int(os.getenv("CACHE_TTL_SUMMARY_SEARCH", "1800"))
+    cache_ttl_proverbs: int = int(os.getenv("CACHE_TTL_PROVERBS", "86400")) # 1 day by default
 
     # Cache behavior
     cache_skip_for_admins: bool = os.getenv("CACHE_SKIP_FOR_ADMINS", "true").lower() == "true"

@@ -19,12 +19,12 @@ from app.services.auto_correct_service import (
     apply_auto_corrections_to_page,
     get_correction_rules
 )
+from app.core.config import settings
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.auto_correct_job")
 
 # Limit concurrency to avoid overloading DB or CPU
-MAX_CONCURRENT_PAGES = 10
 
 
 async def auto_correct_job(ctx, page_ids: List[int]) -> None:
@@ -56,7 +56,7 @@ async def auto_correct_job(ctx, page_ids: List[int]) -> None:
 
     log_json(logger, logging.INFO, "loaded correction rules", rule_count=len(correction_rules))
 
-    semaphore = asyncio.Semaphore(MAX_CONCURRENT_PAGES)
+    semaphore = asyncio.Semaphore(settings.max_parallel_auto_correct)
     results = {"succeeded": 0, "failed": 0, "total_corrections": 0}
 
     async def process_page(page: Page):

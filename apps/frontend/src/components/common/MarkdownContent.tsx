@@ -125,7 +125,7 @@ const renderParagraph = (text: string, key: string, onReferenceClick?: (bookId: 
 
 const dotLeaderPattern = /(?:[.\u00b7\u2022\u2219\u22c5\u2024\ufe52\u3002]\s*){3,}|…{2,}/;
 const isHr = (line: string) => /^(-{3,}|\*{3,}|_{3,})$/.test(line.trim());
-const isHeading = (line: string) => /^#{1,6}\s+/.test(line.trim());
+const isHeading = (line: string) => /^#{1,6}(\s+|$|[^\s#])/.test(line.trim());
 const isQuote = (line: string) => /^\s*>\s?/.test(line);
 const isOrderedList = (line: string) => /^\s*\d+[.)]\s+/.test(line);
 const isArabicScriptChar = (value: string) => /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/.test(value);
@@ -173,42 +173,6 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
       continue;
     }
 
-    const headingMatch = line.trim().match(/^(#{1,6})\s+(.*)$/);
-    if (headingMatch) {
-      const level = headingMatch[1].length;
-      const Tag: any = `h${Math.min(6, level)}`;
-
-      // Determine size based on heading level
-      const sizeClass = level === 1 ? 'text-2xl mb-6' :
-        level === 2 ? 'text-2xl mb-4' :
-          level === 3 ? 'text-xl mb-3' :
-            level === 4 ? 'text-xl mb-2' :
-              'text-lg mb-2';
-
-      blocks.push(
-        <Tag key={`h-${key++}`} className={`font-normal text-[#1a1a1a] ${sizeClass}`}>
-          {renderInline(headingMatch[2], onReferenceClick)}
-        </Tag>
-      );
-      i += 1;
-      continue;
-    }
-
-    if (isQuote(line)) {
-      const quoteLines: string[] = [];
-      while (i < lines.length && isQuote(lines[i])) {
-        quoteLines.push(lines[i].replace(/^\s*>\s?/, ''));
-        i += 1;
-      }
-      const quoteText = quoteLines.join('\n');
-      blocks.push(
-        <blockquote key={`quote-${key++}`} className="border-r-2 border-slate-200 pr-4 text-slate-600">
-          {renderParagraph(quoteText, `quote-${key}`, onReferenceClick)}
-        </blockquote>
-      );
-      continue;
-    }
-
     if (isTocLine(line)) {
       const tocLines: string[] = [];
       while (i < lines.length && lines[i].trim() && isTocLine(lines[i])) {
@@ -238,6 +202,42 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
             <div key={`toc-${key}-line-${idx}`}>{tocLine}</div>
           ))}
         </div>
+      );
+      continue;
+    }
+
+    const headingMatch = line.trim().match(/^(#{1,6})\s*(.*)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const Tag: any = `h${Math.min(6, level)}`;
+
+      // Determine size based on heading level
+      const sizeClass = level === 1 ? 'text-2xl mb-6' :
+        level === 2 ? 'text-2xl mb-4' :
+          level === 3 ? 'text-xl mb-3' :
+            level === 4 ? 'text-xl mb-2' :
+              'text-lg mb-2';
+
+      blocks.push(
+        <Tag key={`h-${key++}`} className={`font-bold text-[#1a1a1a] ${sizeClass}`}>
+          {renderInline(headingMatch[2] || '', onReferenceClick)}
+        </Tag>
+      );
+      i += 1;
+      continue;
+    }
+
+    if (isQuote(line)) {
+      const quoteLines: string[] = [];
+      while (i < lines.length && isQuote(lines[i])) {
+        quoteLines.push(lines[i].replace(/^\s*>\s?/, ''));
+        i += 1;
+      }
+      const quoteText = quoteLines.join('\n');
+      blocks.push(
+        <blockquote key={`quote-${key++}`} className="border-r-2 border-slate-200 pr-4 text-slate-600">
+          {renderParagraph(quoteText, `quote-${key}`, onReferenceClick)}
+        </blockquote>
       );
       continue;
     }

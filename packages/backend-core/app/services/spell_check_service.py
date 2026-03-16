@@ -86,26 +86,6 @@ _WORD_RE = re.compile(
 )
 _MIN_WORD_LEN = 4
 
-# ── OCR page normalization ─────────────────────────────────────────────────────
-
-_PRES_FORM_MAP: dict[int, str] = {}
-for _cp in range(0xFB50, 0xFE00):
-    _nf = unicodedata.normalize("NFKC", chr(_cp))
-    if _nf != chr(_cp):
-        _PRES_FORM_MAP[_cp] = _nf
-for _cp in range(0xFE70, 0xFF00):
-    _nf = unicodedata.normalize("NFKC", chr(_cp))
-    if _nf != chr(_cp):
-        _PRES_FORM_MAP[_cp] = _nf
-
-
-def ocr_normalize_page(raw: str) -> str:
-    """Remove common OCR artifacts before tokenization."""
-    raw = raw.replace("\u200C", "")   # ZWNJ
-    raw = raw.replace("\u200D", "")   # ZWJ
-    raw = raw.replace("\u200B", "")   # Zero-width space
-    raw = raw.replace("\u0640", "")   # Tatweel / kashida
-    return "".join(_PRES_FORM_MAP.get(ord(c), c) for c in raw)
 
 
 def tokenize(page_text: str) -> list[tuple[str, int, int]]:
@@ -531,9 +511,6 @@ async def run_spell_check_for_page(
     """
     raw_text = page.text or ""
     # Tokenize directly against raw_text so offsets map to raw positions.
-    # ocr_normalize_page is NOT applied before tokenisation — that was the
-    # source of the offset mismatch that caused partial highlights and extra
-    # characters after replacement.
     tokens = tokenize(raw_text)
 
     if not tokens:

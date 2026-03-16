@@ -12,10 +12,12 @@ from typing import Optional, List
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
 from sqlalchemy import text, and_, or_, case, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+import random
 from app.core.config import settings
 from app.db.session import get_session
 from app.db.repositories.books import BooksRepository
 from app.db.repositories.pages import PagesRepository
+from app.db.repositories.system_configs import SystemConfigsRepository
 from app.db.models import Page, Chunk, BookSummary
 from app.models.schemas import Book, PaginatedBooks, ExtractionResult
 from app.models.user import User
@@ -437,57 +439,48 @@ async def get_random_proverb(
 
     proverbs_repo = ProverbsRepository(session)
 
-    # Add HTTP cache headers for browser caching (5 minutes)
-    # Set this early so it applies to both cached and fresh responses
-    # public = cacheable by browsers and CDNs
-    # max-age = browser caches for 5 minutes (300 seconds)
-    # stale-while-revalidate = browser can use stale cache for 60s while fetching new data in background
-    response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=60"
+    # Disable browser caching for proverbs to ensure fresh selection from server
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
 
-    # Cache Lookup
+    # Cache Lookup for the LIST of proverbs for this keyword
     keyword_hash = hashlib.md5((keyword or "default").encode()).hexdigest()[:8]
-    cache_key = cache_config.KEY_PROVERB.format(hash=keyword_hash)
-    cached_proverb = await cache_service.get(cache_key)
-    if cached_proverb:
-        return cached_proverb
+    list_cache_key = f"proverbs:list:{keyword_hash}"
     
-    if keyword:
-        # Use provided keywords (supports comma-separated list)
-        keywords = [k.strip() for k in keyword.split(",") if k.strip()]
-        patterns = [generate_uyghur_regex(k) for k in keywords]
-    else:
-        # Use default keywords
-        keywords = ["كىتاب", "بىلىم", "ئەقىل", "پاراسەت"]
-        patterns = [generate_uyghur_regex(k) for k in keywords]
+    proverbs_list = await cache_service.get(list_cache_key)
+    
+    if proverbs_list is None:
+        if keyword:
+            keywords = [k.strip() for k in keyword.split(",") if k.strip()]
+            patterns = [generate_uyghur_regex(k) for k in keywords]
+        else:
+            keywords = ["كىتاب", "بىلىم", "ئەقىل", "پاراسەت"]
+            patterns = [generate_uyghur_regex(k) for k in keywords]
 
-    # Build regex pattern (OR condition)
-    if patterns:
-        combined_pattern = "(" + "|".join(patterns) + ")"
-    else:
-        combined_pattern = ".*" # Match everything if somehow patterns is empty
+        if patterns:
+            combined_pattern = "(" + "|".join(patterns) + ")"
+        else:
+            combined_pattern = ".*"
 
-    # Get random proverb matching the pattern
-    proverb = await proverbs_repo.get_random_proverb(text_pattern=combined_pattern)
+        # Fetch matching proverbs (list)
+        results = await proverbs_repo.find_by_text_pattern(combined_pattern)
+        
+        if results:
+            proverbs_list = [
+                {"text": p.text, "volume": p.volume, "pageNumber": p.page_number}
+                for p in results
+            ]
+        else:
+            proverbs_list = [{
+                "text": "كىتاب — بىلىم بۇلىقى.",
+                "volume": 1,
+                "pageNumber": 1
+            }]
+            
+        # Cache the list (longer TTL as proverbs change infrequently)
+        await cache_service.set(list_cache_key, proverbs_list, ttl=settings.cache_ttl_proverbs)
 
-    if proverb:
-        result = {
-            "text": proverb.text,
-            "volume": proverb.volume,
-            "pageNumber": proverb.page_number
-        }
-    else:
-        # Fallback if no proverbs found
-        result = {
-            "text": "كىتاب — بىلىم بۇلىقى.",
-            "volume": 1,
-            "pageNumber": 1
-        }
-
-    # Cache result for 5 minutes (rotates proverb every 5 mins)
-    # NOTE: This means all users see the same proverb for 5 mins for same keyword.
-    await cache_service.set(cache_key, result, ttl=300)
-
-    return result
+    # Randomly select one from the cached list (Dynamic on every refresh)
+    return random.choice(proverbs_list)
 
 
 
@@ -1453,18 +1446,30 @@ async def update_page_text(
         raise HTTPException(status_code=500, detail="system_config 'gemini_embedding_model' is not set")
 
     new_text = normalize_markdown(payload.get("text", ""))
+    new_text = normalize_uyghur_chars(new_text)
 
     # 1. Update page text and status
     page = await pages_repo.find_one(book_id, page_num)
     if not page:
         raise HTTPException(status_code=404, detail=t("errors.page_not_found"))
     
+    # Check if text actually changed
+    text_changed = page.text != new_text
+
     page.text = new_text
     page.status = 'ocr_done'
     page.is_verified = True
-    page.is_indexed = False
+    page.is_indexed = (not text_changed) and page.is_indexed
     page.last_updated = datetime.now(timezone.utc)
     page.updated_by = current_user.email
+    
+    # If text changed, invalidate stale spell check issues (offsets are now invalid)
+    if text_changed:
+        from app.db.models import PageSpellIssue
+        await session.execute(
+            delete(PageSpellIssue).where(PageSpellIssue.page_id == page.id)
+        )
+        page.spell_check_milestone = "idle"
     
     await session.flush()
 
@@ -1573,6 +1578,7 @@ async def create_book(
     if pages_input:
         for r in pages_input:
             page_text = normalize_markdown(r.get("text") or "")
+            page_text = normalize_uyghur_chars(page_text)
             page_data = {
                 "book_id": book_id,
                 "page_number": r.get("page_number"),
@@ -1679,6 +1685,11 @@ async def update_book_details(
                                 THEN 'idle'
                                 ELSE milestone
                             END,
+                            spell_check_milestone = CASE
+                                WHEN :text IS NOT NULL AND text IS DISTINCT FROM :text
+                                THEN 'idle'
+                                ELSE spell_check_milestone
+                            END,
                             last_updated = :last_updated,
                             updated_by = :updated_by
                         WHERE book_id = :book_id AND page_number = :page_number
@@ -1686,7 +1697,7 @@ async def update_book_details(
                     {
                         "book_id": book_id,
                         "page_number": page_number,
-                        "text": new_text,
+                        "text": normalize_uyghur_chars(new_text) if new_text is not None else None,
                         "status": result.get("status"),
                         "is_verified": result.get("isVerified") or result.get("is_verified"),
                         "last_updated": datetime.now(timezone.utc),
