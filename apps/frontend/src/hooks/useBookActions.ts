@@ -16,6 +16,8 @@ export const useBookActions = (
   const { addNotification } = useNotification();
   const { t } = useI18n();
   const [isCheckingGlobal, setIsCheckingGlobal] = useState(false);
+  const [reprocessingBooks, setReprocessingBooks] = useState<Map<string, string>>(new Map());
+  const [isDeletingBook, setIsDeletingBook] = useState(false);
   const cancelledBooks = useRef<Set<string>>(new Set());
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -269,16 +271,28 @@ export const useBookActions = (
       type: 'confirm',
       confirmText: t('modal.delete.confirm'),
       destructive: true,
+      isLoading: isDeletingBook,
       onConfirm: async () => {
-        cancelledBooks.current.add(bookId);
-        await PersistenceService.deleteBook(bookId);
-        setBooks(prev => prev.filter(b => b.id !== bookId));
-        if (selectedBookId === bookId) {
-          setSelectedBook(null);
-          setView('library');
+        setIsDeletingBook(true);
+        setModal((prev: any) => ({ ...prev, isLoading: true }));
+
+        try {
+          cancelledBooks.current.add(bookId);
+          await PersistenceService.deleteBook(bookId);
+          setBooks(prev => prev.filter(b => b.id !== bookId));
+          if (selectedBookId === bookId) {
+            setSelectedBook(null);
+            setView('library');
+          }
+          setModal((prev: any) => ({ ...prev, isOpen: false }));
+          addNotification(t('common.deleteSuccess'), "success");
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+          addNotification(t('common.error') + ': ' + errorMessage, 'error');
+          setModal((prev: any) => ({ ...prev, isOpen: false }));
+        } finally {
+          setIsDeletingBook(false);
         }
-        setModal((prev: any) => ({ ...prev, isOpen: false }));
-        addNotification(t('common.deleteSuccess'), "success");
       }
     });
   };
@@ -423,7 +437,10 @@ export const useBookActions = (
       message: t('modal.retryFailed.message') || 'خاتالاشقان بەتلەرنى ئۆز قەدىمىدىن باشلاپ قايتا بىر تەرەپ قىلامسىز؟',
       type: 'confirm',
       confirmText: t('modal.retryFailed.confirm') || 'قايتا سىناش',
+      isLoading: false,
       onConfirm: async () => {
+        setModal((prev: any) => ({ ...prev, isLoading: true }));
+
         try {
           const result = await PersistenceService.retryFailedPages(bookId);
           await refreshLibrary();
@@ -435,6 +452,7 @@ export const useBookActions = (
           }
         } catch (err) {
           addNotification(t('common.retryFailedError') || 'قايتا سىناش مەغلۇپ بولدى.', 'error');
+          setModal((prev: any) => ({ ...prev, isOpen: false }));
         }
       }
     });
@@ -455,7 +473,12 @@ export const useBookActions = (
       message: t(`modal.reprocess.${step}.message`) || 'بۇ جەرياننى باشتىن باشلاپ قايتا ئىشلىمەكمۇ؟',
       type: 'confirm',
       confirmText: t('common.confirm') || 'جەزملەش',
+      isLoading: false,
       onConfirm: async () => {
+        // Mark book as reprocessing with the current step
+        setReprocessingBooks(prev => new Map(prev).set(bookId, step));
+        setModal((prev: any) => ({ ...prev, isLoading: true }));
+
         try {
           switch (step) {
             case 'ocr': await PersistenceService.reprocessOcr(bookId); break;
@@ -468,7 +491,16 @@ export const useBookActions = (
           setModal((prev: any) => ({ ...prev, isOpen: false }));
           addNotification(t('common.reprocessStarted'), "success");
         } catch (err) {
-          addNotification(t('common.error'), 'error');
+          const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+          addNotification(t('common.error') + ': ' + errorMessage, 'error');
+          setModal((prev: any) => ({ ...prev, isOpen: false }));
+        } finally {
+          // Remove loading state
+          setReprocessingBooks(prev => {
+            const next = new Map(prev);
+            next.delete(bookId);
+            return next;
+          });
         }
       }
     });
@@ -476,6 +508,8 @@ export const useBookActions = (
 
   return {
     isCheckingGlobal,
+    reprocessingBooks,
+    isDeletingBook,
     handleFileUpload,
     handleRetryFailedPages,
     handleReprocessStep,

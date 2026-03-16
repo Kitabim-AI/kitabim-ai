@@ -63,6 +63,7 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
         confirmText={modal.confirmText}
         onConfirm={modal.onConfirm}
         destructive={modal.destructive}
+        isLoading={modal.isLoading}
         onClose={() => setModal({ ...modal, isOpen: false })}
       />
       <NotificationContainer />

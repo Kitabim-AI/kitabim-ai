@@ -32,6 +32,9 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - DATA_DIR=/app/data
       - GOOGLE_APPLICATION_CREDENTIALS=/etc/gcs/key.json
+      # Connection pool settings (loaded from .env but explicitly listed for visibility)
+      - DB_POOL_SIZE=${DB_POOL_SIZE:-5}
+      - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-7}
     ports:
       - "30800:8000"
     volumes:
@@ -66,6 +69,9 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - DATA_DIR=/app/data
       - GOOGLE_APPLICATION_CREDENTIALS=/etc/gcs/key.json
+      # Connection pool settings (loaded from .env but explicitly listed for visibility)
+      - DB_POOL_SIZE=${DB_POOL_SIZE:-5}
+      - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-7}
     volumes:
       - ./data:/app/data
       - ./gcs-key.json:/etc/gcs/key.json:ro

@@ -10,7 +10,14 @@ from app.langchain.models import generate_text_with_image
 from app.utils.text import clean_uyghur_text
 
 
-async def ocr_page_with_gemini(page: fitz.Page) -> str:
+async def ocr_page_with_gemini(page: fitz.Page, model_name: str = "gemini-2.0-flash") -> str:
+    """
+    OCR a page using Gemini Vision model.
+
+    Args:
+        page: The fitz.Page to OCR
+        model_name: The Gemini model to use (should be fetched from system_configs)
+    """
     pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
     img_bytes = pix.tobytes("jpeg")
 
@@ -19,7 +26,7 @@ async def ocr_page_with_gemini(page: fitz.Page) -> str:
             text = await generate_text_with_image(
                 OCR_PROMPT,
                 img_bytes,
-                settings.gemini_model_name,
+                model_name,
             )
             return clean_uyghur_text(text or "")
         except Exception as exc:

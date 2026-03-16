@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Loader2 } from 'lucide-react';
 import { useI18n } from '../../i18n/I18nContext';
 
 interface ModalProps {
@@ -11,6 +11,7 @@ interface ModalProps {
   onConfirm?: () => void;
   onClose: () => void;
   destructive?: boolean;
+  isLoading?: boolean;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -22,6 +23,7 @@ export const Modal: React.FC<ModalProps> = ({
   onConfirm,
   onClose,
   destructive = false,
+  isLoading = false,
 }) => {
   const { t } = useI18n();
 
@@ -57,7 +59,8 @@ export const Modal: React.FC<ModalProps> = ({
             {type === 'confirm' && (
               <button
                 onClick={onClose}
-                className="flex-1 py-4 px-6 bg-slate-100 hover:bg-slate-200 text-[#94a3b8] font-normal rounded-[20px] transition-all active:scale-95 text-sm"
+                disabled={isLoading}
+                className="flex-1 py-4 px-6 bg-slate-100 hover:bg-slate-200 text-[#94a3b8] font-normal rounded-[20px] transition-all active:scale-95 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {t('common.cancel')}
               </button>
@@ -70,11 +73,13 @@ export const Modal: React.FC<ModalProps> = ({
                   onClose();
                 }
               }}
-              className={`flex-1 py-4 px-6 text-white font-normal rounded-[20px] transition-all shadow-xl active:scale-95 text-sm ${destructive
+              disabled={isLoading}
+              className={`flex-1 py-4 px-6 text-white font-normal rounded-[20px] transition-all shadow-xl active:scale-95 text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${destructive
                 ? 'bg-red-500 hover:bg-red-600 shadow-red-200'
                 : 'bg-[#0369a1] hover:bg-[#0284c7] shadow-[#0369a1]/30'
                 }`}
             >
+              {isLoading && <Loader2 size={16} className="animate-spin" />}
               {confirmText || (type === 'confirm' ? t('modal.confirm') : t('modal.ok'))}
             </button>
           </div>

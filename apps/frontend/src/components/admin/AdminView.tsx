@@ -15,6 +15,8 @@ const getStatusTextColor = (step: string | null) => {
   switch (step.toLowerCase()) {
     case 'ready': return 'text-emerald-600 font-bold';
     case 'embedding': return 'text-orange-600 font-bold';
+    case 'word_index': return 'text-orange-600 font-bold';
+    case 'spell_check': return 'text-purple-600 font-bold';
     case 'chunking': return 'text-indigo-600 font-bold';
     case 'ocr': return 'text-blue-600 font-bold';
     case 'error': return 'text-red-500 font-bold';

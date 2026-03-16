@@ -26,6 +26,7 @@ from app.core.prompts import BOOK_SUMMARY_PROMPT
 from app.db import session as db_session
 from app.db.models import Book, Page
 from app.db.repositories.book_summaries import BookSummariesRepository
+from app.db.repositories.system_configs import SystemConfigsRepository
 from app.langchain import build_text_chain
 from app.langchain.models import GeminiEmbeddings
 from app.utils.observability import log_json
@@ -55,6 +56,15 @@ async def summary_job(ctx, book_id: str) -> None:
 
     try:
         async with db_session.async_session_factory() as session:
+            # Fetch models from system_configs (no fallback — must be configured in DB)
+            config_repo = SystemConfigsRepository(session)
+            gemini_chat_model = await config_repo.get_value("gemini_chat_model")
+            if not gemini_chat_model:
+                raise RuntimeError("system_config 'gemini_chat_model' is not set")
+            gemini_embedding_model = await config_repo.get_value("gemini_embedding_model")
+            if not gemini_embedding_model:
+                raise RuntimeError("system_config 'gemini_embedding_model' is not set")
+
             # Load book metadata
             result = await session.execute(select(Book).where(Book.id == book_id))
             book = result.scalar_one_or_none()
@@ -79,7 +89,7 @@ async def summary_job(ctx, book_id: str) -> None:
         # Generate summary via Gemini chat model
         chain = build_text_chain(
             BOOK_SUMMARY_PROMPT,
-            settings.gemini_chat_model,
+            gemini_chat_model,
             run_name="summary_chain",
         )
         summary = await chain.ainvoke(
@@ -95,7 +105,7 @@ async def summary_job(ctx, book_id: str) -> None:
             return
 
         # Embed the summary
-        embeddings_model = GeminiEmbeddings()
+        embeddings_model = GeminiEmbeddings(gemini_embedding_model)
         vectors = await embeddings_model.aembed_documents([summary])
         embedding = vectors[0]
 

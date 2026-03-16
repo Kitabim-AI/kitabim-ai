@@ -37,13 +37,17 @@ class CategoryResponse(BaseModel):
 
 class RAGService:
     def __init__(self) -> None:
-        self.embeddings = GeminiEmbeddings()
         self._parser = PydanticOutputParser(pydantic_object=CategoryResponse)
         self._rag_chains: dict = {}
         self._category_chains: dict = {}
+        self._embeddings_cache: dict = {}  # Cache embeddings by model name
         self.logger = logging.getLogger("app.rag")
 
-
+    def _get_embeddings(self, model_name: str) -> GeminiEmbeddings:
+        """Get or create cached embeddings instance for the given model."""
+        if model_name not in self._embeddings_cache:
+            self._embeddings_cache[model_name] = GeminiEmbeddings(model_name)
+        return self._embeddings_cache[model_name]
 
     def _get_rag_chain(self, model_name: str):
         if model_name not in self._rag_chains:
@@ -477,10 +481,18 @@ class RAGService:
         chunks_repo = ChunksRepository(session)
         configs_repo = SystemConfigsRepository(session)
 
-        chat_model = await configs_repo.get_value("gemini_chat_model", default=settings.gemini_chat_model)
-        categorization_model = await configs_repo.get_value("gemini_categorization_model", default=settings.gemini_categorization_model)
+        chat_model = await configs_repo.get_value("gemini_chat_model")
+        if not chat_model:
+            raise RuntimeError("system_config 'gemini_chat_model' is not set")
+        categorization_model = await configs_repo.get_value("gemini_categorization_model")
+        if not categorization_model:
+            raise RuntimeError("system_config 'gemini_categorization_model' is not set")
+        embedding_model = await configs_repo.get_value("gemini_embedding_model")
+        if not embedding_model:
+            raise RuntimeError("system_config 'gemini_embedding_model' is not set")
         rag_chain = self._get_rag_chain(chat_model)
         category_chain = self._get_category_chain(categorization_model)
+        embeddings = self._get_embeddings(embedding_model)
 
         if not is_global:
             book = await books_repo.get(req.book_id)
@@ -525,7 +537,7 @@ class RAGService:
         try:
             query_vector = await cache_service.get(emb_cache_key)
             if not query_vector:
-                query_vector = await self.embeddings.aembed_query(req.question)
+                query_vector = await embeddings.aembed_query(req.question)
                 if query_vector:
                     await cache_service.set(emb_cache_key, query_vector, ttl=settings.cache_ttl_rag_query)
         except Exception as exc:
@@ -823,10 +835,18 @@ class RAGService:
         chunks_repo = ChunksRepository(session)
         configs_repo = SystemConfigsRepository(session)
 
-        chat_model = await configs_repo.get_value("gemini_chat_model", default=settings.gemini_chat_model)
-        categorization_model = await configs_repo.get_value("gemini_categorization_model", default=settings.gemini_categorization_model)
+        chat_model = await configs_repo.get_value("gemini_chat_model")
+        if not chat_model:
+            raise RuntimeError("system_config 'gemini_chat_model' is not set")
+        categorization_model = await configs_repo.get_value("gemini_categorization_model")
+        if not categorization_model:
+            raise RuntimeError("system_config 'gemini_categorization_model' is not set")
+        embedding_model = await configs_repo.get_value("gemini_embedding_model")
+        if not embedding_model:
+            raise RuntimeError("system_config 'gemini_embedding_model' is not set")
         rag_chain = self._get_rag_chain(chat_model)
         category_chain = self._get_category_chain(categorization_model)
+        embeddings = self._get_embeddings(embedding_model)
 
         if not is_global:
             book = await books_repo.get(req.book_id)
@@ -873,7 +893,7 @@ class RAGService:
         try:
             query_vector = await cache_service.get(emb_cache_key)
             if not query_vector:
-                query_vector = await self.embeddings.aembed_query(req.question)
+                query_vector = await embeddings.aembed_query(req.question)
                 if query_vector:
                     await cache_service.set(emb_cache_key, query_vector, ttl=settings.cache_ttl_rag_query)
         except Exception as exc:

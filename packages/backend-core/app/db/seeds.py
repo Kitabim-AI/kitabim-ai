@@ -28,8 +28,13 @@ async def seed_system_configs(session: AsyncSession):
         },
         {
             "key": "gemini_ocr_model",
-            "value": "gemini-2.0-flash",
+            "value": "gemini-3.1-flash-lite-preview",
             "description": "Gemini model used for OCR page processing."
+        },
+        {
+            "key": "gemini_embedding_model",
+            "value": "models/gemini-embedding-001",
+            "description": "Gemini model used for generating text embeddings (vector search)."
         },
         {
             "key": "maintenance_retention_days",

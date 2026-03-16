@@ -47,7 +47,7 @@ export const Navbar: React.FC = () => {
 
         <div className="relative flex items-center gap-3 sm:gap-4 md:gap-3 lg:gap-8">
           <div className="flex items-center h-[48px] gap-2 sm:gap-3 cursor-pointer group transition-transform duration-300 hover:-translate-y-0.5" onClick={() => setView('home')}>
-            <div className="flex-shrink-0 p-2 md:p-3 rounded-xl md:rounded-2xl shadow-[0_4px_20px_rgba(255,193,7,0.4),0_8px_40px_rgba(156,39_176,0.2),inset_0_1px_0_rgba(255,255,255,0.4)] transition-all duration-300 relative overflow-hidden group-hover:shadow-[0_6px_20px_rgba(3,105,161,0.5)] icon-shake"
+            <div className="flex-shrink-0 p-2 md:p-2.5 rounded-xl md:rounded-2xl shadow-[0_4px_20px_rgba(255,193,7,0.4),0_8px_40px_rgba(156,39_176,0.2),inset_0_1px_0_rgba(255,255,255,0.4)] transition-all duration-300 relative overflow-hidden group-hover:shadow-[0_6px_20px_rgba(3,105,161,0.5)] icon-shake"
               style={{
                 background: 'linear-gradient(135deg, #FFD54F 0%, #FF9800 50%, #9C27B0 100%)'
               }}>
@@ -55,9 +55,9 @@ export const Navbar: React.FC = () => {
                 style={{
                   background: 'repeating-conic-gradient(from 0deg at 50% 50%, transparent 0deg, transparent 10deg, rgba(255, 255, 255, 0.1) 10deg, rgba(255, 255, 255, 0.1) 20deg)'
                 }} />
-              <BookOpen size={20} className="md:w-6 md:h-6 text-white relative z-10" strokeWidth={2} />
+              <BookOpen size={20} className="md:w-5 md:h-5 text-white relative z-10" strokeWidth={2} />
             </div>
-            <span dir="ltr" className="flex items-center font-semibold text-[#1a1a1a] text-[30px] mt-[20px] md:text-[40px] tracking-tight">
+            <span dir="ltr" className="flex items-center font-semibold text-[#1a1a1a] text-[24px] mt-[12px] md:text-[32px] md:mt-[16px] tracking-tight">
               Kitabim<span className="text-[#0369a1]">.AI</span>
             </span>
           </div>
@@ -246,19 +246,20 @@ const NavButton: React.FC<{
 }> = ({ active, onClick, icon, label, showIcon = 'always' }) => (
   <button
     onClick={onClick}
-    className={`relative px-4 md:px-4 lg:px-6 h-[48px] rounded-2xl text-sm lg:text-base font-normal flex items-center gap-2 transition-all duration-300 group ${active
+    title={label}
+    className={`relative px-3 md:px-3 lg:px-4 xl:px-6 h-[44px] md:h-[48px] rounded-2xl text-sm lg:text-base font-normal flex items-center gap-2 transition-all duration-300 group ${active
       ? 'text-[#0369a1] bg-[#0369a1]/10 shadow-[inset_0_0_0_1px_rgba(3,105,161,0.2)]'
       : 'text-[#64748b] hover:bg-[#0369a1]/5 hover:text-[#0369a1]'
       }`}
   >
-    <div className={`flex items-center gap-2 relative z-10 ${!active ? 'md:justify-center' : ''}`}>
+    <div className="flex items-center gap-2 relative z-10">
       <span className={`${showIcon === 'lg' ? 'hidden lg:inline-flex' : 'inline-flex'} items-center transition-transform group-hover:scale-110 ${active ? 'text-[#0369a1]' : ''}`}>
         {icon}
       </span>
-      <span className={`transition-all duration-300 whitespace-nowrap mt-[3px] ${active
-        ? 'opacity-100 w-auto'
-        : 'md:w-0 md:opacity-0 lg:w-auto lg:opacity-100 overflow-hidden'
-        }`}>
+      <span className={`transition-all duration-300 whitespace-nowrap mt-[3px] overflow-hidden ${
+        // Hide labels on md/lg to save space, show only on xl or larger screens
+        'hidden xl:inline-flex'
+      }`}>
         {label}
       </span>
     </div>

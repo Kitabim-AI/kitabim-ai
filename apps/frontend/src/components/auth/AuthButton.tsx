@@ -137,11 +137,11 @@ export function OAuthButtonGroup({ className = '', align = 'down', side = 'left'
       <button
         onClick={() => setIsOpen(!isOpen)}
         disabled={isLoading}
-        className="flex items-center gap-3 px-6 py-3 bg-gradient-to-r from-[#0369a1] to-[#0284c7] hover:from-[#0284c7] hover:to-[#0369a1] text-white rounded-2xl font-normal text-base transition-all active:scale-95 disabled:opacity-50 shadow-lg hover:shadow-xl shadow-[#0369a1]/30"
+        className="flex items-center gap-1.5 md:gap-3 px-3 md:px-5 lg:px-6 py-2 md:py-3 bg-gradient-to-r from-[#0369a1] to-[#0284c7] hover:from-[#0284c7] hover:to-[#0369a1] text-white rounded-[1.2rem] md:rounded-2xl font-normal text-sm md:text-base transition-all active:scale-95 disabled:opacity-50 shadow-lg hover:shadow-xl shadow-[#0369a1]/30"
       >
-        <LogIn size={20} strokeWidth={2.5} />
-        <span className="uyghur-text">{isLoading ? t('auth.loggingIn') : t('auth.signIn')}</span>
-        <ChevronDown size={16} className={`transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} strokeWidth={3} />
+        <LogIn size={18} className="md:w-[20px] md:h-[20px]" strokeWidth={2.5} />
+        <span className="uyghur-text hidden lg:inline">{isLoading ? t('auth.loggingIn') : t('auth.signIn')}</span>
+        <ChevronDown size={14} className={`md:w-[16px] md:h-[16px] transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} strokeWidth={3} />
       </button>
 
       {isOpen && (
