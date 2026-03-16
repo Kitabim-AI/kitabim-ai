@@ -23,7 +23,7 @@ from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.word_index_scanner")
 
-BATCH_SIZE = 1000
+BATCH_SIZE = 500
 
 
 async def run_word_index_scanner(ctx) -> None:
@@ -44,37 +44,62 @@ async def run_word_index_scanner(ctx) -> None:
     if not page_ids:
         return
 
+    # Load all pages in the batch
+    async with db_session.async_session_factory() as session:
+        result = await session.execute(
+            select(Page).where(Page.id.in_(page_ids))
+        )
+        pages = result.scalars().all()
+
+    # Group pages by book_id
+    book_to_pages = {}
+    for p in pages:
+        book_to_pages.setdefault(p.book_id, []).append(p)
+
     succeeded = 0
     failed = 0
     processed_book_ids = set()
 
-    for page_id in page_ids:
+    for book_id, book_pages in book_to_pages.items():
         try:
-            async with db_session.async_session_factory() as session:
-                # Reload page within the processing transaction
-                res = await session.execute(select(Page).where(Page.id == page_id))
-                page = res.scalar_one()
+            # Aggregate word frequencies for all pages of this book in the batch
+            aggregated_freq = Counter()
+            for page in book_pages:
                 tokens = tokenize(page.text or "")
-                word_freq = Counter(word_norm for word_norm, _raw, _s, _e in tokens)
-                await index_book_words(session, page.book_id, word_freq)
+                page_freq = Counter(word_norm for word_norm, _raw, _s, _e in tokens)
+                aggregated_freq.update(page_freq)
+
+            async with db_session.async_session_factory() as session:
+                # Perform one aggregated upsert for the book
+                await index_book_words(session, book_id, aggregated_freq)
+
+                # Mark all pages in this book-batch as done
+                page_ids_in_batch = [p.id for p in book_pages]
                 await session.execute(
                     update(Page)
-                    .where(Page.id == page.id)
+                    .where(Page.id.in_(page_ids_in_batch))
                     .values(word_index_milestone="done", last_updated=func.now())
                 )
-                session.add(PipelineEvent(
-                    page_id=page.id,
-                    event_type="word_index_succeeded"
-                ))
+
+                # Record events
+                for pid in page_ids_in_batch:
+                    session.add(PipelineEvent(
+                        page_id=pid,
+                        event_type="word_index_succeeded"
+                    ))
+
                 await session.commit()
-                processed_book_ids.add(page.book_id)
-            succeeded += 1
+                processed_book_ids.add(book_id)
+                succeeded += len(book_pages)
 
         except Exception as exc:
+            # If the aggregated update fails, try to mark pages as failed
+            # Note: This is rare as tokenize is CPU-only.
             async with db_session.async_session_factory() as session:
+                page_ids_in_batch = [p.id for p in book_pages]
                 await session.execute(
                     update(Page)
-                    .where(Page.id == page.id)
+                    .where(Page.id.in_(page_ids_in_batch))
                     .values(
                         word_index_milestone="failed",
                         retry_count=Page.retry_count + 1,
@@ -82,10 +107,10 @@ async def run_word_index_scanner(ctx) -> None:
                     )
                 )
                 await session.commit()
-            processed_book_ids.add(page.book_id)
-            failed += 1
-            log_json(logger, logging.WARNING, "word index page failed",
-                     book_id=page.book_id, page=page.page_number,
+            processed_book_ids.add(book_id)
+            failed += len(book_pages)
+            log_json(logger, logging.WARNING, "word index book-batch failed",
+                     book_id=book_id, page_count=len(book_pages),
                      error=repr(exc), traceback=traceback.format_exc())
 
     # Update book-level word_index milestone after processing batch

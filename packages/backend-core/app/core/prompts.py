@@ -1,38 +1,23 @@
-OCR_PROMPT = (
-    "This is a scanned page from a published Uyghur book. "
-    "Your task is to extract ALL text from this image verbatim as high-quality Uyghur text with light Markdown structure. "
-    "The text is written in Uyghur using the Perso-Arabic script (right-to-left, 32-letter Uyghur alphabet). "
-    "CRITICAL: Output ONLY the Uyghur text as it appears on the page. "
-    "Do NOT translate into any other language. Do NOT add any non-Uyghur words. "
-    "Do NOT add commentary, explanations, or any text that is not on the page. "
-    "Rules: "
-    "1. If it is NOT a poem, DO NOT break sentences into multiple lines to match page width; "
-    "provide continuous text for each paragraph. "
-    "2. Maintain separate paragraphs. "
-    "3. Preserve punctuation exactly and keep Uyghur symbols & Arabic script. "
-    "4. Identify and preserve structure: "
-    "use Markdown headings for titles/headers/chapters, "
-    "if a table of contents is detected render it as a Markdown pipe table "
-    "(data rows only, no header row and no separator line, one row per entry), "
-    "keep poems with their original line breaks, "
-    "and include header/footer text (if present) on separate lines, prefixed with "
-    "\"[Header]\" or \"[Footer]\". "
-    "5. If the page contains no readable Uyghur text, output nothing at all — no placeholders, "
-    "no explanations, no filler text. "
-    "6. Output ONLY the recognized Uyghur text with the minimal Markdown needed for structure. "
-    "7. CRITICAL — Uyghur Arabic-script character accuracy. "
-    "These character pairs are visually similar but distinct; choose carefully based on context: "
-    "Waw-family vowels: و (waw) vs ۇ (oe/u) vs ۆ (ö) vs ۋ (ve) — "
-    "ۇ and ۆ carry diacritics above and are common Uyghur vowels; و without diacritic is rare in native Uyghur words. "
-    "Kaf/Gaf/Ng: ك (k) vs گ (g) vs ڭ (ng) — "
-    "ڭ is the Uyghur velar nasal, distinct from both ك and گ. "
-    "Nun vs Kaf/Ng: ن (n) must not be read as ك or ڭ. "
-    "Reh vs Zain: ر (r) vs ز (z) — these look similar; use word context to decide. "
-    "He variants: ە (ae/open-he) vs ھ (dotless-he/h) — both are common in Uyghur, context-dependent. "
-    "Ain vs Ghain: ع vs غ — غ has a dot above; do not omit it. "
-    "He vs Ha: ح vs خ — خ has a dot above; do not omit it. "
-    "Fa vs Qaf: ف (f) vs ق (q) — ق has two dots below; do not confuse with ف which has one dot above. "
-)
+OCR_PROMPT = """This is a scanned page from a published Uyghur book. Your task is to extract ALL text from this image verbatim as high-quality Uyghur text with light Markdown structure. The text is written in Uyghur using the Perso-Arabic script (right-to-left, 32-letter Uyghur alphabet). 
+
+CRITICAL: Output ONLY the Uyghur text as it appears on the page. Do NOT translate into any other language. Do NOT add any non-Uyghur words. Do NOT add commentary, explanations, or any text that is not on the page. 
+
+Rules: 
+1. If it is NOT a poem, DO NOT break sentences into multiple lines to match page width; provide continuous text for each paragraph. 
+2. Maintain separate paragraphs. 
+3. Preserve punctuation exactly and keep Uyghur symbols & Arabic script. 
+4. Identify and preserve structure: use Markdown headings for titles/headers/chapters, if a table of contents is detected render it as a Markdown pipe table (data rows only, no header row and no separator line, one row per entry, Uyghur text on the left, numbers on the right), keep poems with their original line breaks, and include header/footer text (if present) on separate lines, prefixed with "[Header]" or "[Footer]". 
+5. If the page contains no readable Uyghur text, output nothing at all — no placeholders, no explanations, no filler text. 
+6. Output ONLY the recognized Uyghur text with the minimal Markdown needed for structure. 
+7. CRITICAL — Uyghur Arabic-script character accuracy. These character pairs are visually similar but distinct; choose carefully based on context: 
+    - Waw-family vowels: و (oe) vs ۇ (u) vs ۆ (ö) vs ۈ (ü) vs ۋ (ve) — ۈ , ۇ , ۋ and ۆ carry diacritics above; 
+    - Kaf/Gaf/Ng: ك (k) vs گ (g) vs ڭ (ng) — ڭ is the Uyghur velar nasal, distinct from both ك and گ. 
+    - Nun vs Kaf/Ng: ن (n) must not be read as ك or ڭ. 
+    - Reh vs Zain: ر (r) vs ز (z) — these look similar; use word context to decide. 
+    - He variants: ە (ae/open-he) vs ھ (dotless-he/h) — both are common in Uyghur, context-dependent. 
+    - Ain vs Ghain: ع vs غ — غ has a dot above; do not omit it. ع is not an Uyghur chapter.
+    - He vs Ha: ح vs خ — خ has a dot above; do not omit it. ح is not an Uyghur chapter.
+    - Fa vs Qaf: ف (f) vs ق (q) — ق has two dots above; do not confuse with ف which has one dot above."""
 
 CATEGORY_PROMPT = """You are a librarian efficiently categorizing a user's question to find the right section of the library.
 
