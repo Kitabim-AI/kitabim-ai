@@ -21,6 +21,7 @@ from app.db.models import Book, Page, BookSummary
 from app.db.repositories.system_configs import SystemConfigsRepository
 from app.services.book_milestone_service import BookMilestoneService
 from app.utils.observability import log_json
+from app.core.config import settings
 
 # Books already marked ready or failed — do not reprocess them.
 _V1_READY_STATUSES = ("ready", "error")
@@ -62,51 +63,57 @@ async def run_pipeline_driver(ctx) -> None:
             initialized = init_exec.rowcount
 
         # ── 2. Reset failed milestones that still have retries remaining ───────
-        # If any milestone failed but we have retries left, reset ALL milestones 
+        # If any milestone failed but we have retries left, reset ALL milestones
         # to ensure a clean retry of the whole page (or just the failing ones).
-        # We fetch IDs first and then update them to avoid a massive sequential 
+        # We fetch IDs first and then update them to avoid a massive sequential
         # scan update that locks the table and times out in production.
         # UNION ALL of internal queries to force partial index usage for each leg.
         # This is much faster than OR across different columns.
-        reset_ids_stmt = (
-            union_all(
-                select(Page.id).where(Page.ocr_milestone.in_(["failed", "error"]), Page.retry_count < max_retries).limit(5000),
-                select(Page.id).where(Page.chunking_milestone.in_(["failed", "error"]), Page.retry_count < max_retries).limit(5000),
-                select(Page.id).where(Page.embedding_milestone.in_(["failed", "error"]), Page.retry_count < max_retries).limit(5000),
-                select(Page.id).where(Page.word_index_milestone.in_(["failed", "error"]), Page.retry_count < max_retries).limit(5000),
-                select(Page.id).where(Page.spell_check_milestone.in_(["failed", "error"]), Page.retry_count < max_retries).limit(5000),
-            )
-            .limit(5000)
-        )
+        reset_queries = [
+            select(Page.id).where(Page.ocr_milestone.in_(["failed", "error"]), Page.retry_count < max_retries).limit(5000),
+            select(Page.id).where(Page.chunking_milestone.in_(["failed", "error"]), Page.retry_count < max_retries).limit(5000),
+            select(Page.id).where(Page.embedding_milestone.in_(["failed", "error"]), Page.retry_count < max_retries).limit(5000),
+            select(Page.id).where(Page.spell_check_milestone.in_(["failed", "error"]), Page.retry_count < max_retries).limit(5000),
+        ]
+        # Only include word_index_milestone if the feature is enabled
+        if settings.enable_word_index:
+            reset_queries.insert(3, select(Page.id).where(Page.word_index_milestone.in_(["failed", "error"]), Page.retry_count < max_retries).limit(5000))
+
+        reset_ids_stmt = union_all(*reset_queries).limit(5000)
         reset_ids_result = await session.execute(reset_ids_stmt)
         reset_page_ids = [row[0] for row in reset_ids_result.fetchall()]
 
         reset = 0
         if reset_page_ids:
+            # Build update values conditionally based on feature flags
+            update_values = {
+                "ocr_milestone": case(
+                    (Page.ocr_milestone.in_(["failed", "error"]), "idle"), else_=Page.ocr_milestone
+                ),
+                "chunking_milestone": case(
+                    (Page.chunking_milestone.in_(["failed", "error"]), "idle"),
+                    else_=Page.chunking_milestone,
+                ),
+                "embedding_milestone": case(
+                    (Page.embedding_milestone.in_(["failed", "error"]), "idle"),
+                    else_=Page.embedding_milestone,
+                ),
+                "spell_check_milestone": case(
+                    (Page.spell_check_milestone.in_(["failed", "error"]), "idle"),
+                    else_=Page.spell_check_milestone,
+                ),
+            }
+            # Only include word_index_milestone if the feature is enabled
+            if settings.enable_word_index:
+                update_values["word_index_milestone"] = case(
+                    (Page.word_index_milestone.in_(["failed", "error"]), "idle"),
+                    else_=Page.word_index_milestone,
+                )
+
             reset_update_stmt = (
                 update(Page)
                 .where(Page.id.in_(reset_page_ids))
-                .values(
-                    ocr_milestone=case(
-                        (Page.ocr_milestone.in_(["failed", "error"]), "idle"), else_=Page.ocr_milestone
-                    ),
-                    chunking_milestone=case(
-                        (Page.chunking_milestone.in_(["failed", "error"]), "idle"),
-                        else_=Page.chunking_milestone,
-                    ),
-                    embedding_milestone=case(
-                        (Page.embedding_milestone.in_(["failed", "error"]), "idle"),
-                        else_=Page.embedding_milestone,
-                    ),
-                    word_index_milestone=case(
-                        (Page.word_index_milestone.in_(["failed", "error"]), "idle"),
-                        else_=Page.word_index_milestone,
-                    ),
-                    spell_check_milestone=case(
-                        (Page.spell_check_milestone.in_(["failed", "error"]), "idle"),
-                        else_=Page.spell_check_milestone,
-                    ),
-                )
+                .values(**update_values)
             )
             reset_exec = await session.execute(reset_update_stmt)
             reset = reset_exec.rowcount

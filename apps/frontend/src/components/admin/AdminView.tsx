@@ -373,12 +373,11 @@ export const AdminView: React.FC = () => {
                               
                               {/* Mobile Pipeline Progress */}
                               <div className="flex md:hidden items-center gap-1.5 mt-2 opacity-80">
-                                <ScanText size={14} className={getMilestoneColor(book, 'ocr')} />
-                                <Scissors size={14} className={getMilestoneColor(book, 'chunking')} />
-                                <Cuboid size={14} className={getMilestoneColor(book, 'embedding')} />
-                                <Wand2 size={14} className={getMilestoneColor(book, 'summary')} />
-                                <WholeWord size={14} className={getMilestoneColor(book, 'word_index')} />
-                                <BookOpenCheck size={14} className={getMilestoneColor(book, 'spell_check')} />
+                                <ScanText size={14} className={book.pipelineStats ? getPipelineIconClass(book, 'ocr', false, false) : getMilestoneColor(book, 'ocr')} />
+                                <Scissors size={14} className={book.pipelineStats ? getPipelineIconClass(book, 'chunking', false, false) : getMilestoneColor(book, 'chunking')} />
+                                <Cuboid size={14} className={book.pipelineStats ? getPipelineIconClass(book, 'embedding', false, false) : getMilestoneColor(book, 'embedding')} />
+                                <Wand2 size={14} className={book.pipelineStats ? getPipelineIconClass(book, 'summary', false, false) : getMilestoneColor(book, 'summary')} />
+                                <BookOpenCheck size={14} className={book.pipelineStats ? getPipelineIconClass(book, 'spell_check', false, false) : getMilestoneColor(book, 'spell_check')} />
                               </div>
                             </button>
                           )}
@@ -443,7 +442,7 @@ export const AdminView: React.FC = () => {
                               { key: 'chunking', icon: Scissors, label: 'admin.pipeline.chunking' },
                               { key: 'embedding', icon: Cuboid, label: 'admin.pipeline.embedding' },
                               { key: 'summary', icon: Wand2, label: 'admin.pipeline.summary' },
-                              { key: 'word_index', icon: WholeWord, label: 'admin.pipeline.wordIndex' },
+                              // { key: 'word_index', icon: WholeWord, label: 'admin.pipeline.wordIndex' },
                               { key: 'spell_check', icon: BookOpenCheck, label: 'admin.pipeline.spellCheck' }
                             ].map(({ key, icon: Icon, label }) => {
                               const cacheKey = `${book.id}:${key}`;
@@ -458,7 +457,9 @@ export const AdminView: React.FC = () => {
                                     false, // handled inside getPipelineIconClass for page levels
                                     false  // handled inside getPipelineIconClass for page levels
                                   )
-                                : getMilestoneColor(book, key);
+                                : (book.pipelineStats && (book.pipelineStats[key] !== undefined || book.pipelineStats[`${key}_active`] !== undefined))
+                                  ? getPipelineIconClass(book, key, false, false)
+                                  : getMilestoneColor(book, key);
 
                               return (
                                 <div

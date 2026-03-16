@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Page, PageSpellIssue, SpellCheckCorrection
 from app.utils.observability import log_json
+from app.core.config import settings
 
 logger = logging.getLogger("app.services.auto_correct")
 
@@ -169,11 +170,12 @@ async def apply_auto_corrections_to_page(
         )
     )
 
-    # Invalidate word index so the scanner re-builds it with the corrected words
-    await session.execute(
-        text("DELETE FROM book_word_index WHERE book_id = :book_id"),
-        {"book_id": page.book_id}
-    )
+    # Invalidate word index so the scanner re-builds it with the corrected words (if enabled)
+    if settings.enable_word_index:
+        await session.execute(
+            text("DELETE FROM book_word_index WHERE book_id = :book_id"),
+            {"book_id": page.book_id}
+        )
 
     log_json(logger, logging.INFO, "auto-corrections applied to page",
              page_id=page_id,

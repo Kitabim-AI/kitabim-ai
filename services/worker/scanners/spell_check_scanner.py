@@ -16,6 +16,7 @@ import logging
 
 from sqlalchemy import select, update, func
 
+from app.core.config import settings
 from app.db import session as db_session
 from app.db.models import Page, Book
 from app.db.repositories.system_configs import SystemConfigsRepository
@@ -33,14 +34,40 @@ async def run_spell_check_scanner(ctx) -> None:
         if (await config_repo.get_value("spell_check_enabled", "false")) != "true":
             return
         page_limit = int(await config_repo.get_value("scanner_page_limit", "100"))
+        # 1. Identify books currently in the spell_check pipeline step
+        active_books_stmt = select(Book.id).where(Book.pipeline_step == "spell_check")
+        active_books_res = await session.execute(active_books_stmt)
+        active_book_ids = [row[0] for row in active_books_res.fetchall()]
 
-        # Atomically claim idle spell-check pages whose OCR pipeline is done.
-        from sqlalchemy import or_
+        # 2. Identify allowed books for this run
+        allowed_book_ids = list(active_book_ids)
+        
+        # If we have room for more books, find candidates
+        if len(allowed_book_ids) < settings.max_concurrent_spell_check_books:
+            # Find books that have 'idle' spell_check pages and satisfy OCR dependency
+            # We only need enough candidates to fill the remaining slot
+            candidates_stmt = (
+                select(Page.book_id)
+                .where(
+                    Page.ocr_milestone == "succeeded",
+                    Page.spell_check_milestone == "idle",
+                    ~Page.book_id.in_(allowed_book_ids) if allowed_book_ids else True
+                )
+                .distinct()
+                .limit(settings.max_concurrent_spell_check_books - len(allowed_book_ids))
+            )
+            candidates_res = await session.execute(candidates_stmt)
+            allowed_book_ids.extend([row[0] for row in candidates_res.fetchall()])
+
+        if not allowed_book_ids:
+            return
+
+        # 3. Atomically claim idle spell-check pages for the allowed books
         id_stmt = (
             select(Page.id)
             .where(
+                Page.book_id.in_(allowed_book_ids),
                 Page.ocr_milestone == "succeeded",
-                Page.word_index_milestone == "done",
                 Page.spell_check_milestone == "idle",
             )
             .with_for_update(skip_locked=True)
