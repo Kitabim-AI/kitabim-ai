@@ -9,6 +9,7 @@ import { useSpellCheck } from '../../hooks/useSpellCheck';
 import { usePendingCorrections } from '../../hooks/usePendingCorrections';
 import { SpellCheckPanel } from './SpellCheckPanel';
 import { ReviewPanel } from './ReviewPanel';
+import { useNotification } from '../../context/NotificationContext';
 
 interface BookMeta {
   book_id: string;
@@ -26,6 +27,7 @@ const API_BASE = '/api';
 export const SpellCheckView: React.FC = () => {
   const { t } = useI18n();
   const { fontSize, selectedBook, currentPage: readerPage } = useAppContext();
+  const { addNotification } = useNotification();
   const isEditor = useIsEditor();
 
   const [bookMeta, setBookMeta] = useState<BookMeta | null>(null);
@@ -145,24 +147,56 @@ export const SpellCheckView: React.FC = () => {
     }
   }, [currentPage, pagesWithIssues]);
 
-  const handleAddPending = useCallback((
+  const handleAddPending = useCallback(async (
     issueId: number,
     correctedWord: string,
     originalWord: string,
-    options?: { isPhrase?: boolean; range?: [number, number] }
+    options?: { isPhrase?: boolean; range?: [number, number]; isAutoCorrection?: boolean }
   ) => {
     if (!bookMeta) return;
-    pendingCorrections.addPending({
-      issueId,
-      bookId: bookMeta.book_id,
-      bookTitle: bookMeta.title,
-      pageNum: currentPage,
-      originalWord,
-      correctedWord,
-      range: options?.range,
-      isPhrase: options?.isPhrase,
-    });
-  }, [bookMeta, currentPage, pendingCorrections]);
+
+    if (options?.isAutoCorrection) {
+      try {
+        const res = await authFetch(`${API_BASE}/books/${bookMeta.book_id}/pages/${currentPage}/spell-check/apply`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            corrections: [{
+              issue_id: issueId,
+              corrected_word: correctedWord,
+              range: options.range,
+              is_auto_correction: true,
+            }],
+          }),
+        });
+
+        if (res.ok) {
+          addNotification(t('spellCheck.autoCorrectApplied'), 'success');
+          // Immediately refresh issues and text to reflect the applied correction
+          spellCheck.loadIssues();
+          const textRes = await authFetch(`${API_BASE}/books/${bookMeta.book_id}/pages/${currentPage}`);
+          if (textRes.ok) {
+            const data = await textRes.json();
+            if (data?.text) setPageText(data.text);
+          }
+        }
+      } catch (err) {
+        console.error('SpellCheckView: Failed to apply auto-correction immediately', err);
+      }
+    } else {
+      pendingCorrections.addPending({
+        issueId,
+        bookId: bookMeta.book_id,
+        bookTitle: bookMeta.title,
+        pageNum: currentPage,
+        originalWord,
+        correctedWord,
+        range: options?.range,
+        isPhrase: options?.isPhrase,
+        isAutoCorrection: options?.isAutoCorrection,
+      });
+    }
+  }, [bookMeta, currentPage, pendingCorrections, spellCheck]);
 
   const handleConfirmAll = useCallback(async () => {
     const affectedCurrentPageEntries = pendingCorrections.pending.filter(
@@ -192,7 +226,7 @@ export const SpellCheckView: React.FC = () => {
 
   return (
     <div
-      className="h-[calc(100dvh-72px)] sm:h-[calc(100dvh-88px)] md:h-[calc(100dvh-120px)] lg:h-[calc(100dvh-140px)] w-full lg:max-w-5xl lg:mx-auto flex flex-col gap-3 md:gap-4 lg:gap-6 px-3 py-3 sm:px-6 md:px-0 lg:py-4"
+      className="min-h-[calc(100dvh-72px)] sm:min-h-[calc(100dvh-88px)] md:min-h-[calc(100dvh-120px)] lg:min-h-[calc(100dvh-140px)] w-full lg:max-w-5xl lg:mx-auto flex flex-col gap-3 md:gap-4 lg:gap-6 px-3 py-3 sm:px-6 md:px-0 lg:py-4"
       dir="rtl"
       lang="ug"
     >
@@ -288,7 +322,7 @@ export const SpellCheckView: React.FC = () => {
       </div>
 
       {/* Main content */}
-      <div className="flex-1 overflow-hidden glass-panel border border-white/60 rounded-[24px] sm:rounded-[40px] flex flex-col p-4 sm:p-6 lg:p-8">
+      <div className="flex-1 glass-panel border border-white/60 rounded-[24px] sm:rounded-[40px] flex flex-col p-4 sm:p-6 lg:p-8">
         {/* Loading book */}
         {(isLoadingBook || !bookMeta || (spellCheck.isLoading && !spellCheck.hasLoaded)) && !bookError && (
           <div className="flex-1 flex flex-col items-center justify-center gap-6 animate-fade-in">
@@ -357,7 +391,7 @@ export const SpellCheckView: React.FC = () => {
             .filter(p => p < currentPage)
             .reduce((sum, p) => sum + (pageIssueCounts[p] ?? 0), 0);
           return (
-          <div className="flex-1 min-h-0 flex flex-col">
+          <div className="flex flex-col">
           <SpellCheckPanel
                 pageNumber={currentPage}
                 totalPages={bookMeta.total_pages}

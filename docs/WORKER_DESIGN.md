@@ -5,7 +5,7 @@
 The Kitabim.AI processing pipeline uses a **decoupled, event-driven architecture** based on the **Transactional Outbox Pattern**. This design ensures high reliability, observability, and responsiveness by separating the concern of "what work needs doing" from the "execution of that work."
 
 Key characteristics:
-- **`milestone` columns** — each stage (`ocr`, `chunking`, `embedding`, `word_index`, `spell_check`) has its own milestone in the `pages` table.
+- **`milestone` columns** — each stage (`ocr`, `chunking`, `embedding`, `spell_check`) has its own milestone in the `pages` table.
 - **States** — `idle | in_progress | succeeded | failed`.
 - **Transactional Outbox** — the `pipeline_events` table captures successful milestones within the same database transaction as the result application.
 - **Event Dispatcher** — a low-latency scanner that polls the outbox and immediately enqueues the next required job, bypasses traditional 1-minute cron delays.
@@ -39,7 +39,6 @@ Current implementation uses granular milestone columns on the `pages` table and 
 | `ocr_milestone` | `varchar` | State of OCR: `idle \| in_progress \| succeeded \| failed` |
 | `chunking_milestone` | `varchar` | State of Chunking: `idle \| in_progress \| succeeded \| failed` |
 | `embedding_milestone` | `varchar` | State of Embedding: `idle \| in_progress \| succeeded \| failed` |
-| `word_index_milestone` | `varchar` | State of Word Index: `idle \| in_progress \| done \| failed` |
 | `spell_check_milestone` | `varchar` | State of Spell Check: `idle \| in_progress \| done \| failed` |
 | `retry_count` | `integer` | Number of failed attempts for the current step. |
 
@@ -47,7 +46,7 @@ Current implementation uses granular milestone columns on the `pages` table and 
 
 | Column | Type | Description |
 |---|---|---|
-| `pipeline_step` | `varchar` | Primary step for progress tracking: `ocr \| chunking \| embedding \| word_index \| spell_check \| ready` |
+| `pipeline_step` | `varchar` | Primary step for progress tracking: `ocr \| chunking \| embedding \| spell_check \| ready` |
 
 ---
 
@@ -61,7 +60,6 @@ worker/
     ocr_scanner.py           ← claims idle ocr pages, dispatches OcrJob per book
     chunking_scanner.py      ← claims idle chunking pages, dispatches ChunkingJob
     embedding_scanner.py     ← claims idle embedding pages, dispatches EmbeddingJob
-    word_index_scanner.py    ← claims idle word_index pages, dispatches WordIndexJob
     spell_check_scanner.py   ← claims idle spell_check pages, dispatches SpellCheckJob
     event_dispatcher.py      ← monitors outbox, triggers next-step jobs immediately
     stale_watchdog.py        ← resets stale in_progress pages to idle
@@ -70,7 +68,6 @@ worker/
     ocr_job.py            ← downloads PDF, OCRs pages via Gemini Vision
     chunking_job.py       ← chunks page text into DB records
     embedding_job.py      ← generates and stores embeddings
-    word_index_job.py     ← builds word frequency index
     spell_check_job.py    ← identifies unknown words and suggests corrections
     summary_job.py        ← generates semantic book summaries for RAG routing
   worker.py               ← ARQ WorkerSettings
@@ -115,8 +112,7 @@ The single entry point into the pipeline and the only component that advances pi
 ```
 ocr / succeeded        →  chunking / idle
 chunking / succeeded   →  embedding / idle
-embedding / succeeded  →  word_index / idle
-word_index / done      →  spell_check / idle
+embedding / succeeded  →  spell_check / idle
 ```
 
 Spell Check is the end of the page pipeline. There is no further step — `spell_check / done` (or `failed`) is the terminal success state for a page.
@@ -247,7 +243,6 @@ Runs every 30 minutes.
 | `ocr_scanner` | Every 1 min | Groups by book |
 | `chunking_scanner` | Every 1 min | Cross-book |
 | `embedding_scanner` | Every 1 min | Cross-book |
-| `word_index_scanner` | Every 1 min | Cross-book |
 | `spell_check_scanner`| Every 1 min | Cross-book |
 | `event_dispatcher` | Startup + 1 min (high frequency pool) | Triggers reactive progression |
 | `stale_watchdog` | Every 30 min | Uniform reset for all steps |
@@ -273,10 +268,6 @@ flowchart TD
     EMB_IP["embedding / in_progress"]
     EMB_OK["embedding / succeeded"]
     EMB_FAIL["embedding / failed"]
-    INDEX_IDLE["word_index / idle"]
-    INDEX_IP["word_index / in_progress"]
-    INDEX_OK["word_index / done"]
-    INDEX_FAIL["word_index / failed"]
     SPELL_IDLE["spell_check / idle"]
     SPELL_IP["spell_check / in_progress"]
     SPELL_OK["spell_check / done\n(terminal — page done)"]
@@ -302,14 +293,8 @@ flowchart TD
     EMB_IP -->|EmbeddingJob: failure| EMB_FAIL
     EMB_FAIL -->|Scanner retry| EMB_IDLE
     EMB_FAIL -->|retry_count >= max| TERMINAL
-    EMB_OK -->|PipelineDriver: promote| INDEX_IDLE
+    EMB_OK -->|PipelineDriver: promote| SPELL_IDLE
 
-    INDEX_IDLE -->|WordIndexScanner: claim| INDEX_IP
-    INDEX_IP -->|WordIndexJob: success| INDEX_OK
-    INDEX_IP -->|WordIndexJob: failure| INDEX_FAIL
-    INDEX_FAIL -->|Scanner retry| INDEX_IDLE
-    INDEX_FAIL -->|retry_count >= max| TERMINAL
-    INDEX_OK -->|PipelineDriver: promote| SPELL_IDLE
 
     SPELL_IDLE -->|SpellCheckScanner: claim| SPELL_IP
     SPELL_IP -->|SpellCheckJob: success| SPELL_OK
@@ -327,10 +312,10 @@ flowchart TD
     classDef terminal fill:#f1f1f1,stroke:#888,stroke-dasharray:4 4
     classDef book fill:#d4f1f4,stroke:#189ab4,stroke-width:2px
 
-    class OCR_IDLE,CHUNK_IDLE,EMB_IDLE,INDEX_IDLE,SPELL_IDLE idle
-    class OCR_IP,CHUNK_IP,EMB_IP,INDEX_IP,SPELL_IP active
-    class OCR_OK,CHUNK_OK,EMB_OK,INDEX_OK,SPELL_OK done
-    class OCR_FAIL,CHUNK_FAIL,EMB_FAIL,INDEX_FAIL,SPELL_FAIL fail
+    class OCR_IDLE,CHUNK_IDLE,EMB_IDLE,SPELL_IDLE idle
+    class OCR_IP,CHUNK_IP,EMB_IP,SPELL_IP active
+    class OCR_OK,CHUNK_OK,EMB_OK,SPELL_OK done
+    class OCR_FAIL,CHUNK_FAIL,EMB_FAIL,SPELL_FAIL fail
     class TERMINAL terminal
     class BookReady book
 ```

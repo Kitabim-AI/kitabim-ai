@@ -94,7 +94,6 @@ class Settings:
     maintenance_retention_days: int = int(os.getenv("MAINTENANCE_RETENTION_DAYS", "7"))
 
     # Pipeline Feature Flags
-    enable_word_index: bool = os.getenv("ENABLE_WORD_INDEX", "true").lower() == "true"
 
     # Authentication / JWT
     jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "")

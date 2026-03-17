@@ -11,10 +11,14 @@ Runs every 5 minutes (configurable via system_configs).
 from __future__ import annotations
 
 import logging
+import traceback
 
 from app.db import session as db_session
 from app.db.repositories.system_configs import SystemConfigsRepository
-from app.services.auto_correct_service import find_pages_with_auto_correctable_issues
+from app.services.auto_correct_service import (
+    find_pages_with_auto_correctable_issues,
+    cleanup_stale_auto_corrections
+)
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.auto_correct_scanner")
@@ -35,6 +39,11 @@ async def run_auto_correct_scanner(ctx) -> None:
         # Check if auto-correction is enabled
         if (await config_repo.get_value("auto_correct_enabled", "false")) != "true":
             return
+            
+        # Cleanup stale jobs first
+        reverted = await cleanup_stale_auto_corrections(session)
+        if reverted > 0:
+            log_json(logger, logging.INFO, "cleaned up stale auto-corrections", count=reverted)
 
         # Get batch size from config
         batch_size = int(await config_repo.get_value("auto_correct_batch_size", "50"))

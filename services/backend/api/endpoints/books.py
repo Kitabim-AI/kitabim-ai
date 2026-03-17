@@ -18,7 +18,7 @@ from app.db.session import get_session
 from app.db.repositories.books import BooksRepository
 from app.db.repositories.pages import PagesRepository
 from app.db.repositories.system_configs import SystemConfigsRepository
-from app.db.models import Page, Chunk, BookSummary
+from app.db.models import Book as BookDB, Page, Chunk, BookSummary
 from app.models.schemas import Book, PaginatedBooks, ExtractionResult
 from app.models.user import User
 from app.services.storage_service import storage
@@ -357,7 +357,6 @@ async def get_books(
             "ocr_milestone": b.ocr_milestone,
             "chunking_milestone": b.chunking_milestone,
             "embedding_milestone": b.embedding_milestone,
-            "word_index_milestone": b.word_index_milestone,
             "spell_check_milestone": b.spell_check_milestone
         }
         books_data.append(BookSchema.model_validate(b_dict))
@@ -756,7 +755,7 @@ async def get_book(
 @router.get("/{book_id}/pipeline-stats")
 async def get_book_pipeline_stats(
     book_id: str,
-    step: Optional[str] = None,  # Optional: ocr, chunking, embedding, word_index, spell_check, summary
+    step: Optional[str] = None,  # Optional: ocr, chunking, embedding, spell_check, summary
     current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
@@ -1081,7 +1080,6 @@ async def reprocess_ocr(
             ocr_milestone="idle",
             chunking_milestone="idle",
             embedding_milestone="idle",
-            word_index_milestone="idle",
             spell_check_milestone="idle",
             retry_count=0,
             is_indexed=False,
@@ -1096,7 +1094,6 @@ async def reprocess_ocr(
         ocr_milestone="idle",
         chunking_milestone="idle",
         embedding_milestone="idle",
-        word_index_milestone="idle",
         spell_check_milestone="idle",
         status="pending",
         pipeline_step="ocr",
@@ -1140,7 +1137,6 @@ async def reprocess_chunking(
         .values(
             chunking_milestone="idle",
             embedding_milestone="idle",
-            word_index_milestone="idle",
             spell_check_milestone="idle",
             retry_count=0,
             is_indexed=False,
@@ -1154,7 +1150,6 @@ async def reprocess_chunking(
         book_id,
         chunking_milestone="idle",
         embedding_milestone="idle",
-        word_index_milestone="idle",
         spell_check_milestone="idle",
         status="pending",
         pipeline_step="chunking",
@@ -1197,7 +1192,6 @@ async def reprocess_embedding(
         .where(Page.book_id == book_id)
         .values(
             embedding_milestone="idle",
-            word_index_milestone="idle",
             spell_check_milestone="idle",
             retry_count=0,
             is_indexed=False,
@@ -1215,7 +1209,6 @@ async def reprocess_embedding(
     await books_repo.update_one(
         book_id,
         embedding_milestone="idle",
-        word_index_milestone="idle",
         spell_check_milestone="idle",
         status="pending",
         pipeline_step="embedding",
@@ -1232,56 +1225,6 @@ async def reprocess_embedding(
 
 
 
-@router.post("/{book_id}/reprocess/word-index")
-async def reprocess_word_index(
-    book_id: str,
-    current_user: User = Depends(require_editor),
-    session: AsyncSession = Depends(get_session),
-):
-    """Reprocess word index by resetting milestones. Preserves text and chunks.
-
-    This operation:
-    - Resets word-index and spell-check milestones to 'idle'
-    - Clears existing word index data for the book
-    - Preserves all text and chunks
-    - Allows word-index scanner to rebuild index from existing text
-    """
-    books_repo = BooksRepository(session)
-    book = await books_repo.get(book_id)
-    if not book:
-        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
-
-    # Reset page milestones
-    await session.execute(
-        update(Page)
-        .where(Page.book_id == book_id)
-        .values(
-            word_index_milestone="idle",
-            spell_check_milestone="idle",
-            retry_count=0,
-            last_updated=datetime.now(timezone.utc),
-            updated_by=current_user.email,
-        )
-    )
-
-    # Clear existing word index (will be rebuilt by scanner)
-    await session.execute(
-        text("DELETE FROM book_word_index WHERE book_id = :book_id"),
-        {"book_id": book_id}
-    )
-
-    # Update book-level milestones
-    await books_repo.update_one(
-        book_id,
-        word_index_milestone="idle",
-        spell_check_milestone="idle",
-        pipeline_step="word_index",
-        last_updated=datetime.now(timezone.utc),
-        updated_by=current_user.email,
-    )
-    await session.commit()
-
-    return {"status": "word_index_reprocess_started", "message": "Word index milestones reset. Scanner will rebuild index."}
 
 
 @router.post("/{book_id}/reprocess/spell-check")
@@ -1349,7 +1292,6 @@ async def retry_failed_pages(
                 Page.ocr_milestone.in_(["failed", "error"]),
                 Page.chunking_milestone.in_(["failed", "error"]),
                 Page.embedding_milestone.in_(["failed", "error"]),
-                Page.word_index_milestone.in_(["failed", "error"]),
                 Page.spell_check_milestone.in_(["failed", "error"]),
             )
         )
@@ -1362,9 +1304,6 @@ async def retry_failed_pages(
             ),
             embedding_milestone=case(
                 (Page.embedding_milestone.in_(["failed", "error"]), text("'idle'")), else_=Page.embedding_milestone
-            ),
-            word_index_milestone=case(
-                (Page.word_index_milestone.in_(["failed", "error"]), text("'idle'")), else_=Page.word_index_milestone
             ),
             spell_check_milestone=case(
                 (Page.spell_check_milestone.in_(["failed", "error"]), text("'idle'")), else_=Page.spell_check_milestone
@@ -1500,56 +1439,68 @@ async def update_page_text(
             chunk_records.append(chunk)
         
         page.status = 'chunked'
-        await session.flush()
+        page.pipeline_step = 'chunking'
+        page.milestone = 'succeeded'
+
+        await books_repo.update_one(
+            book_id,
+            last_updated=datetime.now(timezone.utc),
+            updated_by=current_user.email
+        )
+        await session.commit()
         
-        # 3. Synchronous Embedding (Instant Feedback)
+        # 3. Synchronous Embedding (Instant Feedback) - RELEASED TRANSACTION
         try:
             embedder = GeminiEmbeddings(gemini_embedding_model)
             vectors = await embedder.aembed_documents([c.text for c in chunk_records])
-            for chunk, vector in zip(chunk_records, vectors):
-                chunk.embedding = vector
             
-            page.status = 'indexed'
-            page.is_indexed = True
+            # Start a new transaction for vectors
+            for chunk, vector in zip(chunk_records, vectors):
+                # We need to re-query or use a fresh statement because old session.commit() might have detached objects
+                await session.execute(
+                    update(Chunk).where(Chunk.id == chunk.id).values(embedding=vector)
+                )
+            
+            await session.execute(
+                update(Page).where(Page.id == page.id).values(
+                    status='indexed',
+                    is_indexed=True,
+                    pipeline_step='embedding',
+                    milestone='succeeded'
+                )
+            )
+            await session.commit()
+            final_status = 'indexed'
         except Exception as e:
             logger.error(f"Failed to embed page {page_num} for book {book_id} during update: {e}")
             # Page remains 'chunked'; batch cron will embed it on next cycle
-            await books_repo.update_one(
-                book_id,
-                last_error=f"Page {page_num} embedding failed during manual update: {e}",
-                last_updated=datetime.now(timezone.utc),
+            await session.execute(
+                update(BookDB).where(BookDB.id == book_id).values(
+                    last_error=f"Page {page_num} embedding failed during manual update: {e}",
+                    last_updated=datetime.now(timezone.utc)
+                )
             )
+            await session.commit()
+            final_status = 'chunked'
     else:
         # If text is empty, just mark as indexed
         page.status = 'indexed'
         page.is_indexed = True
-
-    # Set v2 columns based on final outcome
-    if page.status == 'indexed':
         page.pipeline_step = 'embedding'
         page.milestone = 'succeeded'
-    elif page.status == 'chunked':
-        page.pipeline_step = 'chunking'
-        page.milestone = 'succeeded'
-
-    # Invalidate word index so the scanner re-builds it with the updated content
-    await session.execute(
-        text("DELETE FROM book_word_index WHERE book_id = :book_id"),
-        {"book_id": book_id}
-    )
-
-    await books_repo.update_one(
-        book_id,
-        last_updated=datetime.now(timezone.utc),
-        updated_by=current_user.email
-    )
-    await session.commit()
+        await books_repo.update_one(
+            book_id,
+            last_updated=datetime.now(timezone.utc),
+            updated_by=current_user.email
+        )
+        await session.commit()
+        final_status = 'indexed'
 
     # Invalidate book and RAG cache
     await cache_service.delete(f"book:{book_id}")
     await cache_service.delete_pattern(f"rag:search:{book_id}:*")
 
-    return {"status": "page_updated", "requires_rag": True, "synchronous": page.status == 'indexed'}
+    return {"status": "page_updated", "requires_rag": True, "synchronous": final_status == 'indexed'}
 
 
 

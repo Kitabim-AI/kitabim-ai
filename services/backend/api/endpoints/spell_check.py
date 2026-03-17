@@ -60,6 +60,7 @@ class CorrectionItem(BaseModel):
     issue_id: int
     corrected_word: str
     range: Optional[List[int]] = None
+    is_auto_correction: bool = False
 
 
 class ApplyCorrectionsRequest(BaseModel):
@@ -248,6 +249,13 @@ async def get_page_spell_issues(
     if not page:
         raise HTTPException(status_code=404, detail="Page not found")
 
+    # Proactively apply any matching auto-correction rules so the user doesn't see them
+    from app.services.auto_correct_service import apply_auto_corrections_to_page
+    applied_count = await apply_auto_corrections_to_page(session, page.id)
+    if applied_count > 0:
+        await session.commit()
+        await session.refresh(page)
+
     issues_result = await session.execute(
         select(PageSpellIssue)
         .where(PageSpellIssue.page_id == page.id)
@@ -273,7 +281,12 @@ async def apply_spell_corrections(
     Replaces each corrected word by char offset (processed in reverse order so
     earlier offsets are not invalidated by later replacements). Marks the page
     as is_indexed=False to trigger re-embedding, and records the editor.
+
+    If is_auto_correction is True and user is admin, also creates a global
+    auto-correction rule.
     """
+    from app.db.models import SpellCheckCorrection
+
     page_result = await session.execute(
         select(Page).where(Page.book_id == book_id, Page.page_number == page_num)
     )
@@ -300,6 +313,28 @@ async def apply_spell_corrections(
         if not issue:
             continue
             
+        # Global auto-correction rule creation (if admin)
+        if c.is_auto_correction and current_user.role == "admin":
+            # Upsert into spell_check_corrections
+            existing_stmt = select(SpellCheckCorrection).where(
+                SpellCheckCorrection.misspelled_word == issue.word
+            )
+            existing_res = await session.execute(existing_stmt)
+            existing_rule = existing_res.scalar_one_or_none()
+            
+            if existing_rule:
+                existing_rule.corrected_word = c.corrected_word
+                existing_rule.auto_apply = True
+                existing_rule.updated_at = func.now()
+            else:
+                new_rule = SpellCheckCorrection(
+                    misspelled_word=issue.word,
+                    corrected_word=c.corrected_word,
+                    auto_apply=True,
+                    created_by=current_user.id
+                )
+                session.add(new_rule)
+
         # Use provided range if available (for phrase edits), otherwise use issue defaults
         if c.range and len(c.range) == 2:
             start, end = c.range
@@ -334,12 +369,6 @@ async def apply_spell_corrections(
             last_updated=func.now(),
         )
     )
-    # Invalidate word index so the scanner re-builds it with the corrected words (if enabled)
-    if settings.enable_word_index:
-        await session.execute(
-            text("DELETE FROM book_word_index WHERE book_id = :book_id"),
-            {"book_id": book_id}
-        )
     await session.commit()
 
     return {"applied": len(corrected_ids)}

@@ -397,6 +397,7 @@
     "loadingBook": "ئىملا خاتالىقى بار كىتاب ئىزدەۋاتىدۇ...",
     "noBooks": "ئىملا خاتالىقى بايقالمىدى",
     "noBooksDetail": "بارلىق كىتابلار ئىملا خاتالىقىدىن خالىي، ياكى ئىملا تەكشۈرۈش ئىشلىتىلمىگەن.",
+    "saveAsAutoCorrection": "ئاپتوماتىك تۈزىتىش",
     "issueCount": "{{count}} خاتالىق",
     "loadError": "يوللانمىدى. قايتا سىناڭ.",
     "pageProgress": "{{current}}/{{total}} بەت",
@@ -407,6 +408,9 @@
     "ignoreTooltip": "بۇ خاتالىق ئەمەس",
     "unsavedEdit": "توغرىلاش ساقلانمىدى.",
     "stayAndEdit": "داۋاملاشتۇرۇش",
+    "confirmAutoCorrectTitle": "ئاپتوماتىك تۈزىتىش قائىدىسى",
+    "confirmAutoCorrectMessage": "بۇ «{{original}}» نى بارلىق كىتابلاردا «{{corrected}}» غا ئاپتوماتىك ئۆزگەرتىش قائىدىسى قۇرىدۇ. جەزملەشتۈرەمسىز؟",
+    "confirmAutoCorrectAction": "قائىدە قۇرۇش",
     "discardEdit": "ئەمەلدىن قالدۇرۇش",
     "noContext": "(مەزمۇن يوق)",
     "reviewedSwipe": "خاتالىقلار تۈگىدى — سىيرىڭ",
@@ -424,7 +428,8 @@
     "reviewPage": "بەت",
     "reviewOriginal": "ئەسلى سۆز",
     "reviewReplacement": "توغرىسى",
-    "confirmError": "بەزى بەتلەر ساقلانمىدى. {{count}} تۈزىتىش قالدى."
+    "confirmError": "بەزى بەتلەر ساقلانمىدى. {{count}} تۈزىتىش قالدى.",
+    "autoCorrectApplied": "ئاپتوماتىك تۈزىتىش قائىدىسى قوشۇلدى"
   },
   "pagination": {
     "previous": "ئالدىنقى",
@@ -659,9 +664,9 @@
   },
   "proverbs": {
     "home": "كىتاب,بىلىم",
-    "library": "كىتاب,بىلىم,ئوقۇش",
-    "admin": "ئەمگەك,تېرىش",
+    "library": "كىتاب,بىلىم",
+    "admin": "ئەقىل,پاراسەت",
     "chat": "ئەقىل,پاراسەت",
-    "joinUs": "ئۆملۈك,بىرلىك,ياردەم"
+    "joinUs": "بىرلىك"
   }
 }

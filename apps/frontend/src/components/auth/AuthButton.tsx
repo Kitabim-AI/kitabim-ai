@@ -72,7 +72,7 @@ export function TwitterLoginButton({ className = '' }: LoginButtonProps) {
   );
 }
 
-export function OAuthButtonGroup({ className = '', align = 'down', side = 'left' }: { className?: string; align?: 'up' | 'down'; side?: 'left' | 'right' | 'center' }) {
+export function OAuthButtonGroup({ className = '', align = 'down', side = 'left', inline = false }: { className?: string; align?: 'up' | 'down'; side?: 'left' | 'right' | 'center'; inline?: boolean }) {
   const { loginWithGoogle, loginWithFacebook, loginWithTwitter, isLoading } = useAuth();
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
@@ -140,7 +140,7 @@ export function OAuthButtonGroup({ className = '', align = 'down', side = 'left'
         className="flex items-center gap-1.5 md:gap-3 px-3 md:px-5 lg:px-6 py-2 md:py-3 bg-gradient-to-r from-[#0369a1] to-[#0284c7] hover:from-[#0284c7] hover:to-[#0369a1] text-white rounded-[1.2rem] md:rounded-2xl font-normal text-sm md:text-base transition-all active:scale-95 disabled:opacity-50 shadow-lg hover:shadow-xl shadow-[#0369a1]/30"
       >
         <LogIn size={18} className="md:w-[20px] md:h-[20px]" strokeWidth={2.5} />
-        <span className="uyghur-text hidden lg:inline">{isLoading ? t('auth.loggingIn') : t('auth.signIn')}</span>
+        <span className="uyghur-text">{isLoading ? t('auth.loggingIn') : t('auth.signIn')}</span>
         <ChevronDown size={14} className={`md:w-[16px] md:h-[16px] transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} strokeWidth={3} />
       </button>
 
@@ -193,24 +193,24 @@ export function UserMenu({ onLogout, side = 'left', inline = false }: { onLogout
 
   if (!user) return null;
 
-  const roleInfo: Record<string, { label: string; bg: string; text: string; icon: React.ReactNode }> = {
+  const roleInfo: Record<string, { label: string; bg: string; text: string; icon: React.ElementType }> = {
     admin: {
       label: t('admin.users.admin'),
       bg: 'linear-gradient(135deg, #0369a1 0%, #0284c7 100%)',
       text: 'text-white',
-      icon: <Shield size={12} />
+      icon: Shield
     },
     editor: {
       label: t('admin.users.editor'),
       bg: 'linear-gradient(135deg, #0369a1 0%, #0284c7 100%)',
       text: 'text-white',
-      icon: <Edit3 size={12} />
+      icon: Edit3
     },
     reader: {
       label: t('admin.users.reader'),
       bg: 'linear-gradient(135deg, #64748b 0%, #475569 100%)',
       text: 'text-white',
-      icon: <BookOpen size={12} />
+      icon: BookOpen
     },
   };
 
@@ -276,19 +276,19 @@ export function UserMenu({ onLogout, side = 'left', inline = false }: { onLogout
     <div ref={menuRef} className="relative z-[1001]" dir="rtl">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`p-1.5 bg-white/75 backdrop-blur-md border border-[#0369a1]/10 rounded-2xl transition-all hover:bg-white hover:shadow-xl hover:shadow-[#0369a1]/10 group ${isOpen ? 'ring-4 ring-[#0369a1]/5 border-[#0369a1]/30' : ''}`}
+        className={`p-0.5 md:p-1.5 bg-white/75 backdrop-blur-md border border-[#0369a1]/10 rounded-xl md:rounded-2xl transition-all hover:bg-white hover:shadow-xl hover:shadow-[#0369a1]/10 group ${isOpen ? 'ring-4 ring-[#0369a1]/5 border-[#0369a1]/30' : ''}`}
       >
         <div className="relative">
           <UserAvatar
             url={user.avatarUrl}
             name={user.displayName}
-            className="w-10 h-10 rounded-xl object-cover ring-2 ring-white shadow-md transition-transform group-hover:scale-110"
+            className="w-8 h-8 md:w-10 md:h-10 text-xs md:text-lg rounded-lg md:rounded-xl object-cover ring-2 ring-white shadow-md transition-transform group-hover:scale-110"
           />
           <div
-            className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-lg border-2 border-white flex items-center justify-center text-white shadow-sm`}
+            className={`absolute -bottom-1 -right-1 w-4 h-4 md:w-5 md:h-5 rounded-md md:rounded-lg border-2 border-white flex items-center justify-center text-white shadow-sm`}
             style={{ background: currentRole.bg }}
           >
-            {currentRole.icon}
+            <currentRole.icon size={10} className="md:w-3 md:h-3" />
           </div>
         </div>
       </button>
@@ -315,7 +315,7 @@ export function AuthButton({ onLogout, dropdownSide = 'left', inline = false }: 
     );
   }
 
-  return isAuthenticated ? <UserMenu onLogout={onLogout} side={dropdownSide} inline={inline} /> : <OAuthButtonGroup side={dropdownSide} />;
+  return isAuthenticated ? <UserMenu onLogout={onLogout} side={dropdownSide} inline={inline} /> : <OAuthButtonGroup side={dropdownSide} inline={inline} />;
 }
 
 export default AuthButton;

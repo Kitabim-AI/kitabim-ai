@@ -46,9 +46,6 @@ async def run_stale_watchdog(ctx) -> None:
             "last_updated": now
         }
 
-        if settings.enable_word_index:
-            where_conditions.append(Page.word_index_milestone == "in_progress")
-            update_values["word_index_milestone"] = case((Page.word_index_milestone == "in_progress", "idle"), else_=Page.word_index_milestone)
 
         stmt = (
             update(Page)

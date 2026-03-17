@@ -19,7 +19,6 @@ const getStatusStyles = (status: string) => {
     case 'indexing': return 'bg-orange-50 text-orange-600';
     case 'ocr': return 'bg-blue-50 text-blue-600';
     case 'embedding': return 'bg-orange-50 text-orange-600';
-    case 'word_index': return 'bg-orange-50 text-orange-600';
     case 'spell_check': return 'bg-purple-50 text-purple-600';
     case 'ocr_processing': return 'bg-blue-50 text-blue-600';
     case 'error': return 'bg-red-50 text-red-500';

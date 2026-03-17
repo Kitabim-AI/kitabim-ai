@@ -63,9 +63,6 @@ class Book(Base):
     embedding_milestone: Mapped[str] = mapped_column(
         String(20), default="idle", server_default="idle", nullable=False
     )
-    word_index_milestone: Mapped[str] = mapped_column(
-        String(20), default="idle", server_default="idle", nullable=False
-    )
     spell_check_milestone: Mapped[str] = mapped_column(
         String(20), default="idle", server_default="idle", nullable=False
     )
@@ -175,9 +172,6 @@ class Page(Base):
     )
     spell_check_milestone: Mapped[Optional[str]] = mapped_column(
         String(20), default="idle", server_default="idle", nullable=True
-    )
-    word_index_milestone: Mapped[str] = mapped_column(
-        String(20), default="idle", server_default="idle", nullable=False
     )
 
     last_updated: Mapped[datetime] = mapped_column(
@@ -405,37 +399,9 @@ class Dictionary(Base):
     __tablename__ = "dictionary"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    word: Mapped[str] = mapped_column(String(255), nullable=False)
+    word: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
 
 
-class Word(Base):
-    """Normalized word vocabulary table for efficient storage and lookup"""
-    __tablename__ = "words"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    word: Mapped[str] = mapped_column(Text, nullable=False, unique=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=func.now(),
-        server_default=func.now(),
-        nullable=False
-    )
-
-
-class BookWordIndex(Base):
-    """Per-book word occurrence index using normalized word IDs for 60-80% storage reduction."""
-    __tablename__ = "book_word_index"
-
-    book_id: Mapped[str] = mapped_column(
-        String(64), ForeignKey("books.id", ondelete="CASCADE"), primary_key=True
-    )
-    word_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("words.id", ondelete="CASCADE"), primary_key=True, index=True
-    )
-    occurrence_count: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
-
-    # Relationship to Word table for joins
-    word: Mapped["Word"] = relationship("Word")
 
 
 class PageSpellIssue(Base):
@@ -465,10 +431,14 @@ class PageSpellIssue(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    claimed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     __table_args__ = (
         CheckConstraint(
-            "status IN ('open', 'corrected', 'ignored')",
+            "status IN ('open', 'corrected', 'ignored', 'processing')",
             name="page_spell_issues_status_check",
         ),
     )

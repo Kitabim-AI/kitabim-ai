@@ -56,10 +56,6 @@ async def run_event_dispatcher(ctx) -> None:
                     # Embedding success -> Nothing to trigger (Driver handles book ready)
                     pass
                 
-                elif event.event_type == "word_index_succeeded":
-                    # Word indexing success -> Potentially trigger spell check if OCR also done
-                    # But spell check scanner already handles this.
-                    pass
 
                 processed_ids.append(event.id)
 

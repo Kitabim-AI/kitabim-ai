@@ -13,8 +13,9 @@ from typing import List, TypedDict, Dict
 from sqlalchemy import delete, func, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Page, PageSpellIssue
+from app.db.models import Page, PageSpellIssue, SpellCheckCorrection
 from app.utils.text import normalize_uyghur_chars
+from sqlalchemy import select
 
 class SpellCheckCache(TypedDict, total=False):
     """Optional per-job cache to avoid redundant DB lookups."""
@@ -68,10 +69,9 @@ class ThreadSafeSpellCheckCache:
 # ── Tokenizer ──────────────────────────────────────────────────────────────────
 
 _WORD_RE = re.compile(
-    # Start at U+0621 (ء) to skip Arabic punctuation in U+0600–U+0620:
-    # U+060C ، (comma), U+061B ؛ (semicolon), U+061F ؟ (question mark), etc.
-    # «, », : are already outside all Arabic Unicode ranges.
-    r"[\u0621-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]+"
+    # Start at U+0621 (ء) to skip Arabic punctuation in U+0600–U+0620.
+    # Included \u200C (ZWNJ) and \u200D (ZWJ) to prevent splitting words.
+    r"[\u0621-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF\u200C\u200D]+"
 )
 _MIN_WORD_LEN = 4
 
@@ -88,10 +88,10 @@ def tokenize(page_text: str) -> list[tuple[str, int, int]]:
     for m in _WORD_RE.finditer(page_text):
         raw = m.group()
         left = 0
-        while left < len(raw) and unicodedata.category(raw[left])[0] != 'L':
+        while left < len(raw) and unicodedata.category(raw[left])[0] not in ('L', 'M'):
             left += 1
         right = len(raw)
-        while right > left and unicodedata.category(raw[right - 1])[0] != 'L':
+        while right > left and unicodedata.category(raw[right - 1])[0] not in ('L', 'M'):
             right -= 1
         if left >= right:
             continue
@@ -258,9 +258,6 @@ async def find_unknown_words(
 
 
 
-# NOTE: index_book_words and find_words_unique_to_book functions have been
-# removed as the spell check logic no longer uses word index for validation.
-# Only OCR corrections from the dictionary are now used to identify issues.
 
 
 async def get_ocr_corrections_batch(
@@ -374,7 +371,44 @@ async def run_spell_check_for_page(
     Does NOT commit — caller is responsible for committing.
     """
     raw_text = page.text or ""
-    # Tokenize directly against raw_text so offsets map to raw positions.
+    
+    # S-NEW-AUTO: Fetch and apply global correction rules immediately
+    # This prevents manual review of words we already have a solution for.
+    rules_result = await session.execute(
+        select(SpellCheckCorrection.misspelled_word, SpellCheckCorrection.corrected_word)
+        .where(SpellCheckCorrection.auto_apply == True)
+    )
+    rules = {row.misspelled_word: row.corrected_word for row in rules_result.fetchall()}
+
+    text_changed = False
+    if rules:
+        # Check if any rules apply (quick check before heavy regex/loop)
+        applied_rules = {w: c for w, c in rules.items() if w in raw_text}
+        if applied_rules:
+            # Sort rules by length (desc) to avoid partial replacements of longer phrases
+            sorted_rules = sorted(applied_rules.items(), key=lambda x: len(x[0]), reverse=True)
+            for misspelled, corrected in sorted_rules:
+                if misspelled in raw_text:
+                    # Use robust regex to handle character variants (e.g. hamza seat variations)
+                    from app.utils.text import generate_uyghur_regex
+                    misspelled_regex = generate_uyghur_regex(misspelled)
+                    
+                    # Use negative lookbehind/lookahead with Uyghur character range as word boundaries
+                    # \b doesn't work well with non-ASCII.
+                    boundaries = r"[\u0621-\u06FF\u0750-\u077F\FB50-\uFDFF\uFE70-\uFEFF\u200C\u200D]"
+                    pattern = f"(?<!{boundaries}){misspelled_regex}(?!{boundaries})"
+                    
+                    new_text = re.sub(pattern, corrected, raw_text)
+                    if new_text != raw_text:
+                        raw_text = new_text
+                        text_changed = True
+
+    if text_changed:
+        page.text = raw_text
+        page.last_updated = func.now()
+        # The page will be updated in the DB when the caller commits.
+
+    # Tokenize against the (possibly updated) raw_text
     tokens = tokenize(raw_text)
 
     if not tokens:
@@ -392,7 +426,7 @@ async def run_spell_check_for_page(
     ocr_cache = await get_ocr_corrections_batch(session, unknown, cache=cache)
 
     # SIMPLIFIED LOGIC: Only create issues for words with OCR corrections
-    # No need to check word_index or uniqueness - if a word has a valid
+    # if a word has a valid
     # dictionary correction via OCR substitution/insertion, it's likely an error
     issues: List[PageSpellIssue] = [
         PageSpellIssue(

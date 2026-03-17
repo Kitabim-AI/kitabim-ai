@@ -54,13 +54,13 @@ class WorkerSettings:
 
     # Build cron jobs list conditionally based on feature flags
     cron_jobs = [
+        cron(run_auto_correct_scanner, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}, run_at_startup=True),
         cron(run_gcs_discovery_scanner, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}),
         cron(run_pipeline_driver, run_at_startup=True),
         cron(run_ocr_scanner),
         cron(run_chunking_scanner),
         cron(run_embedding_scanner),
         cron(run_spell_check_scanner),
-        cron(run_auto_correct_scanner, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}),
         cron(run_stale_watchdog, minute={0, 30}),
         cron(run_summary_scanner, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}),
         cron(run_event_dispatcher, run_at_startup=True),
