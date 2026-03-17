@@ -364,7 +364,6 @@ async def apply_spell_corrections(
         .values(
             text=page_text,
             is_indexed=False,
-            is_verified=True,
             updated_by=current_user.id,
             last_updated=func.now(),
         )

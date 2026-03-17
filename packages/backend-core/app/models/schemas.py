@@ -36,7 +36,6 @@ class ExtractionResult(BaseModel):
     page_number: int  # DB: page_number, API: pageNumber
     text: Optional[str] = None
     status: str
-    is_verified: bool = False  # DB: is_verified, API: isVerified
     error: Optional[str] = None
     last_updated: Optional[datetime] = None  # DB: last_updated, API: lastUpdated
     updated_by: Optional[str] = None  # DB: updated_by, API: updatedBy

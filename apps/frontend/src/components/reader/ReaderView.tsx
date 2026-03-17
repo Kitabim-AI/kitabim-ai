@@ -246,7 +246,7 @@ export const ReaderView: React.FC = () => {
                 hasChanges = true;
               }
             } else {
-              if (existing.text !== p.text || existing.isVerified !== (p as any).isVerified ||
+              if (existing.text !== p.text ||
                 existing.status !== p.status || existing.error !== p.error) {
                 prevMap.set(p.pageNumber, p);
                 hasChanges = true;
