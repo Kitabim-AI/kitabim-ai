@@ -103,7 +103,7 @@ export const LibraryView: React.FC = () => {
 
       {/* Infinite Scroll Trigger */}
       <div ref={loaderRef as any} className="h-64 flex flex-col items-center justify-center gap-6">
-        {isLoadingMore ? (
+        {isLoadingMore && !isInitialLoading ? (
           <div className="flex flex-col items-center gap-5 animate-fade-in">
             <div className="w-12 h-12 border-4 border-[#0369a1]/10 border-t-[#0369a1] rounded-full animate-spin"></div>
             <span className="text-xs font-black text-[#0369a1] uppercase animate-pulse">{t('common.loadingMore')}</span>
