@@ -29,7 +29,7 @@ Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered readi
 
 - **Worker (`services/worker`)**
   - ARQ worker process for background orchestration.
-  - **Scanners**: Poll for idle work (OCR, Chunking, Embedding, Word Index, Spell Check).
+  - **Scanners**: Poll for idle work (OCR, Chunking, Embedding, Spell Check).
   - **Jobs**: Focused executors that perform the actual AI or data processing in realtime.
   - **Event Dispatcher**: Reacts to `PipelineEvent` entries to trigger next-step jobs immediately.
   - **Maintenance**: Automated cleanup and staleness watchdog.
@@ -78,11 +78,11 @@ flowchart LR
 ## 5) Data Model (PostgreSQL)
 **Books**
 - `status` statuses: `pending`, `ready`, `error`
-- `pipeline_step`: Active pipeline stage (`ocr`, `chunking`, `embedding`, `word_index`, `spell_check`)
+- `pipeline_step`: Active pipeline stage (`ocr`, `chunking`, `embedding`, `spell_check`)
 - `pipeline_stats`: JSONB blob containing page counts per milestone (e.g., `spell_check_active`, `ocr_failed`)
 
 **Pages**
-- **Milestones**: `ocr_milestone`, `chunking_milestone`, `embedding_milestone`, `word_index_milestone`, `spell_check_milestone`.
+- **Milestones**: `ocr_milestone`, `chunking_milestone`, `embedding_milestone`, `spell_check_milestone`.
 - Milestone States: `idle`, `in_progress`, `succeeded`, `failed`, `done`.
 - `text`, `is_indexed`, `is_verified`.
 
@@ -101,7 +101,7 @@ flowchart LR
 3. **OCR Application**: Worker applies text to `pages`, sets `ocr_milestone` to `succeeded`.
 4. **Local Chunking**: Worker cleans text and creates `chunks`. Sets `chunking_milestone` to `succeeded`.
 5. **Embedding**: Worker generates and stores vectors for chunks. Sets `embedding_milestone` to `succeeded`.
-6. **Indexing & AI Polish**: Worker builds word frequency index and performs spell-check identification.
+6. **AI Polish**: Worker performs spell-check identification.
 7. **Finalization**: Book marked `ready` when all pages reach their terminal milestones.
 
 ### B) RAG Chat

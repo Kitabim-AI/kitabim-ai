@@ -28,7 +28,7 @@ export function UserAvatar({ url, name, className }: UserAvatarProps) {
   // Fallback to initial
   return (
     <div
-      className={`${className} bg-gradient-to-br from-[#0369a1] to-[#0284c7] flex items-center justify-center text-lg font-normal text-white shadow-lg`}
+      className={`${className} bg-gradient-to-br from-[#0369a1] to-[#0284c7] flex items-center justify-center font-normal text-white shadow-lg`}
     >
       {name ? name.charAt(0).toUpperCase() : '?'}
     </div>

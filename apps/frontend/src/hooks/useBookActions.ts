@@ -15,6 +15,7 @@ export const useBookActions = (
 ) => {
   const { addNotification } = useNotification();
   const { t } = useI18n();
+  const [isOpeningBook, setIsOpeningBook] = useState(false);
   const [isCheckingGlobal, setIsCheckingGlobal] = useState(false);
   const [reprocessingBooks, setReprocessingBooks] = useState<Map<string, string>>(new Map());
   const [isDeletingBook, setIsDeletingBook] = useState(false);
@@ -183,6 +184,7 @@ export const useBookActions = (
   };
 
   const openReader = async (book: Book) => {
+    setIsOpeningBook(true);
     try {
       const fullBook = await PersistenceService.getBookById(book.id);
       if (!fullBook) throw new Error("Could not load book content");
@@ -202,6 +204,8 @@ export const useBookActions = (
         message: t('modal.loadError.message'),
         type: 'alert'
       });
+    } finally {
+      setIsOpeningBook(false);
     }
   };
 
@@ -507,6 +511,7 @@ export const useBookActions = (
   };
 
   return {
+    isOpeningBook,
     isCheckingGlobal,
     reprocessingBooks,
     isDeletingBook,

@@ -75,9 +75,6 @@ async def run_pipeline_driver(ctx) -> None:
             select(Page.id).where(Page.embedding_milestone.in_(["failed", "error"]), Page.retry_count < max_retries).limit(5000),
             select(Page.id).where(Page.spell_check_milestone.in_(["failed", "error"]), Page.retry_count < max_retries).limit(5000),
         ]
-        # Only include word_index_milestone if the feature is enabled
-        if settings.enable_word_index:
-            reset_queries.insert(3, select(Page.id).where(Page.word_index_milestone.in_(["failed", "error"]), Page.retry_count < max_retries).limit(5000))
 
         reset_ids_stmt = union_all(*reset_queries).limit(5000)
         reset_ids_result = await session.execute(reset_ids_stmt)
@@ -103,12 +100,6 @@ async def run_pipeline_driver(ctx) -> None:
                     else_=Page.spell_check_milestone,
                 ),
             }
-            # Only include word_index_milestone if the feature is enabled
-            if settings.enable_word_index:
-                update_values["word_index_milestone"] = case(
-                    (Page.word_index_milestone.in_(["failed", "error"]), "idle"),
-                    else_=Page.word_index_milestone,
-                )
 
             reset_update_stmt = (
                 update(Page)

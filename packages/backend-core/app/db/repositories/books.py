@@ -10,7 +10,7 @@ from app.db.models import Book, Page, BookSummary
 from app.db.repositories.base import BaseRepository
 
 
-PIPELINE_ORDER = ["ocr", "chunking", "embedding", "word_index", "spell_check"]
+PIPELINE_ORDER = ["ocr", "chunking", "embedding", "spell_check"]
 
 
 class BooksRepository(BaseRepository[Book]):
@@ -122,7 +122,7 @@ class BooksRepository(BaseRepository[Book]):
 
         Args:
             book_id: The book ID to query
-            step: Optional pipeline step to query (ocr, chunking, embedding, word_index, spell_check, summary)
+            step: Optional pipeline step to query (ocr, chunking, embedding, spell_check, summary)
                   If provided, only queries that specific step for performance optimization.
 
         Returns book data along with page counts by status.
@@ -163,7 +163,6 @@ class BooksRepository(BaseRepository[Book]):
                     "ocr": tp, "ocr_failed": 0, "ocr_active": 0,
                     "chunking": tp, "chunking_failed": 0, "chunking_active": 0,
                     "embedding": tp, "embedding_failed": 0, "embedding_active": 0,
-                    "word_index": tp, "word_index_failed": 0, "word_index_active": 0,
                     "spell_check": sc_done, 
                     "spell_check_failed": sc_failed, 
                     "spell_check_active": sc_active,
@@ -183,7 +182,6 @@ class BooksRepository(BaseRepository[Book]):
                 'ocr': Page.ocr_milestone,
                 'chunking': Page.chunking_milestone,
                 'embedding': Page.embedding_milestone,
-                'word_index': Page.word_index_milestone,
                 'spell_check': Page.spell_check_milestone,
             }
 
@@ -202,7 +200,7 @@ class BooksRepository(BaseRepository[Book]):
                 }
 
             # Query only the specific step
-            done_value = "done" if step == 'word_index' or step == 'spell_check' else "succeeded"
+            done_value = "done" if step == 'spell_check' else "succeeded"
             stats_stmt = (
                 select(
                     func.count(Page.id).label("total"),
@@ -227,9 +225,6 @@ class BooksRepository(BaseRepository[Book]):
                     func.count(case((Page.embedding_milestone == "succeeded", 1))).label("embedding_done"),
                     func.count(case((Page.embedding_milestone.in_(["failed", "error"]), 1))).label("embedding_failed"),
                     func.count(case((Page.embedding_milestone == "in_progress", 1))).label("embedding_active"),
-                    func.count(case((Page.word_index_milestone == "done", 1))).label("word_index_done"),
-                    func.count(case((Page.word_index_milestone.in_(["failed", "error"]), 1))).label("word_index_failed"),
-                    func.count(case((Page.word_index_milestone == "in_progress", 1))).label("word_index_active"),
                     func.count(case((Page.spell_check_milestone == "done", 1))).label("spell_check_done"),
                     func.count(case((Page.spell_check_milestone.in_(["failed", "error"]), 1))).label("spell_check_failed"),
                     func.count(case((Page.spell_check_milestone == "in_progress", 1))).label("spell_check_active"),
@@ -293,7 +288,6 @@ class BooksRepository(BaseRepository[Book]):
                     "ocr": 0, "ocr_failed": 0, "ocr_active": 0,
                     "chunking": 0, "chunking_failed": 0, "chunking_active": 0,
                     "embedding": 0, "embedding_failed": 0, "embedding_active": 0,
-                    "word_index": 0, "word_index_failed": 0, "word_index_active": 0,
                     "spell_check": 0, "spell_check_failed": 0, "spell_check_active": 0,
                 },
                 "has_summary": has_summary,
@@ -316,16 +310,13 @@ class BooksRepository(BaseRepository[Book]):
                 "embedding": row.embedding_done or 0,
                 "embedding_failed": row.embedding_failed or 0,
                 "embedding_active": row.embedding_active or 0,
-                "word_index": row.word_index_done or 0,
-                "word_index_failed": row.word_index_failed or 0,
-                "word_index_active": row.word_index_active or 0,
                 "spell_check": row.spell_check_done or 0,
                 "spell_check_failed": row.spell_check_failed or 0,
                 "spell_check_active": row.spell_check_active or 0,
             },
             "has_summary": has_summary,
             "ocr_done_count": row.ocr_done or 0,
-            "error_count": (row.ocr_failed or 0) + (row.chunking_failed or 0) + (row.embedding_failed or 0) + (row.word_index_failed or 0) + (row.spell_check_failed or 0),
+            "error_count": (row.ocr_failed or 0) + (row.chunking_failed or 0) + (row.embedding_failed or 0) + (row.spell_check_failed or 0),
             "pending_count": row.pending_count or 0,
             "ocr_processing_count": row.processing_count or 0,
         }
@@ -363,9 +354,6 @@ class BooksRepository(BaseRepository[Book]):
                 func.count(case((Page.embedding_milestone == "succeeded", 1))).label("embedding"),
                 func.count(case((Page.embedding_milestone.in_(["failed", "error"]), 1))).label("embedding_failed"),
                 func.count(case((Page.embedding_milestone == "in_progress", 1))).label("embedding_active"),
-                func.count(case((Page.word_index_milestone == "done", 1))).label("word_index"),
-                func.count(case((Page.word_index_milestone.in_(["failed", "error"]), 1))).label("word_index_failed"),
-                func.count(case((Page.word_index_milestone == "in_progress", 1))).label("word_index_active"),
                 func.count(case((Page.spell_check_milestone == "done", 1))).label("spell_check"),
                 func.count(case((Page.spell_check_milestone.in_(["failed", "error"]), 1))).label("spell_check_failed"),
                 func.count(case((Page.spell_check_milestone == "in_progress", 1))).label("spell_check_active"),
@@ -387,9 +375,6 @@ class BooksRepository(BaseRepository[Book]):
                     "embedding": row.embedding,
                     "embedding_failed": row.embedding_failed,
                     "embedding_active": row.embedding_active,
-                    "word_index": row.word_index,
-                    "word_index_failed": row.word_index_failed,
-                    "word_index_active": row.word_index_active,
                     "spell_check": row.spell_check,
                     "spell_check_failed": row.spell_check_failed,
                     "spell_check_active": row.spell_check_active,
@@ -423,7 +408,6 @@ class BooksRepository(BaseRepository[Book]):
                     "chunking_failed": 0, "chunking_active": 0,
                     "embedding": tp if status == "ready" else 0,
                     "embedding_failed": 0, "embedding_active": 0,
-                    "word_index": 0, "word_index_failed": 0, "word_index_active": 0,
                     "spell_check": 0, "spell_check_failed": 0, "spell_check_active": 0,
                 }
 

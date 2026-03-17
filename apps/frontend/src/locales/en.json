@@ -397,6 +397,7 @@
     "loadingBook": "Finding a book with issues...",
     "noBooks": "No spell check issues found",
     "noBooksDetail": "All books are clean, or spell check has not been run yet.",
+    "saveAsAutoCorrection": "Save as auto-correction rule",
     "issueCount": "{{count}} issues",
     "loadError": "Could not load. Please try again.",
     "pageProgress": "Page {{current}} of {{total}}",
@@ -407,6 +408,9 @@
     "ignoreTooltip": "Mark as correct — won't be flagged again",
     "unsavedEdit": "You have unsaved edits.",
     "stayAndEdit": "Stay",
+    "confirmAutoCorrectTitle": "Global Auto-Correction Rule",
+    "confirmAutoCorrectMessage": "This will create a rule to automatically correct \"{{original}}\" to \"{{corrected}}\" across all books. Are you sure?",
+    "confirmAutoCorrectAction": "Create Global Rule",
     "discardEdit": "Discard",
     "noContext": "(Context unavailable)",
     "reviewedSwipe": "All reviewed — swipe to next page",
@@ -424,7 +428,8 @@
     "reviewPage": "Page",
     "reviewOriginal": "Original",
     "reviewReplacement": "Replacement",
-    "confirmError": "Some pages failed to save. {{count}} corrections remain."
+    "confirmError": "Some pages failed to save. {{count}} corrections remain.",
+    "autoCorrectApplied": "Auto-correction rule added"
   },
   "pagination": {
     "previous": "Previous",

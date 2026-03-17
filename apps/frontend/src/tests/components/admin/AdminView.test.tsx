@@ -19,7 +19,7 @@ const mockBooks: Book[] = [
     lastUpdated: new Date(),
     contentHash: 'h',
     categories: ['Cat1'],
-    pipelineStats: { ocr: 5, embedding: 5, word_index: 5, spell_check: 5 },
+    pipelineStats: { ocr: 5, embedding: 5, spell_check: 5 },
     hasSummary: true
   }
 ];
@@ -48,7 +48,6 @@ const i18nMockValue = {
   t: (key: string) => {
     const translations: Record<string, string> = {
       'admin.pipeline.summary': 'Summary',
-      'admin.pipeline.wordIndex': 'Word Index',
       'admin.pipeline.spell_check': 'Spell Check',
     };
     return translations[key] || key;

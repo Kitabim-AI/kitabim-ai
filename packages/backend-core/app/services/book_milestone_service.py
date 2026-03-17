@@ -71,10 +71,6 @@ class BookMilestoneService:
                 func.count(case((Page.embedding_milestone == "succeeded", 1))).label("embedding_done"),
                 func.count(case((Page.embedding_milestone.in_(["failed", "error"]), 1))).label("embedding_failed"),
                 func.count(case((Page.embedding_milestone == "in_progress", 1))).label("embedding_active"),
-                # Word Index
-                func.count(case((Page.word_index_milestone == "done", 1))).label("word_index_done"),
-                func.count(case((Page.word_index_milestone.in_(["failed", "error"]), 1))).label("word_index_failed"),
-                func.count(case((Page.word_index_milestone == "in_progress", 1))).label("word_index_active"),
                 # Spell Check
                 func.count(case((Page.spell_check_milestone == "done", 1))).label("spell_check_done"),
                 func.count(case((Page.spell_check_milestone.in_(["failed", "error"]), 1))).label("spell_check_failed"),
@@ -101,9 +97,6 @@ class BookMilestoneService:
         embedding_milestone = BookMilestoneService.compute_milestone_status(
             stats.embedding_done, stats.embedding_failed, stats.embedding_active, total
         )
-        word_index_milestone = BookMilestoneService.compute_milestone_status(
-            stats.word_index_done, stats.word_index_failed, stats.word_index_active, total
-        )
         spell_check_milestone = BookMilestoneService.compute_milestone_status(
             stats.spell_check_done, stats.spell_check_failed, stats.spell_check_active, total
         )
@@ -117,8 +110,6 @@ class BookMilestoneService:
             book.ocr_milestone = ocr_milestone
             book.chunking_milestone = chunking_milestone
             book.embedding_milestone = embedding_milestone
-            if settings.enable_word_index:
-                book.word_index_milestone = word_index_milestone
             book.spell_check_milestone = spell_check_milestone
 
             await db.commit()
@@ -135,7 +126,7 @@ class BookMilestoneService:
         Args:
             db: Database session
             book_id: ID of the book to update
-            step: One of 'ocr', 'chunking', 'embedding', 'word_index', 'spell_check'
+            step: One of 'ocr', 'chunking', 'embedding', 'spell_check'
         """
         # Map step to page milestone field and count expressions
         step_configs = {
@@ -156,12 +147,6 @@ class BookMilestoneService:
                 'failed_field': Page.embedding_milestone.in_(["failed", "error"]),
                 'active_field': Page.embedding_milestone == "in_progress",
                 'book_field': 'embedding_milestone'
-            },
-            'word_index': {
-                'done_field': Page.word_index_milestone == "done",
-                'failed_field': Page.word_index_milestone.in_(["failed", "error"]),
-                'active_field': Page.word_index_milestone == "in_progress",
-                'book_field': 'word_index_milestone'
             },
             'spell_check': {
                 'done_field': Page.spell_check_milestone == "done",

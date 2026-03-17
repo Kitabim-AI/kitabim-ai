@@ -119,15 +119,6 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
           <span className="flex-1 text-right">{t('admin.table.reprocess.embedding') || 'قايتا ۋېكتورلاش'}</span>
         </button>
 
-        {/* Word Index - Hidden (disabled in pipeline) */}
-        {/* <button
-          onClick={() => { bookActions.handleReprocessStep(book.id, 'word-index'); close(); }}
-          disabled={book.pipelineStep === null || reprocessingStep === 'word-index'}
-          className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-emerald-600 hover:bg-emerald-50 disabled:opacity-30 disabled:cursor-not-allowed rounded-xl transition-all active:scale-[0.98]"
-        >
-          {reprocessingStep === 'word-index' ? <Loader2 size={16} className="animate-spin" /> : <WholeWord size={16} />}
-          <span className="flex-1 text-right">{t('admin.table.reprocess.word_index') || 'قايتا سۆز تىزىملىكى ھاسىللاش'}</span>
-        </button> */}
 
         <button
           onClick={() => { bookActions.handleReprocessStep(book.id, 'spell-check'); close(); }}

@@ -84,7 +84,6 @@ class Book(BaseModel):
     ocr_milestone: str = "idle"  # DB: ocr_milestone, API: ocrMilestone
     chunking_milestone: str = "idle"  # DB: chunking_milestone, API: chunkingMilestone
     embedding_milestone: str = "idle"  # DB: embedding_milestone, API: embeddingMilestone
-    word_index_milestone: str = "idle"  # DB: word_index_milestone, API: wordIndexMilestone
     spell_check_milestone: str = "idle"  # DB: spell_check_milestone, API: spellCheckMilestone
 
 

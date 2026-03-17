@@ -15,7 +15,6 @@ const getStatusTextColor = (step: string | null) => {
   switch (step.toLowerCase()) {
     case 'ready': return 'text-emerald-600 font-bold';
     case 'embedding': return 'text-orange-600 font-bold';
-    case 'word_index': return 'text-orange-600 font-bold';
     case 'spell_check': return 'text-purple-600 font-bold';
     case 'chunking': return 'text-indigo-600 font-bold';
     case 'ocr': return 'text-blue-600 font-bold';
@@ -45,7 +44,7 @@ const getPipelineIconClass = (
   const total = book.totalPages || 0;
 
   // For page-level steps, use the aggregate counts to determine if finished
-  const isPageLevel = ['ocr', 'chunking', 'embedding', 'word_index', 'spell_check'].includes(stepKey);
+  const isPageLevel = ['ocr', 'chunking', 'embedding', 'spell_check'].includes(stepKey);
 
   // Special case: Summary is determined by hasSummary flag
   const isComplete = stepKey === 'summary'
@@ -80,7 +79,6 @@ const getMilestoneColor = (book: any, stepKey: string) => {
     'ocr': 'ocrMilestone',
     'chunking': 'chunkingMilestone',
     'embedding': 'embeddingMilestone',
-    'word_index': 'wordIndexMilestone',
     'spell_check': 'spellCheckMilestone',
     'summary': 'hasSummary', // Special case
   };
@@ -442,7 +440,6 @@ export const AdminView: React.FC = () => {
                               { key: 'chunking', icon: Scissors, label: 'admin.pipeline.chunking' },
                               { key: 'embedding', icon: Cuboid, label: 'admin.pipeline.embedding' },
                               { key: 'summary', icon: Wand2, label: 'admin.pipeline.summary' },
-                              // { key: 'word_index', icon: WholeWord, label: 'admin.pipeline.wordIndex' },
                               { key: 'spell_check', icon: BookOpenCheck, label: 'admin.pipeline.spellCheck' }
                             ].map(({ key, icon: Icon, label }) => {
                               const cacheKey = `${book.id}:${key}`;

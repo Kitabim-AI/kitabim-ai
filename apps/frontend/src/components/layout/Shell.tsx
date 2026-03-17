@@ -67,6 +67,16 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
         onClose={() => setModal({ ...modal, isOpen: false })}
       />
       <NotificationContainer />
+
+      {/* Global Book Opening Spinner */}
+      {bookActions.isOpeningBook && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-white/60 backdrop-blur-sm animate-fade-in">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-12 h-12 border-4 border-[#0369a1]/10 border-t-[#0369a1] rounded-full animate-spin"></div>
+            <span className="text-sm font-bold text-[#0369a1] uppercase tracking-wider animate-pulse">{t('common.loading')}...</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

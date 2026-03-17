@@ -11,6 +11,7 @@ export interface PendingCorrection {
   correctedWord: string;
   range?: [number, number];
   isPhrase?: boolean;
+  isAutoCorrection?: boolean;
   addedAt: number;
 }
 
@@ -95,6 +96,7 @@ export const usePendingCorrections = () => {
         issue_id: p.issueId,
         corrected_word: p.correctedWord,
         ...(p.range ? { range: p.range } : {}),
+        is_auto_correction: !!p.isAutoCorrection,
       }));
 
       try {
