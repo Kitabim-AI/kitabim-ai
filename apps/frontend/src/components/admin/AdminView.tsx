@@ -572,7 +572,7 @@ export const AdminView: React.FC = () => {
             </table>
           </div>
           <div ref={loaderRef as any} className="bg-[#0369a1]/5 px-6 py-8 flex flex-col items-center justify-center gap-4">
-            {isLoadingMore ? (
+            {isLoadingMore && !isInitialLoading ? (
               <div className="flex flex-col items-center gap-3 animate-fade-in">
                 <div className="w-8 h-8 border-3 border-[#0369a1]/10 border-t-[#0369a1] rounded-full animate-spin"></div>
                 <span className="text-[10px] font-black text-[#0369a1] uppercase animate-pulse">{t('common.loadingMore')}</span>

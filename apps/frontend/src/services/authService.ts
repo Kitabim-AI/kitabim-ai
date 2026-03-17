@@ -327,28 +327,44 @@ export const AuthService = {
 /**
  * Refresh the access token using the refresh token cookie.
  */
+/**
+ * Refresh the access token using the refresh token cookie.
+ * Uses a singleton promise to avoid multiple simultaneous refresh calls.
+ */
+let refreshPromise: Promise<boolean> | null = null;
+
 async function refreshAccessToken(): Promise<boolean> {
-  try {
-    const response = await fetch(`${API_BASE}/refresh`, {
-      method: 'POST',
-      credentials: 'include',
-    });
-
-    if (!response.ok) {
-      return false;
-    }
-
-    const data = await response.json();
-    if (data.access_token) {
-      setAccessToken(data.access_token);
-      return true;
-    }
-
-    return false;
-  } catch (error) {
-    console.error('Token refresh failed:', error);
-    return false;
+  if (refreshPromise) {
+    return refreshPromise;
   }
+
+  refreshPromise = (async () => {
+    try {
+      const response = await fetch(`${API_BASE}/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        return false;
+      }
+
+      const data = await response.json();
+      if (data.access_token) {
+        setAccessToken(data.access_token);
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      console.error('Token refresh failed:', error);
+      return false;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
 }
 
 export default AuthService;

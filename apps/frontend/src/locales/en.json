@@ -248,6 +248,7 @@
       "spellCheck": "Spell check"
     },
     "table": {
+      "loading": "Loading",
       "name": "Name",
       "author": "Author",
       "category": "Category",

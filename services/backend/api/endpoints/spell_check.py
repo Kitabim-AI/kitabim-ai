@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
 from app.db.models import Book, Page, PageSpellIssue
+from app.core.config import settings
 from app.models.user import User
 from app.services.spell_check_service import run_spell_check_for_page
 from auth.dependencies import require_editor
@@ -333,11 +334,12 @@ async def apply_spell_corrections(
             last_updated=func.now(),
         )
     )
-    # Invalidate word index so the scanner re-builds it with the corrected words
-    await session.execute(
-        text("DELETE FROM book_word_index WHERE book_id = :book_id"),
-        {"book_id": book_id}
-    )
+    # Invalidate word index so the scanner re-builds it with the corrected words (if enabled)
+    if settings.enable_word_index:
+        await session.execute(
+            text("DELETE FROM book_word_index WHERE book_id = :book_id"),
+            {"book_id": book_id}
+        )
     await session.commit()
 
     return {"applied": len(corrected_ids)}

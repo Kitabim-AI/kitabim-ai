@@ -83,6 +83,7 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
       setTotalBooks(0);
       setTotalReady(0);
       setShelfPage(1);
+      setIsLoadingMoreShelf(false); // Reset pagination state
     }
 
     try {
