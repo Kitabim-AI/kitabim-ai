@@ -72,7 +72,7 @@ export const useBookActions = (
             status: 'pending', // Match backend
             pages: (prev.pages || []).map(r =>
               r.pageNumber === pageNum
-                ? { ...r, status: 'pending', text: '', isVerified: false, pipelineStep: null, milestone: null }
+                ? { ...r, status: 'pending', text: '', pipelineStep: null, milestone: null }
                 : r
             ),
           };
@@ -87,7 +87,7 @@ export const useBookActions = (
               status: 'pending',
               pages: (b.pages || []).map(r =>
                 r.pageNumber === pageNum
-                  ? { ...r, status: 'pending', text: '', isVerified: false, pipelineStep: null, milestone: null }
+                  ? { ...r, status: 'pending', text: '', pipelineStep: null, milestone: null }
                   : r
               ),
             };
@@ -151,13 +151,12 @@ export const useBookActions = (
         let newPages;
         if (pageExists) {
           newPages = existingPages.map(r =>
-            r.pageNumber === pageNum ? { ...r, text: newText, isVerified: true, status: 'ocr_done' } : r
+            r.pageNumber === pageNum ? { ...r, text: newText, status: 'ocr_done' } : r
           );
         } else {
           newPages = [...existingPages, {
             pageNumber: pageNum,
             text: newText,
-            isVerified: true,
             status: 'ocr_done'
           }].sort((a, b) => a.pageNumber - b.pageNumber);
         }
@@ -232,8 +231,7 @@ export const useBookActions = (
       const updatedPages = Array.from(newPageMap.entries()).map(([pageNumber, text]) => ({
         pageNumber,
         text,
-        status: 'ocr_done' as const,
-        isVerified: true
+        status: 'ocr_done' as const
       }));
 
       if (updatedPages.length === 0) {

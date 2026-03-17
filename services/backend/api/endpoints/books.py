@@ -1344,7 +1344,6 @@ async def reset_page(
             UPDATE pages
             SET status = 'pending',
                 text = NULL,
-                is_verified = FALSE,
                 is_indexed = FALSE,
                 pipeline_step = 'ocr',
                 milestone = 'idle',
@@ -1397,7 +1396,6 @@ async def update_page_text(
 
     page.text = new_text
     page.status = 'ocr_done'
-    page.is_verified = True
     page.is_indexed = (not text_changed) and page.is_indexed
     page.last_updated = datetime.now(timezone.utc)
     page.updated_by = current_user.email
@@ -1535,7 +1533,6 @@ async def create_book(
                 "page_number": r.get("page_number"),
                 "text": page_text,
                 "status": r.get("status", "ocr_done"),
-                "is_verified": r.get("is_verified", False),
                 "updated_by": current_user.email,
             }
             # Use repository upsert method
@@ -1620,7 +1617,6 @@ async def update_book_details(
                         UPDATE pages
                         SET text = COALESCE(:text, text),
                             status = COALESCE(:status, status),
-                            is_verified = COALESCE(:is_verified, is_verified),
                             is_indexed = CASE
                                 WHEN :text IS NOT NULL AND text IS DISTINCT FROM :text
                                 THEN FALSE
@@ -1650,7 +1646,6 @@ async def update_book_details(
                         "page_number": page_number,
                         "text": normalize_uyghur_chars(new_text) if new_text is not None else None,
                         "status": result.get("status"),
-                        "is_verified": result.get("isVerified") or result.get("is_verified"),
                         "last_updated": datetime.now(timezone.utc),
                         "updated_by": current_user.email,
                     }

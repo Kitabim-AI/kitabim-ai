@@ -152,7 +152,6 @@ class Page(Base):
         index=True,
         nullable=False
     )
-    is_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_indexed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 

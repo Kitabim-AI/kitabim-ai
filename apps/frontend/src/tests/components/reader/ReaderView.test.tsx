@@ -225,7 +225,7 @@ test.skip('ReaderView saves and cancels page edits', () => {
     />
   );
 
-  fireEvent.click(screen.getByText(/SAVE & VERIFY PAGE/i));
+  fireEvent.click(screen.getByText(/SAVE PAGE/i));
   expect(onUpdatePage).toHaveBeenCalledWith('1', 1, 'Edited text');
   expect(resetSpellCheck).toHaveBeenCalled();
 
@@ -246,7 +246,7 @@ test.skip('ReaderView triggers page actions and close logic', () => {
 
   const verifiedBook: Book = {
     ...mockBook,
-    pages: [{ pageNumber: 1, text: 'Page 1 content', status: 'ocr_done', isVerified: true }]
+    pages: [{ pageNumber: 1, text: 'Page 1 content', status: 'ocr_done' }]
   };
 
   render(

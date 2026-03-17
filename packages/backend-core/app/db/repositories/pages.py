@@ -59,7 +59,6 @@ class PagesRepository(BaseRepository[Page]):
             set_={
                 "text": stmt.excluded.text,
                 "status": stmt.excluded.status,
-                "is_verified": stmt.excluded.is_verified,
                 "error": stmt.excluded.error,
                 "updated_by": stmt.excluded.updated_by,
                 "last_updated": func.now(),

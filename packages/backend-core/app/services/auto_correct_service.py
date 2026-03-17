@@ -179,7 +179,6 @@ async def apply_auto_corrections_to_page(
         .values(
             text=page_text,
             is_indexed=False,  # Trigger re-embedding
-            is_verified=True,
             last_updated=func.now()
         )
     )

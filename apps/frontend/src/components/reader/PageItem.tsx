@@ -1,5 +1,5 @@
 import React from 'react';
-import { RotateCcw, Edit3, CheckCircle2, Save, Loader2 } from 'lucide-react';
+import { RotateCcw, Edit3, Save, Loader2 } from 'lucide-react';
 import { useI18n } from '../../i18n/I18nContext';
 import { MarkdownContent } from '../common/MarkdownContent';
 import { useIsEditor } from '../../hooks/useAuth';
@@ -42,7 +42,6 @@ export const PageItem: React.FC<PageItemProps> = ({
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs font-bold text-[#94a3b8] uppercase">{t('chat.pageNumber', { page: page.pageNumber })}</span>
-          {page.isVerified && <span className="flex items-center gap-1 text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full text-xs font-bold"><CheckCircle2 size={10} /> {t('reader.verified')}</span>}
         </div>
       </div>
 

@@ -84,7 +84,7 @@ flowchart LR
 **Pages**
 - **Milestones**: `ocr_milestone`, `chunking_milestone`, `embedding_milestone`, `spell_check_milestone`.
 - Milestone States: `idle`, `in_progress`, `succeeded`, `failed`, `done`.
-- `text`, `is_indexed`, `is_verified`.
+- `text`, `is_indexed`.
 
 **Pipeline Events**
 - Transactional outbox pattern: `page_id`, `event_type`, `processed`.
