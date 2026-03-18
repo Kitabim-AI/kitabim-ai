@@ -7,6 +7,7 @@ from app.db.models import ContactSubmission
 @pytest.mark.asyncio
 async def test_create_submission():
     session = AsyncMock()
+    session.add = MagicMock()
     repo = ContactSubmissionsRepository(session)
     
     # Mock refresh to avoid errors

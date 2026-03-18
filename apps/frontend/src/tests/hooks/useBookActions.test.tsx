@@ -7,35 +7,84 @@ import { Book } from '@shared/types';
 vi.mock('@/src/services/persistenceService', () => ({
   PersistenceService: {
     uploadPdf: vi.fn(),
-    reprocessBook: vi.fn(),
-    resetFailedPages: vi.fn(),
-    revertBook: vi.fn(),
     getBookById: vi.fn(),
     saveBookGlobally: vi.fn(),
     deleteBook: vi.fn(),
-    updateBookTags: vi.fn(),
     updateBookMetadata: vi.fn(),
+    updatePage: vi.fn(),
+    resetPage: vi.fn(),
   }
 }));
 
-// Mock global fetch for handleReProcessPage and handleUpdatePage
-global.fetch = vi.fn() as any;
+vi.mock('@/src/context/NotificationContext', () => ({
+  useNotification: vi.fn(() => ({
+    addNotification: vi.fn(),
+  })),
+}));
+
+vi.mock('@/src/i18n/I18nContext', () => ({
+  useI18n: vi.fn(() => ({
+    t: (key: string) => key,
+  })),
+}));
 
 const mockBook: Book = {
-  id: '1', title: 'T', author: 'A', totalPages: 1, pages: [{ pageNumber: 1, status: 'ocr_done' }], status: 'ready', uploadDate: new Date(), lastUpdated: new Date(), contentHash: 'h'
+  id: '1',
+  title: 'T',
+  author: 'A',
+  totalPages: 1,
+  pages: [{ pageNumber: 1, text: 'Old Text', status: 'ocr_done' }],
+  status: 'ready',
+  uploadDate: new Date(),
+  lastUpdated: new Date(),
+  contentHash: 'h'
+};
+
+const createHook = (overrides?: { currentView?: string }) => {
+  const refreshLibrary = vi.fn().mockResolvedValue(undefined);
+  const setBooks = vi.fn();
+  const setSelectedBook = vi.fn();
+  const setView = vi.fn();
+  const setModal = vi.fn();
+  const setChatMessages = vi.fn();
+  const setCurrentPage = vi.fn();
+
+  const hook = renderHook(() =>
+    useBookActions(
+      refreshLibrary,
+      setBooks,
+      setSelectedBook,
+      overrides?.currentView ?? 'library',
+      setView,
+      setModal,
+      setChatMessages,
+      setCurrentPage
+    )
+  );
+
+  return {
+    ...hook,
+    refreshLibrary,
+    setBooks,
+    setSelectedBook,
+    setView,
+    setModal,
+    setChatMessages,
+    setCurrentPage,
+  };
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
-test.skip('useBookActions handles file upload', async () => {
-  const refreshLibrary = vi.fn();
-  const setView = vi.fn();
-  const { result } = renderHook(() => useBookActions(refreshLibrary, vi.fn(), vi.fn(), setView, vi.fn()));
+test('useBookActions handles file upload', async () => {
+  vi.mocked(PersistenceService.uploadPdf).mockResolvedValue({ status: 'uploaded' } as any);
+  const { result, refreshLibrary, setView } = createHook({ currentView: 'library' });
 
   const file = new File(['%PDF-1.4'], 'test.pdf', { type: 'application/pdf' });
-  const event = { target: { files: [file] } } as any;
+  const event = { target: { files: [file], value: 'set' } } as any;
 
   await act(async () => {
     await result.current.handleFileUpload(event);
@@ -43,52 +92,50 @@ test.skip('useBookActions handles file upload', async () => {
 
   expect(PersistenceService.uploadPdf).toHaveBeenCalledWith(file);
   expect(refreshLibrary).toHaveBeenCalled();
-  expect(setView).toHaveBeenCalledWith('admin');
+  expect(setView).not.toHaveBeenCalled();
+  expect(event.target.value).toBe('');
 });
 
-test.skip('useBookActions ignores non-pdf uploads and handles upload errors', async () => {
-  const refreshLibrary = vi.fn();
-  const setView = vi.fn();
-  const setModal = vi.fn();
-  const { result } = renderHook(() => useBookActions(refreshLibrary, vi.fn(), vi.fn(), setView, setModal));
+test('useBookActions ignores invalid uploads and handles upload errors', async () => {
+  const { result, setModal } = createHook();
 
   const badFile = new File(['data'], 'test.txt', { type: 'text/plain' });
-  const badEvent = { target: { files: [badFile] } } as any;
+  const badEvent = { target: { files: [badFile], value: 'set' } } as any;
 
   await act(async () => {
     await result.current.handleFileUpload(badEvent);
   });
+
   expect(PersistenceService.uploadPdf).not.toHaveBeenCalled();
 
-  (PersistenceService.uploadPdf as any).mockRejectedValueOnce(new Error('fail'));
+  vi.mocked(PersistenceService.uploadPdf).mockRejectedValueOnce(new Error('fail'));
   const pdfFile = new File(['%PDF-1.4'], 'test.pdf', { type: 'application/pdf' });
-  const pdfEvent = { target: { files: [pdfFile] } } as any;
+  const pdfEvent = { target: { files: [pdfFile], value: 'set' } } as any;
 
   await act(async () => {
     await result.current.handleFileUpload(pdfEvent);
   });
 
   expect(setModal).toHaveBeenCalledWith(expect.objectContaining({ type: 'alert' }));
+  expect(pdfEvent.target.value).toBe('');
 });
 
-test.skip('useBookActions handles openReader', async () => {
-  (PersistenceService.getBookById as any).mockResolvedValue(mockBook);
-  const setSelectedBook = vi.fn();
-  const setView = vi.fn();
-
-  const { result } = renderHook(() => useBookActions(vi.fn(), vi.fn(), setSelectedBook, setView, vi.fn()));
+test('useBookActions handles openReader', async () => {
+  vi.mocked(PersistenceService.getBookById).mockResolvedValue(mockBook as any);
+  const { result, setSelectedBook, setView, setChatMessages, setCurrentPage } = createHook();
 
   await act(async () => {
-    await result.current.openReader(mockBook, vi.fn(), vi.fn(), vi.fn());
+    await result.current.openReader(mockBook);
   });
 
   expect(setSelectedBook).toHaveBeenCalledWith(mockBook);
+  expect(setChatMessages).toHaveBeenCalledWith([]);
   expect(setView).toHaveBeenCalledWith('reader');
+  expect(setCurrentPage).toHaveBeenCalledWith(1);
 });
 
-test.skip('useBookActions handles handleDeleteBook', async () => {
-  const setModal = vi.fn();
-  const { result } = renderHook(() => useBookActions(vi.fn(), vi.fn(), vi.fn(), vi.fn(), setModal));
+test('useBookActions handles delete confirmation flow', async () => {
+  const { result, setModal } = createHook();
 
   act(() => {
     result.current.handleDeleteBook('1', '1');
@@ -99,79 +146,75 @@ test.skip('useBookActions handles handleDeleteBook', async () => {
     type: 'confirm'
   }));
 
-  // Test confirmation callback
-  const onConfirm = setModal.mock.calls[0][0].onConfirm;
+  const config = setModal.mock.calls[0][0];
   await act(async () => {
-    await onConfirm();
+    await config.onConfirm();
   });
 
   expect(PersistenceService.deleteBook).toHaveBeenCalledWith('1');
 });
 
-test.skip('useBookActions handles reset failed pages', async () => {
-  const setModal = vi.fn();
-  const refreshLibrary = vi.fn();
-  (PersistenceService.resetFailedPages as any).mockResolvedValue({ status: 'reset', count: 3 });
-  const { result } = renderHook(() => useBookActions(refreshLibrary, vi.fn(), vi.fn(), vi.fn(), setModal));
+test('useBookActions handles page reset confirmation flow', async () => {
+  const { result, setModal } = createHook();
 
   act(() => {
-    result.current.handleResetFailedPages('1');
+    result.current.handleReProcessPage('1', 3);
   });
 
-  expect(setModal).toHaveBeenCalledWith(expect.objectContaining({ type: 'confirm' }));
+  expect(setModal).toHaveBeenCalledWith(expect.objectContaining({
+    isOpen: true,
+    type: 'confirm'
+  }));
 
-  const onConfirm = setModal.mock.calls[0][0].onConfirm;
+  const config = setModal.mock.calls[0][0];
   await act(async () => {
-    await onConfirm();
+    await config.onConfirm();
   });
-  expect(PersistenceService.resetFailedPages).toHaveBeenCalledWith('1');
-  expect(refreshLibrary).toHaveBeenCalled();
+
+  expect(PersistenceService.resetPage).toHaveBeenCalledWith('1', 3);
 });
 
-test.skip('useBookActions updates page text and saves corrections', async () => {
-  const setSelectedBook = vi.fn();
-  const setEditingPageNum = vi.fn();
-  const fetchMock = vi.fn().mockResolvedValue({ ok: true });
-  // @ts-expect-error test mock
-  global.fetch = fetchMock;
+test('useBookActions updates page text and saves corrections', async () => {
+  vi.mocked(PersistenceService.updatePage).mockResolvedValue(undefined as any);
+  vi.mocked(PersistenceService.saveBookGlobally).mockResolvedValue(undefined as any);
 
-  const { result } = renderHook(() => useBookActions(vi.fn(), vi.fn(), setSelectedBook, vi.fn(), vi.fn()));
+  const { result, setSelectedBook, refreshLibrary } = createHook();
+  const setEditingPageNum = vi.fn();
 
   await act(async () => {
     await result.current.handleUpdatePage('1', 1, 'New Text', setEditingPageNum);
   });
 
-  expect(fetchMock).toHaveBeenCalledWith('/api/books/1/pages/1/update/', expect.any(Object));
+  expect(PersistenceService.updatePage).toHaveBeenCalledWith('1', 1, 'New Text');
   expect(setEditingPageNum).toHaveBeenCalledWith(null);
   expect(setSelectedBook).toHaveBeenCalled();
+  expect(refreshLibrary).toHaveBeenCalled();
 
   const setIsEditing = vi.fn();
   const bookForSave: Book = {
-    id: '1',
-    title: 'T',
-    author: 'A',
+    ...mockBook,
     totalPages: 2,
     pages: [
       { pageNumber: 1, text: 'a', status: 'ocr_done' },
       { pageNumber: 2, text: 'b', status: 'ocr_done' }
     ],
-    status: 'ready',
-    uploadDate: new Date(),
-    lastUpdated: new Date(),
-    contentHash: 'h'
   };
 
   await act(async () => {
-    await result.current.saveCorrections(bookForSave, 'line1\\nline2', setIsEditing);
+    await result.current.saveCorrections(
+      bookForSave,
+      '[[PAGE 1]]\nline1\n[[PAGE 2]]\nline2',
+      setIsEditing
+    );
   });
 
   expect(PersistenceService.saveBookGlobally).toHaveBeenCalled();
   expect(setIsEditing).toHaveBeenCalledWith(false);
 });
 
-test.skip('useBookActions updates title, author, and categories', async () => {
-  const setBooks = vi.fn();
-  const { result } = renderHook(() => useBookActions(vi.fn(), setBooks, vi.fn(), vi.fn(), vi.fn()));
+test('useBookActions updates title, author, and categories', async () => {
+  vi.mocked(PersistenceService.updateBookMetadata).mockResolvedValue(undefined as any);
+  const { result, setBooks } = createHook();
 
   await act(async () => {
     await result.current.handleSaveTitle('1', 'New Title', vi.fn(), vi.fn());
@@ -185,8 +228,9 @@ test.skip('useBookActions updates title, author, and categories', async () => {
   expect(setBooks).toHaveBeenCalled();
 });
 
-test.skip('useBookActions validates volume input', async () => {
-  const { result } = renderHook(() => useBookActions(vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn()));
+test('useBookActions validates volume input', async () => {
+  vi.mocked(PersistenceService.updateBookMetadata).mockResolvedValue(undefined as any);
+  const { result } = createHook();
 
   await act(async () => {
     await result.current.handleSaveVolume('1', '2', vi.fn(), vi.fn());
@@ -194,6 +238,7 @@ test.skip('useBookActions validates volume input', async () => {
   expect(PersistenceService.updateBookMetadata).toHaveBeenCalledWith('1', { volume: 2 });
 
   vi.clearAllMocks();
+  vi.mocked(PersistenceService.updateBookMetadata).mockResolvedValue(undefined as any);
 
   await act(async () => {
     await result.current.handleSaveVolume('1', '2.5', vi.fn(), vi.fn());

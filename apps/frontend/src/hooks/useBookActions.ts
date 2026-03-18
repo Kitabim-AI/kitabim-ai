@@ -3,6 +3,7 @@ import { Book } from '@shared/types';
 import { PersistenceService } from '../services/persistenceService';
 import { useNotification } from '../context/NotificationContext';
 import { useI18n } from '../i18n/I18nContext';
+import { REPROCESS_STEP, type ReprocessStep } from '../constants/milestones';
 
 export const useBookActions = (
   refreshLibrary: () => Promise<void>,
@@ -467,13 +468,13 @@ export const useBookActions = (
     });
   };
 
-  const handleReprocessStep = (bookId: string, step: 'ocr' | 'chunking' | 'embedding' | 'word-index' | 'spell-check') => {
+  const handleReprocessStep = (bookId: string, step: ReprocessStep) => {
     const titles: Record<string, string> = {
-      ocr: t('modal.reprocessOcr.title') || 'OCR نى قايتا ئىشلەش',
-      chunking: t('modal.reprocessChunking.title') || 'پارچىلاشنى قايتا ئىشلەش',
-      embedding: t('modal.reprocessEmbedding.title') || 'ۋېكتورلاشتۇرۇشنى قايتا ئىشلەش',
-      'word-index': t('modal.reprocessWordIndex.title') || 'سۆز تىزىملىكىنى قايتا ئىشلەش',
-      'spell-check': t('modal.reprocessSpellCheck.title') || 'ئىملا تەكشۈرۈشنى قايتا ئىشلەش'
+      [REPROCESS_STEP.OCR]: t('modal.reprocessOcr.title') || 'OCR نى قايتا ئىشلەش',
+      [REPROCESS_STEP.CHUNKING]: t('modal.reprocessChunking.title') || 'پارچىلاشنى قايتا ئىشلەش',
+      [REPROCESS_STEP.EMBEDDING]: t('modal.reprocessEmbedding.title') || 'ۋېكتورلاشتۇرۇشنى قايتا ئىشلەش',
+      [REPROCESS_STEP.WORD_INDEX]: t('modal.reprocessWordIndex.title') || 'سۆز تىزىملىكىنى قايتا ئىشلەش',
+      [REPROCESS_STEP.SPELL_CHECK]: t('modal.reprocessSpellCheck.title') || 'ئىملا تەكشۈرۈشنى قايتا ئىشلەش'
     };
 
     setModal({
@@ -490,11 +491,11 @@ export const useBookActions = (
 
         try {
           switch (step) {
-            case 'ocr': await PersistenceService.reprocessOcr(bookId); break;
-            case 'chunking': await PersistenceService.reprocessChunking(bookId); break;
-            case 'embedding': await PersistenceService.reprocessEmbedding(bookId); break;
-            case 'word-index': await PersistenceService.reprocessWordIndex(bookId); break;
-            case 'spell-check': await PersistenceService.reprocessSpellCheck(bookId); break;
+            case REPROCESS_STEP.OCR: await PersistenceService.reprocessOcr(bookId); break;
+            case REPROCESS_STEP.CHUNKING: await PersistenceService.reprocessChunking(bookId); break;
+            case REPROCESS_STEP.EMBEDDING: await PersistenceService.reprocessEmbedding(bookId); break;
+            case REPROCESS_STEP.WORD_INDEX: await PersistenceService.reprocessWordIndex(bookId); break;
+            case REPROCESS_STEP.SPELL_CHECK: await PersistenceService.reprocessSpellCheck(bookId); break;
           }
           await refreshLibrary();
           setModal((prev: any) => ({ ...prev, isOpen: false }));

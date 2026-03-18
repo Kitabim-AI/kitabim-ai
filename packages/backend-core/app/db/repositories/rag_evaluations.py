@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, UTC
 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,7 +43,7 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
             latency_ms=latency_ms,
             answer_chars=answer_chars,
             user_id=user_id,
-            ts=datetime.utcnow(),
+            ts=datetime.now(UTC),
         )
         return evaluation
 

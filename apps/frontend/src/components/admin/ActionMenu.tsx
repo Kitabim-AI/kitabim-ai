@@ -5,6 +5,7 @@ import { Book } from '@shared/types';
 import { useI18n } from '../../i18n/I18nContext';
 import { useAppContext } from '../../context/AppContext';
 import { useIsAdmin } from '../../hooks/useAuth';
+import { REPROCESS_STEP } from '../../constants/milestones';
 
 interface ActionMenuProps {
   book: Book;
@@ -92,40 +93,40 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
 
         {isAdmin && (
           <button
-            onClick={() => { bookActions.handleReprocessStep(book.id, 'ocr'); close(); }}
-            disabled={reprocessingStep === 'ocr'}
+            onClick={() => { bookActions.handleReprocessStep(book.id, REPROCESS_STEP.OCR); close(); }}
+            disabled={reprocessingStep === REPROCESS_STEP.OCR}
             className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-orange-600 hover:bg-orange-50 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-all active:scale-[0.98]"
           >
-            {reprocessingStep === 'ocr' ? <Loader2 size={16} className="animate-spin" /> : <ScanText size={16} />}
+            {reprocessingStep === REPROCESS_STEP.OCR ? <Loader2 size={16} className="animate-spin" /> : <ScanText size={16} />}
             <span className="flex-1 text-right">{t('admin.table.reprocess.ocr') || 'قايتا OCR'}</span>
           </button>
         )}
 
         <button
-          onClick={() => { bookActions.handleReprocessStep(book.id, 'chunking'); close(); }}
-          disabled={book.pipelineStep === null || reprocessingStep === 'chunking'}
+          onClick={() => { bookActions.handleReprocessStep(book.id, REPROCESS_STEP.CHUNKING); close(); }}
+          disabled={book.pipelineStep === null || reprocessingStep === REPROCESS_STEP.CHUNKING}
           className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-30 disabled:cursor-not-allowed rounded-xl transition-all active:scale-[0.98]"
         >
-          {reprocessingStep === 'chunking' ? <Loader2 size={16} className="animate-spin" /> : <Scissors size={16} />}
+          {reprocessingStep === REPROCESS_STEP.CHUNKING ? <Loader2 size={16} className="animate-spin" /> : <Scissors size={16} />}
           <span className="flex-1 text-right">{t('admin.table.reprocess.chunking') || 'قايتا پارچىلاش'}</span>
         </button>
 
         <button
-          onClick={() => { bookActions.handleReprocessStep(book.id, 'embedding'); close(); }}
-          disabled={book.pipelineStep === null || reprocessingStep === 'embedding'}
+          onClick={() => { bookActions.handleReprocessStep(book.id, REPROCESS_STEP.EMBEDDING); close(); }}
+          disabled={book.pipelineStep === null || reprocessingStep === REPROCESS_STEP.EMBEDDING}
           className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-indigo-600 hover:bg-indigo-50 disabled:opacity-30 disabled:cursor-not-allowed rounded-xl transition-all active:scale-[0.98]"
         >
-          {reprocessingStep === 'embedding' ? <Loader2 size={16} className="animate-spin" /> : <Cuboid size={16} />}
+          {reprocessingStep === REPROCESS_STEP.EMBEDDING ? <Loader2 size={16} className="animate-spin" /> : <Cuboid size={16} />}
           <span className="flex-1 text-right">{t('admin.table.reprocess.embedding') || 'قايتا ۋېكتورلاش'}</span>
         </button>
 
 
         <button
-          onClick={() => { bookActions.handleReprocessStep(book.id, 'spell-check'); close(); }}
-          disabled={book.pipelineStep === null || !spellCheckEnabled || reprocessingStep === 'spell-check'}
+          onClick={() => { bookActions.handleReprocessStep(book.id, REPROCESS_STEP.SPELL_CHECK); close(); }}
+          disabled={book.pipelineStep === null || !spellCheckEnabled || reprocessingStep === REPROCESS_STEP.SPELL_CHECK}
           className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-violet-600 hover:bg-violet-50 disabled:opacity-30 disabled:cursor-not-allowed rounded-xl transition-all active:scale-[0.98]"
         >
-          {reprocessingStep === 'spell-check' ? <Loader2 size={16} className="animate-spin" /> : <BookOpenCheck size={16} />}
+          {reprocessingStep === REPROCESS_STEP.SPELL_CHECK ? <Loader2 size={16} className="animate-spin" /> : <BookOpenCheck size={16} />}
           <span className="flex-1 text-right">{t('admin.table.reprocess.spell_check') || 'قايتا ئىملا تەكشۈرۈش'}</span>
         </button>
 

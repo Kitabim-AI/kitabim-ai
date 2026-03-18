@@ -11,6 +11,7 @@ def rag_service():
 @pytest.mark.asyncio
 async def test_answer_question_catalog_query(rag_service):
     session = AsyncMock()
+    session.add = MagicMock()
     req = ChatRequest(
         book_id="global",
         question="قايسى كىتابلار بار؟",
@@ -30,6 +31,7 @@ async def test_answer_question_catalog_query(rag_service):
 @pytest.mark.asyncio
 async def test_answer_question_current_page_only(rag_service):
     session = AsyncMock()
+    session.add = MagicMock()
     req = ChatRequest(
         book_id="book-123",
         question="بۇ بەتتە نېمە بار؟",

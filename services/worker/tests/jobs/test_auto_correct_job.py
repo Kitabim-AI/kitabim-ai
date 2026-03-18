@@ -35,6 +35,7 @@ async def test_auto_correct_job_success():
          patch("app.services.book_milestone_service.BookMilestoneService.update_book_milestones", new_callable=AsyncMock) as mock_update_milestones:
         
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()
         mock_session_factory.return_value.__aenter__.return_value = mock_session
         
         # Mock pages result

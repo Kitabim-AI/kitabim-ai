@@ -53,6 +53,7 @@ async def test_get_ocr_corrections_batch():
 @pytest.mark.asyncio
 async def test_run_spell_check_for_page_with_issues():
     session = AsyncMock()
+    session.add_all = MagicMock()
     # Uyghur: "خاتا" (khata) and "نامەلۇم" (unknown)
     page = Page(id=1, text="خاتا نامەلۇم", book_id="b1")
     

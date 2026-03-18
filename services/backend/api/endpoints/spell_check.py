@@ -13,6 +13,12 @@ from pydantic import BaseModel
 from sqlalchemy import case, distinct, func, select, text, update, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.pipeline import (
+    PAGE_MILESTONE_IDLE,
+    PAGE_MILESTONE_SUCCEEDED,
+    PIPELINE_STEP_CHUNKING,
+    PIPELINE_STEP_EMBEDDING,
+)
 from app.db.session import get_session
 from app.db.models import Book, Page, PageSpellIssue
 from app.core.config import settings
@@ -365,8 +371,8 @@ async def apply_spell_corrections(
             text=page_text,
             is_indexed=False,
             # Reset pipeline milestones to ensure re-chunking and re-embedding
-            chunking_milestone="idle",
-            embedding_milestone="idle",
+            chunking_milestone=PAGE_MILESTONE_IDLE,
+            embedding_milestone=PAGE_MILESTONE_IDLE,
             updated_by=current_user.id,
             last_updated=func.now(),
         )
@@ -374,8 +380,8 @@ async def apply_spell_corrections(
     
     # Update book milestones (no internal commit anymore)
     from app.services.book_milestone_service import BookMilestoneService
-    await BookMilestoneService.update_book_milestone_for_step(session, book_id, 'chunking')
-    await BookMilestoneService.update_book_milestone_for_step(session, book_id, 'embedding')
+    await BookMilestoneService.update_book_milestone_for_step(session, book_id, PIPELINE_STEP_CHUNKING)
+    await BookMilestoneService.update_book_milestone_for_step(session, book_id, PIPELINE_STEP_EMBEDDING)
     
     await session.commit()
 
@@ -398,13 +404,13 @@ async def trigger_spell_check(
             and_(
                 Page.book_id == book_id,
                 or_(
-                    Page.pipeline_step == "embedding",
+                    Page.pipeline_step == PIPELINE_STEP_EMBEDDING,
                     Page.pipeline_step.is_(None),
                 ),
-                Page.milestone == "succeeded",
+                Page.milestone == PAGE_MILESTONE_SUCCEEDED,
             )
         )
-        .values(spell_check_milestone="idle")
+        .values(spell_check_milestone=PAGE_MILESTONE_IDLE)
         .returning(Page.id)
     )
     queued = len(result.fetchall())
@@ -437,7 +443,7 @@ async def trigger_page_spell_check(
     if not page:
         raise HTTPException(status_code=404, detail="Page not found")
 
-    if page.milestone != "succeeded" or (page.pipeline_step is not None and page.pipeline_step != "embedding"):
+    if page.milestone != PAGE_MILESTONE_SUCCEEDED or (page.pipeline_step is not None and page.pipeline_step != PIPELINE_STEP_EMBEDDING):
         raise HTTPException(
             status_code=400,
             detail="Page has not completed OCR/embedding pipeline yet.",

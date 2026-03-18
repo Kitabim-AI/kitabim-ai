@@ -6,6 +6,12 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 
+from app.core.pipeline import (
+    PAGE_MILESTONE_FAILED,
+    PAGE_MILESTONE_SUCCEEDED,
+    PIPELINE_STEP_EMBEDDING,
+    PIPELINE_STEP_OCR,
+)
 from app.db.session import get_session
 from app.db.models import Book, Page, Chunk
 from auth.dependencies import require_admin
@@ -72,9 +78,9 @@ async def get_system_stats(
         # Map legacy or technical statuses to clean ones
         status = (status or "unknown").lower()
         if status in ('ocr_processing', 'ocr_done'):
-            status = 'ocr'
+            status = PIPELINE_STEP_OCR
         elif status == 'indexing':
-            status = 'embedding'
+            status = PIPELINE_STEP_EMBEDDING
         
         raw_books_by_status[status] = raw_books_by_status.get(status, 0) + count
 
@@ -91,8 +97,8 @@ async def get_system_stats(
     indexed_pages_result = await session.execute(
         select(func.count()).select_from(Page).where(
             and_(
-                Page.pipeline_step == "embedding",
-                Page.milestone == "succeeded"
+                Page.pipeline_step == PIPELINE_STEP_EMBEDDING,
+                Page.milestone == PAGE_MILESTONE_SUCCEEDED
             )
         )
     )
@@ -100,7 +106,7 @@ async def get_system_stats(
 
     # Count error pages
     error_pages_result = await session.execute(
-        select(func.count()).select_from(Page).where(Page.milestone == "failed")
+        select(func.count()).select_from(Page).where(Page.milestone == PAGE_MILESTONE_FAILED)
     )
     error_pages = error_pages_result.scalar() or 0
 
@@ -114,7 +120,7 @@ async def get_system_stats(
             and_(
                 Page.pipeline_step.is_not(None),
                 # Filter out terminal success states to avoid clutter
-                Page.milestone.notin_(['succeeded', 'failed'])
+                Page.milestone.notin_([PAGE_MILESTONE_SUCCEEDED, PAGE_MILESTONE_FAILED])
             )
         )
         .group_by(Page.pipeline_step, Page.milestone)

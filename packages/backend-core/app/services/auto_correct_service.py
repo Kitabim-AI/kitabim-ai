@@ -13,6 +13,7 @@ from datetime import datetime
 from sqlalchemy import select, update, func, text, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.pipeline import PAGE_MILESTONE_IDLE
 from app.db.models import Page, PageSpellIssue, SpellCheckCorrection
 from app.utils.observability import log_json
 from app.core.config import settings
@@ -179,8 +180,8 @@ async def apply_auto_corrections_to_page(
         .values(
             text=page_text,
             is_indexed=False,  # Trigger re-embedding
-            chunking_milestone="idle",  # Force re-chunking of modified text
-            embedding_milestone="idle", # Force re-embedding of modified text
+            chunking_milestone=PAGE_MILESTONE_IDLE,  # Force re-chunking of modified text
+            embedding_milestone=PAGE_MILESTONE_IDLE, # Force re-embedding of modified text
             last_updated=func.now()
         )
     )

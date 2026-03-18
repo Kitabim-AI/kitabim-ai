@@ -20,6 +20,7 @@ def test_hash_token():
 @pytest.mark.asyncio
 async def test_store_refresh_token():
     session = AsyncMock()
+    session.add = MagicMock()
     user_id = "user-123"
     jti = "jti-456"
     token = "secret-token"

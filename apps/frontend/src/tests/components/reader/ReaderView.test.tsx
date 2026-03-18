@@ -1,13 +1,59 @@
-import { screen, fireEvent } from '@testing-library/react';
-import { renderWithProviders as render } from '@/src/tests/test-utils';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ReaderView } from '@/src/components/reader/ReaderView';
-import { expect, test, vi } from 'vitest';
+import { expect, test, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { Book } from '@shared/types';
+import * as AppContextModule from '@/src/context/AppContext';
+import * as AuthModule from '@/src/hooks/useAuth';
+import { I18nContext } from '@/src/i18n/I18nContext';
+import { PersistenceService } from '@/src/services/persistenceService';
 
-const mockUseSpellCheck = vi.fn();
-vi.mock('@/src/hooks/useSpellCheck', () => ({
-  useSpellCheck: (...args: any[]) => mockUseSpellCheck(...args),
+vi.mock('@/src/context/AppContext', () => ({
+  useAppContext: vi.fn(),
+}));
+
+vi.mock('@/src/hooks/useAuth', () => ({
+  useAuth: vi.fn(),
+  useIsEditor: vi.fn(),
+}));
+
+vi.mock('@/src/services/persistenceService', () => ({
+  PersistenceService: {
+    getBookContent: vi.fn(),
+    getBookPages: vi.fn(),
+    downloadBook: vi.fn(),
+  }
+}));
+
+vi.mock('@/src/components/chat/ChatInterface', () => ({
+  ChatInterface: () => <div>chat-panel</div>,
+}));
+
+vi.mock('@/src/components/ui/GlassPanel', () => ({
+  GlassPanel: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}));
+
+vi.mock('@/src/components/reader/VirtualScrollReader', () => ({
+  default: () => <div>virtual-reader</div>,
+}));
+
+vi.mock('@/src/components/reader/PageItem', () => ({
+  PageItem: ({
+    page,
+    isEditing,
+    onEdit,
+    onSave,
+    onCancel,
+    onReprocess,
+  }: any) => (
+    <div>
+      <div>{page.text}</div>
+      {!isEditing && <button onClick={onEdit}>edit-{page.pageNumber}</button>}
+      {isEditing && <button onClick={onSave}>save-{page.pageNumber}</button>}
+      {isEditing && <button onClick={onCancel}>cancel-{page.pageNumber}</button>}
+      <button onClick={onReprocess}>reprocess-{page.pageNumber}</button>
+    </div>
+  ),
 }));
 
 const mockBook: Book = {
@@ -26,272 +72,144 @@ const mockBook: Book = {
   tags: ['History']
 };
 
-const baseSpellCheck = {
-  isChecking: false,
-  spellCheckResult: null,
-  appliedCorrections: new Set<string>(),
-  ignoredCorrections: new Set<string>(),
-  runSpellCheck: vi.fn(),
-  applyCorrection: vi.fn((_c: any, text: string) => text),
-  ignoreCorrection: vi.fn(),
-  resetSpellCheck: vi.fn(),
+const i18nValue = {
+  language: 'en' as const,
+  setLanguage: vi.fn(),
+  t: (key: string, params?: Record<string, string | number>) => {
+    if (params) {
+      return Object.entries(params).reduce(
+        (value, [paramKey, paramValue]) => value.replace(`{{${paramKey}}}`, String(paramValue)),
+        key
+      );
+    }
+    return key;
+  },
 };
 
-test.skip('ReaderView renders book content and controls', () => {
-  mockUseSpellCheck.mockReturnValue(baseSpellCheck);
-  const ref = { current: document.createElement('div') };
+const createContextValue = () => ({
+  selectedBook: mockBook,
+  view: 'reader',
+  setView: vi.fn(),
+  previousView: 'library',
+  currentPage: 1,
+  setCurrentPage: vi.fn(),
+  chat: {
+    chatMessages: [],
+    chatInput: '',
+    setChatInput: vi.fn(),
+    handleSendMessage: vi.fn(),
+    isChatting: false,
+    streamingMessage: '',
+    usageStatus: null,
+    chatContainerRef: { current: document.createElement('div') },
+  },
+  bookActions: {
+    saveCorrections: vi.fn(),
+    handleUpdatePage: vi.fn().mockResolvedValue(undefined),
+    handleReProcessPage: vi.fn(),
+  },
+  setModal: vi.fn(),
+  setIsReaderFullscreen: vi.fn(),
+  fontSize: 18,
+  setFontSize: vi.fn(),
+});
+
+const renderReader = () =>
   render(
-    <ReaderView
-      selectedBook={mockBook}
-      isEditing={false}
-      setIsEditing={vi.fn()}
-      editContent=""
-      setEditContent={vi.fn()}
-      onSaveCorrections={vi.fn()}
-      fontSize={18}
-      setFontSize={vi.fn()}
-      onClose={vi.fn()}
-      onReProcessPage={vi.fn()}
-      onUpdatePage={vi.fn()}
-      currentPage={1}
-      setCurrentPage={vi.fn()}
-      editingPageNum={null}
-      setEditingPageNum={vi.fn()}
-      tempPageText=""
-      setTempPageText={vi.fn()}
-      chatMessages={[]}
-      chatInput=""
-      setChatInput={vi.fn()}
-      onSendMessage={vi.fn()}
-      isChatting={false}
-      chatContainerRef={ref}
-      setModal={vi.fn()}
-    />
+    <I18nContext.Provider value={i18nValue}>
+      <ReaderView />
+    </I18nContext.Provider>
   );
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  Object.defineProperty(window, 'IntersectionObserver', {
+    writable: true,
+    value: class {
+      observe() {}
+      disconnect() {}
+      unobserve() {}
+    }
+  });
+  window.scrollTo = vi.fn();
+  vi.mocked(AuthModule.useAuth).mockReturnValue({
+    isAuthenticated: true,
+    user: { role: 'editor' },
+  } as any);
+  vi.mocked(AuthModule.useIsEditor).mockReturnValue(true);
+});
+
+test('ReaderView renders book content and controls', () => {
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue(createContextValue() as any);
+
+  renderReader();
 
   expect(screen.getByText('Reader Book')).toBeInTheDocument();
-  expect(screen.getByText('History')).toBeInTheDocument();
   expect(screen.getByText('Page 1 content')).toBeInTheDocument();
   expect(screen.getByText('Page 2 content')).toBeInTheDocument();
+  expect(screen.getByText('chat-panel')).toBeInTheDocument();
 });
 
-test.skip('ReaderView handles font size changes', () => {
-  mockUseSpellCheck.mockReturnValue(baseSpellCheck);
-  const setFontSize = vi.fn();
-  const ref = { current: document.createElement('div') };
-  render(
-    <ReaderView
-      selectedBook={mockBook}
-      isEditing={false}
-      setIsEditing={vi.fn()}
-      editContent=""
-      setEditContent={vi.fn()}
-      onSaveCorrections={vi.fn()}
-      fontSize={18}
-      setFontSize={setFontSize}
-      onClose={vi.fn()}
-      onReProcessPage={vi.fn()}
-      onUpdatePage={vi.fn()}
-      currentPage={1}
-      setCurrentPage={vi.fn()}
-      editingPageNum={null}
-      setEditingPageNum={vi.fn()}
-      tempPageText=""
-      setTempPageText={vi.fn()}
-      chatMessages={[]}
-      chatInput=""
-      setChatInput={vi.fn()}
-      onSendMessage={vi.fn()}
-      isChatting={false}
-      chatContainerRef={ref}
-      setModal={vi.fn()}
-    />
-  );
+test('ReaderView handles font size changes', () => {
+  const context = createContextValue();
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue(context as any);
 
-  const increaseBtn = screen.getByTitle('Increase Font Size');
-  const decreaseBtn = screen.getByTitle('Decrease Font Size');
+  renderReader();
 
-  fireEvent.click(increaseBtn);
-  expect(setFontSize).toHaveBeenCalled();
+  const fontControls = screen.getByText('18').parentElement;
+  const buttons = fontControls?.querySelectorAll('button') || [];
+  fireEvent.click(buttons[0] as HTMLButtonElement);
+  fireEvent.click(buttons[1] as HTMLButtonElement);
 
-  fireEvent.click(decreaseBtn);
-  expect(setFontSize).toHaveBeenCalled();
+  expect(context.setFontSize).toHaveBeenCalledTimes(3);
 });
 
-test.skip('ReaderView enters and exits global edit mode', () => {
-  mockUseSpellCheck.mockReturnValue(baseSpellCheck);
-  const setIsEditing = vi.fn();
-  const ref = { current: document.createElement('div') };
-  const { rerender } = render(
-    <ReaderView
-      selectedBook={mockBook}
-      isEditing={false}
-      setIsEditing={setIsEditing}
-      editContent=""
-      setEditContent={vi.fn()}
-      onSaveCorrections={vi.fn()}
-      fontSize={18}
-      setFontSize={vi.fn()}
-      onClose={vi.fn()}
-      onReProcessPage={vi.fn()}
-      onUpdatePage={vi.fn()}
-      currentPage={1}
-      setCurrentPage={vi.fn()}
-      editingPageNum={null}
-      setEditingPageNum={vi.fn()}
-      tempPageText=""
-      setTempPageText={vi.fn()}
-      chatMessages={[]}
-      chatInput=""
-      setChatInput={vi.fn()}
-      onSendMessage={vi.fn()}
-      isChatting={false}
-      chatContainerRef={ref}
-      setModal={vi.fn()}
-    />
+test('ReaderView enters global edit mode and saves corrections', async () => {
+  const context = createContextValue();
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue(context as any);
+  vi.mocked(PersistenceService.getBookContent).mockResolvedValue('[[PAGE 1]]\nFetched content' as any);
+
+  renderReader();
+
+  fireEvent.click(screen.getByText('reader.editBook'));
+
+  await waitFor(() => {
+    expect(PersistenceService.getBookContent).toHaveBeenCalledWith('1');
+  });
+
+  const textarea = await screen.findByRole('textbox');
+  expect(textarea).toHaveValue('[[PAGE 1]]\nFetched content');
+
+  fireEvent.click(screen.getByText('common.save'));
+  expect(context.bookActions.saveCorrections).toHaveBeenCalledWith(
+    mockBook,
+    '[[PAGE 1]]\nFetched content',
+    expect.any(Function)
   );
-
-  const editBtn = screen.getByText('EDIT BOOK');
-  fireEvent.click(editBtn);
-  expect(setIsEditing).toHaveBeenCalledWith(true);
-
-  rerender(
-    <ReaderView
-      selectedBook={mockBook}
-      isEditing={true}
-      setIsEditing={setIsEditing}
-      editContent="Sample Edit"
-      setEditContent={vi.fn()}
-      onSaveCorrections={vi.fn()}
-      fontSize={18}
-      setFontSize={vi.fn()}
-      onClose={vi.fn()}
-      onReProcessPage={vi.fn()}
-      onUpdatePage={vi.fn()}
-      currentPage={1}
-      setCurrentPage={vi.fn()}
-      editingPageNum={null}
-      setEditingPageNum={vi.fn()}
-      tempPageText=""
-      setTempPageText={vi.fn()}
-      chatMessages={[]}
-      chatInput=""
-      setChatInput={vi.fn()}
-      onSendMessage={vi.fn()}
-      isChatting={false}
-      chatContainerRef={ref}
-      setModal={vi.fn()}
-    />
-  );
-
-  expect(screen.getByDisplayValue('Sample Edit')).toBeInTheDocument();
-  expect(screen.getByText('UPDATE KNOWLEDGE BASE')).toBeInTheDocument();
 });
 
-test.skip('ReaderView saves and cancels page edits', () => {
-  const resetSpellCheck = vi.fn();
-  mockUseSpellCheck.mockReturnValue({ ...baseSpellCheck, resetSpellCheck });
+test('ReaderView saves and cancels page edits', async () => {
+  const context = createContextValue();
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue(context as any);
 
-  const setEditingPageNum = vi.fn();
-  const onUpdatePage = vi.fn();
-  const ref = { current: document.createElement('div') };
+  renderReader();
 
-  render(
-    <ReaderView
-      selectedBook={mockBook}
-      isEditing={false}
-      setIsEditing={vi.fn()}
-      editContent=""
-      setEditContent={vi.fn()}
-      onSaveCorrections={vi.fn()}
-      fontSize={18}
-      setFontSize={vi.fn()}
-      onClose={vi.fn()}
-      onReProcessPage={vi.fn()}
-      onUpdatePage={onUpdatePage}
-      currentPage={1}
-      setCurrentPage={vi.fn()}
-      editingPageNum={1}
-      setEditingPageNum={setEditingPageNum}
-      tempPageText="Edited text"
-      setTempPageText={vi.fn()}
-      chatMessages={[]}
-      chatInput=""
-      setChatInput={vi.fn()}
-      onSendMessage={vi.fn()}
-      isChatting={false}
-      chatContainerRef={ref}
-      setModal={vi.fn()}
-    />
-  );
+  fireEvent.click(screen.getByText('edit-1'));
+  fireEvent.click(await screen.findByText('save-1'));
 
-  fireEvent.click(screen.getByText(/SAVE PAGE/i));
-  expect(onUpdatePage).toHaveBeenCalledWith('1', 1, 'Edited text');
-  expect(resetSpellCheck).toHaveBeenCalled();
+  await waitFor(() => {
+    expect(context.bookActions.handleUpdatePage).toHaveBeenCalledWith('1', 1, 'Page 1 content', expect.any(Function));
+  });
 
-  fireEvent.click(screen.getByText(/CANCEL/i));
-  expect(setEditingPageNum).toHaveBeenCalledWith(null);
+  fireEvent.click(screen.getByText('cancel-1'));
 });
 
-test.skip('ReaderView triggers page actions and close logic', () => {
-  mockUseSpellCheck.mockReturnValue({ ...baseSpellCheck });
+test('ReaderView triggers page reprocess actions', () => {
+  const context = createContextValue();
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue(context as any);
 
-  const setEditingPageNum = vi.fn();
-  const setTempPageText = vi.fn();
-  const onReProcessPage = vi.fn();
-  const onClose = vi.fn();
-  const setModal = vi.fn();
-  const setIsEditing = vi.fn();
-  const ref = { current: document.createElement('div') };
+  renderReader();
 
-  const verifiedBook: Book = {
-    ...mockBook,
-    pages: [{ pageNumber: 1, text: 'Page 1 content', status: 'ocr_done' }]
-  };
-
-  render(
-    <ReaderView
-      selectedBook={verifiedBook}
-      isEditing={false}
-      setIsEditing={setIsEditing}
-      editContent=""
-      setEditContent={vi.fn()}
-      onSaveCorrections={vi.fn()}
-      fontSize={18}
-      setFontSize={vi.fn()}
-      onClose={onClose}
-      onReProcessPage={onReProcessPage}
-      onUpdatePage={vi.fn()}
-      currentPage={1}
-      setCurrentPage={vi.fn()}
-      editingPageNum={null}
-      setEditingPageNum={setEditingPageNum}
-      tempPageText=""
-      setTempPageText={setTempPageText}
-      chatMessages={[]}
-      chatInput=""
-      setChatInput={vi.fn()}
-      onSendMessage={vi.fn()}
-      isChatting={false}
-      chatContainerRef={ref}
-      setModal={setModal}
-    />
-  );
-
-  fireEvent.click(screen.getByText(/RE-OCR PAGE/i));
-  expect(setModal).toHaveBeenCalled();
-  const modalConfig = setModal.mock.calls[0][0];
-  modalConfig.onConfirm();
-  expect(onReProcessPage).toHaveBeenCalledWith('1', 1);
-
-  fireEvent.click(screen.getByText(/EDIT PAGE/i));
-  expect(setEditingPageNum).toHaveBeenCalledWith(1);
-  expect(setTempPageText).toHaveBeenCalledWith('Page 1 content');
-
-  fireEvent.click(screen.getByText(/SPELL CHECK/i));
-  expect(setEditingPageNum).toHaveBeenCalledWith(1);
-  expect(setTempPageText).toHaveBeenCalledWith('Page 1 content');
-
-  fireEvent.click(screen.getByLabelText('Close Reader'));
-  expect(onClose).toHaveBeenCalled();
+  fireEvent.click(screen.getByText('reprocess-1'));
+  expect(context.bookActions.handleReProcessPage).toHaveBeenCalledWith('1', 1);
 });

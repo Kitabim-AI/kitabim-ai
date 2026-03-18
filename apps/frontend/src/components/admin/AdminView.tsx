@@ -9,16 +9,22 @@ import { TagEditor } from './TagEditor';
 import { ProgressBar } from './ProgressBar';
 import { ActionMenu } from './ActionMenu';
 import { ProverbDisplay } from '../common/ProverbDisplay';
+import {
+  ADMIN_PIPELINE_STEPS,
+  MILESTONE_FIELD_BY_STEP,
+  PAGE_LEVEL_MILESTONE_STEPS,
+  PIPELINE_STEP,
+} from '../../constants/milestones';
 
 const getStatusTextColor = (step: string | null) => {
   if (!step) return 'text-slate-400';
   switch (step.toLowerCase()) {
-    case 'ready': return 'text-emerald-600 font-bold';
-    case 'embedding': return 'text-orange-600 font-bold';
-    case 'spell_check': return 'text-purple-600 font-bold';
-    case 'chunking': return 'text-indigo-600 font-bold';
-    case 'ocr': return 'text-blue-600 font-bold';
-    case 'error': return 'text-red-500 font-bold';
+    case PIPELINE_STEP.READY: return 'text-emerald-600 font-bold';
+    case PIPELINE_STEP.EMBEDDING: return 'text-orange-600 font-bold';
+    case PIPELINE_STEP.SPELL_CHECK: return 'text-purple-600 font-bold';
+    case PIPELINE_STEP.CHUNKING: return 'text-indigo-600 font-bold';
+    case PIPELINE_STEP.OCR: return 'text-blue-600 font-bold';
+    case PIPELINE_STEP.ERROR: return 'text-red-500 font-bold';
     default: return 'text-slate-400';
   }
 };
@@ -44,7 +50,7 @@ const getPipelineIconClass = (
   const total = book.totalPages || 0;
 
   // For page-level steps, use the aggregate counts to determine if finished
-  const isPageLevel = ['ocr', 'chunking', 'embedding', 'spell_check'].includes(stepKey);
+  const isPageLevel = PAGE_LEVEL_MILESTONE_STEPS.includes(stepKey as typeof PAGE_LEVEL_MILESTONE_STEPS[number]);
 
   // Special case: Summary is determined by hasSummary flag
   const isComplete = stepKey === 'summary'
@@ -75,19 +81,11 @@ const getPipelineIconClass = (
 
 const getMilestoneColor = (book: any, stepKey: string) => {
   // Map step key to milestone field
-  const milestoneFieldMap: Record<string, string> = {
-    'ocr': 'ocrMilestone',
-    'chunking': 'chunkingMilestone',
-    'embedding': 'embeddingMilestone',
-    'spell_check': 'spellCheckMilestone',
-    'summary': 'hasSummary', // Special case
-  };
-
-  const milestoneField = milestoneFieldMap[stepKey];
+  const milestoneField = MILESTONE_FIELD_BY_STEP[stepKey as keyof typeof MILESTONE_FIELD_BY_STEP];
   if (!milestoneField) return 'text-slate-300';
 
   // Special case for summary: use boolean flag
-  if (stepKey === 'summary') {
+  if (stepKey === PIPELINE_STEP.SUMMARY) {
     return book.hasSummary ? 'text-emerald-500' : 'text-slate-300';
   }
 
@@ -111,7 +109,7 @@ const getMilestoneColor = (book: any, stepKey: string) => {
 const isBookReadable = (book: any): boolean => {
   // A book is readable if OCR has started (not idle) or if status is ready
   // This replaces the old check: !book.pipelineStep && book.status === 'pending'
-  return book.status === 'ready' ||
+  return book.status === PIPELINE_STEP.READY ||
          book.ocrMilestone !== 'idle' ||
          (book.status !== 'pending');
 };
@@ -371,11 +369,11 @@ export const AdminView: React.FC = () => {
                               
                               {/* Mobile Pipeline Progress */}
                               <div className="flex md:hidden items-center gap-1.5 mt-2 opacity-80">
-                                <ScanText size={14} className={book.pipelineStats ? getPipelineIconClass(book, 'ocr', false, false) : getMilestoneColor(book, 'ocr')} />
-                                <Scissors size={14} className={book.pipelineStats ? getPipelineIconClass(book, 'chunking', false, false) : getMilestoneColor(book, 'chunking')} />
-                                <Cuboid size={14} className={book.pipelineStats ? getPipelineIconClass(book, 'embedding', false, false) : getMilestoneColor(book, 'embedding')} />
-                                <Wand2 size={14} className={book.pipelineStats ? getPipelineIconClass(book, 'summary', false, false) : getMilestoneColor(book, 'summary')} />
-                                <BookOpenCheck size={14} className={book.pipelineStats ? getPipelineIconClass(book, 'spell_check', false, false) : getMilestoneColor(book, 'spell_check')} />
+                                <ScanText size={14} className={book.pipelineStats ? getPipelineIconClass(book, PIPELINE_STEP.OCR, false, false) : getMilestoneColor(book, PIPELINE_STEP.OCR)} />
+                                <Scissors size={14} className={book.pipelineStats ? getPipelineIconClass(book, PIPELINE_STEP.CHUNKING, false, false) : getMilestoneColor(book, PIPELINE_STEP.CHUNKING)} />
+                                <Cuboid size={14} className={book.pipelineStats ? getPipelineIconClass(book, PIPELINE_STEP.EMBEDDING, false, false) : getMilestoneColor(book, PIPELINE_STEP.EMBEDDING)} />
+                                <Wand2 size={14} className={book.pipelineStats ? getPipelineIconClass(book, PIPELINE_STEP.SUMMARY, false, false) : getMilestoneColor(book, PIPELINE_STEP.SUMMARY)} />
+                                <BookOpenCheck size={14} className={book.pipelineStats ? getPipelineIconClass(book, PIPELINE_STEP.SPELL_CHECK, false, false) : getMilestoneColor(book, PIPELINE_STEP.SPELL_CHECK)} />
                               </div>
                             </button>
                           )}
@@ -436,11 +434,11 @@ export const AdminView: React.FC = () => {
                           <div className="flex items-center gap-2.5">
                             {/* Baseline Pipeline Icons with Lazy Loading Tooltips */}
                             {[
-                              { key: 'ocr', icon: ScanText, label: 'admin.pipeline.ocr' },
-                              { key: 'chunking', icon: Scissors, label: 'admin.pipeline.chunking' },
-                              { key: 'embedding', icon: Cuboid, label: 'admin.pipeline.embedding' },
-                              { key: 'summary', icon: Wand2, label: 'admin.pipeline.summary' },
-                              { key: 'spell_check', icon: BookOpenCheck, label: 'admin.pipeline.spellCheck' }
+                              { ...ADMIN_PIPELINE_STEPS[0], icon: ScanText },
+                              { ...ADMIN_PIPELINE_STEPS[1], icon: Scissors },
+                              { ...ADMIN_PIPELINE_STEPS[2], icon: Cuboid },
+                              { ...ADMIN_PIPELINE_STEPS[3], icon: Wand2 },
+                              { ...ADMIN_PIPELINE_STEPS[4], icon: BookOpenCheck }
                             ].map(({ key, icon: Icon, label }) => {
                               const cacheKey = `${book.id}:${key}`;
                               const stats = detailedStats[cacheKey];

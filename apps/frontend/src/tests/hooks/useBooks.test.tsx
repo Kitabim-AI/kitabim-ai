@@ -1,33 +1,22 @@
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { useBooks } from '@/src/hooks/useBooks';
 import { PersistenceService } from '@/src/services/persistenceService';
 import { expect, test, vi, beforeEach } from 'vitest';
-import React from 'react';
-import { AuthProvider } from '@/src/hooks/useAuth';
-import { AppProvider } from '@/src/context/AppContext';
-import { NotificationProvider } from '@/src/context/NotificationContext';
 
 vi.mock('@/src/services/persistenceService', () => ({
   PersistenceService: {
     getGlobalLibrary: vi.fn(),
-    getRandomProverb: vi.fn().mockResolvedValue({ text: 'Test Proverb', author: 'Author' })
   }
 }));
 
-const Wrapper = ({ children }: { children: React.ReactNode }) => (
-  <NotificationProvider>
-    <AuthProvider>
-      <AppProvider>
-        {children}
-      </AppProvider>
-    </AuthProvider>
-  </NotificationProvider>
-);
+vi.mock('@/src/hooks/useAuth', () => ({
+  useAuth: vi.fn(() => ({
+    isAuthenticated: false,
+  })),
+}));
 
 beforeEach(() => {
   vi.clearAllMocks();
-  sessionStorage.clear();
-  (PersistenceService.getRandomProverb as any).mockResolvedValue({ text: 'Mock Proverb', author: 'Author' });
 });
 
 test('useBooks fetches library data on refresh', async () => {
@@ -36,60 +25,67 @@ test('useBooks fetches library data on refresh', async () => {
     total: 1,
     totalReady: 1
   };
-  (PersistenceService.getGlobalLibrary as any).mockResolvedValue(mockResponse);
+  vi.mocked(PersistenceService.getGlobalLibrary).mockResolvedValue(mockResponse as any);
 
-  const { result } = renderHook(() => useBooks('library', '', 10, 1), { wrapper: Wrapper });
+  const { result } = renderHook(() => useBooks('library', '', 10, 1));
 
-  // Initial call from useEffect will consume one mock or the default mockResolvedValue
-  // Wait for loading to finish
-  await act(async () => {
-    // Wait for the effect
+  await waitFor(() => {
+    expect(result.current.books).toHaveLength(1);
   });
 
   await act(async () => {
-    await result.current.refreshLibrary();
+    result.current.refreshLibrary();
   });
 
-  expect(result.current.books).toHaveLength(1);
   expect(result.current.totalBooks).toBe(1);
-  expect(PersistenceService.getGlobalLibrary).toHaveBeenCalled();
+  expect(PersistenceService.getGlobalLibrary).toHaveBeenCalledTimes(2);
 });
 
-test.skip('useBooks handles sorting', () => {
-  // Skipping as useBooks no longer supports toggleSort
+test('useBooks keeps uploadDate-desc as the default sort config', () => {
+  vi.mocked(PersistenceService.getGlobalLibrary).mockResolvedValue({
+    books: [],
+    total: 0,
+    totalReady: 0,
+  } as any);
+
+  const { result } = renderHook(() => useBooks('library', '', 10, 1));
+
+  return waitFor(() => {
+    expect(result.current.sortConfig).toEqual({
+      key: 'uploadDate',
+      direction: 'desc',
+    });
+  });
 });
 
 test('useBooks handles loadMoreShelf', async () => {
   const firstBatch = {
-    books: Array(12).fill(0).map((_, i) => ({ id: `${i}`, title: `T${i}` })),
-    total: 24,
-    totalReady: 24
+    books: Array.from({ length: 40 }, (_, i) => ({ id: `${i}`, title: `T${i}` })),
+    total: 80,
+    totalReady: 80,
   };
   const secondBatch = {
-    books: Array(12).fill(0).map((_, i) => ({ id: `${i + 12}`, title: `T${i + 12}` })),
-    total: 24,
-    totalReady: 24
+    books: Array.from({ length: 40 }, (_, i) => ({ id: `${i + 40}`, title: `T${i + 40}` })),
+    total: 80,
+    totalReady: 80,
   };
 
-  (PersistenceService.getGlobalLibrary as any).mockImplementation((page: number) => {
-    if (page === 1) return Promise.resolve(firstBatch);
-    if (page === 2) return Promise.resolve(secondBatch);
-    return Promise.resolve({ books: [], total: 24, totalReady: 24 });
+  vi.mocked(PersistenceService.getGlobalLibrary).mockImplementation((page: number) => {
+    if (page === 1) return Promise.resolve(firstBatch as any);
+    if (page === 2) return Promise.resolve(secondBatch as any);
+    return Promise.resolve({ books: [], total: 80, totalReady: 80 } as any);
   });
 
-  const { result } = renderHook(() => useBooks('library', '', 10, 1), { wrapper: Wrapper });
+  const { result } = renderHook(() => useBooks('library', '', 10, 1));
 
-  // Wait for initial load
-  await act(async () => {
-    // useEffect load
+  await waitFor(() => {
+    expect(result.current.books).toHaveLength(40);
   });
-
-  expect(result.current.books).toHaveLength(12);
 
   await act(async () => {
     await result.current.loadMoreShelf();
   });
 
-  expect(result.current.books).toHaveLength(24);
+  expect(result.current.books).toHaveLength(80);
   expect(result.current.hasMoreShelf).toBe(false);
 });

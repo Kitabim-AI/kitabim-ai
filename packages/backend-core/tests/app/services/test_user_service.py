@@ -25,8 +25,8 @@ def mock_user_db():
         provider="google",
         provider_id="123",
         is_active=True,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc)
     )
     return u
 
@@ -63,6 +63,7 @@ async def test_get_user_by_provider(mock_user_db):
 @pytest.mark.asyncio
 async def test_create_user():
     session = AsyncMock()
+    session.add = MagicMock()
     with patch("app.utils.security.hash_ip_if_present", return_value="hashed_ip"):
         user = await create_user(
             session,

@@ -1,7 +1,6 @@
 import pytest
 import json
-import asyncio
-from unittest.mock import AsyncMock, patch, MagicMock, PropertyMock
+from unittest.mock import AsyncMock, patch, PropertyMock
 from pydantic import BaseModel
 from app.services.cache_service import CacheService
 
@@ -24,6 +23,7 @@ async def test_cache_get_hit(cache_service):
         
         with patch.object(CacheService, "redis", new_callable=PropertyMock) as mock_redis_prop:
             mock_redis_prop.return_value = mock_redis
+            cache_service._circuit_breaker.is_open = AsyncMock(return_value=False)
             val = await cache_service.get("test-key")
             assert val == {"a": 1}
 
@@ -38,6 +38,7 @@ async def test_cache_get_miss(cache_service):
         
         with patch.object(CacheService, "redis", new_callable=PropertyMock) as mock_redis_prop:
             mock_redis_prop.return_value = mock_redis
+            cache_service._circuit_breaker.is_open = AsyncMock(return_value=False)
             val = await cache_service.get("missing")
             assert val is None
 
@@ -51,6 +52,8 @@ async def test_cache_set_pydantic(cache_service):
         mock_redis = AsyncMock()
         with patch.object(CacheService, "redis", new_callable=PropertyMock) as mock_redis_prop:
             mock_redis_prop.return_value = mock_redis
+            cache_service._circuit_breaker.is_open = AsyncMock(return_value=False)
+            cache_service._circuit_breaker._on_success = AsyncMock()
             model = MockModel(id=1, name="test")
             await cache_service.set("key", model)
             assert mock_redis.setex.called

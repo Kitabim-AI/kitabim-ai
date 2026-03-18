@@ -1,18 +1,72 @@
 import { screen, fireEvent } from '@testing-library/react';
-import { renderWithProviders as render } from '@/src/tests/test-utils';
+import { render } from '@testing-library/react';
 import { ChatInterface } from '@/src/components/chat/ChatInterface';
-import { expect, test, vi } from 'vitest';
+import { expect, test, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { Message } from '@shared/types';
+import * as AuthModule from '@/src/hooks/useAuth';
+import * as AppContextModule from '@/src/context/AppContext';
+import { I18nContext } from '@/src/i18n/I18nContext';
+
+vi.mock('@/src/hooks/useAuth', () => ({
+  useAuth: vi.fn(),
+}));
+
+vi.mock('@/src/context/AppContext', () => ({
+  useAppContext: vi.fn(),
+}));
+
+vi.mock('@/src/components/auth/AuthButton', () => ({
+  OAuthButtonGroup: () => <div>oauth-buttons</div>,
+}));
+
+vi.mock('@/src/components/common/MarkdownContent', () => ({
+  MarkdownContent: ({ content }: { content: string }) => <div>{content}</div>,
+}));
+
+vi.mock('@/src/components/chat/ReferenceModal', () => ({
+  ReferenceModal: () => null,
+}));
+
+vi.mock('@/src/components/common/ProverbDisplay', () => ({
+  ProverbDisplay: ({ defaultText }: { defaultText: string }) => <div>{defaultText}</div>,
+}));
+
+const i18nValue = {
+  language: 'en' as const,
+  setLanguage: vi.fn(),
+  t: (key: string, params?: Record<string, string | number>) => {
+    if (params) {
+      return Object.entries(params).reduce(
+        (value, [paramKey, paramValue]) => value.replace(`{{${paramKey}}}`, String(paramValue)),
+        key
+      );
+    }
+    return key;
+  },
+};
 
 const mockMessages: Message[] = [
   { role: 'user', text: 'Hello' },
   { role: 'model', text: 'Salam' }
 ];
 
-test.skip('ChatInterface renders global chat correctly', () => {
-  const ref = { current: document.createElement('div') };
+const renderChat = (ui: React.ReactElement) =>
   render(
+    <I18nContext.Provider value={i18nValue}>
+      {ui}
+    </I18nContext.Provider>
+  );
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(AuthModule.useAuth).mockReturnValue({ isAuthenticated: true } as any);
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue({ fontSize: 18 } as any);
+});
+
+test('ChatInterface renders global chat correctly', () => {
+  const ref = { current: document.createElement('div') };
+  renderChat(
     <ChatInterface
       type="global"
       totalReady={5}
@@ -25,14 +79,14 @@ test.skip('ChatInterface renders global chat correctly', () => {
     />
   );
 
-  expect(screen.getByText('كىتابىم خەزىنىسى')).toBeInTheDocument();
-  expect(screen.getByText(/ئىزدەۋاتىدۇ 5/i)).toBeInTheDocument();
-  expect(screen.getByText(/خۇش كەپسىز/i)).toBeInTheDocument();
+  expect(screen.getByText('chat.globalAssistant')).toBeInTheDocument();
+  expect(screen.getByText('chat.welcome.title')).toBeInTheDocument();
+  expect(screen.getByText('chat.welcome.message')).toBeInTheDocument();
 });
 
-test.skip('ChatInterface renders book chat correctly', () => {
+test('ChatInterface renders book chat correctly', () => {
   const ref = { current: document.createElement('div') };
-  render(
+  renderChat(
     <ChatInterface
       type="book"
       chatMessages={mockMessages}
@@ -45,19 +99,17 @@ test.skip('ChatInterface renders book chat correctly', () => {
     />
   );
 
-  expect(screen.getByText('كىتابىم ياردەمچىسى')).toBeInTheDocument();
   expect(screen.getByText('Hello')).toBeInTheDocument();
   expect(screen.getByText('Salam')).toBeInTheDocument();
-  expect(screen.getByText(/بەت:\s*3/i)).toBeInTheDocument();
   expect(screen.getByDisplayValue('my question')).toBeInTheDocument();
 });
 
-test.skip('ChatInterface handles input change and send message', () => {
+test('ChatInterface handles input change and send message', () => {
   const setChatInput = vi.fn();
   const onSendMessage = vi.fn();
   const ref = { current: document.createElement('div') };
 
-  render(
+  const { rerender } = renderChat(
     <ChatInterface
       type="book"
       chatMessages={[]}
@@ -69,22 +121,36 @@ test.skip('ChatInterface handles input change and send message', () => {
     />
   );
 
-  const input = screen.getByPlaceholderText(/سوئال سوراش/i);
+  const input = screen.getByPlaceholderText('chat.inputPlaceholderBook');
   fireEvent.change(input, { target: { value: 'test' } });
   expect(setChatInput).toHaveBeenCalledWith('test');
 
-  const sendBtn = screen.getByRole('button'); // Send button
+  rerender(
+    <I18nContext.Provider value={i18nValue}>
+      <ChatInterface
+        type="book"
+        chatMessages={[]}
+        chatInput="test"
+        setChatInput={setChatInput}
+        onSendMessage={onSendMessage}
+        isChatting={false}
+        chatContainerRef={ref}
+      />
+    </I18nContext.Provider>
+  );
+
+  const sendBtn = screen.getAllByRole('button').at(-1)!;
   fireEvent.click(sendBtn);
   expect(onSendMessage).toHaveBeenCalled();
 });
 
-test.skip('ChatInterface shows loading state', () => {
+test('ChatInterface shows loading state', () => {
   const ref = { current: document.createElement('div') };
-  render(
+  renderChat(
     <ChatInterface
       type="book"
       chatMessages={[]}
-      chatInput=""
+      chatInput="question"
       setChatInput={vi.fn()}
       onSendMessage={vi.fn()}
       isChatting={true}
@@ -92,14 +158,13 @@ test.skip('ChatInterface shows loading state', () => {
     />
   );
 
-  // Loader should be present. Loader2 doesn't have text, but we can check if the button is disabled.
-  expect(screen.getByRole('button')).toBeDisabled();
+  expect(screen.getAllByRole('button').at(-1)).toBeDisabled();
 });
 
 test('ChatInterface renders global chat messages and close button', () => {
   const onClose = vi.fn();
   const ref = { current: document.createElement('div') };
-  render(
+  renderChat(
     <ChatInterface
       type="global"
       totalReady={1}
@@ -115,15 +180,13 @@ test('ChatInterface renders global chat messages and close button', () => {
 
   expect(screen.getByText('Hello')).toBeInTheDocument();
   expect(screen.getByText('Salam')).toBeInTheDocument();
-
-  const buttons = screen.getAllByRole('button');
-  fireEvent.click(buttons[0]);
+  fireEvent.click(screen.getAllByRole('button')[0]);
   expect(onClose).toHaveBeenCalled();
 });
 
-test.skip('ChatInterface global send button disables when input empty', () => {
+test('ChatInterface global send button disables when input empty', () => {
   const ref = { current: document.createElement('div') };
-  render(
+  renderChat(
     <ChatInterface
       type="global"
       totalReady={1}
@@ -136,16 +199,14 @@ test.skip('ChatInterface global send button disables when input empty', () => {
     />
   );
 
-  const sendButtons = screen.getAllByRole('button');
-  const sendBtn = sendButtons[sendButtons.length - 1];
-  expect(sendBtn).toBeDisabled();
+  expect(screen.getAllByRole('button').at(-1)).toBeDisabled();
 });
 
-test.skip('ChatInterface global input sends on Enter', () => {
+test('ChatInterface global input sends on Enter', () => {
   const onSendMessage = vi.fn();
   const ref = { current: document.createElement('div') };
 
-  render(
+  renderChat(
     <ChatInterface
       type="global"
       totalReady={1}
@@ -158,14 +219,14 @@ test.skip('ChatInterface global input sends on Enter', () => {
     />
   );
 
-  const input = screen.getByPlaceholderText(/سۇئال سوراڭ/i);
+  const input = screen.getByPlaceholderText('chat.inputPlaceholderBook');
   fireEvent.keyDown(input, { key: 'Enter' });
   expect(onSendMessage).toHaveBeenCalled();
 });
 
-test.skip('ChatInterface shows book helper message when empty', () => {
+test('ChatInterface shows book helper message when empty', () => {
   const ref = { current: document.createElement('div') };
-  render(
+  renderChat(
     <ChatInterface
       type="book"
       chatMessages={[]}
@@ -177,5 +238,5 @@ test.skip('ChatInterface shows book helper message when empty', () => {
     />
   );
 
-  expect(screen.getByText(/مەزمۇنلارنى تېپىشقا ياردەم/i)).toBeInTheDocument();
+  expect(screen.getByText('chat.bookAssistantWelcome')).toBeInTheDocument();
 });

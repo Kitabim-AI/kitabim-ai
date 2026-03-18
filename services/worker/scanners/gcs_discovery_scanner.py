@@ -167,5 +167,3 @@ def _extract_pdf_metadata(path, remote_path: str) -> tuple[str | None, str | Non
 
 def _pick_title(title_from_pdf: str | None, file_name: str) -> str:
     return file_name.removesuffix(".pdf")
-
-

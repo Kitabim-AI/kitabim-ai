@@ -14,6 +14,12 @@ import { PersistenceService } from '../../services/persistenceService';
 import { PageItem } from './PageItem';
 import VirtualScrollReader from './VirtualScrollReader';
 
+const normalizeReaderCategory = (category: string) =>
+  category
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/^['"\s]+|['"\s]+$/g, '');
+
 export const ReaderView: React.FC = () => {
   const {
     selectedBook,
@@ -37,7 +43,7 @@ export const ReaderView: React.FC = () => {
   const { isAuthenticated, user } = useAuth();
   const isGuestOrReader = !isAuthenticated || (user?.role === 'reader');
   const usesArabicReaderFont = (selectedBook.categories || []).some(
-    (category) => category.replace(/^['"\s]+|['"\s]+$/g, '') === 'ئەرەبچە'
+    (category) => normalizeReaderCategory(category) === 'ئەرەبچە'
   );
   const readerContentFontFamily = usesArabicReaderFont ? '"Adobe Arabic", serif' : undefined;
   const readerContentFontClassName = usesArabicReaderFont ? 'reader-font-adobe' : undefined;

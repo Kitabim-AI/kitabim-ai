@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextvars
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any, Dict
 
 request_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar("request_id", default=None)
@@ -12,7 +12,7 @@ request_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar("req
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload: Dict[str, Any] = {
-            "ts": datetime.utcnow().isoformat() + "Z",
+            "ts": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),

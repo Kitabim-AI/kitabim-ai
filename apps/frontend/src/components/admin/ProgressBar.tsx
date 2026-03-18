@@ -1,5 +1,6 @@
 import React from 'react';
 import { Book } from '@shared/types';
+import { PIPELINE_STEP } from '../../constants/milestones';
 
 interface ProgressBarProps {
   book: Book;
@@ -20,24 +21,24 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({ book }) => {
   const percent = (completedPages / (book.totalPages || 1)) * 100;
 
   // Determine status and colors
-  const step = book.pipelineStep || (book.status === 'ready' ? 'ready' : (book.status === 'error' ? 'error' : null));
+  const step = book.pipelineStep || (book.status === PIPELINE_STEP.READY ? PIPELINE_STEP.READY : (book.status === PIPELINE_STEP.ERROR ? PIPELINE_STEP.ERROR : null));
 
   let color: string;
   let bgColor: string = 'bg-[#0369a1]/20';
 
-  if (step === 'ready') {
+  if (step === PIPELINE_STEP.READY) {
     color = 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]';
     bgColor = 'bg-emerald-100/80';
-  } else if (step === 'embedding') {
+  } else if (step === PIPELINE_STEP.EMBEDDING) {
     color = 'bg-orange-500 animate-pulse shadow-[0_0_8px_rgba(249,115,22,0.4)]';
     bgColor = 'bg-orange-100/80';
-  } else if (step === 'chunking') {
+  } else if (step === PIPELINE_STEP.CHUNKING) {
     color = 'bg-indigo-500 animate-pulse shadow-[0_0_6px_rgba(99,102,241,0.3)]';
     bgColor = 'bg-indigo-100/80';
-  } else if (step === 'ocr') {
+  } else if (step === PIPELINE_STEP.OCR) {
     color = 'bg-blue-500 animate-pulse shadow-[0_0_6px_rgba(59,130,246,0.3)]';
     bgColor = 'bg-blue-100/80';
-  } else if (step === 'error') {
+  } else if (step === PIPELINE_STEP.ERROR) {
     color = 'bg-red-500';
     bgColor = 'bg-red-100/80';
   } else {

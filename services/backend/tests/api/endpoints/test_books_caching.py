@@ -1,15 +1,21 @@
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-from fastapi.testclient import TestClient
+from unittest.mock import AsyncMock
+import sys
+from pathlib import Path
+import importlib.util
 
-# Verify import works
-try:
-    import api.endpoints.books
-except ImportError:
-    # If not in PYTHONPATH, try adding it
-    import sys
-    import os
-    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
+BACKEND_DIR = Path(__file__).resolve().parents[3]
+BACKEND_CORE_DIR = Path(__file__).resolve().parents[5] / "packages" / "backend-core"
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+if str(BACKEND_CORE_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_CORE_DIR))
+
+BOOKS_PATH = BACKEND_DIR / "api" / "endpoints" / "books.py"
+spec = importlib.util.spec_from_file_location("test_books_endpoint_module", BOOKS_PATH)
+books_endpoint = importlib.util.module_from_spec(spec)
+assert spec is not None and spec.loader is not None
+spec.loader.exec_module(books_endpoint)
 
 @pytest.fixture
 def mock_cache(monkeypatch):
@@ -24,24 +30,27 @@ def mock_cache(monkeypatch):
         cache_skip_for_admins = False
         cache_ttl_books = 600
     
-    monkeypatch.setattr("api.endpoints.books.settings", MockSettings())
-    monkeypatch.setattr("api.endpoints.books.cache_service", m)
+    monkeypatch.setattr(books_endpoint, "settings", MockSettings())
+    monkeypatch.setattr(books_endpoint, "cache_service", m)
     return m
 
-def test_get_books_uses_cache(mock_cache, monkeypatch):
-    monkeypatch.setattr("api.endpoints.books.get_current_user_optional", lambda: None)
-    
+@pytest.mark.asyncio
+async def test_get_books_uses_cache(mock_cache):
     mock_cache.get.return_value = {
-        "books": [], 
-        "total": 0, 
-        "totalReady": 0, 
-        "page": 1, 
-        "pageSize": 20
+        "books": [],
+        "total": 0,
+        "totalReady": 0,
+        "page": 1,
+        "pageSize": 20,
     }
-    
-    from services.backend.main import app
-    client = TestClient(app)
-    
-    response = client.get("/api/books/")
-    assert response.status_code == 200
+
+    result = await books_endpoint.get_books(
+        page=1,
+        pageSize=20,
+        current_user=None,
+        session=AsyncMock(),
+    )
+
+    assert result.total == 0
+    assert result.page == 1
     mock_cache.get.assert_called_once()

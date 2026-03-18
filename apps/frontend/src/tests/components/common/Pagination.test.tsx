@@ -4,7 +4,7 @@ import { Pagination } from '@/src/components/common/Pagination';
 import { expect, test, vi } from 'vitest';
 import React from 'react';
 
-test.skip('Pagination renders statistics correctly', () => {
+test('Pagination renders statistics correctly', () => {
   render(
     <Pagination
       page={1}
@@ -15,16 +15,14 @@ test.skip('Pagination renders statistics correctly', () => {
     />
   );
 
-  expect(screen.getByText(/Showing/i)).toBeInTheDocument();
-  // Using getAllByText because '1' appears in statistics and in page button
-  expect(screen.getAllByText('1').length).toBeGreaterThan(0);
-  expect(screen.getAllByText('10').length).toBeGreaterThan(0);
-  expect(screen.getByText('25')).toBeInTheDocument();
+  expect(screen.getByText('pagination.showingLabel')).toBeInTheDocument();
+  expect(screen.getByText('admin.users.pagination')).toBeInTheDocument();
+  expect(screen.getByDisplayValue('10')).toBeInTheDocument();
 });
 
-test.skip('Pagination handles page change', () => {
+test('Pagination handles page change', () => {
   const onPageChange = vi.fn();
-  render(
+  const { container } = render(
     <Pagination
       page={1}
       pageSize={10}
@@ -34,8 +32,8 @@ test.skip('Pagination handles page change', () => {
     />
   );
 
-  const nextBtn = screen.getByTitle('Next Page');
-  fireEvent.click(nextBtn);
+  const buttons = container.querySelectorAll('button');
+  fireEvent.click(buttons[buttons.length - 1]);
   expect(onPageChange).toHaveBeenCalledWith(2);
 });
 
@@ -56,8 +54,8 @@ test('Pagination handles page size change', () => {
   expect(onPageSizeChange).toHaveBeenCalledWith(20);
 });
 
-test.skip('Pagination disables buttons correctly', () => {
-  const { rerender } = render(
+test('Pagination disables buttons correctly', () => {
+  const { container, rerender } = render(
     <Pagination
       page={1}
       pageSize={10}
@@ -67,8 +65,9 @@ test.skip('Pagination disables buttons correctly', () => {
     />
   );
 
-  expect(screen.getByTitle('Previous Page')).toBeDisabled();
-  expect(screen.getByTitle('Next Page')).toBeDisabled();
+  let buttons = container.querySelectorAll('button');
+  expect(buttons[0]).toBeDisabled();
+  expect(buttons[buttons.length - 1]).toBeDisabled();
 
   rerender(
     <Pagination
@@ -80,6 +79,7 @@ test.skip('Pagination disables buttons correctly', () => {
     />
   );
 
-  expect(screen.getByTitle('Previous Page')).not.toBeDisabled();
-  expect(screen.getByTitle('Next Page')).not.toBeDisabled();
+  buttons = container.querySelectorAll('button');
+  expect(buttons[0]).not.toBeDisabled();
+  expect(buttons[buttons.length - 1]).not.toBeDisabled();
 });
