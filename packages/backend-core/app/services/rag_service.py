@@ -611,7 +611,7 @@ class RAGService:
                         summary_cache_key = cache_config.KEY_RAG_SUMMARY_SEARCH.format(hash=emb_hash)
                         
                         book_ids = await cache_service.get(summary_cache_key)
-                        if not book_ids:
+                        if book_ids is None:
                             book_ids = await summaries_repo.summary_search(
                                 query_embedding=query_vector,
                                 limit=settings.summary_top_k,
@@ -713,7 +713,7 @@ class RAGService:
 
             try:
                 top_results = await cache_service.get(search_cache_key)
-                if not top_results:
+                if top_results is None:
                     # Perform vector similarity search using PostgreSQL
                     similar_chunks = await chunks_repo.similarity_search(
                         query_embedding=query_vector,
@@ -962,13 +962,13 @@ class RAGService:
                 # query_vector is already computed and reused here — no extra API call.
                 if query_vector:
                     try:
-                        from app.db.repositories.book_summaries import BookSummariesRepository
+                        summaries_repo = BookSummariesRepository(session)
                         # Cache Lookup (Level 3)
                         emb_hash = hashlib.md5(str(query_vector).encode()).hexdigest()
                         summary_cache_key = cache_config.KEY_RAG_SUMMARY_SEARCH.format(hash=emb_hash)
                         
                         book_ids = await cache_service.get(summary_cache_key)
-                        if not book_ids:
+                        if book_ids is None:
                             book_ids = await summaries_repo.summary_search(
                                 query_embedding=query_vector,
                                 limit=settings.summary_top_k,
@@ -1068,7 +1068,7 @@ class RAGService:
 
             try:
                 top_results = await cache_service.get(search_cache_key)
-                if not top_results:
+                if top_results is None:
                     similar_chunks = await chunks_repo.similarity_search(
                         query_embedding=query_vector,
                         book_ids=book_ids if book_ids else None,

@@ -29,15 +29,15 @@ class BookMilestoneService:
         if done == total:
             return 'complete'
 
+        # All pages failed
+        if failed == total:
+            return 'failed'
+
         # All pages finished (some failed, some succeeded)
         if done + failed == total:
             if failed > 0:
                 return 'partial_failure'
             return 'complete'
-
-        # All pages failed
-        if failed == total:
-            return 'failed'
 
         # Mixed state (some done, some pending/active)
         if done > 0 or active > 0 or failed > 0:
@@ -112,7 +112,8 @@ class BookMilestoneService:
             book.embedding_milestone = embedding_milestone
             book.spell_check_milestone = spell_check_milestone
 
-            await db.commit()
+            # Removed internal commit to allow caller-managed transactions
+            # await db.commit()
 
     @staticmethod
     async def update_book_milestone_for_step(
@@ -190,4 +191,5 @@ class BookMilestoneService:
 
         if book:
             setattr(book, config['book_field'], milestone_status)
-            await db.commit()
+            # Removed internal commit to allow caller-managed transactions
+            # await db.commit()

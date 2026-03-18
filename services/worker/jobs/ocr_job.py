@@ -162,6 +162,7 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
     # Update book-level OCR milestone after processing batch
     async with db_session.async_session_factory() as session:
         await BookMilestoneService.update_book_milestone_for_step(session, book_id, 'ocr')
+        await session.commit()
 
     log_json(logger, logging.INFO, "OCR job completed",
              book_id=book_id, page_count=len(page_ids))

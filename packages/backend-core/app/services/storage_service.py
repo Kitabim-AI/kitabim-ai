@@ -145,19 +145,37 @@ class GCSStorageProvider(StorageProvider):
     """Google Cloud Storage provider with dual bucket support"""
     
     def __init__(self, data_bucket: str, media_bucket: str):
-        from google.cloud import storage
-        self.client = storage.Client()
-        self.data_bucket_name = data_bucket
-        self.media_bucket_name = media_bucket
-        self.data_bucket = self.client.bucket(data_bucket)
-        self.media_bucket = self.client.bucket(media_bucket)
+        self._client = None
+        self._data_bucket_name = data_bucket
+        self._media_bucket_name = media_bucket
+        self._data_bucket = None
+        self._media_bucket = None
+
+    @property
+    def client(self):
+        if self._client is None:
+            from google.cloud import storage
+            self._client = storage.Client()
+        return self._client
+
+    @property
+    def data_bucket(self):
+        if self._data_bucket is None:
+            self._data_bucket = self.client.bucket(self._data_bucket_name)
+        return self._data_bucket
+
+    @property
+    def media_bucket(self):
+        if self._media_bucket is None:
+            self._media_bucket = self.client.bucket(self._media_bucket_name)
+        return self._media_bucket
 
     def _get_bucket_and_path(self, remote_path: str):
         """Helper to determine which bucket to use based on path prefix"""
         if remote_path.startswith("covers/"):
-            return self.media_bucket, self.media_bucket_name, remote_path
+            return self.media_bucket, self._media_bucket_name, remote_path
         # Default all other paths (including uploads/) to the private data bucket
-        return self.data_bucket, self.data_bucket_name, remote_path
+        return self.data_bucket, self._data_bucket_name, remote_path
 
     async def upload_file(self, local_path: Path, remote_path: str) -> str:
         bucket, bucket_name, final_path = self._get_bucket_and_path(remote_path)
@@ -201,7 +219,7 @@ class GCSStorageProvider(StorageProvider):
 
         bucket, bucket_name, final_path = self._get_bucket_and_path(remote_path)
         # For the media bucket, return the direct public URL
-        if bucket_name == self.media_bucket_name:
+        if bucket_name == self._media_bucket_name:
             return f"https://storage.googleapis.com/{bucket_name}/{final_path}"
         # For the private bucket, we don't have a simple public URL (would need signed URLs)
         return f"/api/storage/{remote_path}"

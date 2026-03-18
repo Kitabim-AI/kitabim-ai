@@ -395,7 +395,7 @@ async def run_spell_check_for_page(
                     
                     # Use negative lookbehind/lookahead with Uyghur character range as word boundaries
                     # \b doesn't work well with non-ASCII.
-                    boundaries = r"[\u0621-\u06FF\u0750-\u077F\FB50-\uFDFF\uFE70-\uFEFF\u200C\u200D]"
+                    boundaries = r"[\u0621-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF\u200C\u200D]"
                     pattern = f"(?<!{boundaries}){misspelled_regex}(?!{boundaries})"
                     
                     new_text = re.sub(pattern, corrected, raw_text)

@@ -1438,7 +1438,8 @@ async def update_page_text(
         
         page.status = 'chunked'
         page.pipeline_step = 'chunking'
-        page.milestone = 'succeeded'
+        page.chunking_milestone = 'succeeded' # Use decoupled milestone name
+        page.embedding_milestone = 'idle'      # Reset to trigger re-embedding via worker if needed
 
         await books_repo.update_one(
             book_id,
@@ -1464,7 +1465,7 @@ async def update_page_text(
                     status='indexed',
                     is_indexed=True,
                     pipeline_step='embedding',
-                    milestone='succeeded'
+                    embedding_milestone='succeeded'
                 )
             )
             await session.commit()
@@ -1485,7 +1486,7 @@ async def update_page_text(
         page.status = 'indexed'
         page.is_indexed = True
         page.pipeline_step = 'embedding'
-        page.milestone = 'succeeded'
+        page.embedding_milestone = 'succeeded'
         await books_repo.update_one(
             book_id,
             last_updated=datetime.now(timezone.utc),
@@ -1497,6 +1498,11 @@ async def update_page_text(
     # Invalidate book and RAG cache
     await cache_service.delete(f"book:{book_id}")
     await cache_service.delete_pattern(f"rag:search:{book_id}:*")
+
+    # Update book milestones to reflect manual change
+    from app.services.book_milestone_service import BookMilestoneService
+    await BookMilestoneService.update_book_milestones(session, book_id)
+    await session.commit()
 
     return {"status": "page_updated", "requires_rag": True, "synchronous": final_status == 'indexed'}
 

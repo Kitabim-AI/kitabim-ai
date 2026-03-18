@@ -364,10 +364,19 @@ async def apply_spell_corrections(
         .values(
             text=page_text,
             is_indexed=False,
+            # Reset pipeline milestones to ensure re-chunking and re-embedding
+            chunking_milestone="idle",
+            embedding_milestone="idle",
             updated_by=current_user.id,
             last_updated=func.now(),
         )
     )
+    
+    # Update book milestones (no internal commit anymore)
+    from app.services.book_milestone_service import BookMilestoneService
+    await BookMilestoneService.update_book_milestone_for_step(session, book_id, 'chunking')
+    await BookMilestoneService.update_book_milestone_for_step(session, book_id, 'embedding')
+    
     await session.commit()
 
     return {"applied": len(corrected_ids)}

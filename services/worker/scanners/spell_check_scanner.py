@@ -97,6 +97,9 @@ async def run_spell_check_scanner(ctx) -> None:
                 .where(Book.id.in_(book_ids))
                 .values(pipeline_step="spell_check", last_updated=func.now())
             )
+            # Update book-level spell-check milestones to 'in_progress'
+            for book_id in book_ids:
+                await BookMilestoneService.update_book_milestone_for_step(session, book_id, 'spell_check')
             
         await session.commit()
 

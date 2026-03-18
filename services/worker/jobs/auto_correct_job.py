@@ -58,20 +58,26 @@ async def auto_correct_job(ctx, page_ids: List[int]) -> None:
 
     semaphore = asyncio.Semaphore(settings.max_parallel_auto_correct)
     results = {"succeeded": 0, "failed": 0, "total_corrections": 0}
+    processed_book_ids = set()
 
     async def process_page(page: Page):
+        page_id = page.id
+        book_id = page.book_id
+        page_number = page.page_number
+        processed_book_ids.add(book_id)
+        
         async with semaphore:
             try:
                 async with db_session.async_session_factory() as session:
                     corrections_applied = await apply_auto_corrections_to_page(
                         session,
-                        page.id,
+                        page_id,
                         correction_rules=correction_rules
                     )
 
                     if corrections_applied > 0:
                         session.add(PipelineEvent(
-                            page_id=page.id,
+                            page_id=page_id,
                             event_type="auto_correct_succeeded",
                             payload=f'{{"corrections": {corrections_applied}}}'
                         ))
@@ -81,20 +87,20 @@ async def auto_correct_job(ctx, page_ids: List[int]) -> None:
                         results["total_corrections"] += corrections_applied
 
                         log_json(logger, logging.DEBUG, "auto-correction page succeeded",
-                                 book_id=page.book_id,
-                                 page=page.page_number,
+                                 book_id=book_id,
+                                 page=page_number,
                                  corrections=corrections_applied)
                     else:
                         # No corrections applied (maybe issues were already corrected)
                         log_json(logger, logging.DEBUG, "no corrections applied to page",
-                                 book_id=page.book_id,
-                                 page=page.page_number)
+                                 book_id=book_id,
+                                 page=page_number)
 
             except Exception as exc:
                 async with db_session.async_session_factory() as session:
                     error_msg = repr(exc)[:500]
                     session.add(PipelineEvent(
-                        page_id=page.id,
+                        page_id=page_id,
                         event_type="auto_correct_failed",
                         payload=f'{{"error": "{error_msg}"}}'
                     ))
@@ -102,13 +108,21 @@ async def auto_correct_job(ctx, page_ids: List[int]) -> None:
 
                 results["failed"] += 1
                 log_json(logger, logging.WARNING, "auto-correction page failed",
-                         book_id=page.book_id,
-                         page=page.page_number,
+                         book_id=book_id,
+                         page=page_number,
                          error=repr(exc),
                          traceback=traceback.format_exc())
 
     # Run all pages in parallel (respecting the semaphore)
     await asyncio.gather(*(process_page(p) for p in pages))
+
+    # Update book milestones for all affected books
+    if processed_book_ids:
+        from app.services.book_milestone_service import BookMilestoneService
+        async with db_session.async_session_factory() as session:
+            for bid in processed_book_ids:
+                await BookMilestoneService.update_book_milestones(session, bid)
+            await session.commit()
 
     log_json(logger, logging.INFO, "auto-correction job completed",
              succeeded=results["succeeded"],

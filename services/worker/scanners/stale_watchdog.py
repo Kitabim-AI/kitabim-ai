@@ -14,6 +14,7 @@ from sqlalchemy import update, func
 from app.db import session as db_session
 from app.db.models import Page
 from app.core.config import settings
+from app.services.book_milestone_service import BookMilestoneService
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.stale_watchdog")
@@ -54,11 +55,18 @@ async def run_stale_watchdog(ctx) -> None:
                 Page.last_updated < threshold
             )
             .values(**update_values)
-            .returning(Page.id)
+            .returning(Page.id, Page.book_id)
         )
         
         result = await session.execute(stmt)
-        reset_ids = [row[0] for row in result.fetchall()]
+        rows = result.fetchall()
+        reset_ids = [row[0] for row in rows]
+        reset_book_ids = list(set(row[1] for row in rows))
+
+        if reset_book_ids:
+            for book_id in reset_book_ids:
+                await BookMilestoneService.update_book_milestones(session, book_id)
+        
         await session.commit()
 
     if reset_ids:

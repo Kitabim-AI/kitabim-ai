@@ -53,11 +53,10 @@ async def run_embedding_scanner(ctx) -> None:
             .where(Page.id.in_(page_ids))
             .values(embedding_milestone="in_progress", last_updated=func.now())
         )
-        await session.commit()
-        
         # Update book-level embedding milestones
         for book_id in book_ids:
             await BookMilestoneService.update_book_milestone_for_step(session, book_id, 'embedding')
+        await session.commit()
 
     await redis.enqueue_job("embedding_job", page_ids=page_ids)
     log_json(logger, logging.INFO, "embedding job dispatched", page_count=len(page_ids))
