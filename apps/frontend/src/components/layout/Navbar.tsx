@@ -140,14 +140,22 @@ export const Navbar: React.FC = () => {
             <>
               <button
                 onClick={() => fileInputRef.current?.click()}
+                disabled={bookActions.isCheckingGlobal}
                 className="group relative px-[0.7rem] md:px-5 lg:px-6 h-[35px] md:h-[48px] rounded-[0.7rem] md:rounded-2xl font-normal flex items-center justify-center gap-2 transition-all duration-300 text-white shadow-[0_8px_20px_rgba(3,105,161,0.2)] hover:shadow-[0_12px_28px_rgba(3,105,161,0.3)] hover:-translate-y-0.5 active:translate-y-0 overflow-hidden text-sm lg:text-base"
+                aria-busy={bookActions.isCheckingGlobal}
                 style={{
                   background: 'linear-gradient(135deg, #0369a1 0%, #0284c7 100%)'
                 }}
               >
                 <div className="absolute inset-0 bg-gradient-to-l from-white/0 via-white/20 to-white/0 translate-x-[100%] group-hover:animate-shimmer-fast" />
-                <Upload size={14} strokeWidth={3} className="relative z-10 lg:w-[16px] lg:h-[16px]" />
-                <span className="relative z-10 hidden lg:inline whitespace-nowrap">{t('nav.addBook')}</span>
+                {bookActions.isCheckingGlobal ? (
+                  <RefreshCw size={14} strokeWidth={3} className="relative z-10 lg:w-[16px] lg:h-[16px] animate-spin" />
+                ) : (
+                  <Upload size={14} strokeWidth={3} className="relative z-10 lg:w-[16px] lg:h-[16px]" />
+                )}
+                <span className="relative z-10 hidden lg:inline whitespace-nowrap">
+                  {bookActions.isCheckingGlobal ? t('common.loading') : t('nav.addBook')}
+                </span>
               </button>
               <input
                 type="file"

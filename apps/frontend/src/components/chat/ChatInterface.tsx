@@ -44,6 +44,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const { isAuthenticated } = useAuth();
   const { fontSize } = useAppContext();
   const isGlobal = type === 'global';
+  const chatFontSize = isGlobal ? fontSize : 18;
   const [selectedReference, setSelectedReference] = React.useState<{ bookId: string; pageNums: number[] } | null>(null);
 
   const handleReferenceClick = (bookId: string, pageNums: number[]) => {
@@ -251,7 +252,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 <Bot size={48} className="text-[#0369a1]" strokeWidth={1} />
                 <p
                   className="font-normal leading-loose text-[#1a1a1a]"
-                  style={{ fontSize: `${fontSize}px` }}
+                  style={{ fontSize: `${chatFontSize}px` }}
                 >
                   {t('chat.bookAssistantWelcome')}
                 </p>
@@ -271,7 +272,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   ? 'bg-white/80 border border-[#0369a1]/10 text-[#1a1a1a] rounded-tr-none'
                   : 'bg-[#0369a1] text-white rounded-tl-none shadow-lg shadow-[#0369a1]/5'
                   }`}
-                style={{ fontSize: `${fontSize}px`, lineHeight: '1.8' }}
+                style={{ fontSize: `${chatFontSize}px`, lineHeight: '1.8' }}
               >
                 {msg.role === 'user' ? (
                   msg.text
@@ -280,7 +281,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     content={msg.text}
                     onReferenceClick={handleReferenceClick}
                     className="text-white uyghur-text [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white [&_a]:text-blue-100 [&_button]:text-blue-100 [&_a]:decoration-blue-100/50 [&_button]:decoration-blue-100/50"
-                    style={{ fontSize: `${fontSize}px` }}
+                    style={{ fontSize: `${chatFontSize}px` }}
                   />
                 )}
               </div>
@@ -295,13 +296,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             <div className="flex flex-col gap-1.5 w-full items-end">
               <div
                 className="px-5 py-3.5 rounded-2xl font-normal shadow-lg shadow-[#0369a1]/5 bg-[#0369a1] text-white rounded-tl-none uyghur-text"
-                style={{ fontSize: `${fontSize}px`, lineHeight: '1.8' }}
+                style={{ fontSize: `${chatFontSize}px`, lineHeight: '1.8' }}
               >
                 <MarkdownContent
                   content={streamingMessage}
                   onReferenceClick={handleReferenceClick}
                   className="text-white uyghur-text [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white [&_a]:text-blue-100 [&_button]:text-blue-100 [&_a]:decoration-blue-100/50 [&_button]:decoration-blue-100/50"
-                  style={{ fontSize: `${fontSize}px` }}
+                  style={{ fontSize: `${chatFontSize}px` }}
                 />
                 <span className="inline-block w-[2px] h-4 bg-white/70 ml-1 animate-pulse" />
               </div>
@@ -337,7 +338,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   onChange={(e) => setChatInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && !isChatting && !usageStatus?.hasReachedLimit && onSendMessage()}
                   className="w-full bg-transparent border-none py-2 sm:py-3 pl-[52px] sm:pl-[76px] pr-2 sm:pr-4 font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none uyghur-text"
-                  style={{ fontSize: `${fontSize}px` }}
+                  style={{ fontSize: `${chatFontSize}px` }}
                   dir="rtl"
                   disabled={usageStatus?.hasReachedLimit}
                 />

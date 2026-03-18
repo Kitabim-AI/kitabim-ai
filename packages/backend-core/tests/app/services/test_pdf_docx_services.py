@@ -90,6 +90,35 @@ async def test_extract_docx_pages_fallback():
             assert "Some text" in pages[0]
 
 @pytest.mark.asyncio
+async def test_extract_docx_pages_does_not_normalize_uyghur_text():
+    with patch("docx.Document") as mock_doc_cls:
+        mock_doc = mock_doc_cls.return_value
+
+        mock_para = MagicMock()
+        mock_run = MagicMock()
+
+        run_text = "\uFB8A \u064A\u0654"
+
+        def run_find(tag):
+            if tag.endswith("}lastRenderedPageBreak"):
+                return None
+            if tag.endswith("}t"):
+                return MagicMock(text=run_text)
+            if tag.endswith("}footnoteReference"):
+                return None
+            return None
+
+        mock_run.find.side_effect = run_find
+        para_el = MagicMock()
+        para_el.findall.return_value = [mock_run]
+        mock_para._p = para_el
+        mock_doc.paragraphs = [mock_para]
+
+        with patch("app.services.docx_service._load_footnotes", return_value={}):
+            pages = extract_docx_pages(Path("test.docx"))
+            assert pages == [run_text]
+
+@pytest.mark.asyncio
 async def test_extract_docx_cover():
     with patch("docx.Document") as mock_doc_cls:
         mock_doc = mock_doc_cls.return_value

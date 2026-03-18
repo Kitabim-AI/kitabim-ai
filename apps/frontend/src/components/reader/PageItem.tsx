@@ -9,6 +9,8 @@ interface PageItemProps {
   isActive: boolean;
   isEditing: boolean;
   fontSize: number;
+  contentFontFamily?: string;
+  contentFontClassName?: string;
   onSetActive: () => void;
   onEdit: () => void;
   onReprocess: () => void;
@@ -23,7 +25,7 @@ interface PageItemProps {
 }
 
 export const PageItem: React.FC<PageItemProps> = ({
-  page, isActive, isEditing, fontSize, onSetActive, onEdit, onReprocess,
+  page, isActive, isEditing, fontSize, contentFontFamily, contentFontClassName, onSetActive, onEdit, onReprocess,
   tempText, onTempTextChange, onSave, onCancel, isLoading, isSaving, isFullscreen
 }) => {
   const { t } = useI18n();
@@ -48,7 +50,7 @@ export const PageItem: React.FC<PageItemProps> = ({
       {isEditing ? (
         <div className="flex-1 flex flex-col gap-4 min-h-0">
           <div className="relative flex-1 flex flex-col min-h-0">
-            <textarea value={tempText} onChange={(e) => onTempTextChange(e.target.value)} className="flex-1 w-full p-4 uyghur-text border-2 border-[#0369a1] rounded-xl outline-none resize-none bg-white relative z-10 min-h-0 custom-scrollbar" style={{ fontSize: `${fontSize}px` }} dir="rtl" />
+            <textarea value={tempText} onChange={(e) => onTempTextChange(e.target.value)} className={`flex-1 w-full p-4 uyghur-text border-2 border-[#0369a1] rounded-xl outline-none resize-none bg-white relative z-10 min-h-0 custom-scrollbar ${contentFontClassName || ''}`} style={{ fontSize: `${fontSize}px`, fontFamily: contentFontFamily }} dir="rtl" />
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -72,7 +74,7 @@ export const PageItem: React.FC<PageItemProps> = ({
         isLoading ? (
           <div className="flex flex-col items-center justify-center py-10 opacity-50"><Loader2 className="animate-spin text-[#0369a1] mb-2" /><span className="text-xs uppercase">{t('admin.table.recognizing')}</span></div>
         ) : (
-          <MarkdownContent content={page.text || "..."} className="uyghur-text text-[#1a1a1a]" style={{ fontSize: `${fontSize}px` }} />
+          <MarkdownContent content={page.text || "..."} className={`uyghur-text text-[#1a1a1a] ${contentFontClassName || ''}`} style={{ fontSize: `${fontSize}px`, fontFamily: contentFontFamily }} />
         )
       )}
     </div>

@@ -7,6 +7,23 @@ type MarkdownContentProps = {
   onReferenceClick?: (bookId: string, pageNums: number[]) => void;
 };
 
+const ARABIC_DIACRITIC_RE = /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/;
+const ARABIC_SCRIPT_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/;
+
+const shouldUseArabicFont = (text: string) => {
+  if (!text || !ARABIC_SCRIPT_RE.test(text)) return false;
+  return ARABIC_DIACRITIC_RE.test(text);
+};
+
+const applyArabicFontToPlainText = (value: string, keyPrefix: string) => {
+  if (!shouldUseArabicFont(value)) return value;
+  return (
+    <span key={`${keyPrefix}-arabic`} className="arabic-text">
+      {value}
+    </span>
+  );
+};
+
 const splitInline = (text: string, regex: RegExp, render: (match: string, group1: string, group2: string | undefined, key: number) => React.ReactNode) => {
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
@@ -106,7 +123,11 @@ const renderInline = (text: string, onReferenceClick?: (bookId: string, pageNums
     </em>
   ));
 
-  return nodes;
+  return nodes.map((node, index) => (
+    typeof node === 'string'
+      ? applyArabicFontToPlainText(node, `inline-${index}`)
+      : node
+  ));
 };
 
 const renderParagraph = (text: string, key: string, onReferenceClick?: (bookId: string, pageNums: number[]) => void) => {

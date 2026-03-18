@@ -5,14 +5,20 @@
 
 @font-face {
   font-family: "ALKATIP Basma";
-  src: url("https://db.onlinewebfonts.com/t/3c16518f40da2fc2901f37666c0556a7.woff2") format("woff2"),
-    url("https://db.onlinewebfonts.com/t/3c16518f40da2fc2901f37666c0556a7.woff") format("woff");
+  src: url("/fonts/alkatip-basma.woff2") format("woff2");
+  font-display: swap;
 }
 
 @font-face {
   font-family: "ALKATIP Basma Tom";
-  src: url("https://db.onlinewebfonts.com/t/451d7d8a0df1cd2255ef501335c9ba07.woff2") format("woff2"),
-    url("https://db.onlinewebfonts.com/t/451d7d8a0df1cd2255ef501335c9ba07.woff") format("woff");
+  src: url("/fonts/alkatip-basma-tom.woff2") format("woff2");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Adobe Arabic";
+  src: url("/fonts/adobe-arabic-regular.woff2") format("woff2");
+  font-display: swap;
 }
 
 
@@ -223,6 +229,48 @@ body::after {
 .uyghur-text h5,
 .uyghur-text h6 {
   font-family: "ALKATIP Basma Tom", serif !important;
+}
+
+.reader-font-adobe,
+.reader-font-adobe.uyghur-text,
+.reader-font-adobe textarea,
+.reader-font-adobe p,
+.reader-font-adobe div,
+.reader-font-adobe span,
+.reader-font-adobe li,
+.reader-font-adobe blockquote,
+.reader-font-adobe code,
+.reader-font-adobe strong,
+.reader-font-adobe em,
+.reader-font-adobe h1,
+.reader-font-adobe h2,
+.reader-font-adobe h3,
+.reader-font-adobe h4,
+.reader-font-adobe h5,
+.reader-font-adobe h6,
+.reader-font-adobe .uyghur-text,
+.reader-font-adobe .uyghur-text h1,
+.reader-font-adobe .uyghur-text h2,
+.reader-font-adobe .uyghur-text h3,
+.reader-font-adobe .uyghur-text h4,
+.reader-font-adobe .uyghur-text h5,
+.reader-font-adobe .uyghur-text h6 {
+  font-family: "Adobe Arabic", serif !important;
+  font-variant-ligatures: common-ligatures contextual !important;
+  font-feature-settings: "kern" 1, "liga" 1, "calt" 1, "ccmp" 1 !important;
+  letter-spacing: 0 !important;
+  word-spacing: 0 !important;
+}
+
+.arabic-text,
+.arabic-text *,
+.uyghur-text .arabic-text,
+.uyghur-text .arabic-text * {
+  font-family: "Adobe Arabic", serif !important;
+  font-variant-ligatures: common-ligatures contextual !important;
+  font-feature-settings: "kern" 1, "liga" 1, "calt" 1, "ccmp" 1 !important;
+  letter-spacing: 0 !important;
+  word-spacing: 0 !important;
 }
 
 /* Italics break connections in almost all Uyghur webfonts. */

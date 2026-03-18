@@ -8,6 +8,8 @@ interface VirtualScrollReaderProps {
   bookId: string;
   totalPages: number;
   fontSize: number;
+  contentFontFamily?: string;
+  contentFontClassName?: string;
   initialPage?: number;
   onPageChange?: (page: number) => void;
   scrollParentRef?: React.RefObject<HTMLDivElement>;
@@ -18,6 +20,8 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
   bookId,
   totalPages,
   fontSize,
+  contentFontFamily,
+  contentFontClassName,
   initialPage = 1,
   onPageChange,
   scrollParentRef,
@@ -154,6 +158,8 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
                 <PageItem
                   page={page}
                   fontSize={fontSize}
+                  contentFontFamily={contentFontFamily}
+                  contentFontClassName={contentFontClassName}
                   isActive={pageNum === currentCenterPage}
                   isEditing={false}
                   onSetActive={() => { }}

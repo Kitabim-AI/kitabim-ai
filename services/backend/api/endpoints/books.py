@@ -1017,7 +1017,8 @@ async def upload_pdf(
         volume=None,
         total_pages=page_count,
         cover_url=cover_url,
-        status="pending",
+        status="pending" if file_type == "pdf" else "ocr_done",
+        pipeline_step=None if file_type == "pdf" else "chunking",
         upload_date=now,
         last_updated=now,
         created_by=current_user.email,
@@ -1025,6 +1026,10 @@ async def upload_pdf(
         categories=[],
         visibility="private",
         source="upload",
+        ocr_milestone="idle" if file_type == "pdf" else "complete",
+        chunking_milestone="idle",
+        embedding_milestone="idle",
+        spell_check_milestone="idle",
     )
 
     if file_type == "pdf":
@@ -1039,6 +1044,10 @@ async def upload_pdf(
                 pipeline_step="chunking",
                 milestone="idle",
                 status="ocr_done",
+                ocr_milestone="succeeded",
+                chunking_milestone="idle",
+                embedding_milestone="idle",
+                spell_check_milestone="idle",
             )
             for i, text in enumerate(docx_pages)
         ])
@@ -1969,5 +1978,4 @@ async def download_book(
     except Exception as exc:
         logger.error(f"Failed to download book {book_id}: {exc}")
         raise HTTPException(status_code=500, detail=str(exc))
-
 

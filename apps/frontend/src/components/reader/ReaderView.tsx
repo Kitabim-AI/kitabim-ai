@@ -36,6 +36,11 @@ export const ReaderView: React.FC = () => {
   const isEditor = useIsEditor();
   const { isAuthenticated, user } = useAuth();
   const isGuestOrReader = !isAuthenticated || (user?.role === 'reader');
+  const usesArabicReaderFont = (selectedBook.categories || []).some(
+    (category) => category.replace(/^['"\s]+|['"\s]+$/g, '') === 'ئەرەبچە'
+  );
+  const readerContentFontFamily = usesArabicReaderFont ? '"Adobe Arabic", serif' : undefined;
+  const readerContentFontClassName = usesArabicReaderFont ? 'reader-font-adobe' : undefined;
 
   // Reader-specific state
   const [isEditing, setIsEditing] = useState(false);
@@ -77,6 +82,10 @@ export const ReaderView: React.FC = () => {
     document.body.style.overflowY = 'hidden';
     return () => { document.body.style.overflowY = ''; };
   }, []);
+
+  useEffect(() => {
+    setFontSize(usesArabicReaderFont ? 24 : 18);
+  }, [selectedBook.id, usesArabicReaderFont, setFontSize]);
 
   useEffect(() => {
     if (isGuestOrReader) {
@@ -359,7 +368,7 @@ export const ReaderView: React.FC = () => {
             <div className="min-w-0 flex flex-col justify-center">
               <h2
                 className="font-bold text-[#1a1a1a] truncate"
-                style={{ fontSize: `${fontSize}px` }}
+                style={{ fontSize: '18px' }}
               >
                 {selectedBook.title}
                 {selectedBook.volume ? ` (${t('book.volume', { volume: selectedBook.volume })})` : ''}
@@ -367,7 +376,7 @@ export const ReaderView: React.FC = () => {
               {selectedBook.author && (
                 <p
                   className="text-[#64748b] mt-0.5 truncate hidden sm:block"
-                  style={{ fontSize: `${Math.max(12, fontSize - 4)}px` }}
+                  style={{ fontSize: '14px' }}
                 >
                   {selectedBook.author}
                 </p>
@@ -432,13 +441,15 @@ export const ReaderView: React.FC = () => {
           {isEditing ? (
             <div className="h-full relative w-full max-w-4xl mx-auto">
               {isFetchingContent && <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-20 flex items-center justify-center"><Loader2 className="w-8 h-8 text-[#0369a1] animate-spin" /></div>}
-              <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} className="w-full h-full p-6 uyghur-text border-2 border-[#0369a1]/10 rounded-3xl outline-none resize-none bg-white shadow-inner" style={{ fontSize: `${fontSize}px` }} placeholder={t('common.enterContent')} />
+              <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} className={`w-full h-full p-6 uyghur-text border-2 border-[#0369a1]/10 rounded-3xl outline-none resize-none bg-white shadow-inner ${readerContentFontClassName || ''}`} style={{ fontSize: `${fontSize}px`, fontFamily: readerContentFontFamily }} placeholder={t('common.enterContent')} />
             </div>
           ) : isGuestOrReader ? (
             <VirtualScrollReader
               bookId={selectedBook.id}
               totalPages={selectedBook.totalPages || (selectedBook as any).total_pages || 0}
               fontSize={fontSize}
+              contentFontFamily={readerContentFontFamily}
+              contentFontClassName={readerContentFontClassName}
               initialPage={currentPage || 1}
               onPageChange={setCurrentPage}
               scrollParentRef={mainScrollRef}
@@ -462,6 +473,8 @@ export const ReaderView: React.FC = () => {
                       isActive={currentPage === page.pageNumber}
                       isEditing={editingPageNum === page.pageNumber}
                       fontSize={fontSize}
+                      contentFontFamily={readerContentFontFamily}
+                      contentFontClassName={readerContentFontClassName}
                       onSetActive={() => !isGuestOrReader && setCurrentPage(page.pageNumber)}
                       onEdit={() => { setEditingPageNum(page.pageNumber); setTempPageText(page.text || ''); }}
                       onReprocess={() => bookActions.handleReProcessPage(selectedBook.id, page.pageNumber)}
