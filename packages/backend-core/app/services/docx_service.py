@@ -6,8 +6,6 @@ import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from app.utils.text import normalize_uyghur_chars
-
 logger = logging.getLogger(__name__)
 
 _NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -140,7 +138,9 @@ def extract_docx_pages(path: Path) -> list[str]:
         block_size = 3000
         pages = [full_text[i:i + block_size] for i in range(0, len(full_text), block_size)]
 
-    result = [normalize_uyghur_chars(p.strip()) for p in pages if p.strip()]
+    # Preserve DOCX text exactly as extracted. Uyghur normalization is intended
+    # for OCR-derived text, not for already-encoded document text.
+    result = [p.strip() for p in pages if p.strip()]
     logger.info("docx_service: extracted %d pages from %s", len(result), path.name)
     return result
 

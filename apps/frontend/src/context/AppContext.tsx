@@ -111,6 +111,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     refreshLibrary,
     setBooks,
     setSelectedBook,
+    view,
     setView,
     setModal,
     chat.setChatMessages,

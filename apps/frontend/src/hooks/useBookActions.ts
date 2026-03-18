@@ -8,6 +8,7 @@ export const useBookActions = (
   refreshLibrary: () => Promise<void>,
   setBooks: (books: Book[] | ((prev: Book[]) => Book[])) => void,
   setSelectedBook: (book: Book | null | ((prev: Book | null) => Book | null)) => void,
+  currentView: string,
   setView: (view: any) => void,
   setModal: (modal: any) => void,
   setChatMessages: (messages: any[]) => void,
@@ -27,12 +28,16 @@ export const useBookActions = (
     if (!file || (!ALLOWED_TYPES.includes(file.type) && !file.name.toLowerCase().endsWith('.docx'))) return;
 
     setIsCheckingGlobal(true);
-    setView('admin');
 
     try {
       const result = await PersistenceService.uploadPdf(file);
-      await refreshLibrary();
-      setIsCheckingGlobal(false);
+      const targetView = currentView === 'admin' ? 'admin' : 'library';
+
+      if (currentView === targetView) {
+        await refreshLibrary();
+      } else {
+        setView(targetView);
+      }
 
       if (result?.status === 'existing') {
         addNotification(t('common.uploadExisting'), 'info');
@@ -40,7 +45,6 @@ export const useBookActions = (
         addNotification(t('common.uploadSuccess'), 'success');
       }
     } catch (err) {
-      setIsCheckingGlobal(false);
       const errorMsg = err instanceof Error ? err.message : "An unknown error occurred.";
       setModal({
         isOpen: true,
@@ -48,6 +52,9 @@ export const useBookActions = (
         message: t('modal.uploadError.message', { error: errorMsg }),
         type: 'alert'
       });
+    } finally {
+      setIsCheckingGlobal(false);
+      event.target.value = '';
     }
   };
 
