@@ -1,23 +1,46 @@
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { useChat } from '@/src/hooks/useChat';
-import { chatWithBook } from '@/src/services/geminiService';
+import { chatWithBookStream, getChatUsage } from '@/src/services/geminiService';
 import { expect, test, vi, beforeEach } from 'vitest';
 import { Book } from '@shared/types';
 
 vi.mock('@/src/services/geminiService', () => ({
-  chatWithBook: vi.fn()
+  chatWithBook: vi.fn(),
+  chatWithBookStream: vi.fn(),
+  getChatUsage: vi.fn(),
+}));
+
+vi.mock('@/src/hooks/useAuth', () => ({
+  useAuth: vi.fn(() => ({
+    isAuthenticated: true,
+  })),
 }));
 
 const mockBook: Book = {
-  id: '1', title: 'T', author: 'A', totalPages: 10, pages: [], status: 'ready', uploadDate: new Date(), lastUpdated: new Date(), contentHash: 'h'
+  id: '1',
+  title: 'T',
+  author: 'A',
+  totalPages: 10,
+  pages: [],
+  status: 'ready',
+  uploadDate: new Date(),
+  lastUpdated: new Date(),
+  contentHash: 'h'
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(getChatUsage).mockResolvedValue({ usage: 0, limit: 10, hasReachedLimit: false });
 });
 
-test.skip('useChat handles sending message', async () => {
-  (chatWithBook as any).mockResolvedValue('AI Response');
+test('useChat handles sending message', async () => {
+  vi.mocked(chatWithBookStream).mockImplementation(
+    async (_question, _bookId, _page, _history, onChunk, onComplete) => {
+      onChunk('AI ');
+      onChunk('Response');
+      onComplete();
+    }
+  );
 
   const { result } = renderHook(() => useChat('reader', mockBook, 1));
 
@@ -29,13 +52,33 @@ test.skip('useChat handles sending message', async () => {
     await result.current.handleSendMessage();
   });
 
-  expect(result.current.chatMessages).toHaveLength(2);
+  await waitFor(() => {
+    expect(result.current.chatMessages).toHaveLength(2);
+  });
+
+  expect(result.current.chatMessages[0].text).toBe('Hello');
   expect(result.current.chatMessages[1].text).toBe('AI Response');
-  expect(chatWithBook).toHaveBeenCalledWith('Hello', '1', 1, expect.any(Array));
+  expect(chatWithBookStream).toHaveBeenCalledWith(
+    'Hello',
+    '1',
+    1,
+    expect.any(Array),
+    expect.any(Function),
+    expect.any(Function),
+    expect.any(Function),
+    expect.any(AbortSignal),
+    expect.any(Function),
+    expect.any(Function)
+  );
 });
 
-test.skip('useChat handles global chat', async () => {
-  (chatWithBook as any).mockResolvedValue('Global Answer');
+test('useChat handles global chat', async () => {
+  vi.mocked(chatWithBookStream).mockImplementation(
+    async (_question, _bookId, _page, _history, onChunk, onComplete) => {
+      onChunk('Global Answer');
+      onComplete();
+    }
+  );
 
   const { result } = renderHook(() => useChat('global-chat', null, null));
 
@@ -47,11 +90,30 @@ test.skip('useChat handles global chat', async () => {
     await result.current.handleSendMessage();
   });
 
-  expect(chatWithBook).toHaveBeenCalledWith('Global query', 'global', undefined, expect.any(Array));
+  await waitFor(() => {
+    expect(result.current.chatMessages.at(-1)?.text).toBe('Global Answer');
+  });
+
+  expect(chatWithBookStream).toHaveBeenCalledWith(
+    'Global query',
+    'global',
+    undefined,
+    expect.any(Array),
+    expect.any(Function),
+    expect.any(Function),
+    expect.any(Function),
+    expect.any(AbortSignal),
+    expect.any(Function),
+    expect.any(Function)
+  );
 });
 
-test.skip('useChat handles error state', async () => {
-  (chatWithBook as any).mockRejectedValue(new Error('Fail'));
+test('useChat handles error state', async () => {
+  vi.mocked(chatWithBookStream).mockImplementation(
+    async (_question, _bookId, _page, _history, _onChunk, _onComplete, onError) => {
+      onError('كەچۈرۈڭ، جاۋاب بېرەلمىدىم.');
+    }
+  );
 
   const { result } = renderHook(() => useChat('reader', mockBook, 1));
 
@@ -63,5 +125,7 @@ test.skip('useChat handles error state', async () => {
     await result.current.handleSendMessage();
   });
 
-  expect(result.current.chatMessages[1].text).toContain('جاۋاب بېرەلمىدىم');
+  await waitFor(() => {
+    expect(result.current.chatMessages.at(-1)?.text).toContain('جاۋاب بېرەلمىدىم');
+  });
 });

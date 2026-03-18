@@ -5,6 +5,15 @@ import React from 'react';
 import { Book } from '@shared/types';
 import * as AppContextModule from '@/src/context/AppContext';
 import { I18nContext } from '@/src/i18n/I18nContext';
+import { beforeEach } from 'vitest';
+
+vi.mock('@/src/components/common/ProverbDisplay', () => ({
+  ProverbDisplay: () => <div>proverb</div>,
+}));
+
+vi.mock('@/src/components/admin/SpellCheckConfigPanel', () => ({
+  SpellCheckConfigPanel: () => <div>spell-config</div>,
+}));
 
 const mockBooks: Book[] = [
   {
@@ -57,6 +66,18 @@ const i18nMockValue = {
 vi.mock('@/src/context/AppContext', () => ({
   useAppContext: vi.fn()
 }));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  // @ts-expect-error test mock
+  global.fetch = vi.fn().mockResolvedValue({
+    ok: false,
+    status: 404,
+    json: vi.fn().mockResolvedValue({}),
+    text: vi.fn().mockResolvedValue(''),
+  });
+});
 
 test('AdminView shows green icons for completed pipeline stages', () => {
   vi.mocked(AppContextModule.useAppContext).mockReturnValue(mockAppContextValue as any);

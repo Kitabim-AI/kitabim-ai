@@ -61,10 +61,6 @@ async def test_statistics_tracking():
         cache.ocr_corrections['word2'] = ['correction1']
         cache._stats['ocr_misses'] += 1
 
-    async with cache._locks['unique']:
-        cache.unique_to_book['word3'] = True
-        cache._stats['unique_misses'] += 1
-
     # Simulate hits
     async with cache._locks['unknown']:
         if 'word1' in cache.unknown_words:
@@ -80,7 +76,6 @@ async def test_statistics_tracking():
     print(f"   Overall hit rate: {stats['overall_hit_rate']:.2%}")
     print(f"   Unknown words hit rate: {stats['unknown_words']['hit_rate']:.2%}")
     print(f"   OCR corrections hit rate: {stats['ocr_corrections']['hit_rate']:.2%}")
-    print(f"   Unique to book hit rate: {stats['unique_to_book']['hit_rate']:.2%}")
 
     assert stats['overall_hit_rate'] == 0.5, "Should have 50% overall hit rate (2 hits / 4 total)"
     assert stats['unknown_words']['hit_rate'] == 0.5, "Should have 50% unknown hit rate"

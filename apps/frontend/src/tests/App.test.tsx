@@ -1,190 +1,143 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import App from '@/src/App';
-import { expect, test, vi } from 'vitest';
+import { PersistenceService } from '@/src/services/persistenceService';
+import { expect, test, vi, beforeEach } from 'vitest';
 import React from 'react';
+import * as AppContextModule from '@/src/context/AppContext';
 
-const mockUseBooks = vi.fn();
-const mockUseChat = vi.fn();
-const mockUseBookActions = vi.fn();
-
-vi.mock('@/src/hooks/useBooks', () => ({
-  useBooks: (...args: any[]) => mockUseBooks(...args)
+vi.mock('@/src/context/AppContext', () => ({
+  AppProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useAppContext: vi.fn(),
 }));
 
-vi.mock('@/src/hooks/useChat', () => ({
-  useChat: (...args: any[]) => mockUseChat(...args)
+vi.mock('@/src/services/persistenceService', () => ({
+  PersistenceService: {
+    getBookById: vi.fn(),
+  }
 }));
 
-vi.mock('@/src/hooks/useBookActions', () => ({
-  useBookActions: (...args: any[]) => mockUseBookActions(...args)
+vi.mock('@/src/components/layout/Shell', () => ({
+  Shell: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
-test.skip('App renders and navigates between views', () => {
-  mockUseBooks.mockReturnValue({
-    books: [],
-    sortedBooks: [],
-    totalBooks: 0,
-    totalReady: 0,
-    sortConfig: { key: 'title', direction: 'asc' },
-    toggleSort: vi.fn(),
-    refreshLibrary: vi.fn(),
-    loadMoreShelf: vi.fn(),
-    isLoadingMoreShelf: false,
-    hasMoreShelf: false,
-    setBooks: vi.fn(),
-    isLoading: false
-  });
+vi.mock('@/src/components/library/HomeView', () => ({
+  HomeView: () => <div>home-view</div>,
+}));
 
-  mockUseChat.mockReturnValue({
+vi.mock('@/src/components/library/LibraryView', () => ({
+  LibraryView: () => <div>library-view</div>,
+}));
+
+vi.mock('@/src/components/admin/AdminView', () => ({
+  AdminView: () => <div>admin-view</div>,
+}));
+
+vi.mock('@/src/components/admin/AdminTabs', () => ({
+  AdminTabs: ({ bookManagementPanel }: { bookManagementPanel: React.ReactNode }) => <div>{bookManagementPanel}</div>,
+}));
+
+vi.mock('@/src/components/reader/ReaderView', () => ({
+  ReaderView: () => <div>reader-view</div>,
+}));
+
+vi.mock('@/src/components/chat/ChatInterface', () => ({
+  ChatInterface: ({ onClose }: { onClose?: () => void }) => (
+    <div>
+      <div>chat-view</div>
+      <button onClick={onClose}>close-chat</button>
+    </div>
+  ),
+}));
+
+vi.mock('@/src/components/pages/JoinUsView', () => ({
+  default: () => <div>join-us-view</div>,
+}));
+
+vi.mock('@/src/components/spell-check', () => ({
+  SpellCheckView: () => <div>spell-check-view</div>,
+}));
+
+const baseContext = {
+  view: 'home',
+  selectedBook: null,
+  setSelectedBook: vi.fn(),
+  books: [],
+  totalReady: 0,
+  chat: {
     chatMessages: [],
     chatInput: '',
     setChatInput: vi.fn(),
-    isChatting: false,
     handleSendMessage: vi.fn(),
-    clearChat: vi.fn(),
-    chatContainerRef: { current: null }
-  });
+    isChatting: false,
+    streamingMessage: '',
+    usageStatus: null,
+    chatContainerRef: { current: null },
+  },
+  refreshLibrary: vi.fn(),
+  setView: vi.fn(),
+  previousView: 'library',
+};
 
-  mockUseBookActions.mockReturnValue({
-    isCheckingGlobal: false,
-    handleFileUpload: vi.fn(),
-    handleResetFailedPages: vi.fn(),
-    handleReProcessPage: vi.fn(),
-    handleRevertBook: vi.fn(),
-    handleUpdatePage: vi.fn(),
-    openReader: vi.fn(),
-    saveCorrections: vi.fn(),
-    handleDeleteBook: vi.fn(),
-    handleSaveTags: vi.fn(),
-    handleSaveCategories: vi.fn(),
-    handleSaveAuthor: vi.fn(),
-    handleSaveTitle: vi.fn(),
-    handleSaveVolume: vi.fn()
-  });
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+test('App renders the active view from app context', () => {
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue(baseContext as any);
+  const { rerender } = render(<App />);
+
+  expect(screen.getByText('home-view')).toBeInTheDocument();
+
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue({
+    ...baseContext,
+    view: 'admin',
+  } as any);
+  rerender(<App />);
+  expect(screen.getByText('admin-view')).toBeInTheDocument();
+
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue({
+    ...baseContext,
+    view: 'reader',
+    selectedBook: { id: '1' },
+  } as any);
+  rerender(<App />);
+  expect(screen.getByText('reader-view')).toBeInTheDocument();
+});
+
+test('App closes global chat back to the previous view', () => {
+  const setView = vi.fn();
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue({
+    ...baseContext,
+    view: 'global-chat',
+    previousView: 'library',
+    setView,
+  } as any);
 
   render(<App />);
 
-  // Starts in library view
-  expect(screen.getByText(/Global Knowledge Base/i)).toBeInTheDocument();
-
-  // Navigate to Admin
-  const adminBtn = screen.getByText(/Management/i);
-  fireEvent.click(adminBtn);
-  expect(screen.getByText(/Kitabim Processing Pipeline/i)).toBeInTheDocument();
-
-  // Navigate to Global Chat
-  const chatBtn = screen.getByText(/Global Assistant/i);
-  fireEvent.click(chatBtn);
-  expect(screen.getAllByText(/كىتابىم خەزىنىسى/i).length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByText('close-chat'));
+  expect(setView).toHaveBeenCalledWith('library');
 });
 
-test.skip('App opens reader from library click', () => {
-  const book = {
-    id: '1',
-    title: 'Reader Book',
-    author: 'Author',
-    totalPages: 1,
-    pages: [{ pageNumber: 1, text: 'Page', status: 'ocr_done' }],
-    status: 'ready',
-    uploadDate: new Date(),
-    lastUpdated: new Date(),
-    contentHash: 'hash'
-  };
+test('App polls selected book immediately while admin view is processing', async () => {
+  vi.mocked(PersistenceService.getBookById).mockResolvedValue({ id: '1', status: 'ready', pages: [] } as any);
+  const setSelectedBook = vi.fn();
 
-  mockUseBooks.mockReturnValue({
-    books: [book],
-    sortedBooks: [book],
-    totalBooks: 1,
-    totalReady: 1,
-    sortConfig: { key: 'title', direction: 'asc' },
-    toggleSort: vi.fn(),
-    refreshLibrary: vi.fn(),
-    loadMoreShelf: vi.fn(),
-    isLoadingMoreShelf: false,
-    hasMoreShelf: false,
-    setBooks: vi.fn(),
-    isLoading: false
-  });
-
-  mockUseChat.mockReturnValue({
-    chatMessages: [],
-    chatInput: '',
-    setChatInput: vi.fn(),
-    isChatting: false,
-    handleSendMessage: vi.fn(),
-    clearChat: vi.fn(),
-    chatContainerRef: { current: null }
-  });
-
-  mockUseBookActions.mockImplementation((_refresh: any, _setBooks: any, setSelectedBook: any, setView: any) => ({
-    isCheckingGlobal: false,
-    handleFileUpload: vi.fn(),
-    handleResetFailedPages: vi.fn(),
-    handleReProcessPage: vi.fn(),
-    handleRevertBook: vi.fn(),
-    handleUpdatePage: vi.fn(),
-    openReader: (b: any, _setEditContent: any, _setChatMessages: any, _setCurrentPage: any) => {
-      setSelectedBook(b);
-      setView('reader');
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue({
+    ...baseContext,
+    view: 'admin',
+    setSelectedBook,
+    selectedBook: {
+      id: '1',
+      status: 'ocr_processing',
+      pages: [{ pageNumber: 1, status: 'pending' }],
     },
-    saveCorrections: vi.fn(),
-    handleDeleteBook: vi.fn(),
-    handleSaveTags: vi.fn(),
-    handleSaveCategories: vi.fn(),
-    handleSaveAuthor: vi.fn(),
-    handleSaveTitle: vi.fn(),
-    handleSaveVolume: vi.fn()
-  }));
+  } as any);
 
   render(<App />);
 
-  fireEvent.click(screen.getAllByText('Reader Book')[0]);
-  expect(screen.getByText(/EDIT BOOK/i)).toBeInTheDocument();
-});
-
-test.skip('App shows loading overlay', () => {
-  mockUseBooks.mockReturnValue({
-    books: [],
-    sortedBooks: [],
-    totalBooks: 0,
-    totalReady: 0,
-    sortConfig: { key: 'title', direction: 'asc' },
-    toggleSort: vi.fn(),
-    refreshLibrary: vi.fn(),
-    loadMoreShelf: vi.fn(),
-    isLoadingMoreShelf: false,
-    hasMoreShelf: false,
-    setBooks: vi.fn(),
-    isLoading: true
+  await waitFor(() => {
+    expect(PersistenceService.getBookById).toHaveBeenCalledWith('1');
+    expect(setSelectedBook).toHaveBeenCalledWith({ id: '1', status: 'ready', pages: [] });
   });
-
-  mockUseChat.mockReturnValue({
-    chatMessages: [],
-    chatInput: '',
-    setChatInput: vi.fn(),
-    isChatting: false,
-    handleSendMessage: vi.fn(),
-    clearChat: vi.fn(),
-    chatContainerRef: { current: null }
-  });
-
-  mockUseBookActions.mockReturnValue({
-    isCheckingGlobal: false,
-    handleFileUpload: vi.fn(),
-    handleResetFailedPages: vi.fn(),
-    handleReProcessPage: vi.fn(),
-    handleRevertBook: vi.fn(),
-    handleUpdatePage: vi.fn(),
-    openReader: vi.fn(),
-    saveCorrections: vi.fn(),
-    handleDeleteBook: vi.fn(),
-    handleSaveTags: vi.fn(),
-    handleSaveCategories: vi.fn(),
-    handleSaveAuthor: vi.fn(),
-    handleSaveTitle: vi.fn(),
-    handleSaveVolume: vi.fn()
-  });
-
-  render(<App />);
-  expect(screen.getByText(/Loading Library/i)).toBeInTheDocument();
 });

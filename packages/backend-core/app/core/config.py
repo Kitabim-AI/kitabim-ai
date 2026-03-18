@@ -45,6 +45,8 @@ class Settings:
     data_dir: Path = Path(os.getenv("DATA_DIR", str(REPO_ROOT / "data")))
     uploads_dir: Path = data_dir / "uploads"
     covers_dir: Path = data_dir / "covers"
+    max_cover_upload_bytes: int = int(os.getenv("MAX_COVER_UPLOAD_BYTES", str(5 * 1024 * 1024)))
+    max_cover_image_pixels: int = int(os.getenv("MAX_COVER_IMAGE_PIXELS", "25000000"))
 
     # Parallel Processing
     max_parallel_pages: int = int(os.getenv("MAX_PARALLEL_PAGES", "4")) # OCR concurrency

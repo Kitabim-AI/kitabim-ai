@@ -32,7 +32,7 @@ test('Modal renders title and message', () => {
   expect(screen.getByText(/Are you sure/i)).toBeInTheDocument();
 });
 
-test.skip('Modal calls confirm and close correctly', () => {
+test('Modal calls confirm and close correctly', () => {
   const onConfirm = vi.fn();
   const onClose = vi.fn();
 
@@ -47,17 +47,14 @@ test.skip('Modal calls confirm and close correctly', () => {
     />
   );
 
-  const confirmBtn = screen.getByText('Confirm');
-  const cancelBtn = screen.getByText('Cancel');
-
-  fireEvent.click(confirmBtn);
+  fireEvent.click(screen.getByText('modal.confirm'));
   expect(onConfirm).toHaveBeenCalled();
 
-  fireEvent.click(cancelBtn);
+  fireEvent.click(screen.getByText('common.cancel'));
   expect(onClose).toHaveBeenCalled();
 });
 
-test.skip('Modal alert type behavior', () => {
+test('Modal alert type behavior', () => {
   const onClose = vi.fn();
   render(
     <Modal
@@ -69,7 +66,6 @@ test.skip('Modal alert type behavior', () => {
     />
   );
 
-  const understoodBtn = screen.getByText('Understood');
-  fireEvent.click(understoodBtn);
+  fireEvent.click(screen.getByText('modal.ok'));
   expect(onClose).toHaveBeenCalled();
 });

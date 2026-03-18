@@ -1,4 +1,4 @@
-import { screen, fireEvent } from '@testing-library/react';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { renderWithProviders as render } from '@/src/tests/test-utils';
 import { SpellCheckPanel } from '@/src/components/spell-check/SpellCheckPanel';
 import { SpellIssue } from '@/src/hooks/useSpellCheck';
@@ -71,7 +71,7 @@ test('SpellCheckPanel renders active issue with OCR suggestions', () => {
   expect(screen.getAllByText('thee').length).toBeGreaterThan(0);
 });
 
-test('Clicking OCR suggestion calls onAddPending with correct args', () => {
+test('Clicking OCR suggestion calls onAddPending with correct args', async () => {
   const onAddPending = vi.fn();
   render(
     <SpellCheckPanel
@@ -83,15 +83,17 @@ test('Clicking OCR suggestion calls onAddPending with correct args', () => {
   // Click the first "the" suggestion button (desktop view uses hidden sm:flex)
   const suggestionButtons = screen.getAllByText('the');
   fireEvent.click(suggestionButtons[0]);
-  expect(onAddPending).toHaveBeenCalledWith(
-    1,        // issueId
-    'the',    // correctedWord
-    'teh',    // originalWord
-    { range: [0, 3] }
-  );
+  await waitFor(() => {
+    expect(onAddPending).toHaveBeenCalledWith(
+      1,
+      'the',
+      'teh',
+      { range: [0, 3], isAutoCorrection: false }
+    );
+  });
 });
 
-test('Custom input calls onAddPending on apply button click', () => {
+test('Custom input calls onAddPending on apply button click', async () => {
   const onAddPending = vi.fn();
   render(
     <SpellCheckPanel
@@ -104,10 +106,12 @@ test('Custom input calls onAddPending on apply button click', () => {
   fireEvent.change(input, { target: { value: 'the' } });
   const applyBtn = screen.getByRole('button', { name: 'spellCheck.apply' });
   fireEvent.click(applyBtn);
-  expect(onAddPending).toHaveBeenCalledWith(1, 'the', 'teh', { range: [0, 3] });
+  await waitFor(() => {
+    expect(onAddPending).toHaveBeenCalledWith(1, 'the', 'teh', { range: [0, 3], isAutoCorrection: false });
+  });
 });
 
-test('Custom input calls onAddPending on Enter key', () => {
+test('Custom input calls onAddPending on Enter key', async () => {
   const onAddPending = vi.fn();
   render(
     <SpellCheckPanel
@@ -119,10 +123,12 @@ test('Custom input calls onAddPending on Enter key', () => {
   const input = screen.getByPlaceholderText('spellCheck.typeCorrection');
   fireEvent.change(input, { target: { value: 'the' } });
   fireEvent.keyDown(input, { key: 'Enter' });
-  expect(onAddPending).toHaveBeenCalled();
+  await waitFor(() => {
+    expect(onAddPending).toHaveBeenCalled();
+  });
 });
 
-test('Clicking ignore calls onIgnoreIssue', () => {
+test('Clicking ignore calls onIgnoreIssue', async () => {
   const onIgnoreIssue = vi.fn();
   render(
     <SpellCheckPanel
@@ -133,10 +139,12 @@ test('Clicking ignore calls onIgnoreIssue', () => {
   );
   const ignoreBtn = screen.getByRole('button', { name: 'spellCheck.ignore' });
   fireEvent.click(ignoreBtn);
-  expect(onIgnoreIssue).toHaveBeenCalledWith(1);
+  await waitFor(() => {
+    expect(onIgnoreIssue).toHaveBeenCalledWith(1);
+  });
 });
 
-test('Clicking skip moves to skipped state', () => {
+test('Clicking skip moves to skipped state', async () => {
   render(
     <SpellCheckPanel
       {...defaultProps}
@@ -145,8 +153,9 @@ test('Clicking skip moves to skipped state', () => {
   );
   const skipBtn = screen.getByRole('button', { name: 'spellCheck.skipLater' });
   fireEvent.click(skipBtn);
-  // After skip, undo button should appear
-  expect(screen.getByRole('button', { name: 'spellCheck.undoSkip' })).toBeInTheDocument();
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: 'spellCheck.undoSkip' })).toBeInTheDocument();
+  });
 });
 
 test('Issue queued in pendingIssueIds shows queued card', () => {
@@ -160,7 +169,7 @@ test('Issue queued in pendingIssueIds shows queued card', () => {
   expect(screen.getByText('spellCheck.queued')).toBeInTheDocument();
 });
 
-test('Edit button opens page text editor with full page text', () => {
+test('View page button opens page modal with full page text', async () => {
   render(
     <SpellCheckPanel
       {...defaultProps}
@@ -168,9 +177,10 @@ test('Edit button opens page text editor with full page text', () => {
       pageText="teh quick brown fox"
     />
   );
-  // Desktop view button has text, mobile has title. Both match.
-  const editBtns = screen.getAllByRole('button', { name: /common\.edit/i });
-  fireEvent.click(editBtns[0]);
-  const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
-  expect(textarea.value).toBe('teh quick brown fox');
+  const viewPageButtons = screen.getAllByRole('button', { name: /spellCheck\.viewPage/i });
+  fireEvent.click(viewPageButtons[0]);
+  await waitFor(() => {
+    expect(screen.getByText('teh quick brown fox')).toBeInTheDocument();
+  });
+  expect(screen.getByRole('button', { name: 'common.close' })).toBeInTheDocument();
 });

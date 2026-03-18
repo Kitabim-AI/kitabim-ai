@@ -1,6 +1,18 @@
 """Service for maintaining book-level milestone status based on page milestones."""
 from sqlalchemy import select, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.pipeline import (
+    BOOK_MILESTONE_ATTR_BY_STEP,
+    BOOK_MILESTONE_COMPLETE,
+    BOOK_MILESTONE_FAILED,
+    BOOK_MILESTONE_IDLE,
+    BOOK_MILESTONE_IN_PROGRESS,
+    BOOK_MILESTONE_PARTIAL_FAILURE,
+    FAILED_PAGE_MILESTONES,
+    PAGE_MILESTONE_ATTR_BY_STEP,
+    PAGE_MILESTONE_IN_PROGRESS,
+    STEP_DONE_MILESTONE_BY_STEP,
+)
 from app.db.models import Book, Page
 from app.core.config import settings
 
@@ -23,28 +35,28 @@ class BookMilestoneService:
             One of: 'idle', 'in_progress', 'complete', 'partial_failure', 'failed'
         """
         if total == 0:
-            return 'idle'
+            return BOOK_MILESTONE_IDLE
 
         # All pages succeeded
         if done == total:
-            return 'complete'
+            return BOOK_MILESTONE_COMPLETE
 
         # All pages failed
         if failed == total:
-            return 'failed'
+            return BOOK_MILESTONE_FAILED
 
         # All pages finished (some failed, some succeeded)
         if done + failed == total:
             if failed > 0:
-                return 'partial_failure'
-            return 'complete'
+                return BOOK_MILESTONE_PARTIAL_FAILURE
+            return BOOK_MILESTONE_COMPLETE
 
         # Mixed state (some done, some pending/active)
         if done > 0 or active > 0 or failed > 0:
-            return 'in_progress'
+            return BOOK_MILESTONE_IN_PROGRESS
 
         # Default: idle
-        return 'idle'
+        return BOOK_MILESTONE_IDLE
 
     @staticmethod
     async def update_book_milestones(db: AsyncSession, book_id: str) -> None:
@@ -60,21 +72,21 @@ class BookMilestoneService:
             select(
                 func.count(Page.id).label("total"),
                 # OCR
-                func.count(case((Page.ocr_milestone == "succeeded", 1))).label("ocr_done"),
-                func.count(case((Page.ocr_milestone.in_(["failed", "error"]), 1))).label("ocr_failed"),
-                func.count(case((Page.ocr_milestone == "in_progress", 1))).label("ocr_active"),
+                func.count(case((Page.ocr_milestone == STEP_DONE_MILESTONE_BY_STEP["ocr"], 1))).label("ocr_done"),
+                func.count(case((Page.ocr_milestone.in_(FAILED_PAGE_MILESTONES), 1))).label("ocr_failed"),
+                func.count(case((Page.ocr_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))).label("ocr_active"),
                 # Chunking
-                func.count(case((Page.chunking_milestone == "succeeded", 1))).label("chunking_done"),
-                func.count(case((Page.chunking_milestone.in_(["failed", "error"]), 1))).label("chunking_failed"),
-                func.count(case((Page.chunking_milestone == "in_progress", 1))).label("chunking_active"),
+                func.count(case((Page.chunking_milestone == STEP_DONE_MILESTONE_BY_STEP["chunking"], 1))).label("chunking_done"),
+                func.count(case((Page.chunking_milestone.in_(FAILED_PAGE_MILESTONES), 1))).label("chunking_failed"),
+                func.count(case((Page.chunking_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))).label("chunking_active"),
                 # Embedding
-                func.count(case((Page.embedding_milestone == "succeeded", 1))).label("embedding_done"),
-                func.count(case((Page.embedding_milestone.in_(["failed", "error"]), 1))).label("embedding_failed"),
-                func.count(case((Page.embedding_milestone == "in_progress", 1))).label("embedding_active"),
+                func.count(case((Page.embedding_milestone == STEP_DONE_MILESTONE_BY_STEP["embedding"], 1))).label("embedding_done"),
+                func.count(case((Page.embedding_milestone.in_(FAILED_PAGE_MILESTONES), 1))).label("embedding_failed"),
+                func.count(case((Page.embedding_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))).label("embedding_active"),
                 # Spell Check
-                func.count(case((Page.spell_check_milestone == "done", 1))).label("spell_check_done"),
-                func.count(case((Page.spell_check_milestone.in_(["failed", "error"]), 1))).label("spell_check_failed"),
-                func.count(case((Page.spell_check_milestone == "in_progress", 1))).label("spell_check_active"),
+                func.count(case((Page.spell_check_milestone == STEP_DONE_MILESTONE_BY_STEP["spell_check"], 1))).label("spell_check_done"),
+                func.count(case((Page.spell_check_milestone.in_(FAILED_PAGE_MILESTONES), 1))).label("spell_check_failed"),
+                func.count(case((Page.spell_check_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))).label("spell_check_active"),
             )
             .where(Page.book_id == book_id)
         )
@@ -131,30 +143,13 @@ class BookMilestoneService:
         """
         # Map step to page milestone field and count expressions
         step_configs = {
-            'ocr': {
-                'done_field': Page.ocr_milestone == "succeeded",
-                'failed_field': Page.ocr_milestone.in_(["failed", "error"]),
-                'active_field': Page.ocr_milestone == "in_progress",
-                'book_field': 'ocr_milestone'
-            },
-            'chunking': {
-                'done_field': Page.chunking_milestone == "succeeded",
-                'failed_field': Page.chunking_milestone.in_(["failed", "error"]),
-                'active_field': Page.chunking_milestone == "in_progress",
-                'book_field': 'chunking_milestone'
-            },
-            'embedding': {
-                'done_field': Page.embedding_milestone == "succeeded",
-                'failed_field': Page.embedding_milestone.in_(["failed", "error"]),
-                'active_field': Page.embedding_milestone == "in_progress",
-                'book_field': 'embedding_milestone'
-            },
-            'spell_check': {
-                'done_field': Page.spell_check_milestone == "done",
-                'failed_field': Page.spell_check_milestone.in_(["failed", "error"]),
-                'active_field': Page.spell_check_milestone == "in_progress",
-                'book_field': 'spell_check_milestone'
-            },
+            step_name: {
+                "done_field": getattr(Page, PAGE_MILESTONE_ATTR_BY_STEP[step_name]) == STEP_DONE_MILESTONE_BY_STEP[step_name],
+                "failed_field": getattr(Page, PAGE_MILESTONE_ATTR_BY_STEP[step_name]).in_(FAILED_PAGE_MILESTONES),
+                "active_field": getattr(Page, PAGE_MILESTONE_ATTR_BY_STEP[step_name]) == PAGE_MILESTONE_IN_PROGRESS,
+                "book_field": BOOK_MILESTONE_ATTR_BY_STEP[step_name],
+            }
+            for step_name in PAGE_MILESTONE_ATTR_BY_STEP
         }
 
         if step not in step_configs:

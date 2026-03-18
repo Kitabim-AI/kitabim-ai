@@ -6,14 +6,24 @@ import uuid
 import os
 import io
 import re
+import warnings
 from datetime import datetime, timezone
 from typing import Optional, List
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Response, UploadFile
 from sqlalchemy import text, and_, or_, case, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 import random
 from app.core.config import settings
+from app.core.pipeline import (
+    FAILED_PAGE_MILESTONES,
+    PAGE_MILESTONE_IDLE,
+    PAGE_MILESTONE_SUCCEEDED,
+    PIPELINE_STEP_CHUNKING,
+    PIPELINE_STEP_EMBEDDING,
+    PIPELINE_STEP_OCR,
+    PIPELINE_STEP_SPELL_CHECK,
+)
 from app.db.session import get_session
 from app.db.repositories.books import BooksRepository
 from app.db.repositories.pages import PagesRepository
@@ -42,6 +52,8 @@ import json
 
 
 logger = logging.getLogger(__name__)
+PUBLIC_BOOK_CACHE_SCOPE = "public"
+STAFF_BOOK_CACHE_SCOPE = "staff"
 
 
 def camel_to_snake(name: str) -> str:
@@ -96,30 +108,103 @@ async def _increment_read_count(book_id: str) -> None:
         await session.commit()
 
 
-async def check_book_access_for_guest(book: dict, user: Optional[User]) -> bool:
-    """
-    Check if a guest (unauthenticated user) can access a book.
-    
-    Guests can only access books that are:
-    1. status = 'ready' AND
-    2. visibility = 'public' (defaults to 'public' for legacy books without visibility field)
-    
-    Args:
-        book: The book document from the database.
-        user: The current user (None for guests).
-        
-    Returns:
-        True if access is allowed, False otherwise.
-    """
-    # Authenticated users can access all books
-    if user is not None:
-        return True
-    
-    # Guests: check status and visibility
+def _user_role_name(user: Optional[User]) -> Optional[str]:
+    if user is None:
+        return None
+    role = user.role
+    return role.value if hasattr(role, "value") else str(role)
+
+
+def _can_staff_access_book(user: Optional[User]) -> bool:
+    return _user_role_name(user) in {"admin", "editor"}
+
+
+def _is_public_book(book: dict) -> bool:
     status = book.get("status")
-    visibility = book.get("visibility", "public")  # Default to public for legacy books
-    
-    return status == "ready" and visibility == "public"
+    visibility = book.get("visibility", "public")
+    return status == "ready" and visibility in {"public", None}
+
+
+def can_access_book(book: dict, user: Optional[User]) -> bool:
+    if _can_staff_access_book(user):
+        return True
+    return _is_public_book(book)
+
+
+async def ensure_book_access(book: dict, user: Optional[User]) -> None:
+    if not can_access_book(book, user):
+        raise HTTPException(status_code=403, detail=t("errors.unauthorized_access"))
+
+
+def get_book_cache_scope(user: Optional[User]) -> str:
+    return STAFF_BOOK_CACHE_SCOPE if _can_staff_access_book(user) else PUBLIC_BOOK_CACHE_SCOPE
+
+
+def get_book_cache_key(book_id: str, user: Optional[User]) -> str:
+    return f"{cache_config.KEY_BOOK.format(book_id=book_id)}:{get_book_cache_scope(user)}"
+
+
+async def read_limited_upload_bytes(file: UploadFile, max_bytes: int) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File exceeds {max_bytes // (1024 * 1024)} MB limit",
+            )
+        chunks.append(chunk)
+
+    return b"".join(chunks)
+
+
+def load_safe_cover_image(image_data: bytes):
+    from PIL import Image, UnidentifiedImageError
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            img = Image.open(io.BytesIO(image_data))
+            img.load()
+    except (UnidentifiedImageError, Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
+        raise HTTPException(status_code=400, detail="Invalid image file") from exc
+
+    if img.width * img.height > settings.max_cover_image_pixels:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Image exceeds {settings.max_cover_image_pixels} pixels limit",
+        )
+
+    if img.mode in ("RGBA", "P", "LA"):
+        img = img.convert("RGB")
+
+    return img
+
+
+async def process_cover_upload(file: UploadFile, book_id: str) -> str:
+    allowed_types = {"image/png", "image/jpeg", "image/jpg", "image/webp"}
+    if file.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=400,
+            detail=t("errors.invalid_file_type", allowed=", ".join(sorted(allowed_types))),
+        )
+
+    image_data = await read_limited_upload_bytes(file, settings.max_cover_upload_bytes)
+    img = load_safe_cover_image(image_data)
+
+    temp_cover_path = settings.uploads_dir / f".cover_update_{book_id}.jpg"
+    try:
+        img.save(temp_cover_path, "JPEG", quality=90)
+        remote_cover_path = f"covers/{book_id}.jpg"
+        await storage.upload_file(temp_cover_path, remote_cover_path)
+        return remote_cover_path
+    finally:
+        temp_cover_path.unlink(missing_ok=True)
 
 
 
@@ -660,9 +745,16 @@ async def get_book(
     )
 
     if not skip_cache:
-        cache_key = cache_config.KEY_BOOK.format(book_id=book_id)
+        cache_key = get_book_cache_key(book_id, current_user)
         cached_book = await cache_service.get(cache_key)
         if cached_book:
+            await ensure_book_access(
+                {
+                    "status": cached_book.get("status"),
+                    "visibility": cached_book.get("visibility"),
+                },
+                current_user,
+            )
             # Increment read counter asynchronously even on cache hit
             background_tasks.add_task(_increment_read_count, book_id)
             return Book.model_validate(cached_book)
@@ -682,9 +774,7 @@ async def get_book(
         "visibility": book_model.visibility,
     }
 
-    # Check guest access
-    if not await check_book_access_for_guest(book_dict, current_user):
-        raise HTTPException(status_code=403, detail=t("errors.unauthorized_access"))
+    await ensure_book_access(book_dict, current_user)
 
     # Increment read counter asynchronously (non-blocking)
     background_tasks.add_task(_increment_read_count, book_id)
@@ -741,10 +831,10 @@ async def get_book(
     # via the /content endpoint or paginated API.
     book_response.pages = []
 
-    # Cache only if status is 'ready'
-    if book_model.status == "ready" and not skip_cache:
+    # Cache with visibility-aware scope.
+    if not skip_cache and (_can_staff_access_book(current_user) or _is_public_book(book_dict)):
         await cache_service.set(
-            cache_config.KEY_BOOK.format(book_id=book_id), 
+            get_book_cache_key(book_id, current_user),
             book_dict, 
             ttl=settings.cache_ttl_books
         )
@@ -818,6 +908,13 @@ async def get_book_content(
     if not book_model:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
+    book_dict = {
+        "id": str(book_model.id),
+        "status": book_model.status,
+        "visibility": book_model.visibility,
+    }
+    await ensure_book_access(book_dict, current_user)
+
     # Get all pages using repository
     pages = await pages_repo.find_by_book(book_id, limit=10000)
     logger.info(f"DEBUG: Found {len(pages)} pages for book {book_id}")
@@ -855,8 +952,7 @@ async def get_book_page(
         "visibility": book_model.visibility,
     }
 
-    if not await check_book_access_for_guest(book_dict, current_user):
-        raise HTTPException(status_code=403, detail=t("errors.unauthorized_access"))
+    await ensure_book_access(book_dict, current_user)
 
     # Get page by number
     page = await pages_repo.find_one(book_id, page_num)
@@ -891,8 +987,7 @@ async def get_book_pages(
         "visibility": book_model.visibility,
     }
 
-    if not await check_book_access_for_guest(book_dict, current_user):
-        raise HTTPException(status_code=403, detail=t("errors.unauthorized_access"))
+    await ensure_book_access(book_dict, current_user)
 
     # Get pages with pagination
     pages = await pages_repo.find_by_book(book_id, skip=skip, limit=limit)
@@ -923,9 +1018,7 @@ async def get_book_by_hash(
         "visibility": book_model.visibility,
     }
 
-    # Check guest access
-    if not await check_book_access_for_guest(book_dict, current_user):
-        raise HTTPException(status_code=403, detail=t("errors.unauthorized_access"))
+    await ensure_book_access(book_dict, current_user)
 
     # Convert to Pydantic with automatic camelCase
     return Book.model_validate(book_model)
@@ -1018,7 +1111,7 @@ async def upload_pdf(
         total_pages=page_count,
         cover_url=cover_url,
         status="pending" if file_type == "pdf" else "ocr_done",
-        pipeline_step=None if file_type == "pdf" else "chunking",
+        pipeline_step=None if file_type == "pdf" else PIPELINE_STEP_CHUNKING,
         upload_date=now,
         last_updated=now,
         created_by=current_user.email,
@@ -1026,10 +1119,10 @@ async def upload_pdf(
         categories=[],
         visibility="private",
         source="upload",
-        ocr_milestone="idle" if file_type == "pdf" else "complete",
-        chunking_milestone="idle",
-        embedding_milestone="idle",
-        spell_check_milestone="idle",
+        ocr_milestone=PAGE_MILESTONE_IDLE if file_type == "pdf" else "complete",
+        chunking_milestone=PAGE_MILESTONE_IDLE,
+        embedding_milestone=PAGE_MILESTONE_IDLE,
+        spell_check_milestone=PAGE_MILESTONE_IDLE,
     )
 
     if file_type == "pdf":
@@ -1041,13 +1134,13 @@ async def upload_pdf(
                 book_id=book_id,
                 page_number=i + 1,
                 text=text,
-                pipeline_step="chunking",
-                milestone="idle",
+                pipeline_step=PIPELINE_STEP_CHUNKING,
+                milestone=PAGE_MILESTONE_IDLE,
                 status="ocr_done",
-                ocr_milestone="succeeded",
-                chunking_milestone="idle",
-                embedding_milestone="idle",
-                spell_check_milestone="idle",
+                ocr_milestone=PAGE_MILESTONE_SUCCEEDED,
+                chunking_milestone=PAGE_MILESTONE_IDLE,
+                embedding_milestone=PAGE_MILESTONE_IDLE,
+                spell_check_milestone=PAGE_MILESTONE_IDLE,
             )
             for i, text in enumerate(docx_pages)
         ])
@@ -1086,10 +1179,10 @@ async def reprocess_ocr(
         update(Page)
         .where(Page.book_id == book_id)
         .values(
-            ocr_milestone="idle",
-            chunking_milestone="idle",
-            embedding_milestone="idle",
-            spell_check_milestone="idle",
+            ocr_milestone=PAGE_MILESTONE_IDLE,
+            chunking_milestone=PAGE_MILESTONE_IDLE,
+            embedding_milestone=PAGE_MILESTONE_IDLE,
+            spell_check_milestone=PAGE_MILESTONE_IDLE,
             retry_count=0,
             is_indexed=False,
             last_updated=datetime.now(timezone.utc),
@@ -1100,12 +1193,12 @@ async def reprocess_ocr(
     # Update book-level milestones
     await books_repo.update_one(
         book_id,
-        ocr_milestone="idle",
-        chunking_milestone="idle",
-        embedding_milestone="idle",
-        spell_check_milestone="idle",
+        ocr_milestone=PAGE_MILESTONE_IDLE,
+        chunking_milestone=PAGE_MILESTONE_IDLE,
+        embedding_milestone=PAGE_MILESTONE_IDLE,
+        spell_check_milestone=PAGE_MILESTONE_IDLE,
         status="pending",
-        pipeline_step="ocr",
+        pipeline_step=PIPELINE_STEP_OCR,
         last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email,
     )
@@ -1144,9 +1237,9 @@ async def reprocess_chunking(
         update(Page)
         .where(Page.book_id == book_id)
         .values(
-            chunking_milestone="idle",
-            embedding_milestone="idle",
-            spell_check_milestone="idle",
+            chunking_milestone=PAGE_MILESTONE_IDLE,
+            embedding_milestone=PAGE_MILESTONE_IDLE,
+            spell_check_milestone=PAGE_MILESTONE_IDLE,
             retry_count=0,
             is_indexed=False,
             last_updated=datetime.now(timezone.utc),
@@ -1157,11 +1250,11 @@ async def reprocess_chunking(
     # Update book-level milestones
     await books_repo.update_one(
         book_id,
-        chunking_milestone="idle",
-        embedding_milestone="idle",
-        spell_check_milestone="idle",
+        chunking_milestone=PAGE_MILESTONE_IDLE,
+        embedding_milestone=PAGE_MILESTONE_IDLE,
+        spell_check_milestone=PAGE_MILESTONE_IDLE,
         status="pending",
-        pipeline_step="chunking",
+        pipeline_step=PIPELINE_STEP_CHUNKING,
         last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email,
     )
@@ -1200,8 +1293,8 @@ async def reprocess_embedding(
         update(Page)
         .where(Page.book_id == book_id)
         .values(
-            embedding_milestone="idle",
-            spell_check_milestone="idle",
+            embedding_milestone=PAGE_MILESTONE_IDLE,
+            spell_check_milestone=PAGE_MILESTONE_IDLE,
             retry_count=0,
             is_indexed=False,
             last_updated=datetime.now(timezone.utc),
@@ -1217,10 +1310,10 @@ async def reprocess_embedding(
     # Update book-level milestones
     await books_repo.update_one(
         book_id,
-        embedding_milestone="idle",
-        spell_check_milestone="idle",
+        embedding_milestone=PAGE_MILESTONE_IDLE,
+        spell_check_milestone=PAGE_MILESTONE_IDLE,
         status="pending",
-        pipeline_step="embedding",
+        pipeline_step=PIPELINE_STEP_EMBEDDING,
         last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email,
     )
@@ -1259,7 +1352,7 @@ async def reprocess_spell_check(
         update(Page)
         .where(Page.book_id == book_id)
         .values(
-            spell_check_milestone="idle",
+            spell_check_milestone=PAGE_MILESTONE_IDLE,
             retry_count=0,
             last_updated=datetime.now(timezone.utc),
             updated_by=current_user.email,
@@ -1269,8 +1362,8 @@ async def reprocess_spell_check(
     # Update book-level milestone
     await books_repo.update_one(
         book_id,
-        spell_check_milestone="idle",
-        pipeline_step="spell_check",
+        spell_check_milestone=PAGE_MILESTONE_IDLE,
+        pipeline_step=PIPELINE_STEP_SPELL_CHECK,
         last_updated=datetime.now(timezone.utc),
         updated_by=current_user.email,
     )
@@ -1298,24 +1391,24 @@ async def retry_failed_pages(
         .where(
             Page.book_id == book_id,
             or_(
-                Page.ocr_milestone.in_(["failed", "error"]),
-                Page.chunking_milestone.in_(["failed", "error"]),
-                Page.embedding_milestone.in_(["failed", "error"]),
-                Page.spell_check_milestone.in_(["failed", "error"]),
+                Page.ocr_milestone.in_(FAILED_PAGE_MILESTONES),
+                Page.chunking_milestone.in_(FAILED_PAGE_MILESTONES),
+                Page.embedding_milestone.in_(FAILED_PAGE_MILESTONES),
+                Page.spell_check_milestone.in_(FAILED_PAGE_MILESTONES),
             )
         )
         .values(
             ocr_milestone=case(
-                (Page.ocr_milestone.in_(["failed", "error"]), text("'idle'")), else_=Page.ocr_milestone
+                (Page.ocr_milestone.in_(FAILED_PAGE_MILESTONES), text(f"'{PAGE_MILESTONE_IDLE}'")), else_=Page.ocr_milestone
             ),
             chunking_milestone=case(
-                (Page.chunking_milestone.in_(["failed", "error"]), text("'idle'")), else_=Page.chunking_milestone
+                (Page.chunking_milestone.in_(FAILED_PAGE_MILESTONES), text(f"'{PAGE_MILESTONE_IDLE}'")), else_=Page.chunking_milestone
             ),
             embedding_milestone=case(
-                (Page.embedding_milestone.in_(["failed", "error"]), text("'idle'")), else_=Page.embedding_milestone
+                (Page.embedding_milestone.in_(FAILED_PAGE_MILESTONES), text(f"'{PAGE_MILESTONE_IDLE}'")), else_=Page.embedding_milestone
             ),
             spell_check_milestone=case(
-                (Page.spell_check_milestone.in_(["failed", "error"]), text("'idle'")), else_=Page.spell_check_milestone
+                (Page.spell_check_milestone.in_(FAILED_PAGE_MILESTONES), text(f"'{PAGE_MILESTONE_IDLE}'")), else_=Page.spell_check_milestone
             ),
             retry_count=0, # Reset retries for manual intervention
             last_updated=datetime.now(timezone.utc),
@@ -1415,7 +1508,7 @@ async def update_page_text(
         await session.execute(
             delete(PageSpellIssue).where(PageSpellIssue.page_id == page.id)
         )
-        page.spell_check_milestone = "idle"
+        page.spell_check_milestone = PAGE_MILESTONE_IDLE
     
     await session.flush()
 
@@ -1446,9 +1539,9 @@ async def update_page_text(
             chunk_records.append(chunk)
         
         page.status = 'chunked'
-        page.pipeline_step = 'chunking'
-        page.chunking_milestone = 'succeeded' # Use decoupled milestone name
-        page.embedding_milestone = 'idle'      # Reset to trigger re-embedding via worker if needed
+        page.pipeline_step = PIPELINE_STEP_CHUNKING
+        page.chunking_milestone = PAGE_MILESTONE_SUCCEEDED # Use decoupled milestone name
+        page.embedding_milestone = PAGE_MILESTONE_IDLE      # Reset to trigger re-embedding via worker if needed
 
         await books_repo.update_one(
             book_id,
@@ -1473,8 +1566,8 @@ async def update_page_text(
                 update(Page).where(Page.id == page.id).values(
                     status='indexed',
                     is_indexed=True,
-                    pipeline_step='embedding',
-                    embedding_milestone='succeeded'
+                    pipeline_step=PIPELINE_STEP_EMBEDDING,
+                    embedding_milestone=PAGE_MILESTONE_SUCCEEDED
                 )
             )
             await session.commit()
@@ -1494,8 +1587,8 @@ async def update_page_text(
         # If text is empty, just mark as indexed
         page.status = 'indexed'
         page.is_indexed = True
-        page.pipeline_step = 'embedding'
-        page.embedding_milestone = 'succeeded'
+        page.pipeline_step = PIPELINE_STEP_EMBEDDING
+        page.embedding_milestone = PAGE_MILESTONE_SUCCEEDED
         await books_repo.update_one(
             book_id,
             last_updated=datetime.now(timezone.utc),
@@ -1804,69 +1897,6 @@ async def delete_book(
 
 
 
-@router.post("/upload-cover")
-async def upload_cover(
-    title: str = Form(...),
-    file: UploadFile = File(...),
-    current_user: User = Depends(require_editor),
-    session: AsyncSession = Depends(get_session),
-):
-    """Upload book cover with SQLAlchemy"""
-    from PIL import Image
-    from app.db.models import Book as BookDB
-
-    books_repo = BooksRepository(session)
-
-    # Find book by title (case-insensitive search)
-    stmt = select(BookDB).where(BookDB.title.ilike(f"%{title}%"))
-    result = await session.execute(stmt)
-    book = result.scalar_one_or_none()
-
-    if not book:
-        raise HTTPException(status_code=404, detail=t("errors.book_title_not_found", title=title))
-
-    book_id = book.id
-
-    allowed_types = ["image/png", "image/jpeg", "image/jpg", "image/webp"]
-    if file.content_type not in allowed_types:
-        raise HTTPException(status_code=400, detail=t("errors.invalid_file_type", allowed=", ".join(allowed_types)))
-
-    try:
-        image_data = await file.read()
-        img = Image.open(io.BytesIO(image_data))
-        if img.mode in ("RGBA", "P", "LA"):
-            img = img.convert("RGB")
-        # Save to temp file first for storage provider to upload
-        temp_cover_path = settings.uploads_dir / f".cover_upload_{book_id}.jpg"
-        img.save(temp_cover_path, "JPEG", quality=90)
-        
-        # Upload to storage (works with GCS or Local)
-        remote_cover_path = f"covers/{book_id}.jpg"
-        await storage.upload_file(temp_cover_path, remote_cover_path)
-        cover_url = remote_cover_path
-        
-        # Cleanup temp file
-        temp_cover_path.unlink(missing_ok=True)
-        
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=t("errors.image_process_failed", error=str(exc)))
-
-    await books_repo.update_one(
-        book_id,
-        cover_url=cover_url,
-        last_updated=datetime.now(timezone.utc),
-        updated_by=current_user.email
-    )
-    await session.commit()
-
-    return {
-        "status": "success",
-        "bookId": book_id,
-        "title": book.title,
-        "coverUrl": f"{storage.get_public_url(cover_url)}?v={int(datetime.now(timezone.utc).timestamp())}",
-    }
-
-
 @router.post("/{book_id}/cover")
 async def update_book_cover(
     book_id: str,
@@ -1875,37 +1905,15 @@ async def update_book_cover(
     session: AsyncSession = Depends(get_session),
 ):
     """Update book cover by book ID with SQLAlchemy and storage service"""
-    from PIL import Image
-    
     books_repo = BooksRepository(session)
     book = await books_repo.get(book_id)
     if not book:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
-    allowed_types = ["image/png", "image/jpeg", "image/jpg", "image/webp", "application/octet-stream"]
-    if file.content_type not in allowed_types:
-        # Some browsers might send image/jpg as application/octet-stream for some reason, 
-        # but let's be strict for now or trust PIL to check.
-        pass
-
     try:
-        image_data = await file.read()
-        img = Image.open(io.BytesIO(image_data))
-        if img.mode in ("RGBA", "P", "LA"):
-            img = img.convert("RGB")
-        
-        # Save to temp file first for storage provider to upload
-        temp_cover_path = settings.uploads_dir / f".cover_update_{book_id}.jpg"
-        img.save(temp_cover_path, "JPEG", quality=90)
-        
-        # Upload to storage (works with GCS or Local)
-        remote_cover_path = f"covers/{book_id}.jpg"
-        await storage.upload_file(temp_cover_path, remote_cover_path)
-        cover_url = remote_cover_path
-        
-        # Cleanup temp file
-        temp_cover_path.unlink(missing_ok=True)
-        
+        cover_url = await process_cover_upload(file, book_id)
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error(f"Failed to process cover for book {book_id}: {exc}")
         raise HTTPException(status_code=500, detail=t("errors.image_process_failed", error=str(exc)))
@@ -1978,4 +1986,3 @@ async def download_book(
     except Exception as exc:
         logger.error(f"Failed to download book {book_id}: {exc}")
         raise HTTPException(status_code=500, detail=str(exc))
-

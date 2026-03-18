@@ -40,6 +40,7 @@ async def test_increment_usage_existing():
 @pytest.mark.asyncio
 async def test_increment_usage_new():
     session = AsyncMock()
+    session.add = MagicMock()
     repo = UserChatUsageRepository(session)
     user_id = "new-user"
     

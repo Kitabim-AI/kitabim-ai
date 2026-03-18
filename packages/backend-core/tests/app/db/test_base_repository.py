@@ -38,6 +38,7 @@ async def test_base_get_all():
 @pytest.mark.asyncio
 async def test_base_create():
     session = AsyncMock()
+    session.add = MagicMock()
     repo = BaseRepository(session, Book)
     
     # BaseRepository.create uses self.model(**kwargs)
@@ -82,7 +83,7 @@ async def test_base_delete_one():
         
         res = await repo.delete_one("b1")
         assert res is True
-        session.flush.called
+        assert session.flush.called
 
 @pytest.mark.asyncio
 async def test_base_count():

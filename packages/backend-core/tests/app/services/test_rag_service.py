@@ -37,6 +37,7 @@ def test_rag_is_current_page_query():
 @pytest.mark.asyncio
 async def test_rag_answer_question_catalog(rag_service):
     session = AsyncMock()
+    session.add = MagicMock()
     req = ChatRequest(book_id="global", question="مۇئەللىپ كىم؟", history=[])
     
     # Mock repositories
@@ -56,6 +57,7 @@ async def test_rag_answer_question_catalog(rag_service):
 @pytest.mark.asyncio
 async def test_rag_answer_question_full_loop(rag_service):
     session = AsyncMock()
+    session.add = MagicMock()
     req = ChatRequest(book_id="b1", question="What is in the book?", history=[])
     
     mock_configs = MagicMock()

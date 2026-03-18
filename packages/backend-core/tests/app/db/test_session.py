@@ -24,6 +24,13 @@ async def test_engine():
         echo=True  # Show SQL queries
     )
 
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("SELECT 1"))
+    except Exception as exc:
+        await engine.dispose()
+        pytest.skip(f"Database not available for integration tests: {exc}")
+
     yield engine
 
     await engine.dispose()

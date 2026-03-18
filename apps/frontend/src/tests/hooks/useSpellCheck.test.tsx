@@ -4,6 +4,7 @@ import { expect, test, vi, beforeEach } from 'vitest';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
 const mockIssues = [

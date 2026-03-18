@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from app.db.repositories.rag_evaluations import RAGEvaluationsRepository, get_rag_evaluations_repository
 from app.db.models import RAGEvaluation
 
@@ -49,7 +49,7 @@ async def test_get_average_latency():
     mock_res.scalar_one_or_none.return_value = 123.45
     session.execute.return_value = mock_res
     
-    avg = await repo.get_average_latency(since=datetime.utcnow() - timedelta(days=1), book_id="b1")
+    avg = await repo.get_average_latency(since=datetime.now(UTC) - timedelta(days=1), book_id="b1")
     assert avg == 123.45
     
     mock_res.scalar_one_or_none.return_value = None
@@ -72,7 +72,7 @@ async def test_get_stats_summary():
     mock_res.fetchone.return_value = mock_row
     session.execute.return_value = mock_res
     
-    stats = await repo.get_stats_summary(since=datetime.utcnow())
+    stats = await repo.get_stats_summary(since=datetime.now(UTC))
     assert stats["total_queries"] == 100
     assert stats["avg_latency_ms"] == 150.0
 
