@@ -66,10 +66,9 @@ async def run_ocr_scanner(ctx) -> None:
                 .where(Page.id.in_(page_ids))
                 .values(ocr_milestone="in_progress", last_updated=func.now())
             )
-            await session.commit()
-            
             # Update book-level OCR milestone to 'in_progress' immediately
             await BookMilestoneService.update_book_milestone_for_step(session, book_id, 'ocr')
+            await session.commit()
 
         await redis.enqueue_job(
             "ocr_job",

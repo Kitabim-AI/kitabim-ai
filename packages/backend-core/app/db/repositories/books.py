@@ -361,6 +361,7 @@ class BooksRepository(BaseRepository[Book]):
             .where(Page.book_id.in_(book_ids))
             .group_by(Page.book_id)
         )
+        results = {}
         m_result = await self.session.execute(milestone_stats_stmt)
         for row in m_result.fetchall():
             bid = str(row.book_id)

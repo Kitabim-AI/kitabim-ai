@@ -56,11 +56,10 @@ async def run_chunking_scanner(ctx) -> None:
             .where(Page.id.in_(page_ids))
             .values(chunking_milestone="in_progress", last_updated=func.now())
         )
-        await session.commit()
-
         # Update book-level chunking milestones
         for book_id in book_ids:
             await BookMilestoneService.update_book_milestone_for_step(session, book_id, 'chunking')
+        await session.commit()
 
     await redis.enqueue_job("chunking_job", page_ids=page_ids)
     log_json(logger, logging.INFO, "chunking job dispatched", page_count=len(page_ids))

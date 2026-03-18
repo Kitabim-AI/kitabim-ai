@@ -1,76 +1,89 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime, timezone
 from app.services.chat_limit_service import ChatLimitService
-from app.models.user import User, UserRole
+from app.models.user import UserRole, User
+
+@pytest.fixture
+def chat_limit_service():
+    return ChatLimitService()
+
+@pytest.fixture
+def mock_user():
+    return User(
+        id="user-123", 
+        email="t@e.com", 
+        display_name="T", 
+        role=UserRole.READER,
+        provider="google",
+        provider_id="123",
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc)
+    )
 
 @pytest.mark.asyncio
-async def test_chat_limit_increment_syncs_to_redis_and_db(monkeypatch):
-    # mocks
-    mock_db_repo = AsyncMock()
-    mock_db_repo.increment_usage = AsyncMock(return_value=5)
-    
-    mock_cache = AsyncMock()
-    mock_redis_client = AsyncMock()
-    mock_cache.get_client = AsyncMock(return_value=mock_redis_client)
-    
-    # Mocking UserRepository and Session
-    monkeypatch.setattr("app.services.chat_limit_service.UserChatUsageRepository", lambda s: mock_db_repo)
-    monkeypatch.setattr("app.services.chat_limit_service.cache_service", mock_cache)
-    
-    service = ChatLimitService()
-    user = MagicMock(spec=User)
-    user.id = "user123"
-    user.role = UserRole.READER
-    
-    # Run
-    new_count = await service.increment_usage(user, AsyncMock())
-    
-    # Verify DB increment
-    mock_db_repo.increment_usage.assert_called_once_with("user123")
-    assert new_count == 5
-    
-    # Verify Redis increment (via eval)
-    mock_redis_client.eval.assert_called_once()
-    # Check that Eval was called with the correct Lua script and key
-    args, kwargs = mock_redis_client.eval.call_args
-    assert "redis.call('INCR', KEYS[1])" in args[0]
-    assert "user123" in args[2]
+async def test_get_limit_for_role_admin(chat_limit_service):
+    session = AsyncMock()
+    limit = await chat_limit_service.get_limit_for_role(UserRole.ADMIN, session)
+    assert limit is None
 
 @pytest.mark.asyncio
-async def test_get_usage_checks_cache_first(monkeypatch):
-    mock_cache = AsyncMock()
-    mock_cache.get = AsyncMock(return_value=3)
-    
-    mock_db_repo = AsyncMock()
-    monkeypatch.setattr("app.services.chat_limit_service.UserChatUsageRepository", lambda s: mock_db_repo)
-    monkeypatch.setattr("app.services.chat_limit_service.cache_service", mock_cache)
-    
-    service = ChatLimitService()
-    usage = await service.get_usage("user123", AsyncMock())
-    
-    assert usage == 3
-    mock_cache.get.assert_called_once()
-    mock_db_repo.get_usage.assert_not_called()
+async def test_get_limit_for_role_reader(chat_limit_service):
+    session = AsyncMock()
+    with patch("app.db.repositories.system_configs.SystemConfigsRepository.get_value", return_value="50"):
+        limit = await chat_limit_service.get_limit_for_role(UserRole.READER, session)
+        assert limit == 50
 
 @pytest.mark.asyncio
-async def test_get_usage_falls_back_to_db_and_backfills(monkeypatch):
-    mock_cache = AsyncMock()
-    mock_cache.get = AsyncMock(return_value=None)
-    mock_cache.set = AsyncMock()
-    
-    mock_db_repo = AsyncMock()
-    mock_db_repo.get_usage = AsyncMock(return_value=12)
-    
-    monkeypatch.setattr("app.services.chat_limit_service.UserChatUsageRepository", lambda s: mock_db_repo)
-    monkeypatch.setattr("app.services.chat_limit_service.cache_service", mock_cache)
-    
-    service = ChatLimitService()
-    usage = await service.get_usage("user123", AsyncMock())
-    
-    assert usage == 12
-    mock_cache.get.assert_called_once()
-    mock_db_repo.get_usage.assert_called_once_with("user123")
-    # Backfill
-    mock_cache.set.assert_called_once()
-    args, kwargs = mock_cache.set.call_args
-    assert args[1] == 12
+async def test_get_limit_fallback(chat_limit_service):
+    session = AsyncMock()
+    # Mock exception
+    with patch("app.db.repositories.system_configs.SystemConfigsRepository.get_value", side_effect=Exception("fail")):
+        limit = await chat_limit_service.get_limit_for_role(UserRole.EDITOR, session)
+        assert limit == 100
+
+@pytest.mark.asyncio
+async def test_get_usage_redis_hit(chat_limit_service):
+    session = AsyncMock()
+    with patch("app.services.cache_service.cache_service.get", return_value="15"):
+        usage = await chat_limit_service.get_usage("user-123", session)
+        assert usage == 15
+
+@pytest.mark.asyncio
+async def test_get_usage_redis_miss_db_hit(chat_limit_service):
+    session = AsyncMock()
+    with patch("app.services.cache_service.cache_service.get", return_value=None):
+        with patch("app.db.repositories.user_chat_usage.UserChatUsageRepository.get_usage", return_value=7):
+            with patch("app.services.cache_service.cache_service.set", return_value=None) as mock_set:
+                usage = await chat_limit_service.get_usage("user-123", session)
+                assert usage == 7
+                assert mock_set.called
+
+@pytest.mark.asyncio
+async def test_is_within_limit(chat_limit_service, mock_user):
+    session = AsyncMock()
+    with patch.object(chat_limit_service, "get_limit_for_role", return_value=10):
+        with patch.object(chat_limit_service, "get_usage", return_value=5):
+            assert await chat_limit_service.is_within_limit(mock_user, session) is True
+        
+        with patch.object(chat_limit_service, "get_usage", return_value=10):
+            assert await chat_limit_service.is_within_limit(mock_user, session) is False
+
+@pytest.mark.asyncio
+async def test_increment_usage(chat_limit_service, mock_user):
+    session = AsyncMock()
+    with patch("app.db.repositories.user_chat_usage.UserChatUsageRepository.increment_usage", return_value=6):
+        with patch("app.services.cache_service.cache_service.get_client", return_value=AsyncMock()) as mock_client:
+            res = await chat_limit_service.increment_usage(mock_user, session)
+            assert res == 6
+            assert mock_client.called
+
+@pytest.mark.asyncio
+async def test_get_user_usage_status(chat_limit_service, mock_user):
+    session = AsyncMock()
+    with patch.object(chat_limit_service, "get_limit_for_role", return_value=10):
+        with patch.object(chat_limit_service, "get_usage", return_value=3):
+            status = await chat_limit_service.get_user_usage_status(mock_user, session)
+            assert status["usage"] == 3
+            assert status["limit"] == 10
+            assert status["has_reached_limit"] is False

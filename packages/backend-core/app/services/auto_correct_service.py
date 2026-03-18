@@ -179,6 +179,8 @@ async def apply_auto_corrections_to_page(
         .values(
             text=page_text,
             is_indexed=False,  # Trigger re-embedding
+            chunking_milestone="idle",  # Force re-chunking of modified text
+            embedding_milestone="idle", # Force re-embedding of modified text
             last_updated=func.now()
         )
     )

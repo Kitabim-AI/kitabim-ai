@@ -1,257 +1,111 @@
 import pytest
-
-def test_rag_service_basic():
-    """Basic unit test scaffold for rag_service."""
-    assert True
-
-
-"""
-Unit tests for RagService._entity_matches_question
-
-Tests real Uyghur question patterns for author and book title matching.
-Run with: pytest packages/backend-core/tests/test_entity_matching.py -v
-"""
-import pytest
-
-
-def match(entity: str, question: str) -> bool:
-    """Inline copy of RagService._entity_matches_question for isolated testing."""
-    entity_words = entity.strip().split()
-    if len(entity_words) < 2:
-        return False
-    q_words = question.strip().split()
-    return all(
-        any(q_word.startswith(e_word) for q_word in q_words)
-        for e_word in entity_words
-    )
-
-
-# ---------------------------------------------------------------------------
-# Author matching — "what books did Y write?"
-# ---------------------------------------------------------------------------
-
-class TestAuthorMatching:
-
-    def test_author_with_genitive_suffix(self):
-        # زوردۇن سابىرنىڭ كىتابلىرى — "Zordun Sabir's books"
-        assert match("زوردۇن سابىر", "زوردۇن سابىرنىڭ كىتابلىرى قايسىلار؟") is True
-
-    def test_author_with_plural_possessive(self):
-        # ئابدۇرەھىم ئۆتكۈرنىڭ ئەسەرلىرى — "Abdureyim Ötkür's works"
-        assert match("ئابدۇرەھىم ئۆتكۈر", "ئابدۇرەھىم ئۆتكۈرنىڭ ئەسەرلىرى نەملەر؟") is True
-
-    def test_author_bare_name_in_question(self):
-        # Author name appears without suffix
-        assert match("زوردۇن سابىر", "زوردۇن سابىر نىڭ كىتابلىرى") is True
-
-    def test_author_with_topic_suffix(self):
-        # Y ھەققىدە — "about Y"
-        assert match("مۇھەممەد ئىمىن", "مۇھەممەد ئىمىننىڭ يازغان كىتابلىرى") is True
-
-    def test_author_not_in_question(self):
-        assert match("زوردۇن سابىر", "بۇ كىتابنىڭ مۇئەللىپى كىم؟") is False
-
-    def test_author_partial_first_word_only(self):
-        # Only first name matches — should fail (requires ALL words)
-        assert match("زوردۇن سابىر", "زوردۇن يازغان كىتابلار") is False
-
-    def test_single_word_author_always_false(self):
-        # Single-word entities are skipped to avoid false positives
-        assert match("سابىر", "سابىرنىڭ كىتابلىرى") is False
-
-
-# ---------------------------------------------------------------------------
-# Book title matching — "who is the author of book X?"
-# ---------------------------------------------------------------------------
-
-class TestBookTitleMatching:
-
-    def test_book_title_with_genitive(self):
-        # ئانا يۇرت كىتابىنىڭ مۇئەللىپى كىم؟ — "who is the author of Ana Yurt?"
-        assert match("ئانا يۇرت", "ئانا يۇرتنىڭ مۇئەللىپى كىم؟") is True
-        assert match("ئانا يۇرت", "ئانا يۇرتنىڭ ئاپتورى كىم؟") is True
-
-    def test_book_title_with_accusative_suffix(self):
-        # X نى كىم يازغان؟ — "who wrote X?"
-        assert match("ئانا يۇرت", "ئانا يۇرتنى كىم يازغان؟") is True
-        assert match("ئانا يۇرت", "ئانا يۇرت كىمنىڭ؟") is True
-
-    def test_book_title_bare(self):
-        assert match("ئانا يۇرت", "ئانا يۇرت ھەققىدە مەلۇمات بەر") is True
-
-    def test_book_title_not_in_question(self):
-        assert match("ئانا يۇرت", "بۇ كىتابنى كىم يازغان؟") is False
-
-    def test_book_title_with_locative_suffix(self):
-        # X دا — "in X"
-        assert match("ئانا يۇرت", "ئانا يۇرتتا قانداق مەزمۇنلار بار؟") is True
-
-
-# ---------------------------------------------------------------------------
-# Edge cases
-# ---------------------------------------------------------------------------
-
-class TestEdgeCases:
-
-    def test_empty_entity(self):
-        assert match("", "زوردۇن سابىرنىڭ كىتابلىرى") is False
-
-    def test_empty_question(self):
-        assert match("زوردۇن سابىر", "") is False
-
-    def test_three_word_entity_all_match(self):
-        assert match("ئابدۇللا تايجى خان", "ئابدۇللا تايجى خاننىڭ تارىخى") is True
-
-    def test_three_word_entity_partial_match(self):
-        # Middle word missing
-        assert match("ئابدۇللا تايجى خان", "ئابدۇللا خاننىڭ تارىخى") is False
-
-    def test_entity_words_out_of_order(self):
-        # Both words present but in different order — still matches (order not required)
-        assert match("زوردۇن سابىر", "سابىرنىڭ زوردۇن دېگەن كىتابى") is True
-
-
-"""
-Unit tests for RagService._is_author_or_catalog_query
-
-Tests real Uyghur question patterns that should (or should not) trigger
-the author/catalog lookup path.
-Run with: pytest packages/backend-core/tests/test_author_catalog_query.py -v
-"""
-
-
-def is_author_or_catalog_query(question: str) -> bool:
-    """Inline copy of RagService._is_author_or_catalog_query for isolated testing."""
-    if not question:
-        return False
-    q = question.strip()
-    keywords = [
-        # Author-related — "who wrote X" / "author of X"
-        "مۇئەللىپ", "مۇئەللىپى", "يازغۇچى", "يازغۇچىسى", "ئاپتور", "ئاپتورى",
-        "كىم يازغان", "يازغان كىشى", "يازغان كىم",
-        "كىم تەرىپىدىن", "يازغانلىقى", "كىمنىڭ", "كىمنىكى",
-        # Author-related — "X's books / works"
-        "ئەسەر يازغان", "ئەسەرلىرى", "كىتابلىرى",
-        # Catalog / book-list related
-        "كىتابلىرىڭىز", "كىتاب بارمۇ", "كىتابخانىڭىز",
-        "كىتاب تىزىملىكى", "قانچە كىتاب", "نەچچە كىتاب",
-        "قايسى كىتابلار", "قايسى ئەسەر",
-    ]
-    return any(k in q for k in keywords)
-
-
-is_q = is_author_or_catalog_query
-
-
-# ---------------------------------------------------------------------------
-# "Who is the author of book X?" patterns
-# ---------------------------------------------------------------------------
-
-class TestWhoIsAuthor:
-
-    def test_muelip_kim(self):
-        # مۇئەللىپى كىم؟ — "who is the author?"
-        assert is_q("ئانا يۇرت كىتابىنىڭ مۇئەللىپى كىم؟") is True
-
-    def test_aptor_kim(self):
-        # ئاپتورى كىم؟ — "who is the author?"
-        assert is_q("بۇ كىتابنىڭ ئاپتورى كىم؟") is True
-
-    def test_yazghuchy_kim(self):
-        # يازغۇچىسى كىم؟ — "who is the writer?"
-        assert is_q("بۇ رومانىڭ يازغۇچىسى كىم؟") is True
-
-    def test_kim_yazghan(self):
-        # كىم يازغان؟ — "who wrote?"
-        assert is_q("ئانا يۇرتنى كىم يازغان؟") is True
-
-    def test_yazghan_kishi(self):
-        # يازغان كىشى كىم؟ — "who is the person who wrote?"
-        assert is_q("بۇ كىتابنى يازغان كىشى كىم؟") is True
-
-    def test_kim_teripdin(self):
-        # كىم تەرىپىدىن — "by whom"
-        assert is_q("بۇ ئەسەر كىم تەرىپىدىن يېزىلغان؟") is True
-
-    def test_kimnyki(self):
-        # كىمنىكى — "whose"
-        assert is_q("بۇ كىتاب كىمنىكى؟") is True
-
-
-# ---------------------------------------------------------------------------
-# "What books did author Y write?" patterns
-# ---------------------------------------------------------------------------
-
-class TestAuthorBooks:
-
-    def test_kitabliri(self):
-        # كىتابلىرى — "their books"
-        assert is_q("زوردۇن سابىرنىڭ كىتابلىرى قايسىلار؟") is True
-
-    def test_eserliri(self):
-        # ئەسەرلىرى — "their works"
-        assert is_q("ئابدۇرەھىم ئۆتكۈرنىڭ ئەسەرلىرى") is True
-
-    def test_eser_yazghan(self):
-        # ئەسەر يازغان — "wrote works"
-        assert is_q("ئەسەر يازغان مۇئەللىپلار") is True
-
-    def test_yazghanliqi(self):
-        # يازغانلىقى — "what they wrote"
-        assert is_q("ئۇنىڭ يازغانلىقى نەمە؟") is True
-
-
-# ---------------------------------------------------------------------------
-# Catalog queries — "what books do you have?"
-# ---------------------------------------------------------------------------
-
-class TestCatalogQueries:
-
-    def test_kitabliringiz(self):
-        assert is_q("كىتابلىرىڭىز قايسىلار؟") is True
-
-    def test_kitab_barmu(self):
-        assert is_q("تارىخ ھەققىدە كىتاب بارمۇ؟") is True
-
-    def test_kitabxaningiz(self):
-        assert is_q("كىتابخانىڭىزدا نەچچە كىتاب بار؟") is True
-
-    def test_kitab_tizimliqi(self):
-        assert is_q("كىتاب تىزىملىكىنى كۆرسەت") is True
-
-    def test_qanche_kitab(self):
-        assert is_q("قانچە كىتاب بار؟") is True
-
-    def test_nechchе_kitab(self):
-        assert is_q("نەچچە كىتاب ئىندېكسلاندى؟") is True
-
-    def test_qaysi_kitablar(self):
-        assert is_q("قايسى كىتابلار بار؟") is True
-
-    def test_qaysi_eser(self):
-        assert is_q("قايسى ئەسەر ئوقۇشقا ماس كېلىدۇ؟") is True
-
-
-# ---------------------------------------------------------------------------
-# Should NOT trigger — regular content queries
-# ---------------------------------------------------------------------------
-
-class TestShouldNotTrigger:
-
-    def test_regular_content_question(self):
-        assert is_q("قارلۇغاچ قانداق پەرۋاز قىلىدۇ؟") is False
-
-    def test_historical_question(self):
-        assert is_q("ئۇيغۇر خانلىقى قاچان قۇرۇلغان؟") is False
-
-    def test_definition_question(self):
-        assert is_q("ئىسلام دىنى نېمە؟") is False
-
-    def test_empty_string(self):
-        assert is_q("") is False
-
-    def test_whitespace_only(self):
-        assert is_q("   ") is False
-
-    def test_greeting(self):
-        assert is_q("ياخشىمۇسىز") is False
+from unittest.mock import AsyncMock, MagicMock, patch
+from app.services.rag_service import RAGService
+from app.models.schemas import ChatRequest
+from langchain_core.documents import Document
+
+@pytest.fixture
+def rag_service():
+    return RAGService()
+
+@pytest.mark.asyncio
+async def test_rag_get_embeddings(rag_service):
+    with patch("app.services.rag_service.GeminiEmbeddings") as mock_emb:
+        emb = rag_service._get_embeddings("model-1")
+        assert "model-1" in rag_service._embeddings_cache
+        rag_service._get_embeddings("model-1")
+        assert mock_emb.call_count == 1
+
+@pytest.mark.asyncio
+async def test_rag_get_chains(rag_service):
+    with patch("app.services.rag_service.build_text_chain") as mock_text:
+        with patch("app.services.rag_service.build_structured_chain") as mock_struct:
+            rag_service._get_rag_chain("m1")
+            rag_service._get_category_chain("m1")
+            assert "m1" in rag_service._rag_chains
+            assert "m1" in rag_service._category_chains
+
+def test_rag_is_current_volume_query():
+    assert RAGService._is_current_volume_query("ئۇشبۇ تومدا بارمۇ؟") is True
+    assert RAGService._is_current_volume_query("") is False
+    assert RAGService._is_current_volume_query(None) is False
+
+def test_rag_is_current_page_query():
+    assert RAGService._is_current_page_query("بۇ بەتتە نېمە بار؟") is True
+    assert RAGService._is_current_page_query("") is False
+
+@pytest.mark.asyncio
+async def test_rag_answer_question_catalog(rag_service):
+    session = AsyncMock()
+    req = ChatRequest(book_id="global", question="مۇئەللىپ كىم؟", history=[])
+    
+    # Mock repositories
+    mock_configs = MagicMock()
+    mock_configs.get_value = AsyncMock(side_effect=["chat-model", "cat-model", "emb-model"])
+    
+    with patch("app.db.repositories.system_configs.SystemConfigsRepository", return_value=mock_configs):
+        with patch("app.db.repositories.books.BooksRepository"):
+            with patch("app.db.repositories.pages.PagesRepository"):
+                with patch("app.db.repositories.chunks.ChunksRepository"):
+                    with patch.object(rag_service, "_generate_answer", return_value="The author is X"):
+                        # Mock _build_catalog_context
+                        with patch.object(rag_service, "_build_catalog_context", return_value=("Context", 1)):
+                            res = await rag_service.answer_question(req, session)
+                            assert res == "The author is X"
+
+@pytest.mark.asyncio
+async def test_rag_answer_question_full_loop(rag_service):
+    session = AsyncMock()
+    req = ChatRequest(book_id="b1", question="What is in the book?", history=[])
+    
+    mock_configs = MagicMock()
+    mock_configs.get_value = AsyncMock(side_effect=["chat-model", "cat-model", "emb-model"])
+    
+    with patch("app.db.repositories.system_configs.SystemConfigsRepository", return_value=mock_configs):
+        with patch("app.db.repositories.books.BooksRepository") as mock_books_repo_cls:
+            mock_books_repo = mock_books_repo_cls.return_value
+            mock_book = MagicMock()
+            mock_book.id = "b1"
+            mock_book.title = "T1"
+            mock_book.author = "A1"
+            mock_book.status = "ready"
+            mock_books_repo.get = AsyncMock(return_value=mock_book)
+            
+            # Mock session.execute for siblings search
+            mock_siblings_res = MagicMock()
+            mock_siblings_res.fetchall.return_value = []
+            session.execute = AsyncMock(return_value=mock_siblings_res)
+            
+            with patch("app.db.repositories.pages.PagesRepository"):
+                with patch("app.db.repositories.chunks.ChunksRepository") as mock_chunks_repo_cls:
+                    mock_chunks_repo = mock_chunks_repo_cls.return_value
+                    mock_chunks_repo.similarity_search = AsyncMock(return_value=[
+                        {"text": "Content", "similarity": 0.9, "page_number": 1, "title": "T1", "book_id": "b1"}
+                    ])
+                    
+                    with patch("app.services.rag_service.cache_service") as mock_cache:
+                        # First call for embedding, second call for search results
+                        # We return None for search results so it calls similarity_search
+                        mock_cache.get = AsyncMock(side_effect=[[0.1]*768, None])
+                        
+                        with patch.object(rag_service, "_generate_answer", return_value="Answer from RAG"):
+                            res = await rag_service.answer_question(req, session)
+                            assert res == "Answer from RAG"
+
+@pytest.mark.asyncio
+async def test_rag_generate_answer(rag_service):
+    chain = AsyncMock()
+    chain.ainvoke.return_value = " Predicted "
+    
+    res = await rag_service._generate_answer("Context", "Question", chain)
+    assert res == "Predicted"
+
+@pytest.mark.asyncio
+async def test_rag_categorize_question(rag_service):
+    chain = AsyncMock()
+    mock_resp = MagicMock()
+    mock_resp.categories = ["cat1"]
+    chain.ainvoke.return_value = mock_resp
+    
+    cats = await rag_service._categorize_question("Question", ["cat1", "cat2"], chain)
+    assert cats == ["cat1"]
