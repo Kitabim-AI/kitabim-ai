@@ -47,10 +47,10 @@ _EMBED_BREAKER = CircuitBreaker(
 
 
 async def is_llm_available() -> bool:
-    """Check if the LLM circuit breakers are available."""
-    text_open = await _TEXT_BREAKER.is_open()
-    embed_open = await _EMBED_BREAKER.is_open()
-    return not text_open and not embed_open
+    """Check if the LLM circuit breakers are fully available (closed)."""
+    text_st = (await _TEXT_BREAKER._get_state()).get("state")
+    embed_st = (await _EMBED_BREAKER._get_state()).get("state")
+    return text_st == "closed" and embed_st == "closed"
 
 def update_breaker_config(failure_threshold: int | None = None, recovery_timeout: float | None = None) -> None:
     """Update defaults for both circuit breakers."""
@@ -82,10 +82,20 @@ async def get_circuit_breaker_status() -> dict:
     text_info = await _TEXT_BREAKER.get_info()
     embed_info = await _EMBED_BREAKER.get_info()
 
+    # Determine overall state
+    states = [text_info["state"], embed_info["state"]]
+    if "open" in states:
+        overall_state = "open"
+    elif "half_open" in states:
+        overall_state = "half_open"
+    else:
+        overall_state = "closed"
+
     return {
         "text_breaker": text_info,
         "embed_breaker": embed_info,
-        "overall_available": await is_llm_available(),
+        "overall_available": overall_state == "closed",
+        "overall_state": overall_state,
     }
 
 
@@ -217,8 +227,10 @@ _STREAM_FIRST_CHUNK_TIMEOUT = 60.0  # seconds to wait for the first chunk before
 
 
 async def _stream_with_breaker(breaker: CircuitBreaker, fn, *args, **kwargs):
-    allowed = await breaker._allow_call()
+    allowed, state = await breaker._allow_call()
     if not allowed:
+        if state == "half_open":
+            raise CircuitBreakerOpen(f"Circuit breaker '{breaker.name}' is half-open (recovering but at capacity)")
         raise CircuitBreakerOpen(f"Circuit breaker '{breaker.name}' is open")
 
     try:

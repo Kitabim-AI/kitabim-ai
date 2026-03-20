@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { authFetch } from '../services/authService';
 
 export interface SpellIssue {
@@ -124,5 +124,16 @@ export const useSpellCheck = (bookId: string, pageNumber: number) => {
     setIsScanning(false);
   }, []);
 
-  return { isLoading, isScanning, issues, hasLoaded, loadIssues, triggerRecheck, applyCorrection, ignoreIssue, updateLocalOffsets, reset };
+  return useMemo(() => ({
+    isLoading,
+    isScanning,
+    issues,
+    hasLoaded,
+    loadIssues,
+    triggerRecheck,
+    applyCorrection,
+    ignoreIssue,
+    updateLocalOffsets,
+    reset
+  }), [isLoading, isScanning, issues, hasLoaded, loadIssues, triggerRecheck, applyCorrection, ignoreIssue, updateLocalOffsets, reset]);
 };

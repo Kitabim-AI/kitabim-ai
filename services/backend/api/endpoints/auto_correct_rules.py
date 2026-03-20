@@ -1,5 +1,5 @@
 """
-Spell Check Corrections API — manage auto-correction rules.
+Auto-Correction Rules API — manage global substitution rules.
 
 All endpoints require admin role.
 """
@@ -14,20 +14,21 @@ from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
-from app.db.models import SpellCheckCorrection
+from app.db.models import AutoCorrectRule
 from app.models.user import User
 from app.services.auto_correct_service import get_auto_correction_stats
-from auth.dependencies import require_admin
+from auth.dependencies import require_admin, require_editor
 
 router = APIRouter()
 
 
 # ── Response schemas ──────────────────────────────────────────────────────────
 
-class CorrectionRuleOut(BaseModel):
+class AutoCorrectRuleOut(BaseModel):
+    id: int
     misspelled_word: str
     corrected_word: str
-    auto_apply: bool
+    is_active: bool
     description: Optional[str]
     created_at: datetime
     updated_at: datetime
@@ -36,23 +37,23 @@ class CorrectionRuleOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class CorrectionStatsOut(BaseModel):
+class AutoCorrectStatsOut(BaseModel):
     total_rules: int
     active_rules: int
     total_auto_corrected: int
     pending_corrections: int
 
 
-class ApplyCorrectionsResponse(BaseModel):
+class ApplyRulesResponse(BaseModel):
     queued_pages: int
 
 
 # ── Request schemas ───────────────────────────────────────────────────────────
 
-class CreateCorrectionRuleRequest(BaseModel):
+class CreateAutoCorrectRuleRequest(BaseModel):
     misspelled_word: str
     corrected_word: str
-    auto_apply: bool = False
+    is_active: bool = False
     description: Optional[str] = None
 
     @field_validator('misspelled_word', 'corrected_word')
@@ -70,9 +71,9 @@ class CreateCorrectionRuleRequest(BaseModel):
         return v
 
 
-class UpdateCorrectionRuleRequest(BaseModel):
+class UpdateAutoCorrectRuleRequest(BaseModel):
     corrected_word: Optional[str] = None
-    auto_apply: Optional[bool] = None
+    is_active: Optional[bool] = None
     description: Optional[str] = None
 
     @field_validator('corrected_word')
@@ -85,78 +86,78 @@ class UpdateCorrectionRuleRequest(BaseModel):
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
-@router.get("/spell-check-corrections", response_model=List[CorrectionRuleOut])
-async def list_correction_rules(
+@router.get("/auto-correct-rules", response_model=List[AutoCorrectRuleOut])
+async def list_auto_correct_rules(
     auto_apply_only: bool = False,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     """
-    List all correction rules.
+    List all auto-correction rules.
 
     Query params:
-    - auto_apply_only: If true, only return rules with auto_apply=True
+    - auto_apply_only: If true, only return rules with is_active=True
     """
-    stmt = select(SpellCheckCorrection).order_by(SpellCheckCorrection.misspelled_word)
+    stmt = select(AutoCorrectRule).order_by(AutoCorrectRule.misspelled_word)
 
     if auto_apply_only:
-        stmt = stmt.where(SpellCheckCorrection.auto_apply == True)
+        stmt = stmt.where(AutoCorrectRule.is_active == True)
 
     result = await session.execute(stmt)
     return list(result.scalars().all())
 
 
-@router.get("/spell-check-corrections/stats", response_model=CorrectionStatsOut)
-async def get_correction_stats(
-    current_user: User = Depends(require_admin),
+@router.get("/auto-correct-rules/stats", response_model=AutoCorrectStatsOut)
+async def get_auto_correct_stats_endpoint(
+    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     """Get statistics about auto-corrections."""
     stats = await get_auto_correction_stats(session)
-    return CorrectionStatsOut(**stats)
+    return AutoCorrectStatsOut(**stats)
 
 
-@router.get("/spell-check-corrections/{word}", response_model=CorrectionRuleOut)
-async def get_correction_rule(
+@router.get("/auto-correct-rules/{word}", response_model=AutoCorrectRuleOut)
+async def get_auto_correct_rule(
     word: str,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
-    """Get a specific correction rule."""
+    """Get a specific auto-correction rule."""
     result = await session.execute(
-        select(SpellCheckCorrection)
-        .where(SpellCheckCorrection.misspelled_word == word)
+        select(AutoCorrectRule)
+        .where(AutoCorrectRule.misspelled_word == word)
     )
     rule = result.scalar_one_or_none()
 
     if not rule:
-        raise HTTPException(status_code=404, detail="Correction rule not found")
+        raise HTTPException(status_code=404, detail="Auto-correction rule not found")
 
     return rule
 
 
-@router.post("/spell-check-corrections", response_model=CorrectionRuleOut, status_code=201)
-async def create_correction_rule(
-    body: CreateCorrectionRuleRequest,
+@router.post("/auto-correct-rules", response_model=AutoCorrectRuleOut, status_code=201)
+async def create_auto_correct_rule(
+    body: CreateAutoCorrectRuleRequest,
     current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
     """
-    Create a new correction rule.
+    Create a new auto-correction rule.
 
     If a rule already exists for the misspelled word, it will be updated.
     """
     # Check if rule already exists
     existing = await session.execute(
-        select(SpellCheckCorrection)
-        .where(SpellCheckCorrection.misspelled_word == body.misspelled_word)
+        select(AutoCorrectRule)
+        .where(AutoCorrectRule.misspelled_word == body.misspelled_word)
     )
     existing_rule = existing.scalar_one_or_none()
 
     if existing_rule:
         # Update existing rule
         existing_rule.corrected_word = body.corrected_word
-        existing_rule.auto_apply = body.auto_apply
+        existing_rule.is_active = body.is_active
         existing_rule.description = body.description
         existing_rule.updated_at = func.now()
         await session.commit()
@@ -164,10 +165,10 @@ async def create_correction_rule(
         return existing_rule
     else:
         # Create new rule
-        rule = SpellCheckCorrection(
+        rule = AutoCorrectRule(
             misspelled_word=body.misspelled_word,
             corrected_word=body.corrected_word,
-            auto_apply=body.auto_apply,
+            is_active=body.is_active,
             description=body.description,
             created_by=current_user.id,
         )
@@ -177,26 +178,26 @@ async def create_correction_rule(
         return rule
 
 
-@router.patch("/spell-check-corrections/{word}", response_model=CorrectionRuleOut)
-async def update_correction_rule(
+@router.patch("/auto-correct-rules/{word}", response_model=AutoCorrectRuleOut)
+async def update_auto_correct_rule(
     word: str,
-    body: UpdateCorrectionRuleRequest,
+    body: UpdateAutoCorrectRuleRequest,
     current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
     """
-    Update an existing correction rule.
+    Update an existing auto-correction rule.
 
     Only provided fields will be updated.
     """
     result = await session.execute(
-        select(SpellCheckCorrection)
-        .where(SpellCheckCorrection.misspelled_word == word)
+        select(AutoCorrectRule)
+        .where(AutoCorrectRule.misspelled_word == word)
     )
     rule = result.scalar_one_or_none()
 
     if not rule:
-        raise HTTPException(status_code=404, detail="Correction rule not found")
+        raise HTTPException(status_code=404, detail="Auto-correction rule not found")
 
     # Update only provided fields
     if body.corrected_word is not None:
@@ -207,8 +208,8 @@ async def update_correction_rule(
             )
         rule.corrected_word = body.corrected_word
 
-    if body.auto_apply is not None:
-        rule.auto_apply = body.auto_apply
+    if body.is_active is not None:
+        rule.is_active = body.is_active
 
     if body.description is not None:
         rule.description = body.description
@@ -220,28 +221,28 @@ async def update_correction_rule(
     return rule
 
 
-@router.delete("/spell-check-corrections/{word}", status_code=204)
-async def delete_correction_rule(
+@router.delete("/auto-correct-rules/{word}", status_code=204)
+async def delete_auto_correct_rule(
     word: str,
     current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
-    """Delete a correction rule."""
+    """Delete an auto-correction rule."""
     result = await session.execute(
-        delete(SpellCheckCorrection)
-        .where(SpellCheckCorrection.misspelled_word == word)
-        .returning(SpellCheckCorrection.misspelled_word)
+        delete(AutoCorrectRule)
+        .where(AutoCorrectRule.misspelled_word == word)
+        .returning(AutoCorrectRule.misspelled_word)
     )
 
     if not result.fetchone():
-        raise HTTPException(status_code=404, detail="Correction rule not found")
+        raise HTTPException(status_code=404, detail="Auto-correction rule not found")
 
     await session.commit()
     return None
 
 
-@router.post("/spell-check-corrections/apply", response_model=ApplyCorrectionsResponse)
-async def trigger_auto_corrections(
+@router.post("/auto-correct-rules/apply", response_model=ApplyRulesResponse)
+async def trigger_auto_corrections_manual(
     current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
@@ -249,19 +250,22 @@ async def trigger_auto_corrections(
     Manually trigger auto-correction job for all pages with auto-correctable issues.
 
     This will queue pages for processing by the background worker.
-    Normally, the auto-correction scanner runs automatically every few minutes.
+    Normally, the auto-correction scanner runs automatically.
     """
     from app.services.auto_correct_service import find_pages_with_auto_correctable_issues
 
     # Find pages with auto-correctable issues
-    batch_size = 50  # Could be made configurable
+    from app.db.repositories.system_configs import SystemConfigsRepository
+    config_repo = SystemConfigsRepository(session)
+    batch_size = int(await config_repo.get_value("auto_correct_batch_size", "500"))
+    
     page_ids = await find_pages_with_auto_correctable_issues(session, limit=batch_size)
 
     if not page_ids:
-        return ApplyCorrectionsResponse(queued_pages=0)
+        return ApplyRulesResponse(queued_pages=0)
 
     # In a production environment, we would enqueue a job here
-    # For now, we just return the count
-    # TODO: Integrate with Redis job queue when worker is running
+    # This endpoint is primarily for testing/on-demand cleaning
+    # TODO: Integrate with Redis job queue when worker settings are established
 
-    return ApplyCorrectionsResponse(queued_pages=len(page_ids))
+    return ApplyRulesResponse(queued_pages=len(page_ids))

@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { BookOpenCheck, BookOpen, RefreshCw, AlertCircle, ClipboardList } from 'lucide-react';
 import { useI18n } from '../../i18n/I18nContext';
 import { useAppContext } from '../../context/AppContext';
-import { useIsEditor } from '../../hooks/useAuth';
+import { useIsEditor, useIsAdmin } from '../../hooks/useAuth';
 import { authFetch } from '../../services/authService';
 import { PersistenceService } from '../../services/persistenceService';
-import { useSpellCheck } from '../../hooks/useSpellCheck';
+import { useSpellCheck, SpellIssue } from '../../hooks/useSpellCheck';
 import { usePendingCorrections } from '../../hooks/usePendingCorrections';
 import { SpellCheckPanel } from './SpellCheckPanel';
 import { ReviewPanel } from './ReviewPanel';
@@ -26,9 +26,18 @@ const API_BASE = '/api';
 
 export const SpellCheckView: React.FC = () => {
   const { t } = useI18n();
-  const { fontSize, selectedBook, currentPage: readerPage } = useAppContext();
+  const { 
+    fontSize, 
+    selectedBook, 
+    currentPage: readerPage,
+    setView,
+    setSelectedBook,
+    setCurrentPage: setGlobalCurrentPage,
+    setModal
+  } = useAppContext();
   const { addNotification } = useNotification();
   const isEditor = useIsEditor();
+  const isAdmin = useIsAdmin();
 
   const [bookMeta, setBookMeta] = useState<BookMeta | null>(null);
   const [isLoadingBook, setIsLoadingBook] = useState(false);
@@ -42,44 +51,80 @@ export const SpellCheckView: React.FC = () => {
   const spellCheck = useSpellCheck(bookMeta?.book_id ?? '', currentPage);
   const pendingCorrections = usePendingCorrections();
   const [showReview, setShowReview] = useState(false);
+  
+  // Guard Refs to prevent parallel fetches and loops during re-renders
+  const isFetchingRef = useRef(false);
+  const lastFetchTimeRef = useRef(0);
+  
+  // Stability Refs for capturing current state in callbacks
+  const readerPageRef = useRef(readerPage);
+  const selectedBookIdRef = useRef(selectedBook?.id);
+  const pagesWithIssuesRef = useRef(pagesWithIssues);
+  const pendingLengthRef = useRef(pendingCorrections.pending.length);
+  const currentPageRef = useRef(currentPage);
 
-  const fetchRandomBook = useCallback(async () => {
+  useEffect(() => { readerPageRef.current = readerPage; }, [readerPage]);
+  useEffect(() => { selectedBookIdRef.current = selectedBook?.id; }, [selectedBook?.id]);
+  useEffect(() => { pagesWithIssuesRef.current = pagesWithIssues; }, [pagesWithIssues]);
+  useEffect(() => { pendingLengthRef.current = pendingCorrections.pending.length; }, [pendingCorrections.pending.length]);
+  useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
+
+  const fetchRandomBook = useCallback(async (isManual = false) => {
+    const now = Date.now();
+    
+    // Safety guard: prevent parallel fetches
+    if (isFetchingRef.current) return;
+    
+    // Safety guard: debounce auto-fetches to prevent storms
+    if (!isManual && (now - lastFetchTimeRef.current) < 2000) return;
+
+    isFetchingRef.current = true;
+    lastFetchTimeRef.current = now;
+    
     setIsLoadingBook(true);
     setBookError(false);
     setIsNetworkError(false);
+    
     setBookMeta(null);
     setPageText(undefined);
     setShowReview(false);
     setPageIssueCounts({});
+    
     spellCheck.reset();
+
     try {
       const res = await authFetch(`${API_BASE}/books/spell-check/random-book`);
       if (res.status === 404) {
         setBookError(true);
-        setIsNetworkError(false);
+        setIsLoadingBook(false);
+        isFetchingRef.current = false;
         return;
       }
-      if (!res.ok) {
-        setBookError(true);
-        setIsNetworkError(true);
-        return;
-      }
+      if (!res.ok) throw new Error();
+      
       const data: BookMeta = await res.json();
       setBookMeta(data);
       setPagesWithIssues(data.pages_with_issues);
-      // S13: if same book is open in reader, start from nearest issue page at or after reader's position
-      const isSameBook = selectedBook?.id === data.book_id;
-      const startPage = isSameBook && readerPage
-        ? (data.pages_with_issues.find(p => p >= readerPage) ?? data.first_issue_page)
+      
+      const rPage = readerPageRef.current;
+      const sId = selectedBookIdRef.current;
+      const isSameBook = sId === data.book_id;
+      const startPage = isSameBook && rPage
+        ? (data.pages_with_issues.find(p => p >= rPage) ?? data.first_issue_page)
         : data.first_issue_page;
+      
       setCurrentPage(startPage);
     } catch {
       setBookError(true);
       setIsNetworkError(true);
     } finally {
       setIsLoadingBook(false);
+      // Wait for React to finish its update cycle
+      setTimeout(() => {
+        isFetchingRef.current = false;
+      }, 300);
     }
-  }, []);
+  }, [spellCheck.reset]);
 
   // Load issues and page text whenever bookMeta or currentPage changes
   useEffect(() => {
@@ -90,53 +135,93 @@ export const SpellCheckView: React.FC = () => {
       .then(r => r.ok ? r.json() : null)
       .then(data => { if (data?.text) setPageText(data.text); })
       .catch(() => { });
-  }, [bookMeta?.book_id, currentPage]);
+  }, [bookMeta?.book_id, currentPage, spellCheck.loadIssues]);
 
-  // Sync fresh text from DB after rescanning (S12)
+  // Sync fresh text from DB after rescanning
   useEffect(() => {
     if (!spellCheck.isScanning && spellCheck.hasLoaded && bookMeta?.book_id) {
       authFetch(`${API_BASE}/books/${bookMeta.book_id}/pages/${currentPage}`)
         .then(r => r.ok ? r.json() : null)
         .then(data => { if (data?.text) setPageText(data.text); });
     }
-  }, [spellCheck.isScanning]);
+  }, [spellCheck.isScanning, spellCheck.hasLoaded, bookMeta?.book_id, currentPage]);
 
+  // Auto-start on mount
   useEffect(() => {
-    fetchRandomBook();
+    fetchRandomBook(true);
   }, [fetchRandomBook]);
 
-  // Bug 2 fix: clean up pagesWithIssues in a useEffect, not in an apply handler stale closure
+  // Clean up pagesWithIssues
   useEffect(() => {
     if (spellCheck.hasLoaded && !spellCheck.isLoading && spellCheck.issues.length === 0) {
       setPagesWithIssues(prev => prev.filter(p => p !== currentPage));
     }
   }, [spellCheck.issues.length, spellCheck.hasLoaded, spellCheck.isLoading, currentPage]);
 
-  // Track issue count per page for global index calculation
+  // Propagation rule for pending corrections in the current session
+  useEffect(() => {
+    if (!bookMeta || !spellCheck.hasLoaded || spellCheck.issues.length === 0) return;
+
+    const localSolutions = new Map<string, any>(
+      pendingCorrections.pending
+        .filter(p => p.bookId === bookMeta.book_id && !p.isSkip)
+        .map(p => [p.originalWord, p])
+    );
+    const globalSolutions = new Map<string, any>(
+      pendingCorrections.pending
+        .filter(p => !p.isSkip && (p.isDictionaryAddition || p.isAutoCorrection))
+        .map(p => [p.originalWord, p])
+    );
+
+    const existingPendingIds = new Set(pendingCorrections.pending.map(p => p.issueId));
+
+    spellCheck.issues.forEach(issue => {
+      if (existingPendingIds.has(issue.id)) return;
+
+      const solution = globalSolutions.get(issue.word) || localSolutions.get(issue.word);
+      if (solution) {
+        pendingCorrections.addPending({
+          issueId: issue.id,
+          bookId: bookMeta.book_id,
+          bookTitle: bookMeta.volume ? `${bookMeta.title} (${bookMeta.volume}-قىسىم)` : bookMeta.title,
+          pageNum: currentPage,
+          originalWord: issue.word,
+          correctedWord: solution.correctedWord,
+          isAutoCorrection: solution.isAutoCorrection,
+          isDictionaryAddition: solution.isDictionaryAddition,
+          isIgnore: solution.isIgnore
+        });
+      }
+    });
+  }, [spellCheck.issues, bookMeta, currentPage, pendingCorrections.pending, spellCheck.hasLoaded, pendingCorrections.addPending]);
+
+  // Track issue count per page
   useEffect(() => {
     if (spellCheck.hasLoaded && !spellCheck.isLoading) {
       setPageIssueCounts(prev => ({ ...prev, [currentPage]: spellCheck.issues.length }));
     }
   }, [spellCheck.hasLoaded, spellCheck.isLoading, spellCheck.issues.length, currentPage]);
 
-  // Navigation: panel calls onNextPage() in 'auto' mode when effectively clean
   const handleNextPage = useCallback(() => {
-    const idx = pagesWithIssues.indexOf(currentPage);
+    const cPage = currentPageRef.current;
+    const pws = pagesWithIssuesRef.current;
+    const pLen = pendingLengthRef.current;
+
+    const idx = pws.indexOf(cPage);
     const nextIssuePage = idx >= 0
-      ? pagesWithIssues[idx + 1]
-      : pagesWithIssues.find(p => p > currentPage);
+      ? pws[idx + 1]
+      : pws.find(p => p > cPage);
 
     if (nextIssuePage) {
       setCurrentPage(nextIssuePage);
     } else {
-      // No more issue pages — confirm pending if any, otherwise next book
-      if (pendingCorrections.pending.length > 0) {
+      if (pLen > 0) {
         setShowReview(true);
       } else {
-        fetchRandomBook();
+        fetchRandomBook(false);
       }
     }
-  }, [currentPage, pagesWithIssues, pendingCorrections.pending.length, fetchRandomBook]);
+  }, [fetchRandomBook]);
 
   const handlePrevPage = useCallback(() => {
     const idx = pagesWithIssues.indexOf(currentPage);
@@ -151,68 +236,85 @@ export const SpellCheckView: React.FC = () => {
     issueId: number,
     correctedWord: string,
     originalWord: string,
-    options?: { isPhrase?: boolean; range?: [number, number]; isAutoCorrection?: boolean }
+    options?: { isPhrase?: boolean; range?: [number, number]; isAutoCorrection?: boolean; isDictionaryAddition?: boolean; isIgnore?: boolean; isSkip?: boolean }
   ) => {
     if (!bookMeta) return;
 
-    if (options?.isAutoCorrection) {
-      try {
-        const res = await authFetch(`${API_BASE}/books/${bookMeta.book_id}/pages/${currentPage}/spell-check/apply`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            corrections: [{
-              issue_id: issueId,
-              corrected_word: correctedWord,
-              range: options.range,
-              is_auto_correction: true,
-            }],
-          }),
-        });
+    pendingCorrections.addPending({
+      issueId,
+      bookId: bookMeta.book_id,
+      bookTitle: bookMeta.volume ? `${bookMeta.title} (${bookMeta.volume}-قىسىم)` : bookMeta.title,
+      pageNum: currentPage,
+      originalWord,
+      correctedWord,
+      range: options?.range,
+      isPhrase: options?.isPhrase,
+      isAutoCorrection: options?.isAutoCorrection,
+      isDictionaryAddition: options?.isDictionaryAddition,
+      isIgnore: options?.isIgnore,
+      isSkip: options?.isSkip,
+    });
+  }, [bookMeta, currentPage, pendingCorrections]);
 
-        if (res.ok) {
-          addNotification(t('spellCheck.autoCorrectApplied'), 'success');
-          // Immediately refresh issues and text to reflect the applied correction
-          spellCheck.loadIssues();
-          const textRes = await authFetch(`${API_BASE}/books/${bookMeta.book_id}/pages/${currentPage}`);
-          if (textRes.ok) {
-            const data = await textRes.json();
-            if (data?.text) setPageText(data.text);
-          }
-        }
-      } catch (err) {
-        console.error('SpellCheckView: Failed to apply auto-correction immediately', err);
-      }
+  const toggleSkip = useCallback(async (issueId: number) => {
+    const isAlreadySkipped = pendingCorrections.pending.some(p => p.issueId === issueId && p.isSkip);
+    if (isAlreadySkipped) {
+      const entry = pendingCorrections.pending.find(p => p.issueId === issueId && p.isSkip);
+      if (entry) pendingCorrections.removePending(entry.id);
     } else {
-      pendingCorrections.addPending({
-        issueId,
-        bookId: bookMeta.book_id,
-        bookTitle: bookMeta.title,
-        pageNum: currentPage,
-        originalWord,
-        correctedWord,
-        range: options?.range,
-        isPhrase: options?.isPhrase,
-        isAutoCorrection: options?.isAutoCorrection,
-      });
+      const issue = spellCheck.issues.find(i => i.id === issueId);
+      if (issue && bookMeta) {
+        await handleAddPending(issueId, issue.word, issue.word, { isSkip: true });
+      }
     }
-  }, [bookMeta, currentPage, pendingCorrections, spellCheck]);
+  }, [pendingCorrections.pending, spellCheck.issues, bookMeta, handleAddPending]);
 
   const handleConfirmAll = useCallback(async () => {
-    const affectedCurrentPageEntries = pendingCorrections.pending.filter(
-      p => p.bookId === bookMeta?.book_id && p.pageNum === currentPage
+    if (!bookMeta) return;
+    
+    const hasGlobalChanges = pendingCorrections.pending.some(
+      p => p.isAutoCorrection || p.isDictionaryAddition
     );
+    
+    const affectedCurrentPageEntries = pendingCorrections.pending.filter(
+      p => p.bookId === bookMeta.book_id && p.pageNum === currentPage
+    );
+    
     const result = await pendingCorrections.confirmAll();
+    
     if (result.succeededIds.length > 0) {
       if (affectedCurrentPageEntries.some(p => result.succeededIds.includes(p.id))) {
         spellCheck.loadIssues();
       }
-      // Close review panel if nothing failed — go straight to next issues
+      
       if (!result.failedPageNums?.length) {
         setShowReview(false);
+        setModal({
+          isOpen: true,
+          title: t('common.success'),
+          message: hasGlobalChanges 
+            ? t('spellCheck.confirmSuccessWithWarning') 
+            : t('spellCheck.confirmSuccess'),
+          type: 'success',
+          confirmText: t('common.ok')
+        });
       }
     }
-  }, [pendingCorrections, bookMeta?.book_id, currentPage, spellCheck]);
+  }, [pendingCorrections, bookMeta, currentPage, spellCheck, setModal, t]);
+
+  const handleOpenInReader = useCallback(async () => {
+    if (!bookMeta) return;
+    try {
+      const fullBook = await PersistenceService.getBookById(bookMeta.book_id);
+      if (fullBook) {
+        setSelectedBook(fullBook);
+        setGlobalCurrentPage(currentPage);
+        setView('reader');
+      }
+    } catch (err) {
+      console.error('Failed to open book in reader:', err);
+    }
+  }, [bookMeta, currentPage, setSelectedBook, setGlobalCurrentPage, setView]);
 
   if (!isEditor) {
     return (
@@ -230,29 +332,32 @@ export const SpellCheckView: React.FC = () => {
       dir="rtl"
       lang="ug"
     >
-      {/* Desktop header */}
       <div className="hidden lg:flex bg-white/60 backdrop-blur-2xl px-8 py-4 items-center justify-between border border-[#0369a1]/10 shadow-sm group" style={{ borderRadius: '32px' }}>
-        <div className="flex items-center gap-5">
+        <div className="flex items-center gap-5 flex-1 min-w-0">
           <div className="p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 icon-shake">
             <BookOpenCheck size={24} className="md:w-7 md:h-7" strokeWidth={2.5} />
           </div>
           <div>
             {bookMeta ? (
-              <>
-                <h1 className="font-normal text-[#1a1a1a] uyghur-text leading-tight" style={{ fontSize: `${fontSize + 4}px` }}>
-                  {bookMeta.title}
-                </h1>
-                <div className="flex items-center gap-3 mt-0.5">
+              <div className="flex flex-col gap-1">
+                <h1 
+                  onClick={handleOpenInReader}
+                  className="font-normal text-[#1a1a1a] uyghur-text leading-tight flex items-center flex-wrap gap-2 cursor-pointer hover:text-[#0369a1] transition-colors group/title" 
+                  style={{ fontSize: `${fontSize + 4}px` }}
+                >
+                  <span className="group-hover/title:underline underline-offset-4">{bookMeta.title}</span>
                   {bookMeta.author && (
-                    <span className="text-sm text-slate-400 font-normal uyghur-text">{bookMeta.author}</span>
+                    <span className="text-base text-slate-400 font-normal">({bookMeta.author})</span>
                   )}
-                  {bookMeta.volume && (
+                </h1>
+                {bookMeta.volume && (
+                  <div className="flex items-center gap-3">
                     <span className="text-xs text-[#0369a1] font-bold uppercase bg-[#0369a1]/10 px-2 py-0.5 rounded-lg">
                       {t('book.volume', { volume: bookMeta.volume })}
                     </span>
-                  )}
-                </div>
-              </>
+                  </div>
+                )}
+              </div>
             ) : (
               <h1 className="font-normal text-[#1a1a1a]" style={{ fontSize: `${fontSize + 4}px` }}>
                 {t('spellCheck.title')}
@@ -262,7 +367,7 @@ export const SpellCheckView: React.FC = () => {
         </div>
         <div className="flex items-center gap-3">
           {bookMeta && (
-            <div className="hidden md:flex items-center gap-3 px-6 py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner">
+            <div className="hidden md:flex items-center gap-3 px-6 py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner whitespace-nowrap shrink-0">
               <BookOpen size={18} strokeWidth={2.5} />
               <span className="text-sm font-normal uppercase">
                 {t('spellCheck.issueCount', { count: bookMeta.total_issues })}
@@ -272,16 +377,16 @@ export const SpellCheckView: React.FC = () => {
           {pendingCorrections.pending.length > 0 && (
             <button
               onClick={() => setShowReview(prev => !prev)}
-              className="flex items-center gap-2 px-5 py-2.5 bg-amber-500 text-white rounded-2xl text-sm font-normal transition-all hover:bg-amber-600 active:scale-95 shadow-lg shadow-amber-500/20"
+              className="flex items-center gap-2 px-5 py-2.5 bg-amber-500 text-white rounded-2xl text-sm font-normal transition-all hover:bg-amber-600 active:scale-95 shadow-lg shadow-amber-500/20 whitespace-nowrap shrink-0"
             >
               <ClipboardList size={16} strokeWidth={2.5} />
               {t('spellCheck.reviewPending', { count: pendingCorrections.pending.length })}
             </button>
           )}
           <button
-            onClick={fetchRandomBook}
+            onClick={() => fetchRandomBook(true)}
             disabled={isLoadingBook}
-            className="flex items-center gap-2 px-5 py-2.5 bg-[#0369a1] text-white rounded-2xl text-sm font-normal transition-all hover:bg-[#0284c7] active:scale-95 disabled:opacity-50 shadow-lg shadow-[#0369a1]/20"
+            className="flex items-center gap-2 px-5 py-2.5 bg-[#0369a1] text-white rounded-2xl text-sm font-normal transition-all hover:bg-[#0284c7] active:scale-95 disabled:opacity-50 shadow-lg shadow-[#0369a1]/20 whitespace-nowrap shrink-0"
           >
             <RefreshCw size={16} strokeWidth={2.5} className={isLoadingBook ? 'animate-spin' : ''} />
             {t('spellCheck.nextBook')}
@@ -289,14 +394,18 @@ export const SpellCheckView: React.FC = () => {
         </div>
       </div>
 
-      {/* Mobile header */}
       <div className="lg:hidden flex items-center justify-between px-2 py-1">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20">
             <BookOpenCheck size={18} strokeWidth={2.5} />
           </div>
           {bookMeta && (
-            <span className="font-normal text-[#1a1a1a] uyghur-text text-sm line-clamp-1">{bookMeta.title}</span>
+            <span 
+              onClick={handleOpenInReader}
+              className="font-normal text-[#1a1a1a] uyghur-text text-sm line-clamp-1 cursor-pointer active:text-[#0369a1]"
+            >
+              {bookMeta.title}
+            </span>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -312,7 +421,7 @@ export const SpellCheckView: React.FC = () => {
             </button>
           )}
           <button
-            onClick={fetchRandomBook}
+            onClick={() => fetchRandomBook(true)}
             disabled={isLoadingBook}
             className="p-2 bg-[#0369a1]/10 text-[#0369a1] rounded-xl transition-all hover:bg-[#0369a1] hover:text-white active:scale-95 disabled:opacity-50"
           >
@@ -321,9 +430,7 @@ export const SpellCheckView: React.FC = () => {
         </div>
       </div>
 
-      {/* Main content */}
       <div className="flex-1 glass-panel border border-white/60 rounded-[24px] sm:rounded-[40px] flex flex-col p-4 sm:p-6 lg:p-8">
-        {/* Loading book */}
         {(isLoadingBook || !bookMeta || (spellCheck.isLoading && !spellCheck.hasLoaded)) && !bookError && (
           <div className="flex-1 flex flex-col items-center justify-center gap-6 animate-fade-in">
             <div className="relative">
@@ -338,7 +445,6 @@ export const SpellCheckView: React.FC = () => {
           </div>
         )}
 
-        {/* Error / empty state */}
         {!isLoadingBook && bookError && (
           <div className="flex-1 flex flex-col items-center justify-center gap-6 animate-fade-in">
             {isNetworkError ? (
@@ -350,7 +456,7 @@ export const SpellCheckView: React.FC = () => {
                   <p className="font-normal text-[#1a1a1a] text-lg mb-2">{t('spellCheck.loadError')}</p>
                 </div>
                 <button
-                  onClick={fetchRandomBook}
+                  onClick={() => fetchRandomBook(true)}
                   className="flex items-center gap-2 px-6 py-3 bg-[#0369a1] text-white rounded-2xl text-sm font-normal transition-all hover:bg-[#0284c7] active:scale-95 shadow-lg shadow-[#0369a1]/20"
                 >
                   <RefreshCw size={16} strokeWidth={2.5} />
@@ -371,7 +477,6 @@ export const SpellCheckView: React.FC = () => {
           </div>
         )}
 
-        {/* ReviewPanel */}
         {showReview && (
           <ReviewPanel
             pending={pendingCorrections.pending}
@@ -382,17 +487,19 @@ export const SpellCheckView: React.FC = () => {
             onClearAll={pendingCorrections.clearAll}
             onConfirmAll={handleConfirmAll}
             onClose={() => setShowReview(false)}
+            onUndoSkip={toggleSkip}
+            onToggleDictionary={isEditor ? pendingCorrections.toggleDictionaryAddition : undefined}
+            onToggleAutoCorrection={isEditor ? pendingCorrections.toggleAutoCorrection : undefined}
           />
         )}
 
-        {/* SpellCheckPanel */}
         {!showReview && !isLoadingBook && bookMeta && spellCheck.hasLoaded && (() => {
-          const globalIssueOffset = pagesWithIssues
+          const globalIssueOffset = pagesWithIssuesRef.current
             .filter(p => p < currentPage)
             .reduce((sum, p) => sum + (pageIssueCounts[p] ?? 0), 0);
           return (
-          <div className="flex flex-col">
-          <SpellCheckPanel
+            <div className="flex flex-col">
+              <SpellCheckPanel
                 pageNumber={currentPage}
                 totalPages={bookMeta.total_pages}
                 globalIssueOffset={globalIssueOffset}
@@ -404,30 +511,20 @@ export const SpellCheckView: React.FC = () => {
                 isScanning={spellCheck.isScanning}
                 hasLoaded={spellCheck.hasLoaded}
                 navigationMode="auto"
-                onUpdatePageText={async (text) => {
-                  if (!bookMeta) return false;
-                  try {
-                    await PersistenceService.updatePage(bookMeta.book_id, currentPage, text);
-                    pendingCorrections.clearPagePending(bookMeta.book_id, currentPage);
-                    await spellCheck.triggerRecheck();
-                    return true;
-                  } catch {
-                    return false;
-                  }
-                }}
+                skippedIds={pendingCorrections.pending.filter(p => p.isSkip).map(p => p.issueId)}
+                onToggleSkip={toggleSkip}
                 onAddPending={handleAddPending}
                 pendingIssueIds={pendingCorrections.pending.filter(p => p.bookId === bookMeta.book_id).map(p => p.issueId)}
                 onRemoveFromPending={(issueId) => {
                   const entry = pendingCorrections.pending.find(p => p.issueId === issueId && p.bookId === bookMeta.book_id);
                   if (entry) pendingCorrections.removePending(entry.id);
                 }}
-                onIgnoreIssue={spellCheck.ignoreIssue}
                 onNextPage={handleNextPage}
                 onPrevPage={handlePrevPage}
                 bookTitle={bookMeta.title}
                 bookAuthor={bookMeta.author}
               />
-          </div>
+            </div>
           );
         })()}
       </div>

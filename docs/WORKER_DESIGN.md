@@ -62,6 +62,7 @@ worker/
     embedding_scanner.py     ← claims idle embedding pages, dispatches EmbeddingJob
     spell_check_scanner.py   ← claims idle spell_check pages, dispatches SpellCheckJob
     event_dispatcher.py      ← monitors outbox, triggers next-step jobs immediately
+    auto_correct_scanner.py  ← claims all auto-correctable pages (daily)
     stale_watchdog.py        ← resets stale in_progress pages to idle
     maintenance_scanner.py   ← cleans up processed outbox events (daily)
   jobs/
@@ -248,6 +249,7 @@ Runs every 30 minutes.
 | `stale_watchdog` | Every 30 min | Uniform reset for all steps |
 | `maintenance_scanner`| Daily at 3 AM | Database house keeping |
 | `summary_scanner`     | Every 5 min | Regenerates missing book summaries |
+| `auto_correct_scanner` | Daily at 3 AM | Bulk applies spell corrections |
 
 
 ---

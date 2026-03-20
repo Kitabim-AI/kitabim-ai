@@ -10,7 +10,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-from api.endpoints import ai, auth, books, chat, users, system_configs, stats, contact, spell_check, spell_check_corrections
+from api.endpoints import ai, auth, books, chat, users, system_configs, stats, contact, spell_check, auto_correct_rules
 from app.core.config import settings
 from app.db.session import init_db, close_db  # SQLAlchemy session management
 from app.core.i18n import I18n, set_current_lang, t
@@ -65,39 +65,39 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.project_name, lifespan=lifespan)
 
+
+# Global exception handler to capture and log any unhandled exceptions
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
+    from fastapi.responses import JSONResponse
+    
+    logger = logging.getLogger("app.error")
+    log_json(
+        logger,
+        logging.ERROR,
+        "Unhandled server exception",
+        method=request.method,
+        path=request.url.path,
+        error=str(exc),
+        traceback=traceback.format_exc(),
+    )
+    
+    # Return error detail in development/editor environments
+    # In production, we keep it generic to avoid leaking system info
+    detail = str(exc) if settings.environment != "production" else "Internal Server Error"
+    return JSONResponse(
+        status_code=500,
+        content={"detail": detail}
+    )
+
+
 # Initialize rate limiter
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-@app.middleware("http")
-async def add_request_id(request: Request, call_next):
-    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
-    token = request_id_var.set(request_id)
-    response = None
-    logger = logging.getLogger("app.request")
-    log_json(
-        logger,
-        logging.INFO,
-        "Request started",
-        method=request.method,
-        path=request.url.path,
-    )
-    try:
-        response = await call_next(request)
-        return response
-    finally:
-        if response is not None:
-            response.headers["X-Request-ID"] = request_id
-            log_json(
-                logger,
-                logging.INFO,
-                "Request completed",
-                method=request.method,
-                path=request.url.path,
-                status_code=response.status_code,
-            )
-        request_id_var.reset(token)
+
 
 @app.middleware("http")
 async def add_language_header(request: Request, call_next):
@@ -130,6 +130,49 @@ async def add_security_headers(request: Request, call_next):
         "object-src 'none';"
     )
     return response
+
+
+# Request context & ID middleware - REGISTERED LAST to be OUTERMOST
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    token = request_id_var.set(request_id)
+    response = None
+    logger = logging.getLogger("app.request")
+    log_json(
+        logger,
+        logging.INFO,
+        "Request started",
+        method=request.method,
+        path=request.url.path,
+    )
+    try:
+        response = await call_next(request)
+        return response
+    except Exception as exc:
+        import traceback
+        log_json(
+            logger,
+            logging.ERROR,
+            "Request failed with unhandled exception",
+            method=request.method,
+            path=request.url.path,
+            error=str(exc),
+            traceback=traceback.format_exc(),
+        )
+        raise  # Re-raise to let the global exception handler deal with it
+    finally:
+        if response is not None:
+            response.headers["X-Request-ID"] = request_id
+            log_json(
+                logger,
+                logging.INFO,
+                "Request completed",
+                method=request.method,
+                path=request.url.path,
+                status_code=response.status_code,
+            )
+        request_id_var.reset(token)
 
 
 # CORS Configuration - Allow only specific origins
@@ -177,7 +220,7 @@ app.include_router(system_configs.router, prefix="/api/system-configs", tags=["s
 app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 app.include_router(contact.router, prefix="/api/contact", tags=["contact"])
 app.include_router(spell_check.router, prefix="/api/books", tags=["spell-check"])
-app.include_router(spell_check_corrections.router, prefix="/api", tags=["spell-check-corrections"])
+app.include_router(auto_correct_rules.router, prefix="/api", tags=["spell-check"])
 
 
 @app.get("/")
