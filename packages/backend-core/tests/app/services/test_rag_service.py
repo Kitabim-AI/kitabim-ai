@@ -2,7 +2,6 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from app.services.rag_service import RAGService
 from app.models.schemas import ChatRequest
-from langchain_core.documents import Document
 
 @pytest.fixture
 def rag_service():
@@ -11,15 +10,15 @@ def rag_service():
 @pytest.mark.asyncio
 async def test_rag_get_embeddings(rag_service):
     with patch("app.services.rag_service.GeminiEmbeddings") as mock_emb:
-        emb = rag_service._get_embeddings("model-1")
+        rag_service._get_embeddings("model-1")
         assert "model-1" in rag_service._embeddings_cache
         rag_service._get_embeddings("model-1")
         assert mock_emb.call_count == 1
 
 @pytest.mark.asyncio
 async def test_rag_get_chains(rag_service):
-    with patch("app.services.rag_service.build_text_chain") as mock_text:
-        with patch("app.services.rag_service.build_structured_chain") as mock_struct:
+    with patch("app.services.rag_service.build_text_chain"):
+        with patch("app.services.rag_service.build_structured_chain"):
             rag_service._get_rag_chain("m1")
             rag_service._get_category_chain("m1")
             assert "m1" in rag_service._rag_chains

@@ -1,6 +1,5 @@
 import pytest
-import asyncio
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 from app.utils.rate_limiter import RedisRateLimiter
 
 @pytest.mark.asyncio

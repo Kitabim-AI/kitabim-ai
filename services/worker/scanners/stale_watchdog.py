@@ -13,7 +13,6 @@ from sqlalchemy import update, func
 
 from app.db import session as db_session
 from app.db.models import Page
-from app.core.config import settings
 from app.services.book_milestone_service import BookMilestoneService
 from app.utils.observability import log_json
 

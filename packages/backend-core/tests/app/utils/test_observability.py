@@ -1,4 +1,3 @@
-import pytest
 import logging
 import json
 from unittest.mock import MagicMock, patch
@@ -68,7 +67,7 @@ def test_log_json():
     mock_logger.log.assert_called_with(logging.INFO, "msg", extra={"fields": {"key": "value"}})
 
 def test_configure_logging():
-    with patch("logging.StreamHandler") as mock_handler:
+    with patch("logging.StreamHandler"):
         with patch("logging.getLogger") as mock_get_logger:
             configure_logging(logging.DEBUG)
             assert mock_get_logger.called

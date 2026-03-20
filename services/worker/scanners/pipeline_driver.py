@@ -21,7 +21,6 @@ from app.db.models import Book, Page, BookSummary
 from app.db.repositories.system_configs import SystemConfigsRepository
 from app.services.book_milestone_service import BookMilestoneService
 from app.utils.observability import log_json
-from app.core.config import settings
 
 # Books already marked ready or failed — do not reprocess them.
 _V1_READY_STATUSES = ("ready", "error")

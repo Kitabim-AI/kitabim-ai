@@ -6,7 +6,7 @@ from app.services.spell_check_service import (
     get_ocr_corrections_batch,
     run_spell_check_for_page
 )
-from app.db.models import Page, PageSpellIssue, SpellCheckCorrection
+from app.db.models import Page
 
 @pytest.mark.asyncio
 async def test_cache_stats():

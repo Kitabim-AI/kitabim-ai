@@ -1,8 +1,5 @@
 import pytest
-import os
-import shutil
-from pathlib import Path
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import patch
 from app.services.storage_service import FileSystemStorageProvider, GCSStorageProvider, get_storage_provider
 
 @pytest.fixture

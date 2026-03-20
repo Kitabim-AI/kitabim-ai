@@ -6,12 +6,11 @@ This allows the pipeline to be reactive and run faster than 1-minute crons.
 from __future__ import annotations
 
 import logging
-import json
 
-from sqlalchemy import select, update, func
+from sqlalchemy import select, update
 
 from app.db import session as db_session
-from app.db.models import PipelineEvent, Page
+from app.db.models import PipelineEvent
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.event_dispatcher")
@@ -23,7 +22,7 @@ async def run_event_dispatcher(ctx) -> None:
         # Fetch unprocessed events
         stmt = (
             select(PipelineEvent)
-            .where(PipelineEvent.processed == False)
+            .where(PipelineEvent.processed.is_(False))
             .order_by(PipelineEvent.id)
             .limit(100)
             .with_for_update(skip_locked=True)

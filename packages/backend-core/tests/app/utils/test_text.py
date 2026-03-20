@@ -1,4 +1,3 @@
-import pytest
 from app.utils.text import normalize_uyghur_chars, clean_uyghur_text, generate_uyghur_regex
 
 def test_normalize_uyghur_chars():

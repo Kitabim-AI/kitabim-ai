@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from datetime import datetime, timezone
 from app.services.chat_limit_service import ChatLimitService
 from app.models.user import UserRole, User

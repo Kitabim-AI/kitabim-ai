@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import select, func, or_, and_, case, text
+from sqlalchemy import select, func, or_, and_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.pipeline import (
     FAILED_PAGE_MILESTONES,
@@ -13,7 +13,6 @@ from app.core.pipeline import (
     PAGE_MILESTONE_IDLE,
     PAGE_MILESTONE_IN_PROGRESS,
     PAGE_MILESTONE_SUCCEEDED,
-    PIPELINE_ORDER,
     PIPELINE_STEP_SUMMARY,
     STEP_DONE_MILESTONE_BY_STEP,
 )

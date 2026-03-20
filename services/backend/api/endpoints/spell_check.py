@@ -5,12 +5,11 @@ All endpoints require editor or admin role.
 """
 from __future__ import annotations
 
-import random
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import case, distinct, func, select, text, update, and_, or_
+from sqlalchemy import case, func, select, text, update, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.pipeline import (
@@ -20,11 +19,10 @@ from app.core.pipeline import (
     PIPELINE_STEP_EMBEDDING,
 )
 from app.db.session import get_session
-from app.db.models import Book, Page, PageSpellIssue, Dictionary
-from app.core.config import settings
+from app.db.models import Page, PageSpellIssue, Dictionary
 from app.models.user import User
 from app.services.spell_check_service import run_spell_check_for_page
-from auth.dependencies import require_editor, require_admin
+from auth.dependencies import require_editor
 
 router = APIRouter()
 

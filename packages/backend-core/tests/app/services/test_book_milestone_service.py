@@ -1,6 +1,5 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from sqlalchemy import select
 from app.services.book_milestone_service import BookMilestoneService
 from app.db.models import Book
 

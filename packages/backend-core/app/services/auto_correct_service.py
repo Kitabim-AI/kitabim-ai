@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 from typing import List, Dict, Optional
-from datetime import datetime
 
 from sqlalchemy import select, update, func, text, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.pipeline import PAGE_MILESTONE_IDLE
 from app.db.models import Page, PageSpellIssue, AutoCorrectRule
 from app.utils.observability import log_json
-from app.core.config import settings
 
 logger = logging.getLogger("app.services.auto_correct")
 
@@ -41,7 +39,7 @@ async def get_correction_rules(
     )
 
     if auto_apply_only:
-        stmt = stmt.where(AutoCorrectRule.is_active == True)
+        stmt = stmt.where(AutoCorrectRule.is_active)
 
     result = await session.execute(stmt)
     return {row.misspelled_word: row.corrected_word for row in result.fetchall()}
@@ -290,7 +288,7 @@ async def get_auto_correction_stats(session: AsyncSession) -> Dict:
     active_rules_result = await session.execute(
         select(func.count())
         .select_from(AutoCorrectRule)
-        .where(AutoCorrectRule.is_active == True)
+        .where(AutoCorrectRule.is_active)
     )
     active_rules = active_rules_result.scalar() or 0
 

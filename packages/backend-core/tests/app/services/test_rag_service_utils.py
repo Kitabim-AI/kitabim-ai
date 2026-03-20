@@ -1,8 +1,7 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from langchain_core.documents import Document
 from app.services.rag_service import RAGService
-from app.db.models import Book
 
 @pytest.fixture
 def rag_service():

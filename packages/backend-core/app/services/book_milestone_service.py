@@ -14,7 +14,6 @@ from app.core.pipeline import (
     STEP_DONE_MILESTONE_BY_STEP,
 )
 from app.db.models import Book, Page
-from app.core.config import settings
 
 
 class BookMilestoneService:

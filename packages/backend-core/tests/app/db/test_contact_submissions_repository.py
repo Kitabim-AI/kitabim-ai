@@ -1,6 +1,5 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from datetime import datetime
 from app.db.repositories.contact_submissions import ContactSubmissionsRepository, get_contact_submissions_repository
 from app.db.models import ContactSubmission
 

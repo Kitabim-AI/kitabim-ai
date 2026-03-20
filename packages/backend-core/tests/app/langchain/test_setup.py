@@ -1,4 +1,3 @@
-import pytest
 from unittest.mock import patch
 from app.langchain.setup import configure_langchain, _set_langsmith_env
 

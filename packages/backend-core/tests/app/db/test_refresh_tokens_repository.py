@@ -1,7 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
-from datetime import datetime, timedelta, timezone
 from app.db.repositories.refresh_tokens import RefreshTokensRepository
 from app.db.models import RefreshToken
 

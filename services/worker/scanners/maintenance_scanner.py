@@ -36,7 +36,7 @@ async def run_maintenance_scanner(ctx) -> None:
             # 2. Clean up processed PipelineEvents
             stmt = (
                 delete(PipelineEvent)
-                .where(PipelineEvent.processed == True)
+                .where(PipelineEvent.processed.is_(True))
                 .where(PipelineEvent.created_at < cutoff_date)
             )
             result = await session.execute(stmt)

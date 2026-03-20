@@ -101,7 +101,7 @@ async def list_auto_correct_rules(
     stmt = select(AutoCorrectRule).order_by(AutoCorrectRule.misspelled_word)
 
     if auto_apply_only:
-        stmt = stmt.where(AutoCorrectRule.is_active == True)
+        stmt = stmt.where(AutoCorrectRule.is_active)
 
     result = await session.execute(stmt)
     return list(result.scalars().all())

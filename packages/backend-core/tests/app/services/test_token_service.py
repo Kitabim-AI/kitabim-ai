@@ -34,7 +34,7 @@ async def test_validate_refresh_token_valid():
     session = AsyncMock()
     jti = "jti-456"
     token = "secret-token"
-    token_hash = hash_token(token)
+    hash_token(token)
     
     with patch("app.services.token_service.RefreshTokensRepository") as mock_repo_cls:
         mock_repo = mock_repo_cls.return_value

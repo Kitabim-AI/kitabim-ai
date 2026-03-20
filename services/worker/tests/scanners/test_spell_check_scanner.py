@@ -1,7 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from services.worker.scanners.spell_check_scanner import run_spell_check_scanner
-from app.db.models import Page, Book
 
 @pytest.mark.asyncio
 async def test_spell_check_scanner_no_work():

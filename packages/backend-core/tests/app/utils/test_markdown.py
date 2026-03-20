@@ -1,4 +1,3 @@
-import pytest
 from app.utils.markdown import normalize_markdown, strip_markdown
 
 def test_normalize_markdown():

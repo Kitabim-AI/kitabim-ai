@@ -88,7 +88,7 @@ class GoogleOAuthProvider(OAuthProvider):
         """
         # Increase timeout to 60 seconds to handle slow networks and Google API delays
         async with httpx.AsyncClient(timeout=60.0) as client:
-            logger.debug(f"Exchanging OAuth code with Google (timeout=60s)...")
+            logger.debug("Exchanging OAuth code with Google (timeout=60s)...")
             response = await client.post(
                 self.TOKEN_URL,
                 data={
@@ -130,7 +130,7 @@ class GoogleOAuthProvider(OAuthProvider):
         """
         # Increase timeout to 60 seconds to handle slow networks and Google API delays
         async with httpx.AsyncClient(timeout=60.0) as client:
-            logger.debug(f"Fetching user info from Google (timeout=60s)...")
+            logger.debug("Fetching user info from Google (timeout=60s)...")
             response = await client.get(
                 self.USERINFO_URL,
                 headers={"Authorization": f"Bearer {access_token}"},

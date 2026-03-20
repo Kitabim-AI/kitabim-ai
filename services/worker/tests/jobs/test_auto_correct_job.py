@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from services.worker.jobs.auto_correct_job import auto_correct_job
-from app.db.models import Page, Book
+from app.db.models import Page
 
 @pytest.mark.asyncio
 async def test_auto_correct_job_empty_pages_list():

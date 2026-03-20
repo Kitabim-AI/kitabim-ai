@@ -3,7 +3,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.services.rag_service import RAGService
 from app.models.schemas import ChatRequest
 
-from app.core import cache_config
 
 @pytest.mark.asyncio
 async def test_rag_answer_uses_embedding_cache(monkeypatch):

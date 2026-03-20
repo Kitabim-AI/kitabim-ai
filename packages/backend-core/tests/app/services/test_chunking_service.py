@@ -1,4 +1,3 @@
-import pytest
 from app.services.chunking_service import ChunkingService, RecursiveCharacterTextSplitter
 
 def test_recursive_splitter_simple():

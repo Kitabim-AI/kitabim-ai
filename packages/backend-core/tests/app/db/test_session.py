@@ -7,8 +7,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
-from app.core.config import settings
-from app.db.models import Base, Book, Page, Chunk, User
+from app.db.models import Book, Page, Chunk, User
 from app.db.session import get_database_url
 from app.db.repositories import BooksRepository, PagesRepository, ChunksRepository
 

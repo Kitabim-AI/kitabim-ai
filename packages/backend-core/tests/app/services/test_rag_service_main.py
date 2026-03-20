@@ -1,5 +1,4 @@
 import pytest
-import time
 from unittest.mock import AsyncMock, MagicMock, patch
 from app.services.rag_service import RAGService
 from app.models.schemas import ChatRequest

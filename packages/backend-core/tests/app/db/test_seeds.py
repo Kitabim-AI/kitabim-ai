@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, MagicMock
 from app.db.seeds import seed_system_configs
 
 @pytest.mark.asyncio
@@ -27,4 +27,4 @@ async def test_seed_system_configs_existing():
         await seed_system_configs(session)
         assert not mock_repo.create.called
 
-from unittest.mock import MagicMock
+
