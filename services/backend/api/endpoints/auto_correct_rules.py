@@ -10,14 +10,14 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
-from sqlalchemy import select, delete, func
+from sqlalchemy import select, delete, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
 from app.db.models import AutoCorrectRule
 from app.models.user import User
 from app.services.auto_correct_service import get_auto_correction_stats
-from auth.dependencies import require_admin, require_editor
+from auth.dependencies import require_editor
 
 router = APIRouter()
 
@@ -35,6 +35,13 @@ class AutoCorrectRuleOut(BaseModel):
     created_by: Optional[str]
 
     model_config = {"from_attributes": True}
+
+
+class AutoCorrectRulePaginatedOut(BaseModel):
+    items: List[AutoCorrectRuleOut]
+    total: int
+    skip: int
+    limit: int
 
 
 class AutoCorrectStatsOut(BaseModel):
@@ -86,25 +93,58 @@ class UpdateAutoCorrectRuleRequest(BaseModel):
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
-@router.get("/auto-correct-rules", response_model=List[AutoCorrectRuleOut])
+@router.get("/auto-correct-rules", response_model=AutoCorrectRulePaginatedOut)
 async def list_auto_correct_rules(
+    skip: int = 0,
+    limit: int = 20,
+    search: Optional[str] = None,
     auto_apply_only: bool = False,
     current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     """
-    List all auto-correction rules.
+    List all auto-correction rules with pagination and search.
 
     Query params:
+    - skip: Number of records to skip
+    - limit: Maximum number of records to return
+    - search: Search query (misspelled word, corrected word, or description)
     - auto_apply_only: If true, only return rules with is_active=True
     """
-    stmt = select(AutoCorrectRule).order_by(AutoCorrectRule.misspelled_word)
+    stmt = select(AutoCorrectRule).order_by(func.lower(AutoCorrectRule.misspelled_word), AutoCorrectRule.id)
+    count_stmt = select(func.count()).select_from(AutoCorrectRule)
 
+    filters = []
     if auto_apply_only:
-        stmt = stmt.where(AutoCorrectRule.is_active)
+        filters.append(AutoCorrectRule.is_active)
 
+    if search:
+        search_filter = or_(
+            AutoCorrectRule.misspelled_word.ilike(f"%{search}%"),
+            AutoCorrectRule.corrected_word.ilike(f"%{search}%"),
+            AutoCorrectRule.description.ilike(f"%{search}%")
+        )
+        filters.append(search_filter)
+
+    if filters:
+        stmt = stmt.where(*filters)
+        count_stmt = count_stmt.where(*filters)
+
+    # Get total count
+    total_result = await session.execute(count_stmt)
+    total = total_result.scalar() or 0
+
+    # Get paginated results
+    stmt = stmt.offset(skip).limit(limit)
     result = await session.execute(stmt)
-    return list(result.scalars().all())
+    items = list(result.scalars().all())
+
+    return {
+        "items": items,
+        "total": total,
+        "skip": skip,
+        "limit": limit
+    }
 
 
 @router.get("/auto-correct-rules/stats", response_model=AutoCorrectStatsOut)
@@ -139,7 +179,7 @@ async def get_auto_correct_rule(
 @router.post("/auto-correct-rules", response_model=AutoCorrectRuleOut, status_code=201)
 async def create_auto_correct_rule(
     body: CreateAutoCorrectRuleRequest,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     """
@@ -182,7 +222,7 @@ async def create_auto_correct_rule(
 async def update_auto_correct_rule(
     word: str,
     body: UpdateAutoCorrectRuleRequest,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     """
@@ -224,7 +264,7 @@ async def update_auto_correct_rule(
 @router.delete("/auto-correct-rules/{word}", status_code=204)
 async def delete_auto_correct_rule(
     word: str,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     """Delete an auto-correction rule."""
@@ -241,31 +281,3 @@ async def delete_auto_correct_rule(
     return None
 
 
-@router.post("/auto-correct-rules/apply", response_model=ApplyRulesResponse)
-async def trigger_auto_corrections_manual(
-    current_user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_session),
-):
-    """
-    Manually trigger auto-correction job for all pages with auto-correctable issues.
-
-    This will queue pages for processing by the background worker.
-    Normally, the auto-correction scanner runs automatically.
-    """
-    from app.services.auto_correct_service import find_pages_with_auto_correctable_issues
-
-    # Find pages with auto-correctable issues
-    from app.db.repositories.system_configs import SystemConfigsRepository
-    config_repo = SystemConfigsRepository(session)
-    batch_size = int(await config_repo.get_value("auto_correct_batch_size", "500"))
-    
-    page_ids = await find_pages_with_auto_correctable_issues(session, limit=batch_size)
-
-    if not page_ids:
-        return ApplyRulesResponse(queued_pages=0)
-
-    # In a production environment, we would enqueue a job here
-    # This endpoint is primarily for testing/on-demand cleaning
-    # TODO: Integrate with Redis job queue when worker settings are established
-
-    return ApplyRulesResponse(queued_pages=len(page_ids))

@@ -198,6 +198,8 @@
     "statsLabel": "Statistics",
     "configLabel": "Settings",
     "contactsLabel": "Contacts",
+    "rulesLabel": "Auto-Correction",
+    "dictionaryLabel": "Dictionary",
     "systemConfigLabel": "System Config",
     "stats": {
       "title": "System Statistics",
@@ -271,7 +273,6 @@
         "spell_check": "Reprocess Spell Check"
       },
       "redoOcr": "Redo OCR",
-      "showing": "Showing",
       "email": "Email",
       "role": "Role",
       "joinedDate": "Joined Date",
@@ -335,7 +336,6 @@
       "loadError": "Failed to load users",
       "roleUpdateError": "Failed to update role",
       "statusUpdateError": "Failed to update status",
-      "pagination": "Showing {{start}} to {{end}} of {{total}} users",
       "searchPlaceholder": "Search users (name or email)...",
       "disable": "Disable User",
       "enable": "Enable User",
@@ -370,6 +370,41 @@
           "open": "Open",
           "half_open": "Half-Open"
         }
+      }
+    },
+    "autoCorrectRules": {
+      "title": "Auto-Correction Rules",
+      "subtitle": "Manage global rules for automatic spell correction.",
+      "add": "Add New Rule",
+      "createNew": "Create New Rule",
+      "editRule": "Edit Rule",
+      "misspelled": "Misspelled Word",
+      "corrected": "Corrected Word",
+      "description": "Description",
+      "isActive": "Active Status",
+      "actions": "Actions",
+      "confirmDelete": "Are you sure you want to delete this rule?",
+      "empty": "No auto-correction rules found.",
+      "stats": {
+        "total": "Total Rules",
+        "active": "Active Rules",
+        "applied": "Total Corrected",
+        "pending": "Pending Issues"
+      }
+    },
+    "dictionary": {
+      "title": "Dictionary Management",
+      "subtitle": "Search, add or remove dictionary words.",
+      "searchPlaceholder": "Search word...",
+      "addWord": "Add to Dictionary",
+      "removeWord": "Remove from Dictionary",
+      "confirmDeleteTitle": "Remove from Dictionary",
+      "confirmDelete": "Are you sure you want to remove \"{{word}}\" from the dictionary?",
+      "wordExists": "Word exists in dictionary.",
+      "wordNotFound": "Word not found in dictionary.",
+      "stats": {
+        "total": "Total Words",
+        "totalWords": "{{count}} total words"
       }
     }
   },
@@ -436,13 +471,6 @@
     "readyTitle": "Ready to Start Spell Check",
     "readyDetail": "The system will automatically select books with pending issues for you to review.",
     "startAction": "Start Now"
-  },
-  "pagination": {
-    "previous": "Previous",
-    "next": "Next",
-    "showingLabel": "Show:",
-    "showing": "Showing",
-    "of": "of"
   },
   "suggestions": {
     "title": "Category",

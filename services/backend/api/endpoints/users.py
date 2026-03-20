@@ -186,13 +186,3 @@ async def change_user_status(
     return UserPublic.from_user(updated_user)
 
 
-@router.get("/me/profile", response_model=UserPublic)
-async def get_my_profile(
-    current_user: User = Depends(get_current_user),
-):
-    """
-    Get the current user's profile.
-    
-    Available to all authenticated users.
-    """
-    return UserPublic.from_user(current_user)

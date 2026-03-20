@@ -6,7 +6,7 @@ import { useBookActions } from '../hooks/useBookActions';
 
 interface AppContextType {
   view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check';
-  setView: (view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check') => void;
+  setView: (view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check', updateHistory?: boolean) => void;
   previousView: 'home' | 'library' | 'admin' | 'global-chat' | 'join-us' | 'spell-check';
   setPreviousView: (view: 'home' | 'library' | 'admin' | 'global-chat' | 'join-us' | 'spell-check') => void;
   searchQuery: string;
@@ -24,7 +24,7 @@ interface AppContextType {
   totalReady: number;
   sortedBooks: Book[];
   sortConfig: { key: string; direction: 'asc' | 'desc' };
-  refreshLibrary: () => void;
+  refreshLibrary: () => Promise<void>;
   isLoading: boolean;
   page: number;
   setPage: (page: number) => void;
@@ -42,29 +42,93 @@ interface AppContextType {
   setIsReaderFullscreen: (v: boolean) => void;
   fontSize: number;
   setFontSize: React.Dispatch<React.SetStateAction<number>>;
+  activeTab: string;
+  setActiveTab: (tab: string, updateHistory?: boolean) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [view, setViewInternal] = useState<'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check'>('home');
+  const parsePath = (path: string): { view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check', tab: string } => {
+    const parts = path.toLowerCase().split('/').filter(Boolean);
+    const viewPortion = parts[0] || 'home';
+    
+    let view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' = 'home';
+    let tab = 'books';
+
+    if (viewPortion === 'library') view = 'library';
+    else if (viewPortion === 'admin') {
+      view = 'admin';
+      tab = parts[1] || 'books';
+    }
+    else if (viewPortion === 'chat') view = 'global-chat';
+    else if (viewPortion === 'join-us') view = 'join-us';
+    else if (viewPortion === 'spell-check') view = 'spell-check';
+    else if (viewPortion === 'reader') view = 'reader';
+
+    return { view, tab };
+  };
+
+  const initialRoute = parsePath(window.location.pathname);
+  const [view, setViewInternal] = useState<'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check'>(initialRoute.view);
+  const [activeTab, setActiveTabInternal] = useState<string>(initialRoute.tab);
   const [previousView, setPreviousView] = useState<'home' | 'library' | 'admin' | 'global-chat' | 'join-us' | 'spell-check'>('home');
 
-  const setView = (newView: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check') => {
-    if (newView !== view) {
-      // Clear search queries and categories when switching views
-      setSearchQuery('');
-      setHomeSearchQuery('');
-      setSelectedCategory('');
+  const getPathFromView = (v: string, t?: string) => {
+    if (v === 'home') return '/';
+    if (v === 'global-chat') return '/chat';
+    if (v === 'admin' && t && t !== 'books') return `/admin/${t}`;
+    return `/${v}`;
+  };
 
-      // Only set previousView if the current view is not 'reader'
-      // This ensures we always return to a main navigation view
-      if (view !== 'reader') {
+  const setView = (newView: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check', updateHistory = true) => {
+    if (newView !== view) {
+      if (updateHistory && newView !== 'reader') {
+        const path = getPathFromView(newView, newView === 'admin' ? activeTab : undefined);
+        if (window.location.pathname !== path) {
+          window.history.pushState({ view: newView, tab: activeTab }, '', path);
+        }
+      }
+
+      // Logic: Only clear search if navigating directly BETWEEN main dashboard views.
+      // If we are opening/closing a sub-view (reader, chat), do NOT clear search state.
+      const mainViews = ['home', 'library', 'admin', 'join-us', 'spell-check'];
+      if (mainViews.includes(view) && mainViews.includes(newView)) {
+        setSearchQuery('');
+        setHomeSearchQuery('');
+        setSelectedCategory('');
+      }
+
+      if (view !== 'reader' && view !== 'global-chat') {
         setPreviousView(view);
       }
       setViewInternal(newView);
     }
   };
+
+  const setActiveTab = (newTab: string, updateHistory = true) => {
+    if (newTab !== activeTab) {
+      if (updateHistory && view === 'admin') {
+        const path = getPathFromView('admin', newTab);
+        if (window.location.pathname !== path) {
+          window.history.pushState({ view: 'admin', tab: newTab }, '', path);
+        }
+      }
+      setActiveTabInternal(newTab);
+    }
+  };
+
+  React.useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      const { view: nextView, tab: nextTab } = parsePath(window.location.pathname);
+      setView(nextView, false);
+      setActiveTab(nextTab, false);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [view, activeTab]);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [homeSearchQuery, setHomeSearchQuery] = useState('');
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
@@ -156,6 +220,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setIsReaderFullscreen,
     fontSize,
     setFontSize,
+    activeTab,
+    setActiveTab,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

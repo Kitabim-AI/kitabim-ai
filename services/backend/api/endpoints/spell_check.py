@@ -88,10 +88,6 @@ class RandomBookOut(BaseModel):
     first_issue_page: int
 
 
-class AddToDictionaryRequest(BaseModel):
-    word: str
-
-
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("/spell-check/random-book", response_model=RandomBookOut)
@@ -509,33 +505,3 @@ async def ignore_spell_issues(
     return {"ignored": len(body.issue_ids)}
 
 
-@router.post("/spell-check/dictionary")
-async def add_to_dictionary(
-    body: AddToDictionaryRequest,
-    current_user: User = Depends(require_editor),
-    session: AsyncSession = Depends(get_session),
-):
-    """Add a word to the global spell check dictionary. Editor and Admin allowed."""
-    word = body.word.strip()
-    if not word:
-        raise HTTPException(status_code=400, detail="Word cannot be empty")
-
-    # Check if already exists
-    stmt = select(Dictionary).where(Dictionary.word == word)
-    res = await session.execute(stmt)
-    if res.scalar_one_or_none():
-        return {"added": 0, "message": "Word already in dictionary"}
-
-    new_word = Dictionary(word=word)
-    session.add(new_word)
-    
-    # Also mark all matching OPEN issues across the entire system as 'ignored'
-    # since the word is now valid.
-    await session.execute(
-        update(PageSpellIssue)
-        .where(PageSpellIssue.word == word, PageSpellIssue.status == "open")
-        .values(status="ignored")
-    )
-    
-    await session.commit()
-    return {"added": 1}

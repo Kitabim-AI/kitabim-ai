@@ -224,7 +224,7 @@ export const HomeView: React.FC = () => {
             {!hasMore && books.length > 0 && (
               <div className="flex flex-col items-center gap-2 opacity-30">
                 <div className="w-8 h-[1px] bg-[#94a3b8]"></div>
-                <span className="text-xs font-black text-[#94a3b8] uppercase">{t('pagination.of')}</span>
+                <span className="text-xs font-black text-[#94a3b8] uppercase">{t('common.of')}</span>
               </div>
             )}
           </div>

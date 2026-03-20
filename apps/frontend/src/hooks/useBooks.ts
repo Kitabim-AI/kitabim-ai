@@ -128,7 +128,7 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
   }, [fetchBooks]);
 
   const refreshLibrary = useCallback(() => {
-    fetchBooks(true);
+    return fetchBooks(true);
   }, [fetchBooks]);
 
   const loadMoreShelf = useCallback(async () => {

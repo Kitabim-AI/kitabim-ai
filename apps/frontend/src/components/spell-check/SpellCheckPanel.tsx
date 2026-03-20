@@ -381,11 +381,11 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
               {onPrevPage && (
                 <button
                   onClick={() => onPrevPage?.()}
-                  disabled={isBusy}
-                  className="flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-800 disabled:opacity-40 rounded-xl font-bold transition-all active:scale-95 text-xs sm:text-sm uyghur-text whitespace-nowrap"
+                  disabled={isBusy || (globalIssueOffset + stepperIndex + 1) <= 1}
+                  className="flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-800 disabled:opacity-30 rounded-xl font-bold transition-all active:scale-95 text-xs sm:text-sm uyghur-text whitespace-nowrap"
                 >
                   <ChevronRight size={16} strokeWidth={2.5} />
-                  {t('pagination.previous')}
+                  {t('common.previous')}
                 </button>
               )}
 
@@ -401,10 +401,10 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
 
               <button
                 onClick={() => onNextPage()}
-                disabled={isBusy}
-                className="flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-800 disabled:opacity-40 rounded-xl font-bold transition-all active:scale-95 text-xs sm:text-sm uyghur-text whitespace-nowrap"
+                disabled={isBusy || (globalIssueOffset + stepperIndex + 1) >= (totalBookIssues ?? issues.length)}
+                className="flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-800 disabled:opacity-30 rounded-xl font-bold transition-all active:scale-95 text-xs sm:text-sm uyghur-text whitespace-nowrap"
               >
-                {t('pagination.next')}
+                {t('common.next')}
                 <ChevronLeft size={16} strokeWidth={2.5} />
               </button>
             </div>
