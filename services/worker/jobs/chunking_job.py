@@ -46,7 +46,11 @@ async def chunking_job(ctx, page_ids: List[int]) -> None:
     for page in pages:
         try:
             async with db_session.async_session_factory() as session:
-                chunks = chunking_service.split_text(page.text or "")
+                # Skip chunking if it's a Table of Contents (already marked by OCR job)
+                if page.is_toc:
+                    chunks = []
+                else:
+                    chunks = chunking_service.split_text(page.text or "")
 
                 # Replace any existing chunks for this page
                 await session.execute(
