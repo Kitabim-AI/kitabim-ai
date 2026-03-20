@@ -33,6 +33,15 @@ _TEXT_BREAKER = CircuitBreaker(
 )
 
 
+_OCR_BREAKER = CircuitBreaker(
+    "llm_ocr",
+    CircuitBreakerConfig(
+        failure_threshold=settings.llm_cb_failure_threshold,
+        recovery_timeout=float(settings.llm_cb_recovery_seconds),
+        half_open_max_calls=settings.llm_cb_half_open_max_calls,
+        cooling_period=float(settings.llm_cb_cooling_period),
+    ),
+)
 
 
 _EMBED_BREAKER = CircuitBreaker(
@@ -49,12 +58,13 @@ _EMBED_BREAKER = CircuitBreaker(
 async def is_llm_available() -> bool:
     """Check if the LLM circuit breakers are fully available (closed)."""
     text_st = (await _TEXT_BREAKER._get_state()).get("state")
+    ocr_st = (await _OCR_BREAKER._get_state()).get("state")
     embed_st = (await _EMBED_BREAKER._get_state()).get("state")
-    return text_st == "closed" and embed_st == "closed"
+    return text_st == "closed" and ocr_st == "closed" and embed_st == "closed"
 
 def update_breaker_config(failure_threshold: int | None = None, recovery_timeout: float | None = None) -> None:
-    """Update defaults for both circuit breakers."""
-    for breaker in [_TEXT_BREAKER, _EMBED_BREAKER]:
+    """Update defaults for all circuit breakers."""
+    for breaker in [_TEXT_BREAKER, _OCR_BREAKER, _EMBED_BREAKER]:
         if failure_threshold is not None:
             breaker.config.failure_threshold = failure_threshold
         if recovery_timeout is not None:
@@ -62,16 +72,16 @@ def update_breaker_config(failure_threshold: int | None = None, recovery_timeout
 
 
 async def reset_circuit_breakers() -> dict:
-    """Manually reset (close) both circuit breakers. Admin control."""
-    for breaker in [_TEXT_BREAKER, _EMBED_BREAKER]:
+    """Manually reset (close) all circuit breakers. Admin control."""
+    for breaker in [_TEXT_BREAKER, _OCR_BREAKER, _EMBED_BREAKER]:
         await breaker.reset()
 
     return await get_circuit_breaker_status()
 
 
 async def force_open_circuit_breakers() -> dict:
-    """Manually open both circuit breakers. Admin control."""
-    for breaker in [_TEXT_BREAKER, _EMBED_BREAKER]:
+    """Manually open all circuit breakers. Admin control."""
+    for breaker in [_TEXT_BREAKER, _OCR_BREAKER, _EMBED_BREAKER]:
         await breaker.force_open()
 
     return await get_circuit_breaker_status()
@@ -80,10 +90,11 @@ async def force_open_circuit_breakers() -> dict:
 async def get_circuit_breaker_status() -> dict:
     """Get current status of circuit breakers."""
     text_info = await _TEXT_BREAKER.get_info()
+    ocr_info = await _OCR_BREAKER.get_info()
     embed_info = await _EMBED_BREAKER.get_info()
 
     # Determine overall state
-    states = [text_info["state"], embed_info["state"]]
+    states = [text_info["state"], ocr_info["state"], embed_info["state"]]
     if "open" in states:
         overall_state = "open"
     elif "half_open" in states:
@@ -93,6 +104,7 @@ async def get_circuit_breaker_status() -> dict:
 
     return {
         "text_breaker": text_info,
+        "ocr_breaker": ocr_info,
         "embed_breaker": embed_info,
         "overall_available": overall_state == "closed",
         "overall_state": overall_state,
@@ -208,7 +220,7 @@ async def generate_text_with_image(prompt: str, image_bytes: bytes, model_name: 
     async def _call():
         return await llm.ainvoke([message])
 
-    response = await _call_with_breaker(_TEXT_BREAKER, _call)
+    response = await _call_with_breaker(_OCR_BREAKER, _call)
     text = _extract_message_text(response)
     log_json(_logger, logging.INFO, "LLM response received", text_length=len(text) if text else 0)
     return text
