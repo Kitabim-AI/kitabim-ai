@@ -146,7 +146,7 @@ export const usePendingCorrections = () => {
 
       try {
         if (group[0].isDictionaryAddition) {
-          const res = await authFetch(`${API_BASE}/books/spell-check/dictionary`, {
+          const res = await authFetch(`${API_BASE}/spell-check/dictionary`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ word: group[0].originalWord }),

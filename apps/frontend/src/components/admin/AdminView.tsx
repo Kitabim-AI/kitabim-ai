@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Database, Book as BookIcon, User, Hash, BookOpen, MoreVertical, Save, X, Edit2, Check, Globe, Shield, Wand2, Search, WholeWord, FileText, ScanText, RefreshCw, BookOpenCheck, Cuboid, Scissors } from 'lucide-react';
 import { authFetch } from '../../services/authService';
-import { Pagination } from '../common/Pagination';
-
 import { useI18n } from '../../i18n/I18nContext';
 import { useAppContext } from '../../context/AppContext';
 import { TagEditor } from './TagEditor';

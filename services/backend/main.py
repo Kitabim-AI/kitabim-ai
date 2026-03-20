@@ -10,7 +10,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-from api.endpoints import ai, auth, books, chat, users, system_configs, stats, contact, spell_check, auto_correct_rules
+from api.endpoints import ai, auth, books, chat, users, system_configs, stats, contact, spell_check, auto_correct_rules, dictionary
 from app.core.config import settings
 from app.db.session import init_db, close_db  # SQLAlchemy session management
 from app.core.i18n import I18n, set_current_lang, t
@@ -221,6 +221,7 @@ app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 app.include_router(contact.router, prefix="/api/contact", tags=["contact"])
 app.include_router(spell_check.router, prefix="/api/books", tags=["spell-check"])
 app.include_router(auto_correct_rules.router, prefix="/api", tags=["spell-check"])
+app.include_router(dictionary.router, prefix="/api", tags=["dictionary"])
 
 
 @app.get("/")

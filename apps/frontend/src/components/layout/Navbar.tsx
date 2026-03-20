@@ -10,7 +10,7 @@ export const Navbar: React.FC = () => {
   const { isAuthenticated } = useAuth();
   const isEditor = useIsEditor();
   const { t } = useI18n();
-  const { view, setView, searchQuery, setSearchQuery, homeSearchQuery, setHomeSearchQuery, bookActions, chat, setPage, isLoading } = useAppContext();
+  const { view, setView, searchQuery, setSearchQuery, homeSearchQuery, setHomeSearchQuery, bookActions, chat, setPage, isLoading, activeTab } = useAppContext();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [localSearch, setLocalSearch] = useState(searchQuery);
 
@@ -108,7 +108,7 @@ export const Navbar: React.FC = () => {
         </div>
 
         <div className="relative flex items-center gap-2 md:gap-2 lg:gap-4">
-          {(view === 'admin' || view === 'library') && (
+          {(view === 'library' || (view === 'admin' && activeTab === 'books')) && (
             <div className="relative hidden xl:block">
               <input
                 type="text"

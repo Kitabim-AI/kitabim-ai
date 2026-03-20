@@ -38,7 +38,6 @@ class ExtractionResult(BaseModel):
     status: str
     error: Optional[str] = None
     last_updated: Optional[datetime] = None  # DB: last_updated, API: lastUpdated
-    updated_by: Optional[str] = None  # DB: updated_by, API: updatedBy
     pipeline_step: Optional[str] = None  # DB: pipeline_step, API: pipelineStep
     milestone: Optional[str] = None  # DB: milestone, API: milestone
 
@@ -66,8 +65,6 @@ class Book(BaseModel):
     status: str
     upload_date: datetime  # DB: upload_date, API: uploadDate (auto-converted)
     last_updated: Optional[datetime] = None  # DB: last_updated, API: lastUpdated
-    updated_by: Optional[str] = None  # DB: updated_by, API: updatedBy
-    created_by: Optional[str] = None  # DB: created_by, API: createdBy
     cover_url: Optional[str] = None  # DB: cover_url, API: coverUrl
     visibility: str = "private"
     categories: List[str] = Field(default_factory=list)
@@ -75,7 +72,6 @@ class Book(BaseModel):
     read_count: int = 0  # DB: read_count, API: readCount
     file_name: Optional[str] = None  # Original uploaded filename
     file_type: Optional[str] = None  # File extension (e.g., 'pdf', 'docx')
-    source: Optional[str] = None  # Document source (e.g., 'upload', 'gcs')
     pipeline_step: Optional[str] = None  # DB: pipeline_step, API: pipelineStep
     pipeline_stats: Optional[Dict[str, int]] = Field(default_factory=dict) # DB: pipeline_stats, API: pipelineStats
     has_summary: bool = False  # API: hasSummary
