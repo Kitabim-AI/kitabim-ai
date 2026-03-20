@@ -378,6 +378,8 @@
     "subtitle": "Spell Check Results",
     "checking": "Checking...",
     "analyzing": "Checking dictionary...",
+    "applying": "Applying...",
+    "skipping": "Skipping...",
     "runCheck": "Run Spell Check",
     "refresh": "Refresh",
     "rescan": "Re-scan page",
@@ -427,8 +429,13 @@
     "reviewPage": "Page",
     "reviewOriginal": "Original",
     "reviewReplacement": "Replacement",
+    "confirmSuccess": "Corrections saved successfully.",
+    "confirmSuccessWithWarning": "Corrections saved. Global rules and dictionary additions may take up to 24 hours to sync across all books.",
     "confirmError": "Some pages failed to save. {{count}} corrections remain.",
-    "autoCorrectApplied": "Auto-correction rule added"
+    "autoCorrectApplied": "Auto-correction rule added",
+    "readyTitle": "Ready to Start Spell Check",
+    "readyDetail": "The system will automatically select books with pending issues for you to review.",
+    "startAction": "Start Now"
   },
   "pagination": {
     "previous": "Previous",

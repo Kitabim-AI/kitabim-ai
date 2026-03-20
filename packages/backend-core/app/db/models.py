@@ -443,13 +443,14 @@ class PageSpellIssue(Base):
     )
 
 
-class SpellCheckCorrection(Base):
+class AutoCorrectRule(Base):
     """Auto-correction rules for spell check issues"""
-    __tablename__ = "spell_check_corrections"
+    __tablename__ = "auto_correct_rules"
 
-    misspelled_word: Mapped[str] = mapped_column(Text, primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    misspelled_word: Mapped[str] = mapped_column(Text, unique=True, index=True)
     corrected_word: Mapped[str] = mapped_column(Text, nullable=False)
-    auto_apply: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -471,7 +472,7 @@ class SpellCheckCorrection(Base):
     __table_args__ = (
         CheckConstraint(
             "misspelled_word != corrected_word",
-            name="spell_check_corrections_different_words",
+            name="auto_correct_rules_different_words",
         ),
     )
 

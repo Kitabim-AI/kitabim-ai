@@ -13,7 +13,7 @@ from typing import List, TypedDict, Dict
 from sqlalchemy import delete, func, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Page, PageSpellIssue, SpellCheckCorrection
+from app.db.models import Page, PageSpellIssue, AutoCorrectRule
 from app.utils.text import normalize_uyghur_chars
 from sqlalchemy import select
 
@@ -165,13 +165,18 @@ def ocr_variants(word: str) -> list[str]:
 
 
 # ── Insertion variants (OCR dropped a character) ───────────────────────────────
-# Uyghur vowels most commonly dropped/fused by OCR
+# Uyghur vowels most commonly dropped or fused by OCR engines.
+# Including all 8 standard Uyghur vowels + common variants.
 _VOWEL_INSERTIONS: list[str] = [
-    "\u064A",   # ى ya/ye — most frequently dropped
-    "\u0627",   # ا alef
-    "\u06D5",   # ە ae
-    "\u06C7",   # ۇ u
-    "\u06C6",   # ۆ oe
+    "\u06D0",   # ې Ee — frequently dropped or misread as nothing
+    "\u0649",   # ى I (dotless) — very common drop
+    "\u0648",   # و O (Waw) — common drop
+    "\u06C8",   # ۈ Ue — common drop
+    "\u064A",   # ي Y/I (dotted) — sometimes misread as ى
+    "\u0627",   # ا A (Alif)
+    "\u06D5",   # ە Ae
+    "\u06C7",   # ۇ U
+    "\u06C6",   # ۆ Oe
 ]
 
 
@@ -375,8 +380,8 @@ async def run_spell_check_for_page(
     # S-NEW-AUTO: Fetch and apply global correction rules immediately
     # This prevents manual review of words we already have a solution for.
     rules_result = await session.execute(
-        select(SpellCheckCorrection.misspelled_word, SpellCheckCorrection.corrected_word)
-        .where(SpellCheckCorrection.auto_apply == True)
+        select(AutoCorrectRule.misspelled_word, AutoCorrectRule.corrected_word)
+        .where(AutoCorrectRule.is_active == True)
     )
     rules = {row.misspelled_word: row.corrected_word for row in rules_result.fetchall()}
 

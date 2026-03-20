@@ -31,6 +31,7 @@ interface CircuitBreakerStatus {
     failure_threshold: number;
   };
   overall_available: boolean;
+  overall_state: string;
 }
 
 export function SystemConfigPanel() {
@@ -271,10 +272,10 @@ export function SystemConfigPanel() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mb-4 md:mb-6">
             {/* Overall Status */}
-            <div className={`p-3 md:p-4 rounded-xl md:rounded-2xl border-2 ${cbStatus.overall_available ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+            <div className={`p-3 md:p-4 rounded-xl md:rounded-2xl border-2 ${cbStatus.overall_state === 'closed' ? 'bg-green-50 border-green-200' : cbStatus.overall_state === 'open' ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}`}>
               <div className="text-xs md:text-sm text-slate-600 mb-1">{t('admin.systemConfig.circuitBreaker.overallStatus')}</div>
-              <div className={`text-lg md:text-2xl font-normal ${cbStatus.overall_available ? 'text-green-600' : 'text-red-600'}`}>
-                {cbStatus.overall_available ? `✓ ${t('admin.systemConfig.circuitBreaker.available')}` : `✗ ${t('admin.systemConfig.circuitBreaker.unavailable')}`}
+              <div className={`text-lg md:text-2xl font-normal ${cbStatus.overall_state === 'closed' ? 'text-green-600' : cbStatus.overall_state === 'open' ? 'text-red-600' : 'text-yellow-600'}`}>
+                {cbStatus.overall_state === 'closed' ? `✓ ${t('admin.systemConfig.circuitBreaker.available')}` : cbStatus.overall_state === 'open' ? `✗ ${t('admin.systemConfig.circuitBreaker.unavailable')}` : `⚠ ${t('admin.systemConfig.circuitBreaker.states.half_open')}`}
               </div>
             </div>
 

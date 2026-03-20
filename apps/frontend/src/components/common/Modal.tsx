@@ -1,12 +1,12 @@
 import React, { useEffect } from 'react';
-import { AlertCircle, Loader2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 import { useI18n } from '../../i18n/I18nContext';
 
 interface ModalProps {
   isOpen: boolean;
   title: string;
   message: string;
-  type: 'alert' | 'confirm';
+  type: 'alert' | 'confirm' | 'success';
   confirmText?: string;
   onConfirm?: () => void;
   onClose: () => void;
@@ -40,15 +40,23 @@ export const Modal: React.FC<ModalProps> = ({
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-6" dir="rtl" lang="ug">
       <div
         className="absolute inset-0 bg-slate-900/40 backdrop-blur-md animate-fade-in"
-        onClick={() => type === 'alert' && onClose()}
+        onClick={() => (type === 'alert' || type === 'success') && onClose()}
       />
       <div
         className="bg-white/90 backdrop-blur-2xl rounded-[40px] shadow-[0_32px_128px_rgba(0,0,0,0.15)] w-full max-w-md relative z-10 overflow-hidden animate-fade-in border border-white/40"
       >
         <div className="p-10">
           <div className="flex items-center gap-4 mb-6">
-            <div className={`p-3 rounded-2xl ${type === 'confirm' ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'bg-red-50 text-red-500'}`}>
-              <AlertCircle size={32} strokeWidth={2.5} />
+            <div className={`p-3 rounded-2xl ${
+              type === 'confirm' ? 'bg-[#0369a1]/10 text-[#0369a1]' : 
+              type === 'success' ? 'bg-emerald-50 text-emerald-500' :
+              'bg-red-50 text-red-500'
+            }`}>
+              {type === 'success' ? (
+                <CheckCircle2 size={32} strokeWidth={2.5} />
+              ) : (
+                <AlertCircle size={32} strokeWidth={2.5} />
+              )}
             </div>
             <h3 className="text-xl sm:text-2xl font-normal text-[#1a1a1a]">{title}</h3>
           </div>

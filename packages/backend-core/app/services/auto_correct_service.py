@@ -2,7 +2,7 @@
 Auto-Correction Service — applies automatic corrections to spell check issues.
 
 This service finds open spell check issues that match entries in the
-spell_check_corrections table and applies the corrections to page text.
+auto_correct_rules table and applies the corrections to page text.
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from sqlalchemy import select, update, func, text, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.pipeline import PAGE_MILESTONE_IDLE
-from app.db.models import Page, PageSpellIssue, SpellCheckCorrection
+from app.db.models import Page, PageSpellIssue, AutoCorrectRule
 from app.utils.observability import log_json
 from app.core.config import settings
 
@@ -30,22 +30,21 @@ async def get_correction_rules(
 
     Args:
         session: Database session
-        auto_apply_only: If True, only return rules with auto_apply=True
+        auto_apply_only: If True, only return rules with is_active=True
 
     Returns:
         Dictionary mapping misspelled words to their corrections
     """
     stmt = select(
-        SpellCheckCorrection.misspelled_word,
-        SpellCheckCorrection.corrected_word
+        AutoCorrectRule.misspelled_word,
+        AutoCorrectRule.corrected_word
     )
 
     if auto_apply_only:
-        stmt = stmt.where(SpellCheckCorrection.auto_apply == True)
+        stmt = stmt.where(AutoCorrectRule.is_active == True)
 
-    from app.utils.text import normalize_uyghur_chars
     result = await session.execute(stmt)
-    return {normalize_uyghur_chars(row.misspelled_word): row.corrected_word for row in result.fetchall()}
+    return {row.misspelled_word: row.corrected_word for row in result.fetchall()}
 
 
 async def get_correction_for_word(
@@ -63,8 +62,8 @@ async def get_correction_for_word(
         The corrected word, or None if no correction exists
     """
     result = await session.execute(
-        select(SpellCheckCorrection.corrected_word)
-        .where(SpellCheckCorrection.misspelled_word == word)
+        select(AutoCorrectRule.corrected_word)
+        .where(AutoCorrectRule.misspelled_word == word)
     )
     row = result.fetchone()
     return row.corrected_word if row else None
@@ -100,7 +99,7 @@ async def apply_auto_corrections_to_page(
         logger.warning(f"Page {page_id} not found")
         return 0
 
-    # Fetch correction rules if not provided
+    # Fetch correction rules if not provided (default to active ones)
     if correction_rules is None:
         correction_rules = await get_correction_rules(session, auto_apply_only=True)
 
@@ -143,8 +142,7 @@ async def apply_auto_corrections_to_page(
             logger.warning(f"Issue {issue.id} has no offset information, skipping")
             continue
 
-        from app.utils.text import normalize_uyghur_chars
-        corrected_word = correction_rules.get(normalize_uyghur_chars(issue.word))
+        corrected_word = correction_rules.get(issue.word)
         if not corrected_word:
             continue
 
@@ -220,9 +218,9 @@ async def find_pages_with_auto_correctable_issues(
         text("""
             SELECT psi.id, psi.page_id
             FROM page_spell_issues psi
-            INNER JOIN spell_check_corrections scc ON psi.word = scc.misspelled_word
+            INNER JOIN auto_correct_rules scc ON psi.word = scc.misspelled_word
             WHERE psi.status = 'open'
-              AND scc.auto_apply = true
+              AND scc.is_active = true
               AND psi.char_offset IS NOT NULL
               AND psi.char_end IS NOT NULL
             LIMIT :issue_limit
@@ -278,21 +276,21 @@ async def get_auto_correction_stats(session: AsyncSession) -> Dict:
     Returns:
         Dictionary with statistics:
         - total_rules: Total number of correction rules
-        - active_rules: Number of rules with auto_apply=True
+        - active_rules: Number of rules with is_active=True
         - total_auto_corrected: Total issues that have been auto-corrected
         - pending_corrections: Number of open issues that match correction rules
     """
     # Total correction rules
     total_rules_result = await session.execute(
-        select(func.count()).select_from(SpellCheckCorrection)
+        select(func.count()).select_from(AutoCorrectRule)
     )
     total_rules = total_rules_result.scalar() or 0
 
     # Active correction rules
     active_rules_result = await session.execute(
         select(func.count())
-        .select_from(SpellCheckCorrection)
-        .where(SpellCheckCorrection.auto_apply == True)
+        .select_from(AutoCorrectRule)
+        .where(AutoCorrectRule.is_active == True)
     )
     active_rules = active_rules_result.scalar() or 0
 
@@ -309,9 +307,9 @@ async def get_auto_correction_stats(session: AsyncSession) -> Dict:
         text("""
             SELECT COUNT(DISTINCT psi.id)
             FROM page_spell_issues psi
-            INNER JOIN spell_check_corrections scc ON psi.word = scc.misspelled_word
+            INNER JOIN auto_correct_rules scc ON psi.word = scc.misspelled_word
             WHERE psi.status = 'open'
-              AND scc.auto_apply = true
+              AND scc.is_active = true
               AND psi.char_offset IS NOT NULL
               AND psi.char_end IS NOT NULL
         """)

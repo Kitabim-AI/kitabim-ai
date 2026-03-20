@@ -259,6 +259,18 @@ export const PersistenceService = {
     }
   },
 
+  async addToDictionary(word: string): Promise<void> {
+    const response = await authFetch(`${API_BASE}/spell-check/dictionary`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ word }),
+    });
+    if (!response.ok) {
+      if (response.status === 403) throw new Error("Permission denied: Admin access required");
+      throw new Error("Failed to add word to dictionary");
+    }
+  },
+
   async retryFailedPages(bookId: string): Promise<{ status: string; count: number }> {
     const response = await authFetch(`${API_BASE}/books/${bookId}/retry-failed`, {
       method: 'POST',

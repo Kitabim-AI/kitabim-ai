@@ -11,7 +11,7 @@ Cron schedule:
   chunking_scanner     every 1 min  — claim chunking/idle pages + dispatch
   embedding_scanner    every 1 min  — claim embedding/idle pages + dispatch
   spell_check_scanner  every 1 min  — claim spell_check/idle pages + dispatch
-  auto_correct_scanner every 5 min  — apply auto-corrections to pages with matching rules
+  auto_correct_scanner daily at 3AM — apply auto-corrections in bulk
   stale_watchdog       every 30 min — reset in_progress pages past timeout → idle
   summary_scanner      every 5 min  — backfill/retry book_summaries for ready books
   maintenance_scanner  daily at 3AM — cleanup old processed events/logs
@@ -54,7 +54,7 @@ class WorkerSettings:
 
     # Build cron jobs list conditionally based on feature flags
     cron_jobs = [
-        cron(run_auto_correct_scanner, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}, run_at_startup=True),
+        cron(run_auto_correct_scanner, hour=3, minute=0, run_at_startup=False),
         cron(run_gcs_discovery_scanner, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}),
         cron(run_pipeline_driver, run_at_startup=True),
         cron(run_ocr_scanner),

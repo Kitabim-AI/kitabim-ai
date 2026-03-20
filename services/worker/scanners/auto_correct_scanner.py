@@ -26,34 +26,38 @@ logger = logging.getLogger("app.worker.auto_correct_scanner")
 
 async def run_auto_correct_scanner(ctx) -> None:
     """
-    Find pages with auto-correctable issues and dispatch auto-correction jobs.
-
-    Args:
-        ctx: Worker context (contains redis, config, etc.)
+    Find all pages with auto-correctable issues and dispatch auto-correction jobs.
+    Runs in batches until no more auto-correctable pages are found.
     """
     redis = ctx["redis"]
+    total_dispatched = 0
 
-    async with db_session.async_session_factory() as session:
-        config_repo = SystemConfigsRepository(session)
+    while True:
+        async with db_session.async_session_factory() as session:
+            config_repo = SystemConfigsRepository(session)
 
-        # Check if auto-correction is enabled
-        if (await config_repo.get_value("auto_correct_enabled", "false")) != "true":
-            return
-            
-        # Cleanup stale jobs first
-        reverted = await cleanup_stale_auto_corrections(session)
-        if reverted > 0:
-            log_json(logger, logging.INFO, "cleaned up stale auto-corrections", count=reverted)
+            # Check if auto-correction is enabled
+            if (await config_repo.get_value("auto_correct_enabled", "false")) != "true":
+                return
+                
+            # Cleanup stale jobs first (only on first iteration)
+            if total_dispatched == 0:
+                reverted = await cleanup_stale_auto_corrections(session)
+                if reverted > 0:
+                    log_json(logger, logging.INFO, "cleaned up stale auto-corrections", count=reverted)
 
-        # Get batch size from config
-        batch_size = int(await config_repo.get_value("auto_correct_batch_size", "50"))
+            # Get batch size from config
+            batch_size = int(await config_repo.get_value("auto_correct_batch_size", "500"))
 
-        # Find pages with auto-correctable issues
-        page_ids = await find_pages_with_auto_correctable_issues(session, limit=batch_size)
+            # Find pages with auto-correctable issues
+            page_ids = await find_pages_with_auto_correctable_issues(session, limit=batch_size)
 
-        if not page_ids:
-            return
+            if not page_ids:
+                if total_dispatched > 0:
+                    log_json(logger, logging.INFO, "auto-correction dispatch complete", total_pages=total_dispatched)
+                return
 
-    # Enqueue the auto-correction job
-    await redis.enqueue_job("auto_correct_job", page_ids=page_ids)
-    log_json(logger, logging.INFO, "auto-correction job dispatched", page_count=len(page_ids))
+        # Enqueue the auto-correction job
+        await redis.enqueue_job("auto_correct_job", page_ids=page_ids)
+        total_dispatched += len(page_ids)
+        log_json(logger, logging.INFO, "auto-correction job dispatched", page_count=len(page_ids), current_total=total_dispatched)

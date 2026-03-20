@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { authFetch } from '../services/authService';
 
 export interface PendingCorrection {
@@ -12,6 +12,9 @@ export interface PendingCorrection {
   range?: [number, number];
   isPhrase?: boolean;
   isAutoCorrection?: boolean;
+  isDictionaryAddition?: boolean;
+  isIgnore?: boolean;
+  isSkip?: boolean;
   addedAt: number;
 }
 
@@ -55,8 +58,43 @@ export const usePendingCorrections = () => {
     });
   }, []);
 
-  const removePending = useCallback((id: string) => {
-    setPending(prev => prev.filter(p => p.id !== id));
+  const removePending = useCallback((ids: string | string[]) => {
+    const idsToRemove = Array.isArray(ids) ? ids : [ids];
+    setPending(prev => prev.filter(p => !idsToRemove.includes(p.id)));
+  }, []);
+
+  const toggleDictionaryAddition = useCallback((ids: string | string[]) => {
+    const idsToToggle = Array.isArray(ids) ? ids : [ids];
+    setPending(prev => {
+      if (idsToToggle.length === 0) return prev;
+      const firstItem = prev.find(p => p.id === idsToToggle[0]);
+      if (!firstItem) return prev;
+      const targetState = !firstItem.isDictionaryAddition;
+      
+      return prev.map(p => {
+        if (!idsToToggle.includes(p.id)) return p;
+        return { 
+          ...p, 
+          isDictionaryAddition: targetState,
+          isIgnore: targetState || p.isIgnore
+        };
+      });
+    });
+  }, []);
+
+  const toggleAutoCorrection = useCallback((ids: string | string[]) => {
+    const idsToToggle = Array.isArray(ids) ? ids : [ids];
+    setPending(prev => {
+      if (idsToToggle.length === 0) return prev;
+      const firstItem = prev.find(p => p.id === idsToToggle[0]);
+      if (!firstItem) return prev;
+      const targetState = !firstItem.isAutoCorrection;
+      
+      return prev.map(p => {
+        if (!idsToToggle.includes(p.id)) return p;
+        return { ...p, isAutoCorrection: targetState };
+      });
+    });
   }, []);
 
   const clearAll = useCallback(() => {
@@ -82,7 +120,12 @@ export const usePendingCorrections = () => {
     // Group by bookId + pageNum, sorted by bookId then pageNum
     const byBookPage = new Map<string, PendingCorrection[]>();
     for (const p of pending) {
-      const key = `${p.bookId}::${p.pageNum}`;
+      let key = '';
+      if (p.isDictionaryAddition) key = `dict::${p.originalWord}`;
+      else if (p.isIgnore) key = `ignore::${p.bookId}::${p.pageNum}`;
+      else if (p.isSkip) key = `skip::${p.issueId}`; // Skips are local, but we group them to be safe
+      else key = `${p.bookId}::${p.pageNum}`;
+      
       const arr = byBookPage.get(key) ?? [];
       arr.push(p);
       byBookPage.set(key, arr);
@@ -95,25 +138,58 @@ export const usePendingCorrections = () => {
       const corrections = group.map(p => ({
         issue_id: p.issueId,
         corrected_word: p.correctedWord,
+        original_word: p.originalWord,
         ...(p.range ? { range: p.range } : {}),
         is_auto_correction: !!p.isAutoCorrection,
+        is_dictionary_addition: !!p.isDictionaryAddition,
       }));
 
       try {
-        const res = await authFetch(
-          `${API_BASE}/books/${bookId}/pages/${pageNum}/spell-check/apply`,
-          {
+        if (group[0].isDictionaryAddition) {
+          const res = await authFetch(`${API_BASE}/books/spell-check/dictionary`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ corrections }),
+            body: JSON.stringify({ word: group[0].originalWord }),
+          });
+          if (res.ok) {
+            for (const p of group) succeededIds.push(p.id);
+          } else {
+            failedPageNums.push(pageNum);
+            failedReason = `Dictionary update failed for word ${group[0].originalWord}`;
+            break outer;
           }
-        );
-        if (res.ok) {
+        } else if (group[0].isIgnore) {
+          const res = await authFetch(`${API_BASE}/books/${bookId}/pages/${pageNum}/spell-check/ignore`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ issue_ids: group.map(p => p.issueId) }),
+          });
+          if (res.ok) {
+            for (const p of group) succeededIds.push(p.id);
+          } else {
+            failedPageNums.push(pageNum);
+            failedReason = `Failed to ignore issues on page ${pageNum}`;
+            break outer;
+          }
+        } else if (group[0].isSkip) {
+          // Skips don't need a backend call — just mark as succeeded to remove from pending
           for (const p of group) succeededIds.push(p.id);
         } else {
-          failedPageNums.push(pageNum);
-          failedReason = `Page ${pageNum} returned ${res.status}`;
-          break outer;
+          const res = await authFetch(
+            `${API_BASE}/books/${bookId}/pages/${pageNum}/spell-check/apply`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ corrections }),
+            }
+          );
+          if (res.ok) {
+            for (const p of group) succeededIds.push(p.id);
+          } else {
+            failedPageNums.push(pageNum);
+            failedReason = `Page ${pageNum} returned ${res.status}`;
+            break outer;
+          }
         }
       } catch (err) {
         failedPageNums.push(pageNum);
@@ -134,7 +210,7 @@ export const usePendingCorrections = () => {
     return { succeededIds, failedPageNums, failedReason };
   }, [pending]);
 
-  return {
+  return useMemo(() => ({
     pending,
     pendingIssueIds: pending.map(p => p.issueId),
     isConfirming,
@@ -144,5 +220,18 @@ export const usePendingCorrections = () => {
     clearAll,
     clearPagePending,
     confirmAll,
-  };
+    toggleDictionaryAddition,
+    toggleAutoCorrection
+  }), [
+    pending,
+    isConfirming,
+    confirmError,
+    addPending,
+    removePending,
+    clearAll,
+    clearPagePending,
+    confirmAll,
+    toggleDictionaryAddition,
+    toggleAutoCorrection
+  ]);
 };

@@ -20,11 +20,11 @@ from app.core.pipeline import (
     PIPELINE_STEP_EMBEDDING,
 )
 from app.db.session import get_session
-from app.db.models import Book, Page, PageSpellIssue
+from app.db.models import Book, Page, PageSpellIssue, Dictionary
 from app.core.config import settings
 from app.models.user import User
 from app.services.spell_check_service import run_spell_check_for_page
-from auth.dependencies import require_editor
+from auth.dependencies import require_editor, require_admin
 
 router = APIRouter()
 
@@ -65,8 +65,10 @@ class BookSpellSummaryOut(BaseModel):
 class CorrectionItem(BaseModel):
     issue_id: int
     corrected_word: str
+    original_word: Optional[str] = None
     range: Optional[List[int]] = None
     is_auto_correction: bool = False
+    is_dictionary_addition: bool = False
 
 
 class ApplyCorrectionsRequest(BaseModel):
@@ -86,6 +88,10 @@ class RandomBookOut(BaseModel):
     total_issues: int
     pages_with_issues: List[int]
     first_issue_page: int
+
+
+class AddToDictionaryRequest(BaseModel):
+    word: str
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -291,7 +297,7 @@ async def apply_spell_corrections(
     If is_auto_correction is True and user is admin, also creates a global
     auto-correction rule.
     """
-    from app.db.models import SpellCheckCorrection
+    from app.db.models import PageSpellIssue, AutoCorrectRule, Page
 
     page_result = await session.execute(
         select(Page).where(Page.book_id == book_id, Page.page_number == page_num)
@@ -314,32 +320,56 @@ async def apply_spell_corrections(
 
     # Sort by offset descending so we apply from end → start, preserving positions
     replacements = []
+    processed_auto_corrections = set()  # Track unique misspelled words to avoid redundant rule creation
+    processed_dict_additions = set()
+    
     for c in body.corrections:
         issue = issues_by_id.get(c.issue_id)
         if not issue:
             continue
             
-        # Global auto-correction rule creation (if admin)
-        if c.is_auto_correction and current_user.role == "admin":
-            # Upsert into spell_check_corrections
-            existing_stmt = select(SpellCheckCorrection).where(
-                SpellCheckCorrection.misspelled_word == issue.word
+        # Global auto-correction rule creation 
+        # (Editors and Admins both allowed to help build the global ruleset)
+        word_to_save = c.original_word or issue.word
+        if c.is_auto_correction and word_to_save not in processed_auto_corrections:
+            processed_auto_corrections.add(word_to_save)
+            
+            # Upsert into auto_correct_rules
+            existing_stmt = select(AutoCorrectRule).where(
+                AutoCorrectRule.misspelled_word == word_to_save
             )
             existing_res = await session.execute(existing_stmt)
             existing_rule = existing_res.scalar_one_or_none()
             
             if existing_rule:
                 existing_rule.corrected_word = c.corrected_word
-                existing_rule.auto_apply = True
+                existing_rule.is_active = True
                 existing_rule.updated_at = func.now()
             else:
-                new_rule = SpellCheckCorrection(
-                    misspelled_word=issue.word,
+                new_rule = AutoCorrectRule(
+                    misspelled_word=word_to_save,
                     corrected_word=c.corrected_word,
-                    auto_apply=True,
+                    is_active=True,
                     created_by=current_user.id
                 )
                 session.add(new_rule)
+
+        # Global Dictionary addition
+        if c.is_dictionary_addition and word_to_save not in processed_dict_additions:
+            processed_dict_additions.add(word_to_save)
+            
+            # Check if already in dictionary
+            dict_stmt = select(Dictionary).where(Dictionary.word == word_to_save)
+            dict_res = await session.execute(dict_stmt)
+            if not dict_res.scalar_one_or_none():
+                session.add(Dictionary(word=word_to_save))
+                
+                # Proactively mark all matching OPEN issues everywhere as 'ignored'
+                await session.execute(
+                    update(PageSpellIssue)
+                    .where(PageSpellIssue.word == word_to_save, PageSpellIssue.status == "open")
+                    .values(status="ignored")
+                )
 
         # Use provided range if available (for phrase edits), otherwise use issue defaults
         if c.range and len(c.range) == 2:
@@ -353,32 +383,29 @@ async def apply_spell_corrections(
     
     replacements.sort(key=lambda x: x[0], reverse=True)
 
+    # Apply updates to the Page object
     page_text = page.text or ""
     for start, end, corrected, _ in replacements:
         page_text = page_text[:start] + corrected + page_text[end:]
-
-    corrected_ids = [r[3] for r in replacements]
-
-    await session.execute(
-        update(PageSpellIssue)
-        .where(PageSpellIssue.id.in_(corrected_ids))
-        .values(status="corrected")
-    )
-    await session.execute(
-        update(Page)
-        .where(Page.id == page.id)
-        .values(
-            text=page_text,
-            is_indexed=False,
-            # Reset pipeline milestones to ensure re-chunking and re-embedding
-            chunking_milestone=PAGE_MILESTONE_IDLE,
-            embedding_milestone=PAGE_MILESTONE_IDLE,
-            updated_by=current_user.id,
-            last_updated=func.now(),
-        )
-    )
     
-    # Update book milestones (no internal commit anymore)
+    page.text = page_text
+    page.is_indexed = False
+    page.chunking_milestone = PAGE_MILESTONE_IDLE
+    page.embedding_milestone = PAGE_MILESTONE_IDLE
+    page.updated_by = current_user.id
+    page.last_updated = func.now()
+
+    # Mark issues as corrected
+    corrected_ids = [r[3] for r in replacements]
+    for issue_id in corrected_ids:
+        issue = issues_by_id.get(issue_id)
+        if issue:
+            issue.status = "corrected"
+
+    # Flush changes so the milestone statistics see the new states
+    await session.flush()
+    
+    # Update book milestones (calculates from flushed page states)
     from app.services.book_milestone_service import BookMilestoneService
     await BookMilestoneService.update_book_milestone_for_step(session, book_id, PIPELINE_STEP_CHUNKING)
     await BookMilestoneService.update_book_milestone_for_step(session, book_id, PIPELINE_STEP_EMBEDDING)
@@ -482,3 +509,35 @@ async def ignore_spell_issues(
     await session.commit()
 
     return {"ignored": len(body.issue_ids)}
+
+
+@router.post("/spell-check/dictionary")
+async def add_to_dictionary(
+    body: AddToDictionaryRequest,
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """Add a word to the global spell check dictionary. Editor and Admin allowed."""
+    word = body.word.strip()
+    if not word:
+        raise HTTPException(status_code=400, detail="Word cannot be empty")
+
+    # Check if already exists
+    stmt = select(Dictionary).where(Dictionary.word == word)
+    res = await session.execute(stmt)
+    if res.scalar_one_or_none():
+        return {"added": 0, "message": "Word already in dictionary"}
+
+    new_word = Dictionary(word=word)
+    session.add(new_word)
+    
+    # Also mark all matching OPEN issues across the entire system as 'ignored'
+    # since the word is now valid.
+    await session.execute(
+        update(PageSpellIssue)
+        .where(PageSpellIssue.word == word, PageSpellIssue.status == "open")
+        .values(status="ignored")
+    )
+    
+    await session.commit()
+    return {"added": 1}

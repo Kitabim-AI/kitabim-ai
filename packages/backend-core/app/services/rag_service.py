@@ -962,6 +962,7 @@ class RAGService:
                 # query_vector is already computed and reused here — no extra API call.
                 if query_vector:
                     try:
+                        from app.db.repositories.book_summaries import BookSummariesRepository
                         summaries_repo = BookSummariesRepository(session)
                         # Cache Lookup (Level 3)
                         emb_hash = hashlib.md5(str(query_vector).encode()).hexdigest()

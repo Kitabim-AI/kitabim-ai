@@ -36,8 +36,14 @@ const parseBold = (str: string): React.ReactNode[] =>
 
 const renderSummary = (text: string): React.ReactNode =>
   text.split('\n').filter(l => l.trim()).map((line, i) => {
-    // 1. Check for numbered sections (likely the major summary headers)
-    const listMatch = line.match(/^(\d+)\.\s+(.*)/);
+    const trimmedLine = line.trim();
+
+    // 1. Check for headers (hashes)
+    const headingMatch = trimmedLine.match(/^(#{1,6})\s+(.*)/);
+    const content = headingMatch ? headingMatch[2] : trimmedLine;
+
+    // 2. Check for numbered sections (likely the major summary headers)
+    const listMatch = content.match(/^(\d+)\.\s+(.*)/);
     if (listMatch) {
       const parts = listMatch[2].split(':');
       if (parts.length > 1) {
@@ -61,8 +67,19 @@ const renderSummary = (text: string): React.ReactNode =>
       );
     }
 
-    // 2. Check for bullet points (often used in themes or keywords)
-    const bulletMatch = line.match(/^([-*•])\s+(.*)/);
+    // 3. If it was a heading but not a numbered list, render as heading
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const Tag: any = `h${Math.min(6, level + 1)}`;
+      return (
+        <Tag key={i} className="font-bold text-[#1a1a1a] text-lg mb-4 mt-6 first:mt-0">
+          {parseBold(content)}
+        </Tag>
+      );
+    }
+
+    // 4. Check for bullet points (often used in themes or keywords)
+    const bulletMatch = trimmedLine.match(/^([-*•])\s+(.*)/);
     if (bulletMatch) {
       return (
         <div key={i} className="flex gap-3 mb-2 pr-2 sm:pr-4">
@@ -72,8 +89,8 @@ const renderSummary = (text: string): React.ReactNode =>
       );
     }
 
-    // 3. Default paragraph
-    return <p key={i} className="mb-4 last:mb-0 text-slate-700 leading-relaxed">{parseBold(line)}</p>;
+    // 5. Default paragraph
+    return <p key={i} className="mb-4 last:mb-0 text-slate-700 leading-relaxed">{parseBold(trimmedLine)}</p>;
   });
 
 export const BookCard: React.FC<BookCardProps> = ({ book, onClick }) => {

@@ -53,6 +53,10 @@ class CircuitBreaker:
         state = await self._get_state()
         return state.get("state") == "open"
 
+    async def is_half_open(self) -> bool:
+        state = await self._get_state()
+        return state.get("state") == "half_open"
+
     async def get_info(self) -> dict:
         state = await self._get_state()
         now = time.time()
@@ -95,25 +99,27 @@ class CircuitBreaker:
         if state == 'open' then
             local opened_at = tonumber(redis.call('HGET', key, 'opened_at') or '0')
             if now - opened_at >= recovery_timeout then
-                redis.call('HSET', key, 'state', 'half_open', 'in_flight', '0')
-                state = 'half_open'
+                redis.call('HSET', key, 'state', 'half_open', 'in_flight', '1')
+                return {1, 'half_open'}
             else
-                return 0
+                return {0, 'open'}
             end
         end
         
         if state == 'half_open' then
             local in_flight = tonumber(redis.call('HGET', key, 'in_flight') or '0')
             if in_flight >= half_open_max then
-                return 0
+                return {0, 'half_open'}
             end
             redis.call('HINCRBY', key, 'in_flight', 1)
+            state = 'half_open'
         end
         
-        return 1
+        return {1, state}
         """
         result = await r.eval(script, 1, self.key, str(now), str(self.config.recovery_timeout), str(self.config.half_open_max_calls))
-        return result == 1
+        # result is {1/0, state_string}
+        return bool(result[0]), result[1]
 
     async def _on_success(self) -> None:
         r = get_redis()
@@ -153,8 +159,10 @@ class CircuitBreaker:
         await r.eval(script, 1, self.key, str(now), str(self.config.failure_threshold), str(self.config.cooling_period))
 
     async def call(self, fn: Callable[..., Awaitable[T]], *args, **kwargs) -> T:
-        allowed = await self._allow_call()
+        allowed, state = await self._allow_call()
         if not allowed:
+            if state == "half_open":
+                raise CircuitBreakerOpen(f"Circuit breaker '{self.name}' is half-open (recovering but at capacity)")
             raise CircuitBreakerOpen(f"Circuit breaker '{self.name}' is open")
 
         try:
