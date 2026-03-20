@@ -17,6 +17,7 @@ from app.db import session as db_session
 from app.db.models import Book, Page, PipelineEvent
 from app.db.repositories.system_configs import SystemConfigsRepository
 from app.services.ocr_service import ocr_page_with_gemini
+from app.utils.text import is_toc_page
 from app.services.storage_service import storage
 from app.services.book_milestone_service import BookMilestoneService
 from app.utils.observability import log_json
@@ -110,6 +111,7 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
             try:
                 fitz_page = doc.load_page(page.page_number - 1)  # fitz is 0-indexed
                 text = await ocr_page_with_gemini(fitz_page, gemini_ocr_model)
+                is_toc = is_toc_page(text)
 
                 async with db_session.async_session_factory() as session:
                     await session.execute(
@@ -117,6 +119,7 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
                         .where(Page.id == page.id)
                         .values(
                             text=text,
+                            is_toc=is_toc,
                             ocr_milestone="succeeded",
                             last_updated=func.now(),
                         )

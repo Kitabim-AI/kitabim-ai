@@ -72,10 +72,10 @@ async def summary_job(ctx, book_id: str) -> None:
                 log_json(logger, logging.WARNING, "summary job: book not found", book_id=book_id)
                 return
 
-            # Load all page texts ordered by page_number
+            # Load all page texts ordered by page_number, excluding TOC
             result = await session.execute(
                 select(Page.text)
-                .where(Page.book_id == book_id, Page.text.isnot(None))
+                .where(Page.book_id == book_id, Page.text.isnot(None), Page.is_toc.is_(False))
                 .order_by(Page.page_number)
             )
             pages_text = [row[0] for row in result.fetchall() if row[0]]

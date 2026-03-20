@@ -114,8 +114,10 @@ class ChunksRepository(BaseRepository[Chunk]):
                     1 - (c.embedding <=> CAST(:embedding AS vector)) AS similarity
                 FROM chunks c
                 JOIN books b ON c.book_id = b.id
+                JOIN pages p ON c.book_id = p.book_id AND c.page_number = p.page_number
                 WHERE c.book_id = ANY(:book_ids)
                   AND c.embedding IS NOT NULL
+                  AND p.is_toc IS FALSE
                   AND 1 - (c.embedding <=> CAST(:embedding AS vector)) > :threshold
                 ORDER BY similarity DESC
                 LIMIT :limit
@@ -139,7 +141,9 @@ class ChunksRepository(BaseRepository[Chunk]):
                     1 - (c.embedding <=> CAST(:embedding AS vector)) AS similarity
                 FROM chunks c
                 JOIN books b ON c.book_id = b.id
+                JOIN pages p ON c.book_id = p.book_id AND c.page_number = p.page_number
                 WHERE c.embedding IS NOT NULL
+                  AND p.is_toc IS FALSE
                   AND 1 - (c.embedding <=> CAST(:embedding AS vector)) > :threshold
                 ORDER BY similarity DESC
                 LIMIT :limit

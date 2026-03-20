@@ -40,6 +40,7 @@ class ExtractionResult(BaseModel):
     last_updated: Optional[datetime] = None  # DB: last_updated, API: lastUpdated
     pipeline_step: Optional[str] = None  # DB: pipeline_step, API: pipelineStep
     milestone: Optional[str] = None  # DB: milestone, API: milestone
+    is_toc: bool = False  # API: isToc
 
 
 class Book(BaseModel):
