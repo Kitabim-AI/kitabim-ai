@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import uuid
 import os
@@ -225,7 +224,6 @@ async def get_books(
     """Get paginated books list with SQLAlchemy"""
     from sqlalchemy import or_, and_, any_
     from app.db.models import Book as BookDB
-    from app.db.models import Page as PageDB
     from app.models.schemas import Book as BookSchema
 
     # Cap pageSize to prevent extreme batch operations and connection pool exhaustion
@@ -334,7 +332,7 @@ async def get_books(
             func.count(case((
                 and_(
                     BookDB.status == "ready", 
-                    or_(BookDB.visibility == "public", BookDB.visibility == None)
+                    or_(BookDB.visibility == "public", BookDB.visibility.is_(None))
                 ), 1
             ))).label("total_ready")
         ).select_from(
@@ -350,7 +348,7 @@ async def get_books(
             func.count(case((
                 and_(
                     BookDB.status == "ready", 
-                    or_(BookDB.visibility == "public", BookDB.visibility == None)
+                    or_(BookDB.visibility == "public", BookDB.visibility.is_(None))
                 ), 1
             ))).label("total_ready")
         ).where(and_(*conditions))
@@ -425,9 +423,12 @@ async def get_books(
         last_error_obj = None
         if b.last_error:
             if isinstance(b.last_error, str):
-                try: last_error_obj = json.loads(b.last_error)
-                except Exception: last_error_obj = None
-            else: last_error_obj = b.last_error
+                try:
+                    last_error_obj = json.loads(b.last_error)
+                except Exception:
+                    last_error_obj = None
+            else:
+                last_error_obj = b.last_error
 
         b_dict = {
             "id": b.id, "content_hash": b.content_hash, "title": b.title, "author": b.author or "",
@@ -734,7 +735,6 @@ async def get_book(
     session: AsyncSession = Depends(get_session),
 ):
     """Get a single book by ID with SQLAlchemy - returns metadata only, no pages"""
-    from app.db.models import Page as PageDB
     repo = BooksRepository(session)
 
     # --- PART 0: Cache Lookup ---

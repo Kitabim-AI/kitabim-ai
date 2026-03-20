@@ -11,7 +11,6 @@ Runs every 5 minutes (configurable via system_configs).
 from __future__ import annotations
 
 import logging
-import traceback
 
 from app.db import session as db_session
 from app.db.repositories.system_configs import SystemConfigsRepository

@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from app.services.auto_correct_service import (
     get_correction_rules,
     get_correction_for_word,
@@ -8,7 +8,7 @@ from app.services.auto_correct_service import (
     get_auto_correction_stats,
     cleanup_stale_auto_corrections
 )
-from app.db.models import Page, PageSpellIssue, SpellCheckCorrection
+from app.db.models import Page, PageSpellIssue
 
 @pytest.mark.asyncio
 async def test_get_correction_rules():
@@ -108,7 +108,7 @@ async def test_apply_auto_corrections_to_page_success():
     
     # Check that update(Page) was called with new text
     # The last execute was update(Page)
-    update_call_args = session.execute.call_args_list[-1]
+    session.execute.call_args_list[-1]
     # We can't easily inspect the values() of the update statement without deep mocking,
     # but we can verify session.execute was called 4 times total
     assert session.execute.call_count == 4

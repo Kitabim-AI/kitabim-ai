@@ -381,7 +381,7 @@ async def run_spell_check_for_page(
     # This prevents manual review of words we already have a solution for.
     rules_result = await session.execute(
         select(AutoCorrectRule.misspelled_word, AutoCorrectRule.corrected_word)
-        .where(AutoCorrectRule.is_active == True)
+        .where(AutoCorrectRule.is_active)
     )
     rules = {row.misspelled_word: row.corrected_word for row in rules_result.fetchall()}
 

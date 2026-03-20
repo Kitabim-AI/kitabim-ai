@@ -9,7 +9,6 @@ from app.utils.observability import log_json
 
 from app.services.cache_service import cache_service
 from app.core import cache_config
-from app.core.config import settings
 
 logger = logging.getLogger("app.chat_limit")
 

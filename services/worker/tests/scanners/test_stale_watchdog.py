@@ -1,7 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from services.worker.scanners.stale_watchdog import run_stale_watchdog
-from datetime import datetime, timezone, timedelta
 
 @pytest.mark.asyncio
 async def test_stale_watchdog_no_stale_pages():

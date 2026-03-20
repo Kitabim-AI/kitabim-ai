@@ -1,5 +1,4 @@
-import pytest
-from unittest.mock import patch, mock_open
+from unittest.mock import patch
 import json
 from app.core.i18n import I18n, t, get_current_lang, set_current_lang
 

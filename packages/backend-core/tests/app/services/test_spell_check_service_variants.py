@@ -1,5 +1,4 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 from app.services.spell_check_service import (
     ocr_variants, 
     insertion_variants,

@@ -85,7 +85,7 @@ async def test_get_batch_stats_success():
     
     assert "book-1" in stats
     assert stats["book-1"]["pipeline_stats"]["ocr"] == 10
-    assert stats["book-1"]["has_summary"] == False
+    assert not stats["book-1"]["has_summary"]
 
 @pytest.mark.asyncio
 async def test_get_with_page_stats_ready():

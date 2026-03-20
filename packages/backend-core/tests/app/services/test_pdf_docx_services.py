@@ -1,9 +1,8 @@
 import pytest
 from pathlib import Path
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch
 from app.services.pdf_service import read_pdf_page_count, extract_pdf_cover, create_page_stubs
 from app.services.docx_service import _load_footnotes, _is_heading_para, extract_docx_pages, extract_docx_cover
-from app.db.models import Page
 
 # PDF Service Tests
 def test_read_pdf_page_count():
@@ -75,7 +74,6 @@ async def test_extract_docx_pages_fallback():
         mock_run.find.return_value = MagicMock(text="Some text") # find w:t
         mock_run.get.return_value = None # no footnote
         
-        import app.services.docx_service as ds
         # w:r
         para_el = MagicMock()
         para_el.findall.return_value = [mock_run]

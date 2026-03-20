@@ -1,7 +1,6 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
-from datetime import datetime, timezone
 from app.db.repositories.users import UsersRepository, get_users_repository, RefreshTokensRepository, get_refresh_tokens_repository
 from app.db.models import User, RefreshToken
 
@@ -53,7 +52,7 @@ async def test_update_last_login():
         await repo.update_last_login(user_id, ip_address="1.2.3.4")
         assert mock_update.called
 
-from unittest.mock import patch
+
 
 @pytest.mark.asyncio
 async def test_count_by_role():

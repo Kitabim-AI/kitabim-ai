@@ -1,4 +1,3 @@
-import pytest
 from app.utils.citation_fixer import fix_malformed_citations
 
 def test_fix_malformed_citations_nested():

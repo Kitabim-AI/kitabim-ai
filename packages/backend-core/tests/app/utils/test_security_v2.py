@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from app.utils.security import hash_ip_address, hash_ip_if_present
 
 @pytest.fixture
