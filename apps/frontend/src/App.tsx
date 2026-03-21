@@ -84,6 +84,8 @@ const AppContent: React.FC = () => {
           usageStatus={chat.usageStatus}
           onClose={() => setView(previousView)}
           chatContainerRef={chat.chatContainerRef}
+          selectedCharacterId={chat.selectedCharacterId}
+          setSelectedCharacterId={chat.setSelectedCharacterId}
         />
       )}
       {view === 'join-us' && <JoinUsView />}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Send, Bot, User, BookOpen, LogIn } from 'lucide-react';
+import { X, Send, Bot, User, BookOpen, LogIn, ChevronDown } from 'lucide-react';
 import { Message, Book } from '@shared/types';
 import { useI18n } from '../../i18n/I18nContext';
 import { useAuth } from '../../hooks/useAuth';
@@ -8,6 +8,7 @@ import { OAuthButtonGroup } from '../auth/AuthButton';
 import { MarkdownContent } from '../common/MarkdownContent';
 import { ReferenceModal } from './ReferenceModal';
 import { ProverbDisplay } from '../common/ProverbDisplay';
+import { CHARACTERS } from '../../constants/characters';
 
 
 interface ChatInterfaceProps {
@@ -24,6 +25,8 @@ interface ChatInterfaceProps {
   onClose?: () => void;
   chatContainerRef: React.RefObject<HTMLDivElement>;
   usageStatus?: { usage: number, limit: number | null, hasReachedLimit: boolean } | null;
+  selectedCharacterId?: string;
+  setSelectedCharacterId?: (id: string) => void;
 }
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({
@@ -39,6 +42,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onClose,
   chatContainerRef,
   usageStatus,
+  selectedCharacterId,
+  setSelectedCharacterId,
 }) => {
   const { t } = useI18n();
   const { isAuthenticated } = useAuth();
@@ -50,6 +55,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const handleReferenceClick = (bookId: string, pageNums: number[]) => {
     setSelectedReference({ bookId, pageNums });
   };
+
+  const currentCharacter = CHARACTERS.find(c => c.id === selectedCharacterId) || CHARACTERS[0];
 
   if (isGlobal) {
     return (
@@ -113,7 +120,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   ? 'bg-white border-2 border-[#0369a1]/10 text-[#0369a1]'
                   : 'bg-[#0369a1] text-white shadow-[#0369a1]/30'
                   }`}>
-                  {msg.role === 'user' ? <User size={16} className="md:w-5 md:h-5" strokeWidth={2.5} /> : <Bot size={18} className="md:w-6 md:h-6" strokeWidth={2.5} />}
+                  {msg.role === 'user' ? <User size={16} className="md:w-5 md:h-5" strokeWidth={2.5} /> : <span className="text-lg md:text-xl">{currentCharacter.avatar_emoji}</span>}
                 </div>
                 <div
                   className={`px-3 sm:px-5 lg:px-8 py-2 sm:py-3 lg:py-5 rounded-[20px] lg:rounded-[28px] font-normal uyghur-text shadow-sm ${msg.role === 'user'
@@ -139,7 +146,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           {streamingMessage && (
             <div className="flex flex-col items-end md:flex-row-reverse md:items-start gap-2 md:gap-4 lg:gap-6">
               <div className="w-7 h-7 md:w-10 md:h-10 shrink-0 rounded-xl md:rounded-2xl bg-[#0369a1] text-white flex items-center justify-center shadow-xl shadow-[#0369a1]/20">
-                <Bot size={18} className="md:w-6 md:h-6" strokeWidth={2.5} />
+                <span className="text-lg md:text-xl">{currentCharacter.avatar_emoji}</span>
               </div>
               <div className="flex flex-col gap-1 md:gap-2 w-full items-end">
                 <div
@@ -160,7 +167,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           {isChatting && !streamingMessage && (
             <div className="flex flex-col items-end md:flex-row-reverse md:items-start gap-2 md:gap-4 lg:gap-6">
               <div className="w-7 h-7 md:w-10 md:h-10 shrink-0 rounded-xl md:rounded-2xl bg-[#0369a1] text-white flex items-center justify-center shadow-xl shadow-[#0369a1]/20 animate-pulse">
-                <Bot size={18} className="md:w-6 md:h-6" strokeWidth={2.5} />
+                <span className="text-lg md:text-xl">{currentCharacter.avatar_emoji}</span>
               </div>
               <div className="bg-[#0369a1]/10 px-5 py-4 rounded-[28px] rounded-tl-none flex gap-2 items-center border border-[#0369a1]/10 shadow-sm animate-bounce">
                 <div className="w-2 h-2 bg-[#0369a1] rounded-full animate-bounce" />
@@ -182,7 +189,45 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   </p>
                 </div>
               ) : (
-                <div className="flex gap-2 items-center">
+                <div className="flex gap-2 items-center w-full">
+                  {/* Character Dropdown */}
+                  <div className="relative group shrink-0 me-1">
+                    <button
+                      className="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2.5 bg-[#0369a1]/5 hover:bg-[#0369a1]/10 text-[#0369a1] rounded-2xl transition-all active:scale-95 border border-[#0369a1]/10"
+                      onClick={(e) => {
+                        const menu = document.getElementById('character-menu');
+                        menu?.classList.toggle('hidden');
+                      }}
+                    >
+                      <span className="text-xl sm:text-2xl">{currentCharacter.avatar_emoji}</span>
+                      <span className="hidden sm:inline font-normal text-sm">{currentCharacter.name_uy}</span>
+                      <ChevronDown size={14} className="opacity-50" />
+                    </button>
+                    {/* Simplified Dropdown Menu */}
+                    <div id="character-menu" className="hidden absolute bottom-full right-0 mb-3 bg-white/95 backdrop-blur-xl border border-[#0369a1]/10 rounded-[28px] shadow-2xl p-2 min-w-[200px] z-50 animate-in fade-in slide-in-from-bottom-2">
+                      <div className="grid grid-cols-1 gap-1">
+                        {CHARACTERS.map(char => (
+                          <button
+                            key={char.id}
+                            onClick={() => {
+                              setSelectedCharacterId?.(char.id);
+                              document.getElementById('character-menu')?.classList.add('hidden');
+                            }}
+                            className={`flex items-center gap-3 w-full p-3 rounded-2xl transition-all text-right ${
+                              selectedCharacterId === char.id 
+                                ? 'bg-[#0369a1] text-white' 
+                                : 'hover:bg-slate-50 text-slate-700'
+                            }`}
+                            dir="rtl"
+                          >
+                            <span className="text-2xl">{char.avatar_emoji}</span>
+                            <span className="font-normal text-sm">{char.name_uy}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
                   <input
                     type="text"
                     value={chatInput}
@@ -191,7 +236,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     placeholder={usageStatus && usageStatus.limit !== null
                       ? t('chat.inputPlaceholderWithLimit', { usage: usageStatus.usage, limit: usageStatus.limit })
                       : t('chat.inputPlaceholderBook')}
-                    className="flex-1 bg-transparent py-2.5 sm:py-3 pr-3 sm:pr-6 pl-3 sm:pl-4 font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none uyghur-text"
+                    className="flex-grow bg-transparent py-2.5 sm:py-3 pr-2 sm:pr-4 pl-3 sm:pl-4 font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none uyghur-text"
                     style={{ fontSize: `${fontSize}px` }}
                     dir="rtl"
                     disabled={usageStatus?.hasReachedLimit}
@@ -199,7 +244,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   <button
                     onClick={onSendMessage}
                     disabled={isChatting || !chatInput.trim() || usageStatus?.hasReachedLimit}
-                    className="p-2 sm:p-3 me-2 sm:me-6 bg-[#0369a1] hover:bg-[#0284c7] text-white rounded-[24px] flex items-center justify-center transition-all active:scale-95 shadow-lg shadow-[#0369a1]/20 disabled:opacity-30 disabled:grayscale shrink-0"
+                    className="p-2 sm:p-3 me-2 sm:me-4 bg-[#0369a1] hover:bg-[#0284c7] text-white rounded-[24px] flex items-center justify-center transition-all active:scale-95 shadow-lg shadow-[#0369a1]/20 disabled:opacity-30 disabled:grayscale shrink-0"
                   >
                     <Send size={18} strokeWidth={3} />
                   </button>

@@ -19,6 +19,7 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
     async def summary_search(
         self,
         query_embedding: List[float],
+        book_ids: Optional[List[str]] = None,
         limit: int = 5,
         threshold: float = 0.30,
     ) -> List[str]:
@@ -31,19 +32,31 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
         from sqlalchemy import text
 
         embedding_str = str(query_embedding)
-        query = text("""
-            SELECT
-                book_id,
-                1 - (embedding <=> CAST(:embedding AS vector)) AS similarity
-            FROM book_summaries
-            WHERE 1 - (embedding <=> CAST(:embedding AS vector)) > :threshold
-            ORDER BY similarity DESC
-            LIMIT :limit
-        """)
-        result = await self.session.execute(
-            query,
-            {"embedding": embedding_str, "threshold": threshold, "limit": limit},
-        )
+        if book_ids:
+            query = text("""
+                SELECT
+                    book_id,
+                    1 - (embedding <=> CAST(:embedding AS vector)) AS similarity
+                FROM book_summaries
+                WHERE book_id = ANY(:book_ids)
+                  AND 1 - (embedding <=> CAST(:embedding AS vector)) > :threshold
+                ORDER BY similarity DESC
+                LIMIT :limit
+            """)
+            params = {"embedding": embedding_str, "threshold": threshold, "limit": limit, "book_ids": book_ids}
+        else:
+            query = text("""
+                SELECT
+                    book_id,
+                    1 - (embedding <=> CAST(:embedding AS vector)) AS similarity
+                FROM book_summaries
+                WHERE 1 - (embedding <=> CAST(:embedding AS vector)) > :threshold
+                ORDER BY similarity DESC
+                LIMIT :limit
+            """)
+            params = {"embedding": embedding_str, "threshold": threshold, "limit": limit}
+
+        result = await self.session.execute(query, params)
         return [str(row.book_id) for row in result.fetchall()]
 
     async def upsert(self, book_id: str, summary: str, embedding: List[float]) -> None:

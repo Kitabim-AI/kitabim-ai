@@ -17,7 +17,9 @@ Rules:
     - He variants: ە (ae/open-he) vs ھ (dotless-he/h) — both are common in Uyghur, context-dependent. 
     - Ain vs Ghain: ع vs غ — غ has a dot above; do not omit it. ع is not an Uyghur chapter.
     - He vs Ha: ح vs خ — خ has a dot above; do not omit it. ح is not an Uyghur chapter.
-    - Fa vs Qaf: ف (f) vs ق (q) — ق has two dots above; do not confuse with ف which has one dot above."""
+    - Fa vs Qaf: ف (f) vs ق (q) — ق has two dots above; do not confuse with ف which has one dot above.
+8. IMPORTANT — Frequent OCR transcription corrections. When you see the word on the left, it is almost certainly a transcription error; use the correctly spelled version on the right:
+   ئولار -> ئۇلار | ئونىڭغا -> ئۇنىڭغا | ئونىڭ -> ئۇنىڭ | خوشال -> خۇشال | ئولارنىڭ -> ئۇلارنىڭ | ئولارغا -> ئۇلارغا | ئونىڭدىن -> ئۇنىڭدىن | تويۇقسىز -> تۇيۇقسىز | بونداق -> بۇنداق | ئوزاق -> ئۇزاق | ئونداق -> ئۇنداق | ئەسرنىڭ -> ئەسىرنىڭ | ئويان -> ئۇيان | ئۈزۈن -> ئۇزۇن | موشۇ -> مۇشۇ | ئودۇل -> ئۇدۇل | يوقىرىدا -> يۇقىرىدا | ھوزۇر -> ھۇزۇر | خوراسان -> خۇراسان | يوقىرىغا -> يۇقىرىغا | ئوزاقتىن -> ئۇزاقتىن | يوقىرىدىكى -> يۇقىرىدىكى | ئوزاققىچە -> ئۇزاققىچە | ئوستام -> ئۇستام | ئۆنداق -> ئۇنداق | ئابرويى -> ئابرۇيى | خوشخۇي -> خۇشخۇي | روسلاپ -> رۇسلاپ | جەمئى -> جەمئىي | ئوزاققا -> ئۇزاققا | ئئوچقاندەك -> ئۇچقاندەك | گۇياكى -> گوياكى | بونچە -> بۇنچە | خوشى -> خۇشى | رەسمى -> رەسمىي | ئابرويىنى -> ئابرۇيىنى | بوقا -> بۇقا | قەتئىنەزەر -> قەتئىينەزەر | تېگىرقاپ -> تېڭىرقاپ | ھوجرا -> ھۇجرا | سۆرلۈك -> سۈرلۈك | مولايىم -> مۇلايىم | بۈگۈنكىچە -> بۈگۈنگىچە | كۆچلۈك -> كۇچلۈك | مۆرىسىدىن -> مۈرىسىدىن | ئوسۇل -> ئۇسۇل | ژورنىلى -> ژۇرنىلى | سەمىز -> سېمىز | قومۇلدا -> قۇمۇلدا | ئولارمۇ -> ئۇلارمۇ"""
 
 CATEGORY_PROMPT = """You are a librarian efficiently categorizing a user's question to find the right section of the library.
 
