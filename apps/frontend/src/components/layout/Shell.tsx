@@ -2,7 +2,7 @@ import React from 'react';
 import { Navbar } from './Navbar';
 import { Modal } from '../common/Modal';
 import { NotificationContainer } from '../common/NotificationContainer';
-import { RefreshCw } from 'lucide-react';
+import { SearchOverlay } from '../library/SearchOverlay';
 import { useAppContext } from '../../context/AppContext';
 import { useI18n } from '../../i18n/I18nContext';
 
@@ -54,6 +54,8 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
 
         {children}
       </main>
+
+      <SearchOverlay />
 
       <Modal
         isOpen={modal.isOpen}

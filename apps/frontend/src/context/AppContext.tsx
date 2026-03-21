@@ -44,6 +44,10 @@ interface AppContextType {
   setFontSize: React.Dispatch<React.SetStateAction<number>>;
   activeTab: string;
   setActiveTab: (tab: string, updateHistory?: boolean) => void;
+  globalSearchQuery: string;
+  setGlobalSearchQuery: (query: string) => void;
+  isGlobalSearchOpen: boolean;
+  setIsGlobalSearchOpen: (open: boolean) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -92,8 +96,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       // Logic: Only clear search if navigating directly BETWEEN main dashboard views.
       // If we are opening/closing a sub-view (reader, chat), do NOT clear search state.
+      // Exception: If we are navigating TO library or admin, we might be coming from a search box,
+      // so we let the caller handle clearing if needed.
       const mainViews = ['home', 'library', 'admin', 'join-us', 'spell-check'];
-      if (mainViews.includes(view) && mainViews.includes(newView)) {
+      if (mainViews.includes(view) && mainViews.includes(newView) && newView !== 'library' && newView !== 'admin') {
         setSearchQuery('');
         setHomeSearchQuery('');
         setSelectedCategory('');
@@ -130,6 +136,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [view, activeTab]);
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [globalSearchQuery, setGlobalSearchQuery] = useState('');
+  const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
   const [homeSearchQuery, setHomeSearchQuery] = useState('');
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [selectedCategory, setSelectedCategory] = useState('');
@@ -222,6 +230,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setFontSize,
     activeTab,
     setActiveTab,
+    globalSearchQuery,
+    setGlobalSearchQuery,
+    isGlobalSearchOpen,
+    setIsGlobalSearchOpen,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

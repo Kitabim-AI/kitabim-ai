@@ -38,12 +38,21 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
     const trimmedQuery = searchQuery.trim();
     const currentParams = `${view}-${searchQuery}-${pageSize}-${page}-${category}-${groupByWork}-${isAuthenticated}`;
 
-    // Skip loading books for views that don't need them
-    if (view === 'global-chat' || view === 'reader' || view === 'join-us' || view === 'spell-check') {
+    // Skip loading books for views that don't need them, unless a search is active
+    if (!searchQuery.trim() && (view === 'global-chat' || view === 'reader' || view === 'join-us' || view === 'spell-check' || view === 'search-overlay')) {
       setBooks([]);
       setTotalBooks(0);
       setTotalReady(0);
       lastParamsRef.current = view;
+      setIsLoading(false);
+      return;
+    }
+
+    if (view === 'search-overlay' && trimmedQuery.length < 3) {
+      setBooks([]);
+      setTotalBooks(0);
+      setTotalReady(0);
+      lastParamsRef.current = `query-short`;
       setIsLoading(false);
       return;
     }

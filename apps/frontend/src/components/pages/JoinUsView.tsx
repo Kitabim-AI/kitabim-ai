@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  Users,
+  HeartHandshake,
   FileEdit,
   Code,
   Heart,
@@ -112,7 +112,7 @@ const JoinUsView: React.FC = () => {
         <div className="text-center mb-12 sm:mb-14 md:mb-16 px-4">
           <div className="flex flex-col items-center gap-4 sm:gap-6">
             <div className="px-6 sm:px-8 py-2.5 bg-[#0369a1] text-white rounded-full text-xs sm:text-sm font-bold uppercase mb-3 sm:mb-4 border border-[#0369a1]/20 shadow-[0_8px_20px_rgba(3,105,161,0.2)] flex items-center gap-2">
-              <Users size={16} className="sm:w-[18px] sm:h-[18px]" />
+              <HeartHandshake size={16} className="sm:w-[18px] sm:h-[18px]" />
               {t('joinUs.hero.badge')}
             </div>
             <h1 className="font-black text-[#1a1a1a] leading-tight text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl mb-2">

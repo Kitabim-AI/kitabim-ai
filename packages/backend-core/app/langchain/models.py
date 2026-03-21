@@ -71,17 +71,25 @@ def update_breaker_config(failure_threshold: int | None = None, recovery_timeout
             breaker.config.recovery_timeout = recovery_timeout
 
 
-async def reset_circuit_breakers() -> dict:
-    """Manually reset (close) all circuit breakers. Admin control."""
-    for breaker in [_TEXT_BREAKER, _OCR_BREAKER, _EMBED_BREAKER]:
+async def reset_circuit_breakers(name: Optional[str] = None) -> dict:
+    """Manually reset (close) circuit breakers. Admin control."""
+    breakers = [_TEXT_BREAKER, _OCR_BREAKER, _EMBED_BREAKER]
+    if name:
+        breakers = [b for b in breakers if b.name == name]
+    
+    for breaker in breakers:
         await breaker.reset()
 
     return await get_circuit_breaker_status()
 
 
-async def force_open_circuit_breakers() -> dict:
-    """Manually open all circuit breakers. Admin control."""
-    for breaker in [_TEXT_BREAKER, _OCR_BREAKER, _EMBED_BREAKER]:
+async def force_open_circuit_breakers(name: Optional[str] = None) -> dict:
+    """Manually open circuit breakers. Admin control."""
+    breakers = [_TEXT_BREAKER, _OCR_BREAKER, _EMBED_BREAKER]
+    if name:
+        breakers = [b for b in breakers if b.name == name]
+        
+    for breaker in breakers:
         await breaker.force_open()
 
     return await get_circuit_breaker_status()

@@ -7,6 +7,7 @@ import { Settings, Plus, Save, X, Edit2, RefreshCw } from 'lucide-react';
 import { authFetch } from '../../../services/authService';
 import { useI18n } from '../../../i18n/I18nContext';
 import { ProverbDisplay } from '../../common/ProverbDisplay';
+import { useIsAdmin } from '../../../hooks/useAuth';
 
 interface SystemConfig {
   key: string;
@@ -17,6 +18,13 @@ interface SystemConfig {
 
 interface CircuitBreakerStatus {
   text_breaker: {
+    state: string;
+    failure_count: number;
+    time_since_opened_seconds: number;
+    recovery_timeout: number;
+    failure_threshold: number;
+  };
+  ocr_breaker: {
     state: string;
     failure_count: number;
     time_since_opened_seconds: number;
@@ -36,6 +44,7 @@ interface CircuitBreakerStatus {
 
 export function SystemConfigPanel() {
   const { t } = useI18n();
+  const isAdmin = useIsAdmin();
   const [configs, setConfigs] = useState<SystemConfig[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -88,10 +97,14 @@ export function SystemConfigPanel() {
     }
   };
 
-  const resetCircuitBreaker = async () => {
+  const resetCircuitBreaker = async (name?: string) => {
     try {
       setCbLoading(true);
-      const response = await authFetch('/api/system-configs/circuit-breaker/reset', {
+      const url = name 
+        ? `/api/system-configs/circuit-breaker/reset?name=${name}` 
+        : '/api/system-configs/circuit-breaker/reset';
+        
+      const response = await authFetch(url, {
         method: 'POST',
       });
       if (!response.ok) {
@@ -100,19 +113,20 @@ export function SystemConfigPanel() {
       const data = await response.json();
       setCbStatus(data);
     } catch (err: any) {
-      alert(err.message || 'Failed to reset circuit breaker');
+      console.error('Failed to reset circuit breaker:', err);
     } finally {
       setCbLoading(false);
     }
   };
 
-  const forceOpenCircuitBreaker = async () => {
-    if (!confirm(t('admin.systemConfig.circuitBreaker.confirmForceOpen'))) {
-      return;
-    }
+  const forceOpenCircuitBreaker = async (name?: string) => {
     try {
       setCbLoading(true);
-      const response = await authFetch('/api/system-configs/circuit-breaker/open', {
+      const url = name 
+        ? `/api/system-configs/circuit-breaker/open?name=${name}` 
+        : '/api/system-configs/circuit-breaker/open';
+        
+      const response = await authFetch(url, {
         method: 'POST',
       });
       if (!response.ok) {
@@ -121,7 +135,7 @@ export function SystemConfigPanel() {
       const data = await response.json();
       setCbStatus(data);
     } catch (err: any) {
-      alert(err.message || 'Failed to open circuit breaker');
+      console.error('Failed to open circuit breaker:', err);
     } finally {
       setCbLoading(false);
     }
@@ -270,58 +284,108 @@ export function SystemConfigPanel() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mb-4 md:mb-6">
-            {/* Overall Status */}
-            <div className={`p-3 md:p-4 rounded-xl md:rounded-2xl border-2 ${cbStatus.overall_state === 'closed' ? 'bg-green-50 border-green-200' : cbStatus.overall_state === 'open' ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}`}>
-              <div className="text-xs md:text-sm text-slate-600 mb-1">{t('admin.systemConfig.circuitBreaker.overallStatus')}</div>
-              <div className={`text-lg md:text-2xl font-normal ${cbStatus.overall_state === 'closed' ? 'text-green-600' : cbStatus.overall_state === 'open' ? 'text-red-600' : 'text-yellow-600'}`}>
-                {cbStatus.overall_state === 'closed' ? `✓ ${t('admin.systemConfig.circuitBreaker.available')}` : cbStatus.overall_state === 'open' ? `✗ ${t('admin.systemConfig.circuitBreaker.unavailable')}` : `⚠ ${t('admin.systemConfig.circuitBreaker.states.half_open')}`}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8 mb-4 md:mb-6">
+            {/* Text Model Box */}
+            <div className={`glass-panel p-6 md:p-8 rounded-[32px] border-2 transition-all hover:scale-[1.01] flex flex-col justify-between ${cbStatus.text_breaker.state === 'closed' ? 'bg-green-50/40 border-green-200' : cbStatus.text_breaker.state === 'open' ? 'bg-red-50/40 border-red-200' : 'bg-yellow-50/40 border-yellow-200'}`}>
+              <div>
+                <div className="text-xs md:text-sm text-slate-500 mb-2 uppercase tracking-wider">{t('admin.systemConfig.circuitBreaker.textLlm')}</div>
+                <div className={`text-xl md:text-2xl font-normal ${cbStatus.text_breaker.state === 'closed' ? 'text-green-600' : cbStatus.text_breaker.state === 'open' ? 'text-red-600' : 'text-yellow-600'}`}>
+                  {cbStatus.text_breaker.state === 'closed' ? `✓ ${t('admin.systemConfig.circuitBreaker.states.closed')}` : cbStatus.text_breaker.state === 'open' ? `✗ ${t('admin.systemConfig.circuitBreaker.states.open')}` : `⚠ ${t('admin.systemConfig.circuitBreaker.states.half_open')}`}
+                </div>
+                <div className="text-xs md:text-sm text-slate-400 mt-2">
+                  {t('admin.systemConfig.circuitBreaker.failures')}: <span className="text-slate-700 font-normal">{cbStatus.text_breaker.failure_count}/{cbStatus.text_breaker.failure_threshold}</span>
+                </div>
               </div>
+              
+              {isAdmin && (
+                <div className="grid grid-cols-2 gap-3 mt-8">
+                  <button 
+                    onClick={() => resetCircuitBreaker('llm_generate')}
+                    disabled={cbStatus.text_breaker.state === 'closed' || cbLoading}
+                    className="flex items-center justify-center gap-2 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all font-normal text-sm shadow-lg shadow-green-600/10 disabled:opacity-30"
+                  >
+                    <RefreshCw size={14} />
+                    {t('admin.systemConfig.circuitBreaker.reset')}
+                  </button>
+                  <button 
+                    onClick={() => forceOpenCircuitBreaker('llm_generate')}
+                    disabled={cbStatus.text_breaker.state === 'open' || cbLoading}
+                    className="flex items-center justify-center gap-2 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all font-normal text-sm shadow-lg shadow-red-600/10 disabled:opacity-30"
+                  >
+                    <X size={14} />
+                    {t('admin.systemConfig.circuitBreaker.forceOpen')} 
+                  </button>
+                </div>
+              )}
             </div>
 
-            {/* Text Breaker */}
-            <div className={`p-3 md:p-4 rounded-xl md:rounded-2xl border-2 ${cbStatus.text_breaker.state === 'closed' ? 'bg-green-50 border-green-200' : cbStatus.text_breaker.state === 'open' ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}`}>
-              <div className="text-xs md:text-sm text-slate-600 mb-1">{t('admin.systemConfig.circuitBreaker.textLlm')}</div>
-              <div className="text-base md:text-xl font-normal text-slate-800">{t(`admin.systemConfig.circuitBreaker.states.${cbStatus.text_breaker.state}` as any)}</div>
-              <div className="text-[10px] md:text-xs text-slate-500 mt-1 md:mt-2">
-                {t('admin.systemConfig.circuitBreaker.failures')}: {cbStatus.text_breaker.failure_count}/{cbStatus.text_breaker.failure_threshold}
-                {cbStatus.text_breaker.state === 'open' && (
-                  <> • {t('admin.systemConfig.circuitBreaker.opensFor')} {cbStatus.text_breaker.recovery_timeout}s</>
-                )}
+            {/* Vectorizer Box */}
+            <div className={`glass-panel p-6 md:p-8 rounded-[32px] border-2 transition-all hover:scale-[1.01] flex flex-col justify-between ${cbStatus.embed_breaker.state === 'closed' ? 'bg-green-50/40 border-green-200' : cbStatus.embed_breaker.state === 'open' ? 'bg-red-50/40 border-red-200' : 'bg-yellow-50/40 border-yellow-200'}`}>
+              <div>
+                <div className="text-xs md:text-sm text-slate-500 mb-2 uppercase tracking-wider">{t('admin.systemConfig.circuitBreaker.embeddings')}</div>
+                <div className={`text-xl md:text-2xl font-normal ${cbStatus.embed_breaker.state === 'closed' ? 'text-green-600' : cbStatus.embed_breaker.state === 'open' ? 'text-red-600' : 'text-yellow-600'}`}>
+                  {cbStatus.embed_breaker.state === 'closed' ? `✓ ${t('admin.systemConfig.circuitBreaker.states.closed')}` : cbStatus.embed_breaker.state === 'open' ? `✗ ${t('admin.systemConfig.circuitBreaker.states.open')}` : `⚠ ${t('admin.systemConfig.circuitBreaker.states.half_open')}`}
+                </div>
+                <div className="text-xs md:text-sm text-slate-400 mt-2">
+                  {t('admin.systemConfig.circuitBreaker.failures')}: <span className="text-slate-700 font-normal">{cbStatus.embed_breaker.failure_count}/{cbStatus.embed_breaker.failure_threshold}</span>
+                </div>
               </div>
+
+              {isAdmin && (
+                <div className="grid grid-cols-2 gap-3 mt-8">
+                  <button 
+                    onClick={() => resetCircuitBreaker('llm_embed')}
+                    disabled={cbStatus.embed_breaker.state === 'closed' || cbLoading}
+                    className="flex items-center justify-center gap-2 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all font-normal text-sm shadow-lg shadow-green-600/10 disabled:opacity-30"
+                  >
+                    <RefreshCw size={14} />
+                    {t('admin.systemConfig.circuitBreaker.reset')}
+                  </button>
+                  <button 
+                    onClick={() => forceOpenCircuitBreaker('llm_embed')}
+                    disabled={cbStatus.embed_breaker.state === 'open' || cbLoading}
+                    className="flex items-center justify-center gap-2 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all font-normal text-sm shadow-lg shadow-red-600/10 disabled:opacity-30"
+                  >
+                    <X size={14} />
+                    {t('admin.systemConfig.circuitBreaker.forceOpen')} 
+                  </button>
+                </div>
+              )}
             </div>
 
-            {/* Embed Breaker */}
-            <div className={`p-3 md:p-4 rounded-xl md:rounded-2xl border-2 ${cbStatus.embed_breaker.state === 'closed' ? 'bg-green-50 border-green-200' : cbStatus.embed_breaker.state === 'open' ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}`}>
-              <div className="text-xs md:text-sm text-slate-600 mb-1">{t('admin.systemConfig.circuitBreaker.embeddings')}</div>
-              <div className="text-base md:text-xl font-normal text-slate-800">{t(`admin.systemConfig.circuitBreaker.states.${cbStatus.embed_breaker.state}` as any)}</div>
-              <div className="text-[10px] md:text-xs text-slate-500 mt-1 md:mt-2">
-                {t('admin.systemConfig.circuitBreaker.failures')}: {cbStatus.embed_breaker.failure_count}/{cbStatus.embed_breaker.failure_threshold}
-                {cbStatus.embed_breaker.state === 'open' && (
-                  <> • {t('admin.systemConfig.circuitBreaker.openedFor')} {cbStatus.embed_breaker.time_since_opened_seconds}s</>
-                )}
+            {/* OCR Model Box */}
+            <div className={`glass-panel p-6 md:p-8 rounded-[32px] border-2 transition-all hover:scale-[1.01] flex flex-col justify-between ${cbStatus.ocr_breaker.state === 'closed' ? 'bg-green-50/40 border-green-200' : cbStatus.ocr_breaker.state === 'open' ? 'bg-red-50/40 border-red-200' : 'bg-yellow-50/40 border-yellow-200'}`}>
+              <div>
+                <div className="text-xs md:text-sm text-slate-500 mb-2 uppercase tracking-wider">{t('admin.systemConfig.circuitBreaker.ocrLlm')}</div>
+                <div className={`text-xl md:text-2xl font-normal ${cbStatus.ocr_breaker.state === 'closed' ? 'text-green-600' : cbStatus.ocr_breaker.state === 'open' ? 'text-red-600' : 'text-yellow-600'}`}>
+                  {cbStatus.ocr_breaker.state === 'closed' ? `✓ ${t('admin.systemConfig.circuitBreaker.states.closed')}` : cbStatus.ocr_breaker.state === 'open' ? `✗ ${t('admin.systemConfig.circuitBreaker.states.open')}` : `⚠ ${t('admin.systemConfig.circuitBreaker.states.half_open')}`}
+                </div>
+                <div className="text-xs md:text-sm text-slate-400 mt-2">
+                  {t('admin.systemConfig.circuitBreaker.failures')}: <span className="text-slate-700 font-normal">{cbStatus.ocr_breaker.failure_count}/{cbStatus.ocr_breaker.failure_threshold}</span>
+                </div>
               </div>
-            </div>
-          </div>
 
-          {/* Control Buttons */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 md:gap-3">
-            <button
-              onClick={resetCircuitBreaker}
-              disabled={cbLoading || cbStatus.overall_available}
-              className="flex items-center justify-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all shadow-lg shadow-green-600/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-600"
-            >
-              <RefreshCw size={14} className="md:w-4 md:h-4" />
-              <span className="text-xs md:text-sm font-normal">{t('admin.systemConfig.circuitBreaker.reset')}</span>
-            </button>
-            <button
-              onClick={forceOpenCircuitBreaker}
-              disabled={cbLoading || !cbStatus.overall_available}
-              className="flex items-center justify-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all shadow-lg shadow-red-600/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-red-600"
-            >
-              <X size={14} className="md:w-4 md:h-4" />
-              <span className="text-xs md:text-sm font-normal">{t('admin.systemConfig.circuitBreaker.forceOpen')}</span>
-            </button>
+              {isAdmin && (
+                <div className="grid grid-cols-2 gap-3 mt-8">
+                  <button 
+                    onClick={() => resetCircuitBreaker('llm_ocr')}
+                    disabled={cbStatus.ocr_breaker.state === 'closed' || cbLoading}
+                    className="flex items-center justify-center gap-2 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all font-normal text-sm shadow-lg shadow-green-600/10 disabled:opacity-30"
+                  >
+                    <RefreshCw size={14} />
+                    {t('admin.systemConfig.circuitBreaker.reset')}
+                  </button>
+                  <button 
+                    onClick={() => forceOpenCircuitBreaker('llm_ocr')}
+                    disabled={cbStatus.ocr_breaker.state === 'open' || cbLoading}
+                    className="flex items-center justify-center gap-2 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all font-normal text-sm shadow-lg shadow-red-600/10 disabled:opacity-30"
+                  >
+                    <X size={14} />
+                    {t('admin.systemConfig.circuitBreaker.forceOpen')} 
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -466,7 +530,7 @@ export function SystemConfigPanel() {
                           type="text"
                           value={editValue}
                           onChange={(e) => setEditValue(e.target.value)}
-                          className="w-full px-2 md:px-3 py-1.5 md:py-2 border-2 border-[#0369a1] rounded-xl bg-white outline-none text-left text-sm md:text-base"
+                          className="w-full px-2 md:px-3 py-1.5 md:py-2 border-2 border-[#0369a1] rounded-xl bg-white outline-none text-left text-base"
                         />
                       ) : (
                         <span className="font-normal text-[#1a1a1a] text-sm md:text-base break-all">
@@ -480,7 +544,7 @@ export function SystemConfigPanel() {
                           type="text"
                           value={editDescription}
                           onChange={(e) => setEditDescription(e.target.value)}
-                          className="w-full px-2 md:px-3 py-1.5 md:py-2 border-2 border-[#0369a1] rounded-xl bg-white outline-none text-left text-sm md:text-base"
+                          className="w-full px-2 md:px-3 py-1.5 md:py-2 border-2 border-[#0369a1] rounded-xl bg-white outline-none text-left text-base"
                         />
                       ) : (
                         <span className="text-xs md:text-sm text-[#94a3b8]">

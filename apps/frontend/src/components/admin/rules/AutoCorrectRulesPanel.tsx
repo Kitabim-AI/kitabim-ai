@@ -335,7 +335,7 @@ export function AutoCorrectRulesPanel() {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder={t('common.search')}
-          className="w-full pr-12 pl-6 py-3 md:py-3.5 bg-white border-2 border-[#0369a1]/10 rounded-[16px] md:rounded-[24px] outline-none focus:border-[#0369a1] transition-all uyghur-text shadow-sm text-sm md:text-base"
+          className="w-full pr-12 pl-6 py-2.5 md:py-3 bg-white border-2 border-[#0369a1]/10 rounded-2xl outline-none focus:border-[#0369a1] transition-all uyghur-text shadow-sm text-base"
         />
         {searchQuery && (
           <button

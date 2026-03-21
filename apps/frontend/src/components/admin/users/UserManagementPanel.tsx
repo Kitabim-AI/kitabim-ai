@@ -460,7 +460,7 @@ export function UserManagementPanel() {
 
       {/* Search and Filters Bar */}
       <div className="flex flex-col md:flex-row gap-3 md:gap-4">
-        <div className="relative flex-1 group">
+        <div className="relative flex-1 lg:flex-none lg:w-[30%] group">
           <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1] transition-colors">
             <Search size={18} strokeWidth={3} />
           </div>
@@ -469,7 +469,7 @@ export function UserManagementPanel() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('admin.users.searchPlaceholder') || "ئابونتلارنى ئىزدەش (نامى ياكى ئېلخەت)..."}
-            className="w-full pr-12 pl-12 py-2.5 bg-white border-2 border-[#0369a1]/10 rounded-2xl outline-none focus:border-[#0369a1] transition-all uyghur-text shadow-sm text-sm"
+            className="w-full pr-12 pl-12 py-2.5 md:py-3 bg-white border-2 border-[#0369a1]/10 rounded-2xl outline-none focus:border-[#0369a1] transition-all uyghur-text shadow-sm text-base"
           />
           {searchQuery && (
             <button
@@ -481,7 +481,7 @@ export function UserManagementPanel() {
           )}
         </div>
 
-        <div className="flex items-center gap-2 text-[12px] md:text-[14px] font-normal text-[#0369a1] bg-[#0369a1]/10 px-3 md:px-4 py-2 md:py-2.5 rounded-full border border-[#0369a1]/20 shadow-sm whitespace-nowrap self-start md:self-auto">
+        <div className="flex items-center gap-2 text-[12px] md:text-[14px] font-normal text-[#0369a1] bg-[#0369a1]/10 px-3 md:px-4 py-2 md:py-2.5 rounded-full border border-[#0369a1]/20 shadow-sm whitespace-nowrap self-start md:self-auto md:mr-auto">
           <Users size={12} className="md:w-[14px] md:h-[14px]" />
           {t('admin.users.total', { count: total })}
         </div>

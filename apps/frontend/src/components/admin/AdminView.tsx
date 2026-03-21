@@ -123,13 +123,30 @@ export const AdminView: React.FC = () => {
     hasMoreShelf: hasMore,
     loadMoreShelf: loadMore,
     isLoading: isInitialLoading,
-    searchQuery
+    searchQuery,
+    setSearchQuery
   } = useAppContext();
   const { t } = useI18n();
 
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [menuAnchorRect, setMenuAnchorRect] = useState<DOMRect | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [localSearch, setLocalSearch] = useState(searchQuery);
+
+  // Debounce: update global search query after 500ms
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (localSearch !== searchQuery) {
+        setSearchQuery(localSearch);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [localSearch, searchQuery, setSearchQuery]);
+
+  // Sync local search when global search is changed externally
+  useEffect(() => {
+    setLocalSearch(searchQuery);
+  }, [searchQuery]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -255,7 +272,7 @@ export const AdminView: React.FC = () => {
 
   return (
     <div className="space-y-8 animate-fade-in" lang="ug">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[#75C5F0]/20">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-6 border-b border-[#75C5F0]/20">
         <div className="flex items-center gap-3 md:gap-4 group">
           <div className="self-start mt-1 p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 icon-shake">
             <BookIcon size={20} className="md:w-6 md:h-6" />
@@ -275,11 +292,38 @@ export const AdminView: React.FC = () => {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 md:gap-3 px-4 md:px-6 py-2 md:py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner w-fit">
-          <BookOpen size={16} strokeWidth={2.5} className="md:w-[18px] md:h-[18px]" />
-          <span className="text-xs md:text-sm font-normal uppercase">
-            {isInitialLoading ? <RefreshCw size={14} className="animate-spin inline-block" /> : t('chat.libraryBookCount', { count: totalBooks })}
-          </span>
+      </div>
+
+      {/* Search and Filters Bar */}
+      <div className="flex flex-col md:flex-row gap-3 md:gap-4">
+        <div className="relative flex-1 lg:flex-none lg:w-[30%] group">
+          <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1] transition-colors">
+            {(isInitialLoading || isLoadingMore) && localSearch ? (
+              <RefreshCw size={18} strokeWidth={3} className="animate-spin" />
+            ) : (
+              <Search size={18} strokeWidth={3} />
+            )}
+          </div>
+          <input
+            type="text"
+            value={localSearch}
+            onChange={(e) => setLocalSearch(e.target.value)}
+            placeholder={t('library.searchPlaceholder')}
+            className="w-full pr-12 pl-12 py-2.5 md:py-3 bg-white border-2 border-[#0369a1]/10 rounded-2xl outline-none focus:border-[#0369a1] transition-all uyghur-text shadow-sm text-base"
+          />
+          {localSearch && (
+            <button
+              onClick={() => { setLocalSearch(''); setSearchQuery(''); }}
+              className="absolute inset-y-0 left-4 flex items-center text-[#94a3b8] hover:text-[#0369a1] transition-colors active:scale-95"
+            >
+              <X size={16} strokeWidth={3} />
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 text-[12px] md:text-[14px] font-normal text-[#0369a1] bg-[#0369a1]/10 px-3 md:px-4 py-2 md:py-2.5 rounded-full border border-[#0369a1]/20 shadow-sm whitespace-nowrap self-start md:self-auto md:mr-auto">
+          <BookIcon size={12} className="md:w-[14px] md:h-[14px]" />
+          {t('chat.libraryBookCount', { count: totalBooks })}
         </div>
       </div>
 
