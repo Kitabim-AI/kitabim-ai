@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { BookOpen, Library, Bot, LayoutDashboard, Search, Upload, Users, Menu, X, RefreshCw, BookOpenCheck } from 'lucide-react';
+import { BookOpen, Library, Bot, Settings, Search, Upload, HeartHandshake, Menu, X, RefreshCw, BookOpenCheck, Home } from 'lucide-react';
 import { AuthButton } from '../auth';
 import { useAuth, useIsEditor } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
@@ -10,24 +10,21 @@ export const Navbar: React.FC = () => {
   const { isAuthenticated } = useAuth();
   const isEditor = useIsEditor();
   const { t } = useI18n();
-  const { view, setView, searchQuery, setSearchQuery, homeSearchQuery, setHomeSearchQuery, bookActions, chat, setPage, isLoading, activeTab } = useAppContext();
+  const { 
+    view, 
+    setView, 
+    setSearchQuery, 
+    isGlobalSearchOpen,
+    setIsGlobalSearchOpen,
+    homeSearchQuery, 
+    setHomeSearchQuery, 
+    bookActions, 
+    chat, 
+    setPage, 
+    isLoading, 
+    activeTab 
+  } = useAppContext();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [localSearch, setLocalSearch] = useState(searchQuery);
-
-  // Sync local search when global search is cleared or changed externally
-  React.useEffect(() => {
-    setLocalSearch(searchQuery);
-  }, [searchQuery]);
-
-  // Debounce global search update
-  React.useEffect(() => {
-    const timer = setTimeout(() => {
-      if (localSearch !== searchQuery) {
-        setSearchQuery(localSearch);
-      }
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [localSearch, searchQuery, setSearchQuery]);
 
   const handleNavClick = (callback: () => void) => {
     callback();
@@ -67,25 +64,25 @@ export const Navbar: React.FC = () => {
             <NavButton
               active={view === 'home'}
               onClick={() => setView('home')}
-              icon={<Search size={20} strokeWidth={2.5} />}
+              icon={<Home size={20} strokeWidth={2.5} />}
               label={t('nav.home')}
             />
             <NavButton
               active={view === 'library'}
-              onClick={() => setView('library')}
+              onClick={() => { setSearchQuery(''); setView('library'); }}
               icon={<Library size={20} strokeWidth={2.5} />}
               label={t('nav.library')}
             />
             <NavButton
               active={view === 'global-chat'}
-              onClick={() => { setView('global-chat'); chat.clearChat(); }}
+              onClick={() => { setSearchQuery(''); setView('global-chat'); chat.clearChat(); }}
               icon={<Bot size={24} strokeWidth={2.5} />}
               label={t('nav.globalChat')}
             />
             {isEditor && (
               <NavButton
                 active={view === 'spell-check'}
-                onClick={() => setView('spell-check')}
+                onClick={() => { setSearchQuery(''); setView('spell-check'); }}
                 icon={<BookOpenCheck size={20} strokeWidth={2.5} />}
                 label={t('nav.spellCheck')}
               />
@@ -93,48 +90,30 @@ export const Navbar: React.FC = () => {
             {isEditor && (
               <NavButton
                 active={view === 'admin'}
-                onClick={() => { setView('admin'); setPage(1); }}
-                icon={<LayoutDashboard size={20} strokeWidth={2.5} />}
+                onClick={() => { setSearchQuery(''); setView('admin'); setPage(1); }}
+                icon={<Settings size={20} strokeWidth={2.5} />}
                 label={t('nav.admin')}
               />
             )}
             <NavButton
               active={view === 'join-us'}
-              onClick={() => setView('join-us')}
-              icon={<Users size={20} strokeWidth={2.5} />}
+              onClick={() => { setSearchQuery(''); setView('join-us'); }}
+              icon={<HeartHandshake size={20} strokeWidth={2.5} />}
               label={t('nav.joinUs')}
             />
           </div>
         </div>
 
         <div className="relative flex items-center gap-2 md:gap-2 lg:gap-4">
-          {(view === 'library' || (view === 'admin' && activeTab === 'books')) && (
-            <div className="relative hidden xl:block">
-              <input
-                type="text"
-                placeholder={t('library.searchPlaceholder')}
-                value={localSearch}
-                onChange={(e) => setLocalSearch(e.target.value)}
-                className="pr-11 pl-11 py-2.5 bg-white/50 backdrop-blur-md border-2 border-[#0369a1]/10 rounded-2xl text-sm font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none focus:border-[#0369a1] transition-all w-64 shadow-sm uyghur-text"
-                dir="rtl"
-              />
-              <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1]">
-                {isLoading && localSearch ? (
-                  <RefreshCw size={18} strokeWidth={3} className="animate-spin" />
-                ) : (
-                  <Search size={18} strokeWidth={3} />
-                )}
-              </div>
-              {localSearch && (
-                <button
-                  onClick={() => { setLocalSearch(''); setSearchQuery(''); }}
-                  className="absolute inset-y-0 left-4 flex items-center text-slate-400 hover:text-[#0369a1] transition-all active:scale-90"
-                >
-                  <X size={16} strokeWidth={3} />
-                </button>
-              )}
-            </div>
-          )}
+          {/* Search Toggle Button */}
+          <button
+            onClick={() => setIsGlobalSearchOpen(true)}
+            className="group relative flex items-center justify-center w-10 h-10 md:w-12 md:h-12 bg-white/50 backdrop-blur-md border border-[#0369a1]/10 rounded-2xl hover:border-[#0369a1] hover:bg-[#0369a1]/5 transition-all shadow-sm overflow-hidden active:scale-90"
+            title={t('library.searchPlaceholder')}
+          >
+            <Search size={22} className="text-[#0369a1] group-hover:scale-110 transition-transform" strokeWidth={2.5} />
+            <div className="absolute inset-0 bg-gradient-to-tr from-[#0369a1]/0 to-[#0369a1]/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </button>
 
           {isEditor && (
             <>
@@ -195,7 +174,7 @@ export const Navbar: React.FC = () => {
               <MobileNavButton
                 active={view === 'home'}
                 onClick={() => handleNavClick(() => setView('home'))}
-                icon={<Search size={20} strokeWidth={2.5} />}
+                icon={<Home size={20} strokeWidth={2.5} />}
                 label={t('nav.home')}
               />
               <MobileNavButton
@@ -222,14 +201,14 @@ export const Navbar: React.FC = () => {
                 <MobileNavButton
                   active={view === 'admin'}
                   onClick={() => handleNavClick(() => { setView('admin'); setPage(1); })}
-                  icon={<LayoutDashboard size={20} strokeWidth={2.5} />}
+                  icon={<Settings size={20} strokeWidth={2.5} />}
                   label={t('nav.admin')}
                 />
               )}
               <MobileNavButton
                 active={view === 'join-us'}
                 onClick={() => handleNavClick(() => setView('join-us'))}
-                icon={<Users size={20} strokeWidth={2.5} />}
+                icon={<HeartHandshake size={20} strokeWidth={2.5} />}
                 label={t('nav.joinUs')}
               />
 

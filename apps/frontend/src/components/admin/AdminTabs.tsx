@@ -3,7 +3,7 @@
  */
 
 import React, { useState } from 'react';
-import { Book, Users, Settings, BarChart3, Mail, Sparkles } from 'lucide-react';
+import { Book, Users, Settings, BarChart3, Mail, Sparkles, BookA } from 'lucide-react';
 import { useIsAdmin } from '../../hooks/useAuth';
 import { UserManagementPanel } from './users/UserManagementPanel';
 import { SystemConfigPanel } from './config/SystemConfigPanel';
@@ -36,7 +36,7 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
     { id: 'books', label: t('admin.booksLabel'), icon: <Book size={18} /> },
     { id: 'users', label: t('admin.usersLabel'), icon: <Users size={18} />, adminOnly: true },
     { id: 'rules', label: t('admin.rulesLabel') || 'Auto-Correction', icon: <Sparkles size={18} />, adminOnly: false },
-    { id: 'dictionary', label: t('admin.dictionaryLabel') || 'Dictionary', icon: <Book size={18} />, adminOnly: false },
+    { id: 'dictionary', label: t('admin.dictionaryLabel') || 'Dictionary', icon: <BookA size={18} />, adminOnly: false },
     { id: 'stats', label: t('admin.statsLabel') || 'Statistics', icon: <BarChart3 size={18} />, adminOnly: true },
     { id: 'config', label: t('admin.configLabel'), icon: <Settings size={18} />, adminOnly: true },
     { id: 'contacts', label: t('admin.contactsLabel'), icon: <Mail size={18} />, adminOnly: true },
