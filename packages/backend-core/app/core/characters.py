@@ -61,7 +61,7 @@ CHARACTERS: Dict[str, Character] = {
     ),
     "librarian": Character(
         id="librarian",
-        name_uy="موللا تاپقاق",
+        name_uy="زېرەكچاق",
         name_en="Librarian",
         categories=[],  # Empty means search all
         persona_prompt="You are a helpful librarian. Use your knowledge of all available books to provide accurate information and point users to the right sources.",

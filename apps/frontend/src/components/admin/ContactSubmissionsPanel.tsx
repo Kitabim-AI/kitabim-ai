@@ -3,10 +3,10 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Mail, Loader, AlertCircle } from 'lucide-react';
+import { Mail, Loader, AlertCircle, Search, X } from 'lucide-react';
 import { authFetch } from '../../services/authService';
 import { useI18n } from '../../i18n/I18nContext';
-import { ProverbDisplay } from '../common/ProverbDisplay';
+
 
 interface ContactSubmission {
   id: number;
@@ -33,6 +33,7 @@ const STATUS_STYLES: Record<string, { bg: string; text: string }> = {
 export function ContactSubmissionsPanel() {
   const { t } = useI18n();
   const [submissions, setSubmissions] = useState<ContactSubmission[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -79,30 +80,30 @@ export function ContactSubmissionsPanel() {
 
   return (
     <div className="space-y-6 md:space-y-8 animate-fade-in" dir="rtl" lang="ug">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-6 border-b border-[#75C5F0]/20">
-        <div className="flex items-center gap-3 md:gap-4 group">
-          <div className="self-start mt-1 p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 icon-shake">
-            <Mail size={20} className="md:w-6 md:h-6" />
+      {/* Search and Filter Row - matching other tabs layout */}
+      <div className="flex flex-col md:flex-row gap-3 md:gap-4 items-center">
+        <div className="relative flex-1 lg:flex-none lg:w-[30%] group w-full">
+          <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1]">
+            <Search size={18} strokeWidth={3} />
           </div>
-          <div>
-            <h2 className="text-xl md:text-2xl lg:text-3xl font-normal text-[#1a1a1a]">
-              {t('admin.contacts.title')}
-            </h2>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="w-6 md:w-8 h-[2px] bg-[#0369a1] rounded-full" />
-              <ProverbDisplay
-                keywords={t('proverbs.admin')}
-                size="sm"
-                className="opacity-70 mt-[-2px]"
-                defaultText={t('admin.contacts.subtitle')}
-              />
-            </div>
-          </div>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={t('common.search')}
+            className="w-full pr-12 pl-6 py-2.5 md:py-3 bg-white border-2 border-[#0369a1]/10 rounded-2xl outline-none focus:border-[#0369a1] transition-all uyghur-text shadow-sm text-base"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute inset-y-0 left-4 flex items-center text-slate-400 hover:text-[#0369a1] transition-colors"
+            >
+              <X size={18} />
+            </button>
+          )}
         </div>
 
-        {/* Status Filter */}
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap md:mr-auto">
           {(['all', 'new', 'reviewed', 'contacted', 'archived'] as StatusFilter[]).map((filter) => (
             <button
               key={filter}
@@ -164,7 +165,11 @@ export function ContactSubmissionsPanel() {
                 </tr>
               </thead>
               <tbody>
-                {submissions.map((submission) => {
+                {submissions.filter(s => 
+                  s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  s.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  s.message.toLowerCase().includes(searchQuery.toLowerCase())
+                ).map((submission) => {
                   const statusStyle = getStatusStyle(submission.status);
                   return (
                     <tr

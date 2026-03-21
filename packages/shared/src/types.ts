@@ -56,4 +56,5 @@ export interface PaginatedBooks {
 export interface Message {
   role: 'user' | 'model';
   text: string;
+  characterId?: string;
 }

@@ -120,7 +120,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   ? 'bg-white border-2 border-[#0369a1]/10 text-[#0369a1]'
                   : 'bg-[#0369a1] text-white shadow-[#0369a1]/30'
                   }`}>
-                  {msg.role === 'user' ? <User size={16} className="md:w-5 md:h-5" strokeWidth={2.5} /> : <span className="text-lg md:text-xl">{currentCharacter.avatar_emoji}</span>}
+                  {msg.role === 'user' ? (
+                    <User size={16} className="md:w-5 md:h-5" strokeWidth={2.5} />
+                  ) : (
+                    <span className="text-lg md:text-xl">
+                      {CHARACTERS.find(c => c.id === msg.characterId)?.avatar_emoji || currentCharacter.avatar_emoji}
+                    </span>
+                  )}
                 </div>
                 <div
                   className={`px-3 sm:px-5 lg:px-8 py-2 sm:py-3 lg:py-5 rounded-[20px] lg:rounded-[28px] font-normal uyghur-text shadow-sm ${msg.role === 'user'
@@ -309,7 +315,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           <div key={idx} className={`flex gap-2 ${msg.role === 'user' ? 'flex-col items-start' : 'flex-col items-end'}`}>
             <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm shadow-sm ${msg.role === 'user' ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'bg-[#0369a1] text-white'
               }`}>
-              {msg.role === 'user' ? <User size={18} strokeWidth={2.5} /> : <Bot size={18} strokeWidth={2.5} />}
+              {msg.role === 'user' ? (
+                <User size={18} strokeWidth={2.5} />
+              ) : (
+                <span className="text-base">
+                  {CHARACTERS.find(c => c.id === msg.characterId)?.avatar_emoji || '🤖'}
+                </span>
+              )}
             </div>
             <div className={`flex flex-col gap-1.5 ${msg.role === 'user' ? 'max-w-[85%] items-start' : 'w-full items-end'}`}>
               <div
