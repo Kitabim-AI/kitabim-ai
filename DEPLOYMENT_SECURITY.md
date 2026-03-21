@@ -50,13 +50,10 @@ CORS_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
 
 ```bash
 # Local development
-docker-compose down
-docker-compose up -d --build
+./deploy/local/rebuild-and-restart.sh all
 
 # Production (GCP)
-cd deploy/gcp
-docker-compose down
-docker-compose up -d --build
+./deploy/gcp/scripts/deploy.sh [tag]
 ```
 
 ---
@@ -70,8 +67,7 @@ docker-compose up -d --build
 - [ ] Updated root `.env` file with secrets
 - [ ] Set `CORS_ORIGINS=http://localhost:30080,http://localhost:3000`
 - [ ] Set `ENVIRONMENT=development`
-- [ ] Rebuilt Docker images: `docker-compose build`
-- [ ] Restarted services: `docker-compose up -d`
+- [ ] Rebuilt and restarted services: `./deploy/local/rebuild-and-restart.sh all`
 - [ ] Verified backend health: `curl http://localhost:30800/health`
 - [ ] Tested login functionality
 
@@ -84,8 +80,7 @@ docker-compose up -d --build
 - [ ] Set `ENVIRONMENT=production`
 - [ ] Updated OAuth redirect URIs to production URLs
 - [ ] Verified SSL/TLS certificates are valid
-- [ ] Rebuilt Docker images with production tag
-- [ ] Restarted services: `cd deploy/gcp && docker-compose up -d --build`
+- [ ] Deployed services: `./deploy/gcp/scripts/deploy.sh [tag]`
 - [ ] Verified HTTPS redirection works
 - [ ] Tested authentication flow
 - [ ] Monitored logs for errors

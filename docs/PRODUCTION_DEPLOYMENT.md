@@ -70,71 +70,58 @@ Ensure your domain is configured:
 
 ---
 
-## 🚀 Deployment Steps
+## 🚀 Deployment Steps (Automated)
 
-### Step 1: Build Production Docker Images
+The most reliable way to deploy is using the production deployment script. This script handles:
+1. Building images for `linux/amd64` architecture.
+2. Pushing them to the GCP Artifact Registry.
+3. SSHing into the VM to pull changes and restart services.
+4. Restarting Nginx to refresh upstream connections.
+
+### Run the Deployment Script
+
+From the repository root on your local machine:
 
 ```bash
-cd /Users/Omarjan/Projects/kitabim-ai
+# Deploy with a specific tag (optional)
+./deploy/gcp/scripts/deploy.sh v1.0.0
 
-# Set your image registry and tag
-export REGISTRY=gcr.io/YOUR_PROJECT_ID  # or docker.io/YOUR_USERNAME
-export IMAGE_TAG=$(date +%Y%m%d-%H%M%S)  # Timestamp tag
-
-# Build all images
-docker build -f Dockerfile.backend -t ${REGISTRY}/kitabim-backend:${IMAGE_TAG} .
-docker build -f Dockerfile.worker -t ${REGISTRY}/kitabim-worker:${IMAGE_TAG} .
-docker build -f apps/frontend/Dockerfile -t ${REGISTRY}/kitabim-frontend:${IMAGE_TAG} .
-
-# Tag as latest
-docker tag ${REGISTRY}/kitabim-backend:${IMAGE_TAG} ${REGISTRY}/kitabim-backend:latest
-docker tag ${REGISTRY}/kitabim-worker:${IMAGE_TAG} ${REGISTRY}/kitabim-worker:latest
-docker tag ${REGISTRY}/kitabim-frontend:${IMAGE_TAG} ${REGISTRY}/kitabim-frontend:latest
+# Deploy with automatic git short-sha tag
+./deploy/gcp/scripts/deploy.sh
 ```
 
-### Step 2: Push Images to Registry
+---
 
+## 🛠️ Manual Deployment (Alternative)
+
+If the script fails or you need manual control, follow these steps:
+
+### Step 1: Build & Push Images
 ```bash
-# For Google Container Registry (GCR)
+# Use buildkit for faster builds
+export DOCKER_BUILDKIT=1
+export REGISTRY="us-south1-docker.pkg.dev/YOUR_PROJECT_ID/kitabim"
+export IMAGE_TAG=$(git rev-parse --short HEAD)
+
+# Build
+docker build -f Dockerfile.backend --platform linux/amd64 -t ${REGISTRY}/kitabim-backend:${IMAGE_TAG} .
+docker build -f Dockerfile.worker --platform linux/amd64 -t ${REGISTRY}/kitabim-worker:${IMAGE_TAG} .
+docker build -f apps/frontend/Dockerfile --platform linux/amd64 -t ${REGISTRY}/kitabim-frontend:${IMAGE_TAG} .
+
+# Push
 docker push ${REGISTRY}/kitabim-backend:${IMAGE_TAG}
-docker push ${REGISTRY}/kitabim-backend:latest
 docker push ${REGISTRY}/kitabim-worker:${IMAGE_TAG}
-docker push ${REGISTRY}/kitabim-worker:latest
 docker push ${REGISTRY}/kitabim-frontend:${IMAGE_TAG}
-docker push ${REGISTRY}/kitabim-frontend:latest
-
-# For Docker Hub
-# docker login
-# docker push ${REGISTRY}/kitabim-backend:${IMAGE_TAG}
-# ... etc
 ```
 
-### Step 3: Deploy to Production Server
-
-**SSH into your production server:**
-
+### Step 2: Update Server
+SSH into the production server and run:
 ```bash
-ssh your-user@your-production-server
+cd /opt/kitabim
+git pull
+REGISTRY=... IMAGE_TAG=... docker compose -f deploy/gcp/docker-compose.yml up -d
 ```
 
-**On the production server:**
-
-```bash
-# Navigate to deployment directory
-cd /path/to/kitabim-ai/deploy/gcp
-
-# Pull latest images
-docker-compose pull
-
-# Stop existing containers
-docker-compose down
-
-# Start with new configuration
-docker-compose up -d
-
-# Watch logs
-docker-compose logs -f
-```
 
 ### Step 4: Run Database Migrations (if needed)
 

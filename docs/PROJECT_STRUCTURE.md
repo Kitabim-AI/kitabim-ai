@@ -573,7 +573,7 @@ redis-server
 
 1. **Start all services**
    ```bash
-   docker compose up -d --build
+   ./deploy/local/rebuild-and-restart.sh all
    ```
 
 2. **Check status**
@@ -590,7 +590,12 @@ redis-server
    - Frontend: http://localhost:30080
    - Backend: http://localhost:30800
 
-5. **Logs**
+5. **Production Deployment**
+   ```bash
+   ./deploy/gcp/scripts/deploy.sh [tag]
+   ```
+
+6. **Logs**
    ```bash
    docker compose logs -f backend
    docker compose logs -f worker

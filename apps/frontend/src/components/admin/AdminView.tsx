@@ -124,7 +124,9 @@ export const AdminView: React.FC = () => {
     loadMoreShelf: loadMore,
     isLoading: isInitialLoading,
     searchQuery,
-    setSearchQuery
+    setSearchQuery,
+    selectedCategory,
+    setSelectedCategory
   } = useAppContext();
   const { t } = useI18n();
 

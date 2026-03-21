@@ -46,9 +46,9 @@ Ensure **PostgreSQL** is running on your host machine at port `5432`. The app co
 **3. Launch Services**
 Build and start all services in the background:
 ```bash
-docker compose up -d --build
+./deploy/local/rebuild-and-restart.sh all
 ```
-*Tip: Use `./deploy/local/rebuild-and-restart.sh all` to rebuild later.*
+*Tip: Use `./deploy/local/rebuild-and-restart.sh [frontend|backend|worker]` to rebuild only specific services.*
 
 **4. Access the App**
 - **Web UI**: [http://localhost:30080](http://localhost:30080)
@@ -67,9 +67,9 @@ docker compose up -d
 docker compose down
 
 # Restart a specific service
-docker compose restart backend
+./deploy/local/rebuild-and-restart.sh backend
 
-# Rebuild and restart services
+# Rebuild and restart all services
 ./deploy/local/rebuild-and-restart.sh all
 ```
 
@@ -115,4 +115,6 @@ python3.13 -m pytest services/backend/tests
 - **Caching**: Redis (shared with queue).
 - **Microservices**: Backend (FastAPI), Worker (ARQ).
 
-- **Production**: Docker Compose on GCE.
+- **Production**: Automated deployment using GCP Artifact Registry and Docker Compose on GCE.
+  - Deployment Script: `./deploy/gcp/scripts/deploy.sh [IMAGE_TAG]`
+  - See [Production Deployment Guide](docs/PRODUCTION_DEPLOYMENT.md) for details.

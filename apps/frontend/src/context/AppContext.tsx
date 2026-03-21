@@ -48,6 +48,8 @@ interface AppContextType {
   setGlobalSearchQuery: (query: string) => void;
   isGlobalSearchOpen: boolean;
   setIsGlobalSearchOpen: (open: boolean) => void;
+  selectedCharacterId: string;
+  setSelectedCharacterId: (id: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -175,7 +177,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     isLoading,
     isLoadingMoreShelf,
     hasMoreShelf,
-  } = useBooks(view, view === 'home' ? homeSearchQuery : searchQuery, pageSize, page, view === 'home' ? selectedCategory : undefined);
+  } = useBooks(view, view === 'home' ? homeSearchQuery : searchQuery, pageSize, page, selectedCategory);
 
   const chat = useChat(view, selectedBook, currentPage);
 
@@ -234,6 +236,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setGlobalSearchQuery,
     isGlobalSearchOpen,
     setIsGlobalSearchOpen,
+    selectedCharacterId: chat.selectedCharacterId,
+    setSelectedCharacterId: chat.setSelectedCharacterId,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

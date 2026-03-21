@@ -108,6 +108,7 @@ class ChatRequest(BaseModel):
     question: str
     history: List[dict] = []
     current_page: Optional[int] = None  # API: currentPage
+    character_id: Optional[str] = None  # API: characterId
 
 
 class ChatResponse(BaseModel):

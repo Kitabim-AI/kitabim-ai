@@ -67,7 +67,9 @@ Welcome to the Kitabim.ai documentation. This directory contains comprehensive t
    - Use [VM_MONITORING.md](VM_MONITORING.md) for monitoring commands
    - Run `/scripts/monitor.sh` for quick health checks
 
-2. **Troubleshooting:**
+2. **Troubleshooting & Deployment:**
+   - Local Rebuild: `./deploy/local/rebuild-and-restart.sh [all|backend|worker|frontend]`
+   - Production Deploy: `./deploy/gcp/scripts/deploy.sh [tag]`
    - Check worker logs: `docker logs -f worker`
    - Monitor queue depth: Redis LLEN commands (see VM_MONITORING.md)
    - Review pipeline state in admin dashboard

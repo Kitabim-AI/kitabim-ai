@@ -112,19 +112,33 @@ async def add_language_header(request: Request, call_next):
 async def add_security_headers(request: Request, call_next):
     """Add security headers to all responses"""
     response = await call_next(request)
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    if settings.environment == "production":
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     
-    # Content Security Policy
+    # These are typically handled by the outer Nginx proxy, but we keep them
+    # here for defense-in-depth where Nginx might be bypassed (local dev)
+    if settings.environment != "production":
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+
+    # X-XSS-Protection is deprecated and can trigger "Reduced Protections" 
+    # warnings in Safari 17+. Modern browsers use CSP for this purpose.
+    # response.headers["X-XSS-Protection"] = "1; mode=block" (REMOVED)
+    
+    # Permissions-Policy to restrict sensitive features
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+
+    if settings.environment == "production":
+        # HSTS is handled by Nginx in production, we avoid duplicating it here
+        # to prevent confusing Safari with multiple HSTS headers.
+        pass
+    
+    # Content Security Policy - Consistent with Nginx if possible
+    # Note: We include 'unsafe-inline' and 'unsafe-eval' for pdf.js and React/Vite requirements.
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
         "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com; "
-        "style-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https:; "
         "img-src 'self' data: https:; "
-        "font-src 'self' data:; "
+        "font-src 'self' data: https:; "
         "connect-src 'self' https://accounts.google.com https://graph.facebook.com; "
         "frame-src 'self' https://accounts.google.com; "
         "object-src 'none';"

@@ -18,9 +18,14 @@ This file provides guidance for automated agents working in this repo.
 - Shared data volume is `./data` (uploads and covers).
 
 ## Local Dev (Docker Compose)
-- Build images and start services using `docker compose up -d`.
+- Build images and start all services using `./deploy/local/rebuild-and-restart.sh all`.
 - The application connects to PostgreSQL on your local host via `host.docker.internal:5432`.
-- **CRITICAL DEPLOYMENT RULE**: Do not rely on local dev servers (like `npm run dev`) for final change application. You MUST always use Docker Compose to ensure changes are reflected. Run `./deploy/local/rebuild-and-restart.sh [frontend|backend|worker|all]` to rebuild and restart services after modifying files.
+- **CRITICAL LOCAL RULE**: Do not rely on local dev servers (like `npm run dev`) for final change application. You MUST always use Docker Compose to ensure changes are reflected. Run `./deploy/local/rebuild-and-restart.sh [frontend|backend|worker|all]` to rebuild and restart services after modifying files.
+
+## Production Deployment
+- **CRITICAL PRODUCTION RULE**: Use the automated deployment script for all production releases. This ensures the correct architecture (linux/amd64), registry tagging, and VM sync.
+- Run: `./deploy/gcp/scripts/deploy.sh [IMAGE_TAG]` from the repository root.
+- The script handles building, pushing, and remote deployment commands.
 
 ## File Management & Tooling
 - **SCRIPTS**: Operational, diagnostic, and testing scripts MUST be placed in the `scripts/` folder. Local deployment and rebuild scripts MUST be placed in `deploy/local/`. Never create ad-hoc scripts in the root or service-specific folders.

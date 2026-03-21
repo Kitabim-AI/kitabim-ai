@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { Message, Book } from '@shared/types';
+import { DEFAULT_CHARACTER_ID } from '../constants/characters';
 import { chatWithBook, chatWithBookStream, getChatUsage } from '../services/geminiService';
 import { useAuth } from './useAuth';
 
 export const useChat = (view: string, selectedBook: Book | null, currentPage: number | null) => {
   const { isAuthenticated } = useAuth();
+  const [selectedCharacterId, setSelectedCharacterId] = useState<string>(DEFAULT_CHARACTER_ID);
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [isChatting, setIsChatting] = useState(false);
@@ -109,6 +111,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
           setIsChatting(false);
         },
         controller.signal,
+        selectedCharacterId,
         // onCorrection
         (correctedText: string) => {
           // Replace the streaming message with the corrected version
@@ -146,5 +149,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     handleSendMessage,
     clearChat,
     chatContainerRef,
+    selectedCharacterId,
+    setSelectedCharacterId,
   };
 };

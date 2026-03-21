@@ -37,13 +37,14 @@ export const chatWithBook = async (
   bookId: string, 
   currentPage?: number, 
   history: { role: string, text: string }[] = [],
+  characterId?: string,
   onUsageUpdate?: (usage: any) => void
 ): Promise<string> => {
   try {
     const response = await authFetch(`${API_BASE}/chat/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bookId, question, currentPage, history })
+      body: JSON.stringify({ bookId, question, currentPage, history, character_id: characterId })
     });
 
     if (response.status === 401) {
@@ -85,6 +86,7 @@ export const chatWithBookStream = async (
   onComplete: () => void,
   onError: (error: string) => void,
   signal?: AbortSignal,
+  characterId?: string,
   onCorrection?: (correctedText: string) => void,
   onUsageUpdate?: (usage: any) => void
 ): Promise<void> => {
@@ -92,7 +94,7 @@ export const chatWithBookStream = async (
     const response = await authFetch(`${API_BASE}/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bookId, question, currentPage, history }),
+      body: JSON.stringify({ bookId, question, currentPage, history, character_id: characterId }),
       signal,
     });
 
