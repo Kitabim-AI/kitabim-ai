@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { BookOpen, Library, Bot, Settings, Search, Upload, HeartHandshake, Menu, X, RefreshCw, BookOpenCheck, Home } from 'lucide-react';
+import { BookOpen, LibraryBig, Bot, Settings, Search, Upload, HeartHandshake, Menu, X, RefreshCw, BookOpenCheck, Home } from 'lucide-react';
 import { AuthButton } from '../auth';
 import { useAuth, useIsEditor } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
@@ -44,7 +44,7 @@ export const Navbar: React.FC = () => {
 
         <div className="relative flex items-center gap-3 sm:gap-4 md:gap-3 lg:gap-8">
           <div className="flex items-center h-[48px] gap-2 sm:gap-3 cursor-pointer group transition-transform duration-300 hover:-translate-y-0.5" onClick={() => setView('home')}>
-            <div className="flex-shrink-0 p-2 md:p-2.5 rounded-xl md:rounded-2xl shadow-[0_4px_20px_rgba(255,193,7,0.4),0_8px_40px_rgba(156,39_176,0.2),inset_0_1px_0_rgba(255,255,255,0.4)] transition-all duration-300 relative overflow-hidden group-hover:shadow-[0_6px_20px_rgba(3,105,161,0.5)] icon-shake"
+            <div className="flex-shrink-0 p-2 md:p-3 rounded-xl md:rounded-2xl shadow-[0_4px_20px_rgba(255,193,7,0.4),0_8px_40px_rgba(156,39_176,0.2),inset_0_1px_0_rgba(255,255,255,0.4)] transition-all duration-300 relative overflow-hidden group-hover:shadow-[0_6px_20px_rgba(3,105,161,0.5)] icon-shake"
               style={{
                 background: 'linear-gradient(135deg, #FFD54F 0%, #FF9800 50%, #9C27B0 100%)'
               }}>
@@ -70,7 +70,7 @@ export const Navbar: React.FC = () => {
             <NavButton
               active={view === 'library'}
               onClick={() => { setSearchQuery(''); setView('library'); }}
-              icon={<Library size={20} strokeWidth={2.5} />}
+              icon={<LibraryBig size={20} strokeWidth={2.5} />}
               label={t('nav.library')}
             />
             <NavButton
@@ -108,7 +108,7 @@ export const Navbar: React.FC = () => {
           {/* Search Toggle Button */}
           <button
             onClick={() => setIsGlobalSearchOpen(true)}
-            className="group relative flex items-center justify-center w-8 h-8 md:w-10 md:h-10 bg-white/50 backdrop-blur-md border border-[#0369a1]/10 rounded-xl hover:border-[#0369a1] hover:bg-[#0369a1]/5 transition-all shadow-sm overflow-hidden active:scale-90"
+            className="group relative flex items-center justify-center w-9 h-9 md:w-11 md:h-11 bg-white/50 backdrop-blur-md border border-[#0369a1]/10 rounded-xl md:rounded-2xl hover:border-[#0369a1] hover:bg-[#0369a1]/5 transition-all shadow-sm overflow-hidden active:scale-90"
             title={t('library.searchPlaceholder')}
           >
             <Search size={22} className="text-[#0369a1] group-hover:scale-110 transition-transform" strokeWidth={2.5} />
@@ -120,7 +120,7 @@ export const Navbar: React.FC = () => {
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={bookActions.isCheckingGlobal}
-                className="group relative px-[0.7rem] md:px-5 lg:px-6 h-[30px] md:h-[42px] rounded-xl font-normal flex items-center justify-center gap-2 transition-all duration-300 text-white shadow-[0_8px_20px_rgba(3,105,161,0.2)] hover:shadow-[0_12px_28px_rgba(3,105,161,0.3)] hover:-translate-y-0.5 active:translate-y-0 overflow-hidden text-sm lg:text-base"
+                className="group relative px-[0.7rem] md:px-5 lg:px-6 h-9 md:h-11 rounded-xl md:rounded-2xl font-normal flex items-center justify-center gap-2 transition-all duration-300 text-white shadow-[0_8px_20px_rgba(3,105,161,0.2)] hover:shadow-[0_12px_28px_rgba(3,105,161,0.3)] hover:-translate-y-0.5 active:translate-y-0 overflow-hidden text-sm lg:text-base"
                 aria-busy={bookActions.isCheckingGlobal}
                 style={{
                   background: 'linear-gradient(135deg, #0369a1 0%, #0284c7 100%)'
@@ -152,7 +152,7 @@ export const Navbar: React.FC = () => {
           {/* Mobile Menu Button */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 min-w-[44px] min-h-[44px] rounded-xl hover:bg-[#0369a1]/10 text-[#0369a1] transition-all relative z-10"
+            className="md:hidden flex items-center justify-center w-9 h-9 rounded-xl hover:bg-[#0369a1]/10 text-[#0369a1] border border-[#0369a1]/10 transition-all relative z-10"
           >
             {mobileMenuOpen ? <X size={24} strokeWidth={2.5} /> : <Menu size={24} strokeWidth={2.5} />}
           </button>
@@ -180,7 +180,7 @@ export const Navbar: React.FC = () => {
               <MobileNavButton
                 active={view === 'library'}
                 onClick={() => handleNavClick(() => setView('library'))}
-                icon={<Library size={20} strokeWidth={2.5} />}
+                icon={<LibraryBig size={20} strokeWidth={2.5} />}
                 label={t('nav.library')}
               />
               <MobileNavButton

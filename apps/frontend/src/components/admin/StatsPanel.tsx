@@ -218,11 +218,11 @@ export const StatsPanel: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[#75C5F0]/20">
         <div className="flex items-center gap-4 group">
-          <div className="self-start mt-1 p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 icon-shake">
-            <BarChart3 size={24} />
+          <div className="self-start mt-1 p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 icon-shake">
+            <BarChart3 size={20} className="md:w-6 md:h-6" />
           </div>
           <div>
-            <h2 className="text-2xl md:text-3xl font-normal text-[#1a1a1a]">
+            <h2 className="text-xl md:text-2xl lg:text-3xl font-normal text-[#1a1a1a]">
               {t('admin.stats.title') || 'System Statistics'}
             </h2>
             <div className="flex items-center gap-2 mt-1">

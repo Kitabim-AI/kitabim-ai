@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Zap, Library, BookOpen, RefreshCw } from 'lucide-react';
+import { Zap, LibraryBig, BookOpen, RefreshCw } from 'lucide-react';
 import { ProverbDisplay } from '../common/ProverbDisplay';
 import { BookCard } from './BookCard';
 import { useI18n } from '../../i18n/I18nContext';
@@ -40,7 +40,7 @@ export const LibraryView: React.FC = () => {
         <header className="space-y-3 sm:space-y-4">
           <div className="flex items-center gap-3 sm:gap-4 group">
             <div className="p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 icon-shake">
-              <Library size={20} className="md:w-6 md:h-6" strokeWidth={2.5} />
+              <LibraryBig size={20} className="md:w-6 md:h-6" strokeWidth={2.5} />
             </div>
             <div>
               <h2 className="text-2xl sm:text-3xl font-black text-[#1a1a1a]">{t('library.title')}</h2>
@@ -83,7 +83,7 @@ export const LibraryView: React.FC = () => {
             <div className="relative mb-6">
               <div className="w-16 h-16 border-4 border-[#0369a1]/10 border-t-[#0369a1] rounded-full animate-spin"></div>
               <div className="absolute inset-0 flex items-center justify-center text-[#0369a1]">
-                <Library className="w-8 h-8 animate-pulse" />
+                <LibraryBig className="w-8 h-8 animate-pulse" />
               </div>
             </div>
             <h3 className="text-xl font-normal text-[#1a1a1a]">{t('common.loading')}</h3>
@@ -93,7 +93,7 @@ export const LibraryView: React.FC = () => {
         {books.length === 0 && !isInitialLoading && !isLoadingMore && (
           <div className="col-span-full py-40 w-full flex flex-col items-center justify-center glass-panel rounded-[48px]">
             <div className="p-10 bg-[#0369a1]/10 rounded-[48px] mb-8 relative">
-              <Library className="w-24 h-24 text-[#0369a1]" strokeWidth={1.5} />
+              <LibraryBig className="w-24 h-24 text-[#0369a1]" strokeWidth={1.5} />
             </div>
             <h4 className="text-xl sm:text-2xl md:text-3xl font-black text-[#1a1a1a] mb-4">{t('library.empty.title')}</h4>
             <p className="text-[#94a3b8] font-bold text-base sm:text-lg max-w-md text-center">{t('library.empty.message')}</p>
