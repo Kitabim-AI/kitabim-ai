@@ -53,7 +53,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
   if (isGlobal) {
     return (
-      <div className="h-[calc(100dvh-72px)] sm:h-[calc(100dvh-88px)] md:h-[calc(100dvh-120px)] lg:h-[calc(100dvh-140px)] w-full lg:max-w-5xl lg:mx-auto flex flex-col gap-3 md:gap-4 lg:gap-6 px-3 py-3 sm:px-6 md:px-0 lg:py-4" dir="rtl" lang="ug">
+      <div className="h-[calc(100dvh-72px)] sm:h-[calc(100dvh-88px)] md:h-[calc(100dvh-88px)] lg:h-[calc(100dvh-96px)] w-full lg:max-w-5xl lg:mx-auto flex flex-col gap-3 md:gap-4 lg:gap-6 px-3 py-3 sm:px-6 md:px-0 lg:py-4" dir="rtl" lang="ug">
         {/* Chat Header */}
         <div className="flex bg-white/60 backdrop-blur-2xl px-4 sm:px-8 py-3 sm:py-4 items-center justify-between border border-[#0369a1]/10 shadow-sm group" style={{ borderRadius: '32px' }}>
           <div className="flex items-center gap-3 sm:gap-5">
