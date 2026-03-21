@@ -164,17 +164,9 @@ export const HomeView: React.FC = () => {
       {hasSearch && (
         <div className="w-full max-w-none px-4 md:px-8 pb-24 sm:pb-32">
           <div className="flex flex-col md:flex-row md:items-center justify-between mb-10 sm:mb-12 md:mb-16 gap-4">
-            <div className="flex items-center gap-3 sm:gap-4">
-              <button
-                onClick={() => { setLocalSearch(''); setSearchQuery(''); setSelectedCategory(''); }}
-                className="p-3 min-w-[44px] min-h-[44px] bg-white/40 hover:bg-[#0369a1] text-[#0369a1] hover:text-white rounded-2xl transition-all shadow-sm active:scale-90"
-              >
-                <ArrowRight size={22} className="sm:w-[24px] sm:h-[24px] rotate-180" strokeWidth={3} />
-              </button>
-              <div>
-                <h2 className="text-xl sm:text-2xl md:text-3xl font-normal text-[#1a1a1a]">{t('home.searchResults')}</h2>
-                <p className="text-xs sm:text-sm font-normal text-[#94a3b8] uppercase mt-1">«{searchQuery || selectedCategory}» {t('home.resultsFor')}</p>
-              </div>
+            <div className="flex flex-col gap-2">
+              <h2 className="text-xl sm:text-2xl md:text-3xl font-normal text-[#1a1a1a]">{t('home.searchResults')}</h2>
+              <p className="text-xs sm:text-sm font-normal text-[#94a3b8] uppercase">«{searchQuery || selectedCategory}» {t('home.resultsFor')}</p>
             </div>
             <div className="px-4 sm:px-6 py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl text-xs sm:text-sm font-normal shadow-inner border border-[#0369a1]/5 w-fit">
               <span className="opacity-60">{t('common.total')}</span> {isInitialLoading ? <RefreshCw size={12} className="inline-block animate-spin mx-1" /> : totalBooks} <span className="opacity-60">{t('home.totalBooks')}</span>
