@@ -318,7 +318,7 @@ export const SpellCheckView: React.FC = () => {
 
   if (!isEditor) {
     return (
-      <div className="h-[calc(100dvh-72px)] sm:h-[calc(100dvh-88px)] md:h-[calc(100dvh-120px)] lg:h-[calc(100dvh-140px)] w-full lg:max-w-5xl lg:mx-auto flex items-center justify-center px-3" dir="rtl">
+      <div className="h-[calc(100dvh-72px)] sm:h-[calc(100dvh-88px)] md:h-[calc(100dvh-88px)] lg:h-[calc(100dvh-96px)] w-full lg:max-w-5xl lg:mx-auto flex items-center justify-center px-3" dir="rtl">
         <div className="text-center text-slate-400 font-normal" style={{ fontSize: `${fontSize}px` }}>
           {t('auth.signInMessage')}
         </div>
@@ -328,7 +328,7 @@ export const SpellCheckView: React.FC = () => {
 
   return (
     <div
-      className="min-h-[calc(100dvh-72px)] sm:min-h-[calc(100dvh-88px)] md:min-h-[calc(100dvh-120px)] lg:min-h-[calc(100dvh-140px)] w-full lg:max-w-5xl lg:mx-auto flex flex-col gap-3 md:gap-4 lg:gap-6 px-3 py-3 sm:px-6 md:px-0 lg:py-4"
+      className="h-[calc(100dvh-72px)] sm:h-[calc(100dvh-88px)] md:h-[calc(100dvh-88px)] lg:h-[calc(100dvh-96px)] w-full lg:max-w-5xl lg:mx-auto flex flex-col gap-3 md:gap-4 lg:gap-6 px-3 py-3 sm:px-6 md:px-0 lg:py-4"
       dir="rtl"
       lang="ug"
     >

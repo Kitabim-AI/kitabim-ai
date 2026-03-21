@@ -50,7 +50,7 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
         <Navbar />
       </div>
 
-      <main className="flex-grow p-0 sm:p-2 md:p-4 lg:p-8 max-w-[1600px] mx-auto w-full relative z-10">
+      <main className="flex-grow pt-[72px] sm:pt-[88px] lg:pt-[96px] px-0 sm:px-2 md:px-4 lg:px-8 max-w-[1600px] mx-auto w-full relative z-10">
 
         {children}
       </main>

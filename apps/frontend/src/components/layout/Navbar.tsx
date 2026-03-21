@@ -33,7 +33,7 @@ export const Navbar: React.FC = () => {
 
   return (
     <>
-      <nav className="px-4 sm:px-6 md:px-10 lg:px-12 py-3 sm:py-4 flex items-center justify-between sticky top-0 z-[100] transition-all duration-300" dir="rtl">
+      <nav className="fixed top-0 left-0 right-0 px-4 sm:px-6 md:px-10 lg:px-12 py-1.5 sm:py-2 flex items-center justify-between z-[100] transition-all duration-300" dir="rtl">
         {/* Glass Backdrop - Matching Prototype */}
         <div className="absolute inset-0 bg-white/75 backdrop-blur-[20px] border-b border-[rgba(255,193,7,0.2)] shadow-[0_4px_30px_rgba(117,197,240,0.1),0_1px_0_rgba(255,255,255,0.8)_inset]"
           style={{ backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)' }} />
@@ -108,7 +108,7 @@ export const Navbar: React.FC = () => {
           {/* Search Toggle Button */}
           <button
             onClick={() => setIsGlobalSearchOpen(true)}
-            className="group relative flex items-center justify-center w-10 h-10 md:w-12 md:h-12 bg-white/50 backdrop-blur-md border border-[#0369a1]/10 rounded-2xl hover:border-[#0369a1] hover:bg-[#0369a1]/5 transition-all shadow-sm overflow-hidden active:scale-90"
+            className="group relative flex items-center justify-center w-8 h-8 md:w-10 md:h-10 bg-white/50 backdrop-blur-md border border-[#0369a1]/10 rounded-xl hover:border-[#0369a1] hover:bg-[#0369a1]/5 transition-all shadow-sm overflow-hidden active:scale-90"
             title={t('library.searchPlaceholder')}
           >
             <Search size={22} className="text-[#0369a1] group-hover:scale-110 transition-transform" strokeWidth={2.5} />
@@ -120,7 +120,7 @@ export const Navbar: React.FC = () => {
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={bookActions.isCheckingGlobal}
-                className="group relative px-[0.7rem] md:px-5 lg:px-6 h-[35px] md:h-[48px] rounded-[0.7rem] md:rounded-2xl font-normal flex items-center justify-center gap-2 transition-all duration-300 text-white shadow-[0_8px_20px_rgba(3,105,161,0.2)] hover:shadow-[0_12px_28px_rgba(3,105,161,0.3)] hover:-translate-y-0.5 active:translate-y-0 overflow-hidden text-sm lg:text-base"
+                className="group relative px-[0.7rem] md:px-5 lg:px-6 h-[30px] md:h-[42px] rounded-xl font-normal flex items-center justify-center gap-2 transition-all duration-300 text-white shadow-[0_8px_20px_rgba(3,105,161,0.2)] hover:shadow-[0_12px_28px_rgba(3,105,161,0.3)] hover:-translate-y-0.5 active:translate-y-0 overflow-hidden text-sm lg:text-base"
                 aria-busy={bookActions.isCheckingGlobal}
                 style={{
                   background: 'linear-gradient(135deg, #0369a1 0%, #0284c7 100%)'
@@ -234,7 +234,7 @@ const NavButton: React.FC<{
   <button
     onClick={onClick}
     title={label}
-    className={`relative px-3 md:px-3 lg:px-4 xl:px-6 h-[44px] md:h-[48px] rounded-2xl text-sm lg:text-base font-normal flex items-center gap-2 transition-all duration-300 group ${active
+    className={`relative px-3 md:px-3 lg:px-4 xl:px-6 h-[36px] md:h-[42px] rounded-xl text-sm lg:text-base font-normal flex items-center gap-2 transition-all duration-300 group ${active
       ? 'text-[#0369a1] bg-[#0369a1]/10 shadow-[inset_0_0_0_1px_rgba(3,105,161,0.2)]'
       : 'text-[#64748b] hover:bg-[#0369a1]/5 hover:text-[#0369a1]'
       }`}

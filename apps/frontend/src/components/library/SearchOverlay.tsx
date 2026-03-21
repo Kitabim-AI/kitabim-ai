@@ -111,6 +111,7 @@ export const SearchOverlay: React.FC = () => {
               <input
                 ref={inputRef}
                 type="text"
+                autoFocus
                 value={globalSearchQuery}
                 onChange={(e) => setGlobalSearchQuery(e.target.value)}
                 placeholder={t('home.searchPlaceholder')}
