@@ -276,13 +276,13 @@ export function UserMenu({ onLogout, side = 'left', inline = false }: { onLogout
     <div ref={menuRef} className="relative z-[1001]" dir="rtl">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`p-0.5 md:p-1.5 bg-white/75 backdrop-blur-md border border-[#0369a1]/10 rounded-xl md:rounded-2xl transition-all hover:bg-white hover:shadow-xl hover:shadow-[#0369a1]/10 group ${isOpen ? 'ring-4 ring-[#0369a1]/5 border-[#0369a1]/30' : ''}`}
+        className={`p-0.5 md:p-1 bg-white/75 backdrop-blur-md border border-[#0369a1]/10 rounded-xl md:rounded-2xl transition-all hover:bg-white hover:shadow-xl hover:shadow-[#0369a1]/10 group ${isOpen ? 'ring-4 ring-[#0369a1]/5 border-[#0369a1]/30' : ''}`}
       >
         <div className="relative">
           <UserAvatar
             url={user.avatarUrl}
             name={user.displayName}
-            className="w-8 h-8 md:w-10 md:h-10 text-xs md:text-lg rounded-lg md:rounded-xl object-cover ring-2 ring-white shadow-md transition-transform group-hover:scale-110"
+            className="w-8 h-8 md:w-9 md:h-9 text-xs md:text-lg rounded-lg md:rounded-xl object-cover ring-2 ring-white shadow-md transition-transform group-hover:scale-110"
           />
           <div
             className={`absolute -bottom-1 -right-1 w-4 h-4 md:w-5 md:h-5 rounded-md md:rounded-lg border-2 border-white flex items-center justify-center text-white shadow-sm`}

@@ -76,7 +76,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             </div>
           </div>
           <div className="flex items-center gap-4">
-            {onClose && (
+            {onClose && !isGlobal && (
               <button
                 onClick={onClose}
                 className="p-2 sm:p-3 hover:bg-red-50 text-slate-300 hover:text-red-500 rounded-2xl transition-all active:scale-90"

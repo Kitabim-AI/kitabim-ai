@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Database, Book as BookIcon, User, Hash, BookOpen, MoreVertical, Save, X, Edit2, Check, Globe, Shield, Wand2, Search, WholeWord, FileText, ScanText, RefreshCw, BookOpenCheck, Cuboid, Scissors } from 'lucide-react';
+import { Database, TableOfContents, User, Hash, BookOpen, MoreVertical, Save, X, Edit2, Check, Globe, Shield, Wand2, Search, WholeWord, FileText, ScanText, RefreshCw, BookOpenCheck, Cuboid, Scissors } from 'lucide-react';
 import { authFetch } from '../../services/authService';
 import { useI18n } from '../../i18n/I18nContext';
 import { useAppContext } from '../../context/AppContext';
@@ -275,7 +275,7 @@ export const AdminView: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-6 border-b border-[#75C5F0]/20">
         <div className="flex items-center gap-3 md:gap-4 group">
           <div className="self-start mt-1 p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 icon-shake">
-            <BookIcon size={20} className="md:w-6 md:h-6" />
+            <TableOfContents size={20} className="md:w-6 md:h-6" />
           </div>
           <div>
             <h2 className="text-xl md:text-2xl lg:text-3xl font-normal text-[#1a1a1a]">
@@ -322,7 +322,7 @@ export const AdminView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 text-[12px] md:text-[14px] font-normal text-[#0369a1] bg-[#0369a1]/10 px-3 md:px-4 py-2 md:py-2.5 rounded-full border border-[#0369a1]/20 shadow-sm whitespace-nowrap self-start md:self-auto md:mr-auto">
-          <BookIcon size={12} className="md:w-[14px] md:h-[14px]" />
+          <TableOfContents size={12} className="md:w-[14px] md:h-[14px]" />
           {t('chat.libraryBookCount', { count: totalBooks })}
         </div>
       </div>
