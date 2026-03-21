@@ -20,7 +20,7 @@ from app.utils.observability import configure_logging, log_json, request_id_var
 from auth.jwt_handler import validate_jwt_secret
 
 from app.services.storage_service import storage
-from fastapi.responses import RedirectResponse, FileResponse
+from fastapi.responses import RedirectResponse, FileResponse, JSONResponse
 
 import os as _os
 # Locales live next to main.py in services/backend/, not in packages/backend-core
@@ -146,6 +146,8 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 
+
+
 # Request context & ID middleware - REGISTERED LAST to be OUTERMOST
 @app.middleware("http")
 async def add_request_id(request: Request, call_next):
@@ -187,6 +189,55 @@ async def add_request_id(request: Request, call_next):
                 status_code=response.status_code,
             )
         request_id_var.reset(token)
+
+
+# Security/Noise reduction middleware - MUST be outer than request_id to block noise
+@app.middleware("http")
+async def block_noisy_requests(request: Request, call_next):
+    """
+    Blocks common crawler/scanner paths to reduce noise in logs and save resources.
+    Returns 404 for known forbidden prefixes or specific noisy paths.
+    """
+    path = request.url.path
+    
+    # Check prefixes
+    blocked_prefixes = [p.strip() for p in settings.security_block_prefixes.split(",") if p.strip()]
+    for prefix in blocked_prefixes:
+        if path.startswith(prefix):
+            # We log it as a scan attempt at WARNING level, but return early 
+            # so the main request-id middleware doesn't log it as a normal request.
+            logger = logging.getLogger("app.security")
+            log_json(
+                logger,
+                logging.WARNING,
+                "Crawler/Scanner path blocked",
+                method=request.method,
+                path=path,
+                ip=request.client.host if request.client else "unknown"
+            )
+            return JSONResponse(
+                status_code=404,
+                content={"detail": "Not Found"}
+            )
+            
+    # Check exact paths
+    blocked_paths = [p.strip() for p in settings.security_block_paths.split(",") if p.strip()]
+    if path in blocked_paths:
+        logger = logging.getLogger("app.security")
+        log_json(
+            logger,
+            logging.WARNING,
+            "Crawler/Scanner path blocked",
+            method=request.method,
+            path=path,
+            ip=request.client.host if request.client else "unknown"
+        )
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "Not Found"}
+        )
+
+    return await call_next(request)
 
 
 # CORS Configuration - Allow only specific origins

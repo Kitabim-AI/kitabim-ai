@@ -101,7 +101,9 @@ class ChunksRepository(BaseRepository[Chunk]):
         # Build query with or without book_ids filter
         # Use CAST() instead of :: to avoid conflicts with SQLAlchemy parameter binding
         # JOIN with books table to get title and volume
-        if book_ids:
+        if book_ids is not None:
+            if not book_ids:
+                return []
             query = text("""
                 SELECT
                     c.book_id,

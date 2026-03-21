@@ -6,7 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { Settings, Plus, Save, X, Edit2, RefreshCw } from 'lucide-react';
 import { authFetch } from '../../../services/authService';
 import { useI18n } from '../../../i18n/I18nContext';
-import { ProverbDisplay } from '../../common/ProverbDisplay';
+
 import { useIsAdmin } from '../../../hooks/useAuth';
 
 interface SystemConfig {
@@ -46,6 +46,7 @@ export function SystemConfigPanel() {
   const { t } = useI18n();
   const isAdmin = useIsAdmin();
   const [configs, setConfigs] = useState<SystemConfig[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -209,6 +210,12 @@ export function SystemConfigPanel() {
     setEditDescription('');
   };
 
+  const filteredConfigs = configs.filter(config => 
+    config.key.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    (config.description?.toLowerCase().includes(searchQuery.toLowerCase())) ||
+    config.value.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   const formatDisplayValue = (key: string, value: string) => {
     if (key.endsWith('_at')) {
       const num = Number(value);
@@ -226,44 +233,7 @@ export function SystemConfigPanel() {
 
   return (
     <div className="space-y-6 md:space-y-8 animate-fade-in">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[#75C5F0]/20">
-        <div className="flex items-center gap-3 md:gap-4 group">
-          <div className="self-start mt-1 p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 icon-shake">
-            <Settings size={20} className="md:w-6 md:h-6" />
-          </div>
-          <div>
-            <h2 className="text-xl md:text-2xl lg:text-3xl font-normal text-[#1a1a1a]">
-              {t('admin.systemConfig.title')}
-            </h2>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="w-6 md:w-8 h-[2px] bg-[#0369a1] rounded-full" />
-              <ProverbDisplay
-                keywords={t('proverbs.admin')}
-                size="sm"
-                className="opacity-70 mt-[-2px]"
-                defaultText={t('admin.systemConfig.subtitle')}
-              />
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 md:gap-3">
-          <button
-            onClick={loadConfigs}
-            className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-2.5 bg-white text-[#0369a1] rounded-xl border border-[#0369a1]/20 hover:border-[#0369a1] transition-all shadow-sm"
-          >
-            <RefreshCw size={14} className="md:w-4 md:h-4" />
-            <span className="text-xs md:text-sm font-normal">{t('common.refresh')}</span>
-          </button>
-          <button
-            onClick={() => setIsCreating(true)}
-            className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-2.5 bg-[#0369a1] text-white rounded-xl hover:bg-[#0369a1]/90 transition-all shadow-lg shadow-[#0369a1]/20"
-          >
-            <Plus size={14} className="md:w-4 md:h-4" />
-            <span className="text-xs md:text-sm font-normal">{t('admin.systemConfig.add')}</span>
-          </button>
-        </div>
-      </div>
+
 
       {/* Error Message */}
       {error && (
@@ -503,6 +473,51 @@ export function SystemConfigPanel() {
         </div>
       )}
 
+      {/* Search and Action Bar - matching other tabs layout */}
+      {!isLoading && (
+        <div className="flex flex-col md:flex-row gap-3 md:gap-4 items-center">
+          <div className="relative flex-1 lg:flex-none lg:w-[30%] group w-full">
+            <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1]">
+              <RefreshCw size={18} className="hidden" /> {/* dummy for layout matching */}
+              {/* Lucide Search Icon */}
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-search"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            </div>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={t('common.search')}
+              className="w-full pr-12 pl-6 py-2.5 md:py-3 bg-white border-2 border-[#0369a1]/10 rounded-2xl outline-none focus:border-[#0369a1] transition-all uyghur-text shadow-sm text-base"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute inset-y-0 left-4 flex items-center text-slate-400 hover:text-[#0369a1] transition-colors"
+              >
+                <X size={18} />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 md:gap-3 shrink-0 md:mr-auto">
+            <button
+              onClick={loadConfigs}
+              className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-2.5 bg-white text-[#0369a1] rounded-xl border border-[#0369a1]/20 hover:border-[#0369a1] transition-all shadow-sm"
+            >
+              <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
+              <span className="text-xs md:text-sm font-normal">{t('common.refresh')}</span>
+            </button>
+            <button
+              onClick={() => setIsCreating(true)}
+              className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-2.5 bg-[#0369a1] text-white rounded-xl hover:bg-[#0369a1]/90 transition-all shadow-lg shadow-[#0369a1]/20"
+            >
+              <Plus size={14} className="md:w-4 md:h-4" />
+              <span className="text-xs md:text-sm font-normal">{t('admin.systemConfig.add')}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Configs Table */}
       {!isLoading && configs.length > 0 && (
         <div className="glass-panel overflow-hidden rounded-[16px] md:rounded-[24px] p-0 shadow-xl border border-[#0369a1]/10">
@@ -517,7 +532,7 @@ export function SystemConfigPanel() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#75C5F0]/5">
-                {configs.map((config) => (
+                {filteredConfigs.map((config) => (
                   <tr key={config.key} className="hover:bg-[#e8f4f8]/20 transition-colors">
                     <td className="px-3 md:px-6 py-4 md:py-6">
                       <code className="text-[11px] md:text-sm font-mono bg-[#0369a1]/5 px-2 md:px-3 py-0.5 md:py-1 rounded-lg text-[#0369a1] break-all">

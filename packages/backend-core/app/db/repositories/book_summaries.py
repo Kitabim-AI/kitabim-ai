@@ -32,7 +32,9 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
         from sqlalchemy import text
 
         embedding_str = str(query_embedding)
-        if book_ids:
+        if book_ids is not None:
+            if not book_ids:
+                return []
             query = text("""
                 SELECT
                     book_id,

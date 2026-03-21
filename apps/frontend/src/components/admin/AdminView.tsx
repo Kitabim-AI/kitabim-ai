@@ -6,7 +6,7 @@ import { useAppContext } from '../../context/AppContext';
 import { TagEditor } from './TagEditor';
 import { ProgressBar } from './ProgressBar';
 import { ActionMenu } from './ActionMenu';
-import { ProverbDisplay } from '../common/ProverbDisplay';
+
 import {
   ADMIN_PIPELINE_STEPS,
   MILESTONE_FIELD_BY_STEP,
@@ -274,27 +274,7 @@ export const AdminView: React.FC = () => {
 
   return (
     <div className="space-y-8 animate-fade-in" lang="ug">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-6 border-b border-[#75C5F0]/20">
-        <div className="flex items-center gap-3 md:gap-4 group">
-          <div className="self-start mt-1 p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 icon-shake">
-            <TableOfContents size={20} className="md:w-6 md:h-6" />
-          </div>
-          <div>
-            <h2 className="text-xl md:text-2xl lg:text-3xl font-normal text-[#1a1a1a]">
-              {t('admin.table.managementSystem')}
-            </h2>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="w-6 md:w-8 h-[2px] bg-[#0369a1] rounded-full" />
-              <ProverbDisplay
-                keywords={t('proverbs.admin')}
-                size="sm"
-                className="opacity-70 mt-[-2px]"
-                defaultText={t('admin.table.manageBooks')}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
+
 
       {/* Search and Filters Bar */}
       <div className="flex flex-col md:flex-row gap-3 md:gap-4">

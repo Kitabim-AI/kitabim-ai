@@ -153,6 +153,19 @@ class Settings:
     cache_skip_for_admins: bool = os.getenv("CACHE_SKIP_FOR_ADMINS", "true").lower() == "true"
     cache_max_keys_per_pattern: int = int(os.getenv("CACHE_MAX_KEYS_PER_PATTERN", "1000"))
 
+    # Security - Blocked paths/prefixes for crawler noise reduction
+    # These are common attack/scan paths that are not used by the application
+    security_block_paths: str = os.getenv(
+        "SECURITY_BLOCK_PATHS", 
+        ""
+    )
+    security_block_prefixes: str = os.getenv(
+        "SECURITY_BLOCK_PREFIXES", 
+        "/api/v1/,/api/v2/,/api/uploads/,/api/media/,/api/files/,/api/storage/,/api/blob/,/api/import/,"
+        "/api/assets/,/api/products/,/api/catalog/,/api/gallery/,/api/drive/,/api/s3/,/api/batch/,"
+        "/api/bulk/,/api/multipart/,/api/upwload,/api/profile/,/api/account/,/api/users/avatar"
+    )
+
 
 
 settings = Settings()

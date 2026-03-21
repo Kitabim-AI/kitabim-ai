@@ -142,20 +142,23 @@ class RAGService:
         )
 
     @staticmethod
-    async def _build_catalog_context(question: str, session) -> tuple[str, int]:
+    async def _build_catalog_context(question: str, session, categories: Optional[List[str]] = None) -> tuple[str, int]:
         """
         Build the most specific context possible from the books table:
         - If a known book title is referenced in the question → return info for that book
         - Elif a known author name is referenced → return that author's books
-        - Else → return the full library catalog
+        - Else → return the library catalog (optionally filtered by categories)
         Returns (context_str, retrieved_count).
         """
         q = question.strip()
 
         # 1. Try to match a book title (word-prefix match to handle Uyghur suffixes)
-        title_result = await session.execute(
-            select(Book.title).where(Book.status != "error")
-        )
+        stmt = select(Book.title).where(Book.status != "error")
+        if categories:
+            from sqlalchemy import text as sa_text
+            stmt = stmt.where(sa_text("categories && :cats").bindparams(cats=categories))
+        
+        title_result = await session.execute(stmt)
         titles = [row[0] for row in title_result.fetchall() if row[0]]
         matched_title = next((t for t in titles if RAGService._entity_matches_question(t, q)), None)
 
@@ -177,9 +180,12 @@ class RAGService:
                 return "\n".join(lines), len(books)
 
         # 2. Try to match an author name (word-prefix match to handle Uyghur suffixes)
-        author_result = await session.execute(
-            select(Book.author).where(Book.author.isnot(None), Book.status != "error").distinct()
-        )
+        stmt = select(Book.author).where(Book.author.isnot(None), Book.status != "error").distinct()
+        if categories:
+            from sqlalchemy import text as sa_text
+            stmt = stmt.where(sa_text("categories && :cats").bindparams(cats=categories))
+        
+        author_result = await session.execute(stmt)
         authors = [row[0] for row in author_result.fetchall() if row[0]]
         matched_author = next((a for a in authors if RAGService._entity_matches_question(a, q)), None)
 
@@ -198,8 +204,13 @@ class RAGService:
                 lines.append(f"- {book.title}{volume}{pages}{status_tag}")
             return "\n".join(lines), len(books)
 
-        # 3. Fall back to full catalog
-        stmt = select(Book.title, Book.author, Book.status).where(Book.status != "error").order_by(Book.title)
+        # 3. Fall back to library catalog (optionally filtered by categories)
+        stmt = select(Book.title, Book.author, Book.status).where(Book.status != "error")
+        if categories:
+            from sqlalchemy import text as sa_text
+            stmt = stmt.where(sa_text("categories && :cats").bindparams(cats=categories))
+        
+        stmt = stmt.order_by(Book.title)
         result = await session.execute(stmt)
         all_books = result.fetchall()
         
@@ -251,7 +262,7 @@ class RAGService:
         return t("errors.chat_no_context")
 
     @staticmethod
-    def _build_instructions(strict_no_answer: bool, suppress_page_notice: bool, persona_prompt: Optional[str] = None) -> str:
+    def _build_instructions(strict_no_answer: bool, suppress_page_notice: bool, persona_prompt: Optional[str] = None, is_global: bool = False, has_categories: bool = False) -> str:
         prefix = ""
         if persona_prompt:
             prefix = f"Persona: {persona_prompt}\n\n"
@@ -273,6 +284,13 @@ class RAGService:
         extra_rules = ""
         if suppress_page_notice:
             extra_rules = "\n9. If you can answer, do NOT mention whether the current page contained the answer."
+        if is_global:
+            extra_rules += "\n10. Skip any greetings, introductions, or pleasantries (e.g., 'Hello', 'As-salamu alaykum', 'How can I help you?'). Start your response directly with the answer or the most relevant information."
+
+        librarian_fallback = ""
+        if is_global and has_categories:
+            librarian_fallback = "   - Suggest that the user ask the Librarian (زېرەكچاق) for assistance with books or authors outside your specific expertise.\n"
+
         return (
             prefix +
             "Instructions:\n"
@@ -293,6 +311,8 @@ class RAGService:
             "6. Replace 'abc123' with the actual BookID in the URL, and use the exact values from the context header for the author/title. **Citations must be placed immediately after the relevant sentence or paragraph they support. NEVER group all citations at the end of your response.**\n"
             "7. If the context is marked as 'NO RELEVANT DOCUMENTS FOUND' or does not contain the answer:\n"
             "   - Politely explain that you couldn't find a specific match in the indexed books.\n"
+            "   - Skip any greeting and directly state that no match was found.\n"
+            + librarian_fallback + 
             "   - If it's a general question or greeting, respond naturally but maintain your persona as a librarian advisor.\n"
             "8. Respond ONLY in professional Uyghur (Arabic script).\n"
             "9. STRICT RULE: Output ONLY Uyghur text. Do not include English words, translations, or mixed-language sentences. Maintain purely Uyghur syntax and vocabulary."
@@ -380,8 +400,10 @@ class RAGService:
         strict_no_answer: bool = False,
         suppress_page_notice: bool = False,
         persona_prompt: Optional[str] = None,
+        is_global: bool = False,
+        has_categories: bool = False,
     ) -> str:
-        instructions = self._build_instructions(strict_no_answer, suppress_page_notice, persona_prompt)
+        instructions = self._build_instructions(strict_no_answer, suppress_page_notice, persona_prompt, is_global, has_categories)
         response_text = await chain.ainvoke(
             {
                 "context": context,
@@ -401,9 +423,11 @@ class RAGService:
         strict_no_answer: bool = False,
         suppress_page_notice: bool = False,
         persona_prompt: Optional[str] = None,
+        is_global: bool = False,
+        has_categories: bool = False,
     ) -> AsyncIterator[str]:
         """Stream answer chunks as they're generated by the LLM"""
-        instructions = self._build_instructions(strict_no_answer, suppress_page_notice, persona_prompt)
+        instructions = self._build_instructions(strict_no_answer, suppress_page_notice, persona_prompt, is_global, has_categories)
         has_content = False
         chunk_count = 0
 
@@ -484,6 +508,9 @@ class RAGService:
             persona_prompt = character.persona_prompt
             character_categories = character.categories
 
+        log_json(self.logger, logging.INFO, "RAG answer_question requested", 
+                book_id=req.book_id, is_global=is_global, char_id=char_id, categories=character_categories)
+
         from app.db.repositories.books import BooksRepository
         from app.db.repositories.pages import PagesRepository
         from app.db.repositories.chunks import ChunksRepository
@@ -542,6 +569,8 @@ class RAGService:
                 chat_history=chat_history_str,
                 strict_no_answer=False,
                 suppress_page_notice=False,
+                is_global=is_global,
+                has_categories=bool(character_categories),
             )
 
         # Get query embedding for vector search (Level 1 Cache)
@@ -566,7 +595,7 @@ class RAGService:
 
         # 0. Check if the user is asking about book authors or the general catalog
         if self._is_author_or_catalog_query(req.question):
-            context, retrieved_count = await self._build_catalog_context(req.question, session)
+            context, retrieved_count = await self._build_catalog_context(req.question, session, categories=character_categories)
             
             # If we are in a specific book, also include its metadata specifically
             # This handles cases like "Who is the author of this book?" when in reader
@@ -588,6 +617,8 @@ class RAGService:
                 strict_no_answer=False,
                 suppress_page_notice=True,
                 persona_prompt=persona_prompt,
+                is_global=is_global,
+                has_categories=bool(character_categories),
             )
             await self._record_eval(
                 session,
@@ -622,9 +653,19 @@ class RAGService:
             # 1. Check if the question references a specific book title
             title_matched_ids = await self._find_books_by_title_in_question(req.question, session)
             if title_matched_ids:
-                book_ids = title_matched_ids
-                log_json(self.logger, logging.INFO, "Book title detected in global query, restricting search", count=len(title_matched_ids))
-            else:
+                if char_book_ids is not None:
+                    # Filter matching titles by character allowed books
+                    filtered_matched_ids = [bid for bid in title_matched_ids if bid in char_book_ids]
+                    if filtered_matched_ids:
+                        book_ids = filtered_matched_ids
+                        log_json(self.logger, logging.INFO, "Book title detected and allowed by character categories", count=len(book_ids))
+                    else:
+                        log_json(self.logger, logging.INFO, "Book title detected but ignored: not in character categories")
+                else:
+                    book_ids = title_matched_ids
+                    log_json(self.logger, logging.INFO, "Book title detected in global query, restricting search", count=len(title_matched_ids))
+
+            if not book_ids:
                 # 2. Summary-based book selection (stage 1 of hierarchical retrieval).
                 if query_vector:
                     try:
@@ -668,6 +709,7 @@ class RAGService:
                         try:
                             relevant_categories = await self._categorize_question(req.question, list(all_categories), category_chain)
                             relevant_categories = self._expand_history_categories(relevant_categories)
+                            log_json(self.logger, logging.INFO, "Auto-categorized question", categories=relevant_categories)
                         except Exception as exc:
                             log_json(self.logger, logging.WARNING, "Category routing failed", error=str(exc))
                             relevant_categories = []
@@ -831,6 +873,8 @@ class RAGService:
             strict_no_answer=False,
             suppress_page_notice=False,
             persona_prompt=persona_prompt,
+            is_global=is_global,
+            has_categories=bool(character_categories),
         )
 
         await self._record_eval(
@@ -868,6 +912,9 @@ class RAGService:
         if character:
             persona_prompt = character.persona_prompt
             character_categories = character.categories
+
+        log_json(self.logger, logging.INFO, "RAG answer_question_stream requested", 
+                book_id=req.book_id, is_global=is_global, char_id=char_id, categories=character_categories)
 
         from app.db.repositories.books import BooksRepository
         from app.db.repositories.pages import PagesRepository
@@ -928,6 +975,8 @@ class RAGService:
                 strict_no_answer=False,
                 suppress_page_notice=False,
                 persona_prompt=persona_prompt,
+                is_global=is_global,
+                has_categories=bool(character_categories),
             ):
                 yield chunk
             return
@@ -954,7 +1003,7 @@ class RAGService:
 
         # 0. Check if the user is asking about book authors or the general catalog
         if self._is_author_or_catalog_query(req.question):
-            context, retrieved_count = await self._build_catalog_context(req.question, session)
+            context, retrieved_count = await self._build_catalog_context(req.question, session, categories=character_categories)
             
             # If we are in a specific book, also include its metadata specifically
             if not is_global and book:
@@ -976,6 +1025,8 @@ class RAGService:
                 strict_no_answer=False,
                 suppress_page_notice=True,
                 persona_prompt=persona_prompt,
+                is_global=is_global,
+                has_categories=bool(character_categories),
             ):
                 answer_chunks.append(chunk)
                 yield chunk
@@ -1000,12 +1051,33 @@ class RAGService:
             return
 
         if is_global:
+            # 0. Character-based filtering (Pre-filter)
+            char_book_ids = None
+            if character_categories:
+                from sqlalchemy import text as sa_text
+                stmt = select(Book.id).where(
+                    sa_text("categories && :cats").bindparams(cats=character_categories)
+                ).where(Book.status == "ready")
+                result = await session.execute(stmt)
+                char_book_ids = [str(bid) for bid in result.scalars().all()]
+                log_json(self.logger, logging.INFO, "Character categories filtered search space", count=len(char_book_ids), char_id=char_id)
+
             # 1. Check if the question references a specific book title
             title_matched_ids = await self._find_books_by_title_in_question(req.question, session)
             if title_matched_ids:
-                book_ids = title_matched_ids
-                log_json(self.logger, logging.INFO, "Book title detected in global query, restricting search", count=len(title_matched_ids))
-            else:
+                if char_book_ids is not None:
+                    # Filter matching titles by character allowed books
+                    filtered_matched_ids = [bid for bid in title_matched_ids if bid in char_book_ids]
+                    if filtered_matched_ids:
+                        book_ids = filtered_matched_ids
+                        log_json(self.logger, logging.INFO, "Book title detected and allowed by character categories", count=len(book_ids))
+                    else:
+                        log_json(self.logger, logging.INFO, "Book title detected but ignored: not in character categories")
+                else:
+                    book_ids = title_matched_ids
+                    log_json(self.logger, logging.INFO, "Book title detected in global query, restricting search", count=len(title_matched_ids))
+
+            if not book_ids:
                 # 2. Summary-based book selection (stage 1 of hierarchical retrieval).
                 # query_vector is already computed and reused here — no extra API call.
                 if query_vector:
@@ -1014,12 +1086,14 @@ class RAGService:
                         summaries_repo = BookSummariesRepository(session)
                         # Cache Lookup (Level 3)
                         emb_hash = hashlib.md5(str(query_vector).encode()).hexdigest()
-                        summary_cache_key = cache_config.KEY_RAG_SUMMARY_SEARCH.format(hash=emb_hash)
+                        char_tag = char_id if character_categories else "all"
+                        summary_cache_key = cache_config.KEY_RAG_SUMMARY_SEARCH.format(hash=f"{char_tag}:{emb_hash}")
                         
                         book_ids = await cache_service.get(summary_cache_key)
                         if book_ids is None:
                             book_ids = await summaries_repo.summary_search(
                                 query_embedding=query_vector,
+                                book_ids=char_book_ids,
                                 limit=settings.summary_top_k,
                                 threshold=settings.summary_threshold,
                             )
@@ -1035,16 +1109,19 @@ class RAGService:
 
                 # 3. Fallback: category-based search (when no summaries exist yet)
                 if not book_ids:
-                    stmt = select(Book.categories).where(Book.categories is not None)
-                    result = await session.execute(stmt)
-                    all_categories = set()
-                    for cats in result.scalars().all():
-                        if cats:
-                            all_categories.update(cats)
+                    if not character_categories:
+                        # Auto-categorize if no character categories are set
+                        stmt = select(Book.categories).where(Book.categories.isnot(None))
+                        result = await session.execute(stmt)
+                        all_categories = set()
+                        for cats in result.scalars().all():
+                            if cats:
+                                all_categories.update(cats)
 
                     try:
                         relevant_categories = await self._categorize_question(req.question, list(all_categories), category_chain)
                         relevant_categories = self._expand_history_categories(relevant_categories)
+                        log_json(self.logger, logging.INFO, "Auto-categorized question", categories=relevant_categories)
                     except Exception as exc:
                         log_json(self.logger, logging.WARNING, "Category routing failed", error=str(exc))
                         relevant_categories = []
@@ -1195,6 +1272,8 @@ class RAGService:
             strict_no_answer=False,
             suppress_page_notice=False,
             persona_prompt=persona_prompt,
+            is_global=is_global,
+            has_categories=bool(character_categories),
         ):
             answer_chunks.append(chunk)
             yield chunk

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Book, FileText, CheckCircle, XCircle, RefreshCw, BarChart3, Clock, AlertTriangle, Loader, Zap, Hash } from 'lucide-react';
 import { authFetch } from '../../services/authService';
 import { useI18n } from '../../i18n/I18nContext';
-import { ProverbDisplay } from '../common/ProverbDisplay';
+
 
 interface StatusCount {
   status: string;
@@ -216,54 +216,7 @@ export const StatsPanel: React.FC = () => {
   return (
     <div className="space-y-8 animate-fade-in" dir="rtl" lang="ug">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[#75C5F0]/20">
-        <div className="flex items-center gap-4 group">
-          <div className="self-start mt-1 p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 icon-shake">
-            <BarChart3 size={20} className="md:w-6 md:h-6" />
-          </div>
-          <div>
-            <h2 className="text-xl md:text-2xl lg:text-3xl font-normal text-[#1a1a1a]">
-              {t('admin.stats.title') || 'System Statistics'}
-            </h2>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="w-8 h-[2px] bg-[#0369a1] rounded-full" />
-              <ProverbDisplay
-                keywords={t('proverbs.admin')}
-                size="sm"
-                className="opacity-70 mt-[-2px]"
-                defaultText={t('admin.stats.subtitle') || 'View system analytics and metrics'}
-              />
-            </div>
-          </div>
-        </div>
-        {/* Right side: LLM chip + Refresh button */}
-        <div className="flex items-center gap-3 self-end md:self-auto">
-          {/* LLM Status Chip — leftmost */}
-          {llmState && (
-            <div
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl border-2 text-sm font-medium transition-all shadow-sm ${llmState === 'closed'
-                ? 'bg-green-50 border-green-200 text-green-700'
-                : llmState === 'open' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-yellow-50 border-yellow-200 text-yellow-700'
-                }`}
-            >
-              <Zap size={14} className={llmState === 'closed' ? 'fill-green-500 text-green-500' : llmState === 'open' ? 'text-red-500' : 'fill-yellow-500 text-yellow-500'} />
-              {llmState === 'closed'
-                ? (t('admin.stats.llmAvailable') || 'LLM Available')
-                : llmState === 'open' ? (t('admin.stats.llmUnavailable') || 'LLM Unavailable') : t('admin.systemConfig.circuitBreaker.states.half_open')}
-            </div>
-          )}
 
-          {/* Refresh button — rightmost */}
-          <button
-            onClick={() => { loadStats(); loadLlmStatus(); }}
-            className="flex items-center gap-2 px-4 py-2 bg-white text-[#0369a1] rounded-xl border border-[#0369a1]/20 hover:border-[#0369a1] transition-all shadow-sm"
-          >
-            <RefreshCw size={16} />
-            <span className="text-sm font-normal">{t('common.refresh') || 'Refresh'}</span>
-          </button>
-        </div>
-
-      </div>
 
       {/* Stat Blocks */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">

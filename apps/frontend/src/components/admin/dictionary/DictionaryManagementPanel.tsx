@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { authFetch } from '../../../services/authService';
 import { useI18n } from '../../../i18n/I18nContext';
-import { ProverbDisplay } from '../../common/ProverbDisplay';
+
 import { useAppContext } from '../../../context/AppContext';
 
 interface DictionaryWord {
@@ -142,40 +142,12 @@ export const DictionaryManagementPanel: React.FC = () => {
   return (
     <div className="space-y-6 md:space-y-8 animate-fade-in pb-20" dir="rtl" lang="ug">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[#75C5F0]/20">
-        <div className="flex items-center gap-3 md:gap-4 group">
-          <div className="self-start mt-1 p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 icon-shake">
-            <BookA size={20} className="md:w-6 md:h-6" />
-          </div>
-          <div>
-            <h2 className="text-xl md:text-2xl lg:text-3xl font-normal text-[#1a1a1a]">
-              {t('admin.dictionary.title')}
-            </h2>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="w-6 md:w-8 h-[2px] bg-[#0369a1] rounded-full" />
-              <ProverbDisplay
-                keywords={t('proverbs.admin')}
-                size="sm"
-                className="opacity-70 mt-[-2px]"
-                defaultText={t('admin.dictionary.subtitle')}
-              />
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 md:gap-3">
-          <div className="flex items-center gap-2 md:gap-3 px-4 md:px-6 py-2 md:py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner w-fit">
-            <Hash size={16} strokeWidth={2.5} className="md:w-[18px] md:h-[18px]" />
-            <span className="text-xs md:text-sm font-normal uppercase whitespace-nowrap">
-              {!stats ? <RefreshCw size={14} className="animate-spin inline-block" /> : t('admin.dictionary.stats.totalWords', { count: stats.total_words })}
-            </span>
-          </div>
-        </div>
-      </div>
 
 
-      {/* Main Search & Tool Section */}
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div className="relative group">
+
+      {/* Main Search & Tool Section - centered as an exception with side-by-side elements */}
+      <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-center gap-3 md:gap-4 py-4 md:py-8">
+        <div className="relative flex-1 lg:flex-none lg:w-[40%] group w-full">
           <div className="absolute inset-y-0 right-4 md:right-5 flex items-center pointer-events-none text-[#0369a1] transition-colors z-10 font-bold">
             {isSearching ? (
               <RefreshCw className="animate-spin" size={16} />
@@ -213,6 +185,14 @@ export const DictionaryManagementPanel: React.FC = () => {
             )}
           </div>
         </div>
+
+        <div className="flex items-center gap-2 md:gap-3 px-4 md:px-6 py-2 md:py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner w-fit">
+          <Hash size={16} strokeWidth={2.5} className="md:w-[14px] md:h-[14px]" />
+          <span className="text-xs md:text-sm font-normal uppercase whitespace-nowrap">
+            {!stats ? <RefreshCw size={14} className="animate-spin inline-block" /> : t('admin.dictionary.stats.totalWords', { count: stats.total_words })}
+          </span>
+        </div>
+      </div>
 
         {/* Search Results / Suggestions */}
         <div className="space-y-3">
@@ -287,7 +267,6 @@ export const DictionaryManagementPanel: React.FC = () => {
              </button>
           </div>
         )}
-      </div>
     </div>
   );
 };

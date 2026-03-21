@@ -99,14 +99,14 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
         // onComplete
         () => {
           const finalMessage = streamingMessageRef.current;
-          setChatMessages(prev => [...prev, { role: 'model', text: finalMessage }]);
+          setChatMessages(prev => [...prev, { role: 'model', text: finalMessage, characterId: selectedCharacterId }]);
           setStreamingMessage('');
           setIsChatting(false);
         },
         // onError
         (error: string) => {
           if (controller.signal.aborted) return;
-          setChatMessages(prev => [...prev, { role: 'model', text: error }]);
+          setChatMessages(prev => [...prev, { role: 'model', text: error, characterId: selectedCharacterId }]);
           setStreamingMessage('');
           setIsChatting(false);
         },
@@ -126,7 +126,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     } catch (err: any) {
       if (err.name === 'AbortError') return;
 
-      setChatMessages(prev => [...prev, { role: 'model', text: "كەچۈرۈڭ، جاۋاب بېرەلمىدىم." }]);
+      setChatMessages(prev => [...prev, { role: 'model', text: "كەچۈرۈڭ، جاۋاب بېرەلمىدىم.", characterId: selectedCharacterId }]);
       setStreamingMessage('');
       setIsChatting(false);
     } finally {

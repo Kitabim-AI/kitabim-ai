@@ -32,7 +32,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'librarian',
-    name_uy: 'موللا تاپقاق',
+    name_uy: 'زېرەكچاق',
     name_en: 'Librarian',
     avatar_emoji: '📚'
   }
