@@ -398,6 +398,7 @@
       "title": "لۇغەت باشقۇرۇش",
       "subtitle": "لۇغەت سۆزلىرىنى ئىزدەش، قوشۇش ياكى ئۆچۈرۈش.",
       "searchPlaceholder": "سۆز ئىزدەش...",
+      "searchPlaceholderWithCount": "{{count}} سۆز ئىچىدىن ئىزدەش...",
       "addWord": "لۇغەتكە قوشۇش",
       "removeWord": "لۇغەتتىن ئۆچۈرۈش",
       "confirmDeleteTitle": "لۇغەتتىن ئۆچۈرۈش",
@@ -407,7 +408,8 @@
       "stats": {
         "total": "جەمئىي سۆزلەر",
         "totalWords": "{{count}} جەمئىي سۆز"
-      }
+      },
+      "emptyStateTitle": "كىتابىم ئىملا لۇغىتىدىن سۆز ئىزدەڭ"
     }
   },
   "spellCheck": {

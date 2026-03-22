@@ -151,33 +151,33 @@ export const SearchOverlay: React.FC = () => {
               ))}
             </div>
           ) : !isLoading ? (
-            <div className="h-[50vh] flex flex-col items-center justify-center text-center">
-              <div className="p-12 bg-[#0369a1]/5 rounded-[48px] mb-8 animate-fade-in">
-                {globalSearchQuery.trim().length >= 3 ? (
-                  <Library className="w-24 h-24 text-[#0369a1]" strokeWidth={1.5} />
-                ) : (
-                  <Search className="w-24 h-24 text-[#0369a1]" strokeWidth={1.5} />
-                )}
-              </div>
-              
-              <div className="max-w-md mx-auto space-y-4 animate-fade-in">
-                {globalSearchQuery.trim().length >= 3 ? (
-                  <div className="space-y-4">
-                    <h4 className="text-2xl font-black text-[#1a1a1a]">
-                      {t('library.noResults.title')}
-                    </h4>
-                    <p className="text-slate-500 font-bold">
-                      {t('library.noResults.message')}
-                    </p>
+            <div className="flex-grow flex flex-col items-center justify-center p-6 md:p-12 text-center">
+              {!globalSearchQuery.trim() || globalSearchQuery.trim().length < 3 ? (
+                <div className="flex flex-col items-center justify-center py-12 md:py-20 text-center opacity-40 animate-fade-in">
+                  <div className="p-6 md:p-8 bg-slate-100/50 rounded-full mb-6 md:mb-10 ring-[8px] md:ring-[12px] ring-slate-50/50">
+                    <Search size={48} strokeWidth={1} className="text-[#0369a1] md:w-16 md:h-16" />
                   </div>
-                ) : (
-                  <ProverbDisplay 
-                    keywords="كىتاب" 
-                    size="base" 
-                    className="opacity-50" 
-                  />
-                )}
-              </div>
+                  <div className="space-y-4">
+                    <h3 className="text-xl md:text-2xl font-normal text-slate-600 uyghur-text">
+                      {t('home.searchPlaceholder')}
+                    </h3>
+                  </div>
+                </div>
+              ) : (
+                <div className="max-w-md mx-auto space-y-8 animate-fade-in py-12 md:py-20 flex flex-col items-center">
+                   <div className="p-6 md:p-8 bg-amber-50/80 rounded-full mb-4 md:mb-6 ring-[8px] md:ring-[12px] ring-amber-50/30">
+                      <Library className="w-12 h-12 md:w-16 md:h-16 text-amber-500/60" strokeWidth={1} />
+                   </div>
+                   <div className="space-y-3">
+                      <h4 className="text-xl md:text-2xl font-black text-[#1a1a1a]">
+                        {t('library.noResults.title')}
+                      </h4>
+                      <p className="text-slate-500 font-normal md:text-lg">
+                        {t('library.noResults.message')}
+                      </p>
+                   </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="h-[50vh] flex flex-col items-center justify-center">

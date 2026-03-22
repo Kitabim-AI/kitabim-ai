@@ -160,7 +160,7 @@ export const DictionaryManagementPanel: React.FC = () => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pr-11 md:pr-14 pl-20 md:pl-28 py-2.5 md:py-3 bg-white border-2 border-[#0369a1]/10 rounded-2xl uyghur-text outline-none focus:border-[#0369a1] transition-all shadow-sm placeholder:text-slate-300 text-base"
-            placeholder={t('admin.dictionary.searchPlaceholder')}
+            placeholder={stats ? t('admin.dictionary.searchPlaceholderWithCount', { count: stats.total_words.toLocaleString() }) : t('admin.dictionary.searchPlaceholder')}
             dir="rtl"
           />
           <div className="absolute inset-y-0 left-3 md:left-4 flex items-center gap-1 md:gap-2 z-10">
@@ -185,17 +185,23 @@ export const DictionaryManagementPanel: React.FC = () => {
             )}
           </div>
         </div>
-
-        <div className="flex items-center gap-2 md:gap-3 px-4 md:px-6 py-2 md:py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner w-fit">
-          <Hash size={16} strokeWidth={2.5} className="md:w-[14px] md:h-[14px]" />
-          <span className="text-xs md:text-sm font-normal uppercase whitespace-nowrap">
-            {!stats ? <RefreshCw size={14} className="animate-spin inline-block" /> : t('admin.dictionary.stats.totalWords', { count: stats.total_words })}
-          </span>
-        </div>
       </div>
 
-        {/* Search Results / Suggestions */}
+        {/* Empty State / Search Results / Suggestions */}
         <div className="space-y-3">
+          {!searchQuery.trim() && (
+            <div className="max-w-7xl mx-auto flex flex-col items-center justify-center py-12 md:py-20 text-center opacity-40 animate-fade-in">
+              <div className="p-6 md:p-8 bg-slate-100/50 rounded-full mb-4 md:mb-6 ring-8 ring-slate-50/50">
+                <BookA size={48} strokeWidth={1.5} className="text-[#0369a1]" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-xl md:text-2xl font-normal text-slate-600 uyghur-text">
+                  {t('admin.dictionary.emptyStateTitle')}
+                </h3>
+              </div>
+            </div>
+          )}
+
           {searchQuery.trim() && !isSearching && suggestions.length === 0 && (
             <div className="glass-panel rounded-[24px] md:rounded-[32px] py-8 md:py-12 px-4 md:px-8 flex flex-col items-center justify-center gap-3 md:gap-4 text-center animate-fade-in shadow-lg">
                <div className="p-3 md:p-4 bg-amber-50 text-amber-500 rounded-full shadow-inner ring-4 ring-amber-50/50">

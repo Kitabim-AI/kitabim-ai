@@ -6,6 +6,22 @@ set -e
 
 COMPONENT=${1:-all}
 
+# Auto-generate secure App ID for all/full deployments
+if [ "$COMPONENT" = "all" ]; then
+  NEW_APP_ID=$(openssl rand -hex 16)
+  echo "🔐 Rotating App ID: $NEW_APP_ID"
+  
+  # Update frontend config
+  sed -i.bak "s/export const APP_CLIENT_ID = '.*';/export const APP_CLIENT_ID = '$NEW_APP_ID';/" apps/frontend/src/config.ts
+  rm -f apps/frontend/src/config.ts.bak
+  
+  # Update local .env (at repo root)
+  if [ -f .env ]; then
+    sed -i.bak "s/^SECURITY_APP_ID=.*/SECURITY_APP_ID=$NEW_APP_ID/" .env
+    rm -f .env.bak
+  fi
+fi
+
 rebuild_component() {
   local comp=$1
   echo "🔨 Rebuilding $comp..."

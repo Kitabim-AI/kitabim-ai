@@ -27,6 +27,21 @@ VM_ZONE="us-south1-c"
 APP_DIR="/opt/kitabim"
 COMPOSE_FILE="${APP_DIR}/deploy/gcp/docker-compose.yml"
 
+# ─── Security: Rotate App ID ──────────────────────────────────────
+# Automatically generate a fresh secure ID for every release
+NEW_APP_ID=$(openssl rand -hex 16)
+echo "🔐 Generating fresh production App ID: $NEW_APP_ID"
+
+# Update frontend config (so it's baked into the built frontend image)
+sed -i.bak "s/export const APP_CLIENT_ID = '.*';/export const APP_CLIENT_ID = '$NEW_APP_ID';/" apps/frontend/src/config.ts
+rm -f apps/frontend/src/config.ts.bak
+
+# Update production .env (so it's synced to the VM for the backend/worker containers)
+if [ -f "deploy/gcp/.env" ]; then
+  sed -i.bak "s/^SECURITY_APP_ID=.*/SECURITY_APP_ID=$NEW_APP_ID/" "deploy/gcp/.env"
+  rm -f "deploy/gcp/.env.bak"
+fi
+
 echo "==> Deploying Kitabim AI"
 echo "    Project:   $GCP_PROJECT_ID"
 echo "    Registry:  $REGISTRY"

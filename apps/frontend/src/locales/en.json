@@ -397,6 +397,7 @@
       "title": "Dictionary Management",
       "subtitle": "Search, add or remove dictionary words.",
       "searchPlaceholder": "Search word...",
+      "searchPlaceholderWithCount": "Search within {{count}} words...",
       "addWord": "Add to Dictionary",
       "removeWord": "Remove from Dictionary",
       "confirmDeleteTitle": "Remove from Dictionary",
@@ -406,7 +407,8 @@
       "stats": {
         "total": "Total Words",
         "totalWords": "{{count}} total words"
-      }
+      },
+      "emptyStateTitle": "Search Dictionary"
     }
   },
   "spellCheck": {
