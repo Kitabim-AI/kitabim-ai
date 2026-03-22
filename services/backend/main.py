@@ -240,6 +240,42 @@ async def block_noisy_requests(request: Request, call_next):
     return await call_next(request)
 
 
+# Enforce App Client ID for non-GET requests to ensure they come from our app
+@app.middleware("http")
+async def enforce_app_id(request: Request, call_next):
+    """
+    Enforces a shared secret header (X-Kitabim-App-Id) for all non-GET/OPTIONS API requests.
+    This identifies the request as coming from our authorized application client.
+    """
+    # Only enforce for /api/ paths
+    if not request.url.path.startswith("/api/"):
+        return await call_next(request)
+
+    # Exclude safe methods to allow browser image loading and CORS preflights
+    if request.method in ("GET", "OPTIONS", "HEAD"):
+        return await call_next(request)
+
+    # Check for the Application ID header
+    app_id = request.headers.get("X-Kitabim-App-Id")
+    
+    if app_id != settings.security_app_id:
+        logger = logging.getLogger("app.security")
+        log_json(
+            logger,
+            logging.WARNING,
+            "Unauthorized client: Missing or invalid App ID",
+            method=request.method,
+            path=request.url.path,
+            ip=request.client.host if request.client else "unknown"
+        )
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Unauthorized: Request must originate from the authorized application"}
+        )
+
+    return await call_next(request)
+
+
 # CORS Configuration - Allow only specific origins
 allowed_origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
 app.add_middleware(

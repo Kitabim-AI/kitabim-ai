@@ -1,6 +1,7 @@
 /**
  * Authentication service for handling auth API calls.
  */
+import { APP_CLIENT_ID } from '../config';
 
 const API_BASE = '/api/auth';
 const TOKEN_KEY = 'kitabim_access_token';
@@ -45,6 +46,7 @@ export function getAuthHeaders(): HeadersInit {
   const token = getAccessToken();
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
+    'X-Kitabim-App-Id': APP_CLIENT_ID,
   };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
@@ -64,6 +66,7 @@ export async function authFetch(
   const token = getAccessToken();
 
   const headers = new Headers(options.headers);
+  headers.set('X-Kitabim-App-Id', APP_CLIENT_ID);
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
@@ -342,6 +345,9 @@ async function refreshAccessToken(): Promise<boolean> {
     try {
       const response = await fetch(`${API_BASE}/refresh`, {
         method: 'POST',
+        headers: {
+          'X-Kitabim-App-Id': APP_CLIENT_ID,
+        },
         credentials: 'include',
       });
 

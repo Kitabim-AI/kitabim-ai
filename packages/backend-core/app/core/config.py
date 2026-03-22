@@ -165,6 +165,10 @@ class Settings:
         "/api/assets/,/api/products/,/api/catalog/,/api/gallery/,/api/drive/,/api/s3/,/api/batch/,"
         "/api/bulk/,/api/multipart/,/api/upwload,/api/profile/,/api/account/,/api/users/avatar"
     )
+    security_app_id: str = os.getenv(
+        "SECURITY_APP_ID", 
+        "ec536d0187edf5100c11d4d4a4bd3f82"
+    )
 
 
 

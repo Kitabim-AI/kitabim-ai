@@ -1,6 +1,7 @@
 /**
  * Contact form service for handling contact submission API calls.
  */
+import { APP_CLIENT_ID } from '../config';
 
 const API_BASE = '/api/contact';
 
@@ -31,6 +32,7 @@ export async function submitContactForm(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'X-Kitabim-App-Id': APP_CLIENT_ID,
     },
     body: JSON.stringify(submission),
   });
