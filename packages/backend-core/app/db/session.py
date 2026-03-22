@@ -84,7 +84,7 @@ async def init_db(service_name: str = "backend") -> None:
             "server_settings": {
                 "application_name": app_name
             },
-            "command_timeout": 120,
+            "command_timeout": settings.db_query_timeout,
         }
     )
 

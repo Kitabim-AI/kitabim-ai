@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect, useCallback, createContext, useContext, ReactNode } from 'react';
-import { AuthService, User, getAccessToken, setAccessToken, clearAccessToken } from '../services/authService';
+import { AuthService, User, getAccessToken, setAccessToken, clearAccessToken, recoverSessionToken, refreshAccessToken } from '../services/authService';
 
 interface AuthState {
   user: User | null;
@@ -34,15 +34,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Check for existing session on mount
   useEffect(() => {
     const initAuth = async () => {
-      // Handle token returned from mobile OAuth redirect flow (?access_token=...)
+      // 1. Mobile OAuth redirect flow: token arrives as URL param (?access_token=...)
       const params = new URLSearchParams(window.location.search);
       const tokenFromUrl = params.get('access_token');
       if (tokenFromUrl) {
         setAccessToken(tokenFromUrl);
-        // Remove token from URL without triggering a page reload
         const cleanUrl = new URL(window.location.href);
         cleanUrl.searchParams.delete('access_token');
         window.history.replaceState({}, '', cleanUrl.toString());
+      }
+
+      // 2. Popup redirect fallback: token was written to sessionStorage by the
+      //    OAuth success page when it couldn't reach the opener via postMessage.
+      if (!getAccessToken()) {
+        recoverSessionToken();
+      }
+
+      // 3. Silent refresh: if still no token in memory, try to re-issue one
+      //    using the httpOnly refresh cookie (covers page reloads).
+      if (!getAccessToken()) {
+        await refreshAccessToken();
       }
 
       const token = getAccessToken();

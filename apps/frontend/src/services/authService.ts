@@ -1,10 +1,27 @@
 /**
  * Authentication service for handling auth API calls.
  */
-import { APP_CLIENT_ID } from '../config';
-
 const API_BASE = '/api/auth';
-const TOKEN_KEY = 'kitabim_access_token';
+const SESSION_TOKEN_KEY = 'kitabim_access_token_session';
+
+// App ID fetched from /api/config at startup — never hardcoded or baked into the bundle.
+let _appClientId = '';
+
+export async function initAppConfig(): Promise<void> {
+  try {
+    const res = await fetch('/api/config');
+    if (res.ok) {
+      const data = await res.json();
+      _appClientId = data.appId ?? '';
+    }
+  } catch {
+    // Non-fatal — requests will be sent without the app ID header
+  }
+}
+
+// Access token lives in memory only — never persisted to localStorage.
+// On page load, useAuth recovers the session via the httpOnly refresh cookie.
+let _accessToken: string | null = null;
 
 export interface User {
   id: string;
@@ -19,24 +36,39 @@ export interface AuthTokens {
 }
 
 /**
- * Get stored access token from localStorage.
+ * Get access token from memory.
  */
 export function getAccessToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return _accessToken;
 }
 
 /**
- * Store access token in localStorage.
+ * Store access token in memory only (never persisted to localStorage).
  */
 export function setAccessToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
+  _accessToken = token;
 }
 
 /**
- * Clear access token from localStorage.
+ * Clear access token from memory.
  */
 export function clearAccessToken(): void {
-  localStorage.removeItem(TOKEN_KEY);
+  _accessToken = null;
+}
+
+/**
+ * Read a one-time token from sessionStorage (OAuth redirect fallback), store
+ * it in memory, and clear it immediately so it doesn't linger.
+ * Returns true if a token was recovered.
+ */
+export function recoverSessionToken(): boolean {
+  const token = sessionStorage.getItem(SESSION_TOKEN_KEY);
+  if (token) {
+    _accessToken = token;
+    sessionStorage.removeItem(SESSION_TOKEN_KEY);
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -46,7 +78,7 @@ export function getAuthHeaders(): HeadersInit {
   const token = getAccessToken();
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
-    'X-Kitabim-App-Id': APP_CLIENT_ID,
+    'X-Kitabim-App-Id': _appClientId,
   };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
@@ -66,7 +98,7 @@ export async function authFetch(
   const token = getAccessToken();
 
   const headers = new Headers(options.headers);
-  headers.set('X-Kitabim-App-Id', APP_CLIENT_ID);
+  headers.set('X-Kitabim-App-Id', _appClientId);
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
@@ -238,7 +270,8 @@ export const AuthService = {
 
       window.addEventListener('message', handleMessage);
 
-      // Check if token was set in localStorage as fallback (for when popup can't post message)
+      // When popup closes, attempt a silent refresh — the backend may have set
+      // the httpOnly refresh cookie even if postMessage/BroadcastChannel failed.
       const checkInterval = setInterval(async () => {
         try {
           if (popup.closed) {
@@ -246,13 +279,12 @@ export const AuthService = {
             window.removeEventListener('message', handleMessage);
 
             if (!messageReceived) {
-              console.log(`[OAuth ${provider}] Popup closed, checking for localStorage token`);
-              // Check if token was set via localStorage fallback
-              const token = getAccessToken();
-              if (token) {
+              console.log(`[OAuth ${provider}] Popup closed, attempting silent token refresh`);
+              const refreshed = await refreshAccessToken();
+              if (refreshed) {
                 const user = await this.getCurrentUser();
                 if (user) {
-                  console.log(`[OAuth ${provider}] Found token in localStorage, login successful`);
+                  console.log(`[OAuth ${provider}] Silent refresh succeeded`);
                   authChannel.close();
                   resolve(user);
                   return;
@@ -336,7 +368,7 @@ export const AuthService = {
  */
 let refreshPromise: Promise<boolean> | null = null;
 
-async function refreshAccessToken(): Promise<boolean> {
+export async function refreshAccessToken(): Promise<boolean> {
   if (refreshPromise) {
     return refreshPromise;
   }
@@ -346,7 +378,7 @@ async function refreshAccessToken(): Promise<boolean> {
       const response = await fetch(`${API_BASE}/refresh`, {
         method: 'POST',
         headers: {
-          'X-Kitabim-App-Id': APP_CLIENT_ID,
+          'X-Kitabim-App-Id': _appClientId,
         },
         credentials: 'include',
       });

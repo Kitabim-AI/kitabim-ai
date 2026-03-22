@@ -6,6 +6,7 @@ import uuid
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -65,6 +66,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.project_name, lifespan=lifespan)
 
+# Trust X-Forwarded-For from Nginx proxy (localhost) so request.client.host
+# returns the real client IP everywhere, including slowapi rate limiting.
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["127.0.0.1", "::1"])
+
 
 # Global exception handler to capture and log any unhandled exceptions
 @app.exception_handler(Exception)
@@ -113,29 +118,28 @@ async def add_security_headers(request: Request, call_next):
     """Add security headers to all responses"""
     response = await call_next(request)
     
-    # These are typically handled by the outer Nginx proxy, but we keep them
-    # here for defense-in-depth where Nginx might be bypassed (local dev)
-    if settings.environment != "production":
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-Content-Type-Options"] = "nosniff"
+    # Security headers — always set for defense-in-depth
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
 
-    # X-XSS-Protection is deprecated and can trigger "Reduced Protections" 
+    # X-XSS-Protection is deprecated and can trigger "Reduced Protections"
     # warnings in Safari 17+. Modern browsers use CSP for this purpose.
     # response.headers["X-XSS-Protection"] = "1; mode=block" (REMOVED)
-    
+
     # Permissions-Policy to restrict sensitive features
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), interest-cohort=()"
 
     if settings.environment == "production":
-        # HSTS is handled by Nginx in production, we avoid duplicating it here
-        # to prevent confusing Safari with multiple HSTS headers.
-        pass
+        # HSTS set here for backends not behind Nginx (e.g. direct access).
+        # Nginx also sets it — duplicate headers are harmless; missing it is not.
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     
-    # Content Security Policy - Consistent with Nginx if possible
-    # Note: We include 'unsafe-inline' and 'unsafe-eval' for pdf.js and React/Vite requirements.
+    # Content Security Policy for backend API responses (OAuth callback pages).
+    # 'unsafe-inline' is kept for script-src because the OAuth callback pages
+    # embed inline JS. 'unsafe-eval' is not needed — backend serves no eval() code.
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com; "
+        "script-src 'self' 'unsafe-inline' https://accounts.google.com; "
         "style-src 'self' 'unsafe-inline' https:; "
         "img-src 'self' data: https:; "
         "font-src 'self' data: https:; "
@@ -255,6 +259,12 @@ async def enforce_app_id(request: Request, call_next):
     if request.method in ("GET", "OPTIONS", "HEAD"):
         return await call_next(request)
 
+    # Exempt auth bootstrap endpoints — they are protected by their own mechanisms
+    # (refresh cookie, OAuth state) and must work before the client knows the app ID.
+    exempt_paths = ("/api/auth/refresh", "/api/auth/google/", "/api/auth/facebook/", "/api/auth/twitter/")
+    if any(request.url.path.startswith(p) for p in exempt_paths):
+        return await call_next(request)
+
     # Check for the Application ID header
     app_id = request.headers.get("X-Kitabim-App-Id")
     
@@ -299,9 +309,11 @@ async def get_cover(book_id: str, request: Request):
         # We can either download and serve, or redirect to GCS
         if settings.storage_backend == "gcs":
             url = storage.get_public_url(remote_path)
-            # Pass through query parameters (like ?v=...) to bypass GCS/browser cache
-            if request.query_params:
-                url += f"?{request.query_params}"
+            # Pass through only the cache-busting 'v' param — never forward arbitrary params
+            v = request.query_params.get("v")
+            if v:
+                from urllib.parse import urlencode
+                url += f"?{urlencode({'v': v})}"
             return RedirectResponse(url)
         else:
             await storage.download_file(remote_path, local_path)
@@ -323,6 +335,12 @@ app.include_router(contact.router, prefix="/api/contact", tags=["contact"])
 app.include_router(spell_check.router, prefix="/api/books", tags=["spell-check"])
 app.include_router(auto_correct_rules.router, prefix="/api", tags=["spell-check"])
 app.include_router(dictionary.router, prefix="/api", tags=["dictionary"])
+
+
+@app.get("/api/config")
+async def get_public_config():
+    """Public endpoint — returns config the frontend needs before it can authenticate."""
+    return {"appId": settings.security_app_id}
 
 
 @app.get("/")
