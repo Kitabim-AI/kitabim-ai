@@ -4,15 +4,15 @@
 
 import React, { useState } from 'react';
 import { TableOfContents, Users, Settings, BarChart3, Mail, Sparkles, BookA } from 'lucide-react';
-import { useIsAdmin } from '../../hooks/useAuth';
+import { useI18n } from '../../i18n/I18nContext';
+import { useAppContext } from '../../context/AppContext';
+import { useAuth, useIsEditor, useIsAdmin } from '../../hooks/useAuth';
 import { UserManagementPanel } from './users/UserManagementPanel';
 import { SystemConfigPanel } from './config/SystemConfigPanel';
 import { AutoCorrectRulesPanel } from './rules/AutoCorrectRulesPanel';
 import { StatsPanel } from './StatsPanel';
 import { ContactSubmissionsPanel } from './ContactSubmissionsPanel';
 import { DictionaryManagementPanel } from './dictionary/DictionaryManagementPanel';
-import { useI18n } from '../../i18n/I18nContext';
-import { useAppContext } from '../../context/AppContext';
 
 interface AdminTabsProps {
   bookManagementPanel: React.ReactNode;
@@ -30,7 +30,22 @@ interface Tab {
 export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
   const { t } = useI18n();
   const { activeTab, setActiveTab } = useAppContext();
+  const { isLoading: authLoading, isAuthenticated } = useAuth();
+  const isEditor = useIsEditor();
   const isAdmin = useIsAdmin();
+
+  // Secondary Guard: Only editors can see any admin tab
+  if (!authLoading && !isEditor) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 animate-fade-in">
+        <div className="p-4 bg-red-50 text-red-500 rounded-full mb-4">
+           <Users size={32} />
+        </div>
+        <h3 className="text-xl font-bold text-slate-800">{t('admin.unauthorized')}</h3>
+        <p className="text-slate-500 mt-2">{t('admin.unauthorizedMessage') || 'Please log in with an administrator account to access this page.'}</p>
+      </div>
+    );
+  }
 
   const tabs: Tab[] = [
     { id: 'books', label: t('admin.booksLabel'), icon: <TableOfContents size={18} /> },

@@ -1,7 +1,7 @@
 /**
  * Contact form service for handling contact submission API calls.
  */
-import { APP_CLIENT_ID } from '../config';
+import { authFetch } from './authService';
 
 const API_BASE = '/api/contact';
 
@@ -28,12 +28,9 @@ export interface ContactSubmissionResponse {
 export async function submitContactForm(
   submission: ContactSubmission
 ): Promise<ContactSubmissionResponse> {
-  const response = await fetch(`${API_BASE}/submit`, {
+  const response = await authFetch(`${API_BASE}/submit`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Kitabim-App-Id': APP_CLIENT_ID,
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(submission),
   });
 

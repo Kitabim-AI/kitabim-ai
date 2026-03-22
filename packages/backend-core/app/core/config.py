@@ -81,7 +81,7 @@ class Settings:
     rag_eval_enabled: bool = os.getenv("RAG_EVAL_ENABLED", "false").lower() == "true"
 
     # Logging
-    log_level: str = os.getenv("LOG_LEVEL", "DEBUG")  # DEBUG, INFO, WARNING, ERROR
+    log_level: str = os.getenv("LOG_LEVEL", "WARNING")  # DEBUG, INFO, WARNING, ERROR
 
     # LLM Circuit Breaker
     llm_cb_failure_threshold: int = int(os.getenv("LLM_CB_FAILURE_THRESHOLD", "5"))
@@ -97,10 +97,13 @@ class Settings:
 
     # Pipeline Feature Flags
 
+    # Database query timeout (seconds) — prevents runaway queries from holding pool connections
+    db_query_timeout: int = int(os.getenv("DB_QUERY_TIMEOUT", "120"))
+
     # Authentication / JWT
     jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "")
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
-    jwt_access_token_expire_minutes: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
+    jwt_access_token_expire_minutes: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
     jwt_refresh_token_expire_days: int = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
     # Google OAuth
@@ -165,10 +168,7 @@ class Settings:
         "/api/assets/,/api/products/,/api/catalog/,/api/gallery/,/api/drive/,/api/s3/,/api/batch/,"
         "/api/bulk/,/api/multipart/,/api/upwload,/api/profile/,/api/account/,/api/users/avatar"
     )
-    security_app_id: str = os.getenv(
-        "SECURITY_APP_ID", 
-        "ec536d0187edf5100c11d4d4a4bd3f82"
-    )
+    security_app_id: str = os.getenv("SECURITY_APP_ID", "")
 
 
 

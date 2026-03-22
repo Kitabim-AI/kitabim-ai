@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import secrets
 import uuid
 import os
 import io
@@ -9,7 +10,7 @@ import warnings
 from datetime import datetime, timezone
 from typing import Optional, List
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Response, UploadFile
 from sqlalchemy import text, and_, or_, case, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 import random
@@ -210,12 +211,12 @@ async def process_cover_upload(file: UploadFile, book_id: str) -> str:
 
 @router.get("/", response_model=PaginatedBooks)
 async def get_books(
-    page: int = 1,
-    pageSize: int = 10,
-    q: Optional[str] = None,
-    category: Optional[str] = None,
-    sortBy: str = "title",
-    order: int = 1,
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(10, ge=1, le=50),
+    q: Optional[str] = Query(None, max_length=500),
+    category: Optional[str] = Query(None, max_length=100),
+    sortBy: str = Query("title", pattern="^(title|author|date|uploadDate|created_at|updated_at)$"),
+    order: int = Query(1),
     groupByWork: bool = False,
     includeStats: bool = False,
     current_user: Optional[User] = Depends(get_current_user_optional),
@@ -1062,7 +1063,7 @@ async def upload_pdf(
             temp_path.unlink(missing_ok=True)
             return {"bookId": str(existing.id), "status": "existing"}
 
-        book_id = hashlib.md5(f"{file.filename}{datetime.now(timezone.utc)}".encode()).hexdigest()[:12]
+        book_id = secrets.token_hex(6)
         remote_path = f"uploads/{book_id}{ext}"
         cover_url = None
         cover_temp_path = settings.uploads_dir / f".cover_{book_id}.jpg"

@@ -25,7 +25,7 @@ class RefreshTokensRepository(BaseRepository[RefreshToken]):
             and_(
                 RefreshToken.jti == jti,
                 RefreshToken.token_hash == token_hash,
-                not RefreshToken.revoked
+                ~RefreshToken.revoked
             )
         )
         result = await self.session.execute(stmt)
@@ -44,7 +44,7 @@ class RefreshTokensRepository(BaseRepository[RefreshToken]):
     async def revoke_all_for_user(self, user_id: str | UUID) -> int:
         stmt = (
             update(RefreshToken)
-            .where(and_(RefreshToken.user_id == user_id, not RefreshToken.revoked))
+            .where(and_(RefreshToken.user_id == user_id, ~RefreshToken.revoked))
             .values(revoked=True)
         )
         result = await self.session.execute(stmt)

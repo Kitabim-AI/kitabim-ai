@@ -199,7 +199,7 @@ async def oauth_callback(
         # Get user info from provider
         logger.info(f"Fetching user info from {provider}...")
         user_info = await oauth_provider.get_user_info(access_token)
-        logger.info(f"User info retrieved for {provider}: {user_info.email}")
+        logger.info(f"User info retrieved for {provider}")
 
         # Check if email is verified (skip for Twitter placeholder emails)
         if not user_info.email_verified and not user_info.email.endswith("@twitter.placeholder"):
@@ -232,12 +232,12 @@ async def oauth_callback(
                 avatar_url=user_info.picture,
                 last_login_ip=client_ip,
             )
-            logger.info(f"Created new user from {provider} OAuth: {user.id} ({user.email})")
+            logger.info(f"Created new user from {provider} OAuth: {user.id}")
         else:
             # Update last login and avatar
             client_ip = request.client.host if request.client else None
             await update_user_login(session, user.id, user_info.picture, client_ip)
-            logger.info(f"User logged in via {provider} OAuth: {user.id} ({user.email}) from {client_ip}")
+            logger.info(f"User logged in via {provider} OAuth: {user.id} from {client_ip}")
 
         # Check if user is active
         if not user.is_active:
@@ -476,11 +476,11 @@ def _success_response(access_token: str, refresh_token: str) -> HTMLResponse:
                         console.log('[Kitabim Auth] Opener origin:', openerOrigin);
                         console.log('[Kitabim Auth] Allowed origins:', allowedOrigins);
 
-                        // Post message to opener
+                        // Post message to opener using verified origin (no wildcard)
                         window.opener.postMessage({{
                             type: 'OAUTH_SUCCESS',
                             accessToken: accessToken
-                        }}, '*');
+                        }}, openerOrigin);
 
                         console.log('[Kitabim Auth] Message posted to opener origin, closing in 1000ms...');
                         setTimeout(() => window.close(), 1000);
@@ -526,10 +526,11 @@ def _success_response(access_token: str, refresh_token: str) -> HTMLResponse:
                     // After all attempts, if still no opener, handle the fallback
                     if (!notified) {{
                         console.log('[Kitabim Auth] Opener not found after retries, storing token and redirecting to app');
-                        // Store token in localStorage then redirect back to the app.
+                        // Store token in sessionStorage (clears when tab closes, not persisted).
+                        // useAuth reads and clears it immediately on load via recoverSessionToken().
                         // window.close() is blocked by Safari when not opened via window.open(),
                         // so we navigate back to the app root instead.
-                        localStorage.setItem('kitabim_access_token', accessToken);
+                        sessionStorage.setItem('kitabim_access_token_session', accessToken);
 
                         // Update UI while redirecting
                         const container = document.querySelector('.container');
@@ -579,6 +580,8 @@ def _error_response(message: str) -> HTMLResponse:
     """
     Generate HTML response for OAuth errors.
     """
+    allowed_origins_list = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
+    allowed_origins_json = str(allowed_origins_list).replace("'", '"')
     html = f"""
     <!DOCTYPE html>
     <html>
@@ -636,11 +639,14 @@ def _error_response(message: str) -> HTMLResponse:
         <script>
             // Notify opener of error
             if (window.opener && !window.opener.closed) {{
+                const allowedOrigins = {allowed_origins_json};
                 try {{
-                    window.opener.postMessage({{
-                        type: 'OAUTH_ERROR',
-                        error: "{message}"
-                    }}, '*');
+                    for (const origin of allowedOrigins) {{
+                        window.opener.postMessage({{
+                            type: 'OAUTH_ERROR',
+                            error: "{message}"
+                        }}, origin);
+                    }}
                     // Auto-close after a short delay
                     setTimeout(() => window.close(), 2000);
                 }} catch (err) {{
