@@ -399,16 +399,13 @@
       "subtitle": "لۇغەت سۆزلىرىنى ئىزدەش، قوشۇش ياكى ئۆچۈرۈش.",
       "searchPlaceholder": "سۆز ئىزدەش...",
       "searchPlaceholderWithCount": "{{count}} سۆز ئىچىدىن ئىزدەش...",
+      "totalWords": "جەمئىي {{count}} سۆز",
       "addWord": "لۇغەتكە قوشۇش",
       "removeWord": "لۇغەتتىن ئۆچۈرۈش",
       "confirmDeleteTitle": "لۇغەتتىن ئۆچۈرۈش",
       "confirmDelete": "«{{word}}» سۆزىنى لۇغەتتىن راستىنلا ئۆچۈرەمسىز؟ ",
       "wordExists": "بۇ سۆز لۇغەتتە بار.",
       "wordNotFound": "بۇ سۆز لۇغەتتە يوق.",
-      "stats": {
-        "total": "جەمئىي سۆزلەر",
-        "totalWords": "{{count}} جەمئىي سۆز"
-      },
       "emptyStateTitle": "كىتابىم ئىملا لۇغىتىدىن سۆز ئىزدەڭ"
     }
   },

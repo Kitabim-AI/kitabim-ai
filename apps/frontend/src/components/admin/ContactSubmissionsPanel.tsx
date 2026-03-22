@@ -81,7 +81,7 @@ export function ContactSubmissionsPanel() {
   return (
     <div className="space-y-6 md:space-y-8 animate-fade-in" dir="rtl" lang="ug">
       {/* Search and Filter Row - matching other tabs layout */}
-      <div className="flex flex-col md:flex-row gap-3 md:gap-4 items-center">
+      <div className="flex flex-col-reverse md:flex-row gap-3 md:gap-4 items-center">
         <div className="relative flex-1 lg:flex-none lg:w-[30%] group w-full">
           <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1]">
             <Search size={18} strokeWidth={3} />
@@ -103,7 +103,7 @@ export function ContactSubmissionsPanel() {
           )}
         </div>
 
-        <div className="flex gap-2 flex-wrap md:mr-auto">
+        <div className="flex gap-2 flex-wrap w-full justify-end md:w-auto md:justify-start md:mr-auto">
           {(['all', 'new', 'reviewed', 'contacted', 'archived'] as StatusFilter[]).map((filter) => (
             <button
               key={filter}

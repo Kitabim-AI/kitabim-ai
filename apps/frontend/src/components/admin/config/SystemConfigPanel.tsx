@@ -475,7 +475,7 @@ export function SystemConfigPanel() {
 
       {/* Search and Action Bar - matching other tabs layout */}
       {!isLoading && (
-        <div className="flex flex-col md:flex-row gap-3 md:gap-4 items-center">
+        <div className="flex flex-col-reverse md:flex-row gap-3 md:gap-4 items-center">
           <div className="relative flex-1 lg:flex-none lg:w-[30%] group w-full">
             <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1]">
               <RefreshCw size={18} className="hidden" /> {/* dummy for layout matching */}
@@ -498,8 +498,8 @@ export function SystemConfigPanel() {
               </button>
             )}
           </div>
-
-          <div className="flex items-center gap-2 md:gap-3 shrink-0 md:mr-auto">
+  
+          <div className="flex items-center gap-2 md:gap-3 shrink-0 w-full justify-end md:w-auto md:justify-start md:mr-auto">
             <button
               onClick={loadConfigs}
               className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-2.5 bg-white text-[#0369a1] rounded-xl border border-[#0369a1]/20 hover:border-[#0369a1] transition-all shadow-sm"

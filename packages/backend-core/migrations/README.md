@@ -14,7 +14,7 @@ Migrations follow the pattern: `NNN_description.sql`
 
 ```bash
 # Run a specific migration on local database
-psql -h localhost -p 5432 -U omarjan -d kitabim-ai -f packages/backend-core/migrations/033_reset_spell_check_for_new_logic.sql
+psql -h localhost -p 5532 -U omarjan -d kitabim-ai -f packages/backend-core/migrations/033_reset_spell_check_for_new_logic.sql
 ```
 
 ### Production
@@ -100,7 +100,7 @@ Rollback migrations follow the pattern: `NNN_rollback_description.sql`
 To rollback a migration:
 ```bash
 # Local
-psql -h localhost -p 5432 -U omarjan -d kitabim-ai \
+psql -h localhost -p 5532 -U omarjan -d kitabim-ai \
   -f packages/backend-core/migrations/033_rollback_reset_spell_check_for_new_logic.sql
 
 # Production
