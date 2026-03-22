@@ -28,9 +28,15 @@ export const DictionaryManagementPanel: React.FC = () => {
   const [lastAction, setLastAction] = useState<{ type: 'add' | 'delete', word: string } | null>(null);
   const [stats, setStats] = useState<{ total_words: number } | null>(null);
 
-  // Removed debounceTimer useRef as the new useEffect handles debouncing directly
+  // Infinite Scroll State
+  const [allWords, setAllWords] = useState<DictionaryWord[]>([]);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const loaderRef = useRef<HTMLDivElement>(null);
+  const PAGE_SIZE = 20;
 
-  const fetchStats = async () => { // No longer useCallback
+  const fetchStats = async () => {
     try {
       const resp = await authFetch('/api/spell-check/dictionary/stats');
       if (resp.ok) {
@@ -42,21 +48,41 @@ export const DictionaryManagementPanel: React.FC = () => {
     }
   };
 
-  const searchWords = async (q: string) => { // No longer useCallback
+  const fetchAllWords = useCallback(async (pageNum: number, clear: boolean = false) => {
+    if (isLoadingMore) return;
+    setIsLoadingMore(true);
+    try {
+      const resp = await authFetch(`/api/spell-check/dictionary?skip=${pageNum * PAGE_SIZE}&limit=${PAGE_SIZE}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        if (clear) {
+          setAllWords(data);
+        } else {
+          setAllWords(prev => [...prev, ...data]);
+        }
+        setHasMore(data.length === PAGE_SIZE);
+      }
+    } catch (e) {
+      console.error('Failed to fetch words', e);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [isLoadingMore]);
+
+  const searchWords = async (q: string) => {
     if (!q.trim()) {
       setSuggestions([]);
-      setExactMatch(null); // Reset exact match
+      setExactMatch(null); 
       return;
     }
 
     setIsSearching(true);
     try {
-      const resp = await authFetch(`/api/spell-check/dictionary/search?q=${encodeURIComponent(q)}&limit=10`); // Added limit back
+      const resp = await authFetch(`/api/spell-check/dictionary/search?q=${encodeURIComponent(q)}&limit=10`);
       if (resp.ok) {
         const data = await resp.json();
         setSuggestions(data);
         
-        // Find exact match
         const exact = data.find((d: DictionaryWord) => d.word === q.trim());
         setExactMatch(exact || null);
       }
@@ -69,14 +95,33 @@ export const DictionaryManagementPanel: React.FC = () => {
 
   useEffect(() => {
     fetchStats();
-  }, []); // Dependency array changed
+    fetchAllWords(0, true);
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       searchWords(searchQuery);
     }, 300);
     return () => clearTimeout(timer);
-  }, [searchQuery]); // Dependency array changed
+  }, [searchQuery]);
+
+  // Infinite Scroll Observer
+  useEffect(() => {
+    if (!hasMore || isLoadingMore || searchQuery.trim()) return;
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        const next = page + 1;
+        setPage(next);
+        fetchAllWords(next);
+      }
+    }, { threshold: 0.1 });
+
+    if (loaderRef.current) {
+      observer.observe(loaderRef.current);
+    }
+    return () => observer.disconnect();
+  }, [hasMore, isLoadingMore, page, fetchAllWords, searchQuery]);
 
   const handleAddWord = async (word: string) => {
     const val = word.trim();
@@ -93,7 +138,9 @@ export const DictionaryManagementPanel: React.FC = () => {
       if (resp.ok) {
         setLastAction({ type: 'add', word: val });
         setSearchQuery('');
-        searchWords(''); // Call searchWords with empty string to clear results and refresh
+        // Refresh full list and stats
+        setPage(0);
+        fetchAllWords(0, true);
         fetchStats();
       }
     } catch (e) {
@@ -103,7 +150,7 @@ export const DictionaryManagementPanel: React.FC = () => {
     }
   };
 
-  const handleDeleteWord = (word: string) => { // Refactored to use modal
+  const handleDeleteWord = (word: string) => {
     setModal({
       isOpen: true,
       title: t('admin.dictionary.confirmDeleteTitle'),
@@ -113,7 +160,7 @@ export const DictionaryManagementPanel: React.FC = () => {
       destructive: true,
       onConfirm: async () => {
         setIsDeleting(word);
-        setModal((prev: any) => ({ ...prev, isOpen: false })); // Close modal immediately
+        setModal((prev: any) => ({ ...prev, isOpen: false })); 
         try {
           const resp = await authFetch(`/api/spell-check/dictionary/${encodeURIComponent(word)}`, {
             method: 'DELETE',
@@ -121,12 +168,12 @@ export const DictionaryManagementPanel: React.FC = () => {
 
           if (resp.ok) {
             setLastAction({ type: 'delete', word });
-            if (searchQuery === word) {
-               setSearchQuery('');
+            if (searchQuery) {
+              searchWords(searchQuery);
             } else {
-               searchWords(searchQuery); // Refresh search results
+              setAllWords(prev => prev.filter(w => w.word !== word));
             }
-            fetchStats(); // Refresh stats
+            fetchStats();
           }
         } catch (e) {
           console.error('Failed to delete word', e);
@@ -137,16 +184,14 @@ export const DictionaryManagementPanel: React.FC = () => {
     });
   };
 
-  // Removed: const exactMatch = suggestions.find(s => s.word === searchQuery.trim()); // Now a state variable
+  const activeWords = searchQuery.trim() ? suggestions : allWords;
 
   return (
     <div className="space-y-6 md:space-y-8 animate-fade-in pb-20" dir="rtl" lang="ug">
       {/* Header */}
 
-
-
-      {/* Main Search & Tool Section - centered as an exception with side-by-side elements */}
-      <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-center gap-3 md:gap-4 py-4 md:py-8">
+      {/* Main Search & Tool Section */}
+      <div className="flex flex-col-reverse md:flex-row items-center justify-between w-full gap-3 md:gap-4 py-4 md:py-8">
         <div className="relative flex-1 lg:flex-none lg:w-[40%] group w-full">
           <div className="absolute inset-y-0 right-4 md:right-5 flex items-center pointer-events-none text-[#0369a1] transition-colors z-10 font-bold">
             {isSearching ? (
@@ -160,7 +205,7 @@ export const DictionaryManagementPanel: React.FC = () => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pr-11 md:pr-14 pl-20 md:pl-28 py-2.5 md:py-3 bg-white border-2 border-[#0369a1]/10 rounded-2xl uyghur-text outline-none focus:border-[#0369a1] transition-all shadow-sm placeholder:text-slate-300 text-base"
-            placeholder={stats ? t('admin.dictionary.searchPlaceholderWithCount', { count: stats.total_words.toLocaleString() }) : t('admin.dictionary.searchPlaceholder')}
+            placeholder={t('admin.dictionary.searchPlaceholder')}
             dir="rtl"
           />
           <div className="absolute inset-y-0 left-3 md:left-4 flex items-center gap-1 md:gap-2 z-10">
@@ -185,25 +230,25 @@ export const DictionaryManagementPanel: React.FC = () => {
             )}
           </div>
         </div>
+
+        {stats && (
+          <div className="flex items-center gap-2 text-[12px] md:text-[14px] font-normal text-[#0369a1] bg-[#0369a1]/10 px-3 md:px-4 py-2 md:py-2.5 rounded-full border border-[#0369a1]/20 shadow-sm whitespace-nowrap self-end md:self-auto md:mr-auto">
+            <Hash size={12} className="md:w-[14px] md:h-[14px]" />
+            {t('admin.dictionary.totalWords', { count: stats.total_words.toLocaleString() })}
+          </div>
+        )}
       </div>
 
-        {/* Empty State / Search Results / Suggestions */}
+        {/* Search Results / Full List */}
         <div className="space-y-3">
-          {!searchQuery.trim() && (
-            <div className="max-w-7xl mx-auto flex flex-col items-center justify-center py-12 md:py-20 text-center opacity-40 animate-fade-in">
-              <div className="p-6 md:p-8 bg-slate-100/50 rounded-full mb-4 md:mb-6 ring-8 ring-slate-50/50">
-                <BookA size={48} strokeWidth={1.5} className="text-[#0369a1]" />
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-xl md:text-2xl font-normal text-slate-600 uyghur-text">
-                  {t('admin.dictionary.emptyStateTitle')}
-                </h3>
-              </div>
-            </div>
+          {isSearching && activeWords.length === 0 && (
+             <div className="flex justify-center py-20">
+                <Loader2 size={40} className="animate-spin text-[#0369a1]/20" />
+             </div>
           )}
 
           {searchQuery.trim() && !isSearching && suggestions.length === 0 && (
-            <div className="glass-panel rounded-[24px] md:rounded-[32px] py-8 md:py-12 px-4 md:px-8 flex flex-col items-center justify-center gap-3 md:gap-4 text-center animate-fade-in shadow-lg">
+            <div className="glass-panel rounded-[24px] md:rounded-[32px] py-8 md:py-12 px-4 md:px-8 flex flex-col items-center justify-center gap-3 md:gap-4 text-center animate-fade-in shadow-lg border border-[#0369a1]/10">
                <div className="p-3 md:p-4 bg-amber-50 text-amber-500 rounded-full shadow-inner ring-4 ring-amber-50/50">
                   <AlertCircle className="w-6 h-6 md:w-8 md:h-8" />
                </div>
@@ -214,42 +259,51 @@ export const DictionaryManagementPanel: React.FC = () => {
             </div>
           )}
 
-          {suggestions.length > 0 && (
-            <div className="glass-panel rounded-[32px] p-2 overflow-hidden shadow-xl animate-fade-in">
-               <div className="grid grid-cols-1 gap-1">
-                  {suggestions.map((entry) => (
-                    <div 
-                      key={entry.id} 
-                      className={`
-                        flex items-center justify-between px-4 md:px-6 py-3 md:py-4 rounded-2xl transition-all group
-                        ${entry.word === searchQuery.trim() ? 'bg-[#0369a1]/5 ring-1 ring-[#0369a1]/10' : 'hover:bg-slate-50/50'}
-                      `}
-                    >
-                      <div className="flex items-center gap-3 md:gap-4">
-                        <div className={`p-1.5 md:p-2 rounded-lg ${entry.word === searchQuery.trim() ? 'bg-[#0369a1] text-white' : 'bg-slate-100 text-slate-400'}`}>
-                           <Check size={14} strokeWidth={3} className="w-3 h-3 md:w-3.5 md:h-3.5" />
-                        </div>
-                        <span className={`uyghur-text text-[15px] md:text-xl ${entry.word === searchQuery.trim() ? 'font-bold text-[#0369a1]' : 'text-slate-700 font-normal'}`}>
-                           {entry.word}
-                        </span>
-                        {entry.word === searchQuery.trim() && (
-                          <span className="text-[8px] md:text-[10px] font-bold text-[#0369a1]/60 uppercase tracking-widest bg-[#0369a1]/10 px-2 md:px-2.5 py-0.5 md:py-1 rounded-full border border-[#0369a1]/10">
-                             {t('admin.dictionary.wordExists')}
-                          </span>
-                        )}
-                      </div>
-                      
-                      <button
-                        onClick={() => handleDeleteWord(entry.word)}
-                        disabled={isDeleting === entry.word}
-                        className="p-2.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover:opacity-100 active:scale-90"
-                        title={t('admin.dictionary.removeWord')}
+          {activeWords.length > 0 && (
+            <div className="space-y-3">
+              <div className="glass-panel rounded-[32px] p-2 overflow-hidden shadow-xl animate-fade-in border border-[#0369a1]/5">
+                <div className="grid grid-cols-1 gap-1">
+                    {activeWords.map((entry) => (
+                      <div 
+                        key={entry.id} 
+                        className={`
+                          flex items-center justify-between px-4 md:px-6 py-3 md:py-4 rounded-2xl transition-all group
+                          ${entry.word === searchQuery.trim() ? 'bg-[#0369a1]/5 ring-1 ring-[#0369a1]/10' : 'hover:bg-slate-50/50'}
+                        `}
                       >
-                        {isDeleting === entry.word ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}
-                      </button>
-                    </div>
-                  ))}
-               </div>
+                        <div className="flex items-center gap-3 md:gap-4">
+                          <div className={`p-1.5 md:p-2 rounded-lg ${entry.word === searchQuery.trim() ? 'bg-[#0369a1] text-white' : 'bg-slate-100 text-slate-400'}`}>
+                             <Check size={14} strokeWidth={3} className="w-3 h-3 md:w-3.5 md:h-3.5" />
+                          </div>
+                          <span className={`uyghur-text text-[15px] md:text-xl ${entry.word === searchQuery.trim() ? 'font-bold text-[#0369a1]' : 'text-slate-700 font-normal'}`}>
+                             {entry.word}
+                          </span>
+                          {entry.word === searchQuery.trim() && (
+                            <span className="text-[8px] md:text-[10px] font-bold text-[#0369a1]/60 uppercase tracking-widest bg-[#0369a1]/10 px-2 md:px-2.5 py-0.5 md:py-1 rounded-full border border-[#0369a1]/10">
+                               {t('admin.dictionary.wordExists')}
+                            </span>
+                          )}
+                        </div>
+                        
+                        <button
+                          onClick={() => handleDeleteWord(entry.word)}
+                          disabled={isDeleting === entry.word}
+                          className="p-2.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover:opacity-100 active:scale-90"
+                          title={t('admin.dictionary.removeWord')}
+                        >
+                          {isDeleting === entry.word ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              </div>
+
+              {/* Loader Trigger for Infinite Scroll */}
+              {!searchQuery.trim() && hasMore && (
+                <div ref={loaderRef} className="flex justify-center py-8">
+                  <Loader2 size={24} className="animate-spin text-[#0369a1]/40" />
+                </div>
+              )}
             </div>
           )}
         </div>

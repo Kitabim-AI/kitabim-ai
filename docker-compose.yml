@@ -28,7 +28,7 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql://omarjan@host.docker.internal:5432/kitabim-ai
+      - DATABASE_URL=postgresql://omarjan@host.docker.internal:5532/kitabim-ai
       - REDIS_URL=redis://redis:6379/0
       - DATA_DIR=/app/data
       - GOOGLE_APPLICATION_CREDENTIALS=/etc/gcs/key.json
@@ -65,7 +65,7 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql://omarjan@host.docker.internal:5432/kitabim-ai
+      - DATABASE_URL=postgresql://omarjan@host.docker.internal:5532/kitabim-ai
       - REDIS_URL=redis://redis:6379/0
       - DATA_DIR=/app/data
       - GOOGLE_APPLICATION_CREDENTIALS=/etc/gcs/key.json

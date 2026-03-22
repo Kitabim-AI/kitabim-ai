@@ -168,11 +168,7 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick }) => {
 
             {/* Left side: Stats & Status (in RTL) */}
             <div className="flex items-center gap-2 sm:gap-3 text-[#64748b] shrink-0 font-medium">
-              {book.pipelineStep && book.pipelineStep !== 'ready' && (
-                <span className={`px-1.5 py-0.5 rounded-md font-bold uppercase text-[9px] sm:text-[10px] ${getStatusStyles(book.pipelineStep)}`}>
-                  {t(`bookCard.pipeline.${book.pipelineStep}`) || book.pipelineStep}
-                </span>
-              )}
+
 
               {book.status === 'ready' && (book.readCount ?? 0) > 0 && (
                 <span className="flex items-center gap-1 text-[10px] sm:text-xs">

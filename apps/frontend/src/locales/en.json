@@ -398,6 +398,7 @@
       "subtitle": "Search, add or remove dictionary words.",
       "searchPlaceholder": "Search word...",
       "searchPlaceholderWithCount": "Search within {{count}} words...",
+      "totalWords": "Total {{count}} words",
       "addWord": "Add to Dictionary",
       "removeWord": "Remove from Dictionary",
       "confirmDeleteTitle": "Remove from Dictionary",
@@ -405,8 +406,7 @@
       "wordExists": "Word exists in dictionary.",
       "wordNotFound": "Word not found in dictionary.",
       "stats": {
-        "total": "Total Words",
-        "totalWords": "{{count}} total words"
+        "total": "Total Words"
       },
       "emptyStateTitle": "Search Dictionary"
     }

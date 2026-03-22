@@ -277,7 +277,7 @@ export const AdminView: React.FC = () => {
 
 
       {/* Search and Filters Bar */}
-      <div className="flex flex-col md:flex-row gap-3 md:gap-4">
+      <div className="flex flex-col-reverse md:flex-row gap-3 md:gap-4">
         <div className="relative flex-1 lg:flex-none lg:w-[30%] group">
           <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1] transition-colors">
             {(isInitialLoading || isLoadingMore) && localSearch ? (
@@ -303,7 +303,7 @@ export const AdminView: React.FC = () => {
           )}
         </div>
 
-        <div className="flex items-center gap-2 text-[12px] md:text-[14px] font-normal text-[#0369a1] bg-[#0369a1]/10 px-3 md:px-4 py-2 md:py-2.5 rounded-full border border-[#0369a1]/20 shadow-sm whitespace-nowrap self-start md:self-auto md:mr-auto">
+        <div className="flex items-center gap-2 text-[12px] md:text-[14px] font-normal text-[#0369a1] bg-[#0369a1]/10 px-3 md:px-4 py-2 md:py-2.5 rounded-full border border-[#0369a1]/20 shadow-sm whitespace-nowrap self-end md:self-auto md:mr-auto">
           <TableOfContents size={12} className="md:w-[14px] md:h-[14px]" />
           {t('chat.libraryBookCount', { count: totalBooks })}
         </div>
@@ -392,12 +392,21 @@ export const AdminView: React.FC = () => {
                               <div className="text-[10px] md:text-[12px] font-bold text-slate-400 mt-0.5">{t('book.pagesCount', { count: book.totalPages || 0 })}</div>
                               
                               {/* Mobile Pipeline Progress */}
-                              <div className="flex md:hidden items-center gap-1.5 mt-2 opacity-80">
-                                <ScanText size={14} className={book.pipelineStats ? getPipelineIconClass(book, PIPELINE_STEP.OCR, false, false) : getMilestoneColor(book, PIPELINE_STEP.OCR)} />
-                                <Scissors size={14} className={book.pipelineStats ? getPipelineIconClass(book, PIPELINE_STEP.CHUNKING, false, false) : getMilestoneColor(book, PIPELINE_STEP.CHUNKING)} />
-                                <Cuboid size={14} className={book.pipelineStats ? getPipelineIconClass(book, PIPELINE_STEP.EMBEDDING, false, false) : getMilestoneColor(book, PIPELINE_STEP.EMBEDDING)} />
-                                <Wand2 size={14} className={book.pipelineStats ? getPipelineIconClass(book, PIPELINE_STEP.SUMMARY, false, false) : getMilestoneColor(book, PIPELINE_STEP.SUMMARY)} />
-                                <BookOpenCheck size={14} className={book.pipelineStats ? getPipelineIconClass(book, PIPELINE_STEP.SPELL_CHECK, false, false) : getMilestoneColor(book, PIPELINE_STEP.SPELL_CHECK)} />
+                              <div className="flex md:hidden items-center gap-1.5 mt-2">
+                                {[
+                                  { key: PIPELINE_STEP.OCR, icon: ScanText },
+                                  { key: PIPELINE_STEP.CHUNKING, icon: Scissors },
+                                  { key: PIPELINE_STEP.EMBEDDING, icon: Cuboid },
+                                  { key: PIPELINE_STEP.SUMMARY, icon: Wand2 },
+                                  { key: PIPELINE_STEP.SPELL_CHECK, icon: BookOpenCheck }
+                                ].map(({ key, icon: Icon }) => {
+                                  // Use the same refined color logic as desktop view
+                                  const colorClass = (book.pipelineStats && (book.pipelineStats[key] !== undefined || book.pipelineStats[`${key}_active`] !== undefined))
+                                    ? getPipelineIconClass(book, key, false, false)
+                                    : getMilestoneColor(book, key);
+                                  
+                                  return <Icon key={key} size={14} className={`${colorClass} transition-colors duration-300`} />;
+                                })}
                               </div>
                             </button>
                           )}

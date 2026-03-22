@@ -102,6 +102,24 @@ async def get_dictionary_stats(
     return {"total_words": res.scalar() or 0}
 
 
+@router.get("/spell-check/dictionary", response_model=List[DictionaryWordOut])
+async def list_dictionary_words(
+    skip: int = 0,
+    limit: int = 20,
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """List words in the dictionary with pagination, sorted by latest added (ID DESC)."""
+    stmt = (
+        select(Dictionary)
+        .order_by(Dictionary.id.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    res = await session.execute(stmt)
+    return res.scalars().all()
+
+
 @router.delete("/spell-check/dictionary/{word}")
 async def delete_from_dictionary(
     word: str,

@@ -26,7 +26,7 @@ The intelligent Uyghur Digital Library platform for OCR, curation, and RAG-power
 All configuration is managed via the root-level `.env` file. See `.env.template` for available variables.
 
 Notes:
-- `DATABASE_URL` connects to your **host PostgreSQL** via `host.docker.internal:5432`.
+- `DATABASE_URL` connects to your **host PostgreSQL** via `host.docker.internal:5532`.
 - `GEMINI_API_KEY` is required for AI features.
 - Local storage at `./data` is mounted to the containers for persistent uploads and covers.
 
@@ -41,7 +41,7 @@ cp .env.template .env
 ```
 
 **2. Database Prerequisites**
-Ensure **PostgreSQL** is running on your host machine at port `5432`. The app connects via `host.docker.internal`.
+Ensure **PostgreSQL** is running on your host machine at port `5532`. The app connects via `host.docker.internal`.
 
 **3. Launch Services**
 Build and start all services in the background:

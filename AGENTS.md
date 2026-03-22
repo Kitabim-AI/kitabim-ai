@@ -19,7 +19,7 @@ This file provides guidance for automated agents working in this repo.
 
 ## Local Dev (Docker Compose)
 - Build images and start all services using `./deploy/local/rebuild-and-restart.sh all`.
-- The application connects to PostgreSQL on your local host via `host.docker.internal:5432`.
+- The application connects to PostgreSQL on your local host via `host.docker.internal:5532`.
 - **CRITICAL LOCAL RULE**: Do not rely on local dev servers (like `npm run dev`) for final change application. You MUST always use Docker Compose to ensure changes are reflected. Run `./deploy/local/rebuild-and-restart.sh [frontend|backend|worker|all]` to rebuild and restart services after modifying files.
 
 ## Production Deployment
