@@ -12,47 +12,35 @@ interface ShellProps {
 
 export const Shell: React.FC<ShellProps> = ({ children }) => {
   const {
-    view,
-    setView,
-    searchQuery,
-    setSearchQuery,
-    homeSearchQuery,
     bookActions,
-    chat,
-    setPage,
-    isLoading,
     modal,
     setModal,
     isReaderFullscreen,
+    view,
   } = useAppContext();
   const { t } = useI18n();
 
-  // Fix iOS Safari keyboard dismiss leaving page scrolled with empty space at bottom
-  React.useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-    let keyboardOpen = false;
-    const handleResize = () => {
-      const shrunk = vv.height < window.innerHeight * 0.85;
-      if (keyboardOpen && !shrunk) {
-        // keyboard just closed — reset scroll
-        requestAnimationFrame(() => window.scrollTo(0, 0));
-      }
-      keyboardOpen = shrunk;
-    };
-    vv.addEventListener('resize', handleResize);
-    return () => vv.removeEventListener('resize', handleResize);
-  }, []);
-
   return (
-    <div className="min-h-[100dvh] bg-transparent flex flex-col font-sans relative overflow-x-hidden notranslate" dir="rtl" translate="no">
+    <div className="h-[100dvh] bg-transparent flex flex-col font-sans relative overflow-hidden notranslate" dir="rtl" translate="no">
       <div className={isReaderFullscreen ? 'hidden lg:block' : ''}>
         <Navbar />
       </div>
 
-      <main className="flex-grow pt-[72px] sm:pt-[88px] lg:pt-[96px] px-0 sm:px-2 md:px-4 lg:px-8 max-w-[1600px] mx-auto w-full relative z-10">
+      <main className="flex-grow overflow-y-auto overscroll-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden pt-[72px] sm:pt-[88px] lg:pt-[96px] px-0 sm:px-2 md:px-4 lg:px-8 max-w-[1600px] mx-auto w-full relative z-10">
 
         {children}
+
+        <footer className={`mt-8 mb-6 border-t border-[#0369a1]/10 pt-4 flex flex-col sm:flex-row items-center justify-between gap-2 w-full px-4 sm:px-2 ${view === 'join-us' ? 'max-w-6xl mx-auto' : ['global-chat', 'spell-check'].includes(view) ? 'lg:max-w-5xl lg:mx-auto' : ''}`} dir="rtl">
+          <p className="text-xs text-slate-400 font-normal uyghur-text">
+            © {new Date().getFullYear()} Kitabim.AI — {t('app.footer.copyright')}
+          </p>
+          <a
+            href="mailto:contact@kitabim.ai"
+            className="text-xs text-slate-400 font-normal uyghur-text hover:text-[#0369a1] transition-colors"
+          >
+            {t('app.footer.contactUs')}: contact@kitabim.ai
+          </a>
+        </footer>
       </main>
 
       <SearchOverlay />

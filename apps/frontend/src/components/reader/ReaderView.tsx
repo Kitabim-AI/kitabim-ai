@@ -327,7 +327,7 @@ export const ReaderView: React.FC = () => {
   return (
     <div className={isFullscreen
       ? 'fixed inset-0 z-50 flex flex-col bg-[#f0f4f8] notranslate'
-      : `h-[calc(100dvh-72px)] sm:h-[calc(100dvh-88px)] md:h-[calc(100dvh-120px)] flex flex-col xl:flex-row-reverse ${mobileTab === 'chat' ? 'gap-3' : 'gap-4'} xl:gap-6 py-0 md:py-4 notranslate`
+      : `min-h-[calc(100dvh-72px)] sm:min-h-[calc(100dvh-88px)] md:min-h-[calc(100dvh-120px)] flex flex-col xl:flex-row-reverse ${mobileTab === 'chat' ? 'gap-3' : 'gap-4'} xl:gap-6 py-0 md:py-4 notranslate`
     } lang="ug" translate="no">
       {/* Mobile/Tablet Tab Switcher */}
       <div className={`xl:hidden flex gap-2 ${mobileTab === 'reader' ? 'px-2' : 'p-2'}${isFullscreen ? ' hidden' : ''}`}>
@@ -508,9 +508,9 @@ export const ReaderView: React.FC = () => {
 
       {/* Sidebar Area */}
       <div className={`w-full xl:w-[500px] 2xl:w-[600px] flex-col gap-4 xl:gap-6 ${isFullscreen ? 'hidden' : mobileTab === 'chat' ? 'flex flex-grow' : 'hidden xl:flex'}`}>
-        <GlassPanel className={`h-full flex flex-col overflow-hidden ${mobileTab === 'chat' ? 'rounded-[24px] border' : 'rounded-none xl:rounded-[32px] border'} p-3 sm:p-4 xl:p-6 shadow-xl border-[#0369a1]/10`}>
+        <GlassPanel className={`h-full flex flex-col ${mobileTab === 'chat' ? 'rounded-[24px] border' : 'rounded-none xl:rounded-[32px] border'} p-3 sm:p-4 xl:p-6 shadow-xl border-[#0369a1]/10`}>
           {/* Panel content */}
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 min-h-0">
             <ChatInterface
               type="book"
               chatMessages={chat.chatMessages}

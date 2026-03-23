@@ -1,7 +1,8 @@
-import React from 'react';
-import { X, Send, Bot, User, BookOpen, LogIn, ChevronDown } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Send, Bot, User, LogIn, ChevronDown } from 'lucide-react';
 import { Message, Book } from '@shared/types';
 import { useI18n } from '../../i18n/I18nContext';
+import { translations } from '../../i18n/i18n';
 import { useAuth } from '../../hooks/useAuth';
 import { useAppContext } from '../../context/AppContext';
 import { OAuthButtonGroup } from '../auth/AuthButton';
@@ -10,6 +11,58 @@ import { ReferenceModal } from './ReferenceModal';
 import { ProverbDisplay } from '../common/ProverbDisplay';
 import { CHARACTERS } from '../../constants/characters';
 
+const CHAR_INTERVAL = 55;   // ms per character
+const HOLD_AFTER_TYPED = 1800; // ms to hold the full phrase before switching
+const FADE_DURATION = 350;  // ms fade out
+
+function TypingCarousel({ className }: { className?: string }) {
+  const { language } = useI18n();
+  const phrases: string[] = (translations[language] as any)?.chat?.thinkingPhrases ?? [];
+  const [phraseIdx, setPhraseIdx] = useState(0);
+  const [charIdx, setCharIdx] = useState(0);
+  const [visible, setVisible] = useState(true);
+
+  const phrase = phrases[phraseIdx] ?? '';
+
+  // Character-by-character typing, then hold, then fade and advance
+  useEffect(() => {
+    if (!phrases.length) return;
+    if (charIdx < phrase.length) {
+      const t = setTimeout(() => setCharIdx(i => i + 1), CHAR_INTERVAL);
+      return () => clearTimeout(t);
+    }
+    // Fully typed — hold, then fade out and switch
+    const t = setTimeout(() => {
+      setVisible(false);
+      setTimeout(() => {
+        setPhraseIdx(i => (i + 1) % phrases.length);
+        setCharIdx(0);
+        setVisible(true);
+      }, FADE_DURATION);
+    }, HOLD_AFTER_TYPED);
+    return () => clearTimeout(t);
+  }, [charIdx, phrase, phrases.length]);
+
+  const displayed = phrase.slice(0, charIdx);
+  const isTyping = charIdx < phrase.length;
+
+  return (
+    <span
+      key={phraseIdx}
+      dir="rtl"
+      className={`uyghur-text transition-opacity ${visible ? 'opacity-100' : 'opacity-0'} ${className ?? ''}`}
+      style={{ transitionDuration: `${FADE_DURATION}ms` }}
+    >
+      {displayed}
+      {isTyping && (
+        <span
+          className="inline-block w-[2px] bg-current align-middle mx-px animate-[blink_0.9s_step-end_infinite]"
+          style={{ height: '1em' }}
+        />
+      )}
+    </span>
+  );
+}
 
 interface ChatInterfaceProps {
   type: 'book' | 'global';
@@ -31,8 +84,6 @@ interface ChatInterfaceProps {
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   type,
-  books = [],
-  totalReady = 0,
   chatMessages,
   chatInput,
   setChatInput,
@@ -165,7 +216,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     className="text-white uyghur-text [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white [&_a]:text-blue-100 [&_button]:text-blue-100 [&_a]:decoration-blue-100/50 [&_button]:decoration-blue-100/50"
                     style={{ fontSize: `${fontSize}px` }}
                   />
-                  <span className="inline-block w-[2px] h-5 bg-white/70 ml-1 animate-pulse" />
                 </div>
               </div>
             </div>
@@ -175,10 +225,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               <div className="w-7 h-7 md:w-10 md:h-10 shrink-0 rounded-xl md:rounded-2xl bg-[#0369a1] text-white flex items-center justify-center shadow-xl shadow-[#0369a1]/20 animate-pulse">
                 <span className="text-lg md:text-xl">{currentCharacter.avatar_emoji}</span>
               </div>
-              <div className="bg-[#0369a1]/10 px-5 py-4 rounded-[28px] rounded-tl-none flex gap-2 items-center border border-[#0369a1]/10 shadow-sm animate-bounce">
-                <div className="w-2 h-2 bg-[#0369a1] rounded-full animate-bounce" />
-                <div className="w-2 h-2 bg-[#0369a1] rounded-full animate-bounce [animation-delay:0.2s]" />
-                <div className="w-2 h-2 bg-[#0369a1] rounded-full animate-bounce [animation-delay:0.4s]" />
+              <div className="bg-[#0369a1]/10 px-5 py-4 rounded-[28px] rounded-tl-none flex gap-2 items-center border border-[#0369a1]/10 shadow-sm">
+                <TypingCarousel className="text-[#0369a1] text-sm md:text-base" />
               </div>
             </div>
           )}
@@ -200,7 +248,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   <div className="relative group shrink-0 me-1">
                     <button
                       className="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2.5 bg-[#0369a1]/5 hover:bg-[#0369a1]/10 text-[#0369a1] rounded-2xl transition-all active:scale-95 border border-[#0369a1]/10"
-                      onClick={(e) => {
+                      onClick={() => {
                         const menu = document.getElementById('character-menu');
                         menu?.classList.toggle('hidden');
                       }}
@@ -239,6 +287,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && !isChatting && !usageStatus?.hasReachedLimit && onSendMessage()}
+
                     placeholder={usageStatus && usageStatus.limit !== null
                       ? t('chat.inputPlaceholderWithLimit', { usage: usageStatus.usage, limit: usageStatus.limit })
                       : t('chat.inputPlaceholderBook')}
@@ -361,16 +410,18 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   className="text-white uyghur-text [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white [&_a]:text-blue-100 [&_button]:text-blue-100 [&_a]:decoration-blue-100/50 [&_button]:decoration-blue-100/50"
                   style={{ fontSize: `${chatFontSize}px` }}
                 />
-                <span className="inline-block w-[2px] h-4 bg-white/70 ml-1 animate-pulse" />
               </div>
             </div>
           </div>
         )}
         {isChatting && !streamingMessage && (
-          <div className="flex flex-row-reverse gap-3 items-center px-4">
-            <div className="w-1.5 h-1.5 bg-[#0369a1] rounded-full animate-bounce" />
-            <div className="w-1.5 h-1.5 bg-[#0369a1] rounded-full animate-bounce [animation-delay:0.2s]" />
-            <div className="w-1.5 h-1.5 bg-[#0369a1] rounded-full animate-bounce [animation-delay:0.4s]" />
+          <div className="flex gap-2 flex-col items-end">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm shadow-sm bg-[#0369a1] text-white animate-pulse">
+              <span className="text-base">{currentCharacter.avatar_emoji}</span>
+            </div>
+            <div className="bg-[#0369a1]/10 px-4 py-3 rounded-2xl rounded-tl-none flex gap-2 items-center border border-[#0369a1]/10 shadow-sm">
+              <TypingCarousel className="text-[#0369a1] text-xs sm:text-sm" />
+            </div>
           </div>
         )}
       </div>
@@ -394,6 +445,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && !isChatting && !usageStatus?.hasReachedLimit && onSendMessage()}
+                  onFocus={(e) => setTimeout(() => e.target.scrollIntoView({ block: 'nearest' }), 300)}
                   className="w-full bg-transparent border-none py-2 sm:py-3 pl-[52px] sm:pl-[76px] pr-2 sm:pr-4 font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none uyghur-text"
                   style={{ fontSize: `${chatFontSize}px` }}
                   dir="rtl"

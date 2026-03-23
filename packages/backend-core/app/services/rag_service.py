@@ -1032,22 +1032,25 @@ class RAGService:
                 yield chunk
             
             full_answer = "".join(answer_chunks)
-            await self._record_eval(
-                session,
-                {
-                    "bookId": req.book_id,
-                    "isGlobal": is_global,
-                    "question": req.question,
-                    "currentPage": req.current_page,
-                    "retrievedCount": retrieved_count,
-                    "contextChars": len(context),
-                    "scores": [],
-                    "categoryFilter": character_categories,
-                    "latencyMs": int((time.monotonic() - start_ts) * 1000),
-                    "answer_chars": len(full_answer),
-                },
-                user_id=user_id,
-            )
+            try:
+                await self._record_eval(
+                    session,
+                    {
+                        "bookId": req.book_id,
+                        "isGlobal": is_global,
+                        "question": req.question,
+                        "currentPage": req.current_page,
+                        "retrievedCount": retrieved_count,
+                        "contextChars": len(context),
+                        "scores": [],
+                        "categoryFilter": character_categories,
+                        "latencyMs": int((time.monotonic() - start_ts) * 1000),
+                        "answer_chars": len(full_answer),
+                    },
+                    user_id=user_id,
+                )
+            except Exception as exc:
+                log_json(self.logger, logging.WARNING, "Failed to record eval (catalog path)", error=str(exc))
             return
 
         if is_global:
@@ -1280,22 +1283,25 @@ class RAGService:
 
         # Record evaluation after streaming completes
         full_answer = "".join(answer_chunks)
-        await self._record_eval(
-            session,
-            {
-                "bookId": req.book_id,
-                "isGlobal": is_global,
-                "question": req.question,
-                "currentPage": req.current_page,
-                "retrievedCount": len(top_results),
-                "contextChars": len(context),
-                "scores": [r.get("score") for r in top_results],
-                "categoryFilter": character_categories or (relevant_categories if is_global else []),
-                "latencyMs": int((time.monotonic() - start_ts) * 1000),
-                "answer_chars": len(full_answer),
-            },
-            user_id=user_id,
-        )
+        try:
+            await self._record_eval(
+                session,
+                {
+                    "bookId": req.book_id,
+                    "isGlobal": is_global,
+                    "question": req.question,
+                    "currentPage": req.current_page,
+                    "retrievedCount": len(top_results),
+                    "contextChars": len(context),
+                    "scores": [r.get("score") for r in top_results],
+                    "categoryFilter": character_categories or (relevant_categories if is_global else []),
+                    "latencyMs": int((time.monotonic() - start_ts) * 1000),
+                    "answer_chars": len(full_answer),
+                },
+                user_id=user_id,
+            )
+        except Exception as exc:
+            log_json(self.logger, logging.WARNING, "Failed to record eval (main path)", error=str(exc))
 
 
 rag_service = RAGService()

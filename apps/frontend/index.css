@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
 
 @font-face {
   font-family: "ALKATIP Basma";
@@ -24,7 +29,11 @@
 
 html {
   direction: rtl;
+  height: 100%;
+  overscroll-behavior: none;
 }
+
+
 
 :root {
   --primary-blue: #0369a1;
@@ -152,9 +161,10 @@ body {
   background-size: 200% 200%;
   animation: gradientBG 20s ease infinite;
   color: #1a1a1a;
-  min-height: 100vh;
+  height: 100%;
   position: relative;
-  overflow-x: hidden;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 /* Decorative Background Elements - Matching Prototype */
@@ -354,3 +364,4 @@ body::after {
   -moz-appearance: textfield;
   appearance: textfield;
 }
+

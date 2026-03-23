@@ -80,7 +80,8 @@
     "welcome": "Welcome to Uyghur Library and Knowledge World",
     "footer": {
       "text": "Uyghur Electronic Library - Combining Knowledge and Culture with Artificial Intelligence",
-      "copyright": "All Rights Reserved"
+      "copyright": "All Rights Reserved",
+      "contactUs": "Contact Us"
     }
   },
   "nav": {
@@ -164,7 +165,14 @@
     "limitReached": "Daily chat limit reached. Please try again tomorrow.",
     "usageInfo": "Messages used: {{usage}} of {{limit}}",
     "referenceTitle": "Reference Content",
-    "noContentFound": "No content found."
+    "noContentFound": "No content found.",
+    "thinkingPhrases": [
+      "I understand your question",
+      "Let me think about this",
+      "Searching through the books",
+      "Looking a bit deeper",
+      "I will find an answer to this"
+    ]
   },
   "reader": {
     "reading": "Reading",
