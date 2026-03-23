@@ -51,11 +51,11 @@ export const SearchOverlay: React.FC = () => {
     if (isGlobalSearchOpen) {
       const originalBodyStyle = document.body.style.overflow;
       const originalHtmlStyle = document.documentElement.style.overflow;
-      
+
       document.body.style.overflow = 'hidden';
       document.documentElement.style.overflow = 'hidden';
       document.body.style.height = '100vh';
-      
+
       const handleKeyDown = (e: KeyboardEvent) => {
         if (e.key === 'Escape') {
           setIsGlobalSearchOpen(false);
@@ -69,7 +69,7 @@ export const SearchOverlay: React.FC = () => {
       const timer = setTimeout(() => {
         inputRef.current?.focus();
       }, 50);
-      
+
       return () => {
          document.body.style.overflow = originalBodyStyle;
          document.documentElement.style.overflow = originalHtmlStyle;
@@ -83,14 +83,14 @@ export const SearchOverlay: React.FC = () => {
   if (!isGlobalSearchOpen) return null;
 
   return (
-    <div 
-      className="fixed inset-0 z-[110] flex items-center justify-center p-4 sm:p-6 md:p-10 lg:p-12 animate-fade-in bg-slate-900/40 backdrop-blur-3xl" 
+    <div
+      className="fixed inset-0 z-[110] flex items-center justify-center p-4 sm:p-6 md:p-10 lg:p-12 animate-fade-in bg-slate-900/40 backdrop-blur-3xl"
       style={{ backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)' }}
       dir="rtl"
     >
       {/* Backdrop for click handling */}
-      <div 
-        className="absolute inset-0" 
+      <div
+        className="absolute inset-0"
         onClick={() => {
            setIsGlobalSearchOpen(false);
            setGlobalSearchQuery('');
@@ -106,7 +106,7 @@ export const SearchOverlay: React.FC = () => {
             <div className="p-2 md:p-3 bg-[#0369a1] text-white rounded-xl md:rounded-2xl shadow-lg shadow-[#0369a1]/20 flex-shrink-0">
               <Search size={22} className="md:w-6 md:h-6" strokeWidth={2.5} />
             </div>
-            
+
             <div className="flex-grow relative group min-w-0">
               <input
                 ref={inputRef}
@@ -120,7 +120,7 @@ export const SearchOverlay: React.FC = () => {
               <div className="absolute -bottom-1 left-0 right-0 h-0.5 bg-[#0369a1]/10 group-focus-within:bg-[#0369a1] transition-all rounded-full" />
             </div>
           </div>
-          
+
           {/* Close Button */}
           <button
             onClick={() => {

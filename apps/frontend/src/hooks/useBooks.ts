@@ -22,7 +22,7 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
   // Helper to determine if we should use shelf-style (infinite scroll) behavior
   const isShelfView = useMemo(() => {
     const trimmedQuery = searchQuery.trim();
-    return view === 'library' || view === 'admin' || (view === 'home' && (trimmedQuery.length >= 3 || !!category));
+    return view === 'library' || view === 'admin' || view === 'search-overlay' || (view === 'home' && (trimmedQuery.length >= 3 || !!category));
   }, [view, searchQuery, category]);
 
   // Sorting/Grouping policy: Disabled to show all volumes of multi-volume books
