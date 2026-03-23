@@ -73,14 +73,31 @@ class BooksRepository(BaseRepository[Book]):
             conditions.append(Book.categories.overlap(categories))
 
         if search_query:
-            # Full-text search across title, author, categories
-            search_filter = or_(
-                Book.title.ilike(f"%{search_query}%"),
-                Book.author.ilike(f"%{search_query}%"),
-                # For array search, we need to use PostgreSQL-specific syntax
-                # This is a simplified version; full-text search may need more sophistication
-            )
-            conditions.append(search_filter)
+            # Check if the query ends with a volume number (e.g. "لېيىغان بۇلاق 7")
+            import re
+            volume_match = re.search(r'\s+(\d+)\s*$', search_query)
+            if volume_match:
+                title_part = search_query[:volume_match.start()].strip()
+                volume_num = int(volume_match.group(1))
+                if title_part:
+                    search_filter = or_(
+                        Book.title.ilike(f"%{title_part}%"),
+                        Book.author.ilike(f"%{title_part}%"),
+                    )
+                    conditions.append(search_filter)
+                    conditions.append(Book.volume == volume_num)
+                else:
+                    # Only a number was typed — fall back to normal search
+                    conditions.append(or_(
+                        Book.title.ilike(f"%{search_query}%"),
+                        Book.author.ilike(f"%{search_query}%"),
+                    ))
+            else:
+                # Full-text search across title and author
+                conditions.append(or_(
+                    Book.title.ilike(f"%{search_query}%"),
+                    Book.author.ilike(f"%{search_query}%"),
+                ))
 
         if conditions:
             stmt = stmt.where(and_(*conditions))
