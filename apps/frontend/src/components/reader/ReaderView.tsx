@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
-  X, Type, Minus, Plus, Edit3, Save, Bot,
+  X, ALargeSmall, Edit3, Save, Bot,
   RotateCcw, Loader2, BookOpen,
   Maximize2, Minimize2, Download
 } from 'lucide-react';
@@ -73,6 +74,10 @@ export const ReaderView: React.FC = () => {
   const [hasMorePages, setHasMorePages] = useState(true);
   const [isFetchingContent, setIsFetchingContent] = useState(false);
   const [mobileTab, setMobileTab] = useState<'reader' | 'chat'>('reader');
+  const [showFontSlider, setShowFontSlider] = useState(false);
+  const [sliderPos, setSliderPos] = useState({ top: 0, left: 0 });
+  const fontButtonRef = useRef<HTMLButtonElement>(null);
+  const fontSliderRef = useRef<HTMLDivElement>(null);
 
   const pageTextAreaRef = useRef<HTMLTextAreaElement>(null);
   const globalTextAreaRef = useRef<HTMLTextAreaElement>(null);
@@ -185,9 +190,12 @@ export const ReaderView: React.FC = () => {
     const page = currentPageRef.current;
     if (page !== null && !isEditing && editingPageNum === null) {
       const el = pageRefs.current.get(page);
-      if (el) {
+      const container = mainScrollRef.current;
+      if (el && container) {
         const timer = setTimeout(() => {
-          el.scrollIntoView({ block: 'start', behavior: 'instant' });
+          const containerTop = container.getBoundingClientRect().top;
+          const elTop = el.getBoundingClientRect().top;
+          container.scrollTo({ top: container.scrollTop + (elTop - containerTop) - 24, behavior: 'instant' });
         }, 50);
         return () => clearTimeout(timer);
       }
@@ -200,6 +208,30 @@ export const ReaderView: React.FC = () => {
       pageTextAreaRef.current.style.height = `${pageTextAreaRef.current.scrollHeight}px`;
     }
   }, [tempPageText, editingPageNum]);
+
+  useEffect(() => {
+    if (!showFontSlider) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        fontButtonRef.current && !fontButtonRef.current.contains(e.target as Node) &&
+        fontSliderRef.current && !fontSliderRef.current.contains(e.target as Node)
+      ) {
+        setShowFontSlider(false);
+      }
+    };
+    const updatePos = () => {
+      if (fontButtonRef.current) {
+        const r = fontButtonRef.current.getBoundingClientRect();
+        setSliderPos({ top: r.bottom + 8, left: r.left + r.width / 2 });
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('resize', updatePos);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('resize', updatePos);
+    };
+  }, [showFontSlider]);
 
   const fetchMorePages = useCallback(async () => {
     if (isLoadingMore || !hasMorePages || isGuestOrReader) return;
@@ -327,31 +359,8 @@ export const ReaderView: React.FC = () => {
   return (
     <div className={isFullscreen
       ? 'fixed inset-0 z-50 flex flex-col bg-[#f0f4f8] notranslate'
-      : `min-h-[calc(100dvh-72px)] sm:min-h-[calc(100dvh-88px)] md:min-h-[calc(100dvh-120px)] flex flex-col xl:flex-row-reverse ${mobileTab === 'chat' ? 'gap-3' : 'gap-4'} xl:gap-6 py-0 md:py-4 notranslate`
+      : `h-[calc(100dvh-72px)] sm:h-[calc(100dvh-88px)] md:h-[calc(100dvh-120px)] xl:h-[calc(100dvh-96px)] flex flex-col xl:flex-row-reverse ${mobileTab === 'chat' ? 'gap-3' : 'gap-4'} xl:gap-6 py-0 md:py-4 notranslate`
     } lang="ug" translate="no">
-      {/* Mobile/Tablet Tab Switcher */}
-      <div className={`xl:hidden flex gap-2 ${mobileTab === 'reader' ? 'px-2' : 'p-2'}${isFullscreen ? ' hidden' : ''}`}>
-        <button
-          onClick={() => setMobileTab('reader')}
-          className={`flex-1 flex items-center justify-center gap-3 py-3 px-4 rounded-2xl font-bold text-sm transition-all ${mobileTab === 'reader'
-            ? 'bg-[#0369a1] text-white shadow-lg'
-            : 'bg-white/60 text-[#64748b] border border-[#0369a1]/10'
-            }`}
-        >
-          <BookOpen className="inline-block" size={18} />
-          <span>{t('reader.reading')}</span>
-        </button>
-        <button
-          onClick={() => setMobileTab('chat')}
-          className={`flex-1 flex items-center justify-center gap-3 py-3 px-4 rounded-2xl font-bold text-sm transition-all ${mobileTab === 'chat'
-            ? 'bg-[#0369a1] text-white shadow-lg'
-            : 'bg-white/60 text-[#64748b] border border-[#0369a1]/10'
-            }`}
-        >
-          <Bot className="inline-block" size={22} />
-          <span>{t('chat.chat')}</span>
-        </button>
-      </div>
 
       {/* Main Content Area */}
       <div className={`flex-grow glass-panel flex-col overflow-hidden rounded-[32px] border border-[#0369a1]/10 shadow-2xl relative ${mobileTab === 'reader' ? 'flex' : 'hidden xl:flex'}`}>
@@ -424,10 +433,51 @@ export const ReaderView: React.FC = () => {
               </div>
             )}
 
-            <div className="flex items-center gap-0.5 sm:gap-1 bg-white/60 border border-[#0369a1]/20 rounded-xl sm:rounded-2xl p-0.5 sm:p-1 shadow-sm">
-              <button onClick={() => setFontSize(prev => Math.max(14, prev - 2))} className="p-1 sm:p-2 min-w-[32px] sm:min-w-0 min-h-[32px] sm:min-h-0 hover:bg-[#0369a1]/10 rounded-lg text-[#0369a1] transition-all focus:outline-none"><Minus size={16} /></button>
-              <span className="text-xs sm:text-sm px-1 font-bold min-w-[20px] text-center">{fontSize}</span>
-              <button onClick={() => setFontSize(prev => Math.min(64, prev + 2))} className="p-1 sm:p-2 min-w-[32px] sm:min-w-0 min-h-[32px] sm:min-h-0 hover:bg-[#0369a1]/10 rounded-lg text-[#0369a1] transition-all focus:outline-none"><Plus size={16} /></button>
+            <button
+              onClick={() => setMobileTab(prev => prev === 'reader' ? 'chat' : 'reader')}
+              className="xl:hidden p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] bg-white/60 border border-[#0369a1]/20 text-[#0369a1] hover:bg-[#0369a1]/10 rounded-xl transition-all focus:outline-none"
+              title={mobileTab === 'reader' ? 'Switch to chat' : 'Switch to reader'}
+            >
+              {mobileTab === 'reader' ? <Bot size={21} className="sm:w-[23px] sm:h-[23px]" /> : <BookOpen size={21} className="sm:w-[23px] sm:h-[23px]" />}
+            </button>
+
+            <div className="relative flex items-center">
+              <button
+                ref={fontButtonRef}
+                onClick={() => {
+                  if (!showFontSlider && fontButtonRef.current) {
+                    const r = fontButtonRef.current.getBoundingClientRect();
+                    setSliderPos({ top: r.bottom + 8, left: r.left + r.width / 2 });
+                  }
+                  setShowFontSlider(prev => !prev);
+                }}
+                className={`p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all focus:outline-none ${showFontSlider ? 'bg-[#0369a1] text-white shadow-md' : 'bg-white/60 border border-[#0369a1]/20 text-[#0369a1] hover:bg-[#0369a1]/10'}`}
+              >
+                <ALargeSmall size={21} className="sm:w-[23px] sm:h-[23px] -translate-x-[1px]" />
+              </button>
+              {showFontSlider && createPortal(
+                <div
+                  ref={fontSliderRef}
+                  className="fixed -translate-x-1/2 flex flex-col items-center gap-2 bg-white/95 backdrop-blur-xl border border-[#0369a1]/20 rounded-2xl shadow-2xl px-3 py-4 z-[9999]"
+                  style={{ top: sliderPos.top, left: sliderPos.left }}
+                >
+                  <span className="text-[11px] font-bold text-[#0369a1] select-none">A+</span>
+                  <div style={{ height: '120px', width: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'visible' }}>
+                    <input
+                      type="range"
+                      min={14}
+                      max={64}
+                      step={2}
+                      value={fontSize}
+                      onChange={(e) => setFontSize(Number(e.target.value))}
+                      style={{ width: '120px', transform: 'rotate(-90deg)', cursor: 'pointer', accentColor: '#0369a1', flexShrink: 0 }}
+                    />
+                  </div>
+                  <span className="text-[11px] font-bold text-[#94a3b8] select-none">A-</span>
+                  <span className="text-[11px] font-mono font-bold text-[#0369a1] select-none">{fontSize}</span>
+                </div>,
+                document.body
+              )}
             </div>
 
 
@@ -507,10 +557,67 @@ export const ReaderView: React.FC = () => {
       </div>
 
       {/* Sidebar Area */}
-      <div className={`w-full xl:w-[500px] 2xl:w-[600px] flex-col gap-4 xl:gap-6 ${isFullscreen ? 'hidden' : mobileTab === 'chat' ? 'flex flex-grow' : 'hidden xl:flex'}`}>
-        <GlassPanel className={`h-full flex flex-col ${mobileTab === 'chat' ? 'rounded-[24px] border' : 'rounded-none xl:rounded-[32px] border'} p-3 sm:p-4 xl:p-6 shadow-xl border-[#0369a1]/10`}>
+      <div className={`w-full xl:w-[500px] 2xl:w-[600px] flex-col gap-4 xl:gap-6 min-h-0 ${isFullscreen ? 'hidden' : mobileTab === 'chat' ? 'flex flex-grow' : 'hidden xl:flex'}`}>
+        <GlassPanel className={`flex-1 min-h-0 flex flex-col ${mobileTab === 'chat' ? 'rounded-[24px] border' : 'rounded-none xl:rounded-[32px] border'} shadow-xl border-[#0369a1]/10 overflow-hidden`}>
+          {/* Chat tab header — mobile only, mirrors reader header without edit button */}
+          {mobileTab === 'chat' && (
+            <div className="xl:hidden flex-shrink-0 px-3 sm:px-6 py-2 sm:py-4 border-b border-[#0369a1]/10 flex flex-row items-center justify-between gap-1 sm:gap-4 bg-white/80 backdrop-blur-sm mb-0">
+              {/* Book title — left in RTL */}
+              <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-shrink">
+                <div className="hidden sm:flex p-2 bg-[#0369a1] text-white rounded-xl shadow-lg shrink-0">
+                  <BookOpen size={20} />
+                </div>
+                <div className="min-w-0 flex flex-col justify-center">
+                  <h2 className="font-bold text-[#1a1a1a] truncate" style={{ fontSize: '18px' }}>
+                    {selectedBook.title}
+                    {selectedBook.volume ? ` (${t('book.volume', { volume: selectedBook.volume })})` : ''}
+                  </h2>
+                  {selectedBook.author && (
+                    <p className="text-[#64748b] mt-0.5 truncate hidden sm:block" style={{ fontSize: '14px' }}>
+                      {selectedBook.author}
+                    </p>
+                  )}
+                </div>
+              </div>
+              {/* Controls — right in RTL */}
+              <div className="flex items-center gap-0.5 sm:gap-2 shrink-0">
+                {isEditor && selectedBook.fileType === 'pdf' && (
+                  <button
+                    onClick={handleDownload}
+                    disabled={isDownloading}
+                    className="flex items-center gap-2 px-2 sm:px-4 py-2 min-h-[36px] sm:min-h-[44px] bg-white border border-[#0369a1]/20 text-[#0369a1] text-xs sm:text-sm rounded-xl sm:rounded-2xl hover:bg-[#0369a1]/10 transition-all font-bold disabled:opacity-50"
+                  >
+                    {isDownloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                    <span className="hidden sm:inline">{t('common.download')}</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setMobileTab('reader')}
+                  className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] bg-white/60 border border-[#0369a1]/20 text-[#0369a1] hover:bg-[#0369a1]/10 rounded-xl transition-all focus:outline-none"
+                >
+                  <BookOpen size={21} className="sm:w-[23px] sm:h-[23px]" />
+                </button>
+                <button
+                  ref={fontButtonRef}
+                  onClick={() => {
+                    if (!showFontSlider && fontButtonRef.current) {
+                      const r = fontButtonRef.current.getBoundingClientRect();
+                      setSliderPos({ top: r.bottom + 8, left: r.left + r.width / 2 });
+                    }
+                    setShowFontSlider(prev => !prev);
+                  }}
+                  className={`p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all focus:outline-none ${showFontSlider ? 'bg-[#0369a1] text-white shadow-md' : 'bg-white/60 border border-[#0369a1]/20 text-[#0369a1] hover:bg-[#0369a1]/10'}`}
+                >
+                  <ALargeSmall size={21} className="sm:w-[23px] sm:h-[23px] -translate-x-[1px]" />
+                </button>
+                <button onClick={onClose} className="p-1.5 sm:p-2.5 min-w-[32px] sm:min-w-[44px] min-h-[32px] sm:min-h-[44px] text-[#94a3b8] hover:bg-red-50 hover:text-red-500 rounded-xl transition-all">
+                  <X size={18} className="sm:w-5 sm:h-5" />
+                </button>
+              </div>
+            </div>
+          )}
           {/* Panel content */}
-          <div className="flex-1 min-h-0">
+          <div className="flex-1 min-h-0 p-3 sm:p-4 xl:p-6 overflow-hidden flex flex-col">
             <ChatInterface
               type="book"
               chatMessages={chat.chatMessages}

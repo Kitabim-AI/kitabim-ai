@@ -232,15 +232,11 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
       const level = headingMatch[1].length;
       const Tag: any = `h${Math.min(6, level)}`;
 
-      // Determine size based on heading level
-      const sizeClass = level === 1 ? 'text-2xl mb-6' :
-        level === 2 ? 'text-2xl mb-4' :
-          level === 3 ? 'text-xl mb-3' :
-            level === 4 ? 'text-xl mb-2' :
-              'text-lg mb-2';
+      const headingEmSize = level === 1 ? 1.5 : level === 2 ? 1.35 : level === 3 ? 1.2 : level === 4 ? 1.1 : 1.05;
+      const marginClass = level === 1 ? 'mb-6' : level === 2 ? 'mb-4' : level <= 4 ? 'mb-3' : 'mb-2';
 
       blocks.push(
-        <Tag key={`h-${key++}`} className={`font-bold text-[#1a1a1a] ${sizeClass}`}>
+        <Tag key={`h-${key++}`} className={`font-bold text-[#1a1a1a] ${marginClass}`} style={{ fontSize: `${headingEmSize}em` }}>
           {renderInline(headingMatch[2] || '', onReferenceClick)}
         </Tag>
       );

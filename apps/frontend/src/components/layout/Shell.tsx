@@ -26,9 +26,11 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
         <Navbar />
       </div>
 
-      <main className="flex-grow overflow-y-auto overscroll-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden pt-[72px] sm:pt-[88px] lg:pt-[96px] px-0 sm:px-2 md:px-4 lg:px-8 max-w-[1600px] mx-auto w-full relative z-10">
+      <main className="flex-grow overflow-y-auto overscroll-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden pt-[72px] sm:pt-[88px] lg:pt-[96px] px-0 sm:px-2 md:px-4 lg:px-8 max-w-[1600px] mx-auto w-full relative z-10 flex flex-col">
 
-        {children}
+        <div className="flex-grow">
+          {children}
+        </div>
 
         <footer className={`mt-8 mb-6 border-t border-[#0369a1]/10 pt-4 flex flex-col sm:flex-row items-center justify-between gap-2 w-full px-4 sm:px-2 ${view === 'join-us' ? 'max-w-6xl mx-auto' : ['global-chat', 'spell-check'].includes(view) ? 'lg:max-w-5xl lg:mx-auto' : ''}`} dir="rtl">
           <p className="text-xs text-slate-400 font-normal uyghur-text">
