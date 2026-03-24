@@ -86,6 +86,24 @@ export const ReaderView: React.FC = () => {
   const mainScrollRef = useRef<HTMLDivElement>(null);
   const lastEditedPageRef = useRef<number | null>(null);
 
+  useEffect(() => {
+    if (!showFontSlider) return;
+    const close = (e: MouseEvent | TouchEvent) => {
+      if (
+        fontSliderRef.current && !fontSliderRef.current.contains(e.target as Node) &&
+        fontButtonRef.current && !fontButtonRef.current.contains(e.target as Node)
+      ) {
+        setShowFontSlider(false);
+      }
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('touchstart', close);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('touchstart', close);
+    };
+  }, [showFontSlider]);
+
   const onClose = () => setView(previousView);
 
   // Prevent body-level scrollbar while reader is open (reader manages its own scroll).
@@ -97,6 +115,15 @@ export const ReaderView: React.FC = () => {
   useEffect(() => {
     setFontSize(usesArabicReaderFont ? 24 : 18);
   }, [selectedBook.id, usesArabicReaderFont, setFontSize]);
+
+  useEffect(() => {
+    setMobileTab('reader');
+    document.querySelector('main')?.scrollTo({ top: 0, behavior: 'instant' });
+  }, [selectedBook.id]);
+
+  useEffect(() => {
+    document.querySelector('main')?.scrollTo({ top: 0, behavior: 'instant' });
+  }, [mobileTab]);
 
   useEffect(() => {
     if (isGuestOrReader) {
@@ -222,7 +249,7 @@ export const ReaderView: React.FC = () => {
     const updatePos = () => {
       if (fontButtonRef.current) {
         const r = fontButtonRef.current.getBoundingClientRect();
-        setSliderPos({ top: r.bottom + 8, left: r.left + r.width / 2 });
+        setSliderPos({ top: r.bottom + 8, left: r.left });
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -433,21 +460,13 @@ export const ReaderView: React.FC = () => {
               </div>
             )}
 
-            <button
-              onClick={() => setMobileTab(prev => prev === 'reader' ? 'chat' : 'reader')}
-              className="xl:hidden p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] bg-white/60 border border-[#0369a1]/20 text-[#0369a1] hover:bg-[#0369a1]/10 rounded-xl transition-all focus:outline-none"
-              title={mobileTab === 'reader' ? 'Switch to chat' : 'Switch to reader'}
-            >
-              {mobileTab === 'reader' ? <Bot size={21} className="sm:w-[23px] sm:h-[23px]" /> : <BookOpen size={21} className="sm:w-[23px] sm:h-[23px]" />}
-            </button>
-
             <div className="relative flex items-center">
               <button
                 ref={fontButtonRef}
                 onClick={() => {
                   if (!showFontSlider && fontButtonRef.current) {
                     const r = fontButtonRef.current.getBoundingClientRect();
-                    setSliderPos({ top: r.bottom + 8, left: r.left + r.width / 2 });
+                    setSliderPos({ top: r.bottom + 8, left: r.left });
                   }
                   setShowFontSlider(prev => !prev);
                 }}
@@ -458,10 +477,10 @@ export const ReaderView: React.FC = () => {
               {showFontSlider && createPortal(
                 <div
                   ref={fontSliderRef}
-                  className="fixed -translate-x-1/2 flex flex-col items-center gap-2 bg-white/95 backdrop-blur-xl border border-[#0369a1]/20 rounded-2xl shadow-2xl px-3 py-4 z-[9999]"
+                  className="fixed flex flex-col items-center gap-2 bg-white/95 backdrop-blur-xl border border-[#0369a1]/20 rounded-2xl shadow-2xl px-3 py-4 z-[9999]"
                   style={{ top: sliderPos.top, left: sliderPos.left }}
                 >
-                  <span className="text-[11px] font-bold text-[#0369a1] select-none">A+</span>
+                  <button onClick={() => setFontSize(f => Math.max(14, f - 2))} className="text-[11px] font-bold text-[#94a3b8] select-none px-2 py-1 rounded-lg hover:bg-[#0369a1]/10 active:scale-90 transition-all">A-</button>
                   <div style={{ height: '120px', width: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'visible' }}>
                     <input
                       type="range"
@@ -473,7 +492,7 @@ export const ReaderView: React.FC = () => {
                       style={{ width: '120px', transform: 'rotate(-90deg)', cursor: 'pointer', accentColor: '#0369a1', flexShrink: 0 }}
                     />
                   </div>
-                  <span className="text-[11px] font-bold text-[#94a3b8] select-none">A-</span>
+                  <button onClick={() => setFontSize(f => Math.min(64, f + 2))} className="text-[11px] font-bold text-[#0369a1] select-none px-2 py-1 rounded-lg hover:bg-[#0369a1]/10 active:scale-90 transition-all">A+</button>
                   <span className="text-[11px] font-mono font-bold text-[#0369a1] select-none">{fontSize}</span>
                 </div>,
                 document.body
@@ -592,17 +611,11 @@ export const ReaderView: React.FC = () => {
                   </button>
                 )}
                 <button
-                  onClick={() => setMobileTab('reader')}
-                  className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] bg-white/60 border border-[#0369a1]/20 text-[#0369a1] hover:bg-[#0369a1]/10 rounded-xl transition-all focus:outline-none"
-                >
-                  <BookOpen size={21} className="sm:w-[23px] sm:h-[23px]" />
-                </button>
-                <button
                   ref={fontButtonRef}
                   onClick={() => {
                     if (!showFontSlider && fontButtonRef.current) {
                       const r = fontButtonRef.current.getBoundingClientRect();
-                      setSliderPos({ top: r.bottom + 8, left: r.left + r.width / 2 });
+                      setSliderPos({ top: r.bottom + 8, left: r.left });
                     }
                     setShowFontSlider(prev => !prev);
                   }}
@@ -633,6 +646,17 @@ export const ReaderView: React.FC = () => {
           </div>
         </GlassPanel>
       </div>
+
+      {/* Floating reader/chat toggle — mobile only */}
+      {!isFullscreen && createPortal(
+        <button
+          className="xl:hidden fixed bottom-[112px] left-6 z-50 transition-all active:scale-90 hover:opacity-70 text-[#FF9800] animate-[bob_10s_ease-in-out_infinite]"
+          onClick={() => setMobileTab(prev => prev === 'reader' ? 'chat' : 'reader')}
+        >
+          {mobileTab === 'reader' ? <Bot size={38} strokeWidth={2} /> : <BookOpen size={38} strokeWidth={2} />}
+        </button>,
+        document.body
+      )}
     </div>
   );
 };

@@ -130,10 +130,10 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick }) => {
     <>
       <div
         onClick={() => onClick(book)}
-        className="group relative w-full max-w-[300px] bg-white/80 backdrop-blur-xl rounded-2xl sm:rounded-3xl p-3 sm:p-5 cursor-pointer transition-all duration-300 border border-[#0369a1]/10 hover:border-[#0369a1]/30 hover:-translate-y-1 hover:shadow-[0_12px_24px_rgba(3,105,161,0.1)] shadow-md"
+        className="group relative w-full max-w-[300px] bg-white/80 backdrop-blur-xl rounded-2xl sm:rounded-3xl p-3 sm:p-5 cursor-pointer transition-all duration-300 border border-[#0369a1]/10 hover:border-[#0369a1]/30 hover:-translate-y-1 hover:shadow-[0_12px_24px_rgba(3,105,161,0.1)] active:-translate-y-3 shadow-md"
       >
         {/* Book Cover */}
-        <div className="relative w-full aspect-[5/7] mb-3 sm:mb-5 rounded-xl sm:rounded-2xl overflow-hidden shadow-lg transition-transform duration-500 group-hover:scale-[1.03] group-hover:shadow-xl">
+        <div className="relative w-full aspect-[5/7] mb-3 sm:mb-5 rounded-xl sm:rounded-2xl overflow-hidden shadow-lg transition-transform duration-300 group-hover:scale-[1.03] group-hover:shadow-xl">
           {book.coverUrl ? (
             <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${book.coverUrl})` }} />
           ) : (

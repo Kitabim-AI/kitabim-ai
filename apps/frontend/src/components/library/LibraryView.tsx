@@ -36,14 +36,22 @@ export const LibraryView: React.FC = () => {
   return (
     <div className="space-y-8 sm:space-y-10 md:space-y-12 px-4 sm:px-6 md:px-0 py-4 sm:py-6 md:py-8" dir="rtl">
       {/* Header Section */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 sm:gap-6 pb-8 sm:pb-10 md:pb-12 border-b border-[#0369a1]/10 relative">
+      <div className="pb-8 sm:pb-10 md:pb-12 border-b border-[#0369a1]/10 relative">
         <header className="space-y-3 sm:space-y-4">
           <div className="flex items-center gap-3 sm:gap-4 group">
             <div className="p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 icon-shake">
               <LibraryBig size={20} className="md:w-6 md:h-6" strokeWidth={2.5} />
             </div>
-            <div>
-              <h2 className="text-2xl sm:text-3xl font-black text-[#1a1a1a]">{t('library.title')}</h2>
+            <div className="flex-1">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl sm:text-3xl font-black text-[#1a1a1a]">{t('library.title')}</h2>
+                <div className="flex items-center gap-2 px-3 sm:px-5 py-1.5 sm:py-2 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner">
+                  <BookOpen size={14} className="sm:w-[18px] sm:h-[18px]" strokeWidth={2.5} />
+                  <span className="text-xs sm:text-sm font-normal uppercase">
+                    {isInitialLoading ? <RefreshCw size={12} className="animate-spin" /> : `${totalBooks} ${t('home.totalBooks')}`}
+                  </span>
+                </div>
+              </div>
               <div className="flex items-center gap-2 mt-1 sm:mt-2">
                 <span className="w-6 sm:w-8 h-[2px] bg-[#0369a1] rounded-full" />
                 <ProverbDisplay size="sm" keywords={t('proverbs.library')} className="opacity-70 mt-[-2px]" />
@@ -51,21 +59,6 @@ export const LibraryView: React.FC = () => {
             </div>
           </div>
         </header>
-
-      <div className="flex items-center gap-4">
-        <div className="flex md:hidden items-center gap-2 px-4 py-2 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner">
-          <BookOpen size={16} strokeWidth={2.5} />
-          <span className="text-xs font-normal uppercase">
-            {isInitialLoading ? <RefreshCw size={12} className="animate-spin" /> : `${totalBooks} ${t('home.totalBooks')}`}
-          </span>
-        </div>
-        <div className="hidden md:flex items-center gap-3 px-6 py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner">
-          <BookOpen size={18} strokeWidth={2.5} />
-          <span className="text-sm font-normal uppercase">
-            {isInitialLoading ? <RefreshCw size={14} className="animate-spin" /> : t('chat.libraryBookCount', { count: totalBooks })}
-          </span>
-        </div>
-      </div>
       </div>
 
       {/* Grid Section */}

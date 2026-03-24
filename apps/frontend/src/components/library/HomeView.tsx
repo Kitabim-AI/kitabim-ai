@@ -163,14 +163,14 @@ export const HomeView: React.FC = () => {
       {/* Results Section */}
       {hasSearch && (
         <div className="w-full max-w-none px-4 md:px-8 pb-24 sm:pb-32">
-          <div className="flex flex-col md:flex-row md:items-center justify-between mb-10 sm:mb-12 md:mb-16 gap-4">
-            <div className="flex flex-col gap-2">
+          <div className="flex flex-col mb-10 sm:mb-12 md:mb-16 gap-2">
+            <div className="flex items-center justify-between">
               <h2 className="text-xl sm:text-2xl md:text-3xl font-normal text-[#1a1a1a]">{t('home.searchResults')}</h2>
-              <p className="text-xs sm:text-sm font-normal text-[#94a3b8] uppercase">«{searchQuery || selectedCategory}» {t('home.resultsFor')}</p>
+              <div className="px-3 sm:px-4 py-1 bg-[#0369a1]/10 text-[#0369a1] rounded-xl text-xs sm:text-sm font-normal shadow-inner border border-[#0369a1]/5">
+                {isInitialLoading ? <RefreshCw size={12} className="inline-block animate-spin mx-1" /> : totalBooks} <span className="opacity-60">{t('home.totalBooks')}</span>
+              </div>
             </div>
-            <div className="px-4 sm:px-6 py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl text-xs sm:text-sm font-normal shadow-inner border border-[#0369a1]/5 w-fit">
-              <span className="opacity-60">{t('common.total')}</span> {isInitialLoading ? <RefreshCw size={12} className="inline-block animate-spin mx-1" /> : totalBooks} <span className="opacity-60">{t('home.totalBooks')}</span>
-            </div>
+            <p className="text-xs sm:text-sm font-normal text-[#94a3b8] uppercase">«{searchQuery || selectedCategory}» {t('home.resultsFor')}</p>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-3 sm:gap-x-8 gap-y-8 sm:gap-y-12 justify-items-center">
