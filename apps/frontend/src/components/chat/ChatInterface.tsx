@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Send, Bot, User, LogIn, ChevronDown } from 'lucide-react';
 import { Message, Book } from '@shared/types';
 import { useI18n } from '../../i18n/I18nContext';
@@ -9,13 +9,13 @@ import { OAuthButtonGroup } from '../auth/AuthButton';
 import { MarkdownContent } from '../common/MarkdownContent';
 import { ReferenceModal } from './ReferenceModal';
 import { ProverbDisplay } from '../common/ProverbDisplay';
-import { CHARACTERS } from '../../constants/characters';
+import { CHARACTERS, DEFAULT_CHARACTER_ID } from '../../constants/characters';
 
 const CHAR_INTERVAL = 55;   // ms per character
 const HOLD_AFTER_TYPED = 1800; // ms to hold the full phrase before switching
 const FADE_DURATION = 350;  // ms fade out
 
-function TypingCarousel({ className }: { className?: string }) {
+function TypingCarousel({ className, fontSize }: { className?: string; fontSize?: number }) {
   const { language } = useI18n();
   const phrases: string[] = (translations[language] as any)?.chat?.thinkingPhrases ?? [];
   const [phraseIdx, setPhraseIdx] = useState(0);
@@ -51,7 +51,7 @@ function TypingCarousel({ className }: { className?: string }) {
       key={phraseIdx}
       dir="rtl"
       className={`uyghur-text transition-opacity ${visible ? 'opacity-100' : 'opacity-0'} ${className ?? ''}`}
-      style={{ transitionDuration: `${FADE_DURATION}ms` }}
+      style={{ transitionDuration: `${FADE_DURATION}ms`, ...(fontSize ? { fontSize: `${fontSize}px` } : {}) }}
     >
       {displayed}
       {isTyping && (
@@ -100,14 +100,44 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const { isAuthenticated } = useAuth();
   const { fontSize } = useAppContext();
   const isGlobal = type === 'global';
-  const chatFontSize = isGlobal ? fontSize : 18;
+  const chatFontSize = fontSize;
   const [selectedReference, setSelectedReference] = React.useState<{ bookId: string; pageNums: number[] } | null>(null);
+  const readerInputRef = useRef<HTMLInputElement>(null);
+  const readerOuterRef = useRef<HTMLDivElement>(null);
+
+  // iOS fix: keyboard overlaps the chat. The outer container lives in a min-h layout so
+  // paddingBottom would expand it. Instead, cap maxHeight to the visible viewport area
+  // so the flex column shrinks and keeps the input above the keyboard.
+  // keyboardHeight > 100 guards against firing on desktop or minor viewport changes.
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const update = () => {
+      if (!readerOuterRef.current) return;
+      const keyboardHeight = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+      if (keyboardHeight > 100) {
+        const rect = readerOuterRef.current.getBoundingClientRect();
+        const available = viewport.height - Math.max(0, rect.top);
+        readerOuterRef.current.style.maxHeight = `${Math.max(100, available)}px`;
+      } else {
+        readerOuterRef.current.style.maxHeight = '';
+      }
+    };
+    viewport.addEventListener('resize', update);
+    viewport.addEventListener('scroll', update);
+    return () => {
+      viewport.removeEventListener('resize', update);
+      viewport.removeEventListener('scroll', update);
+    };
+  }, []);
 
   const handleReferenceClick = (bookId: string, pageNums: number[]) => {
     setSelectedReference({ bookId, pageNums });
   };
 
-  const currentCharacter = CHARACTERS.find(c => c.id === selectedCharacterId) || CHARACTERS[0];
+  const currentCharacter = isGlobal
+    ? (CHARACTERS.find(c => c.id === selectedCharacterId) || CHARACTERS[0])
+    : (CHARACTERS.find(c => c.id === DEFAULT_CHARACTER_ID) || CHARACTERS[0]);
 
   if (isGlobal) {
     return (
@@ -226,7 +256,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 <span className="text-lg md:text-xl">{currentCharacter.avatar_emoji}</span>
               </div>
               <div className="bg-[#0369a1]/10 px-5 py-4 rounded-[28px] rounded-tl-none flex gap-2 items-center border border-[#0369a1]/10 shadow-sm">
-                <TypingCarousel className="text-[#0369a1] text-sm md:text-base" />
+                <TypingCarousel className="text-[#0369a1]" fontSize={chatFontSize} />
               </div>
             </div>
           )}
@@ -245,7 +275,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               ) : (
                 <div className="flex gap-2 items-center w-full">
                   {/* Character Dropdown */}
-                  <div className="relative group shrink-0 me-1">
+                  <div className={`relative group shrink-0 me-1${!isGlobal ? ' hidden' : ''}`}>
                     <button
                       className="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2.5 bg-[#0369a1]/5 hover:bg-[#0369a1]/10 text-[#0369a1] rounded-2xl transition-all active:scale-95 border border-[#0369a1]/10"
                       onClick={() => {
@@ -287,7 +317,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && !isChatting && !usageStatus?.hasReachedLimit && onSendMessage()}
-
+                    onFocus={(e) => { const el = e.target; setTimeout(() => el?.scrollIntoView({ block: 'nearest' }), 300); }}
                     placeholder={usageStatus && usageStatus.limit !== null
                       ? t('chat.inputPlaceholderWithLimit', { usage: usageStatus.usage, limit: usageStatus.limit })
                       : t('chat.inputPlaceholderBook')}
@@ -331,7 +361,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
   // Sidebar (Reader) Chat Version
   return (
-    <div className="h-full flex flex-col gap-3 md:gap-6 relative" dir="rtl" lang="ug">
+    <div ref={readerOuterRef} className="flex-1 min-h-0 flex flex-col gap-3 md:gap-6 relative overflow-hidden" dir="rtl" lang="ug">
       <div
         ref={chatContainerRef}
         className="flex-grow overflow-y-auto space-y-6 px-4 custom-scrollbar-mini py-2 flex flex-col"
@@ -420,13 +450,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               <span className="text-base">{currentCharacter.avatar_emoji}</span>
             </div>
             <div className="bg-[#0369a1]/10 px-4 py-3 rounded-2xl rounded-tl-none flex gap-2 items-center border border-[#0369a1]/10 shadow-sm">
-              <TypingCarousel className="text-[#0369a1] text-xs sm:text-sm" />
+              <TypingCarousel className="text-[#0369a1]" fontSize={chatFontSize} />
             </div>
           </div>
         )}
       </div>
 
-      <div className="relative mt-auto p-1 sm:p-2 bg-white/80 backdrop-blur-2xl border-2 border-[#0369a1]/10 shadow-[0_24px_64px_rgba(0,0,0,0.06)] transition-all focus-within:border-[#0369a1] focus-within:ring-[12px] focus-within:ring-[#0369a1]/5 rounded-[20px] md:rounded-[24px]">
+      <div className="relative flex-shrink-0 p-1 sm:p-2 bg-white/80 backdrop-blur-2xl border-2 border-[#0369a1]/10 shadow-[0_24px_64px_rgba(0,0,0,0.06)] transition-all focus-within:border-[#0369a1] focus-within:ring-[12px] focus-within:ring-[#0369a1]/5 rounded-[20px] md:rounded-[24px]">
         {isAuthenticated ? (
           <div className="flex flex-col gap-1">
             {usageStatus?.hasReachedLimit ? (
@@ -445,7 +475,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && !isChatting && !usageStatus?.hasReachedLimit && onSendMessage()}
-                  onFocus={(e) => setTimeout(() => e.target.scrollIntoView({ block: 'nearest' }), 300)}
+                  ref={readerInputRef}
                   className="w-full bg-transparent border-none py-2 sm:py-3 pl-[52px] sm:pl-[76px] pr-2 sm:pr-4 font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none uyghur-text"
                   style={{ fontSize: `${chatFontSize}px` }}
                   dir="rtl"
