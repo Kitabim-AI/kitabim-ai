@@ -67,6 +67,11 @@ html {
   }
 }
 
+@keyframes bob {
+  0%, 20%, 100% { transform: translateY(0px) scale(1); }
+  10% { transform: translateY(-5px) scale(1.08); }
+}
+
 @keyframes gradientBG {
 
   0%,
