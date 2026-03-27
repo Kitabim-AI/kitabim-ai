@@ -33,9 +33,9 @@ export const extractUyghurText = async (base64Image: string, retries = 5): Promi
 };
 
 export const chatWithBook = async (
-  question: string, 
-  bookId: string, 
-  currentPage?: number, 
+  question: string,
+  bookId: string,
+  currentPage?: number,
   history: { role: string, text: string }[] = [],
   characterId?: string,
   onUsageUpdate?: (usage: any) => void
@@ -51,7 +51,7 @@ export const chatWithBook = async (
       return "سوئالغا جاۋاب بېرىش ئۈچۈن تىزىملىتىڭ.";
     }
     if (response.status === 403) {
-      return "بۇ ئىقتىدارنى ئىشلىتىشكە ھوقۇقىڭىز يوق.";
+      return "بۇ ئىقتىدارنى ئىشلىتىش ھوقۇقىڭىز يوق.";
     }
     if (response.status === 429) {
       try {
@@ -103,7 +103,7 @@ export const chatWithBookStream = async (
       return;
     }
     if (response.status === 403) {
-      onError("بۇ ئىقتىدارنى ئىشلىتىشكە ھوقۇقىڭىز يوق.");
+      onError("بۇ ئىقتىدارنى ئىشلىتىش ھوقۇقىڭىز يوق.");
       return;
     }
     if (response.status === 429) {

@@ -53,5 +53,16 @@
   "messages": {
     "logged_out": "Logged out successfully",
     "corrections_applied": "Corrections applied successfully. Embeddings will be regenerated."
+  },
+  "rag": {
+    "identity_intro": "I am {name}.",
+    "capabilities": "I can help you with:\n\n- **Library search** — Search and find answers from Uyghur-language books\n- **Author lookup** — Find the author of a book by its title\n- **Book catalog** — List all books by a specific author\n- **Volume info** — Show the volume count and page count of a book\n- **Page analysis** — Answer questions about the current page you are reading\n- **Conversation history** — Remember previous questions and continue the conversation",
+    "author_of_book": "The author of «{title}» is: **{author}**",
+    "books_by_author_header": "Books by **{author}** in the library:",
+    "volume_info_header": "Volume information for «{title}»:",
+    "volume_label": "Volume {volume}",
+    "volume_unknown": "Volume information not available",
+    "pages_suffix": ", {pages} pages",
+    "followup_context_prefix": "[Previous answer: {context}]"
   }
 }

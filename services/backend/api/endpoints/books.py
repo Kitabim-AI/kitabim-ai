@@ -1629,6 +1629,79 @@ async def update_page_text(
     return {"status": "page_updated", "requires_rag": True, "synchronous": final_status == 'indexed'}
 
 
+@router.post("/admin/bulk-reset-incomplete-ocr")
+async def bulk_reset_incomplete_ocr(
+    include_error: bool = Query(False, description="Also reset books with status='error'"),
+    current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    """Bulk reset OCR milestones for all books that haven't completed OCR.
+
+    Finds all books where ocr_milestone != 'succeeded' and resets them so the
+    OCR scanner picks them up again. Use this to recover from stuck/stale state
+    on production when the worker was down or jobs crashed.
+
+    Set include_error=true to also reset books already marked status='error'.
+    """
+    status_filter = [BookDB.ocr_milestone != PAGE_MILESTONE_SUCCEEDED]
+    if not include_error:
+        status_filter.append(BookDB.status.notin_(["ready", "error"]))
+
+    book_ids_result = await session.execute(
+        select(BookDB.id).where(*status_filter)
+    )
+    book_ids = [row[0] for row in book_ids_result.fetchall()]
+
+    if not book_ids:
+        return {"status": "no_books_found", "books_reset": 0, "pages_reset": 0}
+
+    now = datetime.now(timezone.utc)
+
+    pages_result = await session.execute(
+        update(Page)
+        .where(Page.book_id.in_(book_ids))
+        .values(
+            ocr_milestone=PAGE_MILESTONE_IDLE,
+            chunking_milestone=PAGE_MILESTONE_IDLE,
+            embedding_milestone=PAGE_MILESTONE_IDLE,
+            spell_check_milestone=PAGE_MILESTONE_IDLE,
+            retry_count=0,
+            is_indexed=False,
+            last_updated=now,
+            updated_by=current_user.email,
+        )
+        .returning(Page.id)
+    )
+    pages_reset = len(pages_result.fetchall())
+
+    await session.execute(
+        update(BookDB)
+        .where(BookDB.id.in_(book_ids))
+        .values(
+            ocr_milestone=PAGE_MILESTONE_IDLE,
+            chunking_milestone=PAGE_MILESTONE_IDLE,
+            embedding_milestone=PAGE_MILESTONE_IDLE,
+            spell_check_milestone=PAGE_MILESTONE_IDLE,
+            status="pending",
+            pipeline_step=PIPELINE_STEP_OCR,
+            last_updated=now,
+            updated_by=current_user.email,
+        )
+    )
+    await session.commit()
+
+    await cache_service.delete_pattern("book:*")
+    await cache_service.delete_pattern("rag:search:*")
+    await cache_service.delete_pattern("rag:summary_search:*")
+
+    return {
+        "status": "bulk_reset_started",
+        "books_reset": len(book_ids),
+        "pages_reset": pages_reset,
+        "message": f"OCR milestones reset for {len(book_ids)} books ({pages_reset} pages). Scanner will reprocess.",
+    }
+
+
 
 @router.post("/")
 async def create_book(
