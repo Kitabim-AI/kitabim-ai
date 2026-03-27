@@ -502,6 +502,171 @@ class BooksRepository(BaseRepository[Book]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    # ------------------------------------------------------------------
+    # RAG catalog lookup helpers (used by modular RAG handlers)
+    # ------------------------------------------------------------------
+
+    async def find_author_by_title_in_question(
+        self,
+        question: str,
+        categories: Optional[List[str]] = None,
+    ) -> Optional[tuple[str, str]]:
+        """Return (title, author) if a known book title is word-prefix matched in question.
+
+        Uses the same Uyghur agglutinative suffix matching as the RAG pipeline.
+        Returns None when no title is matched.
+        """
+        stmt = select(Book.title, Book.author).where(
+            Book.status != "error", Book.author.isnot(None)
+        )
+        if categories:
+            from sqlalchemy import text as sa_text
+            stmt = stmt.where(sa_text("categories && :cats").bindparams(cats=categories))
+
+        result = await self.session.execute(stmt)
+        rows = [(row[0], row[1]) for row in result.fetchall() if row[0] and row[1]]
+
+        import re
+        q = question.strip()
+
+        # Exact match when the question contains a «quoted» title
+        quoted = re.findall(r'«([^»]+)»', q)
+        if quoted:
+            for candidate in quoted:
+                candidate_norm = _normalize_uyghur(candidate.strip())
+                for title, author in rows:
+                    if _normalize_uyghur(title.strip()) == candidate_norm:
+                        return title, author
+            return None  # quoted title present but not found — don't fuzzy-match
+
+        for title, author in rows:
+            if _entity_matches_question(title, q):
+                return title, author
+        return None
+
+    async def find_books_by_author_in_question(
+        self,
+        question: str,
+        categories: Optional[List[str]] = None,
+    ) -> List[Book]:
+        """Return all books by an author whose name is word-prefix matched in question.
+
+        Returns an empty list when no author is matched.
+        """
+        stmt = (
+            select(Book.author)
+            .where(Book.author.isnot(None), Book.status != "error")
+            .distinct()
+        )
+        if categories:
+            from sqlalchemy import text as sa_text
+            stmt = stmt.where(sa_text("categories && :cats").bindparams(cats=categories))
+
+        result = await self.session.execute(stmt)
+        authors = [row[0] for row in result.fetchall() if row[0]]
+
+        q = question.strip()
+        matched_author = next(
+            (a for a in authors if _entity_matches_question(a, q)), None
+        )
+        if not matched_author:
+            return []
+
+        stmt = (
+            select(Book)
+            .where(Book.status != "error", Book.author == matched_author)
+            .order_by(Book.volume.asc().nulls_first(), Book.title.asc())
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def find_volume_info_by_title_in_question(
+        self,
+        question: str,
+        categories: Optional[List[str]] = None,
+    ) -> List[dict]:
+        """Return [{title, volume, total_pages}] for a book title matched in question.
+
+        Returns an empty list when no title is matched.
+        """
+        stmt = select(Book.title).where(Book.status != "error")
+        if categories:
+            from sqlalchemy import text as sa_text
+            stmt = stmt.where(sa_text("categories && :cats").bindparams(cats=categories))
+
+        result = await self.session.execute(stmt)
+        titles = [row[0] for row in result.fetchall() if row[0]]
+
+        import re
+        q = question.strip()
+
+        # Exact match when the question contains a «quoted» title
+        quoted = re.findall(r'«([^»]+)»', q)
+        matched_title = None
+        if quoted:
+            for candidate in quoted:
+                candidate_norm = _normalize_uyghur(candidate.strip())
+                matched_title = next(
+                    (t for t in titles if _normalize_uyghur(t.strip()) == candidate_norm), None
+                )
+                if matched_title:
+                    break
+        if not matched_title:
+            matched_title = next(
+                (t for t in titles if _entity_matches_question(t, q)), None
+            )
+        if not matched_title:
+            return []
+
+        stmt = (
+            select(Book.title, Book.volume, Book.total_pages)
+            .where(Book.status != "error", Book.title == matched_title)
+            .order_by(Book.volume.asc().nulls_first())
+        )
+        result = await self.session.execute(stmt)
+        return [
+            {"title": row[0], "volume": row[1], "total_pages": row[2]}
+            for row in result.fetchall()
+        ]
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers for Uyghur entity matching (used by catalog methods)
+# ---------------------------------------------------------------------------
+
+def _normalize_uyghur(text: str) -> str:
+    return (
+        text
+        .replace("\u06D0", "\u06CC")
+        .replace("\u0649", "\u06CC")
+        .replace("\u064A", "\u06CC")
+    )
+
+
+_PUNCT = "«»،؟!()[]{}\"""''"
+
+
+def _entity_matches_question(entity: str, question: str) -> bool:
+    """Word-prefix match handling Uyghur agglutinative suffixes.
+
+    Single-word entities are allowed when at least 4 characters long.
+    Leading/trailing punctuation (e.g. «») is stripped from question tokens
+    so that quoted titles are matched correctly.
+    """
+    entity_words = _normalize_uyghur(entity.strip()).split()
+    if not entity_words:
+        return False
+    if len(entity_words) == 1 and len(entity_words[0]) < 4:
+        return False
+    q_words = [
+        _normalize_uyghur(w).strip(_PUNCT)
+        for w in question.strip().split()
+    ]
+    return all(
+        any(q_word.startswith(e_word) for q_word in q_words)
+        for e_word in entity_words
+    )
+
 
 def get_books_repository(session: AsyncSession) -> BooksRepository:
     """Factory function for dependency injection"""

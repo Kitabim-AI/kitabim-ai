@@ -131,7 +131,7 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
                     ))
                     await session.commit()
 
-                log_json(logger, logging.DEBUG, "OCR page succeeded",
+                log_json(logger, logging.INFO, "OCR page succeeded",
                          book_id=book_id, page=page.page_number)
 
             except Exception as exc:
