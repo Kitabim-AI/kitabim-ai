@@ -49,7 +49,6 @@ class Settings:
     max_cover_image_pixels: int = int(os.getenv("MAX_COVER_IMAGE_PIXELS", "25000000"))
 
     # Parallel Processing
-    max_parallel_pages: int = int(os.getenv("MAX_PARALLEL_PAGES", "4")) # OCR concurrency
     max_parallel_spell_check: int = int(os.getenv("MAX_PARALLEL_SPELL_CHECK", "6"))
     max_concurrent_spell_check_books: int = int(os.getenv("MAX_CONCURRENT_SPELL_CHECK_BOOKS", "3"))
     max_parallel_auto_correct: int = int(os.getenv("MAX_PARALLEL_AUTO_CORRECT", "10"))

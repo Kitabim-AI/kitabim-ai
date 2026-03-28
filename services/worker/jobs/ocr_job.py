@@ -30,12 +30,13 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
     log_json(logger, logging.INFO, "OCR job started",
              book_id=book_id, page_count=len(page_ids))
 
-    # Fetch OCR model from system_configs (no fallback — must be configured in DB)
+    # Fetch OCR settings from system_configs
     async with db_session.async_session_factory() as session:
         config_repo = SystemConfigsRepository(session)
         gemini_ocr_model = await config_repo.get_value("gemini_ocr_model")
         if not gemini_ocr_model:
             raise RuntimeError("system_config 'gemini_ocr_model' is not set")
+        max_parallel_pages = int(await config_repo.get_value("ocr_max_parallel_pages", "4"))
 
     # Mark book's active step
     async with db_session.async_session_factory() as session:
@@ -104,7 +105,7 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
         result = await session.execute(select(Page).where(Page.id.in_(page_ids)))
         pages = list(result.scalars().all())
 
-    sem = asyncio.Semaphore(settings.max_parallel_pages)
+    sem = asyncio.Semaphore(max_parallel_pages)
 
     async def process_page(page: Page) -> None:
         async with sem:

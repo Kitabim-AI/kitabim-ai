@@ -148,8 +148,8 @@ def _build_kwargs(cls, model_name: str, task_type: str | None = None) -> dict:
     return kwargs
 
 
-def _build_chat_model(model_name: str, temperature: float | None = None) -> ChatGoogleGenerativeAI:
-    cache_key = (model_name, temperature)
+def _build_chat_model(model_name: str, temperature: float | None = None, thinking_budget: int | None = None) -> ChatGoogleGenerativeAI:
+    cache_key = (model_name, temperature, thinking_budget)
     cached = _CHAT_MODEL_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -163,6 +163,8 @@ def _build_chat_model(model_name: str, temperature: float | None = None) -> Chat
     kwargs["include_thoughts"] = False
     if temperature is not None:
         kwargs["temperature"] = temperature
+    if thinking_budget is not None:
+        kwargs["thinking_budget"] = thinking_budget
     model = ChatGoogleGenerativeAI(**kwargs)
     _CHAT_MODEL_CACHE[cache_key] = model
     return model
@@ -223,7 +225,8 @@ async def generate_text(prompt: str, model_name: str) -> str:
 
 
 async def generate_text_with_image(prompt: str, image_bytes: bytes, model_name: str) -> str:
-    llm = _build_chat_model(model_name, temperature=0)
+    # temperature=0 for deterministic OCR output; thinking_budget=1024 ("low") for speed/cost
+    llm = _build_chat_model(model_name, temperature=0, thinking_budget=1024)
     image_b64 = base64.b64encode(image_bytes).decode("ascii")
     content = [
         {"type": "text", "text": prompt},

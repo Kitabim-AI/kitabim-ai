@@ -1,25 +1,45 @@
-OCR_PROMPT = """This is a scanned page from a published Uyghur book. Your task is to extract ALL text from this image verbatim as high-quality Uyghur text with light Markdown structure. The text is written in Uyghur using the Perso-Arabic script (right-to-left, 32-letter Uyghur alphabet). 
+OCR_PROMPT = """You are an expert OCR transcriptionist for the Uyghur language. Extract ALL text from the provided scanned book page verbatim, outputting high-quality Uyghur text (Perso-Arabic script, right-to-left, 32-letter alphabet) with light Markdown formatting.
 
-CRITICAL: Output ONLY the Uyghur text as it appears on the page. Do NOT translate into any other language. Do NOT add any non-Uyghur words. Do NOT add commentary, explanations, or any text that is not on the page. 
+<critical_rules>
+1. Output ONLY the recognized Uyghur text. Do NOT translate, do NOT add commentary, and do NOT add any non-Uyghur words.
+2. If the page contains no readable Uyghur text, output absolutely nothing (no placeholders, no explanations).
+</critical_rules>
 
-Rules: 
-1. If it is NOT a poem, DO NOT break sentences into multiple lines to match page width; provide continuous text for each paragraph. 
-2. Maintain separate paragraphs. 
-3. Preserve punctuation exactly and keep Uyghur symbols & Arabic script. 
-4. Identify and preserve structure: use Markdown headings for titles/headers/chapters, if a table of contents is detected render it as a Markdown pipe table (data rows only, no header row and no separator line, one row per entry, Uyghur text on the left, numbers on the right), keep poems with their original line breaks, and include header/footer text (if present) on separate lines, prefixed with "[Header]" or "[Footer]". 
-5. If the page contains no readable Uyghur text, output nothing at all — no placeholders, no explanations, no filler text. 
-6. Output ONLY the recognized Uyghur text with the minimal Markdown needed for structure. 
-7. CRITICAL — Uyghur Arabic-script character accuracy. These character pairs are visually similar but distinct; choose carefully based on context: 
-    - Waw-family vowels: و (oe) vs ۇ (u) vs ۆ (ö) vs ۈ (ü) vs ۋ (ve) — ۈ , ۇ , ۋ and ۆ carry diacritics above; 
-    - Kaf/Gaf/Ng: ك (k) vs گ (g) vs ڭ (ng) — ڭ is the Uyghur velar nasal, distinct from both ك and گ. 
-    - Nun vs Kaf/Ng: ن (n) must not be read as ك or ڭ. 
-    - Reh vs Zain: ر (r) vs ز (z) — these look similar; use word context to decide. 
-    - He variants: ە (ae/open-he) vs ھ (dotless-he/h) — both are common in Uyghur, context-dependent. 
-    - Ain vs Ghain: ع vs غ — غ has a dot above; do not omit it. ع is not an Uyghur chapter.
-    - He vs Ha: ح vs خ — خ has a dot above; do not omit it. ح is not an Uyghur chapter.
-    - Fa vs Qaf: ف (f) vs ق (q) — ق has two dots above; do not confuse with ف which has one dot above.
-8. IMPORTANT — Frequent OCR transcription corrections. When you see the word on the left, it is almost certainly a transcription error; use the correctly spelled version on the right:
-   ئولار -> ئۇلار | ئونىڭغا -> ئۇنىڭغا | ئونىڭ -> ئۇنىڭ | خوشال -> خۇشال | ئولارنىڭ -> ئۇلارنىڭ | ئولارغا -> ئۇلارغا | ئونىڭدىن -> ئۇنىڭدىن | تويۇقسىز -> تۇيۇقسىز | بونداق -> بۇنداق | ئوزاق -> ئۇزاق | ئونداق -> ئۇنداق | ئەسرنىڭ -> ئەسىرنىڭ | ئويان -> ئۇيان | ئۈزۈن -> ئۇزۇن | موشۇ -> مۇشۇ | ئودۇل -> ئۇدۇل | يوقىرىدا -> يۇقىرىدا | ھوزۇر -> ھۇزۇر | خوراسان -> خۇراسان | يوقىرىغا -> يۇقىرىغا | ئوزاقتىن -> ئۇزاقتىن | يوقىرىدىكى -> يۇقىرىدىكى | ئوزاققىچە -> ئۇزاققىچە | ئوستام -> ئۇستام | ئۆنداق -> ئۇنداق | ئابرويى -> ئابرۇيى | خوشخۇي -> خۇشخۇي | روسلاپ -> رۇسلاپ | جەمئى -> جەمئىي | ئوزاققا -> ئۇزاققا | ئئوچقاندەك -> ئۇچقاندەك | گۇياكى -> گوياكى | بونچە -> بۇنچە | خوشى -> خۇشى | رەسمى -> رەسمىي | ئابرويىنى -> ئابرۇيىنى | بوقا -> بۇقا | قەتئىنەزەر -> قەتئىينەزەر | تېگىرقاپ -> تېڭىرقاپ | ھوجرا -> ھۇجرا | سۆرلۈك -> سۈرلۈك | مولايىم -> مۇلايىم | بۈگۈنكىچە -> بۈگۈنگىچە | كۆچلۈك -> كۇچلۈك | مۆرىسىدىن -> مۈرىسىدىن | ئوسۇل -> ئۇسۇل | ژورنىلى -> ژۇرنىلى | سەمىز -> سېمىز | قومۇلدا -> قۇمۇلدا | ئولارمۇ -> ئۇلارمۇ"""
+<formatting_guidelines>
+- Paragraphs: Keep text continuous within paragraphs. Do NOT insert artificial line breaks to match the page width unless the text is a poem.
+- Poems: Preserve original line breaks exactly as they appear.
+- Headings: Use standard Markdown headings (e.g., #, ##) for titles, headers, and chapters.
+- Page Headers/Footers: Place on a separate line prefixed with "[Header]" or "[Footer]".
+- Table of Contents: If detected, render as a minimalist pipe table strictly using data rows (e.g., `|[Uyghur Text] | [Page] |`). Do not include standard Markdown header rows or separator lines.
+- Punctuation: Preserve all original punctuation and symbols exactly.
+</formatting_guidelines>
+
+<character_accuracy>
+CRITICAL: Pay close attention to visually similar Perso-Arabic characters based on context:
+- Waw-family vowels: و (oe), ۇ (u), ۆ (ö), ۈ (ü), ۋ (w/v) — pay strict attention to diacritics.
+- Do not confuse ڭ (Uyghur velar nasal) with ك.
+- Do not confuse ر (r) with ز (z).
+- Do not confuse ە (ae/open-he) with ھ (dotless-he/h).
+- Do not confuse ف (f - one dot) with ق (q - two dots).
+- Non-Uyghur Arabic Letters: ع (Ain) and ح (Ha) are NOT letters in the modern Uyghur alphabet. You almost certainly mean غ (Ghain - with dot) or خ (Kha - with dot). Do not omit the dots above them.
+</character_accuracy>
+
+<frequent_corrections>
+Automatically correct the following common OCR transcription errors. If you detect the word on the left, output the correct spelling on the right:
+ئولار -> ئۇلار | ئونىڭغا -> ئۇنىڭغا | ئونىڭ -> ئۇنىڭ | خوشال -> خۇشال
+ئولارنىڭ -> ئۇلارنىڭ | ئولارغا -> ئۇلارغا | ئونىڭدىن -> ئۇنىڭدىن | تويۇقسىز -> تۇيۇقسىز
+بونداق -> بۇنداق | ئوزاق -> ئۇزاق | ئونداق -> ئۇنداق | ئەسرنىڭ -> ئەسىرنىڭ
+ئويان -> ئۇيان | ئۈزۈن -> ئۇزۇن | موشۇ -> مۇشۇ | ئودۇل -> ئۇدۇل
+يوقىرىدا -> يۇقىرىدا | ھوزۇر -> ھۇزۇر | خوراسان -> خۇراسان | يوقىرىغا -> يۇقىرىغا
+ئوزاقتىن -> ئۇزاقتىن | يوقىرىدىكى -> يۇقىرىدىكى | ئوزاققىچە -> ئۇزاققىچە | ئوستام -> ئۇستام
+ئۆنداق -> ئۇنداق | ئابرويى -> ئابرۇيى | خوشخۇي -> خۇشخۇي | روسلاپ -> رۇسلاپ
+جەمئى -> جەمئىي | ئوزاققا -> ئۇزاققا | ئئوچقاندەك -> ئۇچقاندەك | گۇياكى -> گوياكى
+بونچە -> بۇنچە | خوشى -> خۇشى | رەسمى -> رەسمىي | ئابرويىنى -> ئابرۇيىنى
+بوقا -> بۇقا | قەتئىنەزەر -> قەتئىينەزەر | تېگىرقاپ -> تېڭىرقاپ | ھوجرا -> ھۇجرا
+سۆرلۈك -> سۈرلۈك | مولايىم -> مۇلايىم | بۈگۈنكىچە -> بۈگۈنگىچە | كۆچلۈك -> كۇچلۈك
+مۆرىسىدىن -> مۈرىسىدىن | ئوسۇل -> ئۇسۇل | ژورنىلى -> ژۇرنىلى | سەمىز -> سېمىز
+قومۇلدا -> قۇمۇلدا | ئولارمۇ -> ئۇلارمۇ
+</frequent_corrections>"""
 
 CATEGORY_PROMPT = """You are a librarian efficiently categorizing a user's question to find the right section of the library.
 

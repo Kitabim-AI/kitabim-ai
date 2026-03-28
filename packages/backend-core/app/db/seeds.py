@@ -45,6 +45,11 @@ async def seed_system_configs(session: AsyncSession):
             "key": "spell_check_enabled",
             "value": "true",
             "description": "Globally enable/disable background spell check processing."
+        },
+        {
+            "key": "ocr_max_parallel_pages",
+            "value": "1",
+            "description": "Maximum number of pages to OCR concurrently within a single OCR job. Set to 1 to process pages strictly one at a time."
         }
     ]
     
