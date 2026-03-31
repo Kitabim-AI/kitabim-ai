@@ -1,6 +1,6 @@
 # Kitabim.AI — Project Structure Documentation
 
-> **Generated:** 2026-02-14
+> **Last Updated:** 2026-03-31
 > **Purpose:** Comprehensive overview of the codebase structure, architecture, and organization
 
 ---
@@ -190,17 +190,12 @@ The primary entry point for starting the app locally. Defines all services (Post
 
 ```
 scripts/
-├── init-db.sql                    # PostgreSQL schema
-├── add-missing-columns.sql        # Schema migrations
-├── backup_db.sh                   # Database backup
-├── deploy/                        # Deployment & Infrastructure
-│   ├── local/                    # Local dev scripts
-│   │   └── rebuild-and-restart.sh # Local redeploy script
-├── fix-*.py                       # Data migration scripts
-├── check_*.py                     # Diagnostic scripts
-├── migrate_*.py                   # Data transformation scripts
-└── extract_proverbs.py            # Proverb extraction
+├── *.py / *.sh                   # Operational, diagnostic, data scripts
+├── README.md                      # Scripts index
+└── README_SPELL_CHECK_RESET.md   # Spell-check reset procedure
 ```
+
+> Deployment scripts are in `/deploy/local/` and `/deploy/gcp/`, not in `scripts/`.
 
 **Rule:** All operational, debugging, diagnostic, or testing scripts created by developers or AI agents MUST be placed here. No ad-hoc scripts are allowed in the root or service folders.
 
@@ -252,7 +247,7 @@ docs/
 | Framework | FastAPI | REST API framework |
 | Language | Python 3.13 | Backend language |
 | Validation | Pydantic | Request/response validation |
-| Database | PostgreSQL 16+ | Primary data store |
+| Database | PostgreSQL 17 | Primary data store |
 | Vector Search | pgvector | Semantic similarity search |
 | Caching | Redis | High-speed cache for books/RAG |
 | Queue | Redis + ARQ | Background job processing |
@@ -328,11 +323,13 @@ docs/
 - Handle job retries and error tracking
 - Resumable processing (can restart without data loss)
 
-**Job Types:**
-- `process_pdf` - Full book OCR and indexing
-- `reprocess_pdf` - Re-run OCR (respects verified pages)
-- `reindex_pdf` - Regenerate embeddings only
-- `process_single_page` - OCR one page
+**Job Types (services/worker/jobs/):**
+- `ocr_job` - OCR pages via Gemini Vision (per book, groups by book for one PDF download)
+- `chunking_job` - Split page text into semantic chunks
+- `embedding_job` - Generate 768-dim vectors for chunks
+- `spell_check_job` - Identify unknown words per page
+- `auto_correct_job` - Apply auto-correction rules to spell issues
+- `summary_job` - Generate AI summaries for RAG routing
 
 ### 4. Redis
 
@@ -355,13 +352,22 @@ docs/
 - Page text and chunks
 - Audit logs (created_by, updated_by)
 
-**Tables:**
-- `books` - Book metadata
-- `pages` - Page-level text and status
-- `chunks` - Text chunks with vector embeddings
-- `users` - User accounts
+**Tables (15):**
+- `books` - Book metadata and pipeline state
+- `pages` - Page-level text and milestone tracking
+- `chunks` - Text chunks with 768-dim pgvector embeddings
+- `users` - User accounts (roles: admin/editor/reader)
 - `refresh_tokens` - JWT refresh tokens
-- `jobs` - ARQ job tracking
+- `proverbs` - Uyghur proverbs displayed in the UI
+- `rag_evaluations` - RAG query performance metrics
+- `dictionary` - Uyghur word list for spell check
+- `page_spell_issues` - Unknown word detections per page
+- `auto_correct_rules` - Misspelled → corrected word mappings
+- `system_configs` - Key-value runtime configuration
+- `user_chat_usage` - Daily chat usage counter per user
+- `book_summaries` - LLM-generated summaries with embeddings
+- `contact_submissions` - Join Us form submissions
+- `pipeline_events` - Transactional outbox for state transitions
 
 ---
 
@@ -465,49 +471,37 @@ docs/
 
 ## Configuration Management
 
-### Local Development (.env file)
+### Configuration (.env file)
 
-Used when running services manually (outside Docker Compose):
+All services share the root `.env` file. Key variables:
 
 ```bash
-# Database
-DATABASE_URL=postgresql://omarjan@localhost:5432/kitabim-ai
+# Database (PostgreSQL runs as Docker Compose service)
+DATABASE_URL=postgresql://...@postgres:5432/kitabim-ai   # inside Docker
+# For direct local access: postgresql://...@localhost:5532/kitabim-ai
 
 # Redis
-REDIS_URL=redis://localhost:6379/0
+REDIS_URL=redis://redis:6379/0
 
 # AI
 GEMINI_API_KEY=your-key
-GEMINI_EMBEDDING_MODEL=models/gemini-embedding-001
-# Note: OCR/chat/categorization model names are configured via the
-# system_configs table in the database, NOT via environment variables.
+# Model names are in system_configs table, NOT env vars
 
 # Auth
-JWT_SECRET_KEY=random-32-char-secret
-GOOGLE_CLIENT_ID=your-client-id
-GOOGLE_CLIENT_SECRET=your-secret
-
-# Storage
-DATA_DIR=/Users/Omarjan/Projects/kitabim-ai/data
-```
-
-### Docker Compose Configuration (.env)
-
-The `.env` file at the root contains secrets and environment-specific settings.
-
-**Example .env:**
-```bash
-DATABASE_URL=postgresql://omarjan@host.docker.internal:5432/kitabim-ai
-REDIS_URL=redis://redis:6379/0
-GEMINI_API_KEY=your-actual-key
-JWT_SECRET_KEY=your-jwt-secret
+JWT_SECRET_KEY=<64-char secret>
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
-DATA_DIR=/app/data
+FACEBOOK_CLIENT_ID=...
+TWITTER_CLIENT_ID=...
+
+# Storage
+STORAGE_BACKEND=gcs
+GCS_DATA_BUCKET=...    # private bucket for PDFs
+GCS_MEDIA_BUCKET=...   # public bucket for covers
+DATA_DIR=/app/data     # temp/intermediate files
 ```
 
-**Volume Mounts:**
-- `/app/data` → Host path: `/Users/Omarjan/Projects/kitabim-ai/data`
+See `.env.template` for all available variables including cache TTLs, RAG settings, and pipeline limits.
 
 ---
 
@@ -717,11 +711,10 @@ Kitabim.AI is a **well-structured monorepo** with:
 ✅ **Local-first development** (Docker Compose for consistent environments)
 ✅ **Comprehensive documentation** (BRD, system design, OpenAPI spec)
 
-**Code Statistics:**
-- **Backend:** 45 Python files in `packages/backend-core/app`
-- **Frontend:** 47 TypeScript/TSX files in `apps/frontend/src`
-- **API:** 1087 lines in OpenAPI spec (docs/openapi.json)
-- **Database:** 6 core tables with pgvector support
+**Key Statistics:**
+- **Database:** 15 tables including pgvector embeddings (768-dim)
+- **Worker:** 6 jobs, 11 scanners driving an event-driven pipeline
+- **API:** 11 endpoint modules; see `docs/main/openapi.json`
 
 The architecture supports the three core workflows:
 1. **Digitization** - Upload → OCR → Indexing
@@ -732,5 +725,5 @@ All services communicate via well-defined interfaces (REST API, Redis queue, Pos
 
 ---
 
-*Last Updated: 2026-03-14*
+*Last Updated: 2026-03-31*
 

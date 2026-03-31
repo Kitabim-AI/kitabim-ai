@@ -26,7 +26,7 @@ The intelligent Uyghur Digital Library platform for OCR, curation, and RAG-power
 All configuration is managed via the root-level `.env` file. See `.env.template` for available variables.
 
 Notes:
-- `DATABASE_URL` connects to your **host PostgreSQL** via `host.docker.internal:5532`.
+- `DATABASE_URL` — set to `postgresql://...@postgres:5432/kitabim-ai` inside Docker (the `postgres` service). For direct local access outside Docker, use `localhost:5532`.
 - `GEMINI_API_KEY` is required for AI features.
 - Local storage at `./data` is mounted to the containers for persistent uploads and covers.
 
@@ -40,8 +40,9 @@ Copy the template and fill in your keys (especially `GEMINI_API_KEY`):
 cp .env.template .env
 ```
 
-**2. Database Prerequisites**
-Ensure **PostgreSQL** is running on your host machine at port `5532`. The app connects via `host.docker.internal`.
+**2. Prerequisites**
+- Docker Desktop (or Docker Engine + Docker Compose)
+- PostgreSQL is started automatically as part of Docker Compose (`postgres` service on host port `5532`).
 
 **3. Launch Services**
 Build and start all services in the background:
@@ -104,12 +105,12 @@ python3.13 -m pytest services/backend/tests
 
 ### Troubleshooting
 
-- **host.docker.internal not resolving**: Ensure you are using Docker Desktop or have configured the `host-gateway` in your Docker setup.
 - **Backend not ready**: Check logs with `docker compose logs backend`.
+- **Postgres not ready**: Check logs with `docker compose logs postgres`.
 
 # Technology Stack
 
-- **Frontend**: React 19, Vite 6, Tailwind (CDN), Lucide, pdf.js.
+- **Frontend**: React 19, Vite 6, Tailwind CSS 3.4 (PostCSS bundled), Lucide, pdf.js.
 - **Backend**: FastAPI, PostgreSQL (asyncpg), pgvector, PyMuPDF, LangChain, `langchain-google-genai`, `httpx`, `numpy`.
 - **Queue/Worker**: Redis 7+ + ARQ.
 - **Caching**: Redis (shared with queue).
@@ -117,4 +118,4 @@ python3.13 -m pytest services/backend/tests
 
 - **Production**: Automated deployment using GCP Artifact Registry and Docker Compose on GCE.
   - Deployment Script: `./deploy/gcp/scripts/deploy.sh [IMAGE_TAG]`
-  - See [Production Deployment Guide](docs/PRODUCTION_DEPLOYMENT.md) for details.
+  - See [Production Deployment Guide](docs/main/PRODUCTION_DEPLOYMENT.md) for details.

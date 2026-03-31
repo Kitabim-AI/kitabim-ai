@@ -29,7 +29,6 @@ services/worker/
     spell_check_scanner.py         ← Finds pages needing spell-check, enqueues spell_check_job
     auto_correct_scanner.py        ← Finds pages needing auto-correct, enqueues auto_correct_job
     summary_scanner.py             ← Finds books needing summaries, enqueues summary_job
-    word_index_scanner.py          ← Builds/updates word index
     stale_watchdog.py              ← Detects and resets stuck/stale jobs
     event_dispatcher.py            ← Event queue management
     maintenance_scanner.py         ← Periodic maintenance tasks

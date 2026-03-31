@@ -47,18 +47,15 @@
 - **Production:** `deploy/gcp/.env`
 - **Never commit:** Keep `.env` files in `.gitignore`
 
-## Recent Optimizations (2026-03-14)
+## Pipeline Optimizations (applied 2026-03-14)
 
-### Safe Pipeline Speed Improvements
-Applied three zero-risk optimizations for ~2x pipeline speedup:
+### Safe Pipeline Speed Improvements (~2x speedup)
 
-1. **MAX_PARALLEL_PAGES:** 6→8 (local), 4→8 (production)
-2. **EMBED_BATCH_SIZE:** 20→50
-3. **scanner_book_limit:** 10→20 (via migration 021)
+1. **MAX_PARALLEL_PAGES:** raised to 6 (env var, `.env.template`)
+2. **EMBED_BATCH_SIZE:** raised to 50 (env var, `.env.template`)
+3. **scanner_book_limit:** raised to 20 (migration 021)
 
 **Impact:** 300-page book processing: ~30min → ~15min
-
-See: `/docs/PIPELINE_OPTIMIZATIONS.md` for full details.
 
 ## Architecture Notes
 
@@ -92,4 +89,4 @@ See: `/docs/PIPELINE_OPTIMIZATIONS.md` for full details.
 
 ---
 
-*Last Updated: 2026-03-14*
+*Last Updated: 2026-03-31*

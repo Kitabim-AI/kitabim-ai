@@ -77,8 +77,8 @@ flowchart LR
 
 ## 5) Data Model (PostgreSQL)
 **Books**
-- `status` statuses: `pending`, `ready`, `error`
-- `pipeline_step`: Active pipeline stage (`ocr`, `chunking`, `embedding`, `spell_check`)
+- `status` statuses: `pending`, `ocr_processing`, `ocr_done`, `indexing`, `ready`, `error`
+- `pipeline_step`: Active pipeline stage (`ocr`, `chunking`, `embedding`, `spell_check`, `ready`)
 - `pipeline_stats`: JSONB blob containing page counts per milestone (e.g., `spell_check_active`, `ocr_failed`)
 
 **Pages**

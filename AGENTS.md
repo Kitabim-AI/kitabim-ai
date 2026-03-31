@@ -40,7 +40,7 @@ This file provides guidance for automated agents working in this repo.
 ## Local Dev (Docker Compose)
 - Build images and start all services: `./deploy/local/rebuild-and-restart.sh all`
 - Rebuild a single service: `./deploy/local/rebuild-and-restart.sh [frontend|backend|worker]`
-- The application connects to PostgreSQL on your local host via `host.docker.internal:5532`.
+- PostgreSQL runs as the `postgres` Docker Compose service (internal: `postgres:5432`, host port: `5532`).
 - Frontend: http://localhost:30080 | Backend: http://localhost:30800
 - **CRITICAL LOCAL RULE**: Do not rely on local dev servers (like `npm run dev`) for final change application. You MUST always use Docker Compose to ensure changes are reflected.
 

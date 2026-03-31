@@ -1,6 +1,6 @@
 # Kitabim.ai Documentation
 
-**Last Updated:** 2026-03-14
+**Last Updated:** 2026-03-31
 
 Welcome to the Kitabim.ai documentation. This directory contains comprehensive technical documentation for the platform.
 
@@ -21,8 +21,8 @@ Welcome to the Kitabim.ai documentation. This directory contains comprehensive t
 
 | Document | Description | Status |
 |----------|-------------|--------|
-| [PIPELINE_OPTIMIZATIONS.md](PIPELINE_OPTIMIZATIONS.md) | Safe pipeline speed improvements (2x faster processing) | ✅ Applied |
-| [REDIS_CACHING_PLAN.md](REDIS_CACHING_PLAN.md) | Redis caching strategy and implementation | ✅ Complete |
+| Pipeline optimizations (2x speedup, applied 2026-03-14) | MAX_PARALLEL_PAGES=6, EMBED_BATCH_SIZE=50 | ✅ Applied (env vars only) |
+| Redis caching strategy | Redis caching for books, configs, proverbs | ✅ Complete (see .env.template CACHE_TTL_* vars) |
 
 ### **📊 Operations & Monitoring**
 
@@ -34,8 +34,7 @@ Welcome to the Kitabim.ai documentation. This directory contains comprehensive t
 
 | Document | Description | Status |
 |----------|-------------|--------|
-| [book-summary-rag.md](book-summary-rag.md) | Hierarchical RAG with book summaries | ✅ Implemented |
-| [MIGRATION_015_BOOK_WORD_INDEX.md](MIGRATION_015_BOOK_WORD_INDEX.md) | Book word index feature documentation | ✅ Migrated |
+| Hierarchical RAG with book summaries | `book_summaries` table + `summary_scanner` + `summary_job` | ✅ Implemented |
 | [UI_CSS_STANDARD.md](UI_CSS_STANDARD.md) | Frontend CSS conventions and Tailwind standards | ✅ Current |
 
 ### **📋 Requirements & Specifications**
@@ -120,7 +119,7 @@ All docs should include:
 ## 🏗️ Current System State (March 2026)
 
 ### Technology Stack
-- **Database:** PostgreSQL 16 with pgvector
+- **Database:** PostgreSQL 17 with pgvector
 - **Cache/Queue:** Redis 7
 - **Backend:** Python 3.13 + FastAPI + SQLAlchemy
 - **Frontend:** React 19 + Vite 6 + TypeScript 5.8
@@ -152,10 +151,10 @@ All docs should include:
 - [pgvector Docs](https://github.com/pgvector/pgvector)
 
 ### Project Files
-- [README.md](../README.md) - Project README
-- [SECURITY_FIXES.md](../SECURITY_FIXES.md) - Security updates and fixes
-- [DEPLOYMENT_SECURITY.md](../DEPLOYMENT_SECURITY.md) - Deployment security guide
-- [.claude/project-info.md](../.claude/project-info.md) - Project conventions
+- [README.md](../../README.md) - Project README
+- [SECURITY_FIXES.md](SECURITY_FIXES.md) - Security updates and fixes
+- [DEPLOYMENT_SECURITY.md](DEPLOYMENT_SECURITY.md) - Deployment security guide
+- [.claude/project-info.md](../../.claude/project-info.md) - Project conventions
 
 ---
 
