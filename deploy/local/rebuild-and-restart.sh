@@ -46,6 +46,22 @@ rebuild_component() {
 
 if [ "$COMPONENT" = "all" ]; then
   docker compose build
+
+  # Start postgres first so migrations can run against it
+  docker compose up -d postgres
+  echo "⏳ Waiting for postgres to be ready..."
+  until docker compose exec -T postgres pg_isready -U kitabim -d kitabim-ai > /dev/null 2>&1; do
+    sleep 1
+  done
+  echo "✅ Postgres ready"
+
+  # Apply all migrations (IF NOT EXISTS guards make these idempotent)
+  echo "🗄️  Applying migrations..."
+  for f in packages/backend-core/migrations/*.sql; do
+    echo "  → $(basename "$f")"
+    docker compose exec -T postgres psql -U kitabim -d kitabim-ai < "$f"
+  done
+
   docker compose up -d
 else
   rebuild_component "$COMPONENT"
