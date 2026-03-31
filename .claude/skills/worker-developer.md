@@ -133,26 +133,9 @@ async with db_session.async_session_factory() as session:
 
 ## PipelineEvent
 
-Every page milestone transition must emit a `PipelineEvent` in the **same commit** as the milestone update — not in a separate session:
+Always emit a `PipelineEvent` in the **same commit** as the milestone update — not in a separate session. See `worker-designer` for the full code pattern.
 
-```python
-from app.db.models import PipelineEvent
-
-# Inside the page's session block, before commit:
-session.add(PipelineEvent(
-    page_id=page.id,
-    event_type="my_step_succeeded",   # convention: {step}_{succeeded|failed}
-))
-# or with extra context:
-session.add(PipelineEvent(
-    page_id=page.id,
-    event_type="my_step_failed",
-    payload=f'{{"error": "{error_msg}"}}',
-))
-await session.commit()
-```
-
-The `event_dispatcher` scanner reads unprocessed events and triggers fast downstream jobs (e.g. `ocr_succeeded` → enqueue `chunking_job` immediately, without waiting for the next cron tick). If you add a new pipeline step, update `event_dispatcher.py` to handle the new `event_type`.
+**Critical**: the `event_dispatcher` scanner reads unprocessed events and triggers fast downstream jobs (e.g. `ocr_succeeded` → enqueues `chunking_job` immediately, without waiting for the next cron tick). If you add a new pipeline step, update `event_dispatcher.py` to handle the new `event_type`.
 
 ---
 
@@ -280,160 +263,41 @@ elif event.event_type == "my_step_succeeded":
 
 ## Testing
 
-Tests live in `services/worker/tests/`. Existing tests are scaffolds — write real implementations alongside any new job or scanner.
+See the **`worker-unit-tester`** skill for all test patterns (job templates, scanner templates, pipeline driver tests, `async_session_factory` mocking, and the full workflow).
 
-**Test layout:**
-```
-tests/
-  jobs/test_<step>_job.py
-  scanners/test_<step>_scanner.py
-```
-
-**Async test pattern** (use `pytest-asyncio`):
-```python
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch, call
-
-@pytest.mark.asyncio
-async def test_my_job_success():
-    mock_page = MagicMock()
-    mock_page.id = 1
-    mock_page.book_id = "book-123"
-    mock_page.page_number = 1
-    mock_page.text = "some text"
-    mock_page.is_toc = False
-
-    with patch("jobs.my_job.db_session.async_session_factory") as mock_factory, \
-         patch("jobs.my_job.do_my_work", new_callable=AsyncMock, return_value="result"), \
-         patch("jobs.my_job.BookMilestoneService.update_book_milestone_for_step",
-               new_callable=AsyncMock):
-
-        mock_session = AsyncMock()
-        mock_factory.return_value.__aenter__.return_value = mock_session
-        mock_session.execute.return_value.scalars.return_value.all.return_value = [mock_page]
-
-        ctx = {}
-        await my_job(ctx, page_ids=[1])
-
-        # Verify milestone was set to succeeded
-        update_calls = [str(c) for c in mock_session.execute.call_args_list]
-        assert any("succeeded" in c for c in update_calls)
-```
-
-**Testing the failure path:**
-```python
-@pytest.mark.asyncio
-async def test_my_job_page_failure():
-    with patch("jobs.my_job.do_my_work", new_callable=AsyncMock,
-               side_effect=RuntimeError("API error")), \
-         patch("jobs.my_job.db_session.async_session_factory") as mock_factory, \
-         patch("jobs.my_job.BookMilestoneService.update_book_milestone_for_step",
-               new_callable=AsyncMock):
-
-        mock_session = AsyncMock()
-        mock_factory.return_value.__aenter__.return_value = mock_session
-        mock_session.execute.return_value.scalars.return_value.all.return_value = [mock_page]
-
-        ctx = {}
-        # Job must NOT raise even when a page fails
-        await my_job(ctx, page_ids=[1])
-
-        # Check retry_count was incremented
-        update_calls = str(mock_session.execute.call_args_list)
-        assert "failed" in update_calls
-        assert "retry_count" in update_calls
-```
-
-**Testing a scanner (claim + dispatch):**
-```python
-@pytest.mark.asyncio
-async def test_my_scanner_dispatches_job():
-    mock_redis = AsyncMock()
-
-    with patch("scanners.my_scanner.db_session.async_session_factory") as mock_factory, \
-         patch("scanners.my_scanner.BookMilestoneService.update_book_milestone_for_step",
-               new_callable=AsyncMock):
-
-        mock_session = AsyncMock()
-        mock_factory.return_value.__aenter__.return_value = mock_session
-
-        # Scanner finds 2 claimable pages
-        mock_session.execute.return_value.fetchall.return_value = [(1, "book-1"), (2, "book-1")]
-
-        ctx = {"redis": mock_redis}
-        await run_my_scanner(ctx)
-
-        mock_redis.enqueue_job.assert_called_once()
-        call_kwargs = mock_redis.enqueue_job.call_args
-        assert call_kwargs[0][0] == "my_job"
-        assert set(call_kwargs[1]["page_ids"]) == {1, 2}
-
-
-@pytest.mark.asyncio
-async def test_my_scanner_no_work():
-    mock_redis = AsyncMock()
-
-    with patch("scanners.my_scanner.db_session.async_session_factory") as mock_factory:
-        mock_session = AsyncMock()
-        mock_factory.return_value.__aenter__.return_value = mock_session
-        mock_session.execute.return_value.fetchall.return_value = []
-
-        ctx = {"redis": mock_redis}
-        await run_my_scanner(ctx)
-
-        mock_redis.enqueue_job.assert_not_called()
-```
-
-**Run tests:**
+Run with:
 ```bash
-cd services/worker && python -m pytest
-cd services/worker && python -m pytest tests/jobs/test_my_job.py -v
+pytest services/worker/tests/ -v
+pytest services/worker/tests/jobs/test_my_job.py -v
 ```
 
 ---
 
 ## Logging
 
-Always use `log_json` with structured fields — never `print()` or bare `logger.info("string")`:
+See the logging section in **`worker-designer`** for the full pattern and logger naming convention. Key rule: always use `log_json` — never `print()` or bare `logger.info("string")`.
 
 ```python
 import logging
 from app.utils.observability import log_json
 
-logger = logging.getLogger("app.worker.my_job")      # jobs
-logger = logging.getLogger("app.worker.my_scanner")  # scanners
-
-# Job lifecycle
-log_json(logger, logging.INFO,    "my job started",   page_count=len(page_ids))
-log_json(logger, logging.DEBUG,   "page ok",          book_id=page.book_id, page=page.page_number)
-log_json(logger, logging.WARNING, "page failed",      book_id=page.book_id, error=str(exc))
-log_json(logger, logging.INFO,    "my job completed", succeeded=succeeded, failed=failed)
-
-# Scanner lifecycle
-log_json(logger, logging.INFO, "my scanner dispatched", jobs_dispatched=n, page_count=m)
+logger = logging.getLogger("app.worker.my_job")   # or "app.worker.my_scanner"
+log_json(logger, logging.INFO, "my job started", page_count=len(page_ids))
 ```
 
 ---
 
 ## Database Migrations
 
-Same rules as the backend. Add a sequential `.sql` file for every schema change:
-
-```
-packages/backend-core/migrations/NNN_short_description.sql
-```
+See **`database-designer`** for migration format conventions (IF NOT EXISTS guards, BEGIN/COMMIT, sequential numbering).
 
 Apply locally:
 ```bash
 docker exec -i $(docker compose ps -q postgres) \
-    psql -U postgres kitabim < packages/backend-core/migrations/035_my_change.sql
+    psql -U postgres kitabim < packages/backend-core/migrations/NNN_my_change.sql
 ```
 
-After adding a column, update:
-1. SQLAlchemy model in `models.py`
-2. Any repository queries that need it
-3. Stale watchdog if it's a `*_milestone` column
-4. `BookMilestoneService` if it tracks the new milestone
+After adding a column, update: ORM model → affected repository queries → stale watchdog (if `*_milestone`) → `BookMilestoneService` (if it tracks the new milestone).
 
 ---
 
