@@ -1861,7 +1861,7 @@ async def update_book_details(
     # Remove computed/read-only fields (already in snake_case after conversion)
     read_only_fields = [
         "upload_date", "created_by", "completed_count", "last_error",
-        "pipeline_stats", "page_stats"
+        "pipeline_stats", "page_stats", "has_summary"
     ]
     for field in read_only_fields:
         book_update.pop(field, None)
