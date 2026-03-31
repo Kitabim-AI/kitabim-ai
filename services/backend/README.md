@@ -25,7 +25,7 @@
 ## Notes
 - Local dev uses Docker Compose.
 - Uses PostgreSQL from `DATABASE_URL` and the shared `data/` folder for uploads/covers.
-- Override the data location with `DATA_DIR` (useful for Docker/K8s).
+- Override the data location with `DATA_DIR` (set to `/app/data` inside Docker Compose).
 - The Gemini API key stays on the backend; the frontend proxies AI calls via `/api/ai`.
 - Redis is required for background jobs (`REDIS_URL`).
 - Core code now lives in `packages/backend-core`.
