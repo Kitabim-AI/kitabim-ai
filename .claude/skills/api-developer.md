@@ -377,94 +377,26 @@ docker exec -i $(docker compose ps -q postgres) \
 
 ## Testing
 
-Tests live in `services/backend/tests/`. Run with:
+See the **`api-unit-tester`** skill for all test patterns (repository tests, service tests, endpoint tests, mocking recipes, and the full workflow).
+
+Run with:
 ```bash
-cd services/backend && python -m pytest
-```
-
-**Test file conventions:**
-- `tests/api/endpoints/test_<domain>.py` — endpoint tests
-- `tests/auth/test_<module>.py` — auth tests
-
-**Async test pattern** (use `pytest-asyncio`):
-```python
-import pytest
-from httpx import AsyncClient, ASGITransport
-from main import app
-
-@pytest.mark.asyncio
-async def test_my_endpoint():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        response = await client.get("/api/my-feature/")
-    assert response.status_code == 200
-    data = response.json()
-    assert isinstance(data, list)
-```
-
-**Auth in tests** — override the dependency:
-```python
-from auth.dependencies import get_current_user
-from app.models.user import User, UserRole
-
-def override_user(role: UserRole = UserRole.ADMIN):
-    async def _user():
-        return User(id="test-user", role=role, email="test@example.com", is_active=True)
-    return _user
-
-@pytest.fixture(autouse=True)
-def mock_auth(monkeypatch):
-    app.dependency_overrides[get_current_user] = override_user(UserRole.ADMIN)
-    yield
-    app.dependency_overrides.clear()
-```
-
-**DB in tests** — use an in-memory SQLite or a test Postgres; mock the `get_session` dependency for unit tests:
-```python
-from unittest.mock import AsyncMock, patch
-
-@pytest.mark.asyncio
-async def test_service_logic():
-    mock_session = AsyncMock()
-    mock_session.execute.return_value.scalar_one_or_none.return_value = MyModel(id="1")
-    result = await my_service_function(mock_session, item_id="1")
-    assert result is not None
-```
-
-**Mocking external services** (Gemini, GCS, Redis):
-```python
-from unittest.mock import patch, AsyncMock
-
-@patch("app.services.cache_service.cache_service.get", new_callable=AsyncMock, return_value=None)
-@patch("app.services.cache_service.cache_service.set", new_callable=AsyncMock)
-async def test_with_cache_miss(mock_set, mock_get):
-    ...
+pytest packages/backend-core/tests/    # core package tests
+pytest services/backend/tests/         # API endpoint/auth tests
 ```
 
 ---
 
 ## Logging & Observability
 
-Always use `log_json` — never `print()` or bare `logger.info("string")`:
+Always use `log_json` — never `print()` or bare `logger.info("string")`. See the logging section in **`api-designer`** for the full pattern and examples.
 
 ```python
 import logging
 from app.utils.observability import log_json
 
 logger = logging.getLogger(__name__)
-
-# Info
-log_json(logger, logging.INFO, "Book processing started",
-         book_id=book.id, total_pages=book.total_pages)
-
-# Warning
-log_json(logger, logging.WARNING, "Cache miss on user profile",
-         user_id=user_id, key=cache_key)
-
-# Error (include the exception string)
-log_json(logger, logging.ERROR, "Embedding failed",
-         page_id=page_id, error=str(e), retry_count=page.retry_count)
+log_json(logger, logging.INFO, "Book created", book_id=book.id, user_id=current_user.id)
 ```
 
 `request_id_var` is automatically injected into every log line from the request context — no manual effort needed in endpoints.
