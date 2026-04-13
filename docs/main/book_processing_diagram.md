@@ -15,45 +15,50 @@ flowchart TD
 
     InitDB([Book: pending\nMilestones: idle])
 
-    %% State Machine / Scanners
-    subgraph Pipeline [Decoupled Pipeline Scanners]
+    %% Mandatory sequential pipeline
+    subgraph Pipeline [Mandatory Pipeline — OCR → Chunking → Embedding]
         S_OCR[OCR Scanner] -->|Claim idle| J_OCR[OCR Job]
-        S_CH[Chunking Scanner] -->|Claim idle| J_CH[Chunking Job]
-        S_EM[Embedding Scanner] -->|Claim idle| J_EM[Embedding Job]
-        S_WI[Word Index Scanner] -->|Claim idle| J_WI[Word Index Job]
-        S_SC[Spell Check Scanner] -->|Claim idle| J_SC[Spell Check Job]
+        S_CH[Chunking Scanner] -->|Claim idle\ndep: ocr=succeeded| J_CH[Chunking Job]
+        S_EM[Embedding Scanner] -->|Claim idle\ndep: chunking=succeeded| J_EM[Embedding Job]
     end
 
     InitDB --> S_OCR
 
-    %% Event Bus / Outbox
+    %% Event Bus / Outbox — reactive low-latency triggers
     subgraph Outbox [Transactional Outbox]
-        J_OCR -->|Write Event| OB[(Pipeline Events)]
-        J_CH -->|Write Event| OB
-        J_EM -->|Write Event| OB
-        J_WI -->|Write Event| OB
-        
+        J_OCR -->|Write Event\nocr_succeeded| OB[(Pipeline Events)]
+        J_CH -->|Write Event\nchunking_succeeded| OB
+        J_EM -->|Write Event\nembedding_succeeded| OB
+
         OB -->|Poll| ED[Event Dispatcher]
-        
-        ED -->|Immediate Trigger| S_CH
-        ED -->|Immediate Trigger| S_EM
-        ED -->|Immediate Trigger| S_WI
-        ED -->|Immediate Trigger| S_SC
+
+        ED -->|Immediate: dispatch chunking_job| J_CH
+        ED -->|Immediate: dispatch embedding_job| J_EM
     end
 
-    %% Terminal states
-    J_SC -->|Success| Ready([Book: ready])
-    
+    %% Book readiness — driven by PipelineDriver, not spell check
+    J_EM -->|embedding terminal| PD[Pipeline Driver\nevery 1 min]
+    PD -->|all pages terminal| Ready([Book: ready])
+
+    %% Independent quality layer — runs in parallel, does NOT block readiness
+    subgraph SpellCheck [Independent Quality Layer]
+        S_SC[Spell Check Scanner\ndep: ocr=succeeded only] -->|Claim idle| J_SC[Spell Check Job]
+    end
+    InitDB -.->|ocr done| S_SC
+
     %% Monitoring
     Watchdog[Stale Watchdog] -.->|Reset in_progress > 30m| Pipeline
+    Watchdog -.->|Reset in_progress > 30m| SpellCheck
 
     classDef stage fill:#e9edc9,stroke:#606c38,stroke-width:2px
     classDef job fill:#d4f1f4,stroke:#189ab4,stroke-width:1px
     classDef event fill:#ffe8d6,stroke:#b5838d,stroke-dasharray: 5 5
+    classDef driver fill:#fef9c3,stroke:#854d0e,stroke-width:1px
 
     class InitDB,Ready stage
-    class J_OCR,J_CH,J_EM,J_WI,J_SC job
+    class J_OCR,J_CH,J_EM,J_SC job
     class OB,ED event
+    class PD driver
 ```
 
 ---
@@ -138,9 +143,8 @@ flowchart TD
 | Step | Goal | Terminal Success |
 |---|---|---|
 | `ocr` | Extraction of text from image/PDF | `succeeded` |
-| `chunking` | Semantic splitting of text | `succeeded` |
+| `chunking` | Recursive character splitting of text into overlapping chunks | `succeeded` |
 | `embedding` | Generation of vector embeddings | `succeeded` |
-| `word_index` | Building per-book word frequency index | `done` |
 | `spell_check` | Identifying unknown words | `done` |
 
 ---
@@ -148,7 +152,7 @@ flowchart TD
 ### Reprocess Step
 | Field | Value |
 |---|---|
-| Trigger | Admin context menu step reprocess |
+| Trigger | Admin context menu step reprocess (OCR, Chunking, Embedding, or Spell Check) |
 | Effect | Target step milestone → `idle`. Downstream steps reset. |
 | Logic | Preserves existing data until newer results are applied page-by-page. |
 
@@ -168,7 +172,7 @@ flowchart TD
 | Field | Value |
 |---|---|
 | Trigger | Editor saves text changes |
-| Effect | **Synchronous** re-chunk and re-embed. Sets `milestone: succeeded`. |
+| Effect | Synchronous re-chunk (always). Synchronous re-embed attempted — if it succeeds, `embedding_milestone: succeeded`; if it fails, `embedding_milestone: idle` and the worker picks it up. If text changed, stale spell issues are deleted and `spell_check_milestone` is reset to `idle`. |
 
 ---
 
@@ -177,7 +181,7 @@ flowchart TD
 | Component | Role |
 |---|---|
 | **ARQ Worker** | Runs the scanners and specific jobs (via Redis queue) |
-| **Pipeline Driver** | Periodically checks book readiness and promotes state |
-| **Scanners** | Periodically poll for `idle` pages and dispatch jobs |
-| **Event Dispatcher** | Polles Outbox and triggers scanners immediately for low latency |
+| **Pipeline Driver** | Initializes pages, resets retryable failures, marks books `ready` when embedding is terminal |
+| **Scanners** | Poll for `idle` pages, enforce their own upstream dependency, dispatch jobs |
+| **Event Dispatcher** | Polls the outbox and immediately dispatches the next job (bypasses the 1-min cron delay) |
 | **Stale Watchdog** | Recovers `in_progress` pages that timed out |

@@ -148,18 +148,11 @@ curl https://kitabim.ai/api/health
 
 #### Check Pipeline Processing Stats
 ```bash
-# Via API (requires auth token)
+# Via API (requires admin auth token)
 curl -H "Authorization: Bearer YOUR_TOKEN" \
-  https://kitabim.ai/api/books/stats
+  https://kitabim.ai/api/stats/
 
-# Returns:
-# {
-#   "total": 150,
-#   "pending": 5,
-#   "processing": 3,
-#   "completed": 140,
-#   "error": 2
-# }
+# Returns pipeline statistics across all books and pages
 ```
 
 ---
