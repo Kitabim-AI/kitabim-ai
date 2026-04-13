@@ -69,7 +69,7 @@ An editor is a signed-in user responsible for content management.
 - Can **upload** new PDF books to the library.
 - Can **start, retry, and monitor OCR processing** for uploaded books.
 - Can **edit page content** directly within the reader.
-- Can **reprocess specific steps** (OCR, Chunking, Embedding, Word Index, or Spell Check) or **reindex** existing books.
+- Can **reprocess specific steps** (OCR, Chunking, Embedding, or Spell Check) or **reindex** existing books.
 - Can **run spell check** and **apply corrections**.
 - Can **edit book metadata** (title, author, volume, categories).
 - Can **upload custom cover images**.
@@ -110,11 +110,11 @@ An administrator has full control over the system.
 
 ### 3.1 User Authentication
 
-**REQ-AUTH-001: Sign Up with Google**  
-New users create an account by signing in with their Google account for the first time. There is no separate registration step — the account is created automatically upon first sign-in. The user's display name, email, and profile picture are imported from their Google profile. New users are assigned the **Reader** role by default.
+**REQ-AUTH-001: Sign Up via OAuth**  
+New users create an account by signing in with their Google, Facebook, or Twitter account for the first time. There is no separate registration step — the account is created automatically upon first sign-in. The user's display name, email, and profile picture are imported from the OAuth provider. New users are assigned the **Reader** role by default.
 
-**REQ-AUTH-002: Sign In with Google**  
-Returning users sign in using their Google account. No manual sign-in (username/password) is supported — authentication is exclusively through Google.
+**REQ-AUTH-002: Sign In via OAuth**  
+Returning users sign in using their Google, Facebook, or Twitter account. No manual sign-in (username/password) is supported — authentication is exclusively through OAuth providers.
 
 **REQ-AUTH-003: Automatic Session Management**  
 After sign-in, the user's session is maintained automatically. Short-lived access credentials are refreshed transparently so the user does not need to re-authenticate frequently. Sessions last up to 7 days before requiring a new sign-in.
@@ -205,7 +205,7 @@ The first page of the PDF is automatically saved as the book's cover image durin
 After OCR is complete, the system uses AI to automatically suggest categories for the book based on its content.
 
 **REQ-OCR-008: Search Index Generation**  
-After OCR, the system generates a search index for each page to enable AI-powered question answering and semantic search. Pages are split into smaller overlapping segments to improve search precision.
+After OCR, the system generates a search index for each page to enable AI-powered question answering and semantic search. Pages are split into smaller overlapping chunks using recursive character splitting (split on paragraph breaks, then newlines, then sentences, then words) to improve search precision.
 
 **REQ-OCR-009: Resumable Processing**  
 If OCR processing is interrupted (e.g., due to a system restart or timeout), it can be resumed from where it left off. Already-completed pages are not re-processed.
@@ -459,7 +459,7 @@ Each book in the table has a context menu with available actions:
 - Open in Reader
 - Start OCR (for pending books)
 - Retry OCR (for books with errors)
-- Reprocess Step (OCR, Chunking, Embedding, Word Index, or Spell Check)
+- Reprocess Step (OCR, Chunking, Embedding, or Spell Check)
 - Reindex (regenerate search index)
 - Toggle Visibility (public ↔ private)
 - Delete (admin only)

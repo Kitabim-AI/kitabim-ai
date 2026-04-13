@@ -1,6 +1,6 @@
 # Kitabim.ai Documentation
 
-**Last Updated:** 2026-03-31
+**Last Updated:** 2026-04-12
 
 Welcome to the Kitabim.ai documentation. This directory contains comprehensive technical documentation for the platform.
 
@@ -16,13 +16,14 @@ Welcome to the Kitabim.ai documentation. This directory contains comprehensive t
 | [WORKER_DESIGN.md](WORKER_DESIGN.md) | Event-driven pipeline architecture and worker components | ✅ Current |
 | [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) | Monorepo structure and codebase organization | ✅ Current |
 | [book_processing_diagram.md](book_processing_diagram.md) | Visual diagrams of the book processing pipeline | ✅ Current |
+| [code-review-api-2026-03-29.md](code-review-api-2026-03-29.md) | API code review snapshot — blocking issues still open | ⚠️ Open issues |
 
 ### **⚡ Performance & Optimization**
 
 | Document | Description | Status |
 |----------|-------------|--------|
-| Pipeline optimizations (2x speedup, applied 2026-03-14) | MAX_PARALLEL_PAGES=6, EMBED_BATCH_SIZE=50 | ✅ Applied (env vars only) |
-| Redis caching strategy | Redis caching for books, configs, proverbs | ✅ Complete (see .env.template CACHE_TTL_* vars) |
+| Pipeline optimizations (2x speedup, applied 2026-03-14) | MAX_PARALLEL_PAGES=6, EMBED_BATCH_SIZE=50 — see `.env.template` | ✅ Applied (env vars only) |
+| Redis caching strategy | Redis caching for books, configs, proverbs — see `.env.template` CACHE_TTL_* vars | ✅ Complete |
 
 ### **📊 Operations & Monitoring**
 
@@ -56,8 +57,7 @@ Welcome to the Kitabim.ai documentation. This directory contains comprehensive t
    - Check [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for codebase layout
 
 2. **Making Changes:**
-   - Performance: See [PIPELINE_OPTIMIZATIONS.md](PIPELINE_OPTIMIZATIONS.md) for safe optimizations
-   - Caching: Reference [REDIS_CACHING_PLAN.md](REDIS_CACHING_PLAN.md)
+   - Performance: See `.env.template` for pipeline tuning vars (MAX_PARALLEL_PAGES, EMBED_BATCH_SIZE, CACHE_TTL_*)
    - UI: Follow [UI_CSS_STANDARD.md](UI_CSS_STANDARD.md) conventions
 
 ### **For Operations**
@@ -116,7 +116,7 @@ All docs should include:
 
 ---
 
-## 🏗️ Current System State (March 2026)
+## 🏗️ Current System State (April 2026)
 
 ### Technology Stack
 - **Database:** PostgreSQL 17 with pgvector

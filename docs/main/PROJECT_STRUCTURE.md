@@ -1,6 +1,6 @@
 # Kitabim.AI — Project Structure Documentation
 
-> **Last Updated:** 2026-03-31
+> **Last Updated:** 2026-04-12
 > **Purpose:** Comprehensive overview of the codebase structure, architecture, and organization
 
 ---
@@ -81,8 +81,10 @@ apps/frontend/
 │   │   ├── common/          # Reusable UI components
 │   │   ├── layout/          # App shell and navigation
 │   │   ├── library/         # Book browsing and search
+│   │   ├── pages/           # Top-level page components
 │   │   ├── reader/          # Book reader with RTL support
-│   │   └── spell-check/     # OCR correction interface
+│   │   ├── spell-check/     # OCR correction interface
+│   │   └── ui/              # Primitive UI component library
 │   ├── context/             # React context providers
 │   ├── hooks/               # Custom React hooks
 │   ├── services/            # API clients and helpers
@@ -117,25 +119,36 @@ packages/backend-core/
     │   ├── repositories/    # Repository pattern implementations
     │   └── models.py        # SQLAlchemy models
     ├── langchain/           # LangChain integrations
-    │   ├── chains/          # LCEL chains
-    │   ├── models/          # Model adapters
-    │   └── embeddings/      # Embedding adapters
+    │   ├── chains.py        # LCEL chains
+    │   ├── models.py        # Model and embedding adapters
+    │   └── setup.py         # LangChain initialization
     ├── models/              # Pydantic schemas
     │   ├── schemas.py       # API request/response models
     │   └── user.py          # User models
     ├── services/            # Shared Business services
-    │   ├── cache_service.py # Redis-backed caching with circuit breaker
-    │   ├── pdf_service.py   # PDF upload, OCR orchestration
-
-    │   ├── rag_service.py   # RAG retrieval and chat
-    │   ├── ocr_service.py   # Gemini OCR calls
-    │   ├── chunking_service.py  # Semantic text chunking
-    │   └── token_service.py # JWT token management
+    │   ├── cache_service.py        # Redis-backed caching with circuit breaker
+    │   ├── pdf_service.py          # PDF upload and orchestration
+    │   ├── docx_service.py         # DOCX text extraction
+    │   ├── storage_service.py      # GCS/local storage abstraction
+    │   ├── rag_service.py          # RAG retrieval and chat
+    │   ├── rag/                    # RAG sub-modules
+    │   ├── ocr_service.py          # Gemini OCR calls
+    │   ├── chunking_service.py     # Semantic text chunking
+    │   ├── spell_check_service.py  # Spell check orchestration
+    │   ├── auto_correct_service.py # Auto-correction rule application
+    │   ├── book_milestone_service.py # Pipeline milestone management
+    │   ├── chat_limit_service.py   # Per-user chat rate limiting
+    │   ├── user_service.py         # User management helpers
+    │   └── token_service.py        # JWT token management
     ├── utils/               # Utilities
-    │   ├── circuit_breaker.py # Redis-backed asynchronous circuit breaker
-    │   ├── errors.py        # Exception definitions
-
-    │   └── text_helpers.py  # Text cleaning/normalization
+    │   ├── circuit_breaker.py  # Redis-backed asynchronous circuit breaker
+    │   ├── errors.py           # Exception definitions
+    │   ├── text.py             # Text cleaning/normalization
+    │   ├── markdown.py         # Markdown helpers
+    │   ├── observability.py    # Logging/tracing helpers
+    │   ├── rate_limiter.py     # Rate limiting utilities
+    │   ├── security.py         # Security helpers
+    │   └── citation_fixer.py   # Citation post-processing
     ├── queue.py             # Redis/ARQ queue client
     └── jobs.py              # Shared job utilities
 ```
@@ -158,10 +171,17 @@ packages/backend-core/
 services/backend/
 ├── api/                 # API route handlers
 │   └── endpoints/       
-│       ├── auth.py      # Google OAuth & Token endpoints
-│       ├── books.py     # Book & Page management
-│       ├── chat.py      # RAG chat interface
-│       └── spell_check.py # OCR correction API
+│       ├── auth.py             # OAuth login/callback & token endpoints
+│       ├── books.py            # Book & Page management
+│       ├── chat.py             # RAG chat interface
+│       ├── spell_check.py      # OCR correction API
+│       ├── auto_correct_rules.py # Auto-correction rules API
+│       ├── dictionary.py       # Dictionary management API
+│       ├── users.py            # User management API
+│       ├── ai.py               # AI utility endpoints
+│       ├── stats.py            # Admin statistics endpoint
+│       ├── contact.py          # Contact form submissions
+│       └── system_configs.py   # Runtime configuration API
 ├── auth/                # Auth middleware & dependencies
 ├── main.py              # FastAPI application entry point
 ├── requirements.txt      # Service dependencies
@@ -303,13 +323,17 @@ docs/
 - Health checks (`/health`, `/ready`)
 
 **Key Endpoints:**
-- `POST /api/auth/google` - OAuth callback
+- `GET /api/auth/{provider}/login` - OAuth redirect (provider: google/facebook/twitter)
+- `GET /api/auth/{provider}/callback` - OAuth callback
 - `POST /api/books/upload` - Upload PDF
-- `POST /api/books/{id}/ocr/start` - Start OCR job
+- `POST /api/books/{book_id}/reprocess/ocr` - Start/restart OCR
+- `POST /api/books/{book_id}/reprocess/chunking` - Start/restart chunking
+- `POST /api/books/{book_id}/reprocess/embedding` - Start/restart embedding
 - `POST /api/chat` - RAG chat (global or per-book)
 - `GET /api/books` - List books
-- `PATCH /api/books/{id}` - Update book metadata
+- `PUT /api/books/{book_id}` - Update book metadata
 - `GET /api/users` - List users (admin)
+- `GET /api/stats/` - System statistics (admin)
 
 ### 3. Worker (ARQ)
 
@@ -405,7 +429,7 @@ docs/
      * Saves text to PostgreSQL pages table
      * Updates page status
    - After all pages:
-     * Chunks text semantically
+     * Splits text into overlapping chunks (recursive character splitting)
      * Generates embeddings via Gemini
      * Saves chunks to PostgreSQL
      * Uploads cover image to **Public GCS Media Bucket**
@@ -660,23 +684,37 @@ python3.13 -m pytest services/backend/tests
 | `Dockerfile.backend` | Backend service container image |
 | `Dockerfile.worker` | Worker service container image |
 
-### Backend Core
+### Backend Core (`packages/backend-core/app/`)
 
 | File | Purpose |
 |------|---------|
-| `app/main.py` | FastAPI application entry point |
-| `app/worker.py` | ARQ worker settings and entry point |
-| `app/queue.py` | Redis/ARQ queue client |
-| `app/jobs.py` | Background job function definitions |
-| `app/core/config.py` | Environment configuration loader |
-| `app/core/prompts.py` | AI prompts for OCR, RAG, categorization |
-| `app/api/endpoints/books.py` | Book CRUD and management endpoints |
-| `app/api/endpoints/auth.py` | Authentication endpoints |
-| `app/api/endpoints/chat.py` | RAG chat endpoint |
-| `app/services/pdf_service.py` | PDF processing orchestration |
-| `app/services/rag_service.py` | RAG retrieval and chat logic |
-| `app/db/session.py` | PostgreSQL session management |
-| `app/db/repositories/` | Repository pattern implementations |
+| `core/config.py` | Environment configuration loader |
+| `core/prompts.py` | AI prompts for OCR, RAG, categorization |
+| `core/i18n.py` | Internationalisation helpers |
+| `queue.py` | Redis/ARQ queue client |
+| `jobs.py` | Background job function definitions |
+| `db/session.py` | PostgreSQL session management |
+| `db/models.py` | SQLAlchemy ORM models |
+| `db/repositories/` | Repository pattern implementations |
+| `services/pdf_service.py` | PDF processing orchestration |
+| `services/storage_service.py` | GCS/local storage abstraction |
+| `services/rag_service.py` | RAG retrieval and chat logic |
+
+### Backend API (`services/backend/`)
+
+| File | Purpose |
+|------|---------|
+| `main.py` | FastAPI application entry point and router registration |
+| `api/endpoints/books.py` | Book CRUD and management endpoints |
+| `api/endpoints/auth.py` | OAuth login/callback and token endpoints |
+| `api/endpoints/chat.py` | RAG chat endpoint |
+| `api/endpoints/stats.py` | Admin statistics endpoint |
+
+### Worker (`services/worker/`)
+
+| File | Purpose |
+|------|---------|
+| `worker.py` | ARQ WorkerSettings entry point |
 
 ### Frontend
 
@@ -715,6 +753,7 @@ Kitabim.AI is a **well-structured monorepo** with:
 - **Database:** 15 tables including pgvector embeddings (768-dim)
 - **Worker:** 6 jobs, 11 scanners driving an event-driven pipeline
 - **API:** 11 endpoint modules; see `docs/main/openapi.json`
+- **Backend-core services:** 13 shared services
 
 The architecture supports the three core workflows:
 1. **Digitization** - Upload → OCR → Indexing
@@ -725,5 +764,5 @@ All services communicate via well-defined interfaces (REST API, Redis queue, Pos
 
 ---
 
-*Last Updated: 2026-03-31*
+*Last Updated: 2026-04-12*
 

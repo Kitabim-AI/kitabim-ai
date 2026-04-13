@@ -7,6 +7,8 @@ The Kitabim.AI processing pipeline uses a **decoupled, event-driven architecture
 Key characteristics:
 - **`milestone` columns** — each stage (`ocr`, `chunking`, `embedding`, `spell_check`) has its own milestone in the `pages` table.
 - **States** — `idle | in_progress | succeeded | failed`.
+- **Mandatory pipeline** — `ocr → chunking → embedding` is sequential; a book becomes `ready` when embedding is terminal.
+- **Spell check is independent** — it only requires OCR to be done, runs in parallel with chunking/embedding, and does **not** block book readiness.
 - **Transactional Outbox** — the `pipeline_events` table captures successful milestones within the same database transaction as the result application.
 - **Event Dispatcher** — a low-latency scanner that polls the outbox and immediately enqueues the next required job, bypasses traditional 1-minute cron delays.
 
@@ -70,6 +72,7 @@ worker/
     chunking_job.py       ← chunks page text into DB records
     embedding_job.py      ← generates and stores embeddings
     spell_check_job.py    ← identifies unknown words and suggests corrections
+    auto_correct_job.py   ← applies auto-correction rules to spell issues
     summary_job.py        ← generates semantic book summaries for RAG routing
   worker.py               ← ARQ WorkerSettings
 
@@ -100,29 +103,26 @@ The manual admin API (`POST /api/books/storage/sync`) continues to use the exist
 
 ### PipelineDriver
 
-The single entry point into the pipeline and the only component that advances pipeline steps. Runs every minute as a cron job.
+Handles pipeline bookkeeping. Runs every minute as a cron job.
 
 **Responsibilities:**
 
-1. **Initialize** — finds pages with `pipeline_step IS NULL`, sets them to `ocr / idle`
-2. **Promote** — advances pages whose current step has succeeded to the next step
-3. **Book ready** — marks a book as `ready` when all its pages are terminal
+1. **Initialize** — finds pages with `ocr_milestone = 'idle'` on non-ready books, ensures they are registered for processing
+2. **Reset** — resets `failed` milestones back to `idle` when retries remain
+3. **Book ready** — marks a book as `ready` when all **mandatory** pages are terminal
 
-**Promotion rules:**
+> **Note:** Sequential promotion (`ocr → chunking → embedding`) is **not** done by PipelineDriver. Each scanner enforces its own dependency by checking the upstream milestone directly (e.g. `ChunkingScanner` only claims pages where `ocr_milestone = 'succeeded'`).
+
+**Mandatory pipeline (what gates book readiness):**
 
 ```
-ocr / succeeded        →  chunking / idle
-chunking / succeeded   →  embedding / idle
-embedding / succeeded  →  spell_check / idle
+ocr / succeeded  →  (ChunkingScanner claims)  chunking / idle
+chunking / succeeded  →  (EmbeddingScanner claims)  embedding / idle
 ```
 
-Spell Check is the end of the page pipeline. There is no further step — `spell_check / done` (or `failed`) is the terminal success state for a page.
+Embedding is the terminal mandatory step. A book is marked `pipeline_step = ready` when every page has `embedding_milestone = 'succeeded'` OR any mandatory step has failed with exhausted retries.
 
-**Book ready condition:**
-
-A book is marked `pipeline_step = ready` when every page is in a terminal state:
-- `pipeline_step = spell_check AND milestone = done`  (processed successfully)
-- `milestone = failed AND retry_count >= max_retries`  (exhausted, skipped)
+**Spell check is NOT mandatory** — it is a quality layer that runs independently (see SpellCheckScanner below) and does not block book readiness.
 
 This means a book with a few permanently failed pages is still marked ready and searchable.
 
@@ -165,10 +165,30 @@ OcrScanner (every 1 min):
 Chunking and embedding only need text from the database, so pages from any book can be processed together.
 
 ```
-ChunkingScanner / EmbeddingScanner (every 1 min):
-  1. Claim up to N idle pages across all books → in_progress
+ChunkingScanner (every 1 min):
+  Dependency: ocr_milestone = 'succeeded'
+  1. Claim up to N idle chunking pages across all books → in_progress
+  2. Dispatch one job with all claimed page IDs
+
+EmbeddingScanner (every 1 min):
+  Dependency: chunking_milestone = 'succeeded'
+  1. Claim up to N idle embedding pages across all books → in_progress
   2. Dispatch one job with all claimed page IDs
 ```
+
+**SpellCheckScanner:**
+
+Spell check runs as an **independent quality layer** — it does not block book readiness and does not need to wait for embedding.
+
+```
+SpellCheckScanner (every 1 min):
+  Dependency: ocr_milestone = 'succeeded'  (NOT embedding)
+  1. Identify books currently in spell_check step + new candidates (up to max_concurrent limit)
+  2. Claim idle spell-check pages for those books → in_progress
+  3. Dispatch SpellCheckJob with claimed page IDs
+```
+
+A book can be fully `ready` (searchable, in the library) while its spell check is still running in the background.
 
 ---
 
@@ -270,42 +290,40 @@ flowchart TD
     EMB_IP["embedding / in_progress"]
     EMB_OK["embedding / succeeded"]
     EMB_FAIL["embedding / failed"]
-    SPELL_IDLE["spell_check / idle"]
+    SPELL_IDLE["spell_check / idle\n(independent quality layer)"]
     SPELL_IP["spell_check / in_progress"]
-    SPELL_OK["spell_check / done\n(terminal — page done)"]
+    SPELL_OK["spell_check / done"]
     SPELL_FAIL["spell_check / failed"]
-    TERMINAL["milestone = failed\nretry_count >= max\n(terminal — skipped)"]
+    TERMINAL["ocr|chunking|embedding failed\nretry_count >= max\n(mandatory step — skipped)"]
 
     OCR_IDLE -->|OcrScanner: claim| OCR_IP
     OCR_IP -->|OcrJob: success| OCR_OK
     OCR_IP -->|OcrJob: failure| OCR_FAIL
     OCR_FAIL -->|StaleWatchdog or Scanner retry| OCR_IDLE
     OCR_FAIL -->|retry_count >= max| TERMINAL
-    OCR_OK -->|PipelineDriver: promote| CHUNK_IDLE
+    OCR_OK -->|ChunkingScanner: dep satisfied| CHUNK_IDLE
+    OCR_OK -.->|SpellCheckScanner: dep satisfied| SPELL_IDLE
 
     CHUNK_IDLE -->|ChunkingScanner: claim| CHUNK_IP
     CHUNK_IP -->|ChunkingJob: success| CHUNK_OK
     CHUNK_IP -->|ChunkingJob: failure| CHUNK_FAIL
     CHUNK_FAIL -->|Scanner retry| CHUNK_IDLE
     CHUNK_FAIL -->|retry_count >= max| TERMINAL
-    CHUNK_OK -->|PipelineDriver: promote| EMB_IDLE
+    CHUNK_OK -->|EmbeddingScanner: dep satisfied| EMB_IDLE
 
     EMB_IDLE -->|EmbeddingScanner: claim| EMB_IP
     EMB_IP -->|EmbeddingJob: success| EMB_OK
     EMB_IP -->|EmbeddingJob: failure| EMB_FAIL
     EMB_FAIL -->|Scanner retry| EMB_IDLE
     EMB_FAIL -->|retry_count >= max| TERMINAL
-    EMB_OK -->|PipelineDriver: promote| SPELL_IDLE
-
+    EMB_OK -->|PipelineDriver: mandatory terminal| BookReady([book.pipeline_step = ready])
+    TERMINAL -->|PipelineDriver: mandatory terminal| BookReady
 
     SPELL_IDLE -->|SpellCheckScanner: claim| SPELL_IP
     SPELL_IP -->|SpellCheckJob: success| SPELL_OK
     SPELL_IP -->|SpellCheckJob: failure| SPELL_FAIL
     SPELL_FAIL -->|Scanner retry| SPELL_IDLE
-    SPELL_FAIL -->|retry_count >= max| TERMINAL
-
-    SPELL_OK -->|PipelineDriver: all pages terminal| BookReady([book.pipeline_step = ready])
-    TERMINAL -->|PipelineDriver: all pages terminal| BookReady
+    SPELL_FAIL -->|retry_count >= max| SPELL_TERMINAL[spell_check / exhausted]
 
     classDef idle fill:#e9edc9,stroke:#606c38
     classDef active fill:#fff3cd,stroke:#856404

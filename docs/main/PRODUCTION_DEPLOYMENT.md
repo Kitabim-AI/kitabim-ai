@@ -125,17 +125,17 @@ REGISTRY=... IMAGE_TAG=... docker compose -f deploy/gcp/docker-compose.yml up -d
 
 ### Step 4: Run Database Migrations (if needed)
 
+This project uses raw SQL migration files — **not Alembic**. Run migrations using the migration script from your local machine:
+
 ```bash
-# On production server
-docker-compose exec backend bash
+# From the repository root
+./scripts/run_migration_prod.sh <migration_number>
 
-# Inside container
-cd /app
-alembic upgrade head
-
-# Exit container
-exit
+# Example: apply migration 034
+./scripts/run_migration_prod.sh 034
 ```
+
+The script connects directly to the production database via `deploy/gcp/.env` and runs the SQL file from `packages/backend-core/migrations/`.
 
 ---
 
@@ -376,8 +376,8 @@ If you encounter issues:
 1. Check logs: `docker-compose logs backend`
 2. Verify `.env` values are filled in
 3. Test connectivity to database/redis
-4. Review [DEPLOYMENT_SECURITY.md](../../DEPLOYMENT_SECURITY.md)
-5. Check [SECURITY_FIXES.md](../../SECURITY_FIXES.md)
+4. Review [DEPLOYMENT_SECURITY.md](DEPLOYMENT_SECURITY.md)
+5. Check [SECURITY_FIXES.md](SECURITY_FIXES.md)
 
 **Emergency Contacts:**
 - Infrastructure: [Your team contact]
