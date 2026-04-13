@@ -32,18 +32,28 @@ def normalize_uyghur_chars(text: str) -> str:
         .replace("\u0640", "")   # Remove Tatweel/Kashida
     )
 
+# Matches OCR structural marker lines: "[Header] ..." or "[Footer] ..."
+_OCR_MARKER_LINE = re.compile(r"^\s*\[(Header|Footer)\]", re.IGNORECASE)
+
+
 def clean_uyghur_text(text: str) -> str:
     if not text:
         return ""
 
     text = normalize_uyghur_chars(text)
 
-    # 1. Join words split by hyphen/dash at line endings (standardizing line breaks)
+    # 1. Strip OCR structural marker lines ([Header] ..., [Footer] ...)
+    text = "\n".join(
+        line for line in text.splitlines()
+        if not _OCR_MARKER_LINE.match(line)
+    )
+
+    # 3. Join words split by hyphen/dash at line endings (standardizing line breaks)
     text = re.sub(r"(\w)[-—–_]\s*\n\s*(\w)", r"\1\2", text)
     text = re.sub(r"(\w)[-—–_]\s*\n\s*", r"\1", text)
     text = re.sub(r"ـ+\s*\n\s*", "", text)
 
-    # 2. Split into blocks by double newlines (paragraphs)
+    # 4. Split into blocks by double newlines (paragraphs)
     blocks = re.split(r"\n\s*\n", text)
     cleaned_blocks = []
 
