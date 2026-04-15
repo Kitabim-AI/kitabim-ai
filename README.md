@@ -1,6 +1,6 @@
 # Kitabim.AI Monorepo
 
-The intelligent Uyghur Digital Library platform for OCR, curation, and RAG-powered reading.
+An intelligent Uyghur Digital Library platform for OCR, curation, and RAG-powered reading Q&A AI assistant.
 
 ## Structure
 
