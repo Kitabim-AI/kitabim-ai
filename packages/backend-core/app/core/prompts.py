@@ -58,17 +58,19 @@ Your task is to generate a search-optimized summary that captures the essence of
 Write a detailed summary IN UYGHUR (Arabic script). The summary will be embedded as a vector — every word matters for matching user queries.
 
 Structure the summary into these sections:
-1. ئومۇمىي مەزمۇن (Overview): A comprehensive 200-300 word narrative of the book's subject, plot, or main arguments.
-2. ئاساسلىق ئۇقۇم ۋە تېمىلار (Concepts & Themes): Explicitly list the key themes, scientific concepts, or ideologies explored.
-3. كۆرۈنەرلىك شەخس ۋە جايلار (Entities): Mention specific names of people, historical figures, organizations, and geographic locations.
-4. تىپىك سوئاللار (Hypothetical Queries): List 5-7 questions that this book is best suited to answer. This helps align the document vector with potential user questions.
-5. ئاچقۇچلۇق سۆزلەر (Keywords): 15-20 specific terms or tags that define the book.
+1. تۈرى (Domain): Classify the book into exactly one category: داستان-رومان (fiction/novel) | تارىخ (history) | دىن (religious) | پەن-تەلىم (science/educational) | پەلسەپە (philosophy) | تىببىيات (medicine/health) | ئىقتىسادىيات (economics) | سىياسەت (politics) | سەنئەت-ئەدەبىيات (arts/literature) | باشقا (other).
+2. ئومۇمىي مەزمۇن (Overview): A comprehensive 200-300 word narrative of the book's subject, plot, or main arguments.
+3. ئاساسلىق ئۇقۇم ۋە تېمىلار (Concepts & Themes): Explicitly list the key themes, scientific concepts, or ideologies explored.
+4. كۆرۈنەرلىك شەخس ۋە جايلار (Entities): Mention specific names of people, historical figures, organizations, and geographic locations — ONLY those that actually appear in the provided text excerpts. Do not invent or assume names.
+5. تىپىك سوئاللار (Hypothetical Queries): List 10-15 realistic questions in natural Uyghur that a reader might type to find this book. Cover different angles: factual, conceptual, biographical, and thematic questions. This is the most important section for retrieval quality.
+6. ئاچقۇچلۇق سۆزلەر (Keywords): 15-20 specific terms or tags that define the book.
 
 Search Quality Guidelines:
 - BE SPECIFIC: Use proper nouns and technical terms from the text.
 - BE DENSE: Pack the summary with information; avoid filler text.
 - LANGUAGE: Use formal, standard Uyghur (Arabic script).
 - RETRIEVAL FOCUS: Think about what a user might type in a search box to find this specific content.
+- GROUND IN TEXT: Every entity, name, place, and claim must be supported by the provided text excerpts. Do not hallucinate content not present in the excerpts.
 
 Book title: {title}
 Author: {author}
