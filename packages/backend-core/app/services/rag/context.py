@@ -35,6 +35,9 @@ class QueryContext:
     query_vector: List[float] = field(default_factory=list)
     enriched_question: Optional[str] = None   # FollowUpHandler rewrites question here
     use_current_volume_only: bool = False      # CurrentVolumeHandler sets this
+    context_book_ids: List[str] = field(default_factory=list)  # from ChatRequest — reliable frontend-tracked context
+    history_book_ids: List[str] = field(default_factory=list)  # from FollowUpHandler — backend-extracted fallback
+    used_book_ids: List[str] = field(default_factory=list)     # populated by retrieval, returned in done event
 
     # ── Eval metadata — populated by handlers for facade _record_eval ───────
     retrieved_count: int = 0
