@@ -66,7 +66,7 @@ class Settings:
 
     # Book Summary / Hierarchical RAG Settings
     summary_top_k: int = int(os.getenv("SUMMARY_TOP_K", "5"))
-    summary_threshold: float = float(os.getenv("SUMMARY_THRESHOLD", "0.30"))
+    summary_threshold: float = float(os.getenv("SUMMARY_THRESHOLD", "0.45"))
     summary_max_chars: int = int(os.getenv("SUMMARY_MAX_CHARS", "15000"))
 
     # Chunking Settings
