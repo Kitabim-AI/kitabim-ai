@@ -15,6 +15,7 @@ Cron schedule:
   stale_watchdog       every 30 min — reset in_progress pages past timeout → idle
   summary_scanner      every 5 min  — backfill/retry book_summaries for ready books
   maintenance_scanner  daily at 3AM — cleanup old processed events/logs
+  reembedding_scanner  every 1 min  — backfill embedding_v2 (3072-dim) for all books (migration only — remove after 037)
 """
 from arq.connections import RedisSettings
 from arq.cron import cron
@@ -38,6 +39,8 @@ from jobs.embedding_job import embedding_job
 from jobs.spell_check_job import spell_check_job
 from jobs.summary_job import summary_job
 from jobs.auto_correct_job import auto_correct_job
+from jobs.reembedding_job import reembedding_job
+from scanners.reembedding_scanner import run_reembedding_scanner
 
 
 class WorkerSettings:
@@ -50,6 +53,7 @@ class WorkerSettings:
         spell_check_job,
         summary_job,
         auto_correct_job,
+        reembedding_job,
     ]
 
     # Build cron jobs list conditionally based on feature flags
@@ -65,6 +69,7 @@ class WorkerSettings:
         cron(run_summary_scanner, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}),
         cron(run_event_dispatcher, run_at_startup=True),
         cron(run_maintenance_scanner, hour=3, minute=0),
+        cron(run_reembedding_scanner),
     ]
 
 
