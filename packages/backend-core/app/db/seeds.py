@@ -37,11 +37,6 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Gemini model used for generating text embeddings (vector search)."
         },
         {
-            "key": "gemini_embedding_model_v2",
-            "value": "models/gemini-embedding-2",
-            "description": "Gemini Embedding 2 model (3072-dim) used by reembedding_job during migration. Verify model ID before enabling reembedding_scanner."
-        },
-        {
             "key": "maintenance_retention_days",
             "value": "7",
             "description": "Number of days to retain processed pipeline events before automated cleanup."
@@ -55,6 +50,11 @@ async def seed_system_configs(session: AsyncSession):
             "key": "ocr_max_parallel_pages",
             "value": "1",
             "description": "Maximum number of pages to OCR concurrently within a single OCR job. Set to 1 to process pages strictly one at a time."
+        },
+        {
+            "key": "summary_scanner_batch_size",
+            "value": "5",
+            "description": "Number of books the summary scanner enqueues per run. Increase temporarily to speed up bulk regeneration, then reset to 5."
         }
     ]
     

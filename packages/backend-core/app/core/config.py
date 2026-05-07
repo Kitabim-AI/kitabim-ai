@@ -67,7 +67,7 @@ class Settings:
     # Book Summary / Hierarchical RAG Settings
     summary_top_k: int = int(os.getenv("SUMMARY_TOP_K", "5"))
     summary_threshold: float = float(os.getenv("SUMMARY_THRESHOLD", "0.45"))
-    summary_max_chars: int = int(os.getenv("SUMMARY_MAX_CHARS", "15000"))
+    summary_max_chars: int = int(os.getenv("SUMMARY_MAX_CHARS", "3000000"))
 
     # Chunking Settings
     chunk_size: int = int(os.getenv("CHUNK_SIZE", "500"))
@@ -77,7 +77,6 @@ class Settings:
     langchain_cache_enabled: bool = os.getenv("LANGCHAIN_CACHE", "false").lower() == "true"
     langchain_tracing_enabled: bool = os.getenv("LANGCHAIN_TRACING", "false").lower() == "true"
     langchain_project: str | None = os.getenv("LANGCHAIN_PROJECT")
-    rag_eval_enabled: bool = os.getenv("RAG_EVAL_ENABLED", "false").lower() == "true"
 
     # Logging
     log_level: str = os.getenv("LOG_LEVEL", "WARNING")  # DEBUG, INFO, WARNING, ERROR

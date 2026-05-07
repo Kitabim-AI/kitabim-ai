@@ -8,7 +8,6 @@ from typing import AsyncIterator, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.characters import CHARACTERS, DEFAULT_CHARACTER_ID
-from app.core.config import settings
 from app.models.schemas import ChatRequest
 from app.services.rag.context import QueryContext
 from app.services.rag.llm_resources import llm_resources
@@ -129,12 +128,14 @@ class RAGService:
     # ------------------------------------------------------------------
 
     async def _record_eval(self, ctx: QueryContext, answer: str) -> None:
-        if not settings.rag_eval_enabled:
-            return
         if ctx.session is None:
             return
         try:
             from app.db.repositories.rag_evaluations import RAGEvaluationsRepository
+            from app.db.repositories.system_configs import SystemConfigsRepository
+            enabled = await SystemConfigsRepository(ctx.session).get_value("rag_eval_enabled", "false")
+            if enabled != "true":
+                return
             repo = RAGEvaluationsRepository(ctx.session)
             await repo.create_evaluation(
                 book_id=ctx.book_id,

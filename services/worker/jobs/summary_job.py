@@ -7,8 +7,8 @@ Triggered by:
 
 Process:
   1. Load all page texts for the book (ordered by page_number)
-  2. Sample text to fit within SUMMARY_MAX_CHARS
-  3. Call Gemini chat model to generate a 300-word Uyghur summary
+  2. Pass full text to LLM (SUMMARY_MAX_CHARS=3M chars is a safety ceiling for outlier books)
+  3. Call Gemini chat model to generate a structured Uyghur summary
   4. Embed the summary using GeminiEmbeddings
   5. Upsert into book_summaries table
 
@@ -84,6 +84,8 @@ async def summary_job(ctx, book_id: str) -> None:
             log_json(logger, logging.WARNING, "summary job: no page text found", book_id=book_id)
             return
 
+        # Full text is passed directly; _sample_text only truncates the rare outlier book
+        # that exceeds the model's context window (safety ceiling: SUMMARY_MAX_CHARS=3M chars)
         sampled_text = _sample_text(pages_text, settings.summary_max_chars)
 
         # Generate summary via Gemini chat model
@@ -109,10 +111,11 @@ async def summary_job(ctx, book_id: str) -> None:
         vectors = await embeddings_model.aembed_documents([summary])
         embedding = vectors[0]
 
-        # Upsert into book_summaries
+        # Write to staging columns — active search embedding preserved until migration 040
+        # Revert to repo.upsert() after migration 040 is applied.
         async with db_session.async_session_factory() as session:
             repo = BookSummariesRepository(session)
-            await repo.upsert(book_id=book_id, summary=summary, embedding=embedding)
+            await repo.upsert_draft(book_id=book_id, summary=summary, embedding=embedding)
             await session.commit()
 
         log_json(
