@@ -33,12 +33,26 @@ _FOLLOWUP_MARKERS_NORM = [normalize_uyghur(m) for m in _FOLLOWUP_MARKERS]
 # Questions shorter than this threshold with prior history are likely follow-ups
 _SHORT_QUESTION_THRESHOLD = 15
 
+# Standalone referential pronouns that anchor a short question to a previous topic.
+# We check word-level so "ئۇنىڭ" in "ئۇنىڭ ئاپتورى" matches, but a word that merely
+# contains these characters as a substring does not.
+_REFERENTIAL_PRONOUNS = {normalize_uyghur(p) for p in [
+    "ئۇ", "بۇ", "شۇ",
+    "ئۇلار", "بۇلار", "شۇلار",
+    "ئۇنىڭ", "بۇنىڭ", "شۇنىڭ",
+    "ئۇنى", "بۇنى", "شۇنى",
+    "ئۇنىڭدا", "شۇنىڭدا", "بۇنىڭدا",
+    "ئۇنىڭدىن", "شۇنىڭدىن", "بۇنىڭدىن",
+    "ئۇنىڭغا", "شۇنىڭغا", "بۇنىڭغا",
+]}
+
 
 class FollowUpHandler(QueryHandler):
     """Heuristic follow-up detection — no LLM overhead.
 
     When a follow-up is detected, the question is enriched by prepending the
-    last AI turn as bracketed context, then the standard RAG pipeline runs.
+    last user question as bracketed context (better embedding anchor than the
+    AI answer), then the standard RAG pipeline runs.
     """
 
     intent_name = "follow_up"
@@ -48,21 +62,30 @@ class FollowUpHandler(QueryHandler):
         if not ctx.history:
             return False
         q = normalize_uyghur(ctx.question.strip())
-        # Heuristic 1: explicit follow-up pronoun or marker
+        # Heuristic 1: explicit follow-up phrase or marker
         if any(m in q for m in _FOLLOWUP_MARKERS_NORM):
             return True
-        # Heuristic 2: very short question with at least 2 history turns
+        # Heuristic 2: very short question that contains a referential pronoun,
+        # with at least 2 history turns. Bare standalone words like "ئۇنىڭ"
+        # only make sense in reference to prior context; a short question without
+        # any such pronoun is more likely a new, independent question.
         if len(q) < _SHORT_QUESTION_THRESHOLD and len(ctx.history) >= 2:
-            return True
+            words = set(q.split())
+            if words & _REFERENTIAL_PRONOUNS:
+                return True
         return False
 
     def _enrich(self, ctx: QueryContext) -> str:
-        last_ai = next(
-            (m.get("text", "") for m in reversed(ctx.history) if m.get("role") == "assistant"),
+        # Use the last user question (not the AI answer) as the resolution anchor.
+        # The previous question is topic-focused and produces a better embedding
+        # for pronoun resolution; the AI answer prose biases retrieval toward the
+        # old topic rather than the referenced entity.
+        last_user_q = next(
+            (m.get("text", "") for m in reversed(ctx.history) if m.get("role") == "user"),
             "",
         )
-        if last_ai:
-            return f"{t('rag.followup_context_prefix', context=last_ai[:200])}\n{ctx.question}"
+        if last_user_q:
+            return f"{t('rag.followup_context_prefix', context=last_user_q[:200])}\n{ctx.question}"
         return ctx.question
 
     async def _extract_history_book_ids(self, ctx: QueryContext) -> list:
