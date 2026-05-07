@@ -33,8 +33,13 @@ async def seed_system_configs(session: AsyncSession):
         },
         {
             "key": "gemini_embedding_model",
-            "value": "models/gemini-embedding-001",
+            "value": "models/gemini-embedding-2",
             "description": "Gemini model used for generating text embeddings (vector search)."
+        },
+        {
+            "key": "gemini_embedding_model_v2",
+            "value": "models/gemini-embedding-2",
+            "description": "Gemini Embedding 2 model (3072-dim) used by reembedding_job during migration. Verify model ID before enabling reembedding_scanner."
         },
         {
             "key": "maintenance_retention_days",

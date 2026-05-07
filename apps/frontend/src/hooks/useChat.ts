@@ -15,6 +15,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
   const [usageStatus, setUsageStatus] = useState<{ usage: number, limit: number | null, hasReachedLimit: boolean } | null>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const contextBookIdsRef = useRef<string[]>([]);
 
   const scrollToBottom = () => {
     if (chatContainerRef.current) {
@@ -121,7 +122,11 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
         // onUsageUpdate
         (usage: any) => {
           setUsageStatus(usage);
-        }
+        },
+        // contextBookIds — carry forward the book context from the previous response
+        view === 'global-chat' ? contextBookIdsRef.current : [],
+        // onContextBookIds — store new context for the next request
+        view === 'global-chat' ? (ids: string[]) => { contextBookIdsRef.current = ids; } : undefined,
       );
     } catch (err: any) {
       if (err.name === 'AbortError') return;
@@ -136,7 +141,10 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     }
   };
 
-  const clearChat = () => setChatMessages([]);
+  const clearChat = () => {
+    setChatMessages([]);
+    contextBookIdsRef.current = [];
+  };
 
   return {
     chatMessages,

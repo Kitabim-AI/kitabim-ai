@@ -134,19 +134,18 @@ async def add_security_headers(request: Request, call_next):
         # Nginx also sets it — duplicate headers are harmless; missing it is not.
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     
-    # Content Security Policy for backend API responses (OAuth callback pages).
-    # 'unsafe-inline' is kept for script-src because the OAuth callback pages
-    # embed inline JS. 'unsafe-eval' is not needed — backend serves no eval() code.
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' https://accounts.google.com; "
-        "style-src 'self' 'unsafe-inline' https:; "
-        "img-src 'self' data: https:; "
-        "font-src 'self' data: https:; "
-        "connect-src 'self' https://accounts.google.com https://graph.facebook.com; "
-        "frame-src 'self' https://accounts.google.com; "
-        "object-src 'none';"
-    )
+    # Swagger UI loads assets from cdn.jsdelivr.net — skip strict CSP for docs paths.
+    if request.url.path not in ("/docs", "/redoc", "/openapi.json"):
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' https://accounts.google.com; "
+            "style-src 'self' 'unsafe-inline' https:; "
+            "img-src 'self' data: https:; "
+            "font-src 'self' data: https:; "
+            "connect-src 'self' https://accounts.google.com https://graph.facebook.com; "
+            "frame-src 'self' https://accounts.google.com; "
+            "object-src 'none';"
+        )
     return response
 
 

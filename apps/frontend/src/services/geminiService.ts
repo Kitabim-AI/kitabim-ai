@@ -88,13 +88,15 @@ export const chatWithBookStream = async (
   signal?: AbortSignal,
   characterId?: string,
   onCorrection?: (correctedText: string) => void,
-  onUsageUpdate?: (usage: any) => void
+  onUsageUpdate?: (usage: any) => void,
+  contextBookIds?: string[],
+  onContextBookIds?: (bookIds: string[]) => void,
 ): Promise<void> => {
   try {
     const response = await authFetch(`${API_BASE}/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bookId, question, currentPage, history, character_id: characterId }),
+      body: JSON.stringify({ bookId, question, currentPage, history, character_id: characterId, contextBookIds: contextBookIds ?? [] }),
       signal,
     });
 
@@ -162,6 +164,9 @@ export const chatWithBookStream = async (
             } else if (data.done) {
               if (onUsageUpdate && data.usage) {
                 onUsageUpdate(data.usage);
+              }
+              if (onContextBookIds && Array.isArray(data.contextBookIds) && data.contextBookIds.length > 0) {
+                onContextBookIds(data.contextBookIds);
               }
               onComplete();
               return;

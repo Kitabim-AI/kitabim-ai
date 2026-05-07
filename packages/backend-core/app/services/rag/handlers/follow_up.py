@@ -61,13 +61,37 @@ class FollowUpHandler(QueryHandler):
             return f"{t('rag.followup_context_prefix', context=last_ai[:200])}\n{ctx.question}"
         return ctx.question
 
+    async def _extract_history_book_ids(self, ctx: QueryContext) -> list:
+        """Scan recent assistant messages for book titles and return their IDs.
+
+        Tries messages from most-recent to oldest so the most recent book context wins.
+        """
+        from app.services.rag.handlers.standard_rag import StandardRAGHandler
+        seen: set = set()
+        for msg in reversed(ctx.history):
+            if msg.get("role") != "assistant":
+                continue
+            text = msg.get("text", "").strip()
+            if not text:
+                continue
+            found = await StandardRAGHandler._find_books_by_title_in_question(text, ctx.session)
+            if found:
+                for bid in found:
+                    seen.add(bid)
+                break  # stop at the most recent assistant turn that had a named book
+        return list(seen)
+
     async def handle(self, ctx: QueryContext) -> str:
         ctx.enriched_question = self._enrich(ctx)
+        if ctx.is_global:
+            ctx.history_book_ids = await self._extract_history_book_ids(ctx)
         from app.services.rag.handlers.standard_rag import StandardRAGHandler
         return await StandardRAGHandler().handle(ctx)
 
     async def handle_stream(self, ctx: QueryContext) -> AsyncIterator[str]:
         ctx.enriched_question = self._enrich(ctx)
+        if ctx.is_global:
+            ctx.history_book_ids = await self._extract_history_book_ids(ctx)
         from app.services.rag.handlers.standard_rag import StandardRAGHandler
         async for chunk in StandardRAGHandler().handle_stream(ctx):
             yield chunk
