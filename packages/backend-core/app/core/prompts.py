@@ -106,3 +106,21 @@ RAG_PROMPT_TEMPLATE = """
 
 Question: {question}
 """
+
+QUERY_REWRITE_PROMPT = """You are a query reformulation assistant for an Uyghur digital library.
+
+Given the conversation history and a follow-up question, rewrite the follow-up into a single standalone question that contains all the context needed to search the library — without relying on pronouns or implicit references from previous turns.
+
+Rules:
+1. If the question is already self-contained and does not depend on prior turns, return it EXACTLY as written.
+2. Replace demonstrative pronouns (ئۇ، بۇ، شۇ and their suffixed forms) with the specific entity they refer to from the history.
+3. Keep the rewritten question concise — one or two sentences maximum.
+4. Match the language of the original question (Uyghur, Arabic, or English).
+5. Return ONLY the rewritten question. No explanation, no preamble.
+
+Conversation history:
+{history}
+
+Follow-up question: {question}
+
+Rewritten question:"""

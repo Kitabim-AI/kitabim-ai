@@ -118,6 +118,7 @@ class RAGService:
             chat_history_str=format_chat_history(req.history or []),
             rag_chain=llm_resources.get_rag_chain(chat_model),
             category_chain=llm_resources.get_category_chain(categorization_model),
+            rewrite_chain=llm_resources.get_rewrite_chain(chat_model),
             embeddings=llm_resources.get_embeddings(embedding_model),
             start_ts=time.monotonic(),
             context_book_ids=req.context_book_ids or [],
