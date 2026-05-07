@@ -109,6 +109,7 @@ class ChatRequest(BaseModel):
     history: List[dict] = []
     current_page: Optional[int] = None  # API: currentPage
     character_id: Optional[str] = None  # API: characterId
+    context_book_ids: List[str] = []  # API: contextBookIds — book IDs from the previous response, sent by frontend
 
 
 class ChatResponse(BaseModel):

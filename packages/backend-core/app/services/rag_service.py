@@ -46,6 +46,7 @@ class RAGService:
         req: ChatRequest,
         session: AsyncSession,
         user_id: Optional[str] = None,
+        metadata_out: Optional[dict] = None,
     ) -> AsyncIterator[str]:
         ctx = await self._build_context(req, session, user_id)
         answer_chunks: list[str] = []
@@ -55,6 +56,8 @@ class RAGService:
                 yield chunk
         finally:
             await self._record_eval(ctx, "".join(answer_chunks))
+            if metadata_out is not None:
+                metadata_out["used_book_ids"] = ctx.used_book_ids
 
     # ------------------------------------------------------------------
     # Context construction
@@ -118,6 +121,7 @@ class RAGService:
             category_chain=llm_resources.get_category_chain(categorization_model),
             embeddings=llm_resources.get_embeddings(embedding_model),
             start_ts=time.monotonic(),
+            context_book_ids=req.context_book_ids or [],
         )
 
     # ------------------------------------------------------------------

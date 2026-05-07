@@ -11,6 +11,7 @@ import { SpellCheckView } from './components/spell-check';
 import { AppProvider, useAppContext } from './context/AppContext';
 import { PersistenceService } from './services/persistenceService';
 import { useAuth, useIsEditor } from './hooks/useAuth';
+import { useUyghurInput } from './hooks/useUyghurInput';
 
 const AppContent: React.FC = () => {
   const {
@@ -27,6 +28,8 @@ const AppContent: React.FC = () => {
 
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const isEditor = useIsEditor();
+
+  useUyghurInput();
 
   // Unified Route Guard
   useEffect(() => {
