@@ -227,19 +227,22 @@ class StandardRAGHandler(QueryHandler):
                 book_ids = title_matched_ids
                 log_json(logger, logging.INFO, "Book title detected in global query, restricting search", count=len(title_matched_ids))
 
+        if not book_ids:
+            # ── 2. Summary-based book selection (Level-3 cache) ─────────────
+            if ctx.query_vector:
+                book_ids = await self._summary_search(ctx, char_book_ids)
+
         if not book_ids and ctx.context_book_ids:
-            # ── 1b. Frontend-tracked context book IDs (most reliable) ───────
+            # ── 2b. Frontend-tracked context book IDs ───────────────────────
+            # Placed after summary search so a fresh question about a different
+            # book is resolved semantically rather than anchored to the previous
+            # response's book scope.
             candidates = ctx.context_book_ids
             if char_book_ids is not None:
                 filtered = [bid for bid in candidates if bid in char_book_ids]
                 candidates = filtered if filtered else candidates
             book_ids = candidates
             log_json(logger, logging.INFO, "Using frontend context book IDs", count=len(book_ids))
-
-        if not book_ids:
-            # ── 2. Summary-based book selection (Level-3 cache) ─────────────
-            if ctx.query_vector:
-                book_ids = await self._summary_search(ctx, char_book_ids)
 
         if not book_ids:
             # ── 3. Category-based fallback ───────────────────────────────────
