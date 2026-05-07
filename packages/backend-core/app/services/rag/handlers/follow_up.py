@@ -30,9 +30,6 @@ _FOLLOWUP_MARKERS = [
 ]
 _FOLLOWUP_MARKERS_NORM = [normalize_uyghur(m) for m in _FOLLOWUP_MARKERS]
 
-# Questions shorter than this with prior history and a referential pronoun are follow-ups
-_SHORT_QUESTION_THRESHOLD = 20
-
 _REFERENTIAL_PRONOUNS = {normalize_uyghur(p) for p in [
     "ئۇ", "بۇ", "شۇ",
     "ئۇلار", "بۇلار", "شۇلار",
@@ -63,8 +60,10 @@ class FollowUpHandler(QueryHandler):
         # Heuristic 1: explicit follow-up phrase or marker
         if any(m in q for m in _FOLLOWUP_MARKERS_NORM):
             return True
-        # Heuristic 2: short question with a referential pronoun and prior history
-        if len(q) < _SHORT_QUESTION_THRESHOLD and len(ctx.history) >= 1:
+        # Heuristic 2: referential pronoun as a standalone word with prior history.
+        # No length gate — "ئۇ غۇلجىدا تۇغۇلۇپ چوڭ بولغانغۇ" is a follow-up
+        # just as much as the short "ئۇ قەيەرلىك؟".
+        if len(ctx.history) >= 1:
             words = set(q.split())
             if words & _REFERENTIAL_PRONOUNS:
                 return True
