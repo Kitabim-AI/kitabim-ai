@@ -94,7 +94,21 @@ def is_author_or_catalog_query(question: str) -> bool:
         "قايسى كىتابلار", "قايسى ئەسەر",
     ]
     normalized_keywords = [normalize_uyghur(k) for k in keywords]
-    return any(k in q for k in normalized_keywords)
+    if not any(k in q for k in normalized_keywords):
+        return False
+
+    # "قايسى ئەسەردىكى X" / "قايسى كىتابتا X" are content queries ("X is in which work"),
+    # not catalog queries — even though they contain "قايسى ئەسەر".
+    content_signals = [
+        "پېرسوناژ", "ئوبراز", "قەھرىمان",          # character references
+        "قايسى ئەسەردىكى", "قايسى كىتابتا",         # "in which work/book" patterns
+        "قايسى ئەسەردە", "قايسى كىتابدا",
+    ]
+    normalized_signals = [normalize_uyghur(k) for k in content_signals]
+    if any(k in q for k in normalized_signals):
+        return False
+
+    return True
 
 
 # ---------------------------------------------------------------------------

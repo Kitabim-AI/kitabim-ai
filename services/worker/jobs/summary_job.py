@@ -111,11 +111,9 @@ async def summary_job(ctx, book_id: str) -> None:
         vectors = await embeddings_model.aembed_documents([summary])
         embedding = vectors[0]
 
-        # Write to staging columns — active search embedding preserved until migration 040
-        # Revert to repo.upsert() after migration 040 is applied.
         async with db_session.async_session_factory() as session:
             repo = BookSummariesRepository(session)
-            await repo.upsert_draft(book_id=book_id, summary=summary, embedding=embedding)
+            await repo.upsert(book_id=book_id, summary=summary, embedding=embedding)
             await session.commit()
 
         log_json(
