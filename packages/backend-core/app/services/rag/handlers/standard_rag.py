@@ -143,6 +143,8 @@ class StandardRAGHandler(QueryHandler):
                 key=lambda r: 0 if str(r.get("book_id", "")) in priority_book_ids else 1
             )
 
+        ctx.used_book_ids = list({str(r["book_id"]) for r in top_results if r.get("book_id")})
+
         # ── Build context string ─────────────────────────────────────────────
         context_parts: List[str] = []
         documents: List[Document] = []
@@ -217,6 +219,24 @@ class StandardRAGHandler(QueryHandler):
             else:
                 book_ids = title_matched_ids
                 log_json(logger, logging.INFO, "Book title detected in global query, restricting search", count=len(title_matched_ids))
+
+        if not book_ids and ctx.context_book_ids:
+            # ── 1b. Frontend-tracked context book IDs (most reliable) ───────
+            candidates = ctx.context_book_ids
+            if char_book_ids is not None:
+                filtered = [bid for bid in candidates if bid in char_book_ids]
+                candidates = filtered if filtered else candidates
+            book_ids = candidates
+            log_json(logger, logging.INFO, "Using frontend context book IDs", count=len(book_ids))
+
+        if not book_ids and ctx.history_book_ids:
+            # ── 1c. History context — backend-extracted fallback ─────────────
+            candidates = ctx.history_book_ids
+            if char_book_ids is not None:
+                filtered = [bid for bid in candidates if bid in char_book_ids]
+                candidates = filtered if filtered else candidates
+            book_ids = candidates
+            log_json(logger, logging.INFO, "Using history context book IDs for follow-up", count=len(book_ids))
 
         if not book_ids:
             # ── 2. Summary-based book selection (Level-3 cache) ─────────────

@@ -134,10 +134,12 @@ def _build_kwargs(cls, model_name: str, task_type: str | None = None) -> dict:
     if task_type and "task_type" in sig.parameters:
         kwargs["task_type"] = task_type
 
+    dimensions = 3072 if "gemini-embedding-2" in model_name else 768
+
     if "dimensions" in sig.parameters:
-        kwargs["dimensions"] = 768
+        kwargs["dimensions"] = dimensions
     elif "output_dimensionality" in sig.parameters:
-        kwargs["output_dimensionality"] = 768
+        kwargs["output_dimensionality"] = dimensions
 
     if settings.gemini_api_key:
         if "google_api_key" in sig.parameters:
@@ -346,12 +348,69 @@ class GeminiEmbeddings(Embeddings):
     async def aembed_documents(self, texts: List[str]) -> List[List[float]]:
         if not texts:
             return []
-        return await _call_with_breaker(_EMBED_BREAKER, self._doc_embeddings.aembed_documents, texts)
+            
+        import aiohttp
+        from app.core.config import settings
+
+        model_name = self.model_name
+        if not model_name.startswith("models/"):
+            model_name = f"models/{model_name}"
+            
+        dimensions = 3072 if "gemini-embedding-2" in model_name else 768
+
+        async def _call():
+            url = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:batchEmbedContents?key={settings.gemini_api_key}"
+            requests = []
+            for t in texts:
+                req = {
+                    "model": model_name,
+                    "content": {"parts": [{"text": t}]}
+                }
+                if dimensions:
+                    req["outputDimensionality"] = dimensions
+                requests.append(req)
+                
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json={"requests": requests}) as resp:
+                    resp.raise_for_status()
+                    data = await resp.json()
+                    if "embeddings" not in data:
+                        raise ValueError(f"No embeddings returned from API: {data}")
+                    return [e["values"] for e in data["embeddings"]]
+
+        return await _call_with_breaker(_EMBED_BREAKER, _call)
 
     async def aembed_query(self, text: str) -> List[float]:
         if not text:
             return []
-        return await _call_with_breaker(_EMBED_BREAKER, self._query_embeddings.aembed_query, text)
+            
+        import aiohttp
+        from app.core.config import settings
+
+        model_name = self.model_name
+        if not model_name.startswith("models/"):
+            model_name = f"models/{model_name}"
+            
+        dimensions = 3072 if "gemini-embedding-2" in model_name else 768
+
+        async def _call():
+            url = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:embedContent?key={settings.gemini_api_key}"
+            req = {
+                "model": model_name,
+                "content": {"parts": [{"text": text}]}
+            }
+            if dimensions:
+                req["outputDimensionality"] = dimensions
+                
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=req) as resp:
+                    resp.raise_for_status()
+                    data = await resp.json()
+                    if "embedding" not in data:
+                        raise ValueError(f"No embedding returned from API: {data}")
+                    return data["embedding"]["values"]
+
+        return await _call_with_breaker(_EMBED_BREAKER, _call)
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         return _run_sync(self.aembed_documents(texts))

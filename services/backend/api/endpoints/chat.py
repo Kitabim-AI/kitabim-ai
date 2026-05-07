@@ -117,8 +117,9 @@ async def chat_with_book_stream(
     async def event_generator():
         try:
             accumulated_response = ""
+            stream_meta: dict = {}
             # Stream chunks from RAG service
-            async for chunk in rag_service.answer_question_stream(req, session, user_id=current_user.id):
+            async for chunk in rag_service.answer_question_stream(req, session, user_id=current_user.id, metadata_out=stream_meta):
                 accumulated_response += chunk
                 yield f'data: {json.dumps({"chunk": chunk})}\n\n'
 
@@ -132,8 +133,8 @@ async def chat_with_book_stream(
             # Increment usage on successful stream completion
             await chat_limit_service.increment_usage(current_user, session)
             updated_usage = await chat_limit_service.get_user_usage_status(current_user, session)
-            
-            yield f'data: {json.dumps({"done": True, "usage": updated_usage})}\n\n'
+
+            yield f'data: {json.dumps({"done": True, "usage": updated_usage, "contextBookIds": stream_meta.get("used_book_ids", [])})}\n\n'
 
         except ValueError as exc:
             # Book not found or validation error

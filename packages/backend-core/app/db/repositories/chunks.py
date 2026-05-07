@@ -113,14 +113,14 @@ class ChunksRepository(BaseRepository[Chunk]):
                     b.title,
                     b.volume,
                     b.author,
-                    1 - (c.embedding <=> CAST(:embedding AS vector)) AS similarity
+                    1 - (c.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) AS similarity
                 FROM chunks c
                 JOIN books b ON c.book_id = b.id
                 JOIN pages p ON c.book_id = p.book_id AND c.page_number = p.page_number
                 WHERE c.book_id = ANY(:book_ids)
                   AND c.embedding IS NOT NULL
                   AND p.is_toc IS FALSE
-                  AND 1 - (c.embedding <=> CAST(:embedding AS vector)) > :threshold
+                  AND 1 - (c.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) > :threshold
                 ORDER BY similarity DESC
                 LIMIT :limit
             """)
@@ -140,13 +140,13 @@ class ChunksRepository(BaseRepository[Chunk]):
                     b.title,
                     b.volume,
                     b.author,
-                    1 - (c.embedding <=> CAST(:embedding AS vector)) AS similarity
+                    1 - (c.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) AS similarity
                 FROM chunks c
                 JOIN books b ON c.book_id = b.id
                 JOIN pages p ON c.book_id = p.book_id AND c.page_number = p.page_number
                 WHERE c.embedding IS NOT NULL
                   AND p.is_toc IS FALSE
-                  AND 1 - (c.embedding <=> CAST(:embedding AS vector)) > :threshold
+                  AND 1 - (c.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) > :threshold
                 ORDER BY similarity DESC
                 LIMIT :limit
             """)

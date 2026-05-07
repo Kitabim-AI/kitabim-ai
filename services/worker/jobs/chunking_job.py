@@ -18,6 +18,7 @@ from app.db.models import Book, Chunk, Page, PipelineEvent
 from app.services.chunking_service import chunking_service
 from app.services.book_milestone_service import BookMilestoneService
 from app.utils.observability import log_json
+from app.utils.text import clean_uyghur_text
 
 logger = logging.getLogger("app.worker.chunking_job")
 
@@ -50,7 +51,8 @@ async def chunking_job(ctx, page_ids: List[int]) -> None:
                 if page.is_toc:
                     chunks = []
                 else:
-                    chunks = chunking_service.split_text(page.text or "")
+                    text = clean_uyghur_text(page.text or "")
+                    chunks = chunking_service.split_text(text)
 
                 # Replace any existing chunks for this page
                 await session.execute(
