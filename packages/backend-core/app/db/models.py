@@ -533,10 +533,8 @@ class BookSummary(Base):
         primary_key=True,
         nullable=False,
     )
-    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    summary_v1: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
     embedding: Mapped[List[float]] = mapped_column(Vector(3072), nullable=False)
-    embedding_draft: Mapped[Optional[List[float]]] = mapped_column(Vector(3072), nullable=True)
     embedding_v1: Mapped[Optional[List[float]]] = mapped_column(
         Vector(768),  # Old 768-dim column (to be removed in migration 038)
         nullable=True

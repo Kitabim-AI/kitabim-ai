@@ -20,14 +20,14 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
         self,
         query_embedding: List[float],
         book_ids: Optional[List[str]] = None,
-        limit: int = 5,
         threshold: float = 0.30,
     ) -> List[str]:
         """
         Return book_ids whose summaries are most similar to query_embedding.
 
-        Uses pgvector cosine distance (<=>). Only returns books above threshold.
-        Results are ordered by similarity DESC.
+        Uses pgvector cosine distance (<=>). Returns ALL books above threshold
+        (no row limit — the threshold is the only filter). Results are ordered
+        by similarity DESC.
         """
         from sqlalchemy import text
 
@@ -43,9 +43,8 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
                 WHERE book_id = ANY(:book_ids)
                   AND 1 - (embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) > :threshold
                 ORDER BY similarity DESC
-                LIMIT :limit
             """)
-            params = {"embedding": embedding_str, "threshold": threshold, "limit": limit, "book_ids": book_ids}
+            params = {"embedding": embedding_str, "threshold": threshold, "book_ids": book_ids}
         else:
             query = text("""
                 SELECT
@@ -54,9 +53,8 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
                 FROM book_summaries
                 WHERE 1 - (embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) > :threshold
                 ORDER BY similarity DESC
-                LIMIT :limit
             """)
-            params = {"embedding": embedding_str, "threshold": threshold, "limit": limit}
+            params = {"embedding": embedding_str, "threshold": threshold}
 
         result = await self.session.execute(query, params)
         return [str(row.book_id) for row in result.fetchall()]
@@ -94,6 +92,41 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
             .values(summary=summary, embedding_draft=embedding, generated_at=func.now())
         )
         await self.session.flush()
+
+    async def get_summaries_for_books(
+        self,
+        book_ids: List[str],
+        text_filter: Optional[List[str]] = None,
+    ) -> List[dict]:
+        """Return summary text + book metadata for the given book_ids.
+
+        If text_filter is given, only summaries that contain at least one of
+        those terms (case-insensitive) are returned.
+        """
+        from app.db.models import Book
+        from sqlalchemy import or_
+
+        stmt = (
+            select(BookSummary.book_id, BookSummary.summary, Book.title, Book.volume, Book.author)
+            .join(Book, Book.id == BookSummary.book_id)
+            .where(BookSummary.book_id.in_(book_ids))
+            .where(BookSummary.summary.isnot(None))
+        )
+        if text_filter:
+            stmt = stmt.where(
+                or_(*[BookSummary.summary.ilike(f"%{term}%") for term in text_filter])
+            )
+        result = await self.session.execute(stmt)
+        return [
+            {
+                "book_id": str(row.book_id),
+                "summary": row.summary,
+                "title": row.title,
+                "volume": row.volume,
+                "author": row.author,
+            }
+            for row in result.fetchall()
+        ]
 
     async def get_by_book_id(self, book_id: str) -> Optional[BookSummary]:
         result = await self.session.execute(

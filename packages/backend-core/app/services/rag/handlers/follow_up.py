@@ -23,6 +23,10 @@ _FOLLOWUP_MARKERS = [
     "تېخىمۇ", "قوشۇمچە", "مىسال كەلتۈر",          # additionally / example
     "نىمىشقا", "نېمە ئۈچۈن",                    # why (common follow-up)
     "كىمنى دىمەكچى", "نىمە دىمەكچى",       # what do you mean by ...
+    "كەيىنكى قىسىم", "كېيىنكى قىسىم",      # following volumes
+    "كەيىنكى توم", "كېيىنكى توم",
+    "2-قىسىم", "3-قىسىم", "ئىككىنچى قىسىم", "ئۈچىنچى قىسىم",
+    "بۇ شەخس", "بۇ پېرسوناژ", "بۇ قەھرىمان",  # this character (follow-up reference)
 ]
 _FOLLOWUP_MARKERS_NORM = [normalize_uyghur(m) for m in _FOLLOWUP_MARKERS]
 

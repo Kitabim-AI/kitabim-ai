@@ -100,7 +100,6 @@ class StandardRAGHandler(QueryHandler):
 
         Also populates ctx.query_vector via the Level-1 embedding cache.
         """
-        session = ctx.session
         priority_book_ids: set = set()
         relevant_categories: List[str] = []
 
@@ -129,7 +128,10 @@ class StandardRAGHandler(QueryHandler):
             book_ids = await self._select_single_book_scope(ctx)
 
         # ── Level-2 cache: pgvector similarity search ────────────────────────
-        top_results = await self._vector_search(ctx, book_ids)
+        # Cap at 20 for chunk search — summary search returns results sorted by
+        # similarity DESC so the most relevant books are always first.
+        chunk_book_ids = book_ids[:20] if len(book_ids) > 20 else book_ids
+        top_results = await self._vector_search(ctx, chunk_book_ids)
 
         # Keyword fallback (stub — pgvector already covers this well)
         if not top_results and book_ids:
@@ -168,7 +170,12 @@ class StandardRAGHandler(QueryHandler):
 
         context = "\n\n---\n\n".join(context_parts)
         if not context and ctx.is_global:
-            context = "NO RELEVANT DOCUMENTS FOUND IN THE LIBRARY."
+            if book_ids:
+                context, fallback_book_ids = await self._build_summary_fallback_context(ctx, book_ids)
+                if fallback_book_ids:
+                    ctx.used_book_ids = fallback_book_ids
+            if not context:
+                context = "NO RELEVANT DOCUMENTS FOUND IN THE LIBRARY."
 
         category_filter = ctx.character_categories or relevant_categories
         return context, top_results, category_filter
@@ -290,7 +297,6 @@ class StandardRAGHandler(QueryHandler):
                 book_ids = await summaries_repo.summary_search(
                     query_embedding=ctx.query_vector,
                     book_ids=char_book_ids,
-                    limit=settings.summary_top_k,
                     threshold=settings.summary_threshold,
                 )
                 if book_ids is not None:
@@ -303,6 +309,7 @@ class StandardRAGHandler(QueryHandler):
             return book_ids or []
 
         except Exception as exc:
+            await ctx.session.rollback()
             log_json(logger, logging.WARNING, "Summary search failed", error=str(exc))
             return []
 
@@ -423,6 +430,75 @@ class StandardRAGHandler(QueryHandler):
     # ------------------------------------------------------------------
     # Static helpers
     # ------------------------------------------------------------------
+
+    async def _build_summary_fallback_context(
+        self, ctx: QueryContext, book_ids: List[str]
+    ) -> Tuple[str, List[str]]:
+        """Use book summary text as context when chunk search returns no results.
+
+        Filters summaries by entity keywords extracted from the question so that
+        only books whose summaries actually mention the queried entity are included
+        (avoids loading hundreds of irrelevant summaries when threshold is broad).
+
+        Returns (context_str, used_book_ids) so the caller can populate
+        ctx.used_book_ids for follow-up query continuity.
+        """
+        try:
+            from app.db.repositories.book_summaries import BookSummariesRepository
+
+            summaries_repo = BookSummariesRepository(ctx.session)
+            entity_keywords = self._extract_entity_keywords(ctx.question)
+            summaries = await summaries_repo.get_summaries_for_books(
+                book_ids, text_filter=entity_keywords or None
+            )
+            # If keyword filter was too strict and returned nothing, fall back to
+            # top-10 by similarity (book_ids is already sorted by similarity DESC).
+            if not summaries:
+                summaries = await summaries_repo.get_summaries_for_books(book_ids[:10])
+            if not summaries:
+                return "", []
+
+            parts = [
+                format_document(
+                    Document(
+                        page_content=s["summary"],
+                        metadata={
+                            "title": s["title"],
+                            "volume": s["volume"],
+                            "author": s["author"],
+                            "book_id": s["book_id"],
+                        },
+                    )
+                )
+                for s in summaries
+            ]
+            used_ids = [s["book_id"] for s in summaries]
+            log_json(logger, logging.INFO, "Summary fallback used", book_count=len(summaries))
+            return "\n\n---\n\n".join(parts), used_ids
+        except Exception as exc:
+            await ctx.session.rollback()
+            log_json(logger, logging.WARNING, "Summary fallback failed", error=str(exc))
+            return "", []
+
+    # Question/grammar words that are not useful as summary text filters
+    _ENTITY_STOP_WORDS = {
+        "قايسى", "نېمە", "نىمە", "كىم", "قاچان", "قەيەر", "قەيەردە",
+        "نەچچە", "قانچە", "بارمۇ", "يوقمۇ", "بار", "يوق",
+        "بۇ", "شۇ", "ئۇ", "بۇلار", "شۇلار", "ئۇلار",
+        "ئەسەردىكى", "كىتابتا", "كىتابتىكى", "ئەسەردە", "كىتابدا",
+        "پېرسوناژ", "ئوبراز", "قەھرىمان", "شەخس",
+        "ۋە", "بىلەن", "دىن", "غا", "گە", "دا", "دە", "نى", "نىڭ",
+    }
+
+    @staticmethod
+    def _extract_entity_keywords(question: str) -> List[str]:
+        """Extract non-grammatical words from the question for summary text filtering."""
+        import re
+        tokens = re.split(r'[\s\?؟،,\.،]+', question.strip())
+        return [
+            t for t in tokens
+            if len(t) >= 3 and t not in StandardRAGHandler._ENTITY_STOP_WORDS
+        ]
 
     @staticmethod
     async def _find_books_by_title_in_question(
