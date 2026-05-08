@@ -4,7 +4,7 @@ import asyncio
 import base64
 import inspect
 import logging
-from typing import Any, AsyncIterator, List
+from typing import Any, AsyncIterator, List, Optional
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.messages import HumanMessage
@@ -417,6 +417,20 @@ class GeminiEmbeddings(Embeddings):
 
     def embed_query(self, text: str) -> List[float]:
         return _run_sync(self.aembed_query(text))
+
+
+async def invoke_with_tools(model_name: str, messages: list, tools: list):
+    """Invoke a Gemini chat model with tool definitions.
+
+    Applies rate limiting and circuit breaker. Returns an AIMessage whose
+    ``tool_calls`` attribute contains any tool calls requested by the model.
+    """
+    llm = _build_chat_model(model_name).bind_tools(tools)
+
+    async def _call():
+        return await llm.ainvoke(messages)
+
+    return await _call_with_breaker(_TEXT_BREAKER, _call)
 
 
 def _run_sync(awaitable):

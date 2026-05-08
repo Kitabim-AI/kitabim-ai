@@ -387,6 +387,12 @@ class RAGEvaluation(Base):
     latency_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     answer_chars: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
+    # Agentic RAG metrics (NULL for standard-path requests)
+    agent_steps: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    tools_called: Mapped[Optional[List[str]]] = mapped_column(ARRAY(Text), nullable=True)
+    retry_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    final_chunk_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
     # Timestamp
     ts: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
