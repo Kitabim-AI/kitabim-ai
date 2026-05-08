@@ -53,29 +53,42 @@ If the question is completely general or doesn't fit any category, return an emp
 {format_instructions}"""
 
 BOOK_SUMMARY_PROMPT = """You are an expert librarian indexing Uyghur books for a semantic search system.
-Your task is to generate a search-optimized summary that captures the essence of the book for vector-based retrieval.
+Your task is to generate a search-optimized summary that captures the full content of the book for vector-based retrieval.
 
-Write a detailed summary IN UYGHUR (Arabic script). The summary will be embedded as a vector — every word matters for matching user queries.
+The entire summary is embedded as a single vector — every section contributes to matching user search queries.
+Write the summary IN UYGHUR (Arabic script) only.
 
 Structure the summary into these sections:
-1. تۈرى (Domain): Classify the book into exactly one category: داستان-رومان (fiction/novel) | تارىخ (history) | دىن (religious) | پەن-تەلىم (science/educational) | پەلسەپە (philosophy) | تىببىيات (medicine/health) | ئىقتىسادىيات (economics) | سىياسەت (politics) | سەنئەت-ئەدەبىيات (arts/literature) | باشقا (other).
-2. ئومۇمىي مەزمۇن (Overview): A comprehensive 200-300 word narrative of the book's subject, plot, or main arguments.
-3. ئاساسلىق ئۇقۇم ۋە تېمىلار (Concepts & Themes): Explicitly list the key themes, scientific concepts, or ideologies explored.
-4. كۆرۈنەرلىك شەخس ۋە جايلار (Entities): Mention specific names of people, historical figures, organizations, and geographic locations — ONLY those that actually appear in the provided text excerpts. Do not invent or assume names.
-5. تىپىك سوئاللار (Hypothetical Queries): List 10-15 realistic questions in natural Uyghur that a reader might type to find this book. Cover different angles: factual, conceptual, biographical, and thematic questions. This is the most important section for retrieval quality.
-6. ئاچقۇچلۇق سۆزلەر (Keywords): 15-20 specific terms or tags that define the book.
 
-Search Quality Guidelines:
-- BE SPECIFIC: Use proper nouns and technical terms from the text.
-- BE DENSE: Pack the summary with information; avoid filler text.
-- LANGUAGE: Use formal, standard Uyghur (Arabic script).
-- RETRIEVAL FOCUS: Think about what a user might type in a search box to find this specific content.
-- GROUND IN TEXT: Every entity, name, place, and claim must be supported by the provided text excerpts. Do not hallucinate content not present in the excerpts.
+1. تۈرى (Domain): List 1-3 categories in order of relevance (most relevant first):
+   داستان-رومان (fiction/novel) | تارىخ (history) | دىن (religious) | پەن ۋە مائارىپ (science/educational) | پەلسەپە (philosophy) | تىبابەت (medicine/health) | ئىقتىساد (economics) | سىياسەت (politics) | ئەدەبىيات-سەنئەت (arts/literature) | باشقا (other)
+
+2. ئومومى بايان (Overview): A comprehensive 400-600 word narrative covering the book's subject, main plot or arguments, key developments across the whole book, and overall conclusions or significance. This is the backbone of the embedding — be thorough.
+
+3. ئاساسلىق ئۇقۇم ۋە تېمىلار (Concepts & Themes): Exhaustively list every key theme, concept, theory, ideology, or scientific topic explored in the book. Cover all major and minor themes — completeness matters here.
+
+4. شەخسلەر، ئورۇنلار، تەشكىلاتلار ۋە ۋەقەلەر (Entities): List only entities that appear as subjects or topics within the book's content — do not invent names:
+   - شەخسلەر (People): Named individuals, historical figures, and characters who appear as subjects in the content. EXCLUDE the book's own author, translator, editor, and publisher — they are already captured in the metadata above and are not content entities.
+   - ئورۇنلار (Places): Countries, cities, regions, landmarks, institutions mentioned in the content
+   - تەشكىلاتلار ۋە ۋەقەلەر (Organizations & Events): Named organizations, movements, historical events, time periods mentioned in the content
+
+5. مەزمون دائىرىسى (Topic Coverage): Write a dense paragraph enumerating every specific subject, issue, event, period, method, question, or argument the book addresses in depth — derived entirely from the content, not the chapter structure. Include both broad subjects and highly specific details. This section answers "does this book cover X?" queries and must reflect the full breadth of the book.
+
+6. تىپىك سوئاللار (Hypothetical Queries): List 20-30 realistic questions in natural Uyghur that a reader might search to find this book. Cover every major topic, person, theme, and argument in the book — think about all the different ways users might ask about any part of this content. This is the most critical section for search quality.
+
+7. ئاچقۇچلۇق سۆزلەر (Keywords): 25-40 specific terms, proper nouns, and subject tags that define the book's content. Include both broad category terms and highly specific terms from the text.
+
+Guidelines:
+- BE SPECIFIC: Use proper nouns, technical terms, and exact names from the text.
+- BE EXHAUSTIVE: With the full book available, comprehensive coverage beats brevity — a richer summary means better search results.
+- LANGUAGE: Formal, standard Uyghur (Arabic script) throughout.
+- NO HALLUCINATION: Every name, claim, and entity must appear in the provided text.
+- IGNORE METADATA: Skip publisher information, copyright notices, printing details, ISBN, and any other book production metadata that appears in the text — index the content only.
 
 Book title: {title}
 Author: {author}
 
-Book text (excerpts):
+Book text:
 {text}
 
 Summary:"""
@@ -93,3 +106,21 @@ RAG_PROMPT_TEMPLATE = """
 
 Question: {question}
 """
+
+QUERY_REWRITE_PROMPT = """You are a query reformulation assistant for an Uyghur digital library.
+
+Given the conversation history and a follow-up question, rewrite the follow-up into a single standalone question that contains all the context needed to search the library — without relying on pronouns or implicit references from previous turns.
+
+Rules:
+1. If the question is already self-contained and does not depend on prior turns, return it EXACTLY as written.
+2. Replace demonstrative pronouns (ئۇ، بۇ، شۇ and their suffixed forms) with the specific entity they refer to from the history.
+3. Keep the rewritten question concise — one or two sentences maximum.
+4. Match the language of the original question (Uyghur, Arabic, or English).
+5. Return ONLY the rewritten question. No explanation, no preamble.
+
+Conversation history:
+{history}
+
+Follow-up question: {question}
+
+Rewritten question:"""

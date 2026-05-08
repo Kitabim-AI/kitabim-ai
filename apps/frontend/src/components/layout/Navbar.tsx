@@ -44,7 +44,7 @@ export const Navbar: React.FC = () => {
 
         <div className="relative flex items-center gap-3 sm:gap-4 md:gap-3 lg:gap-8">
           <div className="flex items-center h-[48px] gap-2 sm:gap-3 cursor-pointer group transition-transform duration-300 hover:-translate-y-0.5" onClick={() => setView('home')}>
-            <div className="flex-shrink-0 p-2 md:p-3 rounded-xl md:rounded-2xl shadow-[0_4px_20px_rgba(255,193,7,0.4),0_8px_40px_rgba(156,39_176,0.2),inset_0_1px_0_rgba(255,255,255,0.4)] transition-all duration-300 relative overflow-hidden group-hover:shadow-[0_6px_20px_rgba(3,105,161,0.5)] icon-shake"
+            <div className="flex-shrink-0 w-9 h-9 md:w-11 md:h-11 flex items-center justify-center rounded-xl md:rounded-2xl shadow-[0_4px_20px_rgba(255,193,7,0.4),0_8px_40px_rgba(156,39_176,0.2),inset_0_1px_0_rgba(255,255,255,0.4)] transition-all duration-300 relative overflow-hidden group-hover:shadow-[0_6px_20px_rgba(3,105,161,0.5)] icon-shake"
               style={{
                 background: 'linear-gradient(135deg, #FFD54F 0%, #FF9800 50%, #9C27B0 100%)'
               }}>
@@ -52,7 +52,7 @@ export const Navbar: React.FC = () => {
                 style={{
                   background: 'repeating-conic-gradient(from 0deg at 50% 50%, transparent 0deg, transparent 10deg, rgba(255, 255, 255, 0.1) 10deg, rgba(255, 255, 255, 0.1) 20deg)'
                 }} />
-              <BookOpen size={20} className="md:w-5 md:h-5 text-white relative z-10" strokeWidth={2} />
+              <BookOpen size={24} className="md:w-7 md:h-7 text-white relative z-10" strokeWidth={2} />
             </div>
             <span dir="ltr" className="flex items-center font-semibold text-[#1a1a1a] text-[24px] mt-[12px] md:text-[32px] md:mt-[16px] tracking-tight">
               Kitabim<span className="text-[#0369a1]">.AI</span>
