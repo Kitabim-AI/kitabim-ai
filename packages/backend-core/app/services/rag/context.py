@@ -28,15 +28,15 @@ class QueryContext:
     chat_history_str: str
     rag_chain: object
     category_chain: object
+    rewrite_chain: object
     embeddings: object
     start_ts: float
 
     # ── Mutated by handlers ─────────────────────────────────────────────────
     query_vector: List[float] = field(default_factory=list)
-    enriched_question: Optional[str] = None   # FollowUpHandler rewrites question here
+    enriched_question: Optional[str] = None   # QueryRewriter rewrites follow-up question here
     use_current_volume_only: bool = False      # CurrentVolumeHandler sets this
     context_book_ids: List[str] = field(default_factory=list)  # from ChatRequest — reliable frontend-tracked context
-    history_book_ids: List[str] = field(default_factory=list)  # from FollowUpHandler — backend-extracted fallback
     used_book_ids: List[str] = field(default_factory=list)     # populated by retrieval, returned in done event
 
     # ── Eval metadata — populated by handlers for facade _record_eval ───────

@@ -1,21 +1,23 @@
 """
 Summary Scanner — backfill and retry for book_summaries.
 
-Catches two cases the pipeline_driver hook misses:
+Catches three cases the pipeline_driver hook misses:
   1. Books that were already 'ready' before this feature was deployed
   2. Books whose summary_job failed (no row in book_summaries)
+  3. Books whose summary was cleared for regeneration (summary IS NULL, migration 039)
 
-Runs every 5 minutes. Processes up to 5 books per run to avoid thundering-herd
-on fresh deploys with many existing ready books.
+Runs every 5 minutes. Batch size controlled by system_config 'summary_scanner_batch_size'
+(default 5). Increase temporarily to speed up bulk regeneration, then reset to 5.
 """
 from __future__ import annotations
 
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.db import session as db_session
 from app.db.models import Book, BookSummary
+from app.db.repositories.system_configs import SystemConfigsRepository
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.summary_scanner")
@@ -25,13 +27,20 @@ async def run_summary_scanner(ctx) -> None:
     redis = ctx["redis"]
 
     async with db_session.async_session_factory() as session:
-        # Find ready books that have no summary yet
+        batch_size = int(
+            await SystemConfigsRepository(session).get_value("summary_scanner_batch_size", "5")
+        )
         stmt = (
             select(Book.id)
             .outerjoin(BookSummary, Book.id == BookSummary.book_id)
             .where(Book.status == "ready")
-            .where(BookSummary.book_id.is_(None))
-            .limit(5)
+            .where(
+                or_(
+                    BookSummary.book_id.is_(None),
+                    BookSummary.summary.is_(None),
+                )
+            )
+            .limit(batch_size)
         )
         result = await session.execute(stmt)
         book_ids = [row[0] for row in result.fetchall()]
