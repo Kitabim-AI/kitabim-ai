@@ -91,7 +91,7 @@ flowchart LR
 - Used to trigger downstream processing immediately after a milestone succeeds.
 
 **Chunks**
-- Semantic units with `pgvector(768)` embeddings.
+- Semantic units with `pgvector(3072)` embeddings (Gemini Embedding v2 / `gemini-embedding-2`).
 
 ## 6) Key Flows
 
@@ -105,14 +105,31 @@ flowchart LR
 7. **Finalization**: Book marked `ready` when all pages reach their terminal milestones.
 
 ### B) RAG Chat
-1. Backend embeds query using interactive Gemini API (LangChain). **(Level 1 Cache)**
-2. Performs vector similarity search in PostgreSQL. **(Level 2 Cache)**
-3. Context + prompt passed to LLM via LangChain pipeline for answer generation. **(Level 3 Cache)**
+
+The RAG pipeline is intent-routed. Nine specialized handlers cover metadata queries, follow-ups, and catalog lookups. General questions go through the retrieval handler (fixed pipeline or agentic loop depending on the feature flag).
+
+**Handler registry dispatch:**
+1. `HandlerRegistry` matches the question to the highest-priority handler whose `can_handle()` returns True.
+2. Specialized handlers (identity, author lookup, follow-up rewriting, etc.) answer directly without retrieval.
+3. `AgentRAGHandler` (when `agentic_rag_enabled=true`) or `StandardRAGHandler` handles all other questions.
+
+**Agentic retrieval loop (`agentic_rag_enabled=true`):**
+1. Agent LLM decides which tools to call (up to 4 steps, stops at 8+ chunks). **(Gemini function calling)**
+2. Tools: `search_books_by_summary` **(Level-3 cache)** → `search_chunks` **(Level-1 + Level-2 cache)** → `find_books_by_title` → `rewrite_query`
+3. Accumulated context passed to answer LLM for final response generation.
+
+**Fixed retrieval pipeline (`agentic_rag_enabled=false`, fallback):**
+1. Backend embeds query. **(Level-1 Cache)**
+2. Selects book scope via title match → summary search **(Level-3 Cache)** → context_book_ids → category fallback.
+3. pgvector similarity search. **(Level-2 Cache)**
+4. Context + prompt passed to answer LLM.
+
+**Frontend context tracking:** After each response, `used_book_ids` is returned in metadata and sent back as `context_book_ids` in the next request, giving the agent/handler a reliable scope hint without LLM-based history parsing.
 
 
 ## 7) Gemini Integration Strategy
 - **Official SDK (`google-genai`)**: Used for **File API** operations where LangChain support is limited or direct control is required.
-- **LangChain**: Used for **Interactive Chat**, **Spell Check**, and **Categorization** (LCEL pipelines, structured output parsing).
+- **LangChain**: Used for **Interactive Chat**, **Spell Check**, **Categorization**, and **Agentic RAG tool calling** (LCEL pipelines, structured output parsing, `bind_tools`).
 
 ## 8) Reliability & Observability
 - **Idempotency**: All jobs use standardized identifiers (e.g., `ocr_{book}_{page}`) to ensure results are mapped correctly even if retried.
@@ -120,6 +137,7 @@ flowchart LR
 - **Circuit Breaker**: Protects interactive services from LLM outages and Redis failures.
 - **Cache Service**: Centralized caching with lazy-loading and monitoring (`get_stats`).
 - **Worker Tracking**: Admin dashboard allows monitoring of real-time job states and detailed page-level progress.
+- **RAG Evaluations**: Every chat response writes a `rag_evaluations` row when `rag_eval_enabled=true`. Agent-path rows include `agent_steps` (LLM calls), `tools_called` (ordered tool sequence), `retry_count` (search_chunks invocations), and `final_chunk_count` (unique chunks after dedup). Standard-path rows leave these columns NULL.
 
 
 ## 9) Scalability

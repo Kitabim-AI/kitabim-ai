@@ -29,6 +29,10 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
         latency_ms: int,
         answer_chars: int,
         user_id: Optional[str] = None,
+        agent_steps: Optional[int] = None,
+        tools_called: Optional[List[str]] = None,
+        retry_count: Optional[int] = None,
+        final_chunk_count: Optional[int] = None,
     ) -> RAGEvaluation:
         """Create a new RAG evaluation record"""
         evaluation = await self.create(
@@ -44,6 +48,10 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
             answer_chars=answer_chars,
             user_id=user_id,
             ts=datetime.now(UTC),
+            agent_steps=agent_steps,
+            tools_called=tools_called,
+            retry_count=retry_count,
+            final_chunk_count=final_chunk_count,
         )
         return evaluation
 

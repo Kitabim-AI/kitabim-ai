@@ -150,6 +150,10 @@ class RAGService:
                 latency_ms=int((time.monotonic() - ctx.start_ts) * 1000),
                 answer_chars=len(answer),
                 user_id=ctx.user_id,
+                agent_steps=ctx.agent_steps,
+                tools_called=ctx.agent_tools_called or None,
+                retry_count=ctx.agent_retry_count,
+                final_chunk_count=ctx.agent_final_chunk_count,
             )
             await ctx.session.commit()
         except Exception as exc:

@@ -71,11 +71,11 @@ class FollowUpHandler(QueryHandler):
 
     async def handle(self, ctx: QueryContext) -> str:
         ctx.enriched_question = await QueryRewriter().rewrite(ctx)
-        from app.services.rag.handlers.standard_rag import StandardRAGHandler
-        return await StandardRAGHandler().handle(ctx)
+        from app.services.rag.agent.handler import AgentRAGHandler
+        return await AgentRAGHandler().handle(ctx)
 
     async def handle_stream(self, ctx: QueryContext) -> AsyncIterator[str]:
         ctx.enriched_question = await QueryRewriter().rewrite(ctx)
-        from app.services.rag.handlers.standard_rag import StandardRAGHandler
-        async for chunk in StandardRAGHandler().handle_stream(ctx):
+        from app.services.rag.agent.handler import AgentRAGHandler
+        async for chunk in AgentRAGHandler().handle_stream(ctx):
             yield chunk
