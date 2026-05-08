@@ -1,0 +1,191 @@
+"""Agent tool schemas and dispatch for the agentic RAG loop.
+
+Each tool wraps existing retrieval code — no new retrieval logic lives here.
+The @tool decorator provides the JSON schema that Gemini uses for function calling.
+dispatch_tool() routes a tool call name+args to the real async implementation.
+"""
+from __future__ import annotations
+
+import hashlib
+import logging
+from typing import List, Optional
+
+from langchain_core.tools import tool
+
+from app.core import cache_config
+from app.core.config import settings
+from app.services.cache_service import cache_service
+from app.services.rag.context import QueryContext
+from app.utils.observability import log_json
+
+logger = logging.getLogger("app.rag.agent.tools")
+
+
+# ---------------------------------------------------------------------------
+# Tool schemas (bodies are never executed — only the schema is used by bind_tools)
+# ---------------------------------------------------------------------------
+
+@tool
+def search_chunks(query: str, book_ids: Optional[List[str]] = None) -> str:
+    """Vector-search book chunks for passages relevant to a query.
+
+    Args:
+        query: The search query to embed and match against book passages.
+        book_ids: Optional list of book IDs to restrict the search scope.
+                  Omit to search across all books.
+    """
+    return ""
+
+
+@tool
+def search_books_by_summary(query: str, book_ids: Optional[List[str]] = None) -> str:
+    """Find books whose summaries are most relevant to a query.
+
+    Call this before search_chunks when you don't know which books to search.
+    Returns a list of book IDs sorted by relevance.
+
+    Args:
+        query: The question or topic to match against book summaries.
+        book_ids: Optional candidate set to restrict to (e.g. character-filtered books).
+    """
+    return ""
+
+
+@tool
+def find_books_by_title(question: str) -> str:
+    """Return book IDs for a title explicitly mentioned in the question.
+
+    Handles both «quoted» exact match and fuzzy word-prefix match.
+    Returns an empty list if no recognisable title is found.
+
+    Args:
+        question: The full user question (title extraction is done server-side).
+    """
+    return ""
+
+
+@tool
+def rewrite_query(question: str) -> str:
+    """Resolve pronouns and co-references in a follow-up question using chat history.
+
+    Call when the question contains Uyghur pronouns such as ئۇ، بۇ، شۇ، ئۇنىڭ، بۇنىڭ.
+    Returns the rewritten standalone question.
+
+    Args:
+        question: The user's original question that contains unresolved references.
+    """
+    return ""
+
+
+AGENT_TOOLS = [search_chunks, search_books_by_summary, find_books_by_title, rewrite_query]
+
+
+# ---------------------------------------------------------------------------
+# Dispatch — routes tool call name+args to the real async implementation
+# ---------------------------------------------------------------------------
+
+async def dispatch_tool(tool_name: str, tool_args: dict, ctx: QueryContext) -> dict:
+    """Execute a named tool and return a serialisable result dict."""
+    try:
+        if tool_name == "search_chunks":
+            return {"chunks": await _run_search_chunks(tool_args, ctx)}
+        if tool_name == "search_books_by_summary":
+            return {"book_ids": await _run_search_books_by_summary(tool_args, ctx)}
+        if tool_name == "find_books_by_title":
+            return {"book_ids": await _run_find_books_by_title(tool_args, ctx)}
+        if tool_name == "rewrite_query":
+            return await _run_rewrite_query(tool_args, ctx)
+        return {"error": f"Unknown tool: {tool_name}"}
+    except Exception as exc:
+        log_json(logger, logging.WARNING, "Agent tool failed", tool=tool_name, error=str(exc))
+        return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# Implementations
+# ---------------------------------------------------------------------------
+
+async def _embed_query(query: str, ctx: QueryContext) -> List[float]:
+    """Embed a query string with Level-1 cache (shared with StandardRAGHandler)."""
+    q_hash = hashlib.md5(query.strip().encode()).hexdigest()
+    emb_cache_key = cache_config.KEY_RAG_EMBEDDING.format(hash=q_hash)
+    try:
+        vector = await cache_service.get(emb_cache_key)
+        if not vector:
+            vector = await ctx.embeddings.aembed_query(query)
+            if vector:
+                await cache_service.set(emb_cache_key, vector, ttl=settings.cache_ttl_rag_query)
+        return vector or []
+    except Exception as exc:
+        log_json(logger, logging.WARNING, "Embedding failed in agent tool", error=str(exc))
+        return []
+
+
+async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
+    from app.services.rag.handlers.standard_rag import StandardRAGHandler
+
+    query = args.get("query", "")
+    book_ids: List[str] = args.get("book_ids") or []
+
+    query_vector = await _embed_query(query, ctx)
+    if not query_vector:
+        return []
+
+    handler = StandardRAGHandler()
+    original_vector = ctx.query_vector
+    ctx.query_vector = query_vector
+    try:
+        results = await handler._vector_search(ctx, book_ids)
+    finally:
+        ctx.query_vector = original_vector
+
+    log_json(
+        logger, logging.INFO, "Agent tool search_chunks",
+        query=query[:60], book_count=len(book_ids), results=len(results),
+    )
+    return results
+
+
+_AGENT_SUMMARY_BOOK_LIMIT = 20
+
+
+async def _run_search_books_by_summary(args: dict, ctx: QueryContext) -> List[str]:
+    from app.db.repositories.book_summaries import BookSummariesRepository
+    from app.core.config import settings
+
+    query = args.get("query", "")
+    char_book_ids: Optional[List[str]] = args.get("book_ids")
+
+    query_vector = await _embed_query(query, ctx)
+    if not query_vector:
+        return []
+
+    repo = BookSummariesRepository(ctx.session)
+    book_ids = await repo.summary_search(
+        query_embedding=query_vector,
+        book_ids=char_book_ids,
+        threshold=settings.summary_threshold,
+        limit=_AGENT_SUMMARY_BOOK_LIMIT,
+    )
+
+    log_json(logger, logging.INFO, "Agent tool search_books_by_summary", query=query[:60], books=len(book_ids))
+    return book_ids
+
+
+async def _run_find_books_by_title(args: dict, ctx: QueryContext) -> List[str]:
+    from app.services.rag.handlers.standard_rag import StandardRAGHandler
+
+    question = args.get("question", "")
+    book_ids = await StandardRAGHandler._find_books_by_title_in_question(question, ctx.session)
+    result = book_ids or []
+    log_json(logger, logging.INFO, "Agent tool find_books_by_title", question=question[:120], books=len(result))
+    return result
+
+
+async def _run_rewrite_query(args: dict, ctx: QueryContext) -> dict:
+    from app.services.rag.query_rewriter import QueryRewriter
+
+    rewritten = await QueryRewriter().rewrite(ctx)
+    ctx.enriched_question = rewritten
+    log_json(logger, logging.INFO, "Agent tool rewrite_query", rewritten=rewritten[:80])
+    return {"rewritten_question": rewritten}

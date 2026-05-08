@@ -21,21 +21,23 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
         query_embedding: List[float],
         book_ids: Optional[List[str]] = None,
         threshold: float = 0.30,
+        limit: Optional[int] = None,
     ) -> List[str]:
         """
         Return book_ids whose summaries are most similar to query_embedding.
 
-        Uses pgvector cosine distance (<=>). Returns ALL books above threshold
-        (no row limit — the threshold is the only filter). Results are ordered
-        by similarity DESC.
+        Uses pgvector cosine distance (<=>). Results are ordered by similarity DESC.
+        Pass limit to cap the number of returned books (e.g. for agent tool calls).
         """
         from sqlalchemy import text
 
         embedding_str = str(query_embedding)
+        limit_clause = "LIMIT :limit" if limit is not None else ""
+
         if book_ids is not None:
             if not book_ids:
                 return []
-            query = text("""
+            query = text(f"""
                 SELECT
                     book_id,
                     1 - (embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) AS similarity
@@ -43,18 +45,23 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
                 WHERE book_id = ANY(:book_ids)
                   AND 1 - (embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) > :threshold
                 ORDER BY similarity DESC
+                {limit_clause}
             """)
             params = {"embedding": embedding_str, "threshold": threshold, "book_ids": book_ids}
         else:
-            query = text("""
+            query = text(f"""
                 SELECT
                     book_id,
                     1 - (embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) AS similarity
                 FROM book_summaries
                 WHERE 1 - (embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) > :threshold
                 ORDER BY similarity DESC
+                {limit_clause}
             """)
             params = {"embedding": embedding_str, "threshold": threshold}
+
+        if limit is not None:
+            params["limit"] = limit
 
         result = await self.session.execute(query, params)
         return [str(row.book_id) for row in result.fetchall()]

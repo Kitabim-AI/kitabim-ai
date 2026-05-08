@@ -66,6 +66,7 @@ def build_default_registry() -> HandlerRegistry:
     from app.services.rag.handlers.current_volume import CurrentVolumeHandler
     from app.services.rag.handlers.catalog import CatalogHandler
     from app.services.rag.handlers.standard_rag import StandardRAGHandler
+    from app.services.rag.agent.handler import AgentRAGHandler
 
     return HandlerRegistry([
         IdentityHandler(),
@@ -77,7 +78,8 @@ def build_default_registry() -> HandlerRegistry:
         CurrentPageHandler(),
         CurrentVolumeHandler(),
         CatalogHandler(),
-        StandardRAGHandler(),
+        AgentRAGHandler(),   # priority=998 — intercepts when agentic_rag_enabled=true
+        StandardRAGHandler(),  # priority=999 — fallback when flag is off
     ])
 
 

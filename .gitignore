@@ -42,6 +42,9 @@ gcs-key.json
 *.json.bak
 infra/k8s/docker-desktop/secret.yaml
 
+# Production deployment — kept local only, not for GitHub
+deploy/gcp/
+
 # Logs
 npm-debug.log*
 yarn-debug.log*

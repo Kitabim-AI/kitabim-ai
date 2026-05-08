@@ -44,3 +44,9 @@ class QueryContext:
     context_chars: int = 0
     scores: List[float] = field(default_factory=list)
     category_filter: List[str] = field(default_factory=list)
+
+    # ── Agentic eval metadata — only set by AgentRAGHandler ─────────────────
+    agent_steps: Optional[int] = None
+    agent_tools_called: List[str] = field(default_factory=list)
+    agent_retry_count: Optional[int] = None
+    agent_final_chunk_count: Optional[int] = None

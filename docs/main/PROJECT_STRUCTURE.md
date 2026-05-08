@@ -1,6 +1,6 @@
 # Kitabim.AI — Project Structure Documentation
 
-> **Last Updated:** 2026-04-12
+> **Last Updated:** 2026-05-08
 > **Purpose:** Comprehensive overview of the codebase structure, architecture, and organization
 
 ---
@@ -130,8 +130,22 @@ packages/backend-core/
     │   ├── pdf_service.py          # PDF upload and orchestration
     │   ├── docx_service.py         # DOCX text extraction
     │   ├── storage_service.py      # GCS/local storage abstraction
-    │   ├── rag_service.py          # RAG retrieval and chat
+    │   ├── rag_service.py          # RAG facade — intent routing + eval recording
     │   ├── rag/                    # RAG sub-modules
+    │   │   ├── registry.py         # Handler registry (priority-ordered intent dispatch)
+    │   │   ├── context.py          # QueryContext dataclass (per-request state)
+    │   │   ├── base_handler.py     # Abstract QueryHandler base class
+    │   │   ├── answer_builder.py   # LLM answer generation helpers
+    │   │   ├── query_rewriter.py   # Follow-up pronoun resolution (Level-1 cached)
+    │   │   ├── llm_resources.py    # Lazy-loaded LangChain chains + embeddings singleton
+    │   │   ├── utils.py            # Text helpers (normalize, keyword extract, etc.)
+    │   │   ├── handlers/           # 9 specialized intent handlers + StandardRAGHandler (priority=999 fallback)
+    │   │   └── agent/              # Agentic RAG loop (enabled in production via agentic_rag_enabled system_config)
+    │   │       ├── prompts.py      # Agent system prompt
+    │   │       ├── tools.py        # @tool schemas + dispatch_tool()
+    │   │       ├── loop.py         # ReAct loop: MAX_STEPS=4, _ENOUGH_CHUNKS=8
+    │   │       ├── context_builder.py  # format_observations_as_context()
+    │   │       └── handler.py      # AgentRAGHandler (priority=998, flag-gated)
     │   ├── ocr_service.py          # Gemini OCR calls
     │   ├── chunking_service.py     # Semantic text chunking
     │   ├── spell_check_service.py  # Spell check orchestration
@@ -350,7 +364,7 @@ docs/
 **Job Types (services/worker/jobs/):**
 - `ocr_job` - OCR pages via Gemini Vision (per book, groups by book for one PDF download)
 - `chunking_job` - Split page text into semantic chunks
-- `embedding_job` - Generate 768-dim vectors for chunks
+- `embedding_job` - Generate 3072-dim vectors for chunks
 - `spell_check_job` - Identify unknown words per page
 - `auto_correct_job` - Apply auto-correction rules to spell issues
 - `summary_job` - Generate AI summaries for RAG routing
@@ -379,11 +393,11 @@ docs/
 **Tables (15):**
 - `books` - Book metadata and pipeline state
 - `pages` - Page-level text and milestone tracking
-- `chunks` - Text chunks with 768-dim pgvector embeddings
+- `chunks` - Text chunks with 3072-dim pgvector embeddings
 - `users` - User accounts (roles: admin/editor/reader)
 - `refresh_tokens` - JWT refresh tokens
 - `proverbs` - Uyghur proverbs displayed in the UI
-- `rag_evaluations` - RAG query performance metrics
+- `rag_evaluations` - RAG query performance metrics; agent columns (`agent_steps`, `tools_called`, `retry_count`, `final_chunk_count`) are NULL for standard-path requests
 - `dictionary` - Uyghur word list for spell check
 - `page_spell_issues` - Unknown word detections per page
 - `auto_correct_rules` - Misspelled → corrected word mappings
@@ -448,22 +462,39 @@ docs/
    ↓
 2. Frontend → POST /api/chat
    {
-     "message": "ئۇيغۇر تىلى نېمە؟",
-     "book_id": "uuid" (optional),
-     "conversation_history": [...]
+     "question": "ئابدۇرەھىم ئۆتكۈر كىم؟",
+     "book_id": "uuid-or-global",
+     "history": [...],
+     "context_book_ids": ["book_a", "book_b"]  // book IDs from the prior response
    }
    ↓
-3. Backend:
-   - Generates embedding for question (Gemini)
-   - Performs vector similarity search in PostgreSQL:
-     * If book_id provided: filter by book_id
-     * If global chat: use intelligent routing/librarian
-   - Retrieves top K chunks (by cosine similarity)
-   - Builds prompt with context and question
-   - Calls Gemini chat API via LangChain
-   - Returns answer in Uyghur
+3. Backend (RAGService._build_context):
+   - Resolves character persona, loads LLM chains from llm_resources singleton
    ↓
-4. Frontend displays answer with citations
+4. HandlerRegistry dispatches to highest-priority matching handler:
+   ├── Specialized handlers (priority 1–50): identity, capabilities, author lookup,
+   │   books-by-author, volume info, follow-up rewriting, current-page, current-volume, catalog
+   │   → answer directly without retrieval
+   │
+   ├── AgentRAGHandler (priority=998, when agentic_rag_enabled=true in production):
+   │   - Agent LLM decides which tools to call (up to MAX_STEPS=4):
+   │     * search_books_by_summary → find candidate books via summary embeddings
+   │     * search_chunks          → pgvector search scoped to candidate books
+   │     * find_books_by_title    → exact/fuzzy title lookup
+   │     * rewrite_query          → resolve Uyghur pronouns via QueryRewriter
+   │   - Loop exits early when ≥8 unique chunks collected
+   │   - format_observations_as_context() deduplicates by (book_id, page)
+   │
+   └── StandardRAGHandler (priority=999, fallback when flag is off):
+       - Fixed pipeline: embed query → title match / summary search / category scope
+         → pgvector similarity search → optional summary fallback
+   ↓
+5. Answer LLM (Gemini) generates streaming response from accumulated context
+   ↓
+6. RAGService._record_eval() writes rag_evaluations row
+   (agent columns populated for agentic path, NULL for standard path)
+   ↓
+7. Frontend displays streamed answer; used_book_ids returned in metadata
 ```
 
 ### User Authentication Flow
@@ -727,6 +758,8 @@ python3.13 -m pytest services/backend/tests
 | `src/components/admin/ManagementPage.tsx` | Admin dashboard |
 | `src/services/authService.ts` | Authentication API client |
 | `src/hooks/useAuth.ts` | Authentication state hook |
+| `src/hooks/useChat.ts` | RAG chat state — manages history, context_book_ids, and streaming |
+| `src/hooks/useUyghurInput.ts` | Custom Uyghur keyboard input adapter for RTL form fields |
 
 ### Deployment
 
@@ -750,7 +783,8 @@ Kitabim.AI is a **well-structured monorepo** with:
 ✅ **Comprehensive documentation** (BRD, system design, OpenAPI spec)
 
 **Key Statistics:**
-- **Database:** 15 tables including pgvector embeddings (768-dim)
+- **Database:** 15 tables including pgvector embeddings (3072-dim); `rag_evaluations` includes agent trace columns
+- **RAG handlers:** 9 specialized + `AgentRAGHandler` (priority=998, production) + `StandardRAGHandler` (fallback)
 - **Worker:** 6 jobs, 11 scanners driving an event-driven pipeline
 - **API:** 11 endpoint modules; see `docs/main/openapi.json`
 - **Backend-core services:** 13 shared services
