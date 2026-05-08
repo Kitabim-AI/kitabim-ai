@@ -1,121 +1,158 @@
-# Kitabim.AI Monorepo
+# Kitabim.AI
 
-The intelligent Uyghur Digital Library platform for OCR, curation, and RAG-powered reading.
+**Kitabim.AI** is an intelligent Uyghur Digital Library platform. It combines AI-powered OCR, a curation workflow, and a RAG-powered reading assistant to make Uyghur books searchable and interactive.
 
-## Structure
+---
 
-- `/services/backend`: FastAPI API service (runs shared backend core).
-- `/packages/backend-core`: Shared Python backend package.
-- `/services/worker`: ARQ worker that processes background OCR/embedding/RAG jobs (uses backend-core).
-- `/apps/frontend`: React UI (Vite).
-- `/packages/shared`: Shared TS types/utilities.
-- `/data`: Persistent storage created at runtime (ignored by git).
-  - `uploads/`: Original PDF files.
-  - `covers/`: Extracted book cover images.
+## Features
 
-- `AGENTS.md` files in the repo root and each service provide guidance for automated changes.
+### OCR & Digitization Pipeline
+- Upload PDFs and extract Uyghur text page-by-page using **Google Gemini Vision**
+- Milestone-based processing pipeline (`ocr → chunking → embedding → spell_check`) with resumable jobs and real-time progress tracking
+- Text cleaning tailored for Uyghur script (removes OCR noise, header/footer markers)
+- Semantic chunking with overlapping windows for high-recall retrieval
+
+### Curation Workspace
+- Per-page spell-check against a Uyghur dictionary with one-click corrections
+- Auto-correction rules for common OCR errors applied in bulk
+- Editor role with review queue; books go public only after editorial sign-off
+
+### AI Reading Assistant (RAG)
+- Per-book and global library chat powered by **Gemini** and **pgvector** similarity search
+- **Agentic retrieval loop** (enabled in production): an LLM agent decides which retrieval tools to call — summary search, chunk search, title lookup, or pronoun rewriting — and retries with refined queries until it has enough context (up to 4 steps, early-exit at 8 chunks)
+- **Intent routing**: 9 specialized handlers cover metadata queries (author, volume info, catalog), follow-up pronoun resolution, and page/volume-scoped questions before falling back to the agentic loop
+- **3-level caching**: query embedding (L1), chunk search results (L2), summary search results (L3)
+- Streaming responses via SSE; `used_book_ids` returned per response for frontend context tracking
+- Per-user daily chat limits with role-based overrides
+
+### User Management
+- Google OAuth login; role-based access: **Admin**, **Editor**, **Reader**, **Guest**
+- JWT access + refresh tokens via httpOnly cookies
+- Admin dashboard with per-book pipeline stats, user management, and RAG evaluation metrics
+
+### Infrastructure
+- All AI models and thresholds configurable at runtime via `system_configs` (no redeploy needed)
+- Redis-backed circuit breaker protecting all LLM and external API calls
+- 3-tier caching layer (Redis) with per-key TTLs and cache-miss logging
+- Transactional outbox pattern for reliable pipeline event dispatch
+
+---
+
+## Architecture
+
+```
+apps/frontend/          React 19 + Vite SPA (RTL, Uyghur keyboard support)
+services/backend/       FastAPI REST API
+services/worker/        ARQ background worker (OCR, chunking, embedding, summaries)
+packages/backend-core/  Shared Python code (models, repositories, RAG services)
+```
+
+All services share `packages/backend-core`. The worker and API never duplicate database or AI logic.
+
+For a full architecture diagram and data model see [docs/main/SYSTEM_DESIGN.md](docs/main/SYSTEM_DESIGN.md).  
+For directory structure and key files see [docs/main/PROJECT_STRUCTURE.md](docs/main/PROJECT_STRUCTURE.md).  
+For the agentic RAG design see [docs/main/AGENTIC_RAG_DESIGN.md](docs/main/AGENTIC_RAG_DESIGN.md).
+
+---
 
 ## Local Development (Docker Compose)
 
 ### Prerequisites
 
-- **Docker Desktop** (or Docker Engine + Docker Compose)
+- Docker Desktop (or Docker Engine + Docker Compose)
+- A `GEMINI_API_KEY` from [Google AI Studio](https://aistudio.google.com)
 
-### Environment Variables
+### Quickstart
 
-All configuration is managed via the root-level `.env` file. See `.env.template` for available variables.
-
-Notes:
-- `DATABASE_URL` — set to `postgresql://...@postgres:5432/kitabim-ai` inside Docker (the `postgres` service). For direct local access outside Docker, use `localhost:5532`.
-- `GEMINI_API_KEY` is required for AI features.
-- Local storage at `./data` is mounted to the containers for persistent uploads and covers.
-
-### Quickstart: Start the App Locally
-
-Follow these steps to get the environment running on your machine:
-
-**1. Prepare Environment**
-Copy the template and fill in your keys (especially `GEMINI_API_KEY`):
+**1. Configure environment**
 ```bash
 cp .env.template .env
+# Fill in GEMINI_API_KEY and other required values
 ```
 
-**2. Prerequisites**
-- Docker Desktop (or Docker Engine + Docker Compose)
-- PostgreSQL is started automatically as part of Docker Compose (`postgres` service on host port `5532`).
-
-**3. Launch Services**
-Build and start all services in the background:
+**2. Start all services**
 ```bash
 ./deploy/local/rebuild-and-restart.sh all
 ```
-*Tip: Use `./deploy/local/rebuild-and-restart.sh [frontend|backend|worker]` to rebuild only specific services.*
 
-**4. Access the App**
-- **Web UI**: [http://localhost:30080](http://localhost:30080)
-- **API Docs**: [http://localhost:30800/docs](http://localhost:30800/docs)
-- **Health Check**: [http://localhost:30800/health](http://localhost:30800/health)
+**3. Access**
 
----
+| Service | URL |
+|---------|-----|
+| Web UI | http://localhost:30080 |
+| API + Swagger | http://localhost:30800/docs |
+| Health check | http://localhost:30800/health |
 
-### Start / Stop / Restart
+PostgreSQL runs on host port `5532`. `DATABASE_URL` inside Docker uses the `postgres` service hostname on port `5432`.
+
+### Common commands
 
 ```bash
-# Start
-docker compose up -d
+# Rebuild a single service
+./deploy/local/rebuild-and-restart.sh [frontend|backend|worker]
+
+# Logs
+docker compose logs -f backend
+docker compose logs -f worker
+
+# Status
+docker compose ps
 
 # Stop
 docker compose down
-
-# Restart a specific service
-./deploy/local/rebuild-and-restart.sh backend
-
-# Rebuild and restart all services
-./deploy/local/rebuild-and-restart.sh all
-```
-
-### Logs
-
-```bash
-# All services
-docker compose logs -f
-
-# Specific service
-docker compose logs -f backend
-```
-
-### Status
-
-```bash
-docker compose ps
-```
-
-### Health Checks
-
-```bash
-curl -s http://localhost:30800/health
 ```
 
 ### Tests
 
 ```bash
+# Frontend
 npm test
+
+# Backend
 python3.13 -m pytest services/backend/tests
 ```
 
-### Troubleshooting
+---
 
-- **Backend not ready**: Check logs with `docker compose logs backend`.
-- **Postgres not ready**: Check logs with `docker compose logs postgres`.
+## Technology Stack
 
-# Technology Stack
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 19, Vite 6, TypeScript 5.8, Tailwind CSS 3.4, pdf.js |
+| API | FastAPI, Python 3.13, Pydantic, asyncpg |
+| Database | PostgreSQL 17 + pgvector (3072-dim embeddings, HNSW index) |
+| Caching / Queue | Redis 7 + ARQ |
+| AI | Google Gemini (OCR, embeddings, chat, agentic tool calling) |
+| AI Framework | LangChain + langchain-google-genai |
+| Storage | Google Cloud Storage (private PDF bucket, public covers CDN) |
+| Production | GCE VM + Docker Compose + Artifact Registry + nginx |
 
-- **Frontend**: React 19, Vite 6, Tailwind CSS 3.4 (PostCSS bundled), Lucide, pdf.js.
-- **Backend**: FastAPI, PostgreSQL (asyncpg), pgvector, PyMuPDF, LangChain, `langchain-google-genai`, `httpx`, `numpy`.
-- **Queue/Worker**: Redis 7+ + ARQ.
-- **Caching**: Redis (shared with queue).
-- **Microservices**: Backend (FastAPI), Worker (ARQ).
+---
 
-- **Production**: Automated deployment using GCP Artifact Registry and Docker Compose on GCE.
-  - Deployment Script: `./deploy/gcp/scripts/deploy.sh [IMAGE_TAG]`
-  - See [Production Deployment Guide](docs/main/PRODUCTION_DEPLOYMENT.md) for details.
+## Production Deployment
+
+```bash
+# Build, push images, sync config, and deploy to the production VM
+./deploy/gcp/scripts/deploy.sh [IMAGE_TAG]
+```
+
+The script builds multi-arch images, pushes to Artifact Registry, syncs `docker-compose.yml`, `.env`, and the nginx config to the VM, then performs a zero-downtime rolling restart with a health-check gate.
+
+See [docs/main/PRODUCTION_DEPLOYMENT.md](docs/main/PRODUCTION_DEPLOYMENT.md) for the full runbook.
+
+> **Note:** `deploy/gcp/` is gitignored — production scripts and config are kept local only.
+
+---
+
+## Key Runtime Configuration (`system_configs` table)
+
+These values are changed via the admin API at runtime — no redeploy required.
+
+| Key | Purpose |
+|-----|---------|
+| `gemini_chat_model` | Model used for answer generation |
+| `gemini_embedding_model` | Model used for chunk and query embeddings |
+| `gemini_agent_loop_model` | Fast model for agent tool-calling decisions |
+| `agentic_rag_enabled` | `"true"` enables the agentic retrieval loop |
+| `rag_eval_enabled` | `"true"` writes per-request metrics to `rag_evaluations` |
+| `summary_similarity_threshold` | Minimum score for summary-based book selection |
