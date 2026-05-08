@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from langchain_core.output_parsers import PydanticOutputParser
 
 from app.langchain import GeminiEmbeddings, build_structured_chain, build_text_chain
-from app.core.prompts import CATEGORY_PROMPT, RAG_PROMPT_TEMPLATE
+from app.core.prompts import CATEGORY_PROMPT, QUERY_REWRITE_PROMPT, RAG_PROMPT_TEMPLATE
 
 
 class CategoryResponse(BaseModel):
@@ -24,6 +24,7 @@ class LLMResources:
         self._parser = PydanticOutputParser(pydantic_object=CategoryResponse)
         self._rag_chains: dict = {}
         self._category_chains: dict = {}
+        self._rewrite_chains: dict = {}
         self._embeddings_cache: dict = {}
 
     def get_embeddings(self, model_name: str) -> GeminiEmbeddings:
@@ -44,6 +45,13 @@ class LLMResources:
                 CATEGORY_PROMPT, model_name, self._parser, run_name="category_chain"
             )
         return self._category_chains[model_name]
+
+    def get_rewrite_chain(self, model_name: str):
+        if model_name not in self._rewrite_chains:
+            self._rewrite_chains[model_name] = build_text_chain(
+                QUERY_REWRITE_PROMPT, model_name, run_name="rewrite_chain"
+            )
+        return self._rewrite_chains[model_name]
 
 
 # Module-level singleton — shared across all RAGService instances and workers.
