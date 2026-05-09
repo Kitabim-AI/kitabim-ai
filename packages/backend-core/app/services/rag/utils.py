@@ -35,6 +35,9 @@ def entity_matches_question(entity: str, question: str) -> bool:
     the question.  Single-word entities are allowed when they are at least 4
     characters long (avoids false positives on short tokens).  Normalizes
     ى/ې/ي variants before comparison.
+
+    Also handles the ە → ى alternation before case suffixes
+    (e.g. 'بابۇرنامە' matches 'بابۇرنامىنىڭ').
     """
     entity_words = normalize_uyghur(entity.strip()).split()
     if not entity_words:
@@ -46,10 +49,15 @@ def entity_matches_question(entity: str, question: str) -> bool:
         normalize_uyghur(w).strip(_PUNCT)
         for w in question.strip().split()
     ]
-    return all(
-        any(q_word.startswith(e_word) for q_word in q_words)
-        for e_word in entity_words
-    )
+
+    def _word_matches(e_word: str) -> bool:
+        alt = e_word[:-1] + "ی" if e_word.endswith("ە") else None
+        return any(
+            q_word.startswith(e_word) or (alt is not None and q_word.startswith(alt))
+            for q_word in q_words
+        )
+
+    return all(_word_matches(e_word) for e_word in entity_words)
 
 
 # ---------------------------------------------------------------------------

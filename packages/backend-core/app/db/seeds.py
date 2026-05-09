@@ -22,11 +22,6 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Gemini model used for chat responses (reader chat and global chat)."
         },
         {
-            "key": "gemini_categorization_model",
-            "value": "gemini-3.1-flash-lite-preview",
-            "description": "Gemini model used for category routing in global search."
-        },
-        {
             "key": "gemini_ocr_model",
             "value": "gemini-3.1-flash-lite-preview",
             "description": "Gemini model used for OCR page processing."

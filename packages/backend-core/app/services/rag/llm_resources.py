@@ -1,17 +1,8 @@
 """Lazy-loaded LLM chains and embeddings — module-level singleton."""
 from __future__ import annotations
 
-from typing import List
-
-from pydantic import BaseModel, Field
-from langchain_core.output_parsers import PydanticOutputParser
-
-from app.langchain import GeminiEmbeddings, build_structured_chain, build_text_chain
-from app.core.prompts import CATEGORY_PROMPT, QUERY_REWRITE_PROMPT, RAG_PROMPT_TEMPLATE
-
-
-class CategoryResponse(BaseModel):
-    categories: List[str] = Field(default_factory=list)
+from app.langchain import GeminiEmbeddings, build_text_chain
+from app.core.prompts import QUERY_REWRITE_PROMPT, RAG_PROMPT_TEMPLATE
 
 
 class LLMResources:
@@ -21,9 +12,7 @@ class LLMResources:
     """
 
     def __init__(self) -> None:
-        self._parser = PydanticOutputParser(pydantic_object=CategoryResponse)
         self._rag_chains: dict = {}
-        self._category_chains: dict = {}
         self._rewrite_chains: dict = {}
         self._embeddings_cache: dict = {}
 
@@ -38,13 +27,6 @@ class LLMResources:
                 RAG_PROMPT_TEMPLATE, model_name, run_name="rag_chain"
             )
         return self._rag_chains[model_name]
-
-    def get_category_chain(self, model_name: str):
-        if model_name not in self._category_chains:
-            self._category_chains[model_name] = build_structured_chain(
-                CATEGORY_PROMPT, model_name, self._parser, run_name="category_chain"
-            )
-        return self._category_chains[model_name]
 
     def get_rewrite_chain(self, model_name: str):
         if model_name not in self._rewrite_chains:

@@ -14,12 +14,8 @@ from app.db.models import Book
 from app.services.cache_service import cache_service
 from app.services.rag.base_handler import QueryHandler
 from app.services.rag.context import QueryContext
-from app.services.rag.utils import (
-    expand_history_categories,
-    extract_keywords,
-)
+from app.services.rag.utils import extract_keywords
 from app.services.rag.answer_builder import (
-    categorize_question,
     format_document,
     generate_answer,
     generate_answer_stream,
@@ -47,7 +43,7 @@ class StandardRAGHandler(QueryHandler):
     intent_name = "standard_rag"
     priority = 999
 
-    def can_handle(self, ctx: QueryContext) -> bool:
+    def can_handle(self, _ctx: QueryContext) -> bool:
         return True
 
     # ------------------------------------------------------------------
@@ -315,38 +311,7 @@ class StandardRAGHandler(QueryHandler):
         relevant_categories: List[str] = []
 
         if not ctx.character_categories:
-            # Auto-categorize
-            stmt = select(Book.categories).where(Book.categories.isnot(None))
-            result = await session.execute(stmt)
-            all_categories: set = set()
-            for cats in result.scalars().all():
-                if cats:
-                    all_categories.update(cats)
-
-            try:
-                relevant_categories = await categorize_question(
-                    ctx.question, list(all_categories), ctx.category_chain
-                )
-                relevant_categories = expand_history_categories(relevant_categories)
-                log_json(logger, logging.INFO, "Auto-categorized question", categories=relevant_categories)
-            except Exception as exc:
-                log_json(logger, logging.WARNING, "Category routing failed", error=str(exc))
-                relevant_categories = []
-
-            if relevant_categories:
-                from sqlalchemy import text as sa_text
-                stmt = select(Book.id, Book.title, Book.categories).where(
-                    sa_text("categories && :cats").bindparams(cats=relevant_categories)
-                ).limit(100)
-                result = await session.execute(stmt)
-                all_books_recs = result.fetchall()
-                if "ئۇيغۇر تارىخى" in relevant_categories:
-                    priority_book_ids = {
-                        str(b.id) for b in all_books_recs
-                        if b.categories and "ئۇيغۇر تارىخى" in b.categories
-                    }
-            else:
-                all_books_recs = []
+            all_books_recs = []
         else:
             # Use character book IDs
             all_books_recs = []

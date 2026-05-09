@@ -17,7 +17,7 @@ class HandlerRegistry:
     """Routes a QueryContext to the first handler whose ``can_handle()`` returns True.
 
     Handlers are sorted by ``priority`` (ascending) once at construction time.
-    ``StandardRAGHandler`` (priority=999) always matches and acts as the fallback.
+    ``AgentRAGHandler`` (priority=998) always matches and acts as the fallback.
     """
 
     def __init__(self, handlers: List["QueryHandler"]) -> None:
@@ -35,7 +35,7 @@ class HandlerRegistry:
                 )
                 return handler
         raise RuntimeError(
-            "No handler matched — StandardRAGHandler must always be last with can_handle()=True"
+            "No handler matched — AgentRAGHandler must always be last with can_handle()=True"
         )
 
     async def dispatch(self, ctx: "QueryContext") -> str:
@@ -64,22 +64,18 @@ def build_default_registry() -> HandlerRegistry:
     from app.services.rag.handlers.follow_up import FollowUpHandler
     from app.services.rag.handlers.current_page import CurrentPageHandler
     from app.services.rag.handlers.current_volume import CurrentVolumeHandler
-    from app.services.rag.handlers.catalog import CatalogHandler
-    from app.services.rag.handlers.standard_rag import StandardRAGHandler
     from app.services.rag.agent.handler import AgentRAGHandler
 
     return HandlerRegistry([
         IdentityHandler(),
         CapabilityHandler(),
-        AuthorByTitleHandler(),
-        BooksByAuthorHandler(),
+        AuthorByTitleHandler(),   # priority=20 — fast path for "who wrote X?"
+        BooksByAuthorHandler(),   # priority=21 — fast path for "what did Y write?"
         VolumeInfoHandler(),
         FollowUpHandler(),
         CurrentPageHandler(),
         CurrentVolumeHandler(),
-        CatalogHandler(),
-        AgentRAGHandler(),   # priority=998 — intercepts when agentic_rag_enabled=true
-        StandardRAGHandler(),  # priority=999 — fallback when flag is off
+        AgentRAGHandler(),        # priority=998 — catches all unmatched intents
     ])
 
 

@@ -1,6 +1,6 @@
 # Kitabim.ai Documentation
 
-**Last Updated:** 2026-04-12
+**Last Updated:** 2026-05-09
 
 Welcome to the Kitabim.ai documentation. This directory contains comprehensive technical documentation for the platform.
 
@@ -15,6 +15,9 @@ Welcome to the Kitabim.ai documentation. This directory contains comprehensive t
 | [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md) | High-level system architecture and design decisions | ✅ Current |
 | [WORKER_DESIGN.md](WORKER_DESIGN.md) | Event-driven pipeline architecture and worker components | ✅ Current |
 | [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) | Monorepo structure and codebase organization | ✅ Current |
+| [AGENTIC_RAG_DESIGN.md](AGENTIC_RAG_DESIGN.md) | Agentic RAG design — 7 tools, context injection, follow-up detection | ✅ Current |
+| [QUESTION_ANSWERING_DIAGRAM_V2.md](QUESTION_ANSWERING_DIAGRAM_V2.md) | Visual pipeline diagram — current agentic RAG state | ✅ Current |
+| [QUESTION_ANSWERING_DIAGRAM.md](QUESTION_ANSWERING_DIAGRAM.md) | Visual pipeline diagram — pre-agentic (archived) | ⚠️ Archived |
 | [book_processing_diagram.md](book_processing_diagram.md) | Visual diagrams of the book processing pipeline | ✅ Current |
 | [code-review-api-2026-03-29.md](code-review-api-2026-03-29.md) | API code review snapshot — blocking issues still open | ⚠️ Open issues |
 
@@ -30,6 +33,13 @@ Welcome to the Kitabim.ai documentation. This directory contains comprehensive t
 | Document | Description | Status |
 |----------|-------------|--------|
 | [VM_MONITORING.md](VM_MONITORING.md) | Production VM monitoring guide and commands | ✅ Current |
+
+### **🤖 AI & RAG**
+
+| Document | Description | Status |
+|----------|-------------|--------|
+| [AGENTIC_RAG_DESIGN.md](AGENTIC_RAG_DESIGN.md) | Agentic ReAct loop, 7 tools, context injection, follow-up detection | ✅ Current |
+| [QUESTION_ANSWERING_DIAGRAM_V2.md](QUESTION_ANSWERING_DIAGRAM_V2.md) | Full pipeline visual diagram — current state | ✅ Current |
 
 ### **🔧 Features & Implementation**
 
@@ -135,6 +145,7 @@ All docs should include:
 - **Uptime:** 99.9%
 
 ### Recent Major Changes
+- ✅ **2026-05-09:** Agentic RAG fully promoted — always-on, 7 tools, context injection, "چۇ" follow-up detection, `StandardRAGHandler` removed
 - ✅ **2026-03-14:** Applied pipeline optimizations (2x speedup)
 - ✅ **2026-03-13:** Implemented smart `includeStats` parameter for API
 - ✅ **2026-03-01:** Completed Redis caching rollout
