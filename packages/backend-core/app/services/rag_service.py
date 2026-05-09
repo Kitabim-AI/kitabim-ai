@@ -89,9 +89,6 @@ class RAGService:
         chat_model = await configs_repo.get_value("gemini_chat_model")
         if not chat_model:
             raise RuntimeError("system_config 'gemini_chat_model' is not set")
-        categorization_model = await configs_repo.get_value("gemini_categorization_model")
-        if not categorization_model:
-            raise RuntimeError("system_config 'gemini_categorization_model' is not set")
         embedding_model = await configs_repo.get_value("gemini_embedding_model")
         if not embedding_model:
             raise RuntimeError("system_config 'gemini_embedding_model' is not set")
@@ -117,7 +114,6 @@ class RAGService:
             character_categories=character_categories,
             chat_history_str=format_chat_history(req.history or []),
             rag_chain=llm_resources.get_rag_chain(chat_model),
-            category_chain=llm_resources.get_category_chain(categorization_model),
             rewrite_chain=llm_resources.get_rewrite_chain(chat_model),
             embeddings=llm_resources.get_embeddings(embedding_model),
             start_ts=time.monotonic(),

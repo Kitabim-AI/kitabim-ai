@@ -106,25 +106,23 @@ flowchart LR
 
 ### B) RAG Chat
 
-The RAG pipeline is intent-routed. Nine specialized handlers cover metadata queries, follow-ups, and catalog lookups. General questions go through the retrieval handler (fixed pipeline or agentic loop depending on the feature flag).
+The RAG pipeline is intent-routed. Eight specialized handlers cover metadata queries, follow-ups, and page/volume-scoped questions. All other questions go through the always-on agentic retrieval loop.
 
 **Handler registry dispatch:**
 1. `HandlerRegistry` matches the question to the highest-priority handler whose `can_handle()` returns True.
-2. Specialized handlers (identity, author lookup, follow-up rewriting, etc.) answer directly without retrieval.
-3. `AgentRAGHandler` (when `agentic_rag_enabled=true`) or `StandardRAGHandler` handles all other questions.
+2. Fast-path handlers (`IdentityHandler`, `CapabilityHandler`, `AuthorByTitleHandler`, `BooksByAuthorHandler`, `VolumeInfoHandler`) answer directly from a DB lookup with zero agent calls.
+3. `FollowUpHandler` detects follow-up signals (explicit markers, Uyghur pronouns, and the "چۇ" topic-shift clitic) — rewrites the question via LLM, then delegates to the agent.
+4. `CurrentPageHandler` and `CurrentVolumeHandler` inject page/volume scope, then delegate to the agent.
+5. `AgentRAGHandler` (priority=998) handles all remaining questions.
 
-**Agentic retrieval loop (`agentic_rag_enabled=true`):**
-1. Agent LLM decides which tools to call (up to 4 steps, stops at 8+ chunks). **(Gemini function calling)**
-2. Tools: `search_books_by_summary` **(Level-3 cache)** → `search_chunks` **(Level-1 + Level-2 cache)** → `find_books_by_title` → `rewrite_query`
-3. Accumulated context passed to answer LLM for final response generation.
+**Agentic retrieval loop (always-on):**
+1. `_build_human_message` injects a `[Context]` block (current book ID, context book IDs, category filter) into the agent's first message — agent skips book-discovery when the context is known.
+2. Agent LLM decides which tools to call (up to 4 steps, early-exit at 8+ chunks). **(Gemini function calling)**
+3. Tools: `search_chunks` **(L1+L2 cache)**, `search_books_by_summary` **(L3 cache)**, `find_books_by_title`, `rewrite_query` **(L0 cache, short-circuits if already rewritten)**, `get_book_author`, `get_books_by_author`, `search_catalog`
+4. `format_observations_as_context` deduplicates chunks (sort by score DESC, cap at 15) and prepends metadata context from catalog/author tools.
+5. Combined context passed to answer LLM for final response generation.
 
-**Fixed retrieval pipeline (`agentic_rag_enabled=false`, fallback):**
-1. Backend embeds query. **(Level-1 Cache)**
-2. Selects book scope via title match → summary search **(Level-3 Cache)** → context_book_ids → category fallback.
-3. pgvector similarity search. **(Level-2 Cache)**
-4. Context + prompt passed to answer LLM.
-
-**Frontend context tracking:** After each response, `used_book_ids` is returned in metadata and sent back as `context_book_ids` in the next request, giving the agent/handler a reliable scope hint without LLM-based history parsing.
+**Frontend context tracking:** After each response, `used_book_ids` is returned in metadata and sent back as `context_book_ids` in the next request, letting the agent skip book-discovery on follow-up turns.
 
 
 ## 7) Gemini Integration Strategy
