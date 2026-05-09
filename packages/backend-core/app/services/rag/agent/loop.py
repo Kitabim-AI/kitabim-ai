@@ -16,6 +16,30 @@ from app.utils.observability import log_json
 logger = logging.getLogger("app.rag.agent.loop")
 
 MAX_STEPS = 4
+
+
+def _build_human_message(ctx: QueryContext, question: str) -> str:
+    lines = []
+    if not ctx.is_global and ctx.book:
+        book = ctx.book
+        book_info = f'"{book.title}"' if book.title else "unknown title"
+        if book.author:
+            book_info += f" by {book.author}"
+        if book.volume is not None:
+            book_info += f", volume {book.volume}"
+        lines.append(f"Current book: {book_info} (book_id: {ctx.book_id})")
+        if ctx.use_current_volume_only:
+            lines.append("Scope: current volume only")
+    elif ctx.is_global:
+        if ctx.context_book_ids:
+            lines.append(f"Context book IDs: {', '.join(ctx.context_book_ids[:10])}")
+        if ctx.character_categories:
+            lines.append(f"Category filter: {', '.join(ctx.character_categories)}")
+    if not lines:
+        return question
+    return "[Context]\n" + "\n".join(lines) + "\n\n[Question]\n" + question
+
+
 _ENOUGH_CHUNKS = 8
 
 
@@ -31,7 +55,7 @@ async def run_agent_loop(ctx: QueryContext, agent_model_name: str) -> Tuple[List
     question = ctx.enriched_question or ctx.question
     messages = [
         SystemMessage(content=AGENT_SYSTEM_PROMPT),
-        HumanMessage(content=question),
+        HumanMessage(content=_build_human_message(ctx, question)),
     ]
 
     observations: List[dict] = []

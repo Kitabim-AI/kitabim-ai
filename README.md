@@ -17,11 +17,12 @@
 - Auto-correction rules for common OCR errors applied in bulk
 - Editor role with review queue; books go public only after editorial sign-off
 
-### AI Reading Assistant (RAG)
+### AI Reading Assistant (Agentic RAG)
 - Per-book and global library chat powered by **Gemini** and **pgvector** similarity search
-- **Agentic retrieval loop** (enabled in production): an LLM agent decides which retrieval tools to call — summary search, chunk search, title lookup, or pronoun rewriting — and retries with refined queries until it has enough context (up to 4 steps, early-exit at 8 chunks)
-- **Intent routing**: 9 specialized handlers cover metadata queries (author, volume info, catalog), follow-up pronoun resolution, and page/volume-scoped questions before falling back to the agentic loop
-- **3-level caching**: query embedding (L1), chunk search results (L2), summary search results (L3)
+- **Agentic retrieval loop** — always-on: an LLM agent runs a ReAct loop (up to 4 steps, early-exit at 8 chunks) and decides which of 7 tools to call: chunk search, summary search, title lookup, author lookup, catalog search, and pronoun rewriting
+- **Context injection**: the agent's first message includes the current book ID, context book IDs, and category filter — the agent skips book-discovery entirely when the context is known
+- **Intent routing**: 8 specialized handlers cover metadata queries (author, volume info), follow-up detection, and page/volume-scoped questions before reaching the agentic loop. Follow-up detection catches Uyghur pronouns, explicit markers, and the "چۇ" topic-shift clitic
+- **4-level caching**: query rewrite (L0), query embedding (L1), chunk search results (L2), summary search results (L3)
 - Streaming responses via SSE; `used_book_ids` returned per response for frontend context tracking
 - Per-user daily chat limits with role-based overrides
 
@@ -51,7 +52,8 @@ All services share `packages/backend-core`. The worker and API never duplicate d
 
 For a full architecture diagram and data model see [docs/main/SYSTEM_DESIGN.md](docs/main/SYSTEM_DESIGN.md).  
 For directory structure and key files see [docs/main/PROJECT_STRUCTURE.md](docs/main/PROJECT_STRUCTURE.md).  
-For the agentic RAG design see [docs/main/AGENTIC_RAG_DESIGN.md](docs/main/AGENTIC_RAG_DESIGN.md).
+For the agentic RAG design see [docs/main/AGENTIC_RAG_DESIGN.md](docs/main/AGENTIC_RAG_DESIGN.md).  
+For the current question answering pipeline diagram see [docs/main/QUESTION_ANSWERING_DIAGRAM_V2.md](docs/main/QUESTION_ANSWERING_DIAGRAM_V2.md).
 
 ---
 
@@ -153,6 +155,5 @@ These values are changed via the admin API at runtime — no redeploy required.
 | `gemini_chat_model` | Model used for answer generation |
 | `gemini_embedding_model` | Model used for chunk and query embeddings |
 | `gemini_agent_loop_model` | Fast model for agent tool-calling decisions |
-| `agentic_rag_enabled` | `"true"` enables the agentic retrieval loop |
 | `rag_eval_enabled` | `"true"` writes per-request metrics to `rag_evaluations` |
 | `summary_similarity_threshold` | Minimum score for summary-based book selection |

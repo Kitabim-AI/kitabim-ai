@@ -30,6 +30,9 @@ _FOLLOWUP_MARKERS = [
 ]
 _FOLLOWUP_MARKERS_NORM = [normalize_uyghur(m) for m in _FOLLOWUP_MARKERS]
 
+# "چۇ" is a topic-shift clitic meaning "what about...?" — always a follow-up signal
+_FOLLOWUP_PARTICLE = normalize_uyghur("چۇ")
+
 _REFERENTIAL_PRONOUNS = {normalize_uyghur(p) for p in [
     "ئۇ", "بۇ", "شۇ",
     "ئۇلار", "بۇلار", "شۇلار",
@@ -67,6 +70,9 @@ class FollowUpHandler(QueryHandler):
             words = set(q.split())
             if words & _REFERENTIAL_PRONOUNS:
                 return True
+        # Heuristic 3: "چۇ" topic-shift clitic ("what about X?") on any word.
+        if any(w.endswith(_FOLLOWUP_PARTICLE) for w in q.split()):
+            return True
         return False
 
     async def handle(self, ctx: QueryContext) -> str:

@@ -237,6 +237,10 @@ async def _run_find_books_by_title(args: dict, ctx: QueryContext) -> List[str]:
 
 
 async def _run_rewrite_query(args: dict, ctx: QueryContext) -> dict:
+    if ctx.enriched_question:
+        log_json(logger, logging.INFO, "Agent tool rewrite_query — already rewritten, skipping")
+        return {"rewritten_question": ctx.enriched_question}
+
     from app.services.rag.query_rewriter import QueryRewriter
 
     rewritten = await QueryRewriter().rewrite(ctx)
