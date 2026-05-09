@@ -27,7 +27,6 @@ class QueryContext:
     character_categories: List[str]
     chat_history_str: str
     rag_chain: object
-    category_chain: object
     rewrite_chain: object
     embeddings: object
     start_ts: float

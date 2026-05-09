@@ -1,9 +1,5 @@
 """AgentRAGHandler — agentic replacement for StandardRAGHandler.
 
-Enabled via system_config key `agentic_rag_enabled` = "true".
-Falls back to StandardRAGHandler when the flag is off so the registry
-change is zero-risk during Phase 1.
-
 Agent model is read from system_config key `gemini_agent_model`.
 If unset, falls back to the chat model used for answering.
 """
@@ -20,16 +16,12 @@ logger = logging.getLogger("app.rag.agent.handler")
 
 
 class AgentRAGHandler(QueryHandler):
-    """Agentic RAG handler — LLM-driven retrieval loop.
-
-    Priority 998 sits one slot above StandardRAGHandler (999) so it intercepts
-    all unmatched intents when the feature flag is on.
-    """
+    """Agentic RAG handler — LLM-driven retrieval loop. Fallback for all unmatched intents."""
 
     intent_name = "agent_rag"
     priority = 998
 
-    def can_handle(self, ctx: QueryContext) -> bool:
+    def can_handle(self, _ctx: QueryContext) -> bool:
         return True
 
     # ------------------------------------------------------------------
@@ -38,8 +30,6 @@ class AgentRAGHandler(QueryHandler):
 
     async def handle(self, ctx: QueryContext) -> str:
         agent_model = await self._resolve_agent_model(ctx)
-        if agent_model is None:
-            return await self._fallback(ctx)
 
         from app.services.rag.agent.loop import run_agent_loop
         from app.services.rag.agent.context_builder import format_observations_as_context
@@ -62,10 +52,6 @@ class AgentRAGHandler(QueryHandler):
 
     async def handle_stream(self, ctx: QueryContext) -> AsyncIterator[str]:
         agent_model = await self._resolve_agent_model(ctx)
-        if agent_model is None:
-            async for chunk in self._fallback_stream(ctx):
-                yield chunk
-            return
 
         from app.services.rag.agent.loop import run_agent_loop
         from app.services.rag.agent.context_builder import format_observations_as_context
@@ -91,8 +77,8 @@ class AgentRAGHandler(QueryHandler):
     # Helpers
     # ------------------------------------------------------------------
 
-    async def _resolve_agent_model(self, ctx: QueryContext) -> str | None:
-        """Return the loop model name, or None if the feature flag is off.
+    async def _resolve_agent_model(self, ctx: QueryContext) -> str:
+        """Return the loop model name.
 
         Priority: gemini_agent_loop_model → gemini_agent_model → gemini_chat_model.
         Set gemini_agent_loop_model to a fast model (e.g. gemini-2.0-flash) to keep
@@ -101,17 +87,13 @@ class AgentRAGHandler(QueryHandler):
         from app.db.repositories.system_configs import SystemConfigsRepository
 
         configs_repo = SystemConfigsRepository(ctx.session)
-        enabled = await configs_repo.get_value("agentic_rag_enabled", "false")
-        if enabled != "true":
-            return None
-
         loop_model = (
             await configs_repo.get_value("gemini_agent_loop_model")
             or await configs_repo.get_value("gemini_agent_model")
             or await configs_repo.get_value("gemini_chat_model")
         )
 
-        log_json(logger, logging.INFO, "Agent RAG enabled", loop_model=loop_model)
+        log_json(logger, logging.INFO, "Agent loop model resolved", loop_model=loop_model)
         return loop_model
 
     @staticmethod
@@ -136,11 +118,3 @@ class AgentRAGHandler(QueryHandler):
         ctx.agent_retry_count = sum(1 for obs in observations if obs["tool"] == "search_chunks")
         ctx.agent_final_chunk_count = chunk_count
 
-    async def _fallback(self, ctx: QueryContext) -> str:
-        from app.services.rag.handlers.standard_rag import StandardRAGHandler
-        return await StandardRAGHandler().handle(ctx)
-
-    async def _fallback_stream(self, ctx: QueryContext) -> AsyncIterator[str]:
-        from app.services.rag.handlers.standard_rag import StandardRAGHandler
-        async for chunk in StandardRAGHandler().handle_stream(ctx):
-            yield chunk

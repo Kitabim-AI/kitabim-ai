@@ -7,13 +7,24 @@ from langchain_core.documents import Document
 
 from app.services.rag.answer_builder import format_document
 
+MAX_CONTEXT_CHUNKS = 15
+
+
 def format_observations_as_context(observations: list[dict]) -> Tuple[str, List[str], int]:
     """Convert accumulated tool observations into (context_str, used_book_ids, chunk_count).
 
-    Only `search_chunks` observations contribute to the context.
-    Duplicate (book_id, page) pairs are deduplicated, then sorted by similarity
-    score DESC so the answer LLM sees the most relevant passages first.
+    Tools that return a "context" key (get_book_author, get_books_by_author, search_catalog)
+    are prepended as metadata context. search_chunks results are deduplicated, capped at
+    MAX_CONTEXT_CHUNKS, and sorted by similarity score DESC.
     """
+    # Metadata context from catalog/author/lookup tools (any tool returning a "context" key)
+    metadata_parts = [
+        obs["result"]["context"]
+        for obs in observations
+        if obs.get("result", {}).get("context")
+    ]
+
+    # Chunk context from search_chunks
     seen: set[tuple] = set()
     documents: List[Document] = []
 
@@ -39,11 +50,12 @@ def format_observations_as_context(observations: list[dict]) -> Tuple[str, List[
                 )
             )
 
-    if not documents:
+    if not documents and not metadata_parts:
         return "NO RELEVANT DOCUMENTS FOUND IN THE LIBRARY.", [], 0
 
     documents.sort(key=lambda d: d.metadata["score"], reverse=True)
+    documents = documents[:MAX_CONTEXT_CHUNKS]
 
-    parts = [format_document(doc) for doc in documents]
+    parts = list(metadata_parts) + [format_document(doc) for doc in documents]
     used_book_ids = list({str(doc.metadata["book_id"]) for doc in documents if doc.metadata.get("book_id")})
     return "\n\n---\n\n".join(parts), used_book_ids, len(documents)

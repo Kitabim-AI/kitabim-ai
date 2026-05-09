@@ -652,6 +652,9 @@ def _entity_matches_question(entity: str, question: str) -> bool:
     Single-word entities are allowed when at least 4 characters long.
     Leading/trailing punctuation (e.g. «») is stripped from question tokens
     so that quoted titles are matched correctly.
+
+    Also handles the ە (U+06D5) → ى alternation that occurs when Uyghur case
+    suffixes are attached (e.g. 'بابۇرنامە' matches 'بابۇرنامىنىڭ').
     """
     entity_words = _normalize_uyghur(entity.strip()).split()
     if not entity_words:
@@ -662,10 +665,15 @@ def _entity_matches_question(entity: str, question: str) -> bool:
         _normalize_uyghur(w).strip(_PUNCT)
         for w in question.strip().split()
     ]
-    return all(
-        any(q_word.startswith(e_word) for q_word in q_words)
-        for e_word in entity_words
-    )
+
+    def _word_matches(e_word: str) -> bool:
+        alt = e_word[:-1] + "ی" if e_word.endswith("ە") else None
+        return any(
+            q_word.startswith(e_word) or (alt is not None and q_word.startswith(alt))
+            for q_word in q_words
+        )
+
+    return all(_word_matches(e_word) for e_word in entity_words)
 
 
 def get_books_repository(session: AsyncSession) -> BooksRepository:
