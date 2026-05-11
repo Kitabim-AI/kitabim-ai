@@ -69,9 +69,7 @@ Metadata tools return a `"context"` key that `format_observations_as_context` pr
 
 ```python
 # loop.py — simplified pseudocode
-
-MAX_STEPS = 4
-_ENOUGH_CHUNKS = 8   # early-exit threshold (not a cap — see MAX_CONTEXT_CHUNKS below)
+from app.services.rag.agent.config import AGENT_MAX_STEPS, AGENT_ENOUGH_CHUNKS
 
 async def run_agent_loop(ctx, agent_model_name) -> list[dict]:
     question = ctx.enriched_question or ctx.question
@@ -81,7 +79,7 @@ async def run_agent_loop(ctx, agent_model_name) -> list[dict]:
     ]
     observations = []
 
-    for step in range(MAX_STEPS):
+    for step in range(AGENT_MAX_STEPS):
         response = await invoke_with_tools(agent_model_name, messages, AGENT_TOOLS)
 
         if not response.tool_calls:   # LLM signals it has enough context
@@ -94,7 +92,7 @@ async def run_agent_loop(ctx, agent_model_name) -> list[dict]:
             observations.append({"tool": tc["name"], "args": tc["args"], "result": result})
             messages.append(ToolMessage(json.dumps(result), tool_call_id=tc["id"]))
 
-        if count_chunks(observations) >= _ENOUGH_CHUNKS:
+        if count_chunks(observations) >= AGENT_ENOUGH_CHUNKS:
             break   # collected enough — stop early
 
     return observations
@@ -112,7 +110,7 @@ Before the first LLM call, the agent's HumanMessage is enriched with a `[Context
 
 After the loop:
 1. Collect `"context"` strings from any metadata tool result (catalog, author — in call order).
-2. Collect all chunks from `search_chunks` results; deduplicate by `(book_id, page)`; sort by score DESC; cap at `MAX_CONTEXT_CHUNKS = 15`.
+2. Collect all chunks from `search_chunks` results; deduplicate by `(book_id, page)`; sort by score DESC; cap at `AGENT_MAX_CONTEXT_CHUNKS = 15`.
 3. Return: metadata context prepended before chunk passages.
 
 ---
@@ -156,7 +154,7 @@ User: بابۇرنامىدە ئاغرا شەھىرى توغرىسىدا نېمە
 [Context] Current book: "بابۇرنامە" (book_id: abc123)
 
 Step 1 → search_chunks(query="بابۇرنامىدە ئاغرا شەھىرى", book_ids=["abc123"])
-         → returns 10 chunks  [_ENOUGH_CHUNKS reached → loop ends]
+         → returns 10 chunks  [AGENT_ENOUGH_CHUNKS reached → loop ends]
 
 → generate_answer(10 chunks)
 ```
@@ -185,7 +183,7 @@ ctx.enriched_question = "يىگانە ئارال ھەققىدە بابۇرنام
 Agent receives [Context] + enriched question
 
 Step 1 → search_chunks(query="يىگانە ئارال", book_ids=["abc123"])
-         → 8 chunks  [_ENOUGH_CHUNKS → loop ends]
+         → 8 chunks  [AGENT_ENOUGH_CHUNKS → loop ends]
 
 → generate_answer(8 chunks)
 ```
@@ -197,7 +195,7 @@ User: ئۆتكۈرنىڭ شېئىرلىرى ھەققىدە نېمە بىلىسە
 Step 1 → search_books_by_summary(query="ئۆتكۈر شېئىر") → [book_id_A]
 
 Step 2 → search_chunks(query="ئۆتكۈرنىڭ شېئىرلىرى", book_ids=[A])
-         → 3 chunks (below _ENOUGH_CHUNKS)
+         → 3 chunks (below AGENT_ENOUGH_CHUNKS)
 
 Step 3 → search_chunks(query="ئۆتكۈر شېئىر ئەدەبىيات", book_ids=[A])
          → 7 chunks
@@ -230,11 +228,15 @@ Worst case (4 steps, all cache misses): ~4 × 700 ms + ~4 × 350 ms = ~4.2 s bef
 ```
 packages/backend-core/app/services/rag/agent/
   __init__.py          # package marker
+  config.py            # AGENT_MAX_STEPS, AGENT_ENOUGH_CHUNKS, AGENT_MAX_CONTEXT_CHUNKS
   prompts.py           # AGENT_SYSTEM_PROMPT — retrieval strategy instructions
   tools.py             # @tool schemas + dispatch_tool() — 7 tools
-  loop.py              # run_agent_loop(), _build_human_message(), MAX_STEPS=4, _ENOUGH_CHUNKS=8
-  context_builder.py   # format_observations_as_context(), MAX_CONTEXT_CHUNKS=15
-  handler.py           # AgentRAGHandler — priority=998
+  loop.py              # run_agent_loop(), _build_human_message()
+  context_builder.py   # format_observations_as_context()
+  handler.py           # AgentRAGHandler — priority=998 (also exports singleton)
+
+packages/backend-core/app/services/rag/
+  retrieval.py         # Shared IO primitives: embed_query, vector_search, find_books_by_title_in_question
 ```
 
 Supporting files:

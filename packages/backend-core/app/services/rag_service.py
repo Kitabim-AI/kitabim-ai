@@ -92,6 +92,10 @@ class RAGService:
         embedding_model = await configs_repo.get_value("gemini_embedding_model")
         if not embedding_model:
             raise RuntimeError("system_config 'gemini_embedding_model' is not set")
+        agent_model = (
+            await configs_repo.get_value("gemini_agent_loop_model")
+            or chat_model
+        )
 
         book = None
         if not is_global:
@@ -117,6 +121,7 @@ class RAGService:
             rewrite_chain=llm_resources.get_rewrite_chain(chat_model),
             embeddings=llm_resources.get_embeddings(embedding_model),
             start_ts=time.monotonic(),
+            agent_model=agent_model,
             context_book_ids=req.context_book_ids or [],
         )
 

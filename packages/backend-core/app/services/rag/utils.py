@@ -162,16 +162,3 @@ def cosine_similarity(v1: List[float], v2: List[float]) -> float:
     return float(np.dot(a, b) / denom)
 
 
-def format_book_catalog(books) -> str:
-    """Format a list of Book ORM objects as LLM context."""
-    if not books:
-        return "NO BOOKS FOUND IN THE LIBRARY."
-    lines = ["Library catalog — available books:"]
-    for book in books:
-        title = book.title or "Unknown"
-        author = book.author
-        if author:
-            lines.append(f"- {title} (Author: {author})")
-        else:
-            lines.append(f"- {title}")
-    return "\n".join(lines)

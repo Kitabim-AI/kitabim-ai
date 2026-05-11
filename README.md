@@ -53,7 +53,7 @@ All services share `packages/backend-core`. The worker and API never duplicate d
 For a full architecture diagram and data model see [docs/main/SYSTEM_DESIGN.md](docs/main/SYSTEM_DESIGN.md).  
 For directory structure and key files see [docs/main/PROJECT_STRUCTURE.md](docs/main/PROJECT_STRUCTURE.md).  
 For the agentic RAG design see [docs/main/AGENTIC_RAG_DESIGN.md](docs/main/AGENTIC_RAG_DESIGN.md).  
-For the current question answering pipeline diagram see [docs/main/QUESTION_ANSWERING_DIAGRAM_V2.md](docs/main/QUESTION_ANSWERING_DIAGRAM_V2.md).
+For the current question answering pipeline diagram see [docs/main/QUESTION_ANSWERING_DIAGRAM.md](docs/main/QUESTION_ANSWERING_DIAGRAM.md).
 
 ---
 
