@@ -9,7 +9,7 @@ Visual representation of the current RAG question answering pipeline after agent
 - `FollowUpHandler` and `CurrentVolumeHandler` now delegate to `AgentRAGHandler`
 - Three new agent tools: `get_book_author`, `get_books_by_author`, `search_catalog`
 - `context_builder` accumulates both metadata context (catalog/author tools) and chunk context
-- `MAX_CONTEXT_CHUNKS = 15` cap applied after score-sort
+- `AGENT_MAX_CONTEXT_CHUNKS = 15` cap applied after score-sort
 - LLM "categorize question" call eliminated entirely
 - `FollowUpHandler` now also detects the "چۇ" topic-shift clitic ("what about X?") as heuristic 3
 - Context injection: agent's first message includes `[Context]` block (current book, context book IDs, category filter) — agent skips book-discovery step when book is known
@@ -210,6 +210,8 @@ flowchart LR
 | **_build_human_message** | Enriches the agent's first HumanMessage with current book_id, context book IDs, and category filter; enables agent to skip book-discovery step |
 | **format_observations_as_context** | Combines metadata context (catalog/author tools) + deduplicated, score-sorted chunks (cap 15) |
 | **AnswerBuilder** | Formats chunks into LangChain documents; invokes final RAG chain (streaming or batch) |
+| **retrieval.py** | Shared I/O primitives (`embed_query`, `vector_search`, `find_books_by_title_in_question`) used by agent tools |
+| **agent/config.py** | Centralized ReAct loop magic numbers (`AGENT_MAX_STEPS`, `AGENT_ENOUGH_CHUNKS`, `AGENT_MAX_CONTEXT_CHUNKS`) |
 | **ChunksRepository** | pgvector `similarity_search` against `chunks` table |
 | **BookSummariesRepository** | pgvector `summary_search` against `book_summaries` for book selection |
 | **CatalogHandler** | Utility class (not in registry); used by `search_catalog` tool and VolumeInfoHandler fallback |

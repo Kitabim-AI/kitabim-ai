@@ -8,14 +8,13 @@ from typing import List, Tuple
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
+from app.services.rag.agent.config import AGENT_ENOUGH_CHUNKS, AGENT_MAX_STEPS
 from app.services.rag.agent.prompts import AGENT_SYSTEM_PROMPT
 from app.services.rag.agent.tools import AGENT_TOOLS, dispatch_tool
 from app.services.rag.context import QueryContext
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.rag.agent.loop")
-
-MAX_STEPS = 4
 
 
 def _build_human_message(ctx: QueryContext, question: str) -> str:
@@ -40,7 +39,7 @@ def _build_human_message(ctx: QueryContext, question: str) -> str:
     return "[Context]\n" + "\n".join(lines) + "\n\n[Question]\n" + question
 
 
-_ENOUGH_CHUNKS = 8
+
 
 
 async def run_agent_loop(ctx: QueryContext, agent_model_name: str) -> Tuple[List[dict], int]:
@@ -61,7 +60,7 @@ async def run_agent_loop(ctx: QueryContext, agent_model_name: str) -> Tuple[List
     observations: List[dict] = []
     llm_calls = 0
 
-    for step in range(MAX_STEPS):
+    for step in range(AGENT_MAX_STEPS):
         log_json(logger, logging.INFO, "Agent LLM call starting", step=step, model=agent_model_name)
         try:
             response: AIMessage = await invoke_with_tools(agent_model_name, messages, AGENT_TOOLS)
@@ -102,7 +101,7 @@ async def run_agent_loop(ctx: QueryContext, agent_model_name: str) -> Tuple[List
             tools_called=[o["tool"] for o in observations],
         )
 
-        if total_chunks >= _ENOUGH_CHUNKS:
+        if total_chunks >= AGENT_ENOUGH_CHUNKS:
             log_json(logger, logging.INFO, "Agent loop ended — enough chunks collected", total_chunks=total_chunks)
             break
 

@@ -139,13 +139,15 @@ packages/backend-core/
     │   │   ├── query_rewriter.py   # Follow-up pronoun resolution (Level-1 cached)
     │   │   ├── llm_resources.py    # Lazy-loaded LangChain chains + embeddings singleton
     │   │   ├── utils.py            # Text helpers (normalize, keyword extract, etc.)
-    │   │   ├── handlers/           # 9 specialized intent handlers + StandardRAGHandler (priority=999 fallback)
-    │   │   └── agent/              # Agentic RAG loop (enabled in production via agentic_rag_enabled system_config)
+    │   │   ├── handlers/           # 9 specialized intent handlers
+    │   │   └── agent/              # Agentic RAG loop (always-on fallback handler)
     │   │       ├── prompts.py      # Agent system prompt
+    │   │       ├── config.py       # Agent constants (AGENT_MAX_STEPS, etc.)
     │   │       ├── tools.py        # @tool schemas + dispatch_tool()
-    │   │       ├── loop.py         # ReAct loop: MAX_STEPS=4, _ENOUGH_CHUNKS=8
+    │   │       ├── loop.py         # ReAct loop implementation
     │   │       ├── context_builder.py  # format_observations_as_context()
-    │   │       └── handler.py      # AgentRAGHandler (priority=998, flag-gated)
+    │   │       └── handler.py      # AgentRAGHandler (priority=998)
+    │   ├── retrieval.py            # Shared I/O primitives for RAG
     │   ├── ocr_service.py          # Gemini OCR calls
     │   ├── chunking_service.py     # Semantic text chunking
     │   ├── spell_check_service.py  # Spell check orchestration
@@ -476,18 +478,14 @@ docs/
    │   books-by-author, volume info, follow-up rewriting, current-page, current-volume, catalog
    │   → answer directly without retrieval
    │
-   ├── AgentRAGHandler (priority=998, when agentic_rag_enabled=true in production):
-   │   - Agent LLM decides which tools to call (up to MAX_STEPS=4):
-   │     * search_books_by_summary → find candidate books via summary embeddings
-   │     * search_chunks          → pgvector search scoped to candidate books
-   │     * find_books_by_title    → exact/fuzzy title lookup
-   │     * rewrite_query          → resolve Uyghur pronouns via QueryRewriter
-   │   - Loop exits early when ≥8 unique chunks collected
-   │   - format_observations_as_context() deduplicates by (book_id, page)
-   │
-   └── StandardRAGHandler (priority=999, fallback when flag is off):
-       - Fixed pipeline: embed query → title match / summary search / category scope
-         → pgvector similarity search → optional summary fallback
+   └── AgentRAGHandler (priority=998, always-on fallback):
+       - Agent LLM decides which tools to call (up to MAX_STEPS=4):
+         * search_books_by_summary → find candidate books via summary embeddings
+         * search_chunks          → pgvector search scoped to candidate books
+         * find_books_by_title    → exact/fuzzy title lookup
+         * rewrite_query          → resolve Uyghur pronouns via QueryRewriter
+       - Loop exits early when ≥8 unique chunks collected
+       - format_observations_as_context() deduplicates by (book_id, page)
    ↓
 5. Answer LLM (Gemini) generates streaming response from accumulated context
    ↓
@@ -784,7 +782,7 @@ Kitabim.AI is a **well-structured monorepo** with:
 
 **Key Statistics:**
 - **Database:** 15 tables including pgvector embeddings (3072-dim); `rag_evaluations` includes agent trace columns
-- **RAG handlers:** 9 specialized + `AgentRAGHandler` (priority=998, production) + `StandardRAGHandler` (fallback)
+- **RAG handlers:** 9 specialized + `AgentRAGHandler` (priority=998 fallback)
 - **Worker:** 6 jobs, 11 scanners driving an event-driven pipeline
 - **API:** 11 endpoint modules; see `docs/main/openapi.json`
 - **Backend-core services:** 13 shared services

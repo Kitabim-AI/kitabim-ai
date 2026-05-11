@@ -1,8 +1,6 @@
 """CapabilityHandler — answers 'what can you do' questions with a static list."""
 from __future__ import annotations
 
-from typing import AsyncIterator
-
 from app.core.i18n import t
 from app.services.rag.base_handler import QueryHandler
 from app.services.rag.context import QueryContext
@@ -29,6 +27,3 @@ class CapabilityHandler(QueryHandler):
 
     async def handle(self, _ctx: QueryContext) -> str:
         return t("rag.capabilities")
-
-    async def handle_stream(self, _ctx: QueryContext) -> AsyncIterator[str]:
-        yield t("rag.capabilities")

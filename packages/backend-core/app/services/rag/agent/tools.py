@@ -6,16 +6,13 @@ dispatch_tool() routes a tool call name+args to the real async implementation.
 """
 from __future__ import annotations
 
-import hashlib
 import logging
 from typing import List, Optional
 
 from langchain_core.tools import tool
 
-from app.core import cache_config
-from app.core.config import settings
-from app.services.cache_service import cache_service
 from app.services.rag.context import QueryContext
+from app.services.rag.retrieval import embed_query, find_books_by_title_in_question, vector_search
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.rag.agent.tools")
@@ -159,48 +156,21 @@ async def dispatch_tool(tool_name: str, tool_args: dict, ctx: QueryContext) -> d
 # Implementations
 # ---------------------------------------------------------------------------
 
-async def _embed_query(query: str, ctx: QueryContext) -> List[float]:
-    """Embed a query string with Level-1 cache (shared with StandardRAGHandler)."""
-    q_hash = hashlib.md5(query.strip().encode()).hexdigest()
-    emb_cache_key = cache_config.KEY_RAG_EMBEDDING.format(hash=q_hash)
-    try:
-        vector = await cache_service.get(emb_cache_key)
-        if not vector:
-            vector = await ctx.embeddings.aembed_query(query)
-            if vector:
-                await cache_service.set(emb_cache_key, vector, ttl=settings.cache_ttl_rag_query)
-        return vector or []
-    except Exception as exc:
-        log_json(logger, logging.WARNING, "Embedding failed in agent tool", error=str(exc))
-        return []
-
-
 async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
-    from app.services.rag.handlers.standard_rag import StandardRAGHandler
-
     query = args.get("query", "")
     book_ids: List[str] = args.get("book_ids") or []
 
-    query_vector = await _embed_query(query, ctx)
+    query_vector = await embed_query(query, ctx)
     if not query_vector:
         return []
 
-    handler = StandardRAGHandler()
-    original_vector = ctx.query_vector
-    ctx.query_vector = query_vector
-    try:
-        results = await handler._vector_search(ctx, book_ids)
-    finally:
-        ctx.query_vector = original_vector
+    results = await vector_search(ctx, book_ids, query_vector=query_vector)
 
     log_json(
         logger, logging.INFO, "Agent tool search_chunks",
         query=query[:60], book_count=len(book_ids), results=len(results),
     )
     return results
-
-
-_AGENT_SUMMARY_BOOK_LIMIT = 20
 
 
 async def _run_search_books_by_summary(args: dict, ctx: QueryContext) -> List[str]:
@@ -210,7 +180,7 @@ async def _run_search_books_by_summary(args: dict, ctx: QueryContext) -> List[st
     query = args.get("query", "")
     char_book_ids: Optional[List[str]] = args.get("book_ids")
 
-    query_vector = await _embed_query(query, ctx)
+    query_vector = await embed_query(query, ctx)
     if not query_vector:
         return []
 
@@ -219,7 +189,7 @@ async def _run_search_books_by_summary(args: dict, ctx: QueryContext) -> List[st
         query_embedding=query_vector,
         book_ids=char_book_ids,
         threshold=settings.summary_threshold,
-        limit=_AGENT_SUMMARY_BOOK_LIMIT,
+        limit=20,
     )
 
     log_json(logger, logging.INFO, "Agent tool search_books_by_summary", query=query[:60], books=len(book_ids))
@@ -227,10 +197,8 @@ async def _run_search_books_by_summary(args: dict, ctx: QueryContext) -> List[st
 
 
 async def _run_find_books_by_title(args: dict, ctx: QueryContext) -> List[str]:
-    from app.services.rag.handlers.standard_rag import StandardRAGHandler
-
     question = args.get("question", "")
-    book_ids = await StandardRAGHandler._find_books_by_title_in_question(question, ctx.session)
+    book_ids = await find_books_by_title_in_question(question, ctx.session)
     result = book_ids or []
     log_json(logger, logging.INFO, "Agent tool find_books_by_title", question=question[:120], books=len(result))
     return result

@@ -5,9 +5,8 @@ from typing import List, Tuple
 
 from langchain_core.documents import Document
 
+from app.services.rag.agent.config import AGENT_MAX_CONTEXT_CHUNKS
 from app.services.rag.answer_builder import format_document
-
-MAX_CONTEXT_CHUNKS = 15
 
 
 def format_observations_as_context(observations: list[dict]) -> Tuple[str, List[str], int]:
@@ -54,7 +53,7 @@ def format_observations_as_context(observations: list[dict]) -> Tuple[str, List[
         return "NO RELEVANT DOCUMENTS FOUND IN THE LIBRARY.", [], 0
 
     documents.sort(key=lambda d: d.metadata["score"], reverse=True)
-    documents = documents[:MAX_CONTEXT_CHUNKS]
+    documents = documents[:AGENT_MAX_CONTEXT_CHUNKS]
 
     parts = list(metadata_parts) + [format_document(doc) for doc in documents]
     used_book_ids = list({str(doc.metadata["book_id"]) for doc in documents if doc.metadata.get("book_id")})
