@@ -15,7 +15,7 @@ class QueryHandler(ABC):
     ``QueryContext`` which is passed to every method.
 
     Priority ordering: lower value = higher priority.
-    ``StandardRAGHandler`` uses priority=999 as the guaranteed fallback.
+    ``AgentRAGHandler`` uses priority=998 as the guaranteed fallback.
     """
 
     intent_name: str = "base"
@@ -33,8 +33,11 @@ class QueryHandler(ABC):
         """Return a complete answer string."""
         ...
 
-    @abstractmethod
     async def handle_stream(self, ctx: "QueryContext") -> AsyncIterator[str]:
-        """Yield answer string chunks."""
-        ...
-        yield ""  # pragma: no cover
+        """Yield answer string chunks.
+
+        Default implementation calls ``handle()`` and yields the result as a
+        single chunk.  Override in handlers that can stream token-by-token
+        (e.g. those backed by ``generate_answer_stream``).
+        """
+        yield await self.handle(ctx)

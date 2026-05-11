@@ -30,6 +30,7 @@ class QueryContext:
     rewrite_chain: object
     embeddings: object
     start_ts: float
+    agent_model: str                # gemini_agent_loop_model → gemini_chat_model
 
     # ── Mutated by handlers ─────────────────────────────────────────────────
     query_vector: List[float] = field(default_factory=list)

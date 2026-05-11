@@ -1,7 +1,6 @@
 """IdentityHandler — answers 'who are you' questions with character persona info."""
 from __future__ import annotations
 
-from typing import AsyncIterator
 
 from app.core.characters import CHARACTERS, DEFAULT_CHARACTER_ID
 from app.core.i18n import t
@@ -33,6 +32,3 @@ class IdentityHandler(QueryHandler):
         if char:
             return f"{t('rag.identity_intro', name=char.name_uy)} {char.persona_uy}"
         return build_empty_response_message()
-
-    async def handle_stream(self, ctx: QueryContext) -> AsyncIterator[str]:
-        yield await self.handle(ctx)
