@@ -54,22 +54,35 @@ async def chunking_job(ctx, page_ids: List[int]) -> None:
                     text = clean_uyghur_text(page.text or "")
                     chunks = chunking_service.split_text(text)
 
-                # Replace any existing chunks for this page
+                # Delete any chunks that exceed the new chunk count (to clean up shrinking pages)
                 await session.execute(
                     delete(Chunk).where(
                         Chunk.book_id == page.book_id,
                         Chunk.page_number == page.page_number,
+                        Chunk.chunk_index >= len(chunks)
                     )
                 )
 
-                for idx, chunk_text in enumerate(chunks):
-                    session.add(Chunk(
-                        book_id=page.book_id,
-                        page_number=page.page_number,
-                        chunk_index=idx,
-                        text=chunk_text,
-                        embedding=None,
-                    ))
+                if chunks:
+                    from sqlalchemy.dialects.postgresql import insert
+                    stmt = insert(Chunk).values([
+                        {
+                            "book_id": page.book_id,
+                            "page_number": page.page_number,
+                            "chunk_index": idx,
+                            "text": chunk_text,
+                        }
+                        for idx, chunk_text in enumerate(chunks)
+                    ])
+                    stmt = stmt.on_conflict_do_update(
+                        index_elements=["book_id", "page_number", "chunk_index"],
+                        set_={
+                            "text": stmt.excluded.text,
+                            "embedding": None,
+                            "embedding_v1": None,
+                        }
+                    )
+                    await session.execute(stmt)
 
                 await session.execute(
                     update(Page)

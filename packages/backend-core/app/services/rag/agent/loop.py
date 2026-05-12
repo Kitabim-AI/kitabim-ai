@@ -31,9 +31,12 @@ def _build_human_message(ctx: QueryContext, question: str) -> str:
             lines.append("Scope: current volume only")
     elif ctx.is_global:
         if ctx.context_book_ids:
-            lines.append(f"Context book IDs: {', '.join(ctx.context_book_ids[:10])}")
+            lines.append(f"Previous response book IDs: {', '.join(ctx.context_book_ids[:10])}")
         if ctx.character_categories:
             lines.append(f"Category filter: {', '.join(ctx.character_categories)}")
+            
+    if ctx.history:
+        lines.append("Chat history: Available (contains prior conversation context)")
     if not lines:
         return question
     return "[Context]\n" + "\n".join(lines) + "\n\n[Question]\n" + question

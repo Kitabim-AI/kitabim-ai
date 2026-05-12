@@ -148,7 +148,10 @@ async def chat_with_book_stream(
             error_msg = t("errors.system_busy_generic")
 
             yield f'data: {json.dumps({"error": error_msg})}\n\n'
-            await record_book_error(session, req.book_id, "chat_stream", error_str)
+            try:
+                await record_book_error(session, req.book_id, "chat_stream", error_str)
+            except Exception as record_exc:
+                log_json(logger, logging.WARNING, "record_book_error failed", error=str(record_exc))
 
     return StreamingResponse(
         event_generator(),

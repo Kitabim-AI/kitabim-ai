@@ -12,6 +12,7 @@ from app.services.rag.utils import is_current_volume_query
 class CurrentVolumeHandler(QueryHandler):
     intent_name = "current_volume"
     priority = 41
+    is_fast_handler = True
 
     def can_handle(self, ctx: QueryContext) -> bool:
         if ctx.is_global:

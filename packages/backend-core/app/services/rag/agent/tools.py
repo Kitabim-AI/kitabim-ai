@@ -29,7 +29,7 @@ def search_chunks(query: str, book_ids: Optional[List[str]] = None) -> str:
     Args:
         query: The search query to embed and match against book passages.
         book_ids: Optional list of book IDs to restrict the search scope.
-                  Omit to search across all books.
+                  CRITICAL: DO NOT omit this unless you have already failed to find specific book IDs using search_books_by_summary or other tools. Always try to restrict scope first.
     """
     return ""
 
@@ -114,6 +114,19 @@ def search_catalog(query: str) -> str:
     return ""
 
 
+@tool
+def get_book_summary(book_ids: List[str]) -> str:
+    """Get the full semantic summary of specific books.
+
+    Call this when asked about the main characters, plot, or themes of a specific book.
+    Returns the text of the book's summary.
+
+    Args:
+        book_ids: List of book IDs to fetch summaries for.
+    """
+    return ""
+
+
 AGENT_TOOLS = [
     search_chunks,
     search_books_by_summary,
@@ -122,6 +135,7 @@ AGENT_TOOLS = [
     get_book_author,
     get_books_by_author,
     search_catalog,
+    get_book_summary,
 ]
 
 
@@ -146,6 +160,8 @@ async def dispatch_tool(tool_name: str, tool_args: dict, ctx: QueryContext) -> d
             return await _run_get_books_by_author(tool_args, ctx)
         if tool_name == "search_catalog":
             return await _run_search_catalog(tool_args, ctx)
+        if tool_name == "get_book_summary":
+            return await _run_get_book_summary(tool_args, ctx)
         return {"error": f"Unknown tool: {tool_name}"}
     except Exception as exc:
         log_json(logger, logging.WARNING, "Agent tool failed", tool=tool_name, error=str(exc))
@@ -188,6 +204,7 @@ async def _run_search_books_by_summary(args: dict, ctx: QueryContext) -> List[st
     book_ids = await repo.summary_search(
         query_embedding=query_vector,
         book_ids=char_book_ids,
+        categories=ctx.character_categories or None,
         threshold=settings.summary_threshold,
         limit=20,
     )
@@ -196,9 +213,36 @@ async def _run_search_books_by_summary(args: dict, ctx: QueryContext) -> List[st
     return book_ids
 
 
+async def _run_get_book_summary(args: dict, ctx: QueryContext) -> dict:
+    from app.db.repositories.book_summaries import BookSummariesRepository
+
+    book_ids = args.get("book_ids") or []
+    if not book_ids:
+        return {"context": "No book IDs provided.", "summaries": []}
+
+    repo = BookSummariesRepository(ctx.session)
+    summaries = await repo.get_summaries_for_books(book_ids)
+
+    if not summaries:
+        log_json(logger, logging.INFO, "Agent tool get_book_summary", count=0)
+        return {"context": "No summaries found for the provided book IDs.", "summaries": []}
+
+    lines = []
+    for s in summaries:
+        volume = f", Volume {s['volume']}" if s.get('volume') else ""
+        lines.append(f"Summary for '{s['title']}'{volume} (ID: {s['book_id']}):\n{s['summary']}")
+
+    context_text = "\n\n".join(lines)
+    log_json(logger, logging.INFO, "Agent tool get_book_summary", count=len(summaries))
+    
+    return {"context": context_text, "summaries": summaries}
+
+
 async def _run_find_books_by_title(args: dict, ctx: QueryContext) -> List[str]:
     question = args.get("question", "")
-    book_ids = await find_books_by_title_in_question(question, ctx.session)
+    book_ids = await find_books_by_title_in_question(
+        question, ctx.session, categories=ctx.character_categories or None
+    )
     result = book_ids or []
     log_json(logger, logging.INFO, "Agent tool find_books_by_title", question=question[:120], books=len(result))
     return result
@@ -251,8 +295,8 @@ async def _run_get_books_by_author(args: dict, ctx: QueryContext) -> dict:
     for b in books:
         volume = f", Volume {b.volume}" if b.volume is not None else ""
         pages = f", {b.total_pages} pages" if b.total_pages else ""
-        lines.append(f"- {b.title}{volume}{pages}")
-        book_list.append({"title": b.title, "author": b.author, "volume": b.volume, "total_pages": b.total_pages})
+        lines.append(f"- {b.title}{volume}{pages} (ID: {b.id})")
+        book_list.append({"id": str(b.id), "title": b.title, "author": b.author, "volume": b.volume, "total_pages": b.total_pages})
 
     log_json(logger, logging.INFO, "Agent tool get_books_by_author", author=author, count=len(books))
     return {"context": "\n".join(lines), "books": book_list}

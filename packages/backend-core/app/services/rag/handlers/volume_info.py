@@ -29,6 +29,7 @@ class VolumeInfoHandler(QueryHandler):
 
     intent_name = "volume_info"
     priority = 22
+    is_fast_handler = True
 
     def can_handle(self, ctx: QueryContext) -> bool:
         q = normalize_uyghur(ctx.question.strip())

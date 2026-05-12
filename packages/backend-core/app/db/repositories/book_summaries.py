@@ -20,6 +20,7 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
         self,
         query_embedding: List[float],
         book_ids: Optional[List[str]] = None,
+        categories: Optional[List[str]] = None,
         threshold: float = 0.30,
         limit: Optional[int] = None,
     ) -> List[str]:
@@ -33,17 +34,21 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
 
         embedding_str = str(query_embedding)
         limit_clause = "LIMIT :limit" if limit is not None else ""
+        join_clause = "JOIN books b ON s.book_id = b.id" if categories else ""
+        cat_filter = "AND b.categories && CAST(:categories AS text[])" if categories else ""
 
         if book_ids is not None:
             if not book_ids:
                 return []
             query = text(f"""
                 SELECT
-                    book_id,
-                    1 - (embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) AS similarity
-                FROM book_summaries
-                WHERE book_id = ANY(:book_ids)
-                  AND 1 - (embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) > :threshold
+                    s.book_id,
+                    1 - (s.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) AS similarity
+                FROM book_summaries s
+                {join_clause}
+                WHERE s.book_id = ANY(:book_ids)
+                  {cat_filter}
+                  AND 1 - (s.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) > :threshold
                 ORDER BY similarity DESC
                 {limit_clause}
             """)
@@ -51,14 +56,19 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
         else:
             query = text(f"""
                 SELECT
-                    book_id,
-                    1 - (embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) AS similarity
-                FROM book_summaries
-                WHERE 1 - (embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) > :threshold
+                    s.book_id,
+                    1 - (s.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) AS similarity
+                FROM book_summaries s
+                {join_clause}
+                WHERE 1 - (s.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) > :threshold
+                  {cat_filter}
                 ORDER BY similarity DESC
                 {limit_clause}
             """)
             params = {"embedding": embedding_str, "threshold": threshold}
+
+        if categories:
+            params["categories"] = categories
 
         if limit is not None:
             params["limit"] = limit

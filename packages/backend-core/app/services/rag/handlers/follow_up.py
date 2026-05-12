@@ -56,6 +56,7 @@ class FollowUpHandler(QueryHandler):
 
     intent_name = "follow_up"
     priority = 30
+    is_fast_handler = True
 
     def can_handle(self, ctx: QueryContext) -> bool:
         if not ctx.history:

@@ -99,7 +99,10 @@
     "topCategories": "All Categories",
     "searchResults": "Search Results",
     "resultsFor": "Results for",
-    "totalBooks": "books"
+    "totalBooks": "books",
+    "pressEnterToChat": "No books found — press Enter to ask the assistant",
+    "pressReturnToChat": "No books found — press Return to ask the assistant",
+    "tapToChat": "No books found — tap the search icon to ask the assistant"
   },
   "library": {
     "title": "Public Library",
