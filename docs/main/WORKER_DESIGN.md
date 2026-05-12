@@ -218,11 +218,12 @@ Jobs are pure executors — they process pages and report success or failure. Th
 1. For each page:
      a. Load text from DB
      b. Apply recursive character text splitter
-     c. Save Chunk records (embedding = NULL)
-     d. Set chunking_milestone = 'succeeded'
+     c. Delete chunks with index >= new chunk count (handles shrinking pages)
+     d. Upsert remaining chunks — on conflict update text and reset embedding/embedding_v1 to NULL
+     e. Set chunking_milestone = 'succeeded'
    On failure:
-     e. retry_count++
-     f. Set chunking_milestone = 'failed'
+     f. retry_count++
+     g. Set chunking_milestone = 'failed'
 ```
 
 **EmbeddingJob(page_ids):**
@@ -357,13 +358,3 @@ Max retries is configurable via `system_configs` (e.g. `ocr_max_retry_count`, de
 
 ---
 
-## Why This Is Better
-
-| Concern | v1 | Implementation |
-|---|---|---|
-| Which step failed? | `status = error` — ambiguous | `milestone = failed` — explicit |
-| Stale detection | Step-specific hardcoded timeouts in `maintenance.py` | One rule: `in_progress + timeout → idle` |
-| Adding a new pipeline step | Touch `pdf_service`, `maintenance`, `queue`, `worker` | Add one scanner + one job, nothing else changes |
-| Per-page retry | Partial — mixed into OCR job logic | First-class: `retry_count` on the row, checked by scanner |
-| Monolithic job | `pdf_service.py` does OCR + chunking + embedding | Focused jobs, each does one thing |
-| Batch vs realtime code paths | Two parallel code paths | One path — realtime only |
