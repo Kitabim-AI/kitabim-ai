@@ -19,7 +19,9 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
   pageNumbers,
 }) => {
   const { t } = useI18n();
+  const isSummaryMode = pageNumbers.length === 0;
   const [pagesData, setPagesData] = useState<any[]>([]);
+  const [summaryData, setSummaryData] = useState<{ summary: string; generatedAt: string | null } | null>(null);
   const [bookData, setBookData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -31,11 +33,24 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
   }, [isOpen]);
 
   useEffect(() => {
-    if (isOpen && bookId && pageNumbers?.length > 0) {
-      setLoading(true);
+    if (!isOpen || !bookId) return;
+    setLoading(true);
+    if (isSummaryMode) {
+      Promise.all([
+        PersistenceService.getBookSummary(bookId),
+        PersistenceService.getBookById(bookId),
+      ]).then(([summary, book]) => {
+        setSummaryData(summary);
+        setBookData(book);
+        setLoading(false);
+      }).catch(err => {
+        console.error("Failed to fetch summary data:", err);
+        setLoading(false);
+      });
+    } else {
       Promise.all([
         ...pageNumbers.map(pageNum => PersistenceService.getPage(bookId, pageNum)),
-        PersistenceService.getBookById(bookId)
+        PersistenceService.getBookById(bookId),
       ]).then(results => {
         const pages = results.slice(0, -1);
         const book = results[results.length - 1];
@@ -47,7 +62,7 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
         setLoading(false);
       });
     }
-  }, [isOpen, bookId, pageNumbers]);
+  }, [isOpen, bookId, pageNumbers, isSummaryMode]);
 
   if (!isOpen) return null;
 
@@ -84,7 +99,9 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
               </h3>
               <div className="flex items-center gap-4 text-[#94a3b8] text-sm font-normal uppercase tracking-wider">
                 <span className="flex items-center gap-1.5 px-3 py-1 bg-[#0369a1]/10 text-[#0369a1] rounded-full">
-                  {pageNumbers?.map(p => t('chat.pageNumber', { page: p })).join('، ')}
+                  {isSummaryMode
+                    ? t('chat.bookSummary')
+                    : pageNumbers?.map(p => t('chat.pageNumber', { page: p })).join('، ')}
                 </span>
                 {bookData?.volume && (
                   <span className="flex items-center gap-1.5 px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-xs">
@@ -110,6 +127,23 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
               <Loader2 size={48} className="animate-spin text-[#0369a1]" />
               <p className="text-sm text-slate-400 font-normal uppercase tracking-widest">{t('common.loading')}</p>
             </div>
+          ) : isSummaryMode ? (
+            summaryData?.summary ? (
+              <div className="max-w-3xl mx-auto">
+                <div className="bg-white/80 p-4 sm:p-6 md:p-10 rounded-[20px] sm:rounded-[24px] md:rounded-[32px] shadow-sm border border-white relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-[#0369a1]/5 rounded-bl-[100px] -mr-10 -mt-10" />
+                  <MarkdownContent
+                    content={summaryData.summary}
+                    className="text-base sm:text-lg leading-[2] text-[#1e293b] relative z-10"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="h-64 flex flex-col items-center justify-center text-center gap-4 opacity-40">
+                <HardDrive size={48} className="text-slate-300" />
+                <p className="text-sm sm:text-base text-slate-400 font-normal">{t('chat.noContentFound')}</p>
+              </div>
+            )
           ) : pagesData.length > 0 && pagesData.some(p => p?.text) ? (
             <div className="max-w-3xl mx-auto space-y-6">
               {pagesData.map((pageData, index) => {
@@ -122,9 +156,7 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
                         {t('chat.pageNumber', { page: pageNum })}
                       </div>
                     )}
-                    {/* Cultural motif background */}
                     <div className="absolute top-0 right-0 w-32 h-32 bg-[#0369a1]/5 rounded-bl-[100px] -mr-10 -mt-10 transition-transform group-hover:scale-110 duration-700" />
-
                     <MarkdownContent
                       content={pageData.text}
                       className="text-base sm:text-lg leading-[2] text-[#1e293b] relative z-10"
@@ -146,7 +178,9 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
           <div className="flex items-center gap-3 sm:gap-6 text-xs text-slate-400 font-normal">
             <div className="flex items-center gap-2">
               <Clock size={14} />
-              {t('common.lastUpdated')}: {bookData?.lastUpdated ? new Date(bookData.lastUpdated).toLocaleDateString() : '-'}
+              {t('common.lastUpdated')}: {isSummaryMode
+                ? (summaryData?.generatedAt ? new Date(summaryData.generatedAt).toLocaleDateString() : '-')
+                : (bookData?.lastUpdated ? new Date(bookData.lastUpdated).toLocaleDateString() : '-')}
             </div>
           </div>
           <button

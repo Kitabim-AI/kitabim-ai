@@ -20,6 +20,7 @@ _CAPABILITY_KEYWORDS_NORM = [normalize_uyghur(k) for k in _CAPABILITY_KEYWORDS]
 class CapabilityHandler(QueryHandler):
     intent_name = "capabilities"
     priority = 11
+    is_fast_handler = True
 
     def can_handle(self, ctx: QueryContext) -> bool:
         q = normalize_uyghur(ctx.question.strip())

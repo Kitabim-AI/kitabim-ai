@@ -62,7 +62,7 @@ const renderInline = (text: string, onReferenceClick?: (bookId: string, pageNums
     // extract the actual ref: URL from inside it.
     let effectiveUrl = url || '';
     if (!effectiveUrl.startsWith('ref:') && effectiveUrl.includes('ref:')) {
-      const nestedRef = effectiveUrl.match(/ref:[\w]+:[\d,]+/);
+      const nestedRef = effectiveUrl.match(/ref:[\w]+:(?:[\d,]+|summary)/);
       if (nestedRef) effectiveUrl = nestedRef[0];
     }
 
@@ -70,7 +70,10 @@ const renderInline = (text: string, onReferenceClick?: (bookId: string, pageNums
       const parts = effectiveUrl.split(':');
       const bookId = parts[1];
       const pageNumsStr = parts[2] || '';
-      const pageNums = pageNumsStr.split(',').map(p => parseInt(p.trim(), 10)).filter(p => !isNaN(p));
+      const isSummaryRef = pageNumsStr === 'summary';
+      const pageNums = isSummaryRef
+        ? []
+        : pageNumsStr.split(',').map(p => parseInt(p.trim(), 10)).filter(p => !isNaN(p));
 
       // Clean up the text in case the LLM included the BookID inside the link name
       const cleanText = text.replace(/\s*\(?BookID:\s*[a-zA-Z0-9-]+\)?/gi, '');
@@ -80,8 +83,7 @@ const renderInline = (text: string, onReferenceClick?: (bookId: string, pageNums
           key={`ref-${key}`}
           onClick={(e) => {
             e.preventDefault();
-            console.log('Reference clicked:', { bookId, pageNums });
-            if (onReferenceClick && bookId && pageNums.length > 0) {
+            if (onReferenceClick && bookId && (pageNums.length > 0 || isSummaryRef)) {
               onReferenceClick(bookId, pageNums);
             }
           }}

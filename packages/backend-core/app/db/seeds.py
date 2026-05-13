@@ -50,6 +50,11 @@ async def seed_system_configs(session: AsyncSession):
             "key": "summary_scanner_batch_size",
             "value": "5",
             "description": "Number of books the summary scanner enqueues per run. Increase temporarily to speed up bulk regeneration, then reset to 5."
+        },
+        {
+            "key": "rag_fast_handlers_enabled",
+            "value": "false",
+            "description": "Enable keyword-based fast-path RAG handlers (identity, capabilities, follow_up, author_by_title, books_by_author, volume_info, current_page, current_volume). When false (default), all queries are routed to the agent."
         }
     ]
     

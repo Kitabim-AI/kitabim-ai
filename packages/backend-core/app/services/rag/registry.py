@@ -25,12 +25,15 @@ class HandlerRegistry:
 
     def _select(self, ctx: "QueryContext") -> "QueryHandler":
         for handler in self._handlers:
+            if handler.is_fast_handler and not ctx.fast_handlers_enabled:
+                continue
             if handler.can_handle(ctx):
                 log_json(
                     logger,
                     logging.INFO,
                     "Intent matched",
                     intent=handler.intent_name,
+                    fast_handler=handler.is_fast_handler,
                     question_prefix=ctx.question[:40],
                 )
                 return handler

@@ -122,6 +122,16 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     };
   }, [isCharMenuOpen]);
 
+  // Auto-submit when opened from home page search with a pre-filled question.
+  // Deferred via setTimeout so useChat's view-change effect (which resets the
+  // abort controller) finishes before we start the stream.
+  useEffect(() => {
+    if (!isGlobal || !chatInput.trim() || chatMessages.length > 0) return;
+    const timer = setTimeout(onSendMessage, 0);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // iOS fix: keyboard overlaps the chat. Cap maxHeight to the visible viewport area
   // so the flex column shrinks and keeps the input above the keyboard.
   // keyboardHeight > 100 guards against firing on desktop or minor viewport changes.

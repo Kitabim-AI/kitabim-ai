@@ -12,6 +12,7 @@ from app.services.rag.answer_builder import generate_answer, generate_answer_str
 class CurrentPageHandler(QueryHandler):
     intent_name = "current_page"
     priority = 40
+    is_fast_handler = True
 
     def can_handle(self, ctx: QueryContext) -> bool:
         if ctx.is_global:

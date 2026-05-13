@@ -45,6 +45,9 @@ class QueryContext:
     scores: List[float] = field(default_factory=list)
     category_filter: List[str] = field(default_factory=list)
 
+    # ── Feature flags — resolved from system_configs at context build time ───
+    fast_handlers_enabled: bool = False
+
     # ── Agentic eval metadata — only set by AgentRAGHandler ─────────────────
     agent_steps: Optional[int] = None
     agent_tools_called: List[str] = field(default_factory=list)
