@@ -83,6 +83,7 @@ flowchart TD
                 AG_TOOLS -->|search_books_by_summary| T_SUMM[Summary embedding search\nL3 cache]
                 AG_TOOLS -->|find_books_by_title| T_TITLE[Title match\nDB lookup]
                 AG_TOOLS -->|get_book_summary| T_BOOK_SUMM[Fetch full book summary\nBookSummariesRepository]
+                AG_TOOLS -->|get_current_page| T_CUR_PAGE[Current page raw text\nPagesRepository]
                 AG_TOOLS -->|rewrite_query| T_REWRITE[Short-circuit if already rewritten\notherwise resolve co-references — L0 cache]
             end
 
@@ -92,7 +93,7 @@ flowchart TD
                 AG_TOOLS -->|search_catalog| T_CAT[Catalog context\ntitle → author → full listing]
             end
 
-            T_CHUNKS & T_SUMM & T_TITLE & T_REWRITE & T_BOOK_SUMM & T_AUTHOR & T_BOOKS & T_CAT --> AG_OBS[Accumulate\nObservations]
+            T_CHUNKS & T_SUMM & T_TITLE & T_REWRITE & T_BOOK_SUMM & T_CUR_PAGE & T_AUTHOR & T_BOOKS & T_CAT --> AG_OBS[Accumulate\nObservations]
             AG_OBS -->|chunks < 8 and steps < 4| AG_LOOP
         end
 
@@ -145,7 +146,7 @@ flowchart LR
     Q([Question]) --> FLAG
 
     FLAG{rag_fast_handlers_enabled\n= true?}
-    FLAG -->|No — default| RAGENT[AgentRAGHandler\nReAct loop — 8 tools]
+    FLAG -->|No — default| RAGENT[AgentRAGHandler\nReAct loop — 9 tools]
 
     FLAG -->|Yes| P1
     P1{Identity /\ngreeting?} -->|Yes| R1[IdentityHandler\nDirect reply]
@@ -233,6 +234,7 @@ flowchart TD
 | `get_book_author` | Metadata | `BooksRepository` | All author queries when `rag_fast_handlers_enabled=false`; compound queries when flag is on |
 | `get_books_by_author` | Metadata | `BooksRepository` | All books-by-author queries when flag is off; compound queries when flag is on |
 | `get_book_summary` | Content | `BookSummariesRepository.get_summaries_for_books` | Plot, themes, or main characters of a specific book; called after `find_books_by_title` resolves IDs |
+| `get_current_page` | Content | `PagesRepository.find_one` | Raw text of the page the user is currently reading; only available in single-book in-reader mode |
 | `search_catalog` | Metadata | `CatalogHandler._build_catalog_context` | Library browsing, listing, general catalog questions |
 
 ---

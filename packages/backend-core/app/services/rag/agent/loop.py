@@ -27,6 +27,8 @@ def _build_human_message(ctx: QueryContext, question: str) -> str:
         if book.volume is not None:
             book_info += f", volume {book.volume}"
         lines.append(f"Current book: {book_info} (book_id: {ctx.book_id})")
+        if ctx.current_page is not None:
+            lines.append(f"Current page: {ctx.current_page}")
         if ctx.use_current_volume_only:
             lines.append("Scope: current volume only")
     elif ctx.is_global:

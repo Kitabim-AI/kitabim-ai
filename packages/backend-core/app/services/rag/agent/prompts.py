@@ -14,7 +14,10 @@ what is available in the library):
    - "who wrote [title]?" → call get_book_author
    - "what did [author] write?" → call get_books_by_author
    - general library browsing or listing → call search_catalog
-3. For content questions (what does the book say about X, explain Y, summarize Z, which book is character W in):
+3. If [Context] provides a current_page and the user is asking about the content of the \
+page they are currently reading (e.g. "what is on this page", "read this page", \
+"بۇ بەتتە نېمە دېيىلگەن") → call get_current_page immediately. Do NOT call search_chunks.
+4. For content questions (what does the book say about X, explain Y, summarize Z, which book is character W in):
    a. If the question asks for the plot, themes, or main characters of a specific book → call find_books_by_title, then \
 call get_book_summary with the resulting book IDs. Do NOT call search_chunks for these questions.
    b. If the question explicitly names a book title and asks for specific passages or details → call find_books_by_title, then \
@@ -29,7 +32,7 @@ with those book_ids first — these are confirmed relevant from the prior turn.
 to identify the most relevant books, then call search_chunks with the returned book_ids for precise passage retrieval.
    g. If search_chunks returns fewer than 4 results, retry with a rephrased query or \
 broaden by calling search_chunks with an empty book_ids list to search the entire library.
-4. Stop as soon as you have sufficient context (6–12 passages for content questions, \
+5. Stop as soon as you have sufficient context (6–12 passages for content questions, \
 or a catalog/author result for metadata questions).
 
 Hard limits: at most 4 tool calls total. Do not repeat the same query twice.

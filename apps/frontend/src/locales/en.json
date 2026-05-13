@@ -168,6 +168,7 @@
     "limitReached": "Daily chat limit reached. Please try again tomorrow.",
     "usageInfo": "Messages used: {{usage}} of {{limit}}",
     "referenceTitle": "Reference Content",
+    "bookSummary": "Book Summary",
     "noContentFound": "No content found.",
     "thinkingPhrases": [
       "I understand your question",

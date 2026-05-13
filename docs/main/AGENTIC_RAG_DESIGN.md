@@ -40,7 +40,7 @@ When triggered, `QueryRewriter` LLM-rewrites the question into a standalone quer
 
 ---
 
-## Agent tool set (8 tools)
+## Agent tool set (9 tools)
 
 ### Content retrieval
 
@@ -50,6 +50,7 @@ When triggered, `QueryRewriter` LLM-rewrites the question into a standalone quer
 | `search_books_by_summary` | `BookSummariesRepository.summary_search` | L3 | Find which books cover a topic when book scope is unknown |
 | `find_books_by_title` | `BooksRepository` title match | — | Resolve a book title mentioned in the question to book IDs |
 | `get_book_summary` | `BookSummariesRepository.get_summaries_for_books` | — | Fetch full semantic summary text for specific books; called for plot/character/theme questions |
+| `get_current_page` | `PagesRepository.find_one` | — | Raw text of the page currently open in the reader; only callable in single-book mode when `[Context]` includes `current_page` |
 | `rewrite_query` | `QueryRewriter.rewrite` | L0 | Resolve co-references; short-circuits if `ctx.enriched_question` already set by `FollowUpHandler` |
 
 ### Catalog & metadata
@@ -123,6 +124,8 @@ After the loop:
    - "what did Y write?" → get_books_by_author
    - library browsing → search_catalog
 3. Content questions:
+   a-0. [Context] has current_page and user asks about content of the current page →
+        get_current_page immediately (do NOT call search_chunks)
    a. Question asks for plot/themes/main characters of a specific book →
         find_books_by_title → get_book_summary (do NOT call search_chunks)
    b. Question explicitly names a title and asks for passages/details →
