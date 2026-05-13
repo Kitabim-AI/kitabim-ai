@@ -10,7 +10,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from auth.dependencies import require_admin, get_current_user
+from auth.dependencies import require_admin
 from app.models.user import User, UserRole, UserPublic
 from app.services.user_service import (
     get_user_by_id,

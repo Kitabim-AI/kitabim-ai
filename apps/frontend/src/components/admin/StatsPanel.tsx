@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Book, FileText, CheckCircle, XCircle, RefreshCw, BarChart3, Clock, AlertTriangle, Loader, Zap, Hash } from 'lucide-react';
+import { Book, FileText, CheckCircle, XCircle, RefreshCw, BarChart3, Clock, AlertTriangle, Loader, Hash } from 'lucide-react';
 import { authFetch } from '../../services/authService';
 import { useI18n } from '../../i18n/I18nContext';
 
@@ -50,6 +50,16 @@ const STATUS_STYLES: Record<string, { bg: string; border: string; text: string; 
   'embedding:running': { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', bar: 'bg-orange-500' },
   'embedding:in_progress': { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', bar: 'bg-orange-500' },
   'embedding:succeeded': { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', bar: 'bg-emerald-500' },
+  'spell_check:idle': { bg: 'bg-purple-50', border: 'border-purple-100', text: 'text-purple-600', bar: 'bg-purple-400' },
+  'spell_check:running': { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-700', bar: 'bg-purple-500' },
+  'spell_check:in_progress': { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-700', bar: 'bg-purple-500' },
+  'spell_check:succeeded': { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-800', bar: 'bg-purple-600' },
+  'spell_check:done': { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-800', bar: 'bg-purple-600' },
+  spell_check: { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-700', bar: 'bg-purple-500' },
+  'ocr:failed': { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', bar: 'bg-red-500' },
+  'chunking:failed': { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', bar: 'bg-red-500' },
+  'embedding:failed': { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', bar: 'bg-red-500' },
+  'spell_check:failed': { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', bar: 'bg-red-500' },
   failed: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', bar: 'bg-red-500' },
   error: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', bar: 'bg-red-500' },
   pending: { bg: 'bg-yellow-50', border: 'border-yellow-200', text: 'text-yellow-700', bar: 'bg-yellow-500' },
@@ -209,6 +219,15 @@ export const StatsPanel: React.FC = () => {
     'embedding:running': `${t('bookCard.pipeline.embedding')}: ${t('bookCard.pipeline.running')}`,
     'embedding:in_progress': `${t('bookCard.pipeline.embedding')}: ${t('bookCard.pipeline.in_progress')}`,
     'embedding:succeeded': `${t('bookCard.pipeline.embedding')}: ${t('bookCard.pipeline.succeeded')}`,
+    'spell_check:idle': `${t('bookCard.pipeline.spell_check')}: ${t('bookCard.pipeline.idle')}`,
+    'spell_check:running': `${t('bookCard.pipeline.spell_check')}: ${t('bookCard.pipeline.running')}`,
+    'spell_check:in_progress': `${t('bookCard.pipeline.spell_check')}: ${t('bookCard.pipeline.in_progress')}`,
+    'spell_check:succeeded': `${t('bookCard.pipeline.spell_check')}: ${t('bookCard.pipeline.succeeded')}`,
+    'spell_check:done': `${t('bookCard.pipeline.spell_check')}: ${t('common.done')}`,
+    'ocr:failed': `OCR: ${t('bookCard.pipeline.failed')}`,
+    'chunking:failed': `${t('bookCard.pipeline.chunking')}: ${t('bookCard.pipeline.failed')}`,
+    'embedding:failed': `${t('bookCard.pipeline.embedding')}: ${t('bookCard.pipeline.failed')}`,
+    'spell_check:failed': `${t('bookCard.pipeline.spell_check')}: ${t('bookCard.pipeline.failed')}`,
     failed: t('bookCard.pipeline.failed'),
     error: t('common.error'),
   };

@@ -12,7 +12,6 @@ from app.services.rag.base_handler import QueryHandler
 from app.services.rag.context import QueryContext
 from app.services.rag.utils import entity_matches_question, is_author_or_catalog_query
 from app.services.rag.answer_builder import generate_answer, generate_answer_stream
-from app.utils.observability import log_json
 
 logger = logging.getLogger("app.rag.catalog")
 
