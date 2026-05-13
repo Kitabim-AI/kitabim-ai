@@ -1,8 +1,8 @@
-import React, { createContext, useContext, useState, ReactNode, useRef } from 'react';
 import { Book } from '@shared/types';
+import React, { createContext, ReactNode, useContext, useRef, useState } from 'react';
+import { useBookActions } from '../hooks/useBookActions';
 import { useBooks } from '../hooks/useBooks';
 import { useChat } from '../hooks/useChat';
-import { useBookActions } from '../hooks/useBookActions';
 
 interface AppContextType {
   view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check';

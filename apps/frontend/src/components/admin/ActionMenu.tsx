@@ -1,11 +1,11 @@
+import { Book } from '@shared/types';
+import { BookOpen, BookOpenCheck, Cuboid, Image, Loader2, RotateCcw, ScanText, Scissors, Trash2 } from 'lucide-react';
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { BookOpen, RotateCcw, Trash2, Image, BookOpenCheck, ScanText, Cuboid, Scissors, WholeWord, Loader2 } from 'lucide-react';
-import { Book } from '@shared/types';
-import { useI18n } from '../../i18n/I18nContext';
+import { REPROCESS_STEP } from '../../constants/milestones';
 import { useAppContext } from '../../context/AppContext';
 import { useIsAdmin } from '../../hooks/useAuth';
-import { REPROCESS_STEP } from '../../constants/milestones';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface ActionMenuProps {
   book: Book;

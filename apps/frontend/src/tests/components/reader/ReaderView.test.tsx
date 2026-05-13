@@ -1,12 +1,12 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ReaderView } from '@/src/components/reader/ReaderView';
-import { expect, test, vi, beforeEach } from 'vitest';
-import React from 'react';
-import { Book } from '@shared/types';
 import * as AppContextModule from '@/src/context/AppContext';
 import * as AuthModule from '@/src/hooks/useAuth';
 import { I18nContext } from '@/src/i18n/I18nContext';
 import { PersistenceService } from '@/src/services/persistenceService';
+import { Book } from '@shared/types';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import React from 'react';
+import { beforeEach, expect, test, vi } from 'vitest';
 
 vi.mock('@/src/context/AppContext', () => ({
   useAppContext: vi.fn(),

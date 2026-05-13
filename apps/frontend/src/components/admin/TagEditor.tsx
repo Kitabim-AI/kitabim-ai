@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { X, Save, BookType, Tag, Plus } from 'lucide-react';
+import { Plus, Save, Tag, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../i18n/I18nContext';
 
 interface TagEditorProps {

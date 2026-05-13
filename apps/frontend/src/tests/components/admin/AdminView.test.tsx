@@ -1,11 +1,9 @@
-import { screen, render } from '@testing-library/react';
 import { AdminView } from '@/src/components/admin/AdminView';
-import { expect, test, vi } from 'vitest';
-import React from 'react';
-import { Book } from '@shared/types';
 import * as AppContextModule from '@/src/context/AppContext';
 import { I18nContext } from '@/src/i18n/I18nContext';
-import { beforeEach } from 'vitest';
+import { Book } from '@shared/types';
+import { render, screen } from '@testing-library/react';
+import { beforeEach, expect, test, vi } from 'vitest';
 
 vi.mock('@/src/components/common/ProverbDisplay', () => ({
   ProverbDisplay: () => <div>proverb</div>,

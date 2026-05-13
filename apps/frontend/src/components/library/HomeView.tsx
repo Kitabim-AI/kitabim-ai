@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Search, Bot, Book as BookIcon, ArrowRight, X, RefreshCw } from 'lucide-react';
+import { Book as BookIcon, Bot, RefreshCw, Search, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useAppContext } from '../../context/AppContext';
+import { useI18n } from '../../i18n/I18nContext';
+import { PersistenceService } from '../../services/persistenceService';
 import { ProverbDisplay } from '../common/ProverbDisplay';
 import { BookCard } from './BookCard';
-import { PersistenceService } from '../../services/persistenceService';
-import { useI18n } from '../../i18n/I18nContext';
-import { useAppContext } from '../../context/AppContext';
 
 export const HomeView: React.FC = () => {
   const {

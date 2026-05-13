@@ -1,9 +1,8 @@
-import { screen, fireEvent } from '@testing-library/react';
-import { renderWithProviders as render } from '@/src/tests/test-utils';
 import { BookCard } from '@/src/components/library/BookCard';
-import { expect, test, vi } from 'vitest';
-import React from 'react';
+import { renderWithProviders as render } from '@/src/tests/test-utils';
 import { Book } from '@shared/types';
+import { fireEvent, screen } from '@testing-library/react';
+import { expect, test, vi } from 'vitest';
 
 const mockBook: Book = {
   id: '1',

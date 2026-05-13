@@ -1,17 +1,22 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import {
-  X, ALargeSmall, Edit3, Save, Bot,
-  RotateCcw, Loader2, BookOpen,
-  Maximize2, Minimize2, Download
+  ALargeSmall,
+  BookOpen,
+  Bot,
+  Download,
+  Edit3,
+  Loader2,
+  Maximize2, Minimize2,
+  Save,
+  X
 } from 'lucide-react';
-import { Book } from '@shared/types';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useAppContext } from '../../context/AppContext';
+import { useAuth, useIsEditor } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
+import { PersistenceService } from '../../services/persistenceService';
 import { ChatInterface } from '../chat/ChatInterface';
 import { GlassPanel } from '../ui/GlassPanel';
-import { useIsEditor, useAuth } from '../../hooks/useAuth';
-import { useAppContext } from '../../context/AppContext';
-import { PersistenceService } from '../../services/persistenceService';
 import { PageItem } from './PageItem';
 import VirtualScrollReader from './VirtualScrollReader';
 

@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
-import { Message, Book } from '@shared/types';
+import { Book, Message } from '@shared/types';
+import { useEffect, useRef, useState } from 'react';
 import { DEFAULT_CHARACTER_ID } from '../constants/characters';
-import { chatWithBook, chatWithBookStream, getChatUsage } from '../services/geminiService';
+import { chatWithBookStream, getChatUsage } from '../services/geminiService';
 import { useAuth } from './useAuth';
 
 export const useChat = (view: string, selectedBook: Book | null, currentPage: number | null) => {

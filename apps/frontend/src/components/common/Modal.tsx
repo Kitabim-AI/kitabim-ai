@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
 import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import React, { useEffect } from 'react';
 import { useI18n } from '../../i18n/I18nContext';
 
 interface ModalProps {

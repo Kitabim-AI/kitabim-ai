@@ -2,10 +2,10 @@
  * System Config Panel - CRUD interface for system configurations
  */
 
-import React, { useState, useEffect } from 'react';
-import { Settings, Plus, Save, X, Edit2, RefreshCw } from 'lucide-react';
-import { authFetch } from '../../../services/authService';
+import { Edit2, Plus, RefreshCw, Save, Settings, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useI18n } from '../../../i18n/I18nContext';
+import { authFetch } from '../../../services/authService';
 
 import { useIsAdmin } from '../../../hooks/useAuth';
 

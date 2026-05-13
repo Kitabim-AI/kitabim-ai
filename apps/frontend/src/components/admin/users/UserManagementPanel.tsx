@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { UserService, UserPublic } from '../../../services/userService';
-import { Users, Filter, Check, Search, X, Edit2, Save, Loader2 } from 'lucide-react';
-import { useIsAdmin, useAuth } from '../../../hooks/useAuth';
+import { Check, Edit2, Filter, Loader2, Save, Search, Users, X } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useAuth, useIsAdmin } from '../../../hooks/useAuth';
 import { useI18n } from '../../../i18n/I18nContext';
+import { UserPublic, UserService } from '../../../services/userService';
 import { UserAvatar } from '../../common/UserAvatar';
 
 

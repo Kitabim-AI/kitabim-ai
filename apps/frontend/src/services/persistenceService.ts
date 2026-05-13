@@ -1,6 +1,6 @@
 
 import { Book, PaginatedBooks } from '@shared/types';
-import { authFetch, getAuthHeaders } from './authService';
+import { authFetch } from './authService';
 
 const API_BASE = '/api';
 

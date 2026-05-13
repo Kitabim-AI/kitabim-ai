@@ -1,14 +1,22 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import {
-  BookOpenCheck, BookOpen, Check, X, RefreshCw, Clock, RotateCcw, Inbox, FileText, ChevronRight, ChevronLeft, Loader2, Plus
+  BookOpen,
+  BookOpenCheck,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  Loader2,
+  RefreshCw,
+  RotateCcw,
+  X
 } from 'lucide-react';
-import { useI18n } from '../../i18n/I18nContext';
-import { SpellIssue } from '../../hooks/useSpellCheck';
-import { MarkdownContent } from '../common/MarkdownContent';
+import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNotification } from '../../context/NotificationContext';
 import { useIsAdmin } from '../../hooks/useAuth';
-import { PersistenceService } from '../../services/persistenceService';
+import { SpellIssue } from '../../hooks/useSpellCheck';
+import { useI18n } from '../../i18n/I18nContext';
+import { MarkdownContent } from '../common/MarkdownContent';
 
 interface SpellCheckPanelProps {
   pageNumber: number;

@@ -1,8 +1,7 @@
-import { screen, fireEvent } from '@testing-library/react';
-import { renderWithProviders as render } from '@/src/tests/test-utils';
 import { Modal } from '@/src/components/common/Modal';
+import { renderWithProviders as render } from '@/src/tests/test-utils';
+import { fireEvent, screen } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
-import React from 'react';
 
 test('Modal does not render when isOpen is false', () => {
   const { container } = render(

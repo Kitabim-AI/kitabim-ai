@@ -1,15 +1,15 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { BookOpenCheck, BookOpen, RefreshCw, AlertCircle, ClipboardList } from 'lucide-react';
-import { useI18n } from '../../i18n/I18nContext';
+import { AlertCircle, BookOpen, BookOpenCheck, ClipboardList, RefreshCw } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
-import { useIsEditor, useIsAdmin } from '../../hooks/useAuth';
+import { useNotification } from '../../context/NotificationContext';
+import { useIsAdmin, useIsEditor } from '../../hooks/useAuth';
+import { usePendingCorrections } from '../../hooks/usePendingCorrections';
+import { useSpellCheck } from '../../hooks/useSpellCheck';
+import { useI18n } from '../../i18n/I18nContext';
 import { authFetch } from '../../services/authService';
 import { PersistenceService } from '../../services/persistenceService';
-import { useSpellCheck, SpellIssue } from '../../hooks/useSpellCheck';
-import { usePendingCorrections } from '../../hooks/usePendingCorrections';
-import { SpellCheckPanel } from './SpellCheckPanel';
 import { ReviewPanel } from './ReviewPanel';
-import { useNotification } from '../../context/NotificationContext';
+import { SpellCheckPanel } from './SpellCheckPanel';
 
 interface BookMeta {
   book_id: string;
