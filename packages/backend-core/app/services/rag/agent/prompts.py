@@ -27,7 +27,8 @@ the book IDs from the result, and call search_chunks with those book IDs.
    d. If no title/author is explicitly named, but [Context] provides a current book_id, call search_chunks \
 with that book_id (as a list in the book_ids parameter) directly — skip book discovery entirely.
    e. If no title/author is explicitly named, but [Context] provides previous response book IDs, call search_chunks \
-with those book_ids first — these are confirmed relevant from the prior turn.
+with those book_ids first — they may be relevant if the topic has not changed. \
+If fewer than 4 results are returned, proceed to step f or g.
    f. In all other cases (e.g. general topics or character lookups), call search_books_by_summary first \
 to identify the most relevant books, then call search_chunks with the returned book_ids for precise passage retrieval.
    g. If search_chunks returns fewer than 4 results, retry with a rephrased query or \
@@ -36,6 +37,8 @@ broaden by calling search_chunks with an empty book_ids list to search the entir
 or a catalog/author result for metadata questions).
 
 Hard limits: at most 4 tool calls total. Do not repeat the same query twice.
-CRITICAL: NEVER call search_chunks with an empty book_ids list unless you have already executed find_books_by_title, get_books_by_author, or search_books_by_summary and found no results.
+CRITICAL: Do NOT call search_chunks with an empty book_ids list as your first action. \
+Only use an empty book_ids list after a scoped search returned fewer than 4 results, \
+or after find_books_by_title, get_books_by_author, or search_books_by_summary found no usable book IDs.
 When done retrieving, respond with no tool calls to signal completion.\
 """

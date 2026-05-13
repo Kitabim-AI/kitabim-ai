@@ -198,6 +198,14 @@ async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
 
     results = await vector_search(ctx, book_ids, query_vector=query_vector)
 
+    # When a scoped search returns too few results the user likely switched topics —
+    # the previous-turn book IDs are no longer relevant. Fall back to library-wide search
+    # transparently so the agent doesn't waste its remaining steps on this.
+    if len(results) < 3 and book_ids:
+        log_json(logger, logging.INFO, "Agent tool search_chunks — scoped miss, retrying globally",
+                 query=query[:60], scoped_results=len(results))
+        results = await vector_search(ctx, [], query_vector=query_vector)
+
     log_json(
         logger, logging.INFO, "Agent tool search_chunks",
         query=query[:60], book_count=len(book_ids), results=len(results),

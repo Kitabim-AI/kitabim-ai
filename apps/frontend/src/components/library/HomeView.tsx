@@ -45,9 +45,10 @@ export const HomeView: React.FC = () => {
   // can exit chat mode by deleting the input.
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (localSearch === searchQuery) return;
-      if (chatHint && localSearch.length >= 3 && localSearch.length >= searchQuery.length) return;
-      setSearchQuery(localSearch);
+      const trimmed = localSearch.trim();
+      if (trimmed === searchQuery) return;
+      if (chatHint && trimmed.length >= 3 && trimmed.length >= searchQuery.length) return;
+      setSearchQuery(trimmed);
     }, 300);
     return () => clearTimeout(timer);
   }, [localSearch, searchQuery, setSearchQuery, chatHint]);
@@ -84,8 +85,9 @@ export const HomeView: React.FC = () => {
   }, [hasSearch, hasMore, isLoadingMore, loadMoreShelf, loaderRef, isInitialLoading]);
 
   const handleSearchSubmit = () => {
-    if (localSearch.length >= 3 && !selectedCategory && !isInitialLoading && books.length === 0) {
-      chat.setChatInput(localSearch);
+    const trimmed = localSearch.trim();
+    if (trimmed.length >= 3 && !selectedCategory && !isInitialLoading && books.length === 0) {
+      chat.setChatInput(trimmed);
       setLocalSearch('');
       setSearchQuery('');
       setView('global-chat');
