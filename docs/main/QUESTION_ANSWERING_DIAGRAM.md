@@ -274,7 +274,7 @@ flowchart TD
 | **AuthorByTitleHandler** | Fast path for "who wrote X?" — keyword detect + DB lookup, zero agent calls; falls back to AgentRAG on miss; gated by feature flag |
 | **BooksByAuthorHandler** | Fast path for "list books by Y" — keyword detect + DB lookup, zero agent calls; falls back to AgentRAG on miss; gated by feature flag |
 | **FollowUpHandler** | Detects follow-up signals (markers, pronouns, "چۇ" clitic); rewrites question via LLM; delegates to AgentRAG; gated by feature flag |
-| **AgentRAGHandler** | Handles every query when flag is off (`is_fast_handler=False`, never skipped); fallback for unmatched intents when flag is on; injects `[Context]` block; runs ReAct loop with 7 tools |
+| **AgentRAGHandler** | Handles every query when flag is off (`is_fast_handler=False`, never skipped); fallback for unmatched intents when flag is on; injects `[Context]` block; runs ReAct loop with 9 tools |
 | **_build_human_message** | Enriches the agent's first HumanMessage with current book_id, context book IDs, and category filter; enables agent to skip book-discovery step |
 | **format_observations_as_context** | Combines metadata context (catalog/author tools) + deduplicated, score-sorted chunks (cap 15) |
 | **AnswerBuilder** | Formats chunks into LangChain documents; invokes final RAG chain (streaming or batch) |

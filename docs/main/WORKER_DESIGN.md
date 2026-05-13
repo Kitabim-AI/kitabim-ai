@@ -231,7 +231,7 @@ Jobs are pure executors — they process pages and report success or failure. Th
 ```
 1. For each page:
      a. Load chunks from DB
-     b. Generate 768-dim embeddings via Gemini Embeddings API
+     b. Generate 3072-dim embeddings via Gemini Embeddings API
      c. Store vectors on chunk records
      d. Set embedding_milestone = 'succeeded'
    On failure:

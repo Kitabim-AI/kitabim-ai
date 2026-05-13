@@ -249,12 +249,18 @@ data/
 ### `/docs` - Documentation (Mandatory for Agents)
 
 ```
-docs/
-├── REQUIREMENTS.md           # Business requirements (BRD)
-├── SYSTEM_DESIGN.md         # Architecture and design
-├── PROJECT_STRUCTURE.md     # This file
-└── openapi.json             # OpenAPI 3.0 spec
-└── *.md                      # Any project-wide documentation
+docs/main/
+├── REQUIREMENTS.md                # Business requirements (BRD)
+├── SYSTEM_DESIGN.md               # Architecture, data model, key flows, tech stack
+├── PROJECT_STRUCTURE.md           # This file — directory layout and service responsibilities
+├── AGENTIC_RAG_DESIGN.md          # Handler registry, agent tools, loop logic, caching
+├── QUESTION_ANSWERING_DIAGRAM.md  # Visual pipeline and handler routing diagrams
+├── WORKER_DESIGN.md               # Event-driven pipeline, scanners, jobs, state machine
+├── UI_CSS_STANDARD.md             # Frontend CSS and Tailwind conventions
+├── SECURITY_AUDIT.md              # Security controls and audit findings
+├── DEPLOYMENT_SECURITY.md         # Deployment security guide
+├── VM_MONITORING.md               # Production VM monitoring guide
+└── openapi.json                   # OpenAPI 3.0 spec for the REST API
 ```
 
 **Rule:** All documentation, implementation plans, and architectural notes (other than root-level `README.md` and `AGENTS.md`) MUST be placed here.
@@ -480,10 +486,15 @@ docs/
    │
    └── AgentRAGHandler (priority=998, always-on fallback):
        - Agent LLM decides which tools to call (up to MAX_STEPS=4):
-         * search_books_by_summary → find candidate books via summary embeddings
-         * search_chunks          → pgvector search scoped to candidate books
-         * find_books_by_title    → exact/fuzzy title lookup
-         * rewrite_query          → resolve Uyghur pronouns via QueryRewriter
+         * search_chunks             → pgvector search scoped to known book IDs (L1+L2 cache)
+         * search_books_by_summary   → embedding search over book summaries for topic discovery (L3 cache)
+         * find_books_by_title       → exact/fuzzy title lookup
+         * get_book_summary          → fetch full semantic summary (plot, themes, characters)
+         * get_current_page          → raw text of the currently-open reader page
+         * rewrite_query             → resolve Uyghur pronouns via QueryRewriter (L0 cache)
+         * get_book_author           → author lookup for compound queries
+         * get_books_by_author       → book list by author for compound queries
+         * search_catalog            → library browsing and general catalog questions
        - Loop exits early when ≥8 unique chunks collected
        - format_observations_as_context() deduplicates by (book_id, page)
    ↓
