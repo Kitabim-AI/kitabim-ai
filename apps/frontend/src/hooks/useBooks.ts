@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Book, PaginatedBooks } from '@shared/types';
+import { Book } from '@shared/types';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PersistenceService } from '../services/persistenceService';
 import { useAuth } from './useAuth';
 

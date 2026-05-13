@@ -1,6 +1,6 @@
-import { renderHook, act } from '@testing-library/react';
 import { useSpellCheck } from '@/src/hooks/useSpellCheck';
-import { expect, test, vi, beforeEach } from 'vitest';
+import { act, renderHook } from '@testing-library/react';
+import { beforeEach, expect, test, vi } from 'vitest';
 
 beforeEach(() => {
   vi.clearAllMocks();

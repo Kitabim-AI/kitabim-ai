@@ -1,17 +1,17 @@
 import React, { useEffect } from 'react';
+import { AdminTabs } from './components/admin/AdminTabs';
+import { AdminView } from './components/admin/AdminView';
+import { ChatInterface } from './components/chat/ChatInterface';
 import { Shell } from './components/layout/Shell';
 import { HomeView } from './components/library/HomeView';
 import { LibraryView } from './components/library/LibraryView';
-import { AdminView } from './components/admin/AdminView';
-import { AdminTabs } from './components/admin/AdminTabs';
-import { ReaderView } from './components/reader/ReaderView';
-import { ChatInterface } from './components/chat/ChatInterface';
 import JoinUsView from './components/pages/JoinUsView';
+import { ReaderView } from './components/reader/ReaderView';
 import { SpellCheckView } from './components/spell-check';
 import { AppProvider, useAppContext } from './context/AppContext';
-import { PersistenceService } from './services/persistenceService';
 import { useAuth, useIsEditor } from './hooks/useAuth';
 import { useUyghurInput } from './hooks/useUyghurInput';
+import { PersistenceService } from './services/persistenceService';
 
 const AppContent: React.FC = () => {
   const {

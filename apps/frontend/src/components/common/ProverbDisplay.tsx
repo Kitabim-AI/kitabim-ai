@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { PersistenceService } from '../../services/persistenceService';
 
 interface ProverbDisplayProps {

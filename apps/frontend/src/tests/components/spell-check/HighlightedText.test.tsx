@@ -1,8 +1,7 @@
-import { screen } from '@testing-library/react';
-import { renderWithProviders as render } from '@/src/tests/test-utils';
 import { HighlightedText } from '@/src/components/spell-check/HighlightedText';
+import { renderWithProviders as render } from '@/src/tests/test-utils';
+import { screen } from '@testing-library/react';
 import { expect, test } from 'vitest';
-import React from 'react';
 
 const issue = {
   id: 1,

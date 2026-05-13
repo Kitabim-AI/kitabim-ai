@@ -2,17 +2,17 @@
  * Admin Tabs - Tabbed interface for admin panels
  */
 
-import React, { useState } from 'react';
-import { TableOfContents, Users, Settings, BarChart3, Mail, Sparkles, BookA } from 'lucide-react';
-import { useI18n } from '../../i18n/I18nContext';
+import { BarChart3, BookA, Mail, Settings, Sparkles, TableOfContents, Users } from 'lucide-react';
+import React from 'react';
 import { useAppContext } from '../../context/AppContext';
-import { useAuth, useIsEditor, useIsAdmin } from '../../hooks/useAuth';
-import { UserManagementPanel } from './users/UserManagementPanel';
+import { useAuth, useIsAdmin, useIsEditor } from '../../hooks/useAuth';
+import { useI18n } from '../../i18n/I18nContext';
 import { SystemConfigPanel } from './config/SystemConfigPanel';
-import { AutoCorrectRulesPanel } from './rules/AutoCorrectRulesPanel';
-import { StatsPanel } from './StatsPanel';
 import { ContactSubmissionsPanel } from './ContactSubmissionsPanel';
 import { DictionaryManagementPanel } from './dictionary/DictionaryManagementPanel';
+import { AutoCorrectRulesPanel } from './rules/AutoCorrectRulesPanel';
+import { StatsPanel } from './StatsPanel';
+import { UserManagementPanel } from './users/UserManagementPanel';
 
 interface AdminTabsProps {
   bookManagementPanel: React.ReactNode;

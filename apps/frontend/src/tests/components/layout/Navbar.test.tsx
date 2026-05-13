@@ -1,11 +1,9 @@
-import { screen, fireEvent } from '@testing-library/react';
-import { render } from '@testing-library/react';
 import { Navbar } from '@/src/components/layout/Navbar';
-import { expect, test, vi, beforeEach } from 'vitest';
-import React from 'react';
 import * as AppContextModule from '@/src/context/AppContext';
 import * as AuthModule from '@/src/hooks/useAuth';
 import { I18nContext } from '@/src/i18n/I18nContext';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, expect, test, vi } from 'vitest';
 
 vi.mock('@/src/context/AppContext', () => ({
   useAppContext: vi.fn(),

@@ -1,5 +1,5 @@
-import ugTranslations from '../locales/ug.json';
 import enTranslations from '../locales/en.json';
+import ugTranslations from '../locales/ug.json';
 
 export type Language = 'ug' | 'en';
 

@@ -1,10 +1,9 @@
-import { screen } from '@testing-library/react';
-import { renderWithProviders as render } from '@/src/tests/test-utils';
 import { LibraryView } from '@/src/components/library/LibraryView';
-import { expect, test, vi } from 'vitest';
-import React from 'react';
-import { Book } from '@shared/types';
 import * as AppContextModule from '@/src/context/AppContext';
+import { renderWithProviders as render } from '@/src/tests/test-utils';
+import { Book } from '@shared/types';
+import { screen } from '@testing-library/react';
+import { expect, test, vi } from 'vitest';
 
 vi.mock('@/src/components/common/ProverbDisplay', () => ({
   ProverbDisplay: () => <div>proverb</div>,

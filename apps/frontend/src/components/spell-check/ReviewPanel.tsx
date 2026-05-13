@@ -1,7 +1,7 @@
+import { AlertTriangle, Book, Check, ClipboardList, Clock, EyeOff, Loader2, RotateCcw, Sparkles, X } from 'lucide-react';
 import React from 'react';
-import { X, Check, Loader2, ClipboardList, AlertTriangle, Book, Plus, Clock, RotateCcw, EyeOff, Sparkles } from 'lucide-react';
-import { useI18n } from '../../i18n/I18nContext';
 import { PendingCorrection } from '../../hooks/usePendingCorrections';
+import { useI18n } from '../../i18n/I18nContext';
 
 interface ReviewPanelProps {
   pending: PendingCorrection[];

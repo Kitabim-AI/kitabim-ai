@@ -4,11 +4,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, or_, case
 
 from app.core.pipeline import (
-    PAGE_MILESTONE_FAILED,
-    PAGE_MILESTONE_SUCCEEDED,
     PIPELINE_STEP_EMBEDDING,
     PIPELINE_STEP_OCR,
 )
@@ -95,40 +93,48 @@ async def get_system_stats(
 
     # Count indexed pages (terminal state)
     indexed_pages_result = await session.execute(
-        select(func.count()).select_from(Page).where(
-            and_(
-                Page.pipeline_step == PIPELINE_STEP_EMBEDDING,
-                Page.milestone == PAGE_MILESTONE_SUCCEEDED
-            )
-        )
+        select(func.count()).select_from(Page).where(Page.is_indexed == True)
     )
     indexed_pages = indexed_pages_result.scalar() or 0
 
     # Count error pages
     error_pages_result = await session.execute(
-        select(func.count()).select_from(Page).where(Page.milestone == PAGE_MILESTONE_FAILED)
+        select(func.count()).select_from(Page).where(
+            or_(
+                Page.ocr_milestone.in_(["failed", "error"]),
+                Page.chunking_milestone.in_(["failed", "error"]),
+                Page.embedding_milestone.in_(["failed", "error"]),
+                Page.spell_check_milestone.in_(["failed", "error"]),
+            )
+        )
     )
     error_pages = error_pages_result.scalar() or 0
 
-    # Pages by pipeline state summary - filter out redundant completed states
+    # Pages by pipeline state summary - derived from decoupled milestones
+    current_status_expr = case(
+        (Page.ocr_milestone != "succeeded", func.concat("ocr:", Page.ocr_milestone)),
+        (Page.chunking_milestone != "succeeded", func.concat("chunking:", Page.chunking_milestone)),
+        (Page.embedding_milestone != "succeeded", func.concat("embedding:", Page.embedding_milestone)),
+        (Page.spell_check_milestone.notin_(["idle", "succeeded"]), func.concat("spell_check:", Page.spell_check_milestone)),
+        else_="indexed"
+    )
+
     pages_by_status_result = await session.execute(
         select(
-            func.concat(Page.pipeline_step, ':', Page.milestone), 
+            current_status_expr, 
             func.count(Page.id)
         )
         .where(
-            and_(
-                Page.pipeline_step.is_not(None),
-                # Filter out terminal success states to avoid clutter
-                Page.milestone.notin_([PAGE_MILESTONE_SUCCEEDED, PAGE_MILESTONE_FAILED])
-            )
+            Page.is_indexed == False
         )
-        .group_by(Page.pipeline_step, Page.milestone)
+        .group_by(current_status_expr)
         .order_by(func.count(Page.id).desc())
     )
+    
     pages_by_status = [
         PageStatusCount(status=status, count=count)
         for status, count in pages_by_status_result.all()
+        if status != "indexed"
     ]
 
     unindexed_pages = total_pages - indexed_pages

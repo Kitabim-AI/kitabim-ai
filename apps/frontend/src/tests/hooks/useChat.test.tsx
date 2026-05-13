@@ -1,8 +1,8 @@
-import { renderHook, act, waitFor } from '@testing-library/react';
 import { useChat } from '@/src/hooks/useChat';
 import { chatWithBookStream, getChatUsage } from '@/src/services/geminiService';
-import { expect, test, vi, beforeEach } from 'vitest';
 import { Book } from '@shared/types';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { beforeEach, expect, test, vi } from 'vitest';
 
 vi.mock('@/src/services/geminiService', () => ({
   chatWithBook: vi.fn(),

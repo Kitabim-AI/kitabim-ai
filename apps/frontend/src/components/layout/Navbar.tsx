@@ -1,9 +1,9 @@
+import { BookOpen, BookOpenCheck, Bot, HeartHandshake, Home, LibraryBig, Menu, RefreshCw, Search, Settings, Upload, X } from 'lucide-react';
 import React, { useRef, useState } from 'react';
-import { BookOpen, LibraryBig, Bot, Settings, Search, Upload, HeartHandshake, Menu, X, RefreshCw, BookOpenCheck, Home } from 'lucide-react';
-import { AuthButton } from '../auth';
+import { useAppContext } from '../../context/AppContext';
 import { useAuth, useIsEditor } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
-import { useAppContext } from '../../context/AppContext';
+import { AuthButton } from '../auth';
 
 export const Navbar: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);

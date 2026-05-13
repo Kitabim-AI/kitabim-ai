@@ -1,9 +1,8 @@
-import { screen, fireEvent, waitFor } from '@testing-library/react';
-import { renderWithProviders as render } from '@/src/tests/test-utils';
 import { SpellCheckPanel } from '@/src/components/spell-check/SpellCheckPanel';
 import { SpellIssue } from '@/src/hooks/useSpellCheck';
-import { expect, test, vi, beforeEach } from 'vitest';
-import React from 'react';
+import { renderWithProviders as render } from '@/src/tests/test-utils';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { beforeEach, expect, test, vi } from 'vitest';
 
 // Mocks removed; rely on renderWithProviders
 

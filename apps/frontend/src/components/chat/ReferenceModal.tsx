@@ -1,9 +1,9 @@
+import { BookOpen, Clock, HardDrive, Loader2, X } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, BookOpen, Clock, User, HardDrive, Loader2 } from 'lucide-react';
+import { useI18n } from '../../i18n/I18nContext';
 import { PersistenceService } from '../../services/persistenceService';
 import { MarkdownContent } from '../common/MarkdownContent';
-import { useI18n } from '../../i18n/I18nContext';
 
 interface ReferenceModalProps {
   isOpen: boolean;
