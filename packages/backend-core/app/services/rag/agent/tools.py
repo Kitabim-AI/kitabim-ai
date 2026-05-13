@@ -29,7 +29,9 @@ def search_chunks(query: str, book_ids: Optional[List[str]] = None) -> str:
     Args:
         query: The search query to embed and match against book passages.
         book_ids: Optional list of book IDs to restrict the search scope.
-                  CRITICAL: DO NOT omit this unless you have already failed to find specific book IDs using search_books_by_summary or other tools. Always try to restrict scope first.
+                  Always try to restrict scope first. Only omit (pass no book_ids) after a
+                  scoped search returned fewer than 4 results, or after discovery tools found
+                  no usable book IDs.
     """
     return ""
 
@@ -118,11 +120,12 @@ def search_catalog(query: str) -> str:
 def get_book_summary(book_ids: List[str]) -> str:
     """Get the full semantic summary of specific books.
 
-    Call this when asked about the main characters, plot, or themes of a specific book.
+    Call this when asked about the main characters, plot, themes, or identity of a person/character.
     Returns the text of the book's summary.
 
     Args:
-        book_ids: List of book IDs to fetch summaries for.
+        book_ids: List of book IDs to fetch summaries for. Limit to at most 5 IDs —
+                  each summary is large; passing more is wasteful and dilutes the answer.
     """
     return ""
 
@@ -197,14 +200,6 @@ async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
         return []
 
     results = await vector_search(ctx, book_ids, query_vector=query_vector)
-
-    # When a scoped search returns too few results the user likely switched topics —
-    # the previous-turn book IDs are no longer relevant. Fall back to library-wide search
-    # transparently so the agent doesn't waste its remaining steps on this.
-    if len(results) < 3 and book_ids:
-        log_json(logger, logging.INFO, "Agent tool search_chunks — scoped miss, retrying globally",
-                 query=query[:60], scoped_results=len(results))
-        results = await vector_search(ctx, [], query_vector=query_vector)
 
     log_json(
         logger, logging.INFO, "Agent tool search_chunks",

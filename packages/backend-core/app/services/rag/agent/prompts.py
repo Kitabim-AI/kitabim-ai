@@ -26,12 +26,19 @@ call search_chunks with the resulting book IDs.
 the book IDs from the result, and call search_chunks with those book IDs.
    d. If no title/author is explicitly named, but [Context] provides a current book_id, call search_chunks \
 with that book_id (as a list in the book_ids parameter) directly — skip book discovery entirely.
-   e. If no title/author is explicitly named, but [Context] provides previous response book IDs, call search_chunks \
-with those book_ids first — they may be relevant if the topic has not changed. \
-If fewer than 4 results are returned, proceed to step f or g.
-   f. In all other cases (e.g. general topics or character lookups), call search_books_by_summary first \
-to identify the most relevant books, then call search_chunks with the returned book_ids for precise passage retrieval.
-   g. If search_chunks returns fewer than 4 results, retry with a rephrased query or \
+   e. If no title/author is explicitly named, [Context] provides previous response book IDs, AND the question \
+specifically asks who or what a character or person is (e.g. "X كىم؟", "X توغرىسىدا ئېيت", "tell me about X") → \
+first call search_books_by_summary(query, book_ids=context_book_ids) to verify those books actually contain \
+information about the queried person. If results are returned, call get_book_summary with those book_ids (at most 5). \
+If search_books_by_summary returns no results, the topic has changed — proceed to step g.
+   f. If no title/author is explicitly named but [Context] provides previous response book IDs (and it is not a character question), \
+call search_chunks with those book_ids first — they may be relevant if the topic has not changed. \
+If fewer than 4 results are returned, the topic may have changed — proceed to step g.
+   g. In all other cases (e.g. general topics, character lookups with no prior context), call search_books_by_summary first \
+to identify the most relevant books, then call search_chunks with the returned book_ids for precise passage retrieval. \
+If the question is a "who is X" or "tell me about X" question (not asking for specific passages), \
+call get_book_summary instead of search_chunks — but pass at most 5 of the most relevant book IDs.
+   h. If search_chunks returns fewer than 4 results, retry with a rephrased query or \
 broaden by calling search_chunks with an empty book_ids list to search the entire library.
 5. Stop as soon as you have sufficient context (6–12 passages for content questions, \
 or a catalog/author result for metadata questions).
