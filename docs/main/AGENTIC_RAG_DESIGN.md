@@ -243,7 +243,7 @@ packages/backend-core/app/services/rag/agent/
   __init__.py          # package marker
   config.py            # AGENT_MAX_STEPS, AGENT_ENOUGH_CHUNKS, AGENT_MAX_CONTEXT_CHUNKS
   prompts.py           # AGENT_SYSTEM_PROMPT — retrieval strategy instructions
-  tools.py             # @tool schemas + dispatch_tool() — 7 tools
+  tools.py             # @tool schemas + dispatch_tool() — 9 tools
   loop.py              # run_agent_loop(), _build_human_message()
   context_builder.py   # format_observations_as_context()
   handler.py           # AgentRAGHandler — priority=998 (also exports singleton)

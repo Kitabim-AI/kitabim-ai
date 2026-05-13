@@ -118,7 +118,7 @@ The RAG pipeline is intent-routed. Eight specialized handlers cover metadata que
 **Agentic retrieval loop (always-on):**
 1. `_build_human_message` injects a `[Context]` block (current book ID, context book IDs, category filter) into the agent's first message — agent skips book-discovery when the context is known.
 2. Agent LLM decides which tools to call (up to 4 steps, early-exit at 8+ chunks). **(Gemini function calling)**
-3. Tools (8): `search_chunks` **(L1+L2 cache)**, `search_books_by_summary` **(L3 cache)**, `find_books_by_title`, `get_book_summary`, `rewrite_query` **(L0 cache, short-circuits if already rewritten)**, `get_book_author`, `get_books_by_author`, `search_catalog`
+3. Tools (9): `search_chunks` **(L1+L2 cache)**, `search_books_by_summary` **(L3 cache)**, `find_books_by_title`, `get_book_summary`, `get_current_page`, `rewrite_query` **(L0 cache, short-circuits if already rewritten)**, `get_book_author`, `get_books_by_author`, `search_catalog`
 4. `format_observations_as_context` deduplicates chunks (sort by score DESC, cap at 15) and prepends metadata context from catalog/author tools.
 5. Combined context passed to answer LLM for final response generation.
 
