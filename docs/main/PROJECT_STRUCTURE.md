@@ -1,6 +1,6 @@
 # Kitabim.AI — Project Structure Documentation
 
-> **Last Updated:** 2026-05-08
+> **Last Updated:** 2026-05-12
 > **Purpose:** Comprehensive overview of the codebase structure, architecture, and organization
 
 ---
@@ -139,7 +139,7 @@ packages/backend-core/
     │   │   ├── query_rewriter.py   # Follow-up pronoun resolution (Level-1 cached)
     │   │   ├── llm_resources.py    # Lazy-loaded LangChain chains + embeddings singleton
     │   │   ├── utils.py            # Text helpers (normalize, keyword extract, etc.)
-    │   │   ├── handlers/           # 9 specialized intent handlers
+    │   │   ├── handlers/           # 8 fast-path intent handlers + AgentRAGHandler fallback
     │   │   └── agent/              # Agentic RAG loop (always-on fallback handler)
     │   │       ├── prompts.py      # Agent system prompt
     │   │       ├── config.py       # Agent constants (AGENT_MAX_STEPS, etc.)
@@ -782,7 +782,7 @@ Kitabim.AI is a **well-structured monorepo** with:
 
 **Key Statistics:**
 - **Database:** 15 tables including pgvector embeddings (3072-dim); `rag_evaluations` includes agent trace columns
-- **RAG handlers:** 9 specialized + `AgentRAGHandler` (priority=998 fallback)
+- **RAG handlers:** 8 fast-path handlers (`is_fast_handler=True`, gated by `rag_fast_handlers_enabled`) + `AgentRAGHandler` (priority=998, always-on fallback)
 - **Worker:** 6 jobs, 11 scanners driving an event-driven pipeline
 - **API:** 11 endpoint modules; see `docs/main/openapi.json`
 - **Backend-core services:** 13 shared services
@@ -796,5 +796,5 @@ All services communicate via well-defined interfaces (REST API, Redis queue, Pos
 
 ---
 
-*Last Updated: 2026-04-12*
+*Last Updated: 2026-05-12*
 

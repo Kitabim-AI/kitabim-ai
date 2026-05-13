@@ -20,6 +20,7 @@ class QueryHandler(ABC):
 
     intent_name: str = "base"
     priority: int = 50
+    is_fast_handler: bool = False
 
     def can_handle(self, ctx: "QueryContext") -> bool:
         """Sync, fast check — must NOT perform I/O.

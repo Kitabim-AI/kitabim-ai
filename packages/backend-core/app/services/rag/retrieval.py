@@ -75,8 +75,12 @@ async def vector_search(
         if sorted_book_ids
         else "all"
     )
+    
+    if ctx.character_categories:
+        cat_hash = hashlib.md5(",".join(sorted(ctx.character_categories)).encode()).hexdigest()
+        book_ids_hash += f"_cat_{cat_hash}"
 
-    if not ctx.is_global and len(sorted_book_ids) == 1:
+    if not ctx.is_global and len(sorted_book_ids) == 1 and not ctx.character_categories:
         search_cache_key = cache_config.KEY_RAG_SEARCH_SINGLE.format(
             book_id=sorted_book_ids[0], hash=emb_hash
         )
@@ -91,6 +95,7 @@ async def vector_search(
             similar_chunks = await chunks_repo.similarity_search(
                 query_embedding=effective_vector,
                 book_ids=book_ids if book_ids else None,
+                categories=ctx.character_categories or None,
                 limit=settings.rag_top_k,
                 threshold=settings.rag_score_threshold,
             )
@@ -113,6 +118,10 @@ async def vector_search(
         return top_results or []
     except Exception as exc:
         log_json(logger, logging.WARNING, "Vector search failed", error=str(exc))
+        try:
+            await ctx.session.rollback()
+        except Exception:
+            pass
         return []
 
 
@@ -121,7 +130,7 @@ async def vector_search(
 # ---------------------------------------------------------------------------
 
 async def find_books_by_title_in_question(
-    question: str, session
+    question: str, session, categories: Optional[List[str]] = None
 ) -> Optional[List[str]]:
     """Return IDs for all volumes of a title mentioned in *question*, or None.
 
@@ -133,9 +142,13 @@ async def find_books_by_title_in_question(
     from app.services.rag.utils import entity_matches_question, normalize_uyghur
 
     q = question.strip()
-    title_result = await session.execute(
-        select(Book.id, Book.title).where(Book.status != "error")
-    )
+    
+    stmt = select(Book.id, Book.title).where(Book.status != "error")
+    if categories:
+        from sqlalchemy import text as sa_text
+        stmt = stmt.where(sa_text("categories && CAST(:cats AS text[])").bindparams(cats=categories))
+        
+    title_result = await session.execute(stmt)
     rows = title_result.fetchall()
 
     title_to_ids: dict = {}

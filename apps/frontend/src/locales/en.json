@@ -99,7 +99,10 @@
     "topCategories": "All Categories",
     "searchResults": "Search Results",
     "resultsFor": "Results for",
-    "totalBooks": "books"
+    "totalBooks": "books",
+    "pressEnterToChat": "No books found — press Enter to ask the assistant",
+    "pressReturnToChat": "No books found — press Return to ask the assistant",
+    "tapToChat": "No books found — tap the search icon to ask the assistant"
   },
   "library": {
     "title": "Public Library",
@@ -165,6 +168,7 @@
     "limitReached": "Daily chat limit reached. Please try again tomorrow.",
     "usageInfo": "Messages used: {{usage}} of {{limit}}",
     "referenceTitle": "Reference Content",
+    "bookSummary": "Book Summary",
     "noContentFound": "No content found.",
     "thinkingPhrases": [
       "I understand your question",

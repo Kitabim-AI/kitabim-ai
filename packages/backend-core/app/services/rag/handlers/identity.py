@@ -22,6 +22,7 @@ _IDENTITY_KEYWORDS_NORM = [normalize_uyghur(k) for k in _IDENTITY_KEYWORDS]
 class IdentityHandler(QueryHandler):
     intent_name = "identity"
     priority = 10
+    is_fast_handler = True
 
     def can_handle(self, ctx: QueryContext) -> bool:
         q = normalize_uyghur(ctx.question.strip())

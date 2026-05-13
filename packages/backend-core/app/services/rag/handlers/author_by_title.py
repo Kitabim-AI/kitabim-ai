@@ -26,6 +26,7 @@ class AuthorByTitleHandler(QueryHandler):
 
     intent_name = "author_by_title"
     priority = 20
+    is_fast_handler = True
 
     def can_handle(self, ctx: QueryContext) -> bool:
         q = normalize_uyghur(ctx.question.strip())

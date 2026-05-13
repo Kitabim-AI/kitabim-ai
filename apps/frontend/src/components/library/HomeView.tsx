@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Book as BookIcon, ArrowRight, X, RefreshCw } from 'lucide-react';
+import { Search, Bot, Book as BookIcon, ArrowRight, X, RefreshCw } from 'lucide-react';
 import { ProverbDisplay } from '../common/ProverbDisplay';
 import { BookCard } from './BookCard';
 import { PersistenceService } from '../../services/persistenceService';
@@ -18,7 +18,11 @@ export const HomeView: React.FC = () => {
     selectedCategory,
     setSelectedCategory,
     bookActions,
-    loaderRef
+    loaderRef,
+    setView,
+    chat,
+    loadMoreShelf,
+    fontSize,
   } = useAppContext();
 
   const { t } = useI18n();
@@ -27,15 +31,26 @@ export const HomeView: React.FC = () => {
   const [localSearch, setLocalSearch] = useState(searchQuery);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Debounce: only update context (triggers API call) after 300ms of no typing
+  // Search is active if we have a category OR at least 3 characters
+  const hasSearch = (searchQuery.length >= 3) || selectedCategory.length > 0;
+
+  // No books found for a text query (not a category browse) — prompt to chat
+  const chatHint = searchQuery.length >= 3 && !selectedCategory && !isInitialLoading && books.length === 0;
+  const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  const isMac = !isTouchDevice && navigator.platform.toUpperCase().startsWith('MAC');
+
+  // Debounce: only update context (triggers API call) after 300ms of no typing.
+  // Once chatHint is active, suppress updates as long as the query stays long
+  // enough to be a question — only let through a clear (< 3 chars) so the user
+  // can exit chat mode by deleting the input.
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (localSearch !== searchQuery) {
-        setSearchQuery(localSearch);
-      }
+      if (localSearch === searchQuery) return;
+      if (chatHint && localSearch.length >= 3 && localSearch.length >= searchQuery.length) return;
+      setSearchQuery(localSearch);
     }, 300);
     return () => clearTimeout(timer);
-  }, [localSearch, searchQuery, setSearchQuery]);
+  }, [localSearch, searchQuery, setSearchQuery, chatHint]);
 
   // Sync local search when global search is cleared or changed externally
   useEffect(() => {
@@ -54,12 +69,6 @@ export const HomeView: React.FC = () => {
     fetchCategories();
   }, []);
 
-  const { loadMoreShelf } = useAppContext();
-  const { fontSize } = useAppContext();
-
-  // Search is active if we have a category OR at least 3 characters
-  const hasSearch = (searchQuery.length >= 3) || selectedCategory.length > 0;
-
   useEffect(() => {
     if (!hasSearch) return;
     const observer = new IntersectionObserver(
@@ -73,6 +82,15 @@ export const HomeView: React.FC = () => {
     if (loaderRef.current) observer.observe(loaderRef.current);
     return () => observer.disconnect();
   }, [hasSearch, hasMore, isLoadingMore, loadMoreShelf, loaderRef, isInitialLoading]);
+
+  const handleSearchSubmit = () => {
+    if (localSearch.length >= 3 && !selectedCategory && !isInitialLoading && books.length === 0) {
+      chat.setChatInput(localSearch);
+      setLocalSearch('');
+      setSearchQuery('');
+      setView('global-chat');
+    }
+  };
 
   const handleCategoryClick = (category: string) => {
     setSelectedCategory(category);
@@ -109,13 +127,18 @@ export const HomeView: React.FC = () => {
       {/* Search Section */}
       <div className="w-full max-w-3xl px-4 relative mb-8 sm:mb-10 md:mb-12">
         <div className="relative group">
-          <div className="absolute inset-y-0 right-0 pr-4 sm:pr-6 flex items-center pointer-events-none text-[#94a3b8] group-focus-within:text-[#0369a1] transition-colors z-10">
+          <button
+            onClick={handleSearchSubmit}
+            className="absolute inset-y-0 right-0 pr-4 sm:pr-6 flex items-center text-[#94a3b8] group-focus-within:text-[#0369a1] transition-colors z-10"
+          >
             {isInitialLoading && localSearch ? (
               <RefreshCw size={20} className="sm:w-[22px] sm:h-[22px] animate-spin" strokeWidth={3} />
+            ) : chatHint ? (
+              <Bot size={20} className="sm:w-[22px] sm:h-[22px] text-[#0369a1]" strokeWidth={2.5} />
             ) : (
               <Search size={20} className="sm:w-[22px] sm:h-[22px]" strokeWidth={3} />
             )}
-          </div>
+          </button>
           <input
             ref={searchInputRef}
             type="text"
@@ -123,6 +146,7 @@ export const HomeView: React.FC = () => {
             placeholder={t('home.searchPlaceholder')}
             value={localSearch}
             onChange={(e) => setLocalSearch(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleSearchSubmit(); }}
             dir="rtl"
           />
           {localSearch && (
@@ -134,6 +158,13 @@ export const HomeView: React.FC = () => {
             </button>
           )}
         </div>
+
+        {/* Chat hint when no books match the query */}
+        {chatHint && (
+          <p className="mt-4 text-center text-sm text-[#94a3b8] uyghur-text" dir="rtl">
+            {t(isTouchDevice ? 'home.tapToChat' : isMac ? 'home.pressReturnToChat' : 'home.pressEnterToChat')}
+          </p>
+        )}
 
         {/* Categories helper */}
         {!hasSearch && categories.length > 0 && (
@@ -161,7 +192,7 @@ export const HomeView: React.FC = () => {
       </div>
 
       {/* Results Section */}
-      {hasSearch && (
+      {hasSearch && !chatHint && (
         <div className="w-full max-w-none px-4 md:px-8 pb-24 sm:pb-32">
           <div className="flex flex-col mb-10 sm:mb-12 md:mb-16 gap-2">
             <div className="flex items-center justify-between">

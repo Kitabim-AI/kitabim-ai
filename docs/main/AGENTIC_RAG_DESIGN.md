@@ -1,8 +1,6 @@
 # Agentic RAG — Current Implementation
 
-**Status:** Fully implemented and running in production. All three original phases are complete.
-
-See [QUESTION_ANSWERING_DIAGRAM_V2.md](QUESTION_ANSWERING_DIAGRAM_V2.md) for the visual pipeline diagram.
+See [QUESTION_ANSWERING_DIAGRAM.md](QUESTION_ANSWERING_DIAGRAM.md) for the visual pipeline diagram.
 
 ---
 
@@ -18,8 +16,8 @@ The old `StandardRAGHandler` fixed decision tree has been removed from the regis
 
 | Handler | Priority | Behaviour |
 |---------|----------|-----------|
-| `IdentityHandler` | 1 | Greetings and identity questions — direct reply, no retrieval |
-| `CapabilityHandler` | 2 | "What can you do?" questions — direct reply |
+| `IdentityHandler` | 10 | Greetings and identity questions — direct reply, no retrieval |
+| `CapabilityHandler` | 11 | "What can you do?" questions — direct reply |
 | `AuthorByTitleHandler` | 20 | "Who wrote X?" — DB lookup, direct reply; falls back to agent on miss |
 | `BooksByAuthorHandler` | 21 | "What did Y write?" — DB lookup, direct reply; falls back to agent on miss |
 | `VolumeInfoHandler` | 22 | Volume/page count questions — DB lookup, direct reply |
@@ -42,7 +40,7 @@ When triggered, `QueryRewriter` LLM-rewrites the question into a standalone quer
 
 ---
 
-## Agent tool set (7 tools)
+## Agent tool set (9 tools)
 
 ### Content retrieval
 
@@ -51,6 +49,8 @@ When triggered, `QueryRewriter` LLM-rewrites the question into a standalone quer
 | `search_chunks` | `ChunksRepository.similarity_search` | L1 (embed) + L2 (results) | Vector-search passages; primary retrieval tool |
 | `search_books_by_summary` | `BookSummariesRepository.summary_search` | L3 | Find which books cover a topic when book scope is unknown |
 | `find_books_by_title` | `BooksRepository` title match | — | Resolve a book title mentioned in the question to book IDs |
+| `get_book_summary` | `BookSummariesRepository.get_summaries_for_books` | — | Fetch full semantic summary text for specific books; called for plot/character/theme questions |
+| `get_current_page` | `PagesRepository.find_one` | — | Raw text of the page currently open in the reader; only callable in single-book mode when `[Context]` includes `current_page` |
 | `rewrite_query` | `QueryRewriter.rewrite` | L0 | Resolve co-references; short-circuits if `ctx.enriched_question` already set by `FollowUpHandler` |
 
 ### Catalog & metadata
@@ -124,13 +124,26 @@ After the loop:
    - "what did Y write?" → get_books_by_author
    - library browsing → search_catalog
 3. Content questions:
-   a. [Context] has book_id? → search_chunks directly (skip book discovery)
-   b. [Context] has context book IDs? → search_chunks with those first
-   c. No context IDs: question names a title? → find_books_by_title
-      else → search_books_by_summary → search_chunks
-   d. < 4 chunks? → retry once with rephrased query or broader scope
+   a-0. [Context] has current_page and user asks about content of the current page →
+        get_current_page immediately (do NOT call search_chunks)
+   a. Question asks for plot/themes/main characters of a specific book →
+        find_books_by_title → get_book_summary (do NOT call search_chunks)
+   b. Question explicitly names a title and asks for passages/details →
+        find_books_by_title → search_chunks with resulting IDs
+   c. Question explicitly names an author →
+        get_books_by_author → search_chunks with resulting IDs
+   d. No title/author named, but [Context] has a current book_id →
+        search_chunks directly with that book_id
+   e. No title/author named, but [Context] has previous response book IDs →
+        search_chunks with those IDs first
+   f. All other cases (general topics, character lookups) →
+        search_books_by_summary → search_chunks with returned IDs
+   g. < 4 results? → retry with rephrased query or search_chunks with empty
+        book_ids (entire library) — only after prior discovery steps failed
 4. Stop when 6–12 passages collected (or catalog/author result for metadata)
-Hard limit: 4 tool calls total.
+Hard limits: 4 tool calls total. Never call search_chunks with empty book_ids
+unless find_books_by_title / get_books_by_author / search_books_by_summary
+have already returned no results.
 ```
 
 ---

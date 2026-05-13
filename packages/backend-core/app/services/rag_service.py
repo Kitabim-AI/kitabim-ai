@@ -96,6 +96,9 @@ class RAGService:
             await configs_repo.get_value("gemini_agent_loop_model")
             or chat_model
         )
+        fast_handlers_enabled = (
+            await configs_repo.get_value("rag_fast_handlers_enabled", "false") == "true"
+        )
 
         book = None
         if not is_global:
@@ -123,6 +126,7 @@ class RAGService:
             start_ts=time.monotonic(),
             agent_model=agent_model,
             context_book_ids=req.context_book_ids or [],
+            fast_handlers_enabled=fast_handlers_enabled,
         )
 
     # ------------------------------------------------------------------

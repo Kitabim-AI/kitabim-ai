@@ -74,6 +74,7 @@ class ChunksRepository(BaseRepository[Chunk]):
         self,
         query_embedding: List[float],
         book_ids: Optional[List[str]] = None,
+        categories: Optional[List[str]] = None,
         limit: int = 12,
         threshold: float = 0.35
     ) -> List[dict]:
@@ -89,6 +90,7 @@ class ChunksRepository(BaseRepository[Chunk]):
         Args:
             query_embedding: The query vector (768-dimensional)
             book_ids: Optional list of book UUIDs to filter
+            categories: Optional list of categories to filter books by
             limit: Maximum number of results
             threshold: Minimum similarity score (0.0-1.0)
 
@@ -97,6 +99,8 @@ class ChunksRepository(BaseRepository[Chunk]):
         """
         # Convert embedding to PostgreSQL array format
         embedding_str = str(query_embedding)
+        
+        cat_filter = "AND b.categories && CAST(:categories AS text[])" if categories else ""
 
         # Build query with or without book_ids filter
         # Use CAST() instead of :: to avoid conflicts with SQLAlchemy parameter binding
@@ -104,7 +108,7 @@ class ChunksRepository(BaseRepository[Chunk]):
         if book_ids is not None:
             if not book_ids:
                 return []
-            query = text("""
+            query = text(f"""
                 SELECT
                     c.book_id,
                     c.page_number,
@@ -118,6 +122,7 @@ class ChunksRepository(BaseRepository[Chunk]):
                 JOIN books b ON c.book_id = b.id
                 JOIN pages p ON c.book_id = p.book_id AND c.page_number = p.page_number
                 WHERE c.book_id = ANY(:book_ids)
+                  {cat_filter}
                   AND c.embedding IS NOT NULL
                   AND p.is_toc IS FALSE
                   AND 1 - (c.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) > :threshold
@@ -130,8 +135,10 @@ class ChunksRepository(BaseRepository[Chunk]):
                 "threshold": threshold,
                 "limit": limit
             }
+            if categories:
+                params["categories"] = categories
         else:
-            query = text("""
+            query = text(f"""
                 SELECT
                     c.book_id,
                     c.page_number,
@@ -145,6 +152,7 @@ class ChunksRepository(BaseRepository[Chunk]):
                 JOIN books b ON c.book_id = b.id
                 JOIN pages p ON c.book_id = p.book_id AND c.page_number = p.page_number
                 WHERE c.embedding IS NOT NULL
+                  {cat_filter}
                   AND p.is_toc IS FALSE
                   AND 1 - (c.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) > :threshold
                 ORDER BY similarity DESC
@@ -155,6 +163,8 @@ class ChunksRepository(BaseRepository[Chunk]):
                 "threshold": threshold,
                 "limit": limit
             }
+            if categories:
+                params["categories"] = categories
 
         result = await self.session.execute(query, params)
         rows = result.fetchall()
