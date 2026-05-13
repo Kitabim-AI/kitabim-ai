@@ -1,15 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Send, Bot, User, LogIn, ChevronDown } from 'lucide-react';
-import { Message, Book } from '@shared/types';
+import { Book, Message } from '@shared/types';
+import { Bot, ChevronDown, LogIn, Send, User } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { CHARACTERS, DEFAULT_CHARACTER_ID } from '../../constants/characters';
+import { useAppContext } from '../../context/AppContext';
+import { useAuth } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
 import { translations } from '../../i18n/i18n';
-import { useAuth } from '../../hooks/useAuth';
-import { useAppContext } from '../../context/AppContext';
 import { OAuthButtonGroup } from '../auth/AuthButton';
 import { MarkdownContent } from '../common/MarkdownContent';
-import { ReferenceModal } from './ReferenceModal';
 import { ProverbDisplay } from '../common/ProverbDisplay';
-import { CHARACTERS, DEFAULT_CHARACTER_ID } from '../../constants/characters';
+import { ReferenceModal } from './ReferenceModal';
 
 const CHAR_INTERVAL = 55;   // ms per character
 const HOLD_AFTER_TYPED = 1800; // ms to hold the full phrase before switching

@@ -56,5 +56,17 @@ def format_observations_as_context(observations: list[dict]) -> Tuple[str, List[
     documents = documents[:AGENT_MAX_CONTEXT_CHUNKS]
 
     parts = list(metadata_parts) + [format_document(doc) for doc in documents]
-    used_book_ids = list({str(doc.metadata["book_id"]) for doc in documents if doc.metadata.get("book_id")})
+
+    # Collect book IDs from both chunk results and get_book_summary results so the next
+    # turn's context_book_ids is populated even when retrieval relied on summaries only.
+    chunk_book_ids = {str(doc.metadata["book_id"]) for doc in documents if doc.metadata.get("book_id")}
+    summary_book_ids = {
+        str(summary["book_id"])
+        for obs in observations
+        if obs.get("tool") == "get_book_summary"
+        for summary in obs.get("result", {}).get("summaries", [])
+        if summary.get("book_id")
+    }
+    used_book_ids = list(chunk_book_ids | summary_book_ids)
+
     return "\n\n---\n\n".join(parts), used_book_ids, len(documents)

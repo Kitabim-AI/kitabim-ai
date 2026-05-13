@@ -2,13 +2,20 @@
  * Dictionary Management Panel - Editor/Admin tool to manage spell check dictionary
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { 
-  Search, Plus, Trash2, Check, X, Loader2, BookA, Hash, 
-  AlertCircle, RefreshCw
+import {
+  AlertCircle,
+  Check,
+  Hash,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
+  X
 } from 'lucide-react';
-import { authFetch } from '../../../services/authService';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../../i18n/I18nContext';
+import { authFetch } from '../../../services/authService';
 
 import { useAppContext } from '../../../context/AppContext';
 

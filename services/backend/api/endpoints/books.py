@@ -311,35 +311,42 @@ async def get_books(
         conditions.append(category == any_(BookDB.categories))
 
     if q:
-        q_alt = q.replace('\u0626', '\u064A\u0654') if '\u0626' in q else (q.replace('\u064A\u0654', '\u0626') if '\u064A\u0654' in q else q)
-
         # Detect trailing volume number e.g. "ئانا يۇرت 3"
         volume_match = re.search(r'\s+(\d+)\s*$', q)
         if volume_match:
             title_q = q[:volume_match.start()].strip()
-            title_q_alt = q_alt[:volume_match.start()].strip() if q_alt != q else title_q
             volume_num = int(volume_match.group(1))
             if title_q:
-                search_filter = or_(
-                    BookDB.title.ilike(f"%{title_q}%"),
-                    BookDB.author.ilike(f"%{title_q}%"),
-                    BookDB.title.ilike(f"%{title_q_alt}%"),
-                    BookDB.author.ilike(f"%{title_q_alt}%"),
-                )
-                conditions.append(search_filter)
-                conditions.append(BookDB.volume == volume_num)
-            else:
-                conditions.append(BookDB.volume == volume_num)
+                words = [w for w in title_q.split() if w.strip()]
+                word_conditions = []
+                for w in words:
+                    w_alt = w.replace('\u0626', '\u064A\u0654') if '\u0626' in w else (w.replace('\u064A\u0654', '\u0626') if '\u064A\u0654' in w else w)
+                    search_filter = or_(
+                        BookDB.title.ilike(f"%{w}%"),
+                        BookDB.author.ilike(f"%{w}%"),
+                        BookDB.title.ilike(f"%{w_alt}%"),
+                        BookDB.author.ilike(f"%{w_alt}%"),
+                    )
+                    word_conditions.append(search_filter)
+                if word_conditions:
+                    conditions.append(and_(*word_conditions))
+            conditions.append(BookDB.volume == volume_num)
         else:
-            search_filter = or_(
-                BookDB.title.ilike(f"%{q}%"),
-                BookDB.author.ilike(f"%{q}%"),
-                BookDB.title.ilike(f"%{q_alt}%"),
-                BookDB.author.ilike(f"%{q_alt}%"),
-                func.array_to_string(BookDB.categories, ',').ilike(f"%{q}%"),
-                func.array_to_string(BookDB.categories, ',').ilike(f"%{q_alt}%")
-            )
-            conditions.append(search_filter)
+            words = [w for w in q.split() if w.strip()]
+            word_conditions = []
+            for w in words:
+                w_alt = w.replace('\u0626', '\u064A\u0654') if '\u0626' in w else (w.replace('\u064A\u0654', '\u0626') if '\u064A\u0654' in w else w)
+                search_filter = or_(
+                    BookDB.title.ilike(f"%{w}%"),
+                    BookDB.author.ilike(f"%{w}%"),
+                    BookDB.title.ilike(f"%{w_alt}%"),
+                    BookDB.author.ilike(f"%{w_alt}%"),
+                    func.array_to_string(BookDB.categories, ',').ilike(f"%{w}%"),
+                    func.array_to_string(BookDB.categories, ',').ilike(f"%{w_alt}%")
+                )
+                word_conditions.append(search_filter)
+            if word_conditions:
+                conditions.append(and_(*word_conditions))
 
     # --- PART 2: Optimized Counting ---
     # Merge total and total_ready counts into a single query for better performance

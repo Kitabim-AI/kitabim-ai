@@ -1,12 +1,11 @@
-import { screen, fireEvent } from '@testing-library/react';
-import { render } from '@testing-library/react';
 import { ChatInterface } from '@/src/components/chat/ChatInterface';
-import { expect, test, vi, beforeEach } from 'vitest';
-import React from 'react';
-import { Message } from '@shared/types';
-import * as AuthModule from '@/src/hooks/useAuth';
 import * as AppContextModule from '@/src/context/AppContext';
+import * as AuthModule from '@/src/hooks/useAuth';
 import { I18nContext } from '@/src/i18n/I18nContext';
+import { Message } from '@shared/types';
+import { fireEvent, render, screen } from '@testing-library/react';
+import React from 'react';
+import { beforeEach, expect, test, vi } from 'vitest';
 
 vi.mock('@/src/hooks/useAuth', () => ({
   useAuth: vi.fn(),

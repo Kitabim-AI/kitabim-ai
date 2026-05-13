@@ -1,9 +1,9 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import App from '@/src/App';
-import { PersistenceService } from '@/src/services/persistenceService';
-import { expect, test, vi, beforeEach } from 'vitest';
-import React from 'react';
 import * as AppContextModule from '@/src/context/AppContext';
+import { PersistenceService } from '@/src/services/persistenceService';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import React from 'react';
+import { beforeEach, expect, test, vi } from 'vitest';
 
 vi.mock('@/src/context/AppContext', () => ({
   AppProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,

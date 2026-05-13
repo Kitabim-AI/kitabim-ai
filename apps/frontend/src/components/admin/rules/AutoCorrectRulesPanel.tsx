@@ -2,13 +2,24 @@
  * Auto-Correction Rules Panel - CRUD interface for global spell rules
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { 
-  Sparkles, Plus, Save, X, Edit2, Trash2, Search, Check, AlertTriangle, 
-  Loader2, RefreshCw, BarChart2, Clock, Inbox
+import {
+  BarChart2,
+  Check,
+  Clock,
+  Edit2,
+  Inbox,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Save,
+  Search,
+  Sparkles,
+  Trash2,
+  X
 } from 'lucide-react';
-import { authFetch } from '../../../services/authService';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../../i18n/I18nContext';
+import { authFetch } from '../../../services/authService';
 
 
 interface AutoCorrectRule {

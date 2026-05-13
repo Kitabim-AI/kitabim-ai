@@ -1,5 +1,5 @@
-import React from 'react';
 import { Book } from '@shared/types';
+import React from 'react';
 import { PIPELINE_STEP } from '../../constants/milestones';
 
 interface ProgressBarProps {

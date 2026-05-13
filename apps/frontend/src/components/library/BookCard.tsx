@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
-import { BookOpen, Wand2, X, Sparkles } from 'lucide-react';
 import { Book } from '@shared/types';
+import { BookOpen, Sparkles, Wand2, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useI18n } from '../../i18n/I18nContext';
 import { PersistenceService } from '../../services/persistenceService';
 

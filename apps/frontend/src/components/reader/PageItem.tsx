@@ -1,8 +1,8 @@
+import { Edit3, Loader2, RotateCcw, Save } from 'lucide-react';
 import React from 'react';
-import { RotateCcw, Edit3, Save, Loader2 } from 'lucide-react';
+import { useIsEditor } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
 import { MarkdownContent } from '../common/MarkdownContent';
-import { useIsEditor } from '../../hooks/useAuth';
 
 interface PageItemProps {
   page: any;

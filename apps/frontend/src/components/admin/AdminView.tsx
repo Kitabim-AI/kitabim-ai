@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Database, TableOfContents, User, Hash, BookOpen, MoreVertical, Save, X, Edit2, Check, Globe, Shield, Wand2, Search, WholeWord, FileText, ScanText, RefreshCw, BookOpenCheck, Cuboid, Scissors } from 'lucide-react';
-import { authFetch } from '../../services/authService';
-import { useI18n } from '../../i18n/I18nContext';
+import { BookOpen, BookOpenCheck, Cuboid, Database, Edit2, Globe, Hash, MoreVertical, RefreshCw, Save, ScanText, Scissors, Search, Shield, TableOfContents, User, Wand2, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
-import { TagEditor } from './TagEditor';
-import { ProgressBar } from './ProgressBar';
+import { useI18n } from '../../i18n/I18nContext';
+import { authFetch } from '../../services/authService';
 import { ActionMenu } from './ActionMenu';
+import { TagEditor } from './TagEditor';
 
 import {
   ADMIN_PIPELINE_STEPS,

@@ -1,9 +1,9 @@
+import { BookOpen, LibraryBig, RefreshCw } from 'lucide-react';
 import React, { useEffect } from 'react';
-import { Zap, LibraryBig, BookOpen, RefreshCw } from 'lucide-react';
+import { useAppContext } from '../../context/AppContext';
+import { useI18n } from '../../i18n/I18nContext';
 import { ProverbDisplay } from '../common/ProverbDisplay';
 import { BookCard } from './BookCard';
-import { useI18n } from '../../i18n/I18nContext';
-import { useAppContext } from '../../context/AppContext';
 
 export const LibraryView: React.FC = () => {
   const {

@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Search, Bot, Book as BookIcon, ArrowRight, X, RefreshCw } from 'lucide-react';
+import { Book as BookIcon, Bot, RefreshCw, Search, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useAppContext } from '../../context/AppContext';
+import { useI18n } from '../../i18n/I18nContext';
+import { PersistenceService } from '../../services/persistenceService';
 import { ProverbDisplay } from '../common/ProverbDisplay';
 import { BookCard } from './BookCard';
-import { PersistenceService } from '../../services/persistenceService';
-import { useI18n } from '../../i18n/I18nContext';
-import { useAppContext } from '../../context/AppContext';
 
 export const HomeView: React.FC = () => {
   const {
@@ -45,9 +45,10 @@ export const HomeView: React.FC = () => {
   // can exit chat mode by deleting the input.
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (localSearch === searchQuery) return;
-      if (chatHint && localSearch.length >= 3 && localSearch.length >= searchQuery.length) return;
-      setSearchQuery(localSearch);
+      const trimmed = localSearch.trim();
+      if (trimmed === searchQuery) return;
+      if (chatHint && trimmed.length >= 3 && trimmed.length >= searchQuery.length) return;
+      setSearchQuery(trimmed);
     }, 300);
     return () => clearTimeout(timer);
   }, [localSearch, searchQuery, setSearchQuery, chatHint]);
@@ -84,8 +85,9 @@ export const HomeView: React.FC = () => {
   }, [hasSearch, hasMore, isLoadingMore, loadMoreShelf, loaderRef, isInitialLoading]);
 
   const handleSearchSubmit = () => {
-    if (localSearch.length >= 3 && !selectedCategory && !isInitialLoading && books.length === 0) {
-      chat.setChatInput(localSearch);
+    const trimmed = localSearch.trim();
+    if (trimmed.length >= 3 && !selectedCategory && !isInitialLoading && books.length === 0) {
+      chat.setChatInput(trimmed);
       setLocalSearch('');
       setSearchQuery('');
       setView('global-chat');

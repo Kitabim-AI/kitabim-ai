@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Loader2 } from 'lucide-react';
-import { PageItem } from './PageItem';
-import { PersistenceService } from '../../services/persistenceService';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../i18n/I18nContext';
+import { PersistenceService } from '../../services/persistenceService';
+import { PageItem } from './PageItem';
 
 interface VirtualScrollReaderProps {
   bookId: string;

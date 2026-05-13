@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { BookOpen, ChevronDown, Edit3, LogIn, LogOut, Shield } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { LogOut, User as UserIcon, LogIn, ChevronDown, Shield, Edit3, BookOpen } from 'lucide-react';
 import { useI18n } from '../../i18n/I18nContext';
 import { UserAvatar } from '../common/UserAvatar';
 

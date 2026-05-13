@@ -1,24 +1,23 @@
-import React, { useState, useRef, useEffect } from 'react';
 import {
-  HeartHandshake,
-  FileEdit,
-  Code,
-  Heart,
-  Mail,
-  BookOpen,
   AlertCircle,
-  Github,
-  Send,
-  X,
+  BookOpen,
   Bot,
+  Check,
   CheckCircle2,
   ChevronDown,
-  Check
+  Code,
+  FileEdit,
+  Github,
+  Heart,
+  HeartHandshake,
+  Send,
+  X
 } from 'lucide-react';
-import { useI18n } from '../../i18n/I18nContext';
-import { ProverbDisplay } from '../common/ProverbDisplay';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
+import { useI18n } from '../../i18n/I18nContext';
 import { submitContactForm } from '../../services/contactService';
+import { ProverbDisplay } from '../common/ProverbDisplay';
 
 const JoinUsView: React.FC = () => {
   const { t } = useI18n();

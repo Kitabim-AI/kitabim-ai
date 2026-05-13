@@ -1,10 +1,9 @@
+import { Library, Search, X } from 'lucide-react';
 import React from 'react';
-import { X, Search, Library, RefreshCw } from 'lucide-react';
 import { useAppContext } from '../../context/AppContext';
-import { useI18n } from '../../i18n/I18nContext';
 import { useBooks } from '../../hooks/useBooks';
+import { useI18n } from '../../i18n/I18nContext';
 import { BookCard } from './BookCard';
-import { ProverbDisplay } from '../common/ProverbDisplay';
 
 export const SearchOverlay: React.FC = () => {
   const {
