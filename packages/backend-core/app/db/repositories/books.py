@@ -580,6 +580,22 @@ class BooksRepository(BaseRepository[Book]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def find_sister_volumes(self, book_id: str) -> "List[Book]":
+        """Return all volumes of the same title+author as book_id, sorted by volume."""
+        stmt = select(Book).where(Book.id == book_id)
+        result = await self.session.execute(stmt)
+        book = result.scalar_one_or_none()
+        if not book or not book.title:
+            return []
+
+        stmt = (
+            select(Book)
+            .where(Book.title == book.title, Book.author == book.author, Book.status != "error")
+            .order_by(Book.volume.asc().nulls_first())
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def find_volume_info_by_title_in_question(
         self,
         question: str,
