@@ -40,7 +40,7 @@ When triggered, `QueryRewriter` LLM-rewrites the question into a standalone quer
 
 ---
 
-## Agent tool set (9 tools)
+## Agent tool set (10 tools)
 
 ### Content retrieval
 
@@ -51,6 +51,7 @@ When triggered, `QueryRewriter` LLM-rewrites the question into a standalone quer
 | `find_books_by_title` | `BooksRepository` title match | — | Resolve a book title mentioned in the question to book IDs |
 | `get_book_summary` | `BookSummariesRepository.get_summaries_for_books` | — | Fetch full semantic summary text for specific books; called for plot/character/theme questions |
 | `get_current_page` | `PagesRepository.find_one` | — | Raw text of the page currently open in the reader; only callable in single-book mode when `[Context]` includes `current_page` |
+| `get_sister_volumes` | `BooksRepository.find_sister_volumes` | — | All volumes of the same title+author series as a given `book_id`; called when the question asks about a different volume (next/previous/numbered) of the current or previously-discussed book |
 | `rewrite_query` | `QueryRewriter.rewrite` | L0 | Resolve co-references; short-circuits if `ctx.enriched_question` already set by `FollowUpHandler` |
 
 ### Catalog & metadata
@@ -102,7 +103,7 @@ async def run_agent_loop(ctx, agent_model_name) -> list[dict]:
 
 Before the first LLM call, the agent's HumanMessage is enriched with a `[Context]` block:
 
-- **Single-book mode** (`is_global=False`): injects current book title, author, volume, and `book_id`. Agent calls `search_chunks` directly with that `book_id`, skipping `find_books_by_title` entirely.
+- **Single-book mode** (`is_global=False`): injects current book title, author, volume, and `book_id`. Agent calls `search_chunks` directly with that `book_id`, skipping `find_books_by_title` entirely. Exception: if the question asks about a different volume, the agent calls `get_sister_volumes` first to discover the correct sister volume ID.
 - **Global mode** (`is_global=True`): injects `context_book_ids` (up to 10, frontend-tracked from prior turns) and `character_categories`. Agent tries `search_chunks` with those IDs before falling back to `search_books_by_summary`.
 - When nothing useful is available, returns the bare question — no overhead.
 
@@ -133,9 +134,13 @@ After the loop:
    c. Question explicitly names an author →
         get_books_by_author → search_chunks with resulting IDs
    d. No title/author named, but [Context] has a current book_id →
-        search_chunks directly with that book_id
+        - Sister volume question (next/prev/numbered volume) →
+          get_sister_volumes(current book_id) → search_chunks with the right volume's ID
+        - Otherwise → search_chunks directly with that book_id
    e. No title/author named, but [Context] has previous response book IDs →
-        search_chunks with those IDs first
+        - Sister volume question →
+          get_sister_volumes(context_book_ids[0]) → search_chunks with the right volume's ID
+        - Otherwise → search_chunks with those IDs first
    f. All other cases (general topics, character lookups) →
         search_books_by_summary → search_chunks with returned IDs
    g. < 4 results? → retry with rephrased query or search_chunks with empty
@@ -201,6 +206,23 @@ Step 1 → search_chunks(query="يىگانە ئارال", book_ids=["abc123"])
 → generate_answer(8 chunks)
 ```
 
+### Sister volume question (2 steps — reader mode)
+```
+User is reading "بابۇرنامە" Volume 1 (book_id: abc123)
+User: كەيىنكى تومدا نېمە بولىدۇ؟
+
+[Context] Current book: "بابۇرنامە" by Babur, volume 1 (book_id: abc123)
+
+Step 1 → get_sister_volumes(book_id="abc123")
+         → [{title: "بابۇرنامە", volume: 1, id: abc123},
+             {title: "بابۇرنامە", volume: 2, id: def456}]
+
+Step 2 → search_chunks(query="كەيىنكى تومدا نېمە بولىدۇ", book_ids=["def456"])
+         → 9 chunks  [AGENT_ENOUGH_CHUNKS → loop ends]
+
+→ generate_answer(9 chunks from volume 2)
+```
+
 ### Retry on thin results (3 steps)
 ```
 User: ئۆتكۈرنىڭ شېئىرلىرى ھەققىدە نېمە بىلىسەن؟
@@ -243,7 +265,7 @@ packages/backend-core/app/services/rag/agent/
   __init__.py          # package marker
   config.py            # AGENT_MAX_STEPS, AGENT_ENOUGH_CHUNKS, AGENT_MAX_CONTEXT_CHUNKS
   prompts.py           # AGENT_SYSTEM_PROMPT — retrieval strategy instructions
-  tools.py             # @tool schemas + dispatch_tool() — 9 tools
+  tools.py             # @tool schemas + dispatch_tool() — 10 tools
   loop.py              # run_agent_loop(), _build_human_message()
   context_builder.py   # format_observations_as_context()
   handler.py           # AgentRAGHandler — priority=998 (also exports singleton)
