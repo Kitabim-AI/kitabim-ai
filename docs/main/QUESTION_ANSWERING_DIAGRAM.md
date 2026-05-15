@@ -175,50 +175,73 @@ This diagram illustrates the agent's internal decision tree for tool selection, 
 
 ```mermaid
 flowchart TD
-    Q([User Question]) --> CTX[Agent Checks Context & Question]
+    Q([User Question]) --> PRON{Step 1:\nPronouns/چۇ particle\n+ chat history?}
 
-    CTX -->|Pronouns / چۇ particle\n+ Chat history| REWRITE[Tool: rewrite_query]
-    REWRITE --> CTX
+    %% Step 1 — pronoun / co-reference rewrite
+    PRON -->|No| INTENT
+    PRON -->|Yes| REWRITE[Tool: rewrite_query]
+    REWRITE --> RETITLE{Rewritten question\nnow names a title?}
+    RETITLE -->|Yes — MUST use find_books_by_title\ndo NOT reuse stale context IDs| FBT_R[Tool: find_books_by_title]
+    RETITLE -->|No — re-evaluate rewritten\nquestion from step 2| INTENT
 
-    CTX -->|Metadata / Catalog Intent| METADATA
-    CTX -->|Content / Passage Intent| CONTENT
+    FBT_R --> CHAR_R{Characters /\nplot / themes?}
+    CHAR_R -->|Yes| GBS_R[Tool: get_book_summary] --> STOP
+    CHAR_R -->|No — passages| SC_R[Tool: search_chunks] --> CHK
 
-    subgraph Metadata Strategy
-        METADATA -->|who wrote title?| T_GET_AUTH[Tool: get_book_author]
-        METADATA -->|what did author write?| T_GET_BOOKS[Tool: get_books_by_author]
-        METADATA -->|general library browsing| T_CAT[Tool: search_catalog]
-    end
+    %% Shared intent branch
+    INTENT{Steps 2–4:\nIntent + context}
 
-    subgraph Content Strategy
-        CONTENT -->|Specific book:\nPlot/Characters/Themes| T_TITLE_SUMM[Tool: find_books_by_title]
-        T_TITLE_SUMM -->|IDs| T_GET_SUMM[Tool: get_book_summary]
+    %% Step 2 — catalog / metadata
+    INTENT -->|who wrote title? — step 2| T_AUTH[Tool: get_book_author] --> STOP
+    INTENT -->|what did author write? — step 2| T_BAUTH[Tool: get_books_by_author] --> STOP
+    INTENT -->|library browsing — step 2| T_CAT[Tool: search_catalog] --> STOP
 
-        CONTENT -->|Specific book:\nDetails/Passages| T_TITLE[Tool: find_books_by_title]
-        T_TITLE -->|IDs| T_CHUNKS_TITLE[Tool: search_chunks]
+    %% Step 3 — current page shortcut
+    INTENT -->|Content on current page\ncontext has current_page — step 3| T_CUR[Tool: get_current_page] --> STOP
 
-        CONTENT -->|Names author| T_AUTHOR[Tool: get_books_by_author]
-        T_AUTHOR -->|IDs| T_CHUNKS_AUTH[Tool: search_chunks]
+    %% Step 4a — named title + plot/characters/themes
+    INTENT -->|Named title +\nplot/characters/themes — 4a| FBT_A[Tool: find_books_by_title]
+    FBT_A -->|IDs| GBS_A[Tool: get_book_summary] --> STOP
 
-        CONTENT -->|Context: current book| T_CHUNKS_CTX[Tool: search_chunks\nwith known book_ids]
-        CONTENT -->|Context: previous books| T_CHUNKS_CTX
+    %% Step 4b — named title + passages
+    INTENT -->|Named title +\npassages/details — 4b| FBT_B[Tool: find_books_by_title]
+    FBT_B -->|IDs| SC_B[Tool: search_chunks] --> CHK
 
-        CONTENT -->|No Context/Title/Author\nor General Theme| T_SUMM[Tool: search_books_by_summary]
-        T_SUMM -->|IDs| T_CHUNKS_SUMM[Tool: search_chunks]
+    %% Step 4c — named author
+    INTENT -->|Named author — 4c| GBA_C[Tool: get_books_by_author]
+    GBA_C -->|IDs| SC_C[Tool: search_chunks] --> CHK
 
-        T_CHUNKS_CTX & T_CHUNKS_TITLE & T_CHUNKS_AUTH & T_CHUNKS_SUMM --> CHK{Passages < 4?}
-        CHK -->|Yes| T_CHUNKS_ALL[Tool: search_chunks\nempty book_ids = all books]
-        CHK -->|No| DONE
-    end
+    %% Step 4d — current book_id in context
+    INTENT -->|No title/author;\ncontext: current book_id — 4d| SC_D[Tool: search_chunks\nwith current book_id] --> CHK
 
-    T_GET_AUTH & T_GET_BOOKS & T_CAT & T_GET_SUMM & T_CHUNKS_ALL --> DONE
+    %% Step 4e — previous book IDs + who is X
+    INTENT -->|No title/author;\ncontext: prev book IDs;\nwho is X / tell me about X — 4e| SBS_E[Tool: search_books_by_summary\nwith context_book_ids]
+    SBS_E -->|Results — topic still matches| GBS_E[Tool: get_book_summary] --> STOP
+    SBS_E -->|No results — topic shifted| SBS_G
 
-    DONE([Stop: Issue no tool calls\nto signal completion])
+    %% Step 4f — previous book IDs, non-character
+    INTENT -->|No title/author;\ncontext: prev book IDs;\nnon-character question — 4f| SC_F[Tool: search_chunks\nwith context_book_ids] --> CHK
+
+    %% Step 4g — no context / general fallback
+    INTENT -->|No title/author/context\nor fallthrough from 4e/4f — 4g| SBS_G[Tool: search_books_by_summary]
+    SBS_G --> WHO{Who is X /\ntell me about X?}
+    WHO -->|Yes| GBS_G[Tool: get_book_summary\nmax 5 IDs] --> STOP
+    WHO -->|No| SC_G[Tool: search_chunks\nwith returned book_ids] --> CHK
+
+    %% Step 4h — retry (search_chunks only, never after get_book_summary)
+    CHK{Step 4h:\nsearch_chunks < 4 results?\nNever applies after\nget_book_summary}
+    CHK -->|Yes| SC_H[Tool: search_chunks\nempty book_ids = entire library] --> STOP
+    CHK -->|No — sufficient context| STOP
+
+    STOP([Stop — respond with no tool calls\nto signal completion])
 
     classDef tool fill:#dcfce7,stroke:#16a34a,stroke-width:2px
     classDef decision fill:#fef9c3,stroke:#854d0e,stroke-width:1px
-    
-    class REWRITE,T_GET_AUTH,T_GET_BOOKS,T_CAT,T_CHUNKS_CTX,T_TITLE,T_TITLE_SUMM,T_CHUNKS_TITLE,T_GET_SUMM,T_AUTHOR,T_CHUNKS_AUTH,T_SUMM,T_CHUNKS_SUMM,T_CHUNKS_ALL tool
-    class CTX,METADATA,CONTENT,CHK decision
+    classDef stop fill:#fee2e2,stroke:#dc2626,stroke-width:2px
+
+    class REWRITE,FBT_R,GBS_R,SC_R,T_AUTH,T_BAUTH,T_CAT,T_CUR,FBT_A,GBS_A,FBT_B,SC_B,GBA_C,SC_C,SC_D,SBS_E,GBS_E,SBS_G,GBS_G,SC_G,SC_H tool
+    class PRON,RETITLE,CHAR_R,INTENT,WHO,CHK decision
+    class STOP stop
 ```
 
 ---
@@ -227,15 +250,15 @@ flowchart TD
 
 | Tool | Type | Wraps | When agent calls it |
 |------|------|-------|---------------------|
-| `rewrite_query` | Utility | `QueryRewriter` | Question has pronouns or "چۇ" particle and chat history exists; short-circuits if already rewritten by `FollowUpHandler` |
-| `find_books_by_title` | Content | `BooksRepository` title match | Question explicitly names a book title and no book_id in `[Context]` |
-| `search_books_by_summary` | Content | `BookSummariesRepository` | Finding which books cover a topic; skipped when `[Context]` provides book IDs |
-| `search_chunks` | Content | pgvector similarity search | Retrieving passages; uses L1+L2 cache; called directly with `[Context]` book_id when available |
+| `rewrite_query` | Utility | `QueryRewriter` | Question has pronouns or "چۇ" particle and chat history exists; short-circuits if already rewritten by `FollowUpHandler`. After returning, agent re-evaluates the rewritten question from step 2 — if a title is now explicit, `find_books_by_title` is mandatory and stale context IDs must not be reused |
+| `find_books_by_title` | Content | `BooksRepository` title match | Question explicitly names a book title (including after rewrite resolves a pronoun to a title) |
+| `search_books_by_summary` | Content | `BookSummariesRepository` | Finding which books cover a topic; also used with `context_book_ids` to verify a "who is X" question still matches the previous topic (step 4e) |
+| `search_chunks` | Content | pgvector similarity search | Retrieving passages; uses L1+L2 cache; called directly with `[Context]` book_id when available. Step 4h retry (empty book_ids) applies only when `search_chunks` returned < 4 results — never triggered after `get_book_summary` |
 | `get_book_author` | Metadata | `BooksRepository` | All author queries when `rag_fast_handlers_enabled=false`; compound queries when flag is on |
 | `get_books_by_author` | Metadata | `BooksRepository` | All books-by-author queries when flag is off; compound queries when flag is on |
-| `get_book_summary` | Content | `BookSummariesRepository.get_summaries_for_books` | Plot, themes, or main characters of a specific book; called after `find_books_by_title` resolves IDs |
-| `get_current_page` | Content | `PagesRepository.find_one` | Raw text of the page the user is currently reading; only available in single-book in-reader mode |
-| `search_catalog` | Metadata | `CatalogHandler._build_catalog_context` | Library browsing, listing, general catalog questions |
+| `get_book_summary` | Content | `BookSummariesRepository.get_summaries_for_books` | Plot, themes, or main characters of a specific book (step 4a); or "who is X / tell me about X" questions (steps 4e, 4g). After `get_book_summary` completes for a "who is X" question, the agent stops immediately — no further tools |
+| `get_current_page` | Content | `PagesRepository.find_one` | Raw text of the page the user is currently reading; only available in single-book in-reader mode (step 3) |
+| `search_catalog` | Metadata | `CatalogHandler._build_catalog_context` | Library browsing, listing, general catalog questions only — never for person/character lookups |
 
 ---
 
