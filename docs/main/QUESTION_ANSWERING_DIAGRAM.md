@@ -84,6 +84,7 @@ flowchart TD
                 AG_TOOLS -->|find_books_by_title| T_TITLE[Title match\nDB lookup]
                 AG_TOOLS -->|get_book_summary| T_BOOK_SUMM[Fetch full book summary\nBookSummariesRepository]
                 AG_TOOLS -->|get_current_page| T_CUR_PAGE[Current page raw text\nPagesRepository]
+                AG_TOOLS -->|get_sister_volumes| T_SISTER[All volumes for same title+author\nBooksRepository.find_sister_volumes]
                 AG_TOOLS -->|rewrite_query| T_REWRITE[Short-circuit if already rewritten\notherwise resolve co-references — L0 cache]
             end
 
@@ -93,7 +94,7 @@ flowchart TD
                 AG_TOOLS -->|search_catalog| T_CAT[Catalog context\ntitle → author → full listing]
             end
 
-            T_CHUNKS & T_SUMM & T_TITLE & T_REWRITE & T_BOOK_SUMM & T_CUR_PAGE & T_AUTHOR & T_BOOKS & T_CAT --> AG_OBS[Accumulate\nObservations]
+            T_CHUNKS & T_SUMM & T_TITLE & T_REWRITE & T_BOOK_SUMM & T_CUR_PAGE & T_SISTER & T_AUTHOR & T_BOOKS & T_CAT --> AG_OBS[Accumulate\nObservations]
             AG_OBS -->|chunks < 8 and steps < 4| AG_LOOP
         end
 
@@ -130,7 +131,7 @@ flowchart TD
 
     class H_ID,H_CAP,H_ABT,H_BBA,H_VOL,H_FU,H_CP,H_CV,H_AG handler
     class QR_CACHE,QR_LLM llm
-    class T_AUTHOR,T_BOOKS,T_CAT newtool
+    class T_AUTHOR,T_BOOKS,T_CAT,T_SISTER newtool
     class CTX_INJ inject
     class AG_TOOLS,REG,FAST_PATH decision
     class PAGE_FETCH store
@@ -146,7 +147,7 @@ flowchart LR
     Q([Question]) --> FLAG
 
     FLAG{rag_fast_handlers_enabled\n= true?}
-    FLAG -->|No — default| RAGENT[AgentRAGHandler\nReAct loop — 9 tools]
+    FLAG -->|No — default| RAGENT[AgentRAGHandler\nReAct loop — 10 tools]
 
     FLAG -->|Yes| P1
     P1{Identity /\ngreeting?} -->|Yes| R1[IdentityHandler\nDirect reply]
@@ -212,7 +213,10 @@ flowchart TD
     GBA_C -->|IDs| SC_C[Tool: search_chunks] --> CHK
 
     %% Step 4d — current book_id in context
-    INTENT -->|No title/author;\ncontext: current book_id — 4d| SC_D[Tool: search_chunks\nwith current book_id] --> CHK
+    INTENT -->|No title/author;\ncontext: current book_id — 4d| VOL_D{Sister volume\nquestion?\nnext/prev/numbered volume}
+    VOL_D -->|Yes| GSV_D[Tool: get_sister_volumes\nwith current book_id]
+    GSV_D --> SC_D_SIS[Tool: search_chunks\nwith sister volume book_id] --> CHK
+    VOL_D -->|No| SC_D[Tool: search_chunks\nwith current book_id] --> CHK
 
     %% Step 4e — previous book IDs + who is X
     INTENT -->|No title/author;\ncontext: prev book IDs;\nwho is X / tell me about X — 4e| SBS_E[Tool: search_books_by_summary\nwith context_book_ids]
@@ -220,7 +224,10 @@ flowchart TD
     SBS_E -->|No results — topic shifted| SBS_G
 
     %% Step 4f — previous book IDs, non-character
-    INTENT -->|No title/author;\ncontext: prev book IDs;\nnon-character question — 4f| SC_F[Tool: search_chunks\nwith context_book_ids] --> CHK
+    INTENT -->|No title/author;\ncontext: prev book IDs;\nnon-character question — 4f| VOL_F{Sister volume\nquestion?}
+    VOL_F -->|Yes| GSV_F[Tool: get_sister_volumes\nwith context_book_ids[0]]
+    GSV_F --> SC_F_SIS[Tool: search_chunks\nwith sister volume book_id] --> CHK
+    VOL_F -->|No| SC_F[Tool: search_chunks\nwith context_book_ids] --> CHK
 
     %% Step 4g — no context / general fallback
     INTENT -->|No title/author/context\nor fallthrough from 4e/4f — 4g| SBS_G[Tool: search_books_by_summary]
@@ -239,8 +246,8 @@ flowchart TD
     classDef decision fill:#fef9c3,stroke:#854d0e,stroke-width:1px
     classDef stop fill:#fee2e2,stroke:#dc2626,stroke-width:2px
 
-    class REWRITE,FBT_R,GBS_R,SC_R,T_AUTH,T_BAUTH,T_CAT,T_CUR,FBT_A,GBS_A,FBT_B,SC_B,GBA_C,SC_C,SC_D,SBS_E,GBS_E,SBS_G,GBS_G,SC_G,SC_H tool
-    class PRON,RETITLE,CHAR_R,INTENT,WHO,CHK decision
+    class REWRITE,FBT_R,GBS_R,SC_R,T_AUTH,T_BAUTH,T_CAT,T_CUR,FBT_A,GBS_A,FBT_B,SC_B,GBA_C,SC_C,SC_D,SBS_E,GBS_E,SBS_G,GBS_G,SC_G,SC_H,GSV_D,SC_D_SIS,GSV_F,SC_F_SIS tool
+    class PRON,RETITLE,CHAR_R,INTENT,WHO,CHK,VOL_D,VOL_F decision
     class STOP stop
 ```
 
@@ -258,6 +265,7 @@ flowchart TD
 | `get_books_by_author` | Metadata | `BooksRepository` | All books-by-author queries when flag is off; compound queries when flag is on |
 | `get_book_summary` | Content | `BookSummariesRepository.get_summaries_for_books` | Plot, themes, or main characters of a specific book (step 4a); or "who is X / tell me about X" questions (steps 4e, 4g). After `get_book_summary` completes for a "who is X" question, the agent stops immediately — no further tools |
 | `get_current_page` | Content | `PagesRepository.find_one` | Raw text of the page the user is currently reading; only available in single-book in-reader mode (step 3) |
+| `get_sister_volumes` | Content | `BooksRepository.find_sister_volumes` | All volumes of the same title+author series as a given book_id; called when the question references a different volume (next/previous/numbered) of the current or previously-discussed book — gives the agent the correct book_id before calling `search_chunks` |
 | `search_catalog` | Metadata | `CatalogHandler._build_catalog_context` | Library browsing, listing, general catalog questions only — never for person/character lookups |
 
 ---
@@ -297,7 +305,7 @@ flowchart TD
 | **AuthorByTitleHandler** | Fast path for "who wrote X?" — keyword detect + DB lookup, zero agent calls; falls back to AgentRAG on miss; gated by feature flag |
 | **BooksByAuthorHandler** | Fast path for "list books by Y" — keyword detect + DB lookup, zero agent calls; falls back to AgentRAG on miss; gated by feature flag |
 | **FollowUpHandler** | Detects follow-up signals (markers, pronouns, "چۇ" clitic); rewrites question via LLM; delegates to AgentRAG; gated by feature flag |
-| **AgentRAGHandler** | Handles every query when flag is off (`is_fast_handler=False`, never skipped); fallback for unmatched intents when flag is on; injects `[Context]` block; runs ReAct loop with 9 tools |
+| **AgentRAGHandler** | Handles every query when flag is off (`is_fast_handler=False`, never skipped); fallback for unmatched intents when flag is on; injects `[Context]` block; runs ReAct loop with 10 tools |
 | **_build_human_message** | Enriches the agent's first HumanMessage with current book_id, context book IDs, and category filter; enables agent to skip book-discovery step |
 | **format_observations_as_context** | Combines metadata context (catalog/author tools) + deduplicated, score-sorted chunks (cap 15) |
 | **AnswerBuilder** | Formats chunks into LangChain documents; invokes final RAG chain (streaming or batch) |

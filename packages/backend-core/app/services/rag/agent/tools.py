@@ -131,6 +131,20 @@ def get_book_summary(book_ids: List[str]) -> str:
 
 
 @tool
+def get_sister_volumes(book_id: str) -> str:
+    """Return all volumes of the same book series as the given book.
+
+    Call when the user asks about a different volume of the current book — next volume,
+    previous volume, or a specific volume number (e.g. '2-توم', 'كەيىنكى توم').
+    Returns all volumes with their IDs so you can target the right one in search_chunks.
+
+    Args:
+        book_id: The ID of any volume in the series (use the current book_id from [Context]).
+    """
+    return ""
+
+
+@tool
 def get_current_page() -> str:
     """Retrieve the full text of the page the user is currently reading.
 
@@ -152,6 +166,7 @@ AGENT_TOOLS = [
     get_books_by_author,
     search_catalog,
     get_book_summary,
+    get_sister_volumes,
     get_current_page,
 ]
 
@@ -179,6 +194,8 @@ async def dispatch_tool(tool_name: str, tool_args: dict, ctx: QueryContext) -> d
             return await _run_search_catalog(tool_args, ctx)
         if tool_name == "get_book_summary":
             return await _run_get_book_summary(tool_args, ctx)
+        if tool_name == "get_sister_volumes":
+            return await _run_get_sister_volumes(tool_args, ctx)
         if tool_name == "get_current_page":
             return await _run_get_current_page(ctx)
         return {"error": f"Unknown tool: {tool_name}"}
@@ -260,6 +277,30 @@ async def _run_get_book_summary(args: dict, ctx: QueryContext) -> dict:
     log_json(logger, logging.INFO, "Agent tool get_book_summary", count=len(summaries))
     
     return {"context": context_text, "summaries": summaries}
+
+
+async def _run_get_sister_volumes(args: dict, ctx: QueryContext) -> dict:
+    from app.db.repositories.books import BooksRepository
+
+    book_id = args.get("book_id", "")
+    if not book_id:
+        return {"context": "No book_id provided.", "book_ids": []}
+
+    repo = BooksRepository(ctx.session)
+    books = await repo.find_sister_volumes(book_id)
+    if not books:
+        log_json(logger, logging.INFO, "Agent tool get_sister_volumes — no results", book_id=book_id)
+        return {"context": "No volumes found for this book.", "book_ids": []}
+
+    lines = ["Volumes in this series:"]
+    book_ids = []
+    for b in books:
+        volume = f"Volume {b.volume}" if b.volume is not None else "No volume number"
+        lines.append(f"- {b.title}, {volume} (ID: {b.id})")
+        book_ids.append(str(b.id))
+
+    log_json(logger, logging.INFO, "Agent tool get_sister_volumes", book_id=book_id, count=len(books))
+    return {"context": "\n".join(lines), "book_ids": book_ids}
 
 
 async def _run_get_current_page(ctx: QueryContext) -> dict:
