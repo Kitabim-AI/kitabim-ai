@@ -25,15 +25,12 @@ class HandlerRegistry:
 
     def _select(self, ctx: "QueryContext") -> "QueryHandler":
         for handler in self._handlers:
-            if handler.is_fast_handler and not ctx.fast_handlers_enabled:
-                continue
             if handler.can_handle(ctx):
                 log_json(
                     logger,
                     logging.INFO,
                     "Intent matched",
                     intent=handler.intent_name,
-                    fast_handler=handler.is_fast_handler,
                     question_prefix=ctx.question[:40],
                 )
                 return handler
@@ -45,7 +42,8 @@ class HandlerRegistry:
         handler = self._select(ctx)
         return await handler.handle(ctx)
 
-    async def dispatch_stream(self, ctx: "QueryContext") -> AsyncIterator[str]:
+    async def dispatch_stream(self, ctx: "QueryContext") -> AsyncIterator:
+        """Yield str|dict typed events from the graph handler."""
         handler = self._select(ctx)
         async for chunk in handler.handle_stream(ctx):
             yield chunk
@@ -59,26 +57,10 @@ _registry_singleton: Optional[HandlerRegistry] = None
 
 
 def build_default_registry() -> HandlerRegistry:
-    from app.services.rag.handlers.identity import IdentityHandler
-    from app.services.rag.handlers.capabilities import CapabilityHandler
-    from app.services.rag.handlers.author_by_title import AuthorByTitleHandler
-    from app.services.rag.handlers.books_by_author import BooksByAuthorHandler
-    from app.services.rag.handlers.volume_info import VolumeInfoHandler
-    from app.services.rag.handlers.follow_up import FollowUpHandler
-    from app.services.rag.handlers.current_page import CurrentPageHandler
-    from app.services.rag.handlers.current_volume import CurrentVolumeHandler
     from app.services.rag.agent.handler import AgentRAGHandler
 
     return HandlerRegistry([
-        IdentityHandler(),
-        CapabilityHandler(),
-        AuthorByTitleHandler(),   # priority=20 — fast path for "who wrote X?"
-        BooksByAuthorHandler(),   # priority=21 — fast path for "what did Y write?"
-        VolumeInfoHandler(),
-        FollowUpHandler(),
-        CurrentPageHandler(),
-        CurrentVolumeHandler(),
-        AgentRAGHandler(),        # priority=998 — catches all unmatched intents
+        AgentRAGHandler(),        # priority=998 — sole handler, catches all queries
     ])
 
 

@@ -67,7 +67,11 @@ def find_books_by_title(question: str) -> str:
 def rewrite_query(question: str) -> str:
     """Resolve pronouns and co-references in a follow-up question using chat history.
 
-    Call when the question contains Uyghur pronouns such as ئۇ، بۇ، شۇ، ئۇنىڭ، بۇنىڭ.
+    Call ONLY when the pronoun cannot be resolved within the same question — i.e., when
+    the question begins with a pronoun or uses pronouns referring to an entity named in a
+    PREVIOUS conversation turn. Do NOT call if the pronoun's antecedent is already named
+    within the same question (e.g. "يۇنۇسخان كىم؟ ئۇنىڭ قانچە پەرزەنتى بار؟" — ئۇنىڭ
+    refers to يۇنۇسخان which is already stated in this question).
     Returns the rewritten standalone question.
 
     Args:
@@ -209,8 +213,12 @@ async def dispatch_tool(tool_name: str, tool_args: dict, ctx: QueryContext) -> d
 # ---------------------------------------------------------------------------
 
 async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
+    from app.services.rag.agent.config import CONTEXT_SWITCH_SCORE_THRESHOLD
+
     query = args.get("query", "")
-    book_ids: List[str] = args.get("book_ids") or []
+    # Preserve None (agent omitted book_ids = global search) vs [] (agent passed empty = no books found).
+    book_ids_arg = args.get("book_ids")
+    book_ids: Optional[List[str]] = [str(bid) for bid in book_ids_arg] if book_ids_arg is not None else None
 
     query_vector = await embed_query(query, ctx)
     if not query_vector:
@@ -218,9 +226,27 @@ async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
 
     results = await vector_search(ctx, book_ids, query_vector=query_vector)
 
+    # Transparent context-switch fallback: if the LLM passed the previous
+    # answer's book IDs verbatim and the similarity scores are weak (different
+    # topic), rediscover relevant books via the summary index and re-search within them.
+    if book_ids and ctx.context_book_ids and set(book_ids) == set(ctx.context_book_ids):
+        top_score = max((r.get("score", 0.0) for r in results), default=0.0)
+        if top_score < CONTEXT_SWITCH_SCORE_THRESHOLD:
+            log_json(
+                logger, logging.INFO, "Context switch detected — rediscovering books via summaries",
+                top_score=round(top_score, 3), threshold=CONTEXT_SWITCH_SCORE_THRESHOLD,
+            )
+            new_book_ids = await _run_search_books_by_summary({"query": query}, ctx)
+            if new_book_ids:
+                broader = await vector_search(ctx, new_book_ids, query_vector=query_vector)
+                if broader:
+                    results = broader
+                    book_ids = new_book_ids
+                    log_json(logger, logging.INFO, "Context-switch re-search succeeded", new_books=len(new_book_ids))
+
     log_json(
         logger, logging.INFO, "Agent tool search_chunks",
-        query=query[:60], book_count=len(book_ids), results=len(results),
+        query=query[:60], book_count=len(book_ids) if book_ids is not None else 0, results=len(results),
     )
     return results
 

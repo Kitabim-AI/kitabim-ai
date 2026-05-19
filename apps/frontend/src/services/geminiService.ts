@@ -91,6 +91,7 @@ export const chatWithBookStream = async (
   onUsageUpdate?: (usage: any) => void,
   contextBookIds?: string[],
   onContextBookIds?: (bookIds: string[]) => void,
+  onAgentEvent?: (event: Record<string, any>) => void,
 ): Promise<void> => {
   try {
     const response = await authFetch(`${API_BASE}/chat/stream`, {
@@ -157,10 +158,11 @@ export const chatWithBookStream = async (
             } else if (data.chunk) {
               onChunk(data.chunk);
             } else if (data.correction) {
-              // Backend has sent a corrected version with fixed citations
               if (onCorrection) {
                 onCorrection(data.correction);
               }
+            } else if (data.type) {
+              onAgentEvent?.(data);
             } else if (data.done) {
               if (onUsageUpdate && data.usage) {
                 onUsageUpdate(data.usage);

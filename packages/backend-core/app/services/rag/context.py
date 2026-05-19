@@ -35,7 +35,6 @@ class QueryContext:
     # ── Mutated by handlers ─────────────────────────────────────────────────
     query_vector: List[float] = field(default_factory=list)
     enriched_question: Optional[str] = None   # QueryRewriter rewrites follow-up question here
-    use_current_volume_only: bool = False      # CurrentVolumeHandler sets this
     context_book_ids: List[str] = field(default_factory=list)  # from ChatRequest — reliable frontend-tracked context
     used_book_ids: List[str] = field(default_factory=list)     # populated by retrieval, returned in done event
 
@@ -44,9 +43,6 @@ class QueryContext:
     context_chars: int = 0
     scores: List[float] = field(default_factory=list)
     category_filter: List[str] = field(default_factory=list)
-
-    # ── Feature flags — resolved from system_configs at context build time ───
-    fast_handlers_enabled: bool = False
 
     # ── Agentic eval metadata — only set by AgentRAGHandler ─────────────────
     agent_steps: Optional[int] = None

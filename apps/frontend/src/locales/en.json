@@ -176,7 +176,25 @@
       "Searching through the books",
       "Looking a bit deeper",
       "I will find an answer to this"
-    ]
+    ],
+    "agent": {
+      "analyzing": "Analyzing your question",
+      "thinking": "Thinking...",
+      "searchingPassages": "Searching passages",
+      "searchingBooks": "Searching books",
+      "findingByTitle": "Finding books by title",
+      "rewritingQuery": "Clarifying question",
+      "lookingUpAuthor": "Looking up author",
+      "findingByAuthor": "Finding books by author",
+      "searchingCatalog": "Browsing catalog",
+      "readingSummary": "Reading summaries",
+      "findingVolumes": "Finding related volumes",
+      "readingPage": "Reading current page",
+      "grading": "Selecting best context",
+      "decomposing": "Splitting into {{count}} questions",
+      "foundPassages": "Found {{count}}",
+      "keptPassages": "{{kept}} of {{total}} kept"
+    }
   },
   "reader": {
     "reading": "Reading",

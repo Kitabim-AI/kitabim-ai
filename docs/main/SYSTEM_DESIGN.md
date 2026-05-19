@@ -106,21 +106,15 @@ flowchart LR
 
 ### B) RAG Chat
 
-The RAG pipeline is intent-routed. Eight specialized handlers cover metadata queries, follow-ups, and page/volume-scoped questions. All other questions go through the always-on agentic retrieval loop.
+All questions go directly to `AgentRAGHandler` (priority=998), which runs a LangGraph-based ReAct loop. Graph topology: `plan_query → agent_step → execute_tool → collect_tools → build_context → grade_context → generate_answer`.
 
-**Handler registry dispatch:**
-1. `HandlerRegistry` matches the question to the highest-priority handler whose `can_handle()` returns True.
-2. Fast-path handlers (`IdentityHandler`, `CapabilityHandler`, `AuthorByTitleHandler`, `BooksByAuthorHandler`, `VolumeInfoHandler`) answer directly from a DB lookup with zero agent calls.
-3. `FollowUpHandler` detects follow-up signals (explicit markers, Uyghur pronouns, and the "چۇ" topic-shift clitic) — rewrites the question via LLM, then delegates to the agent.
-4. `CurrentPageHandler` and `CurrentVolumeHandler` inject page/volume scope, then delegate to the agent.
-5. `AgentRAGHandler` (priority=998) handles all remaining questions.
-
-**Agentic retrieval loop (always-on):**
+**Agentic retrieval loop:**
 1. `_build_human_message` injects a `[Context]` block (current book ID, context book IDs, category filter) into the agent's first message — agent skips book-discovery when the context is known.
 2. Agent LLM decides which tools to call (up to 4 steps, early-exit at 8+ chunks). **(Gemini function calling)**
-3. Tools (9): `search_chunks` **(L1+L2 cache)**, `search_books_by_summary` **(L3 cache)**, `find_books_by_title`, `get_book_summary`, `get_current_page`, `rewrite_query` **(L0 cache, short-circuits if already rewritten)**, `get_book_author`, `get_books_by_author`, `search_catalog`
-4. `format_observations_as_context` deduplicates chunks (sort by score DESC, cap at 15) and prepends metadata context from catalog/author tools.
-5. Combined context passed to answer LLM for final response generation.
+3. Tools (10): `search_chunks` **(L1+L2 cache)**, `search_books_by_summary` **(L3 cache)**, `find_books_by_title`, `get_book_summary`, `get_current_page`, `get_sister_volumes`, `rewrite_query` **(L0 cache)**, `get_book_author`, `get_books_by_author`, `search_catalog`
+4. `grade_context` filters low-relevance chunks by relative score threshold before answer generation.
+5. `generate_answer` streams the response; generating the final answer for the user.
+6. `format_observations_as_context` deduplicates chunks (sort by score DESC, cap at 15) and prepends metadata context from catalog/author tools.
 
 **Frontend context tracking:** After each response, `used_book_ids` is returned in metadata and sent back as `context_book_ids` in the next request, letting the agent skip book-discovery on follow-up turns.
 

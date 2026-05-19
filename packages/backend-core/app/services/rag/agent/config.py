@@ -1,5 +1,17 @@
-"""Agent loop configuration constants — single source of truth for numeric limits."""
+"""Agent configuration constants — single source of truth for numeric limits."""
 
-AGENT_MAX_STEPS = 4          # maximum ReAct loop iterations
-AGENT_ENOUGH_CHUNKS = 8      # early-exit threshold: stop once this many chunks are collected
-AGENT_MAX_CONTEXT_CHUNKS = 15  # hard cap on chunks passed to the answer LLM
+# ── ReAct loop ────────────────────────────────────────────────────────────────
+AGENT_MAX_STEPS = 6            # maximum ReAct iterations per round
+AGENT_ENOUGH_CHUNKS = 8        # early-exit: stop once this many chunks are collected
+AGENT_MAX_CONTEXT_CHUNKS = 20  # hard cap on chunks passed to the answer LLM
+
+# ── Context grading (grade_context node) ─────────────────────────────────────
+GRADE_RELATIVE_THRESHOLD = 0.85   # keep chunks scoring >= top_score × this value
+MIN_CHUNKS_AFTER_GRADING = 3      # never filter below this many chunks
+
+# ── Context-switch detection ──────────────────────────────────────────────────
+# When the LLM reuses context_book_ids from the previous answer and the top
+# similarity score is below this threshold, the search is transparently broadened
+# to all books. Prevents stale context from poisoning topic-switch queries.
+# Calibrated from observed scores: good match ≈ 0.75+, topic mismatch ≈ 0.62.
+CONTEXT_SWITCH_SCORE_THRESHOLD = 0.72

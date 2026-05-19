@@ -1,8 +1,19 @@
 import { Book, Message } from '@shared/types';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { DEFAULT_CHARACTER_ID } from '../constants/characters';
 import { chatWithBookStream, getChatUsage } from '../services/geminiService';
 import { useAuth } from './useAuth';
+
+export interface AgentStep {
+  id: string;
+  type: 'decomposing' | 'planning' | 'thinking' | 'tool' | 'grading';
+  tool?: string;
+  found?: number;
+  kept?: number;
+  total?: number;
+  count?: number;
+  status: 'active' | 'done';
+}
 
 export const useChat = (view: string, selectedBook: Book | null, currentPage: number | null) => {
   const { isAuthenticated } = useAuth();
@@ -11,11 +22,60 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
   const [chatInput, setChatInput] = useState('');
   const [isChatting, setIsChatting] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState('');
+  const [agentSteps, setAgentSteps] = useState<AgentStep[]>([]);
   const streamingMessageRef = useRef('');
   const [usageStatus, setUsageStatus] = useState<{ usage: number, limit: number | null, hasReachedLimit: boolean } | null>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const contextBookIdsRef = useRef<string[]>([]);
+
+  const handleAgentEvent = useCallback((event: Record<string, any>) => {
+    const { type } = event;
+
+    if (type === 'answer_start') {
+      streamingMessageRef.current = '';
+      setStreamingMessage('');
+      return;
+    }
+
+    setAgentSteps(prev => {
+      if (type === 'tool_result') {
+        let toolIdx = -1;
+        for (let i = prev.length - 1; i >= 0; i--) {
+          if (prev[i].type === 'tool' && prev[i].status === 'active') { toolIdx = i; break; }
+        }
+        if (toolIdx < 0) return prev;
+        return prev.map((s, i) => i === toolIdx ? { ...s, status: 'done' as const, found: event.found } : s);
+      }
+
+      const steps = prev.map(s => s.status === 'active' ? { ...s, status: 'done' as const } : s);
+
+      if (type === 'decompose') {
+        return [...steps, { id: 'decompose', type: 'decomposing' as const, count: event.count, status: 'done' as const }];
+      }
+      if (type === 'planning') {
+        return [...steps, { id: 'plan', type: 'planning' as const, status: 'done' as const }];
+      }
+      if (type === 'agent_thinking') {
+        let thinkIdx = -1;
+        for (let i = steps.length - 1; i >= 0; i--) {
+          if (steps[i].type === 'thinking') { thinkIdx = i; break; }
+        }
+        const thinkStep: AgentStep = { id: 'think', type: 'thinking', status: 'active' };
+        if (thinkIdx >= 0) {
+          return [...steps.slice(0, thinkIdx), thinkStep, ...steps.slice(thinkIdx + 1)];
+        }
+        return [...steps, thinkStep];
+      }
+      if (type === 'tool_call') {
+        return [...steps, { id: `tool-${event.tool}-${Date.now()}`, type: 'tool' as const, tool: event.tool, status: 'active' as const }];
+      }
+      if (type === 'grading') {
+        return [...steps, { id: 'grade', type: 'grading' as const, kept: event.after, total: event.before, status: 'done' as const }];
+      }
+      return steps;
+    });
+  }, []);
 
   const scrollToBottom = () => {
     if (chatContainerRef.current) {
@@ -82,6 +142,10 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     streamingMessageRef.current = '';
     setIsChatting(true);
     setStreamingMessage('');
+    // Seed with an active "thinking" step immediately so the bubble is already
+    // at AgentThinkingSteps size before the first real event arrives — prevents
+    // the small-TypingCarousel → large-steps resize jitter.
+    setAgentSteps([{ id: 'initial-think', type: 'thinking', status: 'active' }]);
 
     try {
       const bookId = (view === 'global-chat') ? 'global' : selectedBook!.id;
@@ -101,6 +165,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
         () => {
           const finalMessage = streamingMessageRef.current;
           setChatMessages(prev => [...prev, { role: 'model', text: finalMessage, characterId: selectedCharacterId }]);
+          streamingMessageRef.current = '';
           setStreamingMessage('');
           setIsChatting(false);
         },
@@ -115,7 +180,6 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
         selectedCharacterId,
         // onCorrection
         (correctedText: string) => {
-          // Replace the streaming message with the corrected version
           setStreamingMessage(correctedText);
           streamingMessageRef.current = correctedText;
         },
@@ -127,6 +191,8 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
         view === 'global-chat' ? contextBookIdsRef.current : [],
         // onContextBookIds — store new context for the next request
         view === 'global-chat' ? (ids: string[]) => { contextBookIdsRef.current = ids; } : undefined,
+        // onAgentEvent — live LangGraph step events
+        handleAgentEvent,
       );
     } catch (err: any) {
       if (err.name === 'AbortError') return;
@@ -153,6 +219,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     setChatInput,
     isChatting,
     streamingMessage,
+    agentSteps,
     usageStatus,
     handleSendMessage,
     clearChat,

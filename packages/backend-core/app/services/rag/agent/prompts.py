@@ -11,6 +11,9 @@ _STEP_1_COREFERENCE = (
     "1. If the question contains Uyghur pronouns (ئۇ، بۇ، شۇ، ئۇنىڭ، بۇنىڭ، ئۇنى، بۇنى) "
     'or the topic-shift particle "چۇ" attached to a word (e.g. ئارالنىڭچۇ؟، كىتابچۇ؟) '
     "and there is prior conversation context, call rewrite_query first to resolve co-references. "
+    "EXCEPTION: Do NOT call rewrite_query if the pronoun's antecedent is already named within "
+    'the same question (e.g. "يۇنۇسخان كىم؟ ئۇنىڭ قانچە پەرزەنتى بار؟" — ئۇنىڭ refers to '
+    "يۇنۇسخان which is already stated; skip straight to book discovery). "
     "After rewrite_query returns, re-evaluate the rewritten question from step 2 onward as if it were the original question. "
     "If the rewritten question now explicitly names a book title, you MUST call find_books_by_title next — "
     "do NOT reuse [Context] book IDs from a previous turn whose topic differs from the rewritten question."
@@ -59,8 +62,10 @@ _STEP_4_CONTENT = (
     "to identify the most relevant books, then call search_chunks with the returned book_ids for precise passage retrieval. "
     'If the question is a "who is X" or "tell me about X" question (not asking for specific passages), '
     "call get_book_summary instead of search_chunks — but pass at most 5 of the most relevant book IDs. "
-    "After get_book_summary completes for a 'who is X' / 'tell me about X' question, stop immediately — "
-    "do NOT call search_chunks, search_catalog, or any other tool afterward.\n"
+    "After get_book_summary completes for a 'who is X' / 'tell me about X' question about a SINGLE entity, "
+    "stop immediately — do NOT call search_chunks, search_catalog, or any other tool afterward. "
+    "EXCEPTION: If the question asks you to compare, contrast, or find commonality between multiple books or entities, "
+    "you MUST retrieve information for ALL named books/entities before stopping.\n"
     "   h. If search_chunks (not get_book_summary) returns fewer than 4 results, retry with a rephrased query or "
     "broaden by calling search_chunks with an empty book_ids list to search the entire library. "
     "This step does not apply after a get_book_summary call."
@@ -71,8 +76,18 @@ _STEP_5_STOP = (
     "or a catalog/author result for metadata questions)."
 )
 
+_STEP_MULTI_QUESTION = (
+    "6. If the question contains a [Sub-questions] section listing multiple numbered questions, "
+    "you MUST retrieve evidence for ALL of them before finishing. "
+    "Use separate tool calls for each sub-question if their topics differ. "
+    "Do not stop after finding evidence for only the first sub-question. "
+    "IMPORTANT: When a sub-question is about a different book or entity than one already retrieved, "
+    "always call find_books_by_title (or search_books_by_summary) fresh for that sub-question — "
+    "do NOT reuse book IDs that appeared in a previous tool result from this same turn."
+)
+
 _HARD_LIMITS = (
-    "Hard limits: at most 4 tool calls total. Do not repeat the same query twice.\n"
+    "Hard limits: at most 6 tool calls total. Do not repeat the same query twice.\n"
     "CRITICAL: Do NOT call search_chunks with an empty book_ids list as your first action. "
     "Only use an empty book_ids list after a scoped search returned fewer than 4 results, "
     "or after find_books_by_title, get_books_by_author, or search_books_by_summary found no usable book IDs.\n"
@@ -86,5 +101,6 @@ AGENT_SYSTEM_PROMPT = "\n\n".join([
     _STEP_3_CURRENT_PAGE,
     _STEP_4_CONTENT,
     _STEP_5_STOP,
+    _STEP_MULTI_QUESTION,
     _HARD_LIMITS,
 ])

@@ -11,6 +11,8 @@ langchain
 langchain-core
 langchain-community
 langchain-google-genai
+langgraph
+langgraph-checkpoint-redis
 arq
 python-jose[cryptography]
 slowapi>=0.1.9

@@ -53,7 +53,7 @@ async def embed_query(query: str, ctx: "QueryContext") -> List[float]:
 
 async def vector_search(
     ctx: "QueryContext",
-    book_ids: List[str],
+    book_ids: Optional[List[str]],
     query_vector: Optional[List[float]] = None,
 ) -> List[dict]:
     """Cached pgvector similarity search.
@@ -63,6 +63,10 @@ async def vector_search(
     """
     effective_vector = query_vector if query_vector is not None else ctx.query_vector
     if not effective_vector:
+        return []
+
+    # Explicit empty list means discovery tools returned nothing — don't fall back to global scan.
+    if book_ids is not None and not book_ids:
         return []
 
     from app.db.repositories.chunks import ChunksRepository
@@ -94,7 +98,7 @@ async def vector_search(
         if top_results is None:
             similar_chunks = await chunks_repo.similarity_search(
                 query_embedding=effective_vector,
-                book_ids=book_ids if book_ids else None,
+                book_ids=book_ids,
                 categories=ctx.character_categories or None,
                 limit=settings.rag_top_k,
                 threshold=settings.rag_score_threshold,
@@ -117,7 +121,8 @@ async def vector_search(
                 )
         return top_results or []
     except Exception as exc:
-        log_json(logger, logging.WARNING, "Vector search failed", error=str(exc))
+        log_json(logger, logging.WARNING, "Vector search failed",
+                 exc_type=type(exc).__name__, error=str(exc) or repr(exc))
         try:
             await ctx.session.rollback()
         except Exception:
@@ -170,7 +175,10 @@ async def find_books_by_title_in_question(
         return None
 
     # --- Fuzzy word-prefix match (no quotes in question) ---
-    matched_title = next(
-        (t for t in title_to_ids if entity_matches_question(t, q)), None
-    )
-    return title_to_ids[matched_title] if matched_title else None
+    # Collect ALL matching titles so multi-book questions return IDs for every
+    # named book (not just the first one that happens to match).
+    all_matching_ids: list = []
+    for title, ids in title_to_ids.items():
+        if entity_matches_question(title, q):
+            all_matching_ids.extend(ids)
+    return all_matching_ids if all_matching_ids else None

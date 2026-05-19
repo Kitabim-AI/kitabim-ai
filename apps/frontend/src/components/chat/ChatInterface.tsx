@@ -1,14 +1,16 @@
 import { Book, Message } from '@shared/types';
-import { Bot, ChevronDown, LogIn, Send, User } from 'lucide-react';
+import { Bot, ChevronDown, Loader2, LogIn, Send, User } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { CHARACTERS, DEFAULT_CHARACTER_ID } from '../../constants/characters';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../hooks/useAuth';
+import { AgentStep } from '../../hooks/useChat';
 import { useI18n } from '../../i18n/I18nContext';
 import { translations } from '../../i18n/i18n';
 import { OAuthButtonGroup } from '../auth/AuthButton';
 import { MarkdownContent } from '../common/MarkdownContent';
 import { ProverbDisplay } from '../common/ProverbDisplay';
+import { AgentThinkingSteps } from './AgentThinkingSteps';
 import { ReferenceModal } from './ReferenceModal';
 
 const CHAR_INTERVAL = 55;   // ms per character
@@ -74,6 +76,8 @@ interface ChatInterfaceProps {
   onSendMessage: () => void;
   isChatting: boolean;
   streamingMessage?: string;
+
+  agentSteps?: AgentStep[];
   currentPage?: number | null;
   onClose?: () => void;
   chatContainerRef: React.RefObject<HTMLDivElement>;
@@ -90,6 +94,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onSendMessage,
   isChatting,
   streamingMessage = '',
+
+  agentSteps = [],
   chatContainerRef,
   usageStatus,
   selectedCharacterId,
@@ -236,29 +242,32 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 </div>
               ))
             )}
-            {streamingMessage && (
-              <div className="flex flex-col items-end md:flex-row-reverse md:items-start gap-2 md:gap-4 lg:gap-6">
-                <div className="w-7 h-7 md:w-10 md:h-10 shrink-0 rounded-xl md:rounded-2xl bg-[#0369a1] text-white flex items-center justify-center shadow-xl shadow-[#0369a1]/20">
-                  <span className="text-lg md:text-xl">{currentCharacter.avatar_emoji}</span>
-                </div>
-                <div className="px-3 sm:px-5 lg:px-8 py-2 sm:py-3 lg:py-5 rounded-[20px] lg:rounded-[28px] rounded-tl-none font-normal uyghur-text shadow-xl shadow-[#0369a1]/10 bg-[#0369a1] text-white" style={{ fontSize: `${fontSize}px`, lineHeight: '1.8' }}>
-                  <MarkdownContent
-                    content={streamingMessage}
-                    onReferenceClick={handleReferenceClick}
-                    className="text-white uyghur-text [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white [&_a]:text-blue-100 [&_button]:text-blue-100 [&_a]:decoration-blue-100/50 [&_button]:decoration-blue-100/50"
-                    style={{ fontSize: `${fontSize}px` }}
-                  />
-                </div>
-              </div>
-            )}
-            {isChatting && !streamingMessage && (
+            {isChatting && (
               <div className="flex flex-col items-end md:flex-row-reverse md:items-start gap-2 md:gap-4 lg:gap-6">
                 <div className="w-7 h-7 md:w-10 md:h-10 shrink-0 rounded-xl md:rounded-2xl bg-[#0369a1] text-white flex items-center justify-center shadow-xl shadow-[#0369a1]/20 animate-pulse">
                   <span className="text-lg md:text-xl">{currentCharacter.avatar_emoji}</span>
                 </div>
-                <div className="bg-[#0369a1]/10 px-5 py-4 rounded-[28px] rounded-tl-none flex gap-2 items-center border border-[#0369a1]/10 shadow-sm">
-                  <TypingCarousel className="text-[#0369a1]" fontSize={chatFontSize} />
-                </div>
+                {streamingMessage ? (
+                  <div className={`px-3 sm:px-5 lg:px-8 py-2 sm:py-3 lg:py-5 rounded-[20px] lg:rounded-[28px] rounded-tl-none font-normal uyghur-text shadow-md shadow-[#0369a1]/5 bg-[#0369a1]/80 text-white transition-opacity duration-300 opacity-100`} style={{ fontSize: `${fontSize}px`, lineHeight: '1.8' }}>
+                    <MarkdownContent
+                      content={streamingMessage}
+                      onReferenceClick={handleReferenceClick}
+                      className="text-white/90 uyghur-text [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white [&_a]:text-blue-100 [&_button]:text-blue-100 [&_a]:decoration-blue-100/50 [&_button]:decoration-blue-100/50"
+                      style={{ fontSize: `${fontSize}px` }}
+                    />
+                    <div dir="ltr" className="flex gap-[3px] mt-2 items-end">
+                      <span className="w-1.5 h-1.5 rounded-full bg-white/60 animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <span className="w-1.5 h-1.5 rounded-full bg-white/60 animate-bounce" style={{ animationDelay: '120ms' }} />
+                      <span className="w-1.5 h-1.5 rounded-full bg-white/60 animate-bounce" style={{ animationDelay: '240ms' }} />
+                    </div>
+                  </div>
+                ) : agentSteps.length > 0 ? (
+                  <AgentThinkingSteps steps={agentSteps} fontSize={chatFontSize} />
+                ) : (
+                  <div className="w-full bg-[#0369a1]/10 px-5 py-4 rounded-[28px] rounded-tl-none flex gap-2 items-center border border-[#0369a1]/10 shadow-sm">
+                    <TypingCarousel className="text-[#0369a1]" fontSize={chatFontSize} />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -410,34 +419,37 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             </div>
           </div>
         ))}
-        {streamingMessage && (
-          <div className="flex gap-2 flex-col items-end">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm shadow-sm bg-[#0369a1] text-white">
-              <Bot size={18} strokeWidth={2.5} />
-            </div>
-            <div className="flex flex-col gap-1.5 w-full items-end">
-              <div
-                className="px-5 py-3.5 rounded-2xl font-normal shadow-lg shadow-[#0369a1]/5 bg-[#0369a1] text-white rounded-tl-none uyghur-text"
-                style={{ fontSize: `${chatFontSize}px`, lineHeight: '1.8' }}
-              >
-                <MarkdownContent
-                  content={streamingMessage}
-                  onReferenceClick={handleReferenceClick}
-                  className="text-white uyghur-text [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white [&_a]:text-blue-100 [&_button]:text-blue-100 [&_a]:decoration-blue-100/50 [&_button]:decoration-blue-100/50"
-                  style={{ fontSize: `${chatFontSize}px` }}
-                />
-              </div>
-            </div>
-          </div>
-        )}
-        {isChatting && !streamingMessage && (
+        {isChatting && (
           <div className="flex gap-2 flex-col items-end">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm shadow-sm bg-[#0369a1] text-white animate-pulse">
               <span className="text-base">{currentCharacter.avatar_emoji}</span>
             </div>
-            <div className="bg-[#0369a1]/10 px-4 py-3 rounded-2xl rounded-tl-none flex gap-2 items-center border border-[#0369a1]/10 shadow-sm">
-              <TypingCarousel className="text-[#0369a1]" fontSize={chatFontSize} />
-            </div>
+            {streamingMessage ? (
+              <div className="flex flex-col gap-1.5 w-full items-end">
+                <div
+                  className={`px-5 py-3.5 rounded-2xl font-normal shadow-sm shadow-[#0369a1]/5 bg-[#0369a1]/80 text-white rounded-tl-none uyghur-text transition-opacity duration-300 opacity-100`}
+                  style={{ fontSize: `${chatFontSize}px`, lineHeight: '1.8' }}
+                >
+                  <MarkdownContent
+                    content={streamingMessage}
+                    onReferenceClick={handleReferenceClick}
+                    className="text-white/90 uyghur-text [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white [&_a]:text-blue-100 [&_button]:text-blue-100 [&_a]:decoration-blue-100/50 [&_button]:decoration-blue-100/50"
+                    style={{ fontSize: `${chatFontSize}px` }}
+                  />
+                  <div dir="ltr" className="flex gap-[3px] mt-1.5 items-end">
+                    <span className="w-1 h-1 rounded-full bg-white/60 animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-1 h-1 rounded-full bg-white/60 animate-bounce" style={{ animationDelay: '120ms' }} />
+                    <span className="w-1 h-1 rounded-full bg-white/60 animate-bounce" style={{ animationDelay: '240ms' }} />
+                  </div>
+                </div>
+              </div>
+            ) : agentSteps.length > 0 ? (
+              <AgentThinkingSteps steps={agentSteps} fontSize={chatFontSize} compact />
+            ) : (
+              <div className="bg-[#0369a1]/10 px-4 py-3 rounded-2xl rounded-tl-none flex gap-2 items-center border border-[#0369a1]/10 shadow-sm">
+                <TypingCarousel className="text-[#0369a1]" fontSize={chatFontSize} />
+              </div>
+            )}
           </div>
         )}
       </div>

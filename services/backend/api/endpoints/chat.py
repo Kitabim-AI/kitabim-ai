@@ -118,15 +118,31 @@ async def chat_with_book_stream(
         try:
             accumulated_response = ""
             stream_meta: dict = {}
-            # Stream chunks from RAG service
-            async for chunk in rag_service.answer_question_stream(req, session, user_id=current_user.id, metadata_out=stream_meta):
-                accumulated_response += chunk
-                yield f'data: {json.dumps({"chunk": chunk})}\n\n'
+            # Stream events from RAG service.
+            # str   → raw text token from fast handlers; wrap as {"chunk": str}
+            # dict  → typed event from graph handler; pass through as-is,
+            #         except {"type": "chunk", "text": ...} which also feeds accumulator
+            async for event in rag_service.answer_question_stream(req, session, user_id=current_user.id, metadata_out=stream_meta):
+                if isinstance(event, str):
+                    accumulated_response += event
+                    yield f'data: {json.dumps({"chunk": event})}\n\n'
+                elif isinstance(event, dict):
+                    if event.get("type") == "chunk":
+                        accumulated_response += event.get("text", "")
+                        # Keep frontend-compatible {"chunk": text} format for answer tokens
+                        yield f'data: {json.dumps({"chunk": event["text"]})}\n\n'
+                    elif event.get("type") == "answer_start":
+                        # A new answer generation cycle is starting.
+                        # Reset the accumulator so the citation fixer only sees the final answer.
+                        accumulated_response = ""
+                        yield f'data: {json.dumps(event)}\n\n'
+                    else:
+                        # Status events (planning, tool_call, tool_result, grading, etc.)
+                        yield f'data: {json.dumps(event)}\n\n'
 
             # After streaming completes, apply citation fixer and send fixed version if needed
             fixed_response = fix_malformed_citations(accumulated_response)
             if fixed_response != accumulated_response:
-                # Send the corrected version
                 log_json(logger, logging.INFO, "Citations were fixed in stream", user_id=current_user.id)
                 yield f'data: {json.dumps({"correction": fixed_response})}\n\n'
 

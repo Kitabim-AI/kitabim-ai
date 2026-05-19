@@ -46,13 +46,23 @@ class RAGService:
         session: AsyncSession,
         user_id: Optional[str] = None,
         metadata_out: Optional[dict] = None,
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterator:
+        """Yield str (raw text chunks from fast handlers) or dict (typed events from graph handler).
+
+        Callers must handle both types:
+          str  → raw answer token; wrap as {"chunk": str} for SSE
+          dict → typed event; pass through as-is for SSE
+                 dict with type=="chunk" carries {"type": "chunk", "text": str}
+        """
         ctx = await self._build_context(req, session, user_id)
         answer_chunks: list[str] = []
         try:
-            async for chunk in self._registry.dispatch_stream(ctx):
-                answer_chunks.append(chunk)
-                yield chunk
+            async for event in self._registry.dispatch_stream(ctx):
+                if isinstance(event, str):
+                    answer_chunks.append(event)
+                elif isinstance(event, dict) and event.get("type") == "chunk":
+                    answer_chunks.append(event.get("text", ""))
+                yield event
         finally:
             await self._record_eval(ctx, "".join(answer_chunks))
             if metadata_out is not None:
@@ -96,10 +106,6 @@ class RAGService:
             await configs_repo.get_value("gemini_agent_loop_model")
             or chat_model
         )
-        fast_handlers_enabled = (
-            await configs_repo.get_value("rag_fast_handlers_enabled", "false") == "true"
-        )
-
         book = None
         if not is_global:
             books_repo = BooksRepository(session)
@@ -126,7 +132,6 @@ class RAGService:
             start_ts=time.monotonic(),
             agent_model=agent_model,
             context_book_ids=req.context_book_ids or [],
-            fast_handlers_enabled=fast_handlers_enabled,
         )
 
     # ------------------------------------------------------------------
