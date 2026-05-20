@@ -73,16 +73,12 @@ async def grade_context_node(state: AgentState) -> dict:
     )
     writer({"type": "grading", "before": before_count, "after": len(graded)})
 
-    # Prepend metadata parts (catalog/author context) that were kept in retrieved_context
-    retrieved = state.get("retrieved_context", "")
-    metadata_parts = []
-    chunk_section_marker = "[BookID:"
-    if chunk_section_marker in retrieved:
-        # Everything before the first chunk header is metadata context from catalog tools
-        first_chunk_pos = retrieved.find(chunk_section_marker)
-        metadata_block = retrieved[:first_chunk_pos].strip()
-        if metadata_block:
-            metadata_parts.append(metadata_block)
+    # Extract metadata context directly from observations to prevent parsing issues
+    metadata_parts = [
+        obs["result"]["context"]
+        for obs in observations
+        if obs.get("result", {}).get("context")
+    ]
 
     chunk_parts = [format_document(d) for d in graded]
     all_parts = metadata_parts + chunk_parts
