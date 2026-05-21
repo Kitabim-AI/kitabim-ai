@@ -11,12 +11,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     gcc \
     g++
 
-# Install Python dependencies separately for better caching
+# Install Python dependencies separately for better caching.
+# requirements.worker.txt adds worker-only heavy ML packages (ragas, datasets)
+# that are deliberately excluded from the backend API image.
 COPY services/backend/requirements.txt .
 COPY services/backend/requirements.postgres.txt .
+COPY services/worker/requirements.worker.txt .
 
 RUN --mount=type=cache,target=/root/.cache/pip \
-  pip install --user -r requirements.txt -r requirements.postgres.txt
+  pip install --user -r requirements.txt -r requirements.postgres.txt -r requirements.worker.txt
 
 # Stage 2: Final Image
 FROM python:3.13-slim

@@ -49,3 +49,7 @@ class QueryContext:
     agent_tools_called: List[str] = field(default_factory=list)
     agent_retry_count: Optional[int] = None
     agent_final_chunk_count: Optional[int] = None
+
+    # ── Ragas eval payload — set by populate_ctx_from_state ─────────────────
+    # Stores the final graded context text so _record_eval can persist it.
+    graded_context: Optional[str] = None

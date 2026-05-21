@@ -36,7 +36,7 @@ function getStepLabel(step: AgentStep, t: (key: string, params?: Record<string, 
     case 'grading': return t('chat.agent.grading');
     case 'tool':
       switch (step.tool) {
-        case 'search_chunks': return t('chat.agent.searchingPassages');
+        case 'search_chunks': return t('chat.agent.searchingContent');
         case 'search_books_by_summary': return t('chat.agent.searchingBooks');
         case 'find_books_by_title': return t('chat.agent.findingByTitle');
         case 'rewrite_query': return t('chat.agent.rewritingQuery');
@@ -46,18 +46,57 @@ function getStepLabel(step: AgentStep, t: (key: string, params?: Record<string, 
         case 'get_book_summary': return t('chat.agent.readingSummary');
         case 'get_sister_volumes': return t('chat.agent.findingVolumes');
         case 'get_current_page': return t('chat.agent.readingPage');
-        default: return t('chat.agent.searchingPassages');
+        default: return t('chat.agent.searchingContent');
       }
     default: return '';
   }
 }
 
-function getStepSublabel(step: AgentStep, t: (key: string, params?: Record<string, any>) => string): string | null {
+function getStepSublabel(
+  step: AgentStep,
+  t: (key: string, params?: Record<string, any>) => string,
+  allSteps: AgentStep[]
+): string | null {
   if (step.type === 'tool' && step.status === 'done' && step.found !== undefined) {
-    return t('chat.agent.foundPassages', { count: step.found });
+    const isBookTool = [
+      'find_books_by_title',
+      'search_books_by_summary',
+      'get_books_by_author',
+      'get_sister_volumes',
+      'search_catalog',
+    ].includes(step.tool ?? '');
+
+    if (isBookTool) {
+      return t('chat.agent.foundBooks', { count: step.found });
+    }
+    return t('chat.agent.foundContent', { count: step.found });
   }
   if (step.type === 'grading' && step.kept !== undefined && step.total !== undefined) {
-    return t('chat.agent.keptPassages', { kept: step.kept, total: step.total });
+    const currentIndex = allSteps.findIndex(s => s.id === step.id);
+    let isBookGrading = false;
+
+    if (currentIndex !== -1) {
+      for (let i = currentIndex - 1; i >= 0; i--) {
+        if (allSteps[i].type === 'tool') {
+          const isBookTool = [
+            'find_books_by_title',
+            'search_books_by_summary',
+            'get_books_by_author',
+            'get_sister_volumes',
+            'search_catalog',
+          ].includes(allSteps[i].tool ?? '');
+          if (isBookTool) {
+            isBookGrading = true;
+          }
+          break;
+        }
+      }
+    }
+
+    if (isBookGrading) {
+      return t('chat.agent.keptBooks', { kept: step.kept, total: step.total });
+    }
+    return t('chat.agent.keptContent', { kept: step.kept, total: step.total });
   }
   return null;
 }
@@ -81,7 +120,7 @@ export const AgentThinkingSteps: React.FC<AgentThinkingStepsProps> = ({ steps, f
       {steps.map(step => {
         const isActive = step.status === 'active';
         const label = getStepLabel(step, t);
-        const sublabel = getStepSublabel(step, t);
+        const sublabel = getStepSublabel(step, t, steps);
 
         return (
           <div

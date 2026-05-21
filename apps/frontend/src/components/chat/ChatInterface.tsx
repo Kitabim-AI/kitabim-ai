@@ -1,5 +1,5 @@
 import { Book, Message } from '@shared/types';
-import { Bot, ChevronDown, Loader2, LogIn, Send, User } from 'lucide-react';
+import { Bot, ChevronDown, LogIn, Send, ThumbsDown, ThumbsUp, User } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { CHARACTERS, DEFAULT_CHARACTER_ID } from '../../constants/characters';
 import { useAppContext } from '../../context/AppContext';
@@ -84,6 +84,7 @@ interface ChatInterfaceProps {
   usageStatus?: { usage: number, limit: number | null, hasReachedLimit: boolean } | null;
   selectedCharacterId?: string;
   setSelectedCharacterId?: (id: string) => void;
+  submitFeedback?: (messageIndex: number, feedback: 'positive' | 'negative') => void;
 }
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({
@@ -100,6 +101,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   usageStatus,
   selectedCharacterId,
   setSelectedCharacterId,
+  submitFeedback,
 }) => {
   const { t } = useI18n();
   const { isAuthenticated } = useAuth();
@@ -226,17 +228,40 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                       <span className="text-lg md:text-xl">{CHARACTERS.find(c => c.id === msg.characterId)?.avatar_emoji || currentCharacter.avatar_emoji}</span>
                     )}
                   </div>
-                  <div
-                    className={`px-3 sm:px-5 lg:px-8 py-2 sm:py-3 lg:py-5 rounded-[20px] lg:rounded-[28px] font-normal uyghur-text shadow-sm ${msg.role === 'user' ? 'bg-white/80 border border-[#0369a1]/10 text-[#1a1a1a] rounded-tr-none' : 'bg-[#0369a1] text-white rounded-tl-none shadow-xl shadow-[#0369a1]/10'}`}
-                    style={{ fontSize: `${fontSize}px`, lineHeight: '1.8' }}
-                  >
-                    {msg.role === 'user' ? msg.text : (
-                      <MarkdownContent
-                        content={msg.text}
-                        onReferenceClick={handleReferenceClick}
-                        className="text-white uyghur-text [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white [&_a]:text-blue-100 [&_button]:text-blue-100 [&_a]:decoration-blue-100/50 [&_button]:decoration-blue-100/50"
-                        style={{ fontSize: `${fontSize}px` }}
-                      />
+                  {/* Bubble + optional feedback buttons */}
+                  <div className={`flex flex-col gap-1 min-w-0 ${msg.role === 'model' ? 'items-end' : 'items-start'}`}>
+                    <div
+                      className={`px-3 sm:px-5 lg:px-8 py-2 sm:py-3 lg:py-5 rounded-[20px] lg:rounded-[28px] font-normal uyghur-text shadow-sm ${msg.role === 'user' ? 'bg-white/80 border border-[#0369a1]/10 text-[#1a1a1a] rounded-tr-none' : 'bg-[#0369a1] text-white rounded-tl-none shadow-xl shadow-[#0369a1]/10'}`}
+                      style={{ fontSize: `${fontSize}px`, lineHeight: '1.8' }}
+                    >
+                      {msg.role === 'user' ? msg.text : (
+                        <MarkdownContent
+                          content={msg.text}
+                          onReferenceClick={handleReferenceClick}
+                          className="text-white uyghur-text [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white [&_a]:text-blue-100 [&_button]:text-blue-100 [&_a]:decoration-blue-100/50 [&_button]:decoration-blue-100/50"
+                          style={{ fontSize: `${fontSize}px` }}
+                        />
+                      )}
+                    </div>
+                    {msg.role === 'model' && msg.evalId !== undefined && !isChatting && (
+                      <div dir="ltr" className="flex gap-0.5 items-center px-1">
+                        <button
+                          onClick={() => submitFeedback?.(idx, 'positive')}
+                          disabled={!!msg.feedback}
+                          title="👍"
+                          className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'positive' ? 'text-emerald-500 bg-emerald-50' : 'text-slate-300 hover:text-emerald-400 hover:bg-emerald-50/60'}`}
+                        >
+                          <ThumbsUp size={20} strokeWidth={2} />
+                        </button>
+                        <button
+                          onClick={() => submitFeedback?.(idx, 'negative')}
+                          disabled={!!msg.feedback}
+                          title="👎"
+                          className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'negative' ? 'text-red-500 bg-red-50' : 'text-slate-300 hover:text-red-400 hover:bg-red-50/60'}`}
+                        >
+                          <ThumbsDown size={20} strokeWidth={2} />
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -416,6 +441,26 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   />
                 )}
               </div>
+              {msg.role === 'model' && msg.evalId !== undefined && !isChatting && (
+                <div dir="ltr" className="flex gap-0.5 items-center px-1">
+                  <button
+                    onClick={() => submitFeedback?.(idx, 'positive')}
+                    disabled={!!msg.feedback}
+                    title="👍"
+                    className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'positive' ? 'text-emerald-500 bg-emerald-50' : 'text-slate-300 hover:text-emerald-400 hover:bg-emerald-50/60'}`}
+                  >
+                    <ThumbsUp size={18} strokeWidth={2} />
+                  </button>
+                  <button
+                    onClick={() => submitFeedback?.(idx, 'negative')}
+                    disabled={!!msg.feedback}
+                    title="👎"
+                    className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'negative' ? 'text-red-500 bg-red-50' : 'text-slate-300 hover:text-red-400 hover:bg-red-50/60'}`}
+                  >
+                    <ThumbsDown size={18} strokeWidth={2} />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         ))}

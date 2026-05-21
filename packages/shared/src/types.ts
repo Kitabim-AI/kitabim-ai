@@ -57,4 +57,8 @@ export interface Message {
   role: 'user' | 'model';
   text: string;
   characterId?: string;
+  /** The RAGEvaluation DB id returned in the SSE done event. Used for feedback. */
+  evalId?: number;
+  /** User thumbs rating once submitted ('positive' | 'negative'). */
+  feedback?: 'positive' | 'negative';
 }

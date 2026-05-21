@@ -1,7 +1,7 @@
 import { Book, Message } from '@shared/types';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DEFAULT_CHARACTER_ID } from '../constants/characters';
-import { chatWithBookStream, getChatUsage } from '../services/geminiService';
+import { chatWithBookStream, getChatUsage, submitChatFeedback } from '../services/geminiService';
 import { useAuth } from './useAuth';
 
 export interface AgentStep {
@@ -28,6 +28,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const contextBookIdsRef = useRef<string[]>([]);
+  const pendingEvalIdRef = useRef<number | null>(null);
 
   const handleAgentEvent = useCallback((event: Record<string, any>) => {
     const { type } = event;
@@ -164,7 +165,9 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
         // onComplete
         () => {
           const finalMessage = streamingMessageRef.current;
-          setChatMessages(prev => [...prev, { role: 'model', text: finalMessage, characterId: selectedCharacterId }]);
+          const evalId = pendingEvalIdRef.current ?? undefined;
+          pendingEvalIdRef.current = null;
+          setChatMessages(prev => [...prev, { role: 'model', text: finalMessage, characterId: selectedCharacterId, evalId }]);
           streamingMessageRef.current = '';
           setStreamingMessage('');
           setIsChatting(false);
@@ -193,6 +196,8 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
         view === 'global-chat' ? (ids: string[]) => { contextBookIdsRef.current = ids; } : undefined,
         // onAgentEvent — live LangGraph step events
         handleAgentEvent,
+        // onEvalId — capture eval id from done event
+        (evalId: number) => { pendingEvalIdRef.current = evalId; },
       );
     } catch (err: any) {
       if (err.name === 'AbortError') return;
@@ -210,6 +215,17 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
   const clearChat = () => {
     setChatMessages([]);
     contextBookIdsRef.current = [];
+    pendingEvalIdRef.current = null;
+  };
+
+  const submitFeedback = async (messageIndex: number, feedback: 'positive' | 'negative') => {
+    const msg = chatMessages[messageIndex];
+    if (!msg || msg.role !== 'model' || !msg.evalId) return;
+    // Optimistically update UI state
+    setChatMessages(prev =>
+      prev.map((m, i) => i === messageIndex ? { ...m, feedback } : m)
+    );
+    await submitChatFeedback(msg.evalId, feedback);
   };
 
   return {
@@ -226,5 +242,6 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     chatContainerRef,
     selectedCharacterId,
     setSelectedCharacterId,
+    submitFeedback,
   };
 };

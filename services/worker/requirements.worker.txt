@@ -1,0 +1,5 @@
+# Worker-only dependencies — installed on top of services/backend/requirements.txt
+# These are heavy ML packages needed only by the Ragas evaluation job and should
+# NOT be installed in the backend API container.
+ragas
+datasets

@@ -181,3 +181,7 @@ def populate_ctx_from_state(ctx, state: AgentState) -> None:
     # Count graded chunks from the final context string
     context = state.get("graded_context") or state.get("retrieved_context", "")
     ctx.agent_final_chunk_count = context.count("[BookID:")
+
+    # Persist graded context text for Ragas evaluation
+    ctx.graded_context = context
+

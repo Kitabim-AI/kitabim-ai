@@ -2,6 +2,7 @@ import logging
 import json
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -150,7 +151,7 @@ async def chat_with_book_stream(
             await chat_limit_service.increment_usage(current_user, session)
             updated_usage = await chat_limit_service.get_user_usage_status(current_user, session)
 
-            yield f'data: {json.dumps({"done": True, "usage": updated_usage, "contextBookIds": stream_meta.get("used_book_ids", [])})}\n\n'
+            yield f'data: {json.dumps({"done": True, "usage": updated_usage, "contextBookIds": stream_meta.get("used_book_ids", []), "evalId": stream_meta.get("eval_id")})}\n\n'
 
         except ValueError as exc:
             # Book not found or validation error
@@ -178,3 +179,60 @@ async def chat_with_book_stream(
             "X-Accel-Buffering": "no",  # Disable nginx buffering
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# Feedback endpoint
+# ---------------------------------------------------------------------------
+
+class FeedbackRequest(BaseModel):
+    eval_id: int
+    feedback: str  # "positive" | "negative"
+
+
+@router.post("/feedback")
+async def submit_chat_feedback(
+    req: FeedbackRequest,
+    current_user: User = Depends(require_reader),
+    session: AsyncSession = Depends(get_session),
+):
+    """Record thumbs-up/down feedback for an assistant response.
+
+    Thumbs-down (negative) feedback immediately enqueues a Ragas evaluation
+    job for that response, regardless of the background sampling rate.
+    """
+    if req.feedback not in ("positive", "negative"):
+        raise HTTPException(status_code=400, detail="feedback must be 'positive' or 'negative'")
+
+    from app.db.repositories.rag_evaluations import RAGEvaluationsRepository
+    from app.db.models import RAGEvaluation
+
+    # Verify the record exists and belongs to this user before mutating it.
+    # eval_id is a sequential integer — without this check any authenticated
+    # reader could trigger Ragas jobs on other users' responses.
+    record = await session.get(RAGEvaluation, req.eval_id)
+    if record is None or record.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Evaluation record not found")
+
+    repo = RAGEvaluationsRepository(session)
+    evaluation = await repo.update_feedback(
+        eval_id=req.eval_id,
+        feedback=req.feedback,
+    )
+
+    if evaluation is None:
+        raise HTTPException(status_code=404, detail="Evaluation record not found")
+
+    # For thumbs-down: always enqueue Ragas evaluation (bypasses sampling)
+    if req.feedback == "negative" and evaluation.answer and evaluation.retrieved_context:
+        try:
+            import arq
+            from app.core.config import settings
+            redis_pool = await arq.create_pool(arq.connections.RedisSettings.from_dsn(settings.redis_url))
+            await redis_pool.enqueue_job("evaluate_rag_query", req.eval_id)
+            await redis_pool.aclose()
+            log_json(logger, logging.INFO, "Ragas job queued via negative feedback", eval_id=req.eval_id, user_id=current_user.id)
+        except Exception as exc:
+            log_json(logger, logging.WARNING, "Failed to enqueue Ragas job from feedback", error=str(exc))
+
+    return {"ok": True, "eval_id": req.eval_id, "feedback": req.feedback}

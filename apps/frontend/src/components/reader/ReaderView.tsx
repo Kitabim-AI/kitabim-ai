@@ -648,6 +648,7 @@ export const ReaderView: React.FC = () => {
               currentPage={currentPage}
               usageStatus={chat.usageStatus}
               chatContainerRef={chat.chatContainerRef}
+              submitFeedback={chat.submitFeedback}
             />
           </div>
         </GlassPanel>

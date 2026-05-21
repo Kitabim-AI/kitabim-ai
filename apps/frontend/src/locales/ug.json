@@ -182,20 +182,22 @@
     "agent": {
       "analyzing": "سۇئالىڭىزنى ئانالىز قىلىۋاتىمەن",
       "thinking": "ئويلىنىۋاتىمەن...",
-      "searchingPassages": "مۇناسىۋەتلىك مەزمۇنلارنى ئىزدەۋاتىمەن",
+      "searchingContent": "مۇناسىۋەتلىك مەزمۇنلارنى ئىزدەۋاتىمەن",
       "searchingBooks": "كىتاب ئىزدەۋاتىمەن",
       "findingByTitle": "كىتاب نامى بويىچە ئىزدەۋاتىمەن",
-      "rewritingQuery": "سۇئالىڭىزنى مۇكەممەلەشتۈرۋاتىمەن",
+      "rewritingQuery": "سۇئالىڭىزنى قايتا قۇراشتۇرۋاتىمەن",
       "lookingUpAuthor": "ئاپتورنى ئىزدەۋاتىمەن",
       "findingByAuthor": "ئاپتورنىڭ كىتابلىرىنى ئىزدەۋاتىمەن",
       "searchingCatalog": "كىتابلار تىزىملىكىنى تەكشۈرۋاتىمەن",
       "readingSummary": "قىسقىچە مەزمۇنلارنى ئوقۇۋاتىمەن",
-      "findingVolumes": "مۇناسىۋەتلىك كىتابلارنى ئىزدەۋاتىمەن",
+      "findingVolumes": "كىتابلارنىڭ باشقا توملېرىنى ئىزدەۋاتىمەن",
       "readingPage": "ھازىرقى بەتنى ئوقۇۋاتىمەن",
       "grading": "ئەڭ مۇۋاپىق مەزمۇننى تاللاۋاتىمەن",
       "decomposing": "سۇئالىڭىزنى پارچىلاۋاتىمەن",
-      "foundPassages": "{{count}} پارچە مەزمۇن تاپتىم",
-      "keptPassages": "{{kept}}/{{total}} پارچە مەزمۇن تاللاندى"
+      "foundContent": "{{count}} پارچە مەزمۇن تاپتىم",
+      "foundBooks": "{{count}} كىتاب تاپتىم",
+      "keptContent": "{{kept}}/{{total}} پارچە مەزمۇن تاللاندى",
+      "keptBooks": "{{kept}}/{{total}} كىتاب تاللاندى"
     }
   },
   "reader": {
@@ -245,7 +247,15 @@
       "chunkStats": "ۋېكتور بۆلەك ستاتىستىكىسى",
       "totalChunks": "جەمئىي بۆلەك",
       "embeddedChunks": "ۋېكتورلانغان بۆلەك",
-      "pendingChunks": "ساقلاۋاتقان بۆلەك"
+      "pendingChunks": "ساقلاۋاتقان بۆلەك",
+      "ragQualityTitle": "RAG سۈپەت ستاتىستىكىسى (Ragas)",
+      "totalQueries": "جەمئىي سۇئال",
+      "gradedEvaluations": "Ragas باھالىغىنى",
+      "avgFaithfulness": "ئوتتۇرىچە ئىشەنچلىك قىممىتى",
+      "avgFaithfulnessNoData": "ئوتتۇرىچە ئىشەنچلىك قىممىتى — ھېسابلانمىدى",
+      "avgAnswerRelevance": "ئوتتۇرىچە مۇناسىۋەتلىك قىممىتى",
+      "avgAnswerRelevanceNoData": "ئوتتۇرىچە مۇناسىۋەتلىك قىممىتى — ھېسابلانمىدى",
+      "ragStatsUnavailable": "RAG ستاتىستىكىسى تېپىلمىدى ({{status}})"
     },
     "contacts": {
       "title": "ئالاقىلىشىش ئۇچۇرلىرى",

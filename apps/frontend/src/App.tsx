@@ -120,6 +120,7 @@ const AppContent: React.FC = () => {
           chatContainerRef={chat.chatContainerRef}
           selectedCharacterId={chat.selectedCharacterId}
           setSelectedCharacterId={chat.setSelectedCharacterId}
+          submitFeedback={chat.submitFeedback}
         />
       )}
       {view === 'join-us' && <JoinUsView />}
