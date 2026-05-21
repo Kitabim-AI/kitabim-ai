@@ -15,7 +15,7 @@ Welcome to the Kitabim.ai documentation. This directory contains comprehensive t
 | [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md) | High-level system architecture and design decisions | ✅ Current |
 | [WORKER_DESIGN.md](WORKER_DESIGN.md) | Event-driven pipeline architecture and worker components | ✅ Current |
 | [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) | Monorepo structure and codebase organization | ✅ Current |
-| [AGENTIC_RAG_DESIGN.md](AGENTIC_RAG_DESIGN.md) | Agentic RAG design — 9 tools, context injection, follow-up detection | ✅ Current |
+| [AGENTIC_RAG_DESIGN.md](AGENTIC_RAG_DESIGN.md) | Agentic RAG design — LangGraph graph, 10 tools, context injection, self-critique | ✅ Current |
 | [QUESTION_ANSWERING_DIAGRAM.md](QUESTION_ANSWERING_DIAGRAM.md) | Visual pipeline diagram — current agentic RAG state | ✅ Current |
 | [BOOK_PROCESSING_DIAGRAM.md](BOOK_PROCESSING_DIAGRAM.md) | Visual diagrams of the book processing pipeline | ✅ Current |
 
@@ -36,7 +36,7 @@ Welcome to the Kitabim.ai documentation. This directory contains comprehensive t
 
 | Document | Description | Status |
 |----------|-------------|--------|
-| [AGENTIC_RAG_DESIGN.md](AGENTIC_RAG_DESIGN.md) | Agentic ReAct loop, 9 tools, context injection, follow-up detection | ✅ Current |
+| [AGENTIC_RAG_DESIGN.md](AGENTIC_RAG_DESIGN.md) | Agentic ReAct loop, 10 tools, LangGraph graph, self-critique | ✅ Current |
 | [QUESTION_ANSWERING_DIAGRAM.md](QUESTION_ANSWERING_DIAGRAM.md) | Full pipeline visual diagram — current state | ✅ Current |
 
 ### **🔧 Features & Implementation**
@@ -137,9 +137,9 @@ All docs should include:
 - **Deployment:** Docker Compose on GCP VM (e2-standard-2)
 
 ### Recent Major Changes
-- ✅ **2026-05-12:** Chunking job now upserts instead of delete-all + re-insert — preserves unchanged chunks; `get_book_summary` agent tool added (9 tools total); `rag_fast_handlers_enabled` feature flag gates all fast-path handlers
+- ✅ **2026-05-15:** Fast-path handlers permanently removed — `AgentRAGHandler` is now the sole handler; LangGraph `StateGraph` with self-critique node; `get_sister_volumes` added (10 tools total); streaming UX overhauled (isRetrying pattern, unified bubble, w-full AgentThinkingSteps)
 - ✅ **2026-05-10:** RAG pipeline refactoring — extracted shared retrieval module, centralized ReAct configurations, simplified handler boilerplate
-- ✅ **2026-05-09:** Agentic RAG fully promoted — always-on, context injection, "چۇ" follow-up detection, `StandardRAGHandler` removed
+- ✅ **2026-05-09:** Agentic RAG fully promoted — always-on, context injection, "چۇ" follow-up detection
 - ✅ **2026-03-14:** Applied pipeline optimizations (2x speedup)
 - ✅ **2026-03-01:** Completed Redis caching rollout
 

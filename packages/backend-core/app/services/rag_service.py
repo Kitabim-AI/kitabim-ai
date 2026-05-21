@@ -46,17 +46,29 @@ class RAGService:
         session: AsyncSession,
         user_id: Optional[str] = None,
         metadata_out: Optional[dict] = None,
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterator:
+        """Yield str (raw text chunks from fast handlers) or dict (typed events from graph handler).
+
+        Callers must handle both types:
+          str  → raw answer token; wrap as {"chunk": str} for SSE
+          dict → typed event; pass through as-is for SSE
+                 dict with type=="chunk" carries {"type": "chunk", "text": str}
+        """
         ctx = await self._build_context(req, session, user_id)
         answer_chunks: list[str] = []
         try:
-            async for chunk in self._registry.dispatch_stream(ctx):
-                answer_chunks.append(chunk)
-                yield chunk
+            async for event in self._registry.dispatch_stream(ctx):
+                if isinstance(event, str):
+                    answer_chunks.append(event)
+                elif isinstance(event, dict) and event.get("type") == "chunk":
+                    answer_chunks.append(event.get("text", ""))
+                yield event
         finally:
-            await self._record_eval(ctx, "".join(answer_chunks))
+            eval_id = await self._record_eval(ctx, "".join(answer_chunks))
             if metadata_out is not None:
                 metadata_out["used_book_ids"] = ctx.used_book_ids
+                if eval_id is not None:
+                    metadata_out["eval_id"] = eval_id
 
     # ------------------------------------------------------------------
     # Context construction
@@ -96,10 +108,6 @@ class RAGService:
             await configs_repo.get_value("gemini_agent_loop_model")
             or chat_model
         )
-        fast_handlers_enabled = (
-            await configs_repo.get_value("rag_fast_handlers_enabled", "false") == "true"
-        )
-
         book = None
         if not is_global:
             books_repo = BooksRepository(session)
@@ -126,24 +134,36 @@ class RAGService:
             start_ts=time.monotonic(),
             agent_model=agent_model,
             context_book_ids=req.context_book_ids or [],
-            fast_handlers_enabled=fast_handlers_enabled,
         )
 
     # ------------------------------------------------------------------
     # Eval recording
     # ------------------------------------------------------------------
 
-    async def _record_eval(self, ctx: QueryContext, answer: str) -> None:
+    async def _record_eval(self, ctx: QueryContext, answer: str) -> Optional[int]:
+        """Record a RAG evaluation entry. Returns the evaluation DB id, or None on failure."""
         if ctx.session is None:
-            return
+            return None
         try:
+            import random
             from app.db.repositories.rag_evaluations import RAGEvaluationsRepository
             from app.db.repositories.system_configs import SystemConfigsRepository
-            enabled = await SystemConfigsRepository(ctx.session).get_value("rag_eval_enabled", "false")
+
+            configs = SystemConfigsRepository(ctx.session)
+            enabled = await configs.get_value("rag_eval_enabled", "false")
             if enabled != "true":
-                return
+                return None
+
+            # Determine whether this query should be graded by Ragas
+            sampling_rate_str = await configs.get_value("rag_eval_sampling_rate", "0.05")
+            try:
+                sampling_rate = float(sampling_rate_str)
+            except ValueError:
+                sampling_rate = 0.05
+            should_grade = random.random() < sampling_rate
+
             repo = RAGEvaluationsRepository(ctx.session)
-            await repo.create_evaluation(
+            evaluation = await repo.create_evaluation(
                 book_id=ctx.book_id,
                 is_global=ctx.is_global,
                 question=ctx.question,
@@ -159,10 +179,30 @@ class RAGService:
                 tools_called=ctx.agent_tools_called or None,
                 retry_count=ctx.agent_retry_count,
                 final_chunk_count=ctx.agent_final_chunk_count,
+                # Ragas fields — always store answer/context so feedback can trigger evaluation
+                eval_status="queued" if should_grade else "skipped",
+                answer=answer,
+                retrieved_context=ctx.graded_context,
             )
             await ctx.session.commit()
+
+            # Enqueue the background Ragas scoring job if selected
+            if should_grade and evaluation.id is not None:
+                try:
+                    import arq
+                    from app.core.config import settings
+                    redis_pool = await arq.create_pool(arq.connections.RedisSettings.from_dsn(settings.redis_url))
+                    await redis_pool.enqueue_job("evaluate_rag_query", evaluation.id)
+                    await redis_pool.aclose()
+                    log_json(logger, logging.INFO, "RAG eval job queued", eval_id=evaluation.id)
+                except Exception as exc:
+                    log_json(logger, logging.WARNING, "Failed to enqueue RAG eval job", error=str(exc))
+
+            return evaluation.id
         except Exception as exc:
             log_json(logger, logging.WARNING, "RAG eval insert failed", error=str(exc))
+            return None
 
 
 rag_service = RAGService()
+

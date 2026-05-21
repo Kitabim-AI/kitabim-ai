@@ -31,6 +31,7 @@ class CatalogHandler(QueryHandler):
         ctx.retrieved_count = retrieved_count
         ctx.context_chars = len(context)
         ctx.category_filter = ctx.character_categories
+        ctx.graded_context = context  # persisted for Ragas evaluation
 
         return await generate_answer(
             context,
@@ -51,6 +52,7 @@ class CatalogHandler(QueryHandler):
         ctx.retrieved_count = retrieved_count
         ctx.context_chars = len(context)
         ctx.category_filter = ctx.character_categories
+        ctx.graded_context = context  # persisted for Ragas evaluation
 
         async for chunk in generate_answer_stream(
             context,

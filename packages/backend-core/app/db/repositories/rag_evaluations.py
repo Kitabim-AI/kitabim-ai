@@ -33,6 +33,13 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
         tools_called: Optional[List[str]] = None,
         retry_count: Optional[int] = None,
         final_chunk_count: Optional[int] = None,
+        faithfulness_score: Optional[float] = None,
+        answer_relevance_score: Optional[float] = None,
+        context_precision_score: Optional[float] = None,
+        context_recall_score: Optional[float] = None,
+        eval_status: str = "skipped",
+        answer: Optional[str] = None,
+        retrieved_context: Optional[str] = None,
     ) -> RAGEvaluation:
         """Create a new RAG evaluation record"""
         evaluation = await self.create(
@@ -52,6 +59,13 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
             tools_called=tools_called,
             retry_count=retry_count,
             final_chunk_count=final_chunk_count,
+            faithfulness_score=faithfulness_score,
+            answer_relevance_score=answer_relevance_score,
+            context_precision_score=context_precision_score,
+            context_recall_score=context_recall_score,
+            eval_status=eval_status,
+            answer=answer,
+            retrieved_context=retrieved_context,
         )
         return evaluation
 
@@ -106,6 +120,8 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
             func.avg(RAGEvaluation.retrieved_count).label("avg_retrieved"),
             func.avg(RAGEvaluation.context_chars).label("avg_context_chars"),
             func.avg(RAGEvaluation.answer_chars).label("avg_answer_chars"),
+            func.avg(RAGEvaluation.faithfulness_score).label("avg_faithfulness"),
+            func.avg(RAGEvaluation.answer_relevance_score).label("avg_answer_relevance"),
         )
 
         if since:
@@ -120,7 +136,34 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
             "avg_retrieved": float(row.avg_retrieved or 0),
             "avg_context_chars": float(row.avg_context_chars or 0),
             "avg_answer_chars": float(row.avg_answer_chars or 0),
+            "avg_faithfulness": float(row.avg_faithfulness) if row.avg_faithfulness is not None else None,
+            "avg_answer_relevance": float(row.avg_answer_relevance) if row.avg_answer_relevance is not None else None,
         }
+
+
+    async def update_feedback(
+        self,
+        eval_id: int,
+        feedback: str,
+    ) -> Optional[RAGEvaluation]:
+        """Record user thumbs-up/down feedback on an evaluation row.
+
+        For negative feedback the row is also moved to 'queued' so the
+        admin panel can distinguish rows awaiting the Ragas job from rows
+        that were permanently skipped by the sampling rate.
+        """
+        from sqlalchemy import update as sql_update
+        values: dict = {"user_feedback": feedback}
+        if feedback == "negative":
+            values["eval_status"] = "queued"
+
+        await self.session.execute(
+            sql_update(RAGEvaluation)
+            .where(RAGEvaluation.id == eval_id)
+            .values(**values)
+        )
+        await self.session.commit()
+        return await self.session.get(RAGEvaluation, eval_id)
 
 
 def get_rag_evaluations_repository(session: AsyncSession) -> RAGEvaluationsRepository:

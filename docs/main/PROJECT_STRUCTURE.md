@@ -139,14 +139,15 @@ packages/backend-core/
     │   │   ├── query_rewriter.py   # Follow-up pronoun resolution (Level-1 cached)
     │   │   ├── llm_resources.py    # Lazy-loaded LangChain chains + embeddings singleton
     │   │   ├── utils.py            # Text helpers (normalize, keyword extract, etc.)
-    │   │   ├── handlers/           # 8 fast-path intent handlers + AgentRAGHandler fallback
-    │   │   └── agent/              # Agentic RAG loop (always-on fallback handler)
+    │   │   ├── handlers/           # CatalogHandler utility (used by search_catalog tool)
+    │   │   └── agent/              # LangGraph agentic RAG graph
     │   │       ├── prompts.py      # Agent system prompt
     │   │       ├── config.py       # Agent constants (AGENT_MAX_STEPS, etc.)
-    │   │       ├── tools.py        # @tool schemas + dispatch_tool()
-    │   │       ├── loop.py         # ReAct loop implementation
-    │   │       ├── context_builder.py  # format_observations_as_context()
-    │   │       └── handler.py      # AgentRAGHandler (priority=998)
+    │   │       ├── tools.py        # @tool schemas + dispatch_tool() — 10 tools
+    │   │       ├── state.py        # AgentState TypedDict
+    │   │       ├── graph.py        # LangGraph StateGraph — nodes and conditional edges
+    │   │       ├── handler.py      # AgentRAGHandler (priority=998)
+    │   │       └── nodes/          # One module per graph node
     │   ├── retrieval.py            # Shared I/O primitives for RAG
     │   ├── ocr_service.py          # Gemini OCR calls
     │   ├── chunking_service.py     # Semantic text chunking
@@ -479,24 +480,21 @@ docs/main/
 3. Backend (RAGService._build_context):
    - Resolves character persona, loads LLM chains from llm_resources singleton
    ↓
-4. HandlerRegistry dispatches to highest-priority matching handler:
-   ├── Specialized handlers (priority 1–50): identity, capabilities, author lookup,
-   │   books-by-author, volume info, follow-up rewriting, current-page, current-volume, catalog
-   │   → answer directly without retrieval
-   │
-   └── AgentRAGHandler (priority=998, always-on fallback):
-       - Agent LLM decides which tools to call (up to MAX_STEPS=4):
-         * search_chunks             → pgvector search scoped to known book IDs (L1+L2 cache)
-         * search_books_by_summary   → embedding search over book summaries for topic discovery (L3 cache)
-         * find_books_by_title       → exact/fuzzy title lookup
-         * get_book_summary          → fetch full semantic summary (plot, themes, characters)
-         * get_current_page          → raw text of the currently-open reader page
-         * rewrite_query             → resolve Uyghur pronouns via QueryRewriter (L0 cache)
-         * get_book_author           → author lookup for compound queries
-         * get_books_by_author       → book list by author for compound queries
-         * search_catalog            → library browsing and general catalog questions
-       - Loop exits early when ≥8 unique chunks collected
-       - format_observations_as_context() deduplicates by (book_id, page)
+4. HandlerRegistry dispatches to AgentRAGHandler (priority=998, sole handler):
+   - LangGraph graph: plan_query → agent_step → execute_tool → collect_tools → build_context → grade_context → generate_answer
+   - Agent LLM decides which tools to call (up to MAX_STEPS=4):
+     * search_chunks             → pgvector search scoped to known book IDs (L1+L2 cache)
+     * search_books_by_summary   → embedding search over book summaries for topic discovery (L3 cache)
+     * find_books_by_title       → exact/fuzzy title lookup
+     * get_book_summary          → fetch full semantic summary (plot, themes, characters)
+     * get_current_page          → raw text of the currently-open reader page
+     * get_sister_volumes        → all volumes of the same series as a given book_id
+     * rewrite_query             → resolve Uyghur pronouns via QueryRewriter (L0 cache)
+     * get_book_author           → author lookup for who-wrote-X questions
+     * get_books_by_author       → book list for what-did-Y-write questions
+     * search_catalog            → library browsing and general catalog questions
+   - Loop exits early when ≥8 unique chunks collected
+   - grade_context filters low-relevance chunks
    ↓
 5. Answer LLM (Gemini) generates streaming response from accumulated context
    ↓
@@ -793,7 +791,7 @@ Kitabim.AI is a **well-structured monorepo** with:
 
 **Key Statistics:**
 - **Database:** 15 tables including pgvector embeddings (3072-dim); `rag_evaluations` includes agent trace columns
-- **RAG handlers:** 8 fast-path handlers (`is_fast_handler=True`, gated by `rag_fast_handlers_enabled`) + `AgentRAGHandler` (priority=998, always-on fallback)
+- **RAG handler:** `AgentRAGHandler` (priority=998, sole handler) — LangGraph ReAct loop with 10 tools
 - **Worker:** 6 jobs, 11 scanners driving an event-driven pipeline
 - **API:** 11 endpoint modules; see `docs/main/openapi.json`
 - **Backend-core services:** 13 shared services

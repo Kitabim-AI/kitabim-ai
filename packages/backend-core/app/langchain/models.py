@@ -203,9 +203,16 @@ def _extract_message_text(response) -> str:
 async def _call_with_breaker(breaker: CircuitBreaker, fn, *args, **kwargs):
     # Apply global rate limiting before attempting the call
     await _GEMINI_LIMITER.wait()
-    
+
+    async def _fn_with_timeout():
+        try:
+            return await asyncio.wait_for(fn(*args, **kwargs), timeout=_INVOKE_TIMEOUT)
+        except asyncio.TimeoutError:
+            log_json(_logger, logging.ERROR, "LLM invoke timed out", timeout=_INVOKE_TIMEOUT, breaker=breaker.name)
+            raise TimeoutError(f"LLM did not respond within {_INVOKE_TIMEOUT}s")
+
     try:
-        return await breaker.call(fn, *args, **kwargs)
+        return await breaker.call(_fn_with_timeout)
     except CircuitBreakerOpen as exc:
         log_json(_logger, logging.ERROR, "LLM circuit open", error=str(exc))
         raise
@@ -255,6 +262,7 @@ def _normalize_prompt_value(value) -> str:
 
 
 _STREAM_FIRST_CHUNK_TIMEOUT = 60.0  # seconds to wait for the first chunk before treating as failure
+_INVOKE_TIMEOUT = 30.0  # seconds to wait for a non-streaming ainvoke to complete
 
 
 async def _stream_with_breaker(breaker: CircuitBreaker, fn, *args, **kwargs):

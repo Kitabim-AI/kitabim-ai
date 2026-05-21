@@ -393,6 +393,23 @@ class RAGEvaluation(Base):
     retry_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     final_chunk_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
+    # Ragas semantic evaluation metrics
+    faithfulness_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    answer_relevance_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    context_precision_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    context_recall_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    eval_status: Mapped[str] = mapped_column(
+        String(20),
+        default="skipped",
+        server_default="skipped",
+        nullable=False
+    )
+    answer: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    retrieved_context: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # User feedback ('positive' = 👍, 'negative' = 👎, None = no feedback yet)
+    user_feedback: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+
     # Timestamp
     ts: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

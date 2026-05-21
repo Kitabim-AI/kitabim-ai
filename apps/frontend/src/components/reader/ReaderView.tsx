@@ -644,9 +644,11 @@ export const ReaderView: React.FC = () => {
               onSendMessage={chat.handleSendMessage}
               isChatting={chat.isChatting}
               streamingMessage={chat.streamingMessage}
+              agentSteps={chat.agentSteps}
               currentPage={currentPage}
               usageStatus={chat.usageStatus}
               chatContainerRef={chat.chatContainerRef}
+              submitFeedback={chat.submitFeedback}
             />
           </div>
         </GlassPanel>

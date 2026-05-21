@@ -169,3 +169,46 @@ async def get_system_stats(
             "percentage_embedded": round(percentage_embedded, 2)
         }
     }
+
+
+class RAGQualityStats(BaseModel):
+    total_evaluations: int
+    graded_evaluations: int
+    avg_faithfulness: float | None
+    avg_answer_relevance: float | None
+
+
+@router.get("/rag", response_model=RAGQualityStats)
+async def get_rag_quality_stats(
+    current_user=Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    """Get Ragas semantic quality metrics from graded RAG evaluations (admin only).
+
+    Single query using conditional aggregation — avoids three round-trips.
+    """
+    from sqlalchemy import case
+    from app.db.models import RAGEvaluation
+
+    is_completed = RAGEvaluation.eval_status == "completed"
+
+    result = await session.execute(
+        select(
+            func.count().label("total"),
+            func.count(case((is_completed, 1))).label("graded"),
+            func.avg(case((is_completed, RAGEvaluation.faithfulness_score))).label("avg_faithfulness"),
+            func.avg(case((is_completed, RAGEvaluation.answer_relevance_score))).label("avg_answer_relevance"),
+        ).select_from(RAGEvaluation)
+    )
+    row = result.fetchone()
+
+    avg_faithfulness = float(row.avg_faithfulness) if row and row.avg_faithfulness is not None else None
+    avg_answer_relevance = float(row.avg_answer_relevance) if row and row.avg_answer_relevance is not None else None
+
+    return {
+        "total_evaluations": row.total if row else 0,
+        "graded_evaluations": row.graded if row else 0,
+        "avg_faithfulness": round(avg_faithfulness, 3) if avg_faithfulness is not None else None,
+        "avg_answer_relevance": round(avg_answer_relevance, 3) if avg_answer_relevance is not None else None,
+    }
+
