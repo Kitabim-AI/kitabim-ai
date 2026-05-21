@@ -19,8 +19,24 @@ class GraphRepository:
 
     def __init__(self, uri: Optional[str] = None) -> None:
         self._uri = uri or settings.memgraph_url
-        # Memgraph runs locally without authentication by default
-        self._driver = AsyncGraphDatabase.driver(self._uri, auth=None)
+        # Memgraph runs without authentication by default.
+        # liveness_check_timeout=0: verify each pooled connection is alive before
+        #   returning it to the caller — prevents "defunct connection" errors that occur
+        #   when Memgraph closes an idle connection server-side while it is still in the pool.
+        # max_connection_lifetime=300: recycle connections after 5 minutes so they are
+        #   never older than the server-side idle timeout.
+        # max_connection_pool_size=20: explicit cap; one worker job with max_parallel=5
+        #   chunks at ~4 graph calls each fits comfortably within this limit.
+        # connection_timeout=30: fail fast rather than waiting indefinitely on a dead host.
+        self._driver = AsyncGraphDatabase.driver(
+            self._uri,
+            auth=None,
+            max_connection_pool_size=20,
+            max_connection_lifetime=300,
+            connection_timeout=30,
+            liveness_check_timeout=0,
+            keep_alive=True,
+        )
 
     async def close(self) -> None:
         """Close driver session connection pool."""

@@ -268,4 +268,5 @@ async def run_pipeline_driver(ctx) -> None:
         books_marked_ready=books_marked_ready,
         books_marked_error=books_marked_error,
         summary_jobs_enqueued=len(newly_ready_ids),
+        graph_jobs_enqueued=len(newly_ready_ids),
     )

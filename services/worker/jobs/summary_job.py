@@ -31,7 +31,7 @@ from app.db.repositories.system_configs import SystemConfigsRepository
 from app.db.repositories.graph import GraphRepository
 from app.langchain import build_text_chain
 from app.langchain.models import GeminiEmbeddings
-from app.services.knowledge_graph_service import EntityType, GlobalMetadataExtraction
+from app.services.knowledge_graph_service import EntityType, GlobalMetadataExtraction, parse_and_clean_json_from_exception
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.summary_job")
@@ -147,36 +147,56 @@ async def summary_job(ctx, book_id: str) -> None:
                     f"- The book itself (use exact title: '{book.title}') to its main characters (e.g. (Book)-[:HAS_CHARACTER]->(Person))\n"
                     f"- The book itself (use exact title: '{book.title}') to its location settings (e.g. (Book)-[:SET_IN]->(Location))\n"
                     "- Relationships between the characters themselves (e.g. SON_OF, MARRIED_TO, INFLUENCED, etc.)\n\n"
+                    "Language Guideline:\n"
+                    "- Extract all entity names (persons, locations, events, themes, etc.) strictly in their original "
+                    "Uyghur Perso-Arabic script as they appear in the text. Do NOT translate or transliterate "
+                    "names to English or Latin characters (e.g., use 'نۇھ' instead of 'Nuh', and 'ياپەس' instead of 'Yafes').\n\n"
                     "Ensure entities are referred to by their standard, canonical names.\n\n"
                     "Important Kinship/Relationship Guideline:\n"
                     "- In Uyghur lineage terms, 'قوزىچىسى' or 'نەۋرىسى' refers to a grandchild (GRANDSON_OF or GRANDCHILD_OF), NOT a child (SON_OF).\n\n"
                     f"Book Summary:\n{summary}"
                 )
 
-                global_extraction = await global_llm.ainvoke(global_prompt)
+                global_extraction = None
+                try:
+                    global_extraction = await global_llm.ainvoke(global_prompt)
+                except Exception as e:
+                    global_extraction = parse_and_clean_json_from_exception(e, GlobalMetadataExtraction)
+                    if global_extraction:
+                        log_json(
+                            logger, logging.INFO, "summary job: recovered from global graph extraction validation error",
+                            book_id=book_id
+                        )
+                    else:
+                        log_json(
+                            logger, logging.WARNING, "failed to extract global metadata from summary",
+                            book_id=book_id,
+                            error=str(e)
+                        )
 
-                # Save entities to Memgraph
-                for entity in global_extraction.entities:
-                    name = entity.name.strip()
-                    if not name:
-                        continue
-                    await graph_repo.upsert_entity(
-                        name=name,
-                        entity_type=entity.type.value,
-                        subtype=entity.subtype,
-                    )
+                if global_extraction:
+                    # Save entities to Memgraph
+                    for entity in global_extraction.entities:
+                        name = entity.name.strip()
+                        if not name:
+                            continue
+                        await graph_repo.upsert_entity(
+                            name=name,
+                            entity_type=entity.type.value,
+                            subtype=entity.subtype,
+                        )
 
-                # Save relationships
-                for rel in global_extraction.relations:
-                    src = rel.source.strip()
-                    tgt = rel.target.strip()
-                    rtype = rel.relation.strip()
-                    if not src or not tgt or not rtype:
-                        continue
+                    # Save relationships
+                    for rel in global_extraction.relations:
+                        src = rel.source.strip()
+                        tgt = rel.target.strip()
+                        rtype = rel.relation.strip()
+                        if not src or not tgt or not rtype:
+                            continue
 
-                    # If source matches book title, connect Book node directly
-                    if src.lower() == book.title.lower():
-                        await graph_repo.connect_book_to_entity(
+                        # If source matches book title, connect Book node directly
+                        if src.lower() == book.title.lower():
+                            await graph_repo.connect_book_to_entity(
                             book_id=book_id,
                             entity_name=tgt,
                             rel_type=rtype,

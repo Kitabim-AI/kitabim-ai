@@ -1,0 +1,80 @@
+import pytest
+from app.services.knowledge_graph_service import (
+    KnowledgeExtraction,
+    GlobalMetadataExtraction,
+    parse_and_clean_json_from_exception,
+)
+
+def test_parse_and_clean_knowledge_extraction_success():
+    # Simulate a validation exception message containing the raw JSON with an empty dict at the end of relations
+    error_message = (
+        'Failed to parse KnowledgeExtraction from completion {\n'
+        '  "entities": [\n'
+        '    {"name": "Nuh", "type": "Person", "subtype": "Prophet"},\n'
+        '    {"name": "Yafes", "type": "Person", "subtype": "Son of Nuh"}\n'
+        '  ],\n'
+        '  "relations": [\n'
+        '    {"source_entity": "Yafes", "relation_type": "SON_OF", "target_entity": "Nuh"},\n'
+        '    {}\n'
+        '  ]\n'
+        '}. Got: 3 validation errors for KnowledgeExtraction\n'
+        'relations.1.source_entity\n'
+        '  Field required [type=missing, input_value={}, input_type=dict]'
+    )
+    
+    exc = ValueError(error_message)
+    
+    parsed = parse_and_clean_json_from_exception(exc, KnowledgeExtraction)
+    
+    assert parsed is not None
+    assert len(parsed.entities) == 2
+    assert parsed.entities[0].name == "Nuh"
+    assert parsed.entities[1].name == "Yafes"
+    
+    # The empty dict in relations should have been filtered out, leaving exactly 1 valid relation
+    assert len(parsed.relations) == 1
+    assert parsed.relations[0].source_entity == "Yafes"
+    assert parsed.relations[0].relation_type == "SON_OF"
+    assert parsed.relations[0].target_entity == "Nuh"
+
+
+def test_parse_and_clean_global_metadata_success():
+    error_message = (
+        'Failed to parse GlobalMetadataExtraction from completion {\n'
+        '  "entities": [\n'
+        '    {"name": "Moghul", "type": "Person", "subtype": "Son of Alanje"},\n'
+        '    {"name": "", "type": "Person"}\n'  # empty name
+        '  ],\n'
+        '  "relations": [\n'
+        '    {"source": "Book Title", "relation": "HAS_CHARACTER", "target": "Moghul", "target_type": "Person"},\n'
+        '    {"source": "", "relation": "", "target": ""}\n'  # incomplete relation
+        '  ]\n'
+        '}. Got: validation errors...'
+    )
+    
+    exc = ValueError(error_message)
+    
+    parsed = parse_and_clean_json_from_exception(exc, GlobalMetadataExtraction)
+    
+    assert parsed is not None
+    # Empty name entity should be filtered out
+    assert len(parsed.entities) == 1
+    assert parsed.entities[0].name == "Moghul"
+    
+    # Incomplete relation should be filtered out
+    assert len(parsed.relations) == 1
+    assert parsed.relations[0].source == "Book Title"
+    assert parsed.relations[0].relation == "HAS_CHARACTER"
+    assert parsed.relations[0].target == "Moghul"
+
+
+def test_parse_and_clean_invalid_json():
+    # If the exception has no JSON pattern
+    exc = ValueError("Some other internal Google API error occurred")
+    parsed = parse_and_clean_json_from_exception(exc, KnowledgeExtraction)
+    assert parsed is None
+
+    # If the JSON is completely broken/unparseable
+    exc = ValueError("Failed to parse from completion {entities: [broken json").with_traceback(None)
+    parsed = parse_and_clean_json_from_exception(exc, KnowledgeExtraction)
+    assert parsed is None

@@ -62,11 +62,21 @@ async def run_graph_scanner(ctx) -> None:
     if not to_enqueue:
         return
 
+    # enqueue_job returns None when arq deduplicates (job already queued/running).
+    # Only count and log books that were genuinely newly enqueued.
+    newly_enqueued = []
     for book_id in to_enqueue:
-        await redis.enqueue_job(
+        job = await redis.enqueue_job(
             "knowledge_graph_job",
             book_id=book_id,
             _job_id=f"knowledge_graph:{book_id}"
         )
+        if job is not None:
+            newly_enqueued.append(book_id)
+        else:
+            log_json(logger, logging.DEBUG, "graph scanner: job already queued or running", book_id=book_id)
 
-    log_json(logger, logging.INFO, "graph scanner enqueued jobs", count=len(to_enqueue), book_ids=to_enqueue)
+    if not newly_enqueued:
+        return
+
+    log_json(logger, logging.INFO, "graph scanner enqueued jobs", count=len(newly_enqueued), book_ids=newly_enqueued)
