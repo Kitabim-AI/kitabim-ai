@@ -38,6 +38,7 @@ export interface Book {
   pipelineStep?: 'ocr' | 'chunking' | 'embedding' | 'spell_check' | 'ready' | null;
   pipelineStats?: Record<string, number>;
   hasSummary?: boolean;
+  hasGraph?: boolean;
   // Book-level milestones (denormalized from pages for performance)
   ocrMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';
   chunkingMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';

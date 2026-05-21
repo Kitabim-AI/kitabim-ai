@@ -161,6 +161,19 @@ def get_current_page() -> str:
     return ""
 
 
+@tool
+def query_knowledge_graph(query: str) -> str:
+    """Query the book knowledge graph to retrieve connections and relationships between entities.
+
+    Call this tool when the query asks about historical figures, events, locations, concepts,
+    or relations between multiple entities, to retrieve semantic network context.
+
+    Args:
+        query: The search query or question containing entities to query.
+    """
+    return ""
+
+
 AGENT_TOOLS = [
     search_chunks,
     search_books_by_summary,
@@ -172,6 +185,7 @@ AGENT_TOOLS = [
     get_book_summary,
     get_sister_volumes,
     get_current_page,
+    query_knowledge_graph,
 ]
 
 
@@ -202,6 +216,8 @@ async def dispatch_tool(tool_name: str, tool_args: dict, ctx: QueryContext) -> d
             return await _run_get_sister_volumes(tool_args, ctx)
         if tool_name == "get_current_page":
             return await _run_get_current_page(ctx)
+        if tool_name == "query_knowledge_graph":
+            return await _run_query_knowledge_graph(tool_args, ctx)
         return {"error": f"Unknown tool: {tool_name}"}
     except Exception as exc:
         log_json(logger, logging.WARNING, "Agent tool failed", tool=tool_name, error=str(exc))
@@ -432,3 +448,64 @@ async def _run_search_catalog(args: dict, ctx: QueryContext) -> dict:
     context_text = CatalogHandler._prepend_current_book(context_text, ctx)
     log_json(logger, logging.INFO, "Agent tool search_catalog", query=query[:60], books=count)
     return {"context": context_text, "book_count": count}
+
+
+async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
+    from app.langchain.models import build_text_llm
+    from app.db.repositories.graph import GraphRepository
+    import re
+
+    query = args.get("query", "")
+    if not query:
+        return {"context": "No query provided.", "relations": []}
+
+    # Extract entities from the query using the LLM
+    prompt = (
+        "Extract any names of key entities (persons, locations, events, organizations, historical eras, or concepts) "
+        "mentioned in the following user query. Return them ONLY as a comma-separated list, with no other text, explanation, or formatting. "
+        "If no specific entities are mentioned, return an empty string.\n\n"
+        f"Query: {query}"
+    )
+
+    try:
+        llm = build_text_llm(ctx.agent_model)
+        llm_response = await llm.ainvoke(prompt)
+        
+        entities = [
+            e.strip() 
+            for e in re.split(r"[,，\u060c\n]", llm_response) 
+            if e.strip()
+        ]
+    except Exception as exc:
+        log_json(logger, logging.WARNING, "Failed to extract entities for knowledge graph query", error=str(exc))
+        entities = []
+
+    if not entities:
+        log_json(logger, logging.INFO, "Agent tool query_knowledge_graph — no entities extracted", query=query[:60])
+        return {"context": "No entities extracted from the query to match in the knowledge graph.", "relations": []}
+
+    log_json(logger, logging.INFO, "Agent tool query_knowledge_graph", query=query[:60], entities=entities)
+
+    graph_repo = GraphRepository()
+    try:
+        records = await graph_repo.query_subgraph(entities)
+    finally:
+        await graph_repo.close()
+
+    if not records:
+        return {
+            "context": f"No knowledge graph relationships found for entities: {', '.join(entities)}.",
+            "relations": []
+        }
+
+    lines = [f"Knowledge Graph Relationships for: {', '.join(entities)}"]
+    for rec in records:
+        source = rec.get("source")
+        source_type = rec.get("source_type", "Entity")
+        rel = rec.get("rel", "RELATED_TO")
+        target = rec.get("target")
+        target_type = rec.get("target_type", "Entity")
+        lines.append(f"- ({source}: {source_type}) -[{rel}]-> ({target}: {target_type})")
+
+    context_text = "\n".join(lines)
+    return {"context": context_text, "relations": records}

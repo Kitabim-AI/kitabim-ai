@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 
 from sqlalchemy import select
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.core.config import settings
 from app.core.prompts import BOOK_SUMMARY_PROMPT
@@ -27,8 +28,10 @@ from app.db import session as db_session
 from app.db.models import Book, Page
 from app.db.repositories.book_summaries import BookSummariesRepository
 from app.db.repositories.system_configs import SystemConfigsRepository
+from app.db.repositories.graph import GraphRepository
 from app.langchain import build_text_chain
 from app.langchain.models import GeminiEmbeddings
+from app.services.knowledge_graph_service import EntityType, GlobalMetadataExtraction
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.summary_job")
@@ -115,6 +118,87 @@ async def summary_job(ctx, book_id: str) -> None:
             repo = BookSummariesRepository(session)
             await repo.upsert(book_id=book_id, summary=summary, embedding=embedding)
             await session.commit()
+
+        # Update Memgraph: save book summary and extract global relations
+        graph_repo = GraphRepository()
+        try:
+            await graph_repo.init_constraints()
+            await graph_repo.upsert_book(
+                book_id=book_id,
+                title=book.title,
+                author=book.author or "Unknown Author",
+                summary=summary,
+            )
+
+            # Extract book-level global entities and relationships from summary
+            api_key = settings.gemini_api_key
+            if api_key:
+                global_llm = ChatGoogleGenerativeAI(
+                    model=gemini_chat_model,
+                    google_api_key=api_key,
+                    temperature=0.0
+                ).with_structured_output(GlobalMetadataExtraction)
+
+                global_prompt = (
+                    f"Read the following summary of the book '{book.title}' by '{book.author}'. "
+                    "Extract the main characters (Person), primary locations (Location), and core themes/concepts (Concept). "
+                    "Also extract directed relationships connecting:\n"
+                    f"- The book itself (use exact title: '{book.title}') to its core themes (e.g. (Book)-[:HAS_THEME]->(Concept))\n"
+                    f"- The book itself (use exact title: '{book.title}') to its main characters (e.g. (Book)-[:HAS_CHARACTER]->(Person))\n"
+                    f"- The book itself (use exact title: '{book.title}') to its location settings (e.g. (Book)-[:SET_IN]->(Location))\n"
+                    "- Relationships between the characters themselves (e.g. SON_OF, MARRIED_TO, INFLUENCED, etc.)\n\n"
+                    "Ensure entities are referred to by their standard, canonical names.\n\n"
+                    "Important Kinship/Relationship Guideline:\n"
+                    "- In Uyghur lineage terms, 'قوزىچىسى' or 'نەۋرىسى' refers to a grandchild (GRANDSON_OF or GRANDCHILD_OF), NOT a child (SON_OF).\n\n"
+                    f"Book Summary:\n{summary}"
+                )
+
+                global_extraction = await global_llm.ainvoke(global_prompt)
+
+                # Save entities to Memgraph
+                for entity in global_extraction.entities:
+                    name = entity.name.strip()
+                    if not name:
+                        continue
+                    await graph_repo.upsert_entity(
+                        name=name,
+                        entity_type=entity.type.value,
+                        subtype=entity.subtype,
+                    )
+
+                # Save relationships
+                for rel in global_extraction.relations:
+                    src = rel.source.strip()
+                    tgt = rel.target.strip()
+                    rtype = rel.relation.strip()
+                    if not src or not tgt or not rtype:
+                        continue
+
+                    # If source matches book title, connect Book node directly
+                    if src.lower() == book.title.lower():
+                        await graph_repo.connect_book_to_entity(
+                            book_id=book_id,
+                            entity_name=tgt,
+                            rel_type=rtype,
+                        )
+                    else:
+                        # Ensure source entity exists
+                        await graph_repo.upsert_entity(
+                            name=src,
+                            entity_type=EntityType.PERSON.value,
+                        )
+                        await graph_repo.connect_entities(
+                            source_name=src,
+                            rel_type=rtype,
+                            target_name=tgt,
+                        )
+                log_json(logger, logging.INFO, "summary job: indexed global book relationships in Memgraph", book_id=book_id)
+            else:
+                log_json(logger, logging.WARNING, "gemini_api_key not configured, skipping global graph extraction", book_id=book_id)
+        except Exception as graph_exc:
+            log_json(logger, logging.ERROR, "failed to index global metadata in Memgraph", book_id=book_id, error=str(graph_exc))
+        finally:
+            await graph_repo.close()
 
         log_json(
             logger, logging.INFO, "summary job completed",

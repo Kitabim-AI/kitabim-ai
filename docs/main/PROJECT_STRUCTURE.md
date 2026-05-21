@@ -117,6 +117,7 @@ packages/backend-core/
     ├── db/                  # Database layer
     │   ├── postgres.py      # Connection and session management
     │   ├── repositories/    # Repository pattern implementations
+    │   │   └── graph.py     # Memgraph interface and Cypher queries
     │   └── models.py        # SQLAlchemy models
     ├── langchain/           # LangChain integrations
     │   ├── chains.py        # LCEL chains
@@ -143,7 +144,7 @@ packages/backend-core/
     │   │   └── agent/              # LangGraph agentic RAG graph
     │   │       ├── prompts.py      # Agent system prompt
     │   │       ├── config.py       # Agent constants (AGENT_MAX_STEPS, etc.)
-    │   │       ├── tools.py        # @tool schemas + dispatch_tool() — 10 tools
+    │   │       ├── tools.py        # @tool schemas + dispatch_tool() — 11 tools
     │   │       ├── state.py        # AgentState TypedDict
     │   │       ├── graph.py        # LangGraph StateGraph — nodes and conditional edges
     │   │       ├── handler.py      # AgentRAGHandler (priority=998)
@@ -292,6 +293,7 @@ docs/main/
 | Validation | Pydantic | Request/response validation |
 | Database | PostgreSQL 17 | Primary data store |
 | Vector Search | pgvector | Semantic similarity search |
+| Graph Database | Memgraph | In-memory GraphRAG store |
 | Caching | Redis | High-speed cache for books/RAG |
 | Queue | Redis + ARQ | Background job processing |
 
@@ -377,6 +379,7 @@ docs/main/
 - `spell_check_job` - Identify unknown words per page
 - `auto_correct_job` - Apply auto-correction rules to spell issues
 - `summary_job` - Generate AI summaries for RAG routing
+- `knowledge_graph_job` - Extract semantic entities and relationships to index in Memgraph
 
 ### 4. Redis
 
@@ -415,6 +418,20 @@ docs/main/
 - `book_summaries` - LLM-generated summaries with embeddings
 - `contact_submissions` - Join Us form submissions
 - `pipeline_events` - Transactional outbox for state transitions
+
+### 6. Memgraph
+
+**Bolt Port:** 37687 (host), 7687 (internal)
+**Lab Port:** 33000 (host), 3000 (internal)
+
+**Responsibilities:**
+- In-memory graph database for GraphRAG
+- Entity and relationship extraction storage
+- Multi-hop relationship traversal for agentic reasoning
+
+**Data Model:**
+- Nodes: `Book`, `Chunk`, `Entity`
+- Relationships: `MENTIONS`, `RELATED_TO`, `WROTE`, `BELONGS_TO`
 
 ---
 
@@ -493,6 +510,7 @@ docs/main/
      * get_book_author           → author lookup for who-wrote-X questions
      * get_books_by_author       → book list for what-did-Y-write questions
      * search_catalog            → library browsing and general catalog questions
+     * query_knowledge_graph     → query Memgraph graph database for entity relationship networks
    - Loop exits early when ≥8 unique chunks collected
    - grade_context filters low-relevance chunks
    ↓
@@ -734,6 +752,7 @@ python3.13 -m pytest services/backend/tests
 | `db/session.py` | PostgreSQL session management |
 | `db/models.py` | SQLAlchemy ORM models |
 | `db/repositories/` | Repository pattern implementations |
+| `db/repositories/graph.py` | Memgraph interface and Cypher queries |
 | `services/pdf_service.py` | PDF processing orchestration |
 | `services/storage_service.py` | GCS/local storage abstraction |
 | `services/rag_service.py` | RAG retrieval and chat logic |
@@ -753,6 +772,7 @@ python3.13 -m pytest services/backend/tests
 | File | Purpose |
 |------|---------|
 | `worker.py` | ARQ WorkerSettings entry point |
+| `jobs/knowledge_graph_job.py` | Asynchronous entity extraction and Memgraph indexing |
 
 ### Frontend
 
@@ -790,9 +810,9 @@ Kitabim.AI is a **well-structured monorepo** with:
 ✅ **Comprehensive documentation** (BRD, system design, OpenAPI spec)
 
 **Key Statistics:**
-- **Database:** 15 tables including pgvector embeddings (3072-dim); `rag_evaluations` includes agent trace columns
-- **RAG handler:** `AgentRAGHandler` (priority=998, sole handler) — LangGraph ReAct loop with 10 tools
-- **Worker:** 6 jobs, 11 scanners driving an event-driven pipeline
+- **Database:** 15 tables in Postgres including pgvector embeddings (3072-dim) + Memgraph graph database
+- **RAG handler:** `AgentRAGHandler` (priority=998, sole handler) — LangGraph ReAct loop with 11 tools
+- **Worker:** 7 jobs, 11 scanners driving an event-driven pipeline
 - **API:** 11 endpoint modules; see `docs/main/openapi.json`
 - **Backend-core services:** 13 shared services
 

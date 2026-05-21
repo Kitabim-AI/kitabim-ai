@@ -29,6 +29,7 @@ The chat interface is powered by a **ReAct-loop agent** that runs for every ques
    - `rewrite_query` — resolve Uyghur pronouns and co-references via LLM rewrite (L0 cache)
    - `get_book_author` / `get_books_by_author` — catalog metadata lookups
    - `search_catalog` — library browsing and general listing queries
+   - `query_knowledge_graph` — search the book knowledge graph (stored in Memgraph) for entities and relationships to answer factual, relational, and historical questions (GraphRAG)
 
 3. **Early exit** — the loop stops as soon as 8 or more unique passages are collected, or when the agent signals it has enough context.
 
@@ -52,6 +53,7 @@ See [docs/main/AGENTIC_RAG_DESIGN.md](docs/main/AGENTIC_RAG_DESIGN.md) for the f
 - Text cleaning tailored for Uyghur script (removes OCR noise, header/footer markers)
 - Semantic chunking with overlapping windows; upsert strategy so re-chunking is idempotent
 - AI-generated book summaries stored with embeddings for topic-based book discovery
+- **Knowledge Graph Ingestion (GraphRAG)**: Extracts Person, Location, Organization, Work, and Event entities and their semantic relationships from book chunks, building a semantic network in Memgraph.
 
 ### Curation Workspace
 - Per-page spell-check against a Uyghur dictionary with one-click corrections
@@ -82,6 +84,8 @@ cp .env.template .env
 | Web UI | http://localhost:30080 |
 | API + Swagger | http://localhost:30800/docs |
 | Health check | http://localhost:30800/health |
+| Memgraph Bolt | localhost:37687 |
+| Memgraph Lab (UI) | http://localhost:33000 |
 
 ```bash
 # Rebuild a single service after code changes

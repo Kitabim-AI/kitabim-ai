@@ -474,7 +474,8 @@ export const useBookActions = (
       [REPROCESS_STEP.CHUNKING]: t('modal.reprocessChunking.title') || 'پارچىلاشنى قايتا ئىشلەش',
       [REPROCESS_STEP.EMBEDDING]: t('modal.reprocessEmbedding.title') || 'ۋېكتورلاشتۇرۇشنى قايتا ئىشلەش',
       [REPROCESS_STEP.WORD_INDEX]: t('modal.reprocessWordIndex.title') || 'سۆز تىزىملىكىنى قايتا ئىشلەش',
-      [REPROCESS_STEP.SPELL_CHECK]: t('modal.reprocessSpellCheck.title') || 'ئىملا تەكشۈرۈشنى قايتا ئىشلەش'
+      [REPROCESS_STEP.SPELL_CHECK]: t('modal.reprocessSpellCheck.title') || 'ئىملا تەكشۈرۈشنى قايتا ئىشلەش',
+      [REPROCESS_STEP.GRAPH]: t('modal.reprocessGraph.title') || 'بىلىم گىرافىنى قايتا ئىشلەش',
     };
 
     setModal({
@@ -496,6 +497,7 @@ export const useBookActions = (
             case REPROCESS_STEP.EMBEDDING: await PersistenceService.reprocessEmbedding(bookId); break;
             case REPROCESS_STEP.WORD_INDEX: await PersistenceService.reprocessWordIndex(bookId); break;
             case REPROCESS_STEP.SPELL_CHECK: await PersistenceService.reprocessSpellCheck(bookId); break;
+            case REPROCESS_STEP.GRAPH: await PersistenceService.reprocessGraph(bookId); break;
           }
           await refreshLibrary();
           setModal((prev: any) => ({ ...prev, isOpen: false }));

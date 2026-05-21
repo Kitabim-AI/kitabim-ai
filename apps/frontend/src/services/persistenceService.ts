@@ -259,6 +259,18 @@ export const PersistenceService = {
     }
   },
 
+  async reprocessGraph(bookId: string): Promise<void> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/graph`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Editor access required");
+      }
+      throw new Error("Failed to start reprocessing graph");
+    }
+  },
+
   async addToDictionary(word: string): Promise<void> {
     const response = await authFetch(`${API_BASE}/spell-check/dictionary`, {
       method: 'POST',

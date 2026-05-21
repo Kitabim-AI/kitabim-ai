@@ -46,11 +46,14 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      memgraph:
+        condition: service_started
     env_file:
       - .env
     environment:
       - DATABASE_URL=postgresql://kitabim:kitabim@postgres:5432/kitabim-ai
       - REDIS_URL=redis://redis:6379/0
+      - MEMGRAPH_URL=bolt://memgraph:7687
       - DATA_DIR=/app/data
       - GOOGLE_APPLICATION_CREDENTIALS=/etc/gcs/key.json
       # Connection pool settings (loaded from .env but explicitly listed for visibility)
@@ -83,11 +86,14 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      memgraph:
+        condition: service_started
     env_file:
       - .env
     environment:
       - DATABASE_URL=postgresql://kitabim:kitabim@postgres:5432/kitabim-ai
       - REDIS_URL=redis://redis:6379/0
+      - MEMGRAPH_URL=bolt://memgraph:7687
       - DATA_DIR=/app/data
       - GOOGLE_APPLICATION_CREDENTIALS=/etc/gcs/key.json
       # Connection pool settings (loaded from .env but explicitly listed for visibility)
@@ -115,5 +121,20 @@ services:
         limits:
           memory: 256M
 
+  # ─── Memgraph (Graph DB) ──────────────────────────────────────────────────
+  memgraph:
+    image: memgraph/memgraph-platform:latest
+    restart: always
+    ports:
+      - "37687:7687"
+      - "33000:3000"
+    volumes:
+      - memgraph_data:/var/lib/memgraph
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
 volumes:
   postgres_data:
+  memgraph_data:

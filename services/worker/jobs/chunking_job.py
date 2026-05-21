@@ -79,7 +79,6 @@ async def chunking_job(ctx, page_ids: List[int]) -> None:
                         set_={
                             "text": stmt.excluded.text,
                             "embedding": None,
-                            "embedding_v1": None,
                         }
                     )
                     await session.execute(stmt)
