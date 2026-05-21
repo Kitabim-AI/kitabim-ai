@@ -91,6 +91,8 @@ export const chatWithBookStream = async (
   onUsageUpdate?: (usage: any) => void,
   contextBookIds?: string[],
   onContextBookIds?: (bookIds: string[]) => void,
+  onAgentEvent?: (event: Record<string, any>) => void,
+  onEvalId?: (evalId: number) => void,
 ): Promise<void> => {
   try {
     const response = await authFetch(`${API_BASE}/chat/stream`, {
@@ -157,16 +159,20 @@ export const chatWithBookStream = async (
             } else if (data.chunk) {
               onChunk(data.chunk);
             } else if (data.correction) {
-              // Backend has sent a corrected version with fixed citations
               if (onCorrection) {
                 onCorrection(data.correction);
               }
+            } else if (data.type) {
+              onAgentEvent?.(data);
             } else if (data.done) {
               if (onUsageUpdate && data.usage) {
                 onUsageUpdate(data.usage);
               }
               if (onContextBookIds && Array.isArray(data.contextBookIds) && data.contextBookIds.length > 0) {
                 onContextBookIds(data.contextBookIds);
+              }
+              if (onEvalId && typeof data.evalId === 'number') {
+                onEvalId(data.evalId);
               }
               onComplete();
               return;
@@ -193,5 +199,22 @@ export const getChatUsage = async (): Promise<{ usage: number, limit: number | n
   } catch (err) {
     console.error("Chat Usage Error:", err);
     return { usage: 0, limit: null, hasReachedLimit: false };
+  }
+};
+
+export const submitChatFeedback = async (
+  evalId: number,
+  feedback: 'positive' | 'negative',
+): Promise<boolean> => {
+  try {
+    const response = await authFetch(`${API_BASE}/chat/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eval_id: evalId, feedback }),
+    });
+    return response.ok;
+  } catch (err) {
+    console.error('Chat Feedback Error:', err);
+    return false;
   }
 };

@@ -1,4 +1,4 @@
-import { AlertTriangle, BarChart3, Book, CheckCircle, Clock, FileText, Hash, Loader, RefreshCw, XCircle } from 'lucide-react';
+import { AlertTriangle, BarChart3, Book, CheckCircle, Clock, FileText, Hash, Loader, RefreshCw, ShieldCheck, XCircle } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { useI18n } from '../../i18n/I18nContext';
 import { authFetch } from '../../services/authService';
@@ -30,6 +30,13 @@ interface SystemStats {
   books_by_status: StatusCount[];
   page_stats: PageStats;
   chunk_stats: ChunkStats;
+}
+
+interface RAGQualityStats {
+  total_evaluations: number;
+  graded_evaluations: number;
+  avg_faithfulness: number | null;
+  avg_answer_relevance: number | null;
 }
 
 // ---- Styling helpers ----
@@ -133,6 +140,8 @@ function StatCard({ label, count, total, status, showBar }: StatCardProps) {
 export const StatsPanel: React.FC = () => {
   const { t } = useI18n();
   const [stats, setStats] = useState<SystemStats | null>(null);
+  const [ragQuality, setRagQuality] = useState<RAGQualityStats | null>(null);
+  const [ragQualityError, setRagQualityError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [llmState, setLlmState] = useState<string | null>(null);
@@ -141,9 +150,18 @@ export const StatsPanel: React.FC = () => {
     try {
       setIsLoading(true);
       setError(null);
-      const response = await authFetch('/api/stats/');
-      if (!response.ok) throw new Error(`Error ${response.status}: ${await response.text()}`);
-      setStats(await response.json());
+      setRagQualityError(null);
+      const [statsRes, ragRes] = await Promise.all([
+        authFetch('/api/stats/'),
+        authFetch('/api/stats/rag'),
+      ]);
+      if (!statsRes.ok) throw new Error(`Error ${statsRes.status}: ${await statsRes.text()}`);
+      setStats(await statsRes.json());
+      if (ragRes.ok) {
+        setRagQuality(await ragRes.json());
+      } else {
+        setRagQualityError(t('admin.stats.ragStatsUnavailable', { status: ragRes.status }));
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to load statistics');
     } finally {
@@ -355,6 +373,89 @@ export const StatsPanel: React.FC = () => {
               total={stats.chunk_stats.total}
               status="pending"
             />
+          </div>
+        </div>
+
+        {/* ── RAG Quality (Ragas) ── */}
+        <div className="glass-panel overflow-hidden rounded-[24px] p-8 shadow-xl border border-[#0369a1]/10">
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 mb-4">
+              <ShieldCheck size={16} className="text-[#0369a1]" />
+              <h4 className="text-base font-semibold text-[#0369a1] uppercase tracking-wide">
+                {t('admin.stats.ragQualityTitle') || 'RAG Quality (Ragas)'}
+              </h4>
+            </div>
+
+            {ragQualityError && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                <p className="text-xs text-amber-700 font-medium">{ragQualityError}</p>
+              </div>
+            )}
+
+            {/* Total evaluated */}
+            <div className="p-4 bg-slate-50 border-2 border-slate-200 rounded-xl">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-slate-600">{t('admin.stats.totalQueries') || 'Total Queries'}</span>
+                <span className="text-2xl font-bold text-slate-800">{(ragQuality?.total_evaluations ?? 0).toLocaleString()}</span>
+              </div>
+            </div>
+
+            {/* Graded */}
+            <div className="p-4 bg-indigo-50 border-2 border-indigo-200 rounded-xl">
+              <div className="flex items-center justify-between mb-2">
+                <span className="flex items-center gap-1.5 text-sm font-medium text-indigo-700">
+                  <CheckCircle size={14} />
+                  {t('admin.stats.gradedEvaluations') || 'Graded by Ragas'}
+                </span>
+                <span className="text-2xl font-bold text-indigo-700">{(ragQuality?.graded_evaluations ?? 0).toLocaleString()}</span>
+              </div>
+              <div className="w-full bg-white/60 rounded-full h-1.5 overflow-hidden">
+                <div
+                  className="bg-indigo-500 h-full rounded-full transition-all duration-700"
+                  style={{ width: `${ragQuality && ragQuality.total_evaluations > 0 ? (ragQuality.graded_evaluations / ragQuality.total_evaluations) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Faithfulness */}
+            {ragQuality?.avg_faithfulness != null ? (
+              <div className="p-4 bg-emerald-50 border-2 border-emerald-200 rounded-xl">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="flex items-center gap-1.5 text-sm font-medium text-emerald-700">
+                    <CheckCircle size={14} />
+                    {t('admin.stats.avgFaithfulness') || 'Avg Faithfulness'}
+                  </span>
+                  <span className="text-2xl font-bold text-emerald-700">{(ragQuality.avg_faithfulness * 100).toFixed(1)}%</span>
+                </div>
+                <div className="w-full bg-white/60 rounded-full h-1.5 overflow-hidden">
+                  <div className="bg-emerald-500 h-full rounded-full transition-all duration-700" style={{ width: `${ragQuality.avg_faithfulness * 100}%` }} />
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl">
+                <span className="text-sm text-slate-500">{t('admin.stats.avgFaithfulnessNoData') || 'Avg Faithfulness — no data yet'}</span>
+              </div>
+            )}
+
+            {/* Answer Relevance */}
+            {ragQuality?.avg_answer_relevance != null ? (
+              <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-xl">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="flex items-center gap-1.5 text-sm font-medium text-blue-700">
+                    <CheckCircle size={14} />
+                    {t('admin.stats.avgAnswerRelevance') || 'Avg Answer Relevance'}
+                  </span>
+                  <span className="text-2xl font-bold text-blue-700">{(ragQuality.avg_answer_relevance * 100).toFixed(1)}%</span>
+                </div>
+                <div className="w-full bg-white/60 rounded-full h-1.5 overflow-hidden">
+                  <div className="bg-blue-500 h-full rounded-full transition-all duration-700" style={{ width: `${ragQuality.avg_answer_relevance * 100}%` }} />
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl">
+                <span className="text-sm text-slate-500">{t('admin.stats.avgAnswerRelevanceNoData') || 'Avg Answer Relevance — no data yet'}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>

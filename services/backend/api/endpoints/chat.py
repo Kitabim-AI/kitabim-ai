@@ -2,6 +2,7 @@ import logging
 import json
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -118,15 +119,31 @@ async def chat_with_book_stream(
         try:
             accumulated_response = ""
             stream_meta: dict = {}
-            # Stream chunks from RAG service
-            async for chunk in rag_service.answer_question_stream(req, session, user_id=current_user.id, metadata_out=stream_meta):
-                accumulated_response += chunk
-                yield f'data: {json.dumps({"chunk": chunk})}\n\n'
+            # Stream events from RAG service.
+            # str   → raw text token from fast handlers; wrap as {"chunk": str}
+            # dict  → typed event from graph handler; pass through as-is,
+            #         except {"type": "chunk", "text": ...} which also feeds accumulator
+            async for event in rag_service.answer_question_stream(req, session, user_id=current_user.id, metadata_out=stream_meta):
+                if isinstance(event, str):
+                    accumulated_response += event
+                    yield f'data: {json.dumps({"chunk": event})}\n\n'
+                elif isinstance(event, dict):
+                    if event.get("type") == "chunk":
+                        accumulated_response += event.get("text", "")
+                        # Keep frontend-compatible {"chunk": text} format for answer tokens
+                        yield f'data: {json.dumps({"chunk": event["text"]})}\n\n'
+                    elif event.get("type") == "answer_start":
+                        # A new answer generation cycle is starting.
+                        # Reset the accumulator so the citation fixer only sees the final answer.
+                        accumulated_response = ""
+                        yield f'data: {json.dumps(event)}\n\n'
+                    else:
+                        # Status events (planning, tool_call, tool_result, grading, etc.)
+                        yield f'data: {json.dumps(event)}\n\n'
 
             # After streaming completes, apply citation fixer and send fixed version if needed
             fixed_response = fix_malformed_citations(accumulated_response)
             if fixed_response != accumulated_response:
-                # Send the corrected version
                 log_json(logger, logging.INFO, "Citations were fixed in stream", user_id=current_user.id)
                 yield f'data: {json.dumps({"correction": fixed_response})}\n\n'
 
@@ -134,7 +151,7 @@ async def chat_with_book_stream(
             await chat_limit_service.increment_usage(current_user, session)
             updated_usage = await chat_limit_service.get_user_usage_status(current_user, session)
 
-            yield f'data: {json.dumps({"done": True, "usage": updated_usage, "contextBookIds": stream_meta.get("used_book_ids", [])})}\n\n'
+            yield f'data: {json.dumps({"done": True, "usage": updated_usage, "contextBookIds": stream_meta.get("used_book_ids", []), "evalId": stream_meta.get("eval_id")})}\n\n'
 
         except ValueError as exc:
             # Book not found or validation error
@@ -162,3 +179,60 @@ async def chat_with_book_stream(
             "X-Accel-Buffering": "no",  # Disable nginx buffering
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# Feedback endpoint
+# ---------------------------------------------------------------------------
+
+class FeedbackRequest(BaseModel):
+    eval_id: int
+    feedback: str  # "positive" | "negative"
+
+
+@router.post("/feedback")
+async def submit_chat_feedback(
+    req: FeedbackRequest,
+    current_user: User = Depends(require_reader),
+    session: AsyncSession = Depends(get_session),
+):
+    """Record thumbs-up/down feedback for an assistant response.
+
+    Thumbs-down (negative) feedback immediately enqueues a Ragas evaluation
+    job for that response, regardless of the background sampling rate.
+    """
+    if req.feedback not in ("positive", "negative"):
+        raise HTTPException(status_code=400, detail="feedback must be 'positive' or 'negative'")
+
+    from app.db.repositories.rag_evaluations import RAGEvaluationsRepository
+    from app.db.models import RAGEvaluation
+
+    # Verify the record exists and belongs to this user before mutating it.
+    # eval_id is a sequential integer — without this check any authenticated
+    # reader could trigger Ragas jobs on other users' responses.
+    record = await session.get(RAGEvaluation, req.eval_id)
+    if record is None or record.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Evaluation record not found")
+
+    repo = RAGEvaluationsRepository(session)
+    evaluation = await repo.update_feedback(
+        eval_id=req.eval_id,
+        feedback=req.feedback,
+    )
+
+    if evaluation is None:
+        raise HTTPException(status_code=404, detail="Evaluation record not found")
+
+    # For thumbs-down: always enqueue Ragas evaluation (bypasses sampling)
+    if req.feedback == "negative" and evaluation.answer and evaluation.retrieved_context:
+        try:
+            import arq
+            from app.core.config import settings
+            redis_pool = await arq.create_pool(arq.connections.RedisSettings.from_dsn(settings.redis_url))
+            await redis_pool.enqueue_job("evaluate_rag_query", req.eval_id)
+            await redis_pool.aclose()
+            log_json(logger, logging.INFO, "Ragas job queued via negative feedback", eval_id=req.eval_id, user_id=current_user.id)
+        except Exception as exc:
+            log_json(logger, logging.WARNING, "Failed to enqueue Ragas job from feedback", error=str(exc))
+
+    return {"ok": True, "eval_id": req.eval_id, "feedback": req.feedback}

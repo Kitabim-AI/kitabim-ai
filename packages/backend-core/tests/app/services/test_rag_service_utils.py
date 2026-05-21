@@ -1,45 +1,47 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from langchain_core.documents import Document
-from app.services.rag_service import RAGService
 
-@pytest.fixture
-def rag_service():
-    return RAGService()
+from app.services.rag.utils import (
+    is_current_volume_query,
+    is_current_page_query,
+    normalize_uyghur,
+    is_author_or_catalog_query,
+    entity_matches_question,
+)
+from app.services.rag.answer_builder import format_document
+from app.services.rag.handlers.catalog import CatalogHandler
 
-def test_is_current_volume_query(rag_service):
-    assert rag_service._is_current_volume_query("ئۇشبۇ تومدا بارمۇ؟") is True
-    assert rag_service._is_current_volume_query("مەزكور قىسىمدا نېمە بار؟") is True
 
-def test_is_current_page_query(rag_service):
-    assert rag_service._is_current_page_query("بۇ بەتتە نېمە بار؟") is True
-    assert rag_service._is_current_page_query("ئۇشبۇ بەتتە كىم بار؟") is True
+def test_is_current_volume_query():
+    assert is_current_volume_query("ئۇشبۇ تومدا بارمۇ؟") is True
+    assert is_current_volume_query("") is False
+    assert is_current_volume_query(None) is False
 
-def test_normalize_uyghur(rag_service):
+
+def test_is_current_page_query():
+    assert is_current_page_query("بۇ بەتتە نېمە بار؟") is True
+    assert is_current_page_query("") is False
+    assert is_current_page_query(None) is False
+
+
+def test_normalize_uyghur():
     orig = "ئېيى"
-    norm = rag_service._normalize_uyghur(orig)
-    assert "\u06D0" not in norm
-    assert "\u064A" not in norm
+    norm = normalize_uyghur(orig)
+    assert norm == normalize_uyghur("ئىيى")
 
-def test_is_author_or_catalog_query(rag_service):
-    assert rag_service._is_author_or_catalog_query("بۇ كىتابنىڭ ئاپتورى كىم؟") is True
-    assert rag_service._is_author_or_catalog_query("قايسى كىتابلار بار؟") is True
 
-def test_entity_matches_question(rag_service):
-    assert rag_service._entity_matches_question("زوردۇن سابىر", "زوردۇن سابىرنىڭ ئەسىرى") is True
-    assert rag_service._entity_matches_question("ئانا يۇرت", "ئانا يۇرتتا نېمە بار؟") is True
+def test_is_author_or_catalog_query():
+    assert is_author_or_catalog_query("بۇ كىتابنىڭ ئاپتورى كىم؟") is True
+    assert is_author_or_catalog_query("بەت 10 نى ئوقۇ") is False
 
-def test_format_book_catalog(rag_service):
-    # The standalone _format_book_catalog method does NOT include status tags
-    books = [
-        MagicMock(title="T1", author="A1"),
-        MagicMock(title="T2", author=None)
-    ]
-    catalog = rag_service._format_book_catalog(books)
-    assert "T1 (Author: A1)" in catalog
-    assert "- T2" in catalog
 
-def test_format_document(rag_service):
+def test_entity_matches_question():
+    assert entity_matches_question("زوردۇن سابىر", "زوردۇن سابىرنىڭ ئەسىرى") is True
+    assert entity_matches_question("زوردۇن سابىر", "يازغۇچى كىم؟") is False
+
+
+def test_format_document():
     doc = Document(
         page_content="Content",
         metadata={
@@ -50,19 +52,32 @@ def test_format_document(rag_service):
             "page": 10
         }
     )
-    formatted = rag_service._format_document(doc)
-    assert "[BookID: b1, Book: Title, Author: Author, Volume: 1, Page: 10]\nContent" == formatted
+    formatted = format_document(doc)
+    assert "Content" in formatted
+    assert "Title" in formatted
+    assert "BookID: b1" in formatted
+
 
 @pytest.mark.asyncio
-async def test_build_catalog_context_title_match(rag_service):
+async def test_build_catalog_context_title_match():
     session = AsyncMock()
+    
+    # 1st execute is select Book.title to get all title candidates
     mock_titles = MagicMock()
     mock_titles.fetchall.return_value = [("ئانا يۇرت",)]
-    session.execute.side_effect = [
-        mock_titles,
-        MagicMock(fetchall=MagicMock(return_value=[MagicMock(title="ئانا يۇرت", author="سابىر", volume=1, total_pages=500, status="ready")]))
+    
+    # 2nd execute is select title, author, volume, etc. for matched title
+    mock_books = MagicMock()
+    mock_books.fetchall.return_value = [
+        MagicMock(title="ئانا يۇرت", author="زوردۇن سابىر", volume=1, total_pages=500, status="ready")
     ]
     
-    ctx, count = await rag_service._build_catalog_context("ئانا يۇرتتا نېمە بار؟", session)
-    assert "Information about 'ئانا يۇرت':" in ctx
+    session.execute.side_effect = [
+        mock_titles,
+        mock_books
+    ]
+
+    ctx, count = await CatalogHandler._build_catalog_context("ئانا يۇرتتا نېمە بار؟", session)
+    assert "ئانا يۇرت" in ctx
+    assert "زوردۇن سابىر" in ctx
     assert count == 1

@@ -61,7 +61,7 @@ class Settings:
 
     # RAG Settings
     rag_score_threshold: float = float(os.getenv("RAG_SCORE_THRESHOLD", "0.50"))
-    rag_top_k: int = int(os.getenv("RAG_TOP_K", "16"))
+    rag_top_k: int = int(os.getenv("RAG_TOP_K", "20"))
     rag_max_chars_per_book: int = int(os.getenv("RAG_MAX_CHARS_PER_BOOK", "6000"))
 
     # Book Summary / Hierarchical RAG Settings

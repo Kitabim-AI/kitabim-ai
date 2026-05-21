@@ -38,6 +38,7 @@ from jobs.embedding_job import embedding_job
 from jobs.spell_check_job import spell_check_job
 from jobs.summary_job import summary_job
 from jobs.auto_correct_job import auto_correct_job
+from jobs.eval_job import evaluate_rag_query
 
 
 class WorkerSettings:
@@ -50,6 +51,7 @@ class WorkerSettings:
         spell_check_job,
         summary_job,
         auto_correct_job,
+        evaluate_rag_query,
     ]
 
     # Build cron jobs list conditionally based on feature flags

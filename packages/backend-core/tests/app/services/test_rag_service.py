@@ -1,112 +1,118 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from app.services.rag_service import RAGService
-from app.models.schemas import ChatRequest
+from langchain_core.documents import Document
 
-@pytest.fixture
-def rag_service():
-    return RAGService()
+from app.services.rag.context import QueryContext
+from app.services.rag.agent.handler import AgentRAGHandler
+from app.services.rag.agent.nodes.grade_context import grade_context_node
 
-@pytest.mark.asyncio
-async def test_rag_get_embeddings(rag_service):
-    with patch("app.services.rag_service.GeminiEmbeddings") as mock_emb:
-        rag_service._get_embeddings("model-1")
-        assert "model-1" in rag_service._embeddings_cache
-        rag_service._get_embeddings("model-1")
-        assert mock_emb.call_count == 1
 
 @pytest.mark.asyncio
-async def test_rag_get_chains(rag_service):
-    with patch("app.services.rag_service.build_text_chain"):
-        with patch("app.services.rag_service.build_structured_chain"):
-            rag_service._get_rag_chain("m1")
-            rag_service._get_category_chain("m1")
-            assert "m1" in rag_service._rag_chains
-            assert "m1" in rag_service._category_chains
+async def test_grade_context_node_preserves_metadata(monkeypatch):
+    # Mock stream writer
+    mock_writer = MagicMock()
+    with patch("app.services.rag.agent.nodes.grade_context.get_stream_writer", return_value=mock_writer):
+        # Setup observations
+        # 1. Metadata tool observation (like get_book_summary or search_catalog)
+        # Note: it must return a dict with result containing 'context'
+        meta_obs = {
+            "tool": "get_book_summary",
+            "result": {
+                "context": "[BookID: book1, Book: Title1] Summary context text here."
+            }
+        }
+        # 2. Chunk documents observation
+        chunk_obs = {
+            "tool": "search_chunks",
+            "result": {
+                "chunks": [
+                    {
+                        "text": "Chunk content",
+                        "score": 0.85,
+                        "book_id": "book2",
+                        "page": 25,
+                        "title": "Title2",
+                        "author": "Author2",
+                        "volume": 1
+                    }
+                ]
+            }
+        }
+        
+        state = {
+            "observations": [meta_obs, chunk_obs],
+            "retrieved_context": "Pre-compiled context string",
+            "question": "Test query"
+        }
+        
+        res = await grade_context_node(state)
+        
+        # Verify both metadata block and formatted document chunk exist in graded_context
+        graded_context = res["graded_context"]
+        assert "[BookID: book1, Book: Title1] Summary context text here." in graded_context
+        assert "Chunk content" in graded_context
+        assert "BookID: book2" in graded_context
+        assert "Page: 25" in graded_context
 
-def test_rag_is_current_volume_query():
-    assert RAGService._is_current_volume_query("ئۇشبۇ تومدا بارمۇ؟") is True
-    assert RAGService._is_current_volume_query("") is False
-    assert RAGService._is_current_volume_query(None) is False
-
-def test_rag_is_current_page_query():
-    assert RAGService._is_current_page_query("بۇ بەتتە نېمە بار؟") is True
-    assert RAGService._is_current_page_query("") is False
 
 @pytest.mark.asyncio
-async def test_rag_answer_question_catalog(rag_service):
-    session = AsyncMock()
-    session.add = MagicMock()
-    req = ChatRequest(book_id="global", question="مۇئەللىپ كىم؟", history=[])
+async def test_agent_rag_handler_handle():
+    handler = AgentRAGHandler()
+    ctx = MagicMock()
+    ctx.agent_model = "model-x"
     
-    # Mock repositories
-    mock_configs = MagicMock()
-    mock_configs.get_value = AsyncMock(side_effect=["chat-model", "cat-model", "emb-model"])
+    mock_graph = MagicMock()
+    # Mock ainvoke to return final state
+    mock_graph.ainvoke = AsyncMock(return_value={
+        "final_answer": "This is the answer. [مەنبە](ref:book1:12)",
+        "step_count": 3,
+        "observations": [{"tool": "search_chunks"}],
+        "tool_calls": [{"name": "search_chunks"}]
+    })
     
-    with patch("app.db.repositories.system_configs.SystemConfigsRepository", return_value=mock_configs):
-        with patch("app.db.repositories.books.BooksRepository"):
-            with patch("app.db.repositories.pages.PagesRepository"):
-                with patch("app.db.repositories.chunks.ChunksRepository"):
-                    with patch.object(rag_service, "_generate_answer", return_value="The author is X"):
-                        # Mock _build_catalog_context
-                        with patch.object(rag_service, "_build_catalog_context", return_value=("Context", 1)):
-                            res = await rag_service.answer_question(req, session)
-                            assert res == "The author is X"
+    with patch("app.services.rag.agent.graph.get_or_build_graph", return_value=mock_graph), \
+         patch("app.services.rag.agent.graph.build_initial_state") as mock_init, \
+         patch("app.services.rag.agent.graph.populate_ctx_from_state") as mock_populate:
+         
+        mock_init.return_value = {}
+        
+        answer = await handler.handle(ctx)
+        
+        assert answer == "This is the answer. [مەنبە](ref:book1:12)"
+        mock_graph.ainvoke.assert_called_once_with({})
+        mock_populate.assert_called_once_with(ctx, mock_graph.ainvoke.return_value)
+
 
 @pytest.mark.asyncio
-async def test_rag_answer_question_full_loop(rag_service):
-    session = AsyncMock()
-    session.add = MagicMock()
-    req = ChatRequest(book_id="b1", question="What is in the book?", history=[])
+async def test_agent_rag_handler_handle_stream():
+    handler = AgentRAGHandler()
+    ctx = MagicMock()
+    ctx.agent_model = "model-x"
     
-    mock_configs = MagicMock()
-    mock_configs.get_value = AsyncMock(side_effect=["chat-model", "cat-model", "emb-model"])
+    mock_graph = MagicMock()
     
-    with patch("app.db.repositories.system_configs.SystemConfigsRepository", return_value=mock_configs):
-        with patch("app.db.repositories.books.BooksRepository") as mock_books_repo_cls:
-            mock_books_repo = mock_books_repo_cls.return_value
-            mock_book = MagicMock()
-            mock_book.id = "b1"
-            mock_book.title = "T1"
-            mock_book.author = "A1"
-            mock_book.status = "ready"
-            mock_books_repo.get = AsyncMock(return_value=mock_book)
+    # Mock astream to yield custom/values events
+    async def mock_astream(*args, **kwargs):
+        yield "custom", {"type": "tool_call", "name": "search_chunks"}
+        yield "custom", {"type": "chunk", "text": "Answer chunk"}
+        yield "values", {"final_answer": "Final", "step_count": 2}
+        
+    mock_graph.astream = mock_astream
+    
+    with patch("app.services.rag.agent.graph.get_or_build_graph", return_value=mock_graph), \
+         patch("app.services.rag.agent.graph.build_initial_state") as mock_init, \
+         patch("app.services.rag.agent.graph.populate_ctx_from_state") as mock_populate:
+         
+        mock_init.return_value = {}
+        
+        events = []
+        async for event in handler.handle_stream(ctx):
+            events.append(event)
             
-            # Mock session.execute for siblings search
-            mock_siblings_res = MagicMock()
-            mock_siblings_res.fetchall.return_value = []
-            session.execute = AsyncMock(return_value=mock_siblings_res)
-            
-            with patch("app.db.repositories.pages.PagesRepository"):
-                with patch("app.db.repositories.chunks.ChunksRepository") as mock_chunks_repo_cls:
-                    mock_chunks_repo = mock_chunks_repo_cls.return_value
-                    mock_chunks_repo.similarity_search = AsyncMock(return_value=[
-                        {"text": "Content", "similarity": 0.9, "page_number": 1, "title": "T1", "book_id": "b1"}
-                    ])
-                    
-                    with patch("app.services.rag_service.cache_service") as mock_cache:
-                        # First call for embedding, second call for search results
-                        # We return None for search results so it calls similarity_search
-                        mock_cache.get = AsyncMock(side_effect=[[0.1]*768, None])
-                        
-                        with patch.object(rag_service, "_generate_answer", return_value="Answer from RAG"):
-                            res = await rag_service.answer_question(req, session)
-                            assert res == "Answer from RAG"
-
-@pytest.mark.asyncio
-async def test_rag_generate_answer(rag_service):
-    chain = AsyncMock()
-    chain.ainvoke.return_value = " Predicted "
-    
-    res = await rag_service._generate_answer("Context", "Question", chain)
-    assert res == "Predicted"
-
-@pytest.mark.asyncio
-async def test_rag_categorize_question(rag_service):
-    chain = AsyncMock()
-    mock_resp = MagicMock()
-    mock_resp.categories = ["cat1"]
-    chain.ainvoke.return_value = mock_resp
-    
-    cats = await rag_service._categorize_question("Question", ["cat1", "cat2"], chain)
-    assert cats == ["cat1"]
+        assert events == [
+            {"type": "tool_call", "name": "search_chunks"},
+            {"type": "chunk", "text": "Answer chunk"}
+        ]
+        
+        # Verify terminal state populated context
+        mock_populate.assert_called_once_with(ctx, {"final_answer": "Final", "step_count": 2})

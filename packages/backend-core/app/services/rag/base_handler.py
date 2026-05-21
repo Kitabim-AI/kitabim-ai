@@ -20,9 +20,8 @@ class QueryHandler(ABC):
 
     intent_name: str = "base"
     priority: int = 50
-    is_fast_handler: bool = False
 
-    def can_handle(self, ctx: "QueryContext") -> bool:
+    def can_handle(self, _ctx: "QueryContext") -> bool:
         """Sync, fast check — must NOT perform I/O.
 
         Return True if this handler should process the request.
@@ -34,11 +33,6 @@ class QueryHandler(ABC):
         """Return a complete answer string."""
         ...
 
-    async def handle_stream(self, ctx: "QueryContext") -> AsyncIterator[str]:
-        """Yield answer string chunks.
-
-        Default implementation calls ``handle()`` and yields the result as a
-        single chunk.  Override in handlers that can stream token-by-token
-        (e.g. those backed by ``generate_answer_stream``).
-        """
+    async def handle_stream(self, ctx: "QueryContext") -> AsyncIterator:
+        """Yield str|dict typed events. Graph-backed handlers yield typed event dicts."""
         yield await self.handle(ctx)

@@ -114,11 +114,13 @@ const AppContent: React.FC = () => {
           onSendMessage={chat.handleSendMessage}
           isChatting={chat.isChatting}
           streamingMessage={chat.streamingMessage}
+          agentSteps={chat.agentSteps}
           usageStatus={chat.usageStatus}
           onClose={() => setView(previousView)}
           chatContainerRef={chat.chatContainerRef}
           selectedCharacterId={chat.selectedCharacterId}
           setSelectedCharacterId={chat.setSelectedCharacterId}
+          submitFeedback={chat.submitFeedback}
         />
       )}
       {view === 'join-us' && <JoinUsView />}

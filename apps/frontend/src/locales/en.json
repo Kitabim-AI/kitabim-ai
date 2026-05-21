@@ -176,7 +176,27 @@
       "Searching through the books",
       "Looking a bit deeper",
       "I will find an answer to this"
-    ]
+    ],
+    "agent": {
+      "analyzing": "Analyzing your question",
+      "thinking": "Thinking...",
+      "searchingContent": "Searching content",
+      "searchingBooks": "Searching books",
+      "findingByTitle": "Finding books by title",
+      "rewritingQuery": "Clarifying question",
+      "lookingUpAuthor": "Looking up author",
+      "findingByAuthor": "Finding books by author",
+      "searchingCatalog": "Browsing catalog",
+      "readingSummary": "Reading summaries",
+      "findingVolumes": "Finding related volumes",
+      "readingPage": "Reading current page",
+      "grading": "Selecting best context",
+      "decomposing": "Splitting into {{count}} questions",
+      "foundContent": "Found {{count}}",
+      "foundBooks": "Found {{count}} books",
+      "keptContent": "{{kept}} of {{total}} content kept",
+      "keptBooks": "{{kept}} of {{total}} books kept"
+    }
   },
   "reader": {
     "reading": "Reading",
@@ -225,7 +245,15 @@
       "chunkStats": "Vector Chunk Statistics",
       "totalChunks": "Total Chunks",
       "embeddedChunks": "Vectorized Chunks",
-      "pendingChunks": "Pending Chunks"
+      "pendingChunks": "Pending Chunks",
+      "ragQualityTitle": "RAG Quality (Ragas)",
+      "totalQueries": "Total Queries",
+      "gradedEvaluations": "Graded by Ragas",
+      "avgFaithfulness": "Avg Faithfulness",
+      "avgFaithfulnessNoData": "Avg Faithfulness — no data yet",
+      "avgAnswerRelevance": "Avg Answer Relevance",
+      "avgAnswerRelevanceNoData": "Avg Answer Relevance — no data yet",
+      "ragStatsUnavailable": "RAG stats unavailable ({{status}})"
     },
     "contacts": {
       "title": "Contact Submissions",
