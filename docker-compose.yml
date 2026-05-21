@@ -47,7 +47,7 @@ services:
       postgres:
         condition: service_healthy
       memgraph:
-        condition: service_started
+        condition: service_healthy
     env_file:
       - .env
     environment:
@@ -87,7 +87,7 @@ services:
       postgres:
         condition: service_healthy
       memgraph:
-        condition: service_started
+        condition: service_healthy
     env_file:
       - .env
     environment:
@@ -123,13 +123,20 @@ services:
 
   # ─── Memgraph (Graph DB) ──────────────────────────────────────────────────
   memgraph:
-    image: memgraph/memgraph-platform:latest
+    # NOTE: bind-mounting /var/lib/memgraph causes a segfault (mmap/AppArmor
+    # interaction on bind-mounted paths). The knowledge graph is rebuilt from
+    # PostgreSQL on demand, so ephemeral storage is acceptable here.
+    image: memgraph/memgraph:3.10.1
     restart: always
     ports:
       - "37687:7687"
-      - "33000:3000"
-    volumes:
-      - memgraph_data:/var/lib/memgraph
+    healthcheck:
+      # Use bash /dev/tcp to verify the Bolt port is accepting connections
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/7687' 2>/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -137,4 +144,3 @@ services:
 
 volumes:
   postgres_data:
-  memgraph_data:
