@@ -175,3 +175,52 @@ async def test_graph_repository_query_subgraph():
         assert call_kwargs["entity_names"] == ["A", "B"]
         assert records == [{"source": "A", "rel": "KNOWS", "target": "B"}]
 
+
+@pytest.mark.asyncio
+async def test_graph_repository_bulk_ops():
+    mock_session = AsyncMock()
+    mock_session.__aenter__.return_value = mock_session
+    mock_driver = MagicMock()
+    mock_driver.session.return_value = mock_session
+
+    with patch("app.db.repositories.graph.AsyncGraphDatabase.driver", return_value=mock_driver):
+        repo = GraphRepository()
+
+        # 1. Test upsert_chunks_and_connect_bulk
+        chunks = [{"id": 1, "page_number": 1, "text_preview": "Text"}]
+        await repo.upsert_chunks_and_connect_bulk("b1", chunks)
+        assert mock_session.run.called
+        call_args = mock_session.run.call_args[0]
+        call_kwargs = mock_session.run.call_args[1]
+        assert "UNWIND $chunks_data" in call_args[0]
+        assert call_kwargs["book_id"] == "b1"
+        assert call_kwargs["chunks_data"] == chunks
+
+        # 2. Test upsert_entities_bulk
+        entities = [{"name": "E1", "type": "Person", "subtype": None}]
+        await repo.upsert_entities_bulk(entities)
+        assert mock_session.run.called
+        call_args = mock_session.run.call_args[0]
+        call_kwargs = mock_session.run.call_args[1]
+        assert "UNWIND $entities_data" in call_args[0]
+        assert call_kwargs["entities_data"] == entities
+
+        # 3. Test connect_chunks_entities_bulk
+        pairs = [{"chunk_id": 1, "entity_name": "E1"}]
+        await repo.connect_chunks_entities_bulk(pairs)
+        assert mock_session.run.called
+        call_args = mock_session.run.call_args[0]
+        call_kwargs = mock_session.run.call_args[1]
+        assert "UNWIND $pairs_data" in call_args[0]
+        assert call_kwargs["pairs_data"] == pairs
+
+        # 4. Test connect_entities_bulk
+        relations = [{"source_name": "E1", "rel_type": "KNOWS", "target_name": "E2"}]
+        await repo.connect_entities_bulk(relations)
+        assert mock_session.run.called
+        call_args = mock_session.run.call_args[0]
+        call_kwargs = mock_session.run.call_args[1]
+        assert "UNWIND $relations_data" in call_args[0]
+        assert call_kwargs["relations_data"] == relations
+
+

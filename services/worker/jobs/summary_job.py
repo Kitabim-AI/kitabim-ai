@@ -197,21 +197,21 @@ async def summary_job(ctx, book_id: str) -> None:
                         # If source matches book title, connect Book node directly
                         if src.lower() == book.title.lower():
                             await graph_repo.connect_book_to_entity(
-                            book_id=book_id,
-                            entity_name=tgt,
-                            rel_type=rtype,
-                        )
-                    else:
-                        # Ensure source entity exists
-                        await graph_repo.upsert_entity(
-                            name=src,
-                            entity_type=EntityType.PERSON.value,
-                        )
-                        await graph_repo.connect_entities(
-                            source_name=src,
-                            rel_type=rtype,
-                            target_name=tgt,
-                        )
+                                book_id=book_id,
+                                entity_name=tgt,
+                                rel_type=rtype,
+                            )
+                        else:
+                            # Ensure source entity exists
+                            await graph_repo.upsert_entity(
+                                name=src,
+                                entity_type=EntityType.PERSON.value,
+                            )
+                            await graph_repo.connect_entities(
+                                source_name=src,
+                                rel_type=rtype,
+                                target_name=tgt,
+                            )
                 log_json(logger, logging.INFO, "summary job: indexed global book relationships in Memgraph", book_id=book_id)
             else:
                 log_json(logger, logging.WARNING, "gemini_api_key not configured, skipping global graph extraction", book_id=book_id)

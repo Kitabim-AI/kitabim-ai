@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 from neo4j import AsyncGraphDatabase
 
 from app.core.config import settings
@@ -19,7 +20,22 @@ class GraphRepository:
 
     def __init__(self, uri: Optional[str] = None) -> None:
         self._uri = uri or settings.memgraph_url
-        # Memgraph runs without authentication by default.
+        
+        # Parse credentials from the URI if present, as the Neo4j driver does not support
+        # credentials embedded directly in the URI scheme.
+        parsed = urlparse(self._uri)
+        if parsed.username and parsed.password:
+            auth = (parsed.username, parsed.password)
+            # Reconstruct clean URI without credentials
+            clean_uri = f"{parsed.scheme}://{parsed.hostname}"
+            if parsed.port:
+                clean_uri += f":{parsed.port}"
+            if parsed.path:
+                clean_uri += parsed.path
+        else:
+            auth = None
+            clean_uri = self._uri
+
         # liveness_check_timeout=0: verify each pooled connection is alive before
         #   returning it to the caller — prevents "defunct connection" errors that occur
         #   when Memgraph closes an idle connection server-side while it is still in the pool.
@@ -29,8 +45,8 @@ class GraphRepository:
         #   chunks at ~4 graph calls each fits comfortably within this limit.
         # connection_timeout=30: fail fast rather than waiting indefinitely on a dead host.
         self._driver = AsyncGraphDatabase.driver(
-            self._uri,
-            auth=None,
+            clean_uri,
+            auth=auth,
             max_connection_pool_size=20,
             max_connection_lifetime=300,
             connection_timeout=30,
@@ -185,6 +201,71 @@ class GraphRepository:
                 target_name=target_name,
                 rel_type=rel_type,
             )
+
+    async def upsert_chunks_and_connect_bulk(
+        self,
+        book_id: str,
+        chunks: List[Dict[str, Any]],
+    ) -> None:
+        """Create/update Chunk nodes and connect them to the Book node in bulk."""
+        if not chunks:
+            return
+        query = """
+        UNWIND $chunks_data AS c_data
+        MERGE (c:Chunk {id: c_data.id})
+        SET c.book_id = $book_id,
+            c.page_number = c_data.page_number,
+            c.text_preview = c_data.text_preview
+        WITH c
+        MATCH (b:Book {id: $book_id})
+        MERGE (b)-[:HAS_CHUNK]->(c)
+        """
+        async with self._driver.session() as session:
+            await session.run(
+                query,
+                book_id=str(book_id),
+                chunks_data=chunks,
+            )
+
+    async def upsert_entities_bulk(self, entities: List[Dict[str, Any]]) -> None:
+        """Create or update Entity nodes in bulk."""
+        if not entities:
+            return
+        query = """
+        UNWIND $entities_data AS e_data
+        MERGE (e:Entity {name: e_data.name})
+        SET e.type = e_data.type,
+            e.subtype = e_data.subtype
+        """
+        async with self._driver.session() as session:
+            await session.run(query, entities_data=entities)
+
+    async def connect_chunks_entities_bulk(self, pairs: List[Dict[str, Any]]) -> None:
+        """Create MENTIONS relationships between Chunks and Entities in bulk."""
+        if not pairs:
+            return
+        query = """
+        UNWIND $pairs_data AS pair
+        MATCH (c:Chunk {id: pair.chunk_id})
+        MATCH (e:Entity {name: pair.entity_name})
+        MERGE (c)-[:MENTIONS]->(e)
+        """
+        async with self._driver.session() as session:
+            await session.run(query, pairs_data=pairs)
+
+    async def connect_entities_bulk(self, relations: List[Dict[str, Any]]) -> None:
+        """Create RELATED_TO relationships between Entities in bulk."""
+        if not relations:
+            return
+        query = """
+        UNWIND $relations_data AS rel
+        MATCH (s:Entity {name: rel.source_name})
+        MATCH (t:Entity {name: rel.target_name})
+        MERGE (s)-[r:RELATED_TO]->(t)
+        SET r.type = rel.rel_type
+        """
+        async with self._driver.session() as session:
+            await session.run(query, relations_data=relations)
 
     async def query_subgraph(self, entity_names: List[str]) -> List[Dict[str, Any]]:
         """Query 1-hop relationships for a list of entity names to construct context."""

@@ -78,3 +78,44 @@ def test_parse_and_clean_invalid_json():
     exc = ValueError("Failed to parse from completion {entities: [broken json").with_traceback(None)
     parsed = parse_and_clean_json_from_exception(exc, KnowledgeExtraction)
     assert parsed is None
+
+
+def test_entity_type_normalization_variations():
+    # Test direct validation of EntityType enum
+    from app.services.knowledge_graph_service import EntityType
+    assert EntityType("person") == EntityType.PERSON
+    assert EntityType("PERSONS") == EntityType.PERSON
+    assert EntityType("character") == EntityType.PERSON
+    
+    assert EntityType("location") == EntityType.LOCATION
+    assert EntityType("cities") == EntityType.LOCATION
+    
+    assert EntityType("historical era") == EntityType.ERA
+    assert EntityType("Historical_Era") == EntityType.ERA
+    assert EntityType("era") == EntityType.ERA
+    
+    assert EntityType("kingdom") == EntityType.ORGANIZATION
+    assert EntityType("dynasty") == EntityType.ORGANIZATION
+    
+    assert EntityType("theme") == EntityType.CONCEPT
+    assert EntityType("concepts") == EntityType.CONCEPT
+    
+    # Test validation of entities with variations through parse_and_clean_json_from_exception
+    error_message = (
+        'Failed to parse KnowledgeExtraction from completion {\n'
+        '  "entities": [\n'
+        '    {"name": "Nuh", "type": "person", "subtype": "Prophet"},\n'
+        '    {"name": "Yafes", "type": "historical era", "subtype": "Era Setting"},\n'
+        '    {"name": "Kashgar", "type": "cities"}\n'
+        '  ],\n'
+        '  "relations": []\n'
+        '}. Got: validation errors...'
+    )
+    exc = ValueError(error_message)
+    parsed = parse_and_clean_json_from_exception(exc, KnowledgeExtraction)
+    assert parsed is not None
+    assert len(parsed.entities) == 3
+    assert parsed.entities[0].type == EntityType.PERSON
+    assert parsed.entities[1].type == EntityType.ERA
+    assert parsed.entities[2].type == EntityType.LOCATION
+

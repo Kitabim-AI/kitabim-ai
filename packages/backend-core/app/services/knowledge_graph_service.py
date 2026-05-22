@@ -20,6 +20,31 @@ class EntityType(str, Enum):
     CONCEPT = "Concept"
     OTHER = "Other"
 
+    @classmethod
+    def _missing_(cls, value: object) -> EntityType | None:
+        if not isinstance(value, str):
+            return None
+        val = value.strip().lower()
+        if val in ("person", "persons", "character", "characters", "author", "authors"):
+            return cls.PERSON
+        if val in ("location", "locations", "place", "places", "city", "cities", "country", "countries"):
+            return cls.LOCATION
+        if val in ("event", "events"):
+            return cls.EVENT
+        if val in ("organization", "organizations", "kingdom", "kingdoms", "state", "states", "dynasty", "dynasties"):
+            return cls.ORGANIZATION
+        if val in ("historicalera", "era", "eras", "timeperiod", "historical era", "historical_era"):
+            return cls.ERA
+        if val in ("concept", "concepts", "theme", "themes", "book", "books"):
+            return cls.CONCEPT
+        if val in ("other", "others"):
+            return cls.OTHER
+        
+        for member in cls:
+            if member.value.lower() == val:
+                return member
+        return None
+
 
 class ExtractedEntity(BaseModel):
     name: str = Field(description="The standard name of the person, place, event, era or concept")

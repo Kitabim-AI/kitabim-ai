@@ -98,16 +98,16 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
 
             async def process_chunk_batch(batch: list[Chunk]) -> None:
                 async with semaphore:
-                    # Write Chunk nodes and book→chunk edges (no LLM required for structure)
+                    # Write Chunk nodes and book→chunk edges in bulk
+                    chunks_bulk = []
                     for chunk in batch:
                         text_preview = chunk.text[:100] + "..." if chunk.text else ""
-                        await graph_repo.upsert_chunk(
-                            chunk_id=chunk.id,
-                            book_id=str(book.id),
-                            page_number=chunk.page_number,
-                            text_preview=text_preview,
-                        )
-                        await graph_repo.connect_book_chunk(book_id=str(book.id), chunk_id=chunk.id)
+                        chunks_bulk.append({
+                            "id": chunk.id,
+                            "page_number": chunk.page_number,
+                            "text_preview": text_preview,
+                        })
+                    await graph_repo.upsert_chunks_and_connect_bulk(str(book.id), chunks_bulk)
 
                     chunks_with_text = [c for c in batch if c.text]
                     if not chunks_with_text:
@@ -157,34 +157,71 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
 
                     if extraction:
                         try:
+                            # 1. Collect all entity names defined in extraction.entities
+                            defined_entity_names = {e.name.strip() for e in extraction.entities if e.name.strip()}
+
+                            # 2. Extract and format entities
+                            entities_to_upsert = []
                             for entity in extraction.entities:
                                 name = entity.name.strip()
                                 if not name:
                                     continue
-                                await graph_repo.upsert_entity(
-                                    name=name,
-                                    entity_type=entity.type.value,
-                                    subtype=entity.subtype,
-                                )
-                                # Attribute the entity to every chunk in this batch that had text.
-                                # We don't know which specific chunk it came from; this is the
-                                # most accurate representation available in batched mode.
-                                for chunk in chunks_with_text:
-                                    await graph_repo.connect_chunk_entity(
-                                        chunk_id=chunk.id, entity_name=name
-                                    )
+                                entities_to_upsert.append({
+                                    "name": name,
+                                    "type": entity.type.value,
+                                    "subtype": entity.subtype,
+                                })
 
+                            # 3. Scan relations for any entities not in defined_entity_names to ensure MATCH matches them
+                            fallback_entities = []
+                            for rel in extraction.relations:
+                                src = rel.source_entity.strip()
+                                tgt = rel.target_entity.strip()
+                                if src and src not in defined_entity_names:
+                                    fallback_entities.append(src)
+                                    defined_entity_names.add(src)
+                                if tgt and tgt not in defined_entity_names:
+                                    fallback_entities.append(tgt)
+                                    defined_entity_names.add(tgt)
+
+                            for name in fallback_entities:
+                                entities_to_upsert.append({
+                                    "name": name,
+                                    "type": "Concept",  # Fallback type
+                                    "subtype": "Auto-extracted from relation",
+                                })
+
+                            # 4. Upsert entities in bulk
+                            if entities_to_upsert:
+                                await graph_repo.upsert_entities_bulk(entities_to_upsert)
+
+                            # 5. Connect chunks to entities in bulk (cross-attribute all extracted entities to chunks in batch)
+                            pairs_to_connect = []
+                            for name in defined_entity_names:
+                                for chunk in chunks_with_text:
+                                    pairs_to_connect.append({
+                                        "chunk_id": chunk.id,
+                                        "entity_name": name,
+                                    })
+                            if pairs_to_connect:
+                                await graph_repo.connect_chunks_entities_bulk(pairs_to_connect)
+
+                            # 6. Connect entities in bulk
+                            relations_to_connect = []
                             for rel in extraction.relations:
                                 src = rel.source_entity.strip()
                                 tgt = rel.target_entity.strip()
                                 rtype = rel.relation_type.strip()
                                 if not src or not tgt or not rtype:
                                     continue
-                                await graph_repo.connect_entities(
-                                    source_name=src,
-                                    rel_type=rtype,
-                                    target_name=tgt,
-                                )
+                                relations_to_connect.append({
+                                    "source_name": src,
+                                    "rel_type": rtype,
+                                    "target_name": tgt,
+                                })
+                            if relations_to_connect:
+                                await graph_repo.connect_entities_bulk(relations_to_connect)
+
                         except Exception as save_exc:
                             log_json(
                                 logger, logging.ERROR, "failed to save parsed/recovered entities/relations to Memgraph",

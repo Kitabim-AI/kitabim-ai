@@ -142,5 +142,23 @@ services:
         limits:
           memory: 1G
 
+  # ─── Memgraph Lab (Visualization UI) ──────────────────────────────────────
+  memgraph-lab:
+    image: memgraph/lab:latest
+    restart: always
+    ports:
+      - "33000:3000"
+    environment:
+      - QUICK_CONNECT_MG_HOST=memgraph
+      - QUICK_CONNECT_MG_PORT=7687
+    depends_on:
+      memgraph:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+
 volumes:
   postgres_data:
