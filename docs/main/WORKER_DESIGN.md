@@ -74,6 +74,7 @@ worker/
     spell_check_job.py    ← identifies unknown words and suggests corrections
     auto_correct_job.py   ← applies auto-correction rules to spell issues
     summary_job.py        ← generates semantic book summaries for RAG routing
+    knowledge_graph_job.py ← extracts semantic entities and relationships to index in Memgraph
   worker.py               ← ARQ WorkerSettings
 
 ```
@@ -239,6 +240,21 @@ Jobs are pure executors — they process pages and report success or failure. Th
      f. Set embedding_milestone = 'failed'
 ```
 
+**KnowledgeGraphJob(book_id):**
+
+```
+1. Verify book exists and chunks are present in PostgreSQL.
+2. Load all chunks for the book.
+3. For each chunk (async, semaphore-limited concurrency of 5):
+     a. Call Gemini with the page chunk content to extract entities (Person, Location, Organization, Work, Event) and relationships.
+     b. Parse structured JSON containing names, types, descriptions, target connections.
+4. Establish a Bolt session with Memgraph.
+5. Upsert the Book node (id, title, author, summary).
+6. Upsert Entity nodes (standardizing names, trimming whitespace).
+7. Create MENTIONS relationship from Book node to Entity nodes, recording the chunk UUID list and mention count.
+8. Create semantic relationships (LIVES_IN, WRITTEN_BY, PARTICIPATED_IN, RELATED_TO, etc.) between Entity nodes, storing source chunk UUIDs as metadata.
+```
+
 ---
 
 ### StaleWatchdog
@@ -270,6 +286,7 @@ Runs every 30 minutes.
 | `stale_watchdog` | Every 30 min | Uniform reset for all steps |
 | `maintenance_scanner`| Daily at 3 AM | Database house keeping |
 | `summary_scanner`     | Every 5 min | Regenerates missing book summaries |
+| `graph_scanner`       | Every 5 min | Regenerates missing book knowledge graphs |
 | `auto_correct_scanner` | Daily at 3 AM | Bulk applies spell corrections |
 
 
@@ -319,6 +336,9 @@ flowchart TD
     EMB_FAIL -->|retry_count >= max| TERMINAL
     EMB_OK -->|PipelineDriver: mandatory terminal| BookReady([book.pipeline_step = ready])
     TERMINAL -->|PipelineDriver: mandatory terminal| BookReady
+
+    BookReady -->|Enqueue| SummaryJob[summary_job\n(Gen summary)]
+    BookReady -->|Enqueue| KGJob[knowledge_graph_job\n(Extract Graph)]
 
     SPELL_IDLE -->|SpellCheckScanner: claim| SPELL_IP
     SPELL_IP -->|SpellCheckJob: success| SPELL_OK

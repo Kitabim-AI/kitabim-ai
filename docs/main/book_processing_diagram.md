@@ -40,6 +40,17 @@ flowchart TD
     J_EM -->|embedding terminal| PD[Pipeline Driver\nevery 1 min]
     PD -->|all pages terminal| Ready([Book: ready])
 
+    Ready -->|Enqueue| J_SUM[Summary Job]
+    Ready -->|Enqueue| J_KG[Knowledge Graph Job]
+
+    %% Backfill Scanners
+    S_SUM[Summary Scanner] -.->|Claim missing| J_SUM
+    S_KG[Graph Scanner] -.->|Claim missing| J_KG
+
+    J_SUM -->|Save summary| PG[(PostgreSQL)]
+    J_SUM -->|Save summary| MG[(Memgraph)]
+    J_KG -->|Index entities & relations| MG
+
     %% Independent quality layer — runs in parallel, does NOT block readiness
     subgraph SpellCheck [Independent Quality Layer]
         S_SC[Spell Check Scanner\ndep: ocr=succeeded only] -->|Claim idle| J_SC[Spell Check Job]
@@ -54,11 +65,13 @@ flowchart TD
     classDef job fill:#d4f1f4,stroke:#189ab4,stroke-width:1px
     classDef event fill:#ffe8d6,stroke:#b5838d,stroke-dasharray: 5 5
     classDef driver fill:#fef9c3,stroke:#854d0e,stroke-width:1px
+    classDef db fill:#f3f4f6,stroke:#4b5563,stroke-width:1px
 
     class InitDB,Ready stage
-    class J_OCR,J_CH,J_EM,J_SC job
+    class J_OCR,J_CH,J_EM,J_SC,J_SUM,J_KG job
     class OB,ED event
     class PD driver
+    class PG,MG db
 ```
 
 ---

@@ -48,11 +48,21 @@ async def run_summary_scanner(ctx) -> None:
     if not book_ids:
         return
 
+    # enqueue_job returns None when arq deduplicates (job already queued/running).
+    # Only count and log books that were genuinely newly enqueued.
+    newly_enqueued = []
     for book_id in book_ids:
-        await redis.enqueue_job(
+        job = await redis.enqueue_job(
             "summary_job",
             book_id=book_id,
             _job_id=f"summary:{book_id}"
         )
+        if job is not None:
+            newly_enqueued.append(book_id)
+        else:
+            log_json(logger, logging.DEBUG, "summary scanner: job already queued or running", book_id=book_id)
 
-    log_json(logger, logging.INFO, "summary scanner enqueued jobs", count=len(book_ids))
+    if not newly_enqueued:
+        return
+
+    log_json(logger, logging.INFO, "summary scanner enqueued jobs", count=len(newly_enqueued))

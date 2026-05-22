@@ -70,8 +70,8 @@ class Settings:
     summary_max_chars: int = int(os.getenv("SUMMARY_MAX_CHARS", "3000000"))
 
     # Chunking Settings
-    chunk_size: int = int(os.getenv("CHUNK_SIZE", "500"))
-    chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "100"))
+    chunk_size: int = int(os.getenv("CHUNK_SIZE", "1500"))
+    chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "300"))
 
     # LangChain / Observability
     langchain_cache_enabled: bool = os.getenv("LANGCHAIN_CACHE", "false").lower() == "true"
@@ -89,6 +89,7 @@ class Settings:
 
     # Queue / Workers
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    memgraph_url: str = os.getenv("MEMGRAPH_URL", "bolt://localhost:37687")
     queue_max_jobs: int = int(os.getenv("QUEUE_MAX_JOBS", "2"))
     queue_job_timeout: int = int(os.getenv("QUEUE_JOB_TIMEOUT", "7200"))
     maintenance_retention_days: int = int(os.getenv("MAINTENANCE_RETENTION_DAYS", "7"))

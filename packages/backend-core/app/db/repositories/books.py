@@ -18,6 +18,7 @@ from app.core.pipeline import (
 )
 from app.db.models import Book, Page, BookSummary
 from app.db.repositories.base import BaseRepository
+from app.db.repositories.graph import GraphRepository
 
 
 class BooksRepository(BaseRepository[Book]):
@@ -163,6 +164,13 @@ class BooksRepository(BaseRepository[Book]):
             summary_res = await self.session.execute(summary_stmt)
             has_summary = (summary_res.scalar() or 0) > 0
             
+            has_graph = False
+            graph_repo = GraphRepository()
+            try:
+                has_graph = await graph_repo.check_book_exists(book_id)
+            finally:
+                await graph_repo.close()
+
             # For ready books, we still need to check if background spell check is running
             sc_stmt = (
                 select(
@@ -192,6 +200,7 @@ class BooksRepository(BaseRepository[Book]):
                     "spell_check_active": sc_active,
                 },
                 "has_summary": has_summary,
+                "has_graph": has_graph,
                 "ocr_done_count": tp,
                 "error_count": sc_failed,
                 "pending_count": tp - sc_done - sc_active - sc_failed,
@@ -267,6 +276,14 @@ class BooksRepository(BaseRepository[Book]):
             summary_res = await self.session.execute(summary_stmt)
             has_summary = (summary_res.scalar() or 0) > 0
 
+        has_graph = False
+        if not step or step == "graph":
+            graph_repo = GraphRepository()
+            try:
+                has_graph = await graph_repo.check_book_exists(book_id)
+            finally:
+                await graph_repo.close()
+
         # Handle single-step response
         if step and step != PIPELINE_STEP_SUMMARY:
             if not row:
@@ -279,6 +296,7 @@ class BooksRepository(BaseRepository[Book]):
                         f"{step}_active": 0,
                     },
                     "has_summary": False,
+                    "has_graph": has_graph if step == "graph" else False,
                     "ocr_done_count": 0,
                     "error_count": 0,
                     "pending_count": 0,
@@ -294,6 +312,7 @@ class BooksRepository(BaseRepository[Book]):
                     f"{step}_active": getattr(row, f"{step}_active", 0) or 0,
                 },
                 "has_summary": False,
+                "has_graph": has_graph if step == "graph" else False,
                 "ocr_done_count": 0,
                 "error_count": 0,
                 "pending_count": 0,
@@ -313,6 +332,7 @@ class BooksRepository(BaseRepository[Book]):
                     "spell_check": 0, "spell_check_failed": 0, "spell_check_active": 0,
                 },
                 "has_summary": has_summary,
+                "has_graph": has_graph,
                 "ocr_done_count": 0,
                 "error_count": 0,
                 "pending_count": 0,
@@ -337,6 +357,7 @@ class BooksRepository(BaseRepository[Book]):
                 "spell_check_active": row.spell_check_active or 0,
             },
             "has_summary": has_summary,
+            "has_graph": has_graph,
             "ocr_done_count": row.ocr_done or 0,
             "error_count": (row.ocr_failed or 0) + (row.chunking_failed or 0) + (row.embedding_failed or 0) + (row.spell_check_failed or 0),
             "pending_count": row.pending_count or 0,
@@ -409,6 +430,16 @@ class BooksRepository(BaseRepository[Book]):
         summary_res = await self.session.execute(summary_stmt)
         books_with_summary = {row[0] for row in summary_res.fetchall()}
 
+        # Check which books have graphs in Memgraph
+        graph_repo = GraphRepository()
+        books_with_graph = set()
+        try:
+            books_with_graph = await graph_repo.check_books_exist(book_ids)
+        except Exception:
+            pass
+        finally:
+            await graph_repo.close()
+
         # 3. Assemble final results
         final_results = {}
         for bid in book_ids:
@@ -437,7 +468,8 @@ class BooksRepository(BaseRepository[Book]):
             
             final_results[bid] = {
                 "pipeline_stats": stats,
-                "has_summary": bid in books_with_summary
+                "has_summary": bid in books_with_summary,
+                "has_graph": bid in books_with_graph
             }
 
         return final_results

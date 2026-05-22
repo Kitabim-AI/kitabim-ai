@@ -193,7 +193,9 @@
       "grading": "Selecting best context",
       "decomposing": "Splitting into {{count}} questions",
       "foundContent": "Found {{count}}",
+      "noContentFound": "No content found",
       "foundBooks": "Found {{count}} books",
+      "noBooksFound": "No books found",
       "keptContent": "{{kept}} of {{total}} content kept",
       "keptBooks": "{{kept}} of {{total}} books kept"
     }
@@ -286,7 +288,8 @@
       "embedding": "Vector Indices",
       "summary": "AI Summary",
       "wordIndex": "Word Index",
-      "spellCheck": "Spell check"
+      "spellCheck": "Spell check",
+      "graph": "Knowledge Graph"
     },
     "table": {
       "loading": "Loading",
@@ -310,7 +313,8 @@
         "chunking": "Reprocess Chunking",
         "embedding": "Reprocess Embedding",
         "word_index": "Reprocess Word Index",
-        "spell_check": "Reprocess Spell Check"
+        "spell_check": "Reprocess Spell Check",
+        "graph": "Reprocess Knowledge Graph"
       },
       "redoOcr": "Redo OCR",
       "email": "Email",
@@ -597,6 +601,9 @@
     "reprocessSpellCheck": {
       "title": "Reprocess Spell Check"
     },
+    "reprocessGraph": {
+      "title": "Reprocess Knowledge Graph"
+    },
     "reprocess": {
       "ocr": {
         "message": "Are you sure you want to reprocess all pages from the OCR step? All current text will be deleted."
@@ -612,6 +619,9 @@
       },
       "spell-check": {
         "message": "Are you sure you want to re-run Spell Check?"
+      },
+      "graph": {
+        "message": "Are you sure you want to regenerate the Knowledge Graph?"
       }
     },
     "redoOcrError": {

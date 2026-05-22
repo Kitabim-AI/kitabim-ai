@@ -67,9 +67,13 @@ function getStepSublabel(
     ].includes(step.tool ?? '');
 
     if (isBookTool) {
-      return t('chat.agent.foundBooks', { count: step.found });
+      return step.found === 0
+        ? t('chat.agent.noBooksFound')
+        : t('chat.agent.foundBooks', { count: step.found });
     }
-    return t('chat.agent.foundContent', { count: step.found });
+    return step.found === 0
+      ? t('chat.agent.noContentFound')
+      : t('chat.agent.foundContent', { count: step.found });
   }
   if (step.type === 'grading' && step.kept !== undefined && step.total !== undefined) {
     const currentIndex = allSteps.findIndex(s => s.id === step.id);

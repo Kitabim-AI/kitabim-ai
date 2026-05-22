@@ -44,6 +44,7 @@ from auth.dependencies import (
 import logging
 from app.utils.text import generate_uyghur_regex, normalize_uyghur_chars
 from app.core.i18n import t
+from app.utils.observability import log_json
 from app.services.pdf_service import read_pdf_page_count, extract_pdf_cover, create_page_stubs
 from app.services.docx_service import extract_docx_pages, extract_docx_cover
 from app.services.cache_service import cache_service
@@ -289,6 +290,7 @@ async def get_books(
                 stats = batch_stats.get(str(book.id), {})
                 book.pipeline_stats = stats.get("pipeline_stats", {})
                 book.has_summary = stats.get("has_summary", False)
+                book.has_graph = stats.get("has_graph", False)
 
         # Return immediately with cached metadata + fresh stats
         return PaginatedBooks.model_validate({
@@ -466,6 +468,7 @@ async def get_books(
             "visibility": b.visibility, "categories": _normalize_categories(b.categories),
             "last_error": last_error_obj, "read_count": b.read_count or 0, "file_name": b.file_name,
             "file_type": b.file_type, "source": b.source, "pipeline_stats": {}, "has_summary": False,
+            "has_graph": False,
             # Book-level milestones for accurate icon colors
             "ocr_milestone": b.ocr_milestone,
             "chunking_milestone": b.chunking_milestone,
@@ -481,9 +484,23 @@ async def get_books(
         s_stmt = select(BookSummary.book_id).where(BookSummary.book_id.in_(bid_list))
         s_res = await session.execute(s_stmt)
         summary_ids = {str(row[0]) for row in s_res.fetchall()}
+        
+        # Batch-fetch graph status from Memgraph
+        from app.db.repositories.graph import GraphRepository
+        graph_repo = GraphRepository()
+        graph_ids = set()
+        try:
+            graph_ids = await graph_repo.check_books_exist(bid_list)
+        except Exception:
+            pass
+        finally:
+            await graph_repo.close()
+
         for pydantic_book in books_data:
             if str(pydantic_book.id) in summary_ids:
                 pydantic_book.has_summary = True
+            if str(pydantic_book.id) in graph_ids:
+                pydantic_book.has_graph = True
 
     # Only fetch expensive pipeline stats if explicitly requested (non-lite)
     if should_include_stats and books_data:
@@ -495,6 +512,8 @@ async def get_books(
             # has_summary is already set above, but stats might have a more recent view
             if stats.get("has_summary"):
                 pydantic_book.has_summary = True
+            if stats.get("has_graph"):
+                pydantic_book.has_graph = True
 
     result = {
         "books": books_data,
@@ -516,7 +535,7 @@ async def get_books(
             # Create metadata-only version (strip out stats)
             metadata_result = {
                 "books": [
-                    {**book.model_dump(), "pipeline_stats": {}, "has_summary": False}
+                    {**book.model_dump(), "pipeline_stats": {}, "has_summary": False, "has_graph": False}
                     for book in books_data
                 ],
                 "total": total,
@@ -823,6 +842,7 @@ async def get_book(
     # Reuse previously fetched stats for the book metadata
     pipeline_stats = stats.get("pipeline_stats", {})
     has_summary = stats.get("has_summary", False)
+    has_graph = stats.get("has_graph", False)
 
     # Create a dict with only metadata
     book_dict = {
@@ -848,7 +868,8 @@ async def get_book(
         "file_type": book_model.file_type,
         "source": book_model.source,
         "pipeline_stats": pipeline_stats,
-        "has_summary": has_summary
+        "has_summary": has_summary,
+        "has_graph": has_graph
     }
 
     # Convert SQLAlchemy models to Pydantic (automatic camelCase conversion)
@@ -889,6 +910,7 @@ async def get_book_pipeline_stats(
     return {
         "pipeline_stats": stats.get("pipeline_stats", {}),
         "has_summary": stats.get("has_summary", False),
+        "has_graph": stats.get("has_graph", False),
         "total_pages": stats["book"].total_pages
     }
 
@@ -1399,6 +1421,34 @@ async def reprocess_spell_check(
     return {"status": "spell_check_reprocess_started", "message": "Spell check milestone reset. Scanner will reprocess."}
 
 
+@router.post("/{book_id}/reprocess/graph")
+async def reprocess_graph(
+    book_id: str,
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """Manually trigger/reprocess Knowledge Graph extraction for a book.
+
+    This queues the `knowledge_graph_job` to extract entities and relations in Memgraph.
+    """
+    books_repo = BooksRepository(session)
+    book = await books_repo.get(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+
+    try:
+        import arq
+        redis_pool = await arq.create_pool(arq.connections.RedisSettings.from_dsn(settings.redis_url))
+        await redis_pool.enqueue_job("knowledge_graph_job", book_id)
+        await redis_pool.aclose()
+        log_json(logger, logging.INFO, "manually enqueued knowledge_graph_job", book_id=book_id, user=current_user.email)
+    except Exception as exc:
+        log_json(logger, logging.ERROR, "failed to enqueue knowledge_graph_job", book_id=book_id, error=str(exc))
+        raise HTTPException(status_code=500, detail=t("errors.graph_enqueue_failed"))
+
+    return {"status": "graph_reprocess_started", "message": "Knowledge Graph extraction queued."}
+
+
 @router.post("/{book_id}/retry-failed")
 async def retry_failed_pages(
     book_id: str,
@@ -1868,7 +1918,7 @@ async def update_book_details(
     # Remove computed/read-only fields (already in snake_case after conversion)
     read_only_fields = [
         "upload_date", "created_by", "completed_count", "last_error",
-        "pipeline_stats", "page_stats", "has_summary"
+        "pipeline_stats", "page_stats", "has_summary", "has_graph"
     ]
     for field in read_only_fields:
         book_update.pop(field, None)

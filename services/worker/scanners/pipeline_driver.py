@@ -243,14 +243,20 @@ async def run_pipeline_driver(ctx) -> None:
 
         await session.commit()
 
-    # Enqueue summary jobs for books that just became ready (outside the session).
+    # Enqueue summary and knowledge graph jobs for books that just became ready (outside the session).
     # summary_job generates and stores a semantic summary for hierarchical RAG.
+    # knowledge_graph_job extracts and indexes entities and relations in Memgraph.
     redis = ctx["redis"]
     for book_id in newly_ready_ids:
         await redis.enqueue_job(
             "summary_job",
             book_id=book_id,
             _job_id=f"summary:{book_id}"
+        )
+        await redis.enqueue_job(
+            "knowledge_graph_job",
+            book_id=book_id,
+            _job_id=f"knowledge_graph:{book_id}"
         )
 
     log_json(
@@ -262,4 +268,5 @@ async def run_pipeline_driver(ctx) -> None:
         books_marked_ready=books_marked_ready,
         books_marked_error=books_marked_error,
         summary_jobs_enqueued=len(newly_ready_ids),
+        graph_jobs_enqueued=len(newly_ready_ids),
     )

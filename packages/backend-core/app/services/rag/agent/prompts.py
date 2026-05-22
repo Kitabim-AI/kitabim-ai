@@ -66,7 +66,8 @@ _STEP_4_CONTENT = (
     "stop immediately — do NOT call search_chunks, search_catalog, or any other tool afterward. "
     "EXCEPTION: If the question asks you to compare, contrast, or find commonality between multiple books or entities, "
     "you MUST retrieve information for ALL named books/entities before stopping.\n"
-    "   h. If search_chunks (not get_book_summary) returns fewer than 4 results, retry with a rephrased query or "
+    "   h. If the question asks about relationships, lineages, or connections between characters, locations, events, or concepts (e.g. 'how are X and Y related?', 'who is the grandchild/child of Z?', 'list the events in location W'), call query_knowledge_graph first to retrieve semantic relationship networks. Combine this with search_chunks if precise textual passages are also needed.\n"
+    "   i. If search_chunks (not get_book_summary) returns fewer than 4 results, retry with a rephrased query or "
     "broaden by calling search_chunks with an empty book_ids list to search the entire library. "
     "This step does not apply after a get_book_summary call."
 )

@@ -54,7 +54,7 @@ All questions route directly to `AgentRAGHandler`. There is no feature flag and 
 
 ```mermaid
 flowchart LR
-    Q([Question]) --> RAGENT[AgentRAGHandler\npriority=998\nLangGraph ReAct loop — 10 tools]
+    Q([Question]) --> RAGENT[AgentRAGHandler\npriority=998\nLangGraph ReAct loop — 11 tools]
     RAGENT --> ANS([Answer])
 ```
 
@@ -82,10 +82,11 @@ flowchart TD
     %% Shared intent branch
     INTENT{Steps 2–4:\nIntent + context}
 
-    %% Step 2 — catalog / metadata
+    %% Step 2 — catalog / metadata / graph
     INTENT -->|who wrote title? — step 2| T_AUTH[Tool: get_book_author] --> STOP
     INTENT -->|what did author write? — step 2| T_BAUTH[Tool: get_books_by_author] --> STOP
     INTENT -->|library browsing — step 2| T_CAT[Tool: search_catalog] --> STOP
+    INTENT -->|Multi-hop / relationships — step 2| T_KG[Tool: query_knowledge_graph] --> STOP
 
     %% Step 3 — current page shortcut
     INTENT -->|Content on current page\ncontext has current_page — step 3| T_CUR[Tool: get_current_page] --> STOP
@@ -136,7 +137,7 @@ flowchart TD
     classDef decision fill:#fef9c3,stroke:#854d0e,stroke-width:1px
     classDef stop fill:#fee2e2,stroke:#dc2626,stroke-width:2px
 
-    class REWRITE,FBT_R,GBS_R,SC_R,T_AUTH,T_BAUTH,T_CAT,T_CUR,FBT_A,GBS_A,FBT_B,SC_B,GBA_C,SC_C,SC_D,SBS_E,GBS_E,SBS_G,GBS_G,SC_G,SC_H,GSV_D,SC_D_SIS,GSV_F,SC_F_SIS tool
+    class REWRITE,FBT_R,GBS_R,SC_R,T_AUTH,T_BAUTH,T_CAT,T_CUR,FBT_A,GBS_A,FBT_B,SC_B,GBA_C,SC_C,SC_D,SBS_E,GBS_E,SBS_G,GBS_G,SC_G,SC_H,GSV_D,SC_D_SIS,GSV_F,SC_F_SIS,T_KG tool
     class PRON,RETITLE,CHAR_R,INTENT,WHO,CHK,VOL_D,VOL_F decision
     class STOP stop
 ```
@@ -157,6 +158,7 @@ flowchart TD
 | `get_current_page` | Content | `PagesRepository.find_one` | Raw text of the page the user is currently reading; only available in single-book in-reader mode (step 3) |
 | `get_sister_volumes` | Content | `BooksRepository.find_sister_volumes` | All volumes of the same title+author series as a given book_id; called when the question references a different volume (next/previous/numbered) of the current or previously-discussed book — gives the agent the correct book_id before calling `search_chunks` |
 | `search_catalog` | Metadata | `CatalogHandler._build_catalog_context` | Library browsing, listing, general catalog questions only — never for person/character lookups |
+| `query_knowledge_graph` | Content | `GraphRepository.query_subgraph` | Multi-hop relationship queries, tracing links between historical figures, locations, eras, and concepts. Called when the query requires mapping connection networks or retrieving multi-hop relationship facts |
 
 ---
 

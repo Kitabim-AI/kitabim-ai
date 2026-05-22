@@ -1,4 +1,4 @@
-import { BookOpen, BookOpenCheck, Cuboid, Database, Edit2, Globe, Hash, MoreVertical, RefreshCw, Save, ScanText, Scissors, Search, Shield, TableOfContents, User, Wand2, X } from 'lucide-react';
+import { BookOpen, BookOpenCheck, Cuboid, Database, Edit2, Globe, Hash, MoreVertical, Network, RefreshCw, Save, ScanText, Scissors, Search, Shield, TableOfContents, User, Wand2, X } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { useI18n } from '../../i18n/I18nContext';
@@ -49,12 +49,14 @@ const getPipelineIconClass = (
   // For page-level steps, use the aggregate counts to determine if finished
   const isPageLevel = PAGE_LEVEL_MILESTONE_STEPS.includes(stepKey as typeof PAGE_LEVEL_MILESTONE_STEPS[number]);
 
-  // Special case: Summary is determined by hasSummary flag
+  // Special case: Summary and Graph are determined by boolean flags
   const isComplete = stepKey === 'summary'
     ? !!book.hasSummary
-    : isPageLevel
-      ? (total > 0 && doneCount + failedCount === total)
-      : isCompleteParam;
+    : stepKey === 'graph'
+      ? !!book.hasGraph
+      : isPageLevel
+        ? (total > 0 && doneCount + failedCount === total)
+        : isCompleteParam;
 
   const isFailed = isPageLevel
     ? failedCount > 0
@@ -84,6 +86,10 @@ const getMilestoneColor = (book: any, stepKey: string) => {
   // Special case for summary: use boolean flag
   if (stepKey === PIPELINE_STEP.SUMMARY) {
     return book.hasSummary ? 'text-emerald-500' : 'text-slate-300';
+  }
+  // Special case for graph: use boolean flag
+  if (stepKey === PIPELINE_STEP.GRAPH) {
+    return book.hasGraph ? 'text-emerald-500' : 'text-slate-300';
   }
 
   const milestone = book[milestoneField];
@@ -397,7 +403,8 @@ export const AdminView: React.FC = () => {
                                   { key: PIPELINE_STEP.CHUNKING, icon: Scissors },
                                   { key: PIPELINE_STEP.EMBEDDING, icon: Cuboid },
                                   { key: PIPELINE_STEP.SUMMARY, icon: Wand2 },
-                                  { key: PIPELINE_STEP.SPELL_CHECK, icon: BookOpenCheck }
+                                  { key: PIPELINE_STEP.SPELL_CHECK, icon: BookOpenCheck },
+                                  { key: PIPELINE_STEP.GRAPH, icon: Network }
                                 ].map(({ key, icon: Icon }) => {
                                   // Use the same refined color logic as desktop view
                                   const colorClass = (book.pipelineStats && (book.pipelineStats[key] !== undefined || book.pipelineStats[`${key}_active`] !== undefined))
@@ -470,7 +477,8 @@ export const AdminView: React.FC = () => {
                               { ...ADMIN_PIPELINE_STEPS[1], icon: Scissors },
                               { ...ADMIN_PIPELINE_STEPS[2], icon: Cuboid },
                               { ...ADMIN_PIPELINE_STEPS[3], icon: Wand2 },
-                              { ...ADMIN_PIPELINE_STEPS[4], icon: BookOpenCheck }
+                              { ...ADMIN_PIPELINE_STEPS[4], icon: BookOpenCheck },
+                              { ...ADMIN_PIPELINE_STEPS[5], icon: Network }
                             ].map(({ key, icon: Icon, label }) => {
                               const cacheKey = `${book.id}:${key}`;
                               const stats = detailedStats[cacheKey];
@@ -479,7 +487,7 @@ export const AdminView: React.FC = () => {
 
                               const colorClass = isLoaded
                                 ? getPipelineIconClass(
-                                    { ...book, pipelineStats: stats.pipeline_stats, hasSummary: stats.has_summary, totalPages: stats.total_pages },
+                                    { ...book, pipelineStats: stats.pipeline_stats, hasSummary: stats.has_summary, hasGraph: stats.has_graph, totalPages: stats.total_pages },
                                     key,
                                     false, // handled inside getPipelineIconClass for page levels
                                     false  // handled inside getPipelineIconClass for page levels
@@ -504,6 +512,8 @@ export const AdminView: React.FC = () => {
                                         <>
                                           {key === 'summary' ? (
                                             <span>{stats.has_summary ? t('common.done') : t('common.pending')}</span>
+                                          ) : key === 'graph' ? (
+                                            <span>{(stats.has_graph || stats.hasGraph) ? t('common.done') : t('common.pending')}</span>
                                           ) : (
                                             <span>
                                               {getStat(stats.pipeline_stats, key)}/{stats.total_pages}
