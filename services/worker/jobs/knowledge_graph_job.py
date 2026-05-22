@@ -145,7 +145,8 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                             log_json(
                                 logger, logging.INFO, "recovered from output parsing validation error using fallback parser",
                                 book_id=book_id,
-                                chunk_ids=[c.id for c in batch]
+                                chunk_ids=[c.id for c in batch],
+                                error=str(e),
                             )
                         else:
                             log_json(
