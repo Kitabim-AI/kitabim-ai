@@ -193,7 +193,9 @@
       "grading": "Selecting best context",
       "decomposing": "Splitting into {{count}} questions",
       "foundContent": "Found {{count}}",
+      "noContentFound": "No content found",
       "foundBooks": "Found {{count}} books",
+      "noBooksFound": "No books found",
       "keptContent": "{{kept}} of {{total}} content kept",
       "keptBooks": "{{kept}} of {{total}} books kept"
     }

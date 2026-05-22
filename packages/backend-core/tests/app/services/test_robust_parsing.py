@@ -3,7 +3,9 @@ from app.services.knowledge_graph_service import (
     KnowledgeExtraction,
     GlobalMetadataExtraction,
     parse_and_clean_json_from_exception,
+    EntityType,
 )
+
 
 def test_parse_and_clean_knowledge_extraction_success():
     # Simulate a validation exception message containing the raw JSON with an empty dict at the end of relations
@@ -118,4 +120,35 @@ def test_entity_type_normalization_variations():
     assert parsed.entities[0].type == EntityType.PERSON
     assert parsed.entities[1].type == EntityType.ERA
     assert parsed.entities[2].type == EntityType.LOCATION
+
+
+def test_optional_fields_parsing():
+    # Test that KnowledgeExtraction validates successfully when fields are omitted or None
+    raw_data = {
+        "entities": [
+            {"name": "Nuh"},  # type is missing (None)
+            {"type": "Person"},  # name is missing (None)
+            {"name": "Yafes", "type": None}  # type is explicitly None
+        ],
+        "relations": [
+            {"source_entity": "Yafes"},  # relation_type and target_entity are missing
+            {"source_entity": "Yafes", "relation_type": "SON_OF", "target_entity": None}  # target_entity is None
+        ]
+    }
+    
+    parsed = KnowledgeExtraction.model_validate(raw_data)
+    assert parsed is not None
+    
+    assert len(parsed.entities) == 3
+    assert parsed.entities[0].name == "Nuh"
+    assert parsed.entities[0].type is None
+    assert parsed.entities[1].name is None
+    assert parsed.entities[1].type == EntityType.PERSON
+    
+    assert len(parsed.relations) == 2
+    assert parsed.relations[0].source_entity == "Yafes"
+    assert parsed.relations[0].relation_type is None
+    assert parsed.relations[0].target_entity is None
+    assert parsed.relations[1].target_entity is None
+
 

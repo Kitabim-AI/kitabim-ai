@@ -177,20 +177,20 @@ async def summary_job(ctx, book_id: str) -> None:
                 if global_extraction:
                     # Save entities to Memgraph
                     for entity in global_extraction.entities:
-                        name = entity.name.strip()
+                        name = entity.name.strip() if entity.name else ""
                         if not name:
                             continue
                         await graph_repo.upsert_entity(
                             name=name,
-                            entity_type=entity.type.value,
+                            entity_type=entity.type.value if entity.type else EntityType.OTHER.value,
                             subtype=entity.subtype,
                         )
 
                     # Save relationships
                     for rel in global_extraction.relations:
-                        src = rel.source.strip()
-                        tgt = rel.target.strip()
-                        rtype = rel.relation.strip()
+                        src = rel.source.strip() if rel.source else ""
+                        tgt = rel.target.strip() if rel.target else ""
+                        rtype = rel.relation.strip() if rel.relation else ""
                         if not src or not tgt or not rtype:
                             continue
 
@@ -200,7 +200,7 @@ async def summary_job(ctx, book_id: str) -> None:
                                 book_id=book_id,
                                 entity_name=tgt,
                                 rel_type=rtype,
-                            )
+                              )
                         else:
                             # Ensure source entity exists
                             await graph_repo.upsert_entity(

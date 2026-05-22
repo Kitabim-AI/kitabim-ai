@@ -47,17 +47,17 @@ class EntityType(str, Enum):
 
 
 class ExtractedEntity(BaseModel):
-    name: str = Field(description="The standard name of the person, place, event, era or concept")
-    type: EntityType = Field(description="The primary category of the entity")
+    name: Optional[str] = Field(None, description="The standard name of the person, place, event, era or concept")
+    type: Optional[EntityType] = Field(None, description="The primary category of the entity")
     subtype: Optional[str] = Field(None, description="Optional subtype (e.g. 'City' for Location, 'Sultan' for Person)")
 
 
 # ── Chunk-level extraction (used by knowledge_graph_job) ─────────────────────
 
 class ExtractedRelation(BaseModel):
-    source_entity: str = Field(description="Name of the source entity")
-    relation_type: str = Field(description="The type of relationship (e.g., LIVED_IN, PART_OF, INFLUENCED, BORN_IN, SON_OF)")
-    target_entity: str = Field(description="Name of the target entity")
+    source_entity: Optional[str] = Field(None, description="Name of the source entity")
+    relation_type: Optional[str] = Field(None, description="The type of relationship (e.g., LIVED_IN, PART_OF, INFLUENCED, BORN_IN, SON_OF)")
+    target_entity: Optional[str] = Field(None, description="Name of the target entity")
 
 
 class KnowledgeExtraction(BaseModel):
@@ -68,10 +68,10 @@ class KnowledgeExtraction(BaseModel):
 # ── Book-level extraction (used by summary_job) ───────────────────────────────
 
 class GlobalRelation(BaseModel):
-    source: str = Field(description="Name of the source entity (can be the book title itself, or a character/concept name)")
-    relation: str = Field(description="Relationship type (e.g. HAS_THEME, HAS_CHARACTER, SET_IN, SON_OF, INFLUENCED, LIVED_IN)")
-    target: str = Field(description="Name of the target entity")
-    target_type: EntityType = Field(description="The primary category of the target entity")
+    source: Optional[str] = Field(None, description="Name of the source entity (can be the book title itself, or a character/concept name)")
+    relation: Optional[str] = Field(None, description="Relationship type (e.g. HAS_THEME, HAS_CHARACTER, SET_IN, SON_OF, INFLUENCED, LIVED_IN)")
+    target: Optional[str] = Field(None, description="Name of the target entity")
+    target_type: Optional[EntityType] = Field(None, description="The primary category of the target entity")
 
 
 class GlobalMetadataExtraction(BaseModel):

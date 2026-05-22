@@ -195,7 +195,9 @@
       "grading": "ئەڭ مۇۋاپىق مەزمۇننى تاللاۋاتىمەن",
       "decomposing": "سۇئالىڭىزنى پارچىلاۋاتىمەن",
       "foundContent": "{{count}} پارچە مەزمۇن تاپتىم",
+      "noContentFound": "مەزمۇن تېپىلمىدى",
       "foundBooks": "{{count}} كىتاب تاپتىم",
+      "noBooksFound": "كىتاب تېپىلمىدى",
       "keptContent": "{{kept}}/{{total}} پارچە مەزمۇن تاللاندى",
       "keptBooks": "{{kept}}/{{total}} كىتاب تاللاندى"
     }

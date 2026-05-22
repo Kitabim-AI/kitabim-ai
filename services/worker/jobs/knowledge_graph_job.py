@@ -21,7 +21,7 @@ from app.db import session as db_session
 from app.db.models import Book, Chunk
 from app.db.repositories.graph import GraphRepository
 from app.db.repositories.system_configs import SystemConfigsRepository
-from app.services.knowledge_graph_service import KnowledgeExtraction, parse_and_clean_json_from_exception
+from app.services.knowledge_graph_service import KnowledgeExtraction, parse_and_clean_json_from_exception, EntityType
 from app.utils.observability import log_json
 
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -159,25 +159,25 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                     if extraction:
                         try:
                             # 1. Collect all entity names defined in extraction.entities
-                            defined_entity_names = {e.name.strip() for e in extraction.entities if e.name.strip()}
+                            defined_entity_names = {e.name.strip() for e in extraction.entities if e.name and e.name.strip()}
 
                             # 2. Extract and format entities
                             entities_to_upsert = []
                             for entity in extraction.entities:
-                                name = entity.name.strip()
+                                name = entity.name.strip() if entity.name else ""
                                 if not name:
                                     continue
                                 entities_to_upsert.append({
                                     "name": name,
-                                    "type": entity.type.value,
+                                    "type": entity.type.value if entity.type else EntityType.OTHER.value,
                                     "subtype": entity.subtype,
                                 })
 
                             # 3. Scan relations for any entities not in defined_entity_names to ensure MATCH matches them
                             fallback_entities = []
                             for rel in extraction.relations:
-                                src = rel.source_entity.strip()
-                                tgt = rel.target_entity.strip()
+                                src = rel.source_entity.strip() if rel.source_entity else ""
+                                tgt = rel.target_entity.strip() if rel.target_entity else ""
                                 if src and src not in defined_entity_names:
                                     fallback_entities.append(src)
                                     defined_entity_names.add(src)
@@ -210,9 +210,9 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                             # 6. Connect entities in bulk
                             relations_to_connect = []
                             for rel in extraction.relations:
-                                src = rel.source_entity.strip()
-                                tgt = rel.target_entity.strip()
-                                rtype = rel.relation_type.strip()
+                                src = rel.source_entity.strip() if rel.source_entity else ""
+                                tgt = rel.target_entity.strip() if rel.target_entity else ""
+                                rtype = rel.relation_type.strip() if rel.relation_type else ""
                                 if not src or not tgt or not rtype:
                                     continue
                                 relations_to_connect.append({
