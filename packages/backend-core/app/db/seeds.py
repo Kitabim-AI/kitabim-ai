@@ -51,6 +51,21 @@ async def seed_system_configs(session: AsyncSession):
             "value": "5",
             "description": "Number of books the summary scanner enqueues per run. Increase temporarily to speed up bulk regeneration, then reset to 5."
         },
+        {
+            "key": "graph_scanner_batch_size",
+            "value": "5",
+            "description": "Number of books the graph scanner enqueues per run. Increase temporarily to speed up bulk backfill, then reset to 5."
+        },
+        {
+            "key": "kg_chunk_batch_size",
+            "value": "5",
+            "description": "Number of chunks combined into a single LLM call during knowledge graph extraction. Higher values reduce API calls and improve coreference resolution at the cost of larger prompts. Default tuned for 1500-char chunks (~7 500 chars per call)."
+        },
+        {
+            "key": "kg_max_parallel_chunks",
+            "value": "5",
+            "description": "Maximum number of concurrent LLM batch calls during knowledge graph extraction. Each call processes kg_chunk_batch_size chunks."
+        },
     ]
     
     for item in defaults:

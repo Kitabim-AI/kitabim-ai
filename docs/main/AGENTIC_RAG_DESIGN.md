@@ -20,7 +20,7 @@ Three quality nodes sit around the ReAct loop: a **decompose_query** node (split
 
 ---
 
-## Agent tool set (10 tools)
+## Agent tool set (11 tools)
 
 ### Content retrieval
 
@@ -33,6 +33,7 @@ Three quality nodes sit around the ReAct loop: a **decompose_query** node (split
 | `get_current_page` | `PagesRepository.find_one` | — | Raw text of the page currently open in the reader; only callable in single-book mode when `[Context]` includes `current_page` |
 | `get_sister_volumes` | `BooksRepository.find_sister_volumes` | — | All volumes of the same title+author series as a given `book_id`; called when the question asks about a different volume (next/previous/numbered) of the current or previously-discussed book |
 | `rewrite_query` | `QueryRewriter.rewrite` | L0 | Resolve co-references; short-circuits if `ctx.enriched_question` is already set |
+| `query_knowledge_graph` | `GraphRepository.query_subgraph` | — | Search the book knowledge graph (stored in Memgraph) for entities and relationships to answer factual, relational, and historical questions (GraphRAG) |
 
 ### Catalog & metadata
 
@@ -115,11 +116,13 @@ Before the first LLM call, the initial `HumanMessage` is enriched with a `[Conte
         - Sister volume question →
           get_sister_volumes(context_book_ids[0]) → search_chunks with the right volume's ID
         - Otherwise → search_chunks with those IDs first
-   f. All other cases (general topics, character lookups) →
+   f. Factual/Historical Relationships: If the question asks about historical figures, events, locations, or connections between multiple entities →
+        query_knowledge_graph (retrieves connections between entities)
+   g. All other cases (general topics, character lookups) →
         search_books_by_summary → search_chunks with returned IDs
-   g. < 4 results? → retry with rephrased query or search_chunks with empty
+   h. < 4 results? → retry with rephrased query or search_chunks with empty
         book_ids (entire library) — only after prior discovery steps failed
-4. Stop when 6–12 passages collected (or catalog/author result for metadata)
+4. Stop when 6–12 passages collected (or catalog/author/knowledge graph result for metadata)
 Hard limits: 4 tool calls total. Never call search_chunks with empty book_ids
 unless find_books_by_title / get_books_by_author / search_books_by_summary
 have already returned no results.
@@ -307,7 +310,7 @@ packages/backend-core/app/services/rag/agent/
                        # GRADE_RELATIVE_THRESHOLD, MIN_CHUNKS_AFTER_GRADING,
                        # CONTEXT_SWITCH_SCORE_THRESHOLD
   prompts.py           # AGENT_SYSTEM_PROMPT — retrieval strategy instructions
-  tools.py             # @tool schemas + dispatch_tool() — 10 tools
+  tools.py             # @tool schemas + dispatch_tool() — 11 tools
   state.py             # AgentState TypedDict (includes sub_questions)
   graph.py             # LangGraph StateGraph — wires all nodes and conditional edges
   handler.py           # AgentRAGHandler — priority=998
@@ -327,6 +330,9 @@ packages/backend-core/app/services/rag/
                        # format_document()
   retrieval.py         # Shared IO primitives: embed_query, vector_search,
                        # find_books_by_title_in_question
+
+packages/backend-core/app/db/repositories/
+  graph.py             # Memgraph database client and GraphRAG subgraph query implementation
 ```
 
 Supporting files:
@@ -363,6 +369,7 @@ Frontend:
 | `decompose_query` | Gemini Flash (cheap) — only when > 1 `?`/`؟` | Split multi-question input into sub-questions; zero-cost for single questions |
 | `plan_query` | — (no LLM) | Heuristic intent detection; zero-cost |
 | Agent ReAct loop (1–N) | Gemini Flash (tool-use) | Tool selection per step |
+| `query_knowledge_graph` (during tool run) | Gemini Flash (cheap) | Dynamically extract query entity terms from user query |
 | `grade_context` | — (no LLM) | Score-based chunk filtering; heuristic |
 | `generate_answer` | Gemini Pro / configured model | Streaming answer generation |
 

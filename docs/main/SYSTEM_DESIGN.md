@@ -1,7 +1,7 @@
 # System Design — Kitabim.AI
 
 ## 1) Overview
-Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered reading of Uyghur books. The system uses the **Gemini 2.0 Flash** model for high-throughput OCR and embeddings, a FastAPI backend with an asynchronous processing pipeline, and a React/Vite frontend. Background orchestration is handled through a Redis-backed queue with a dedicated worker service. The backend API and worker share a common Python package (`packages/backend-core`).
+Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered reading of Uyghur books. The system uses the **Gemini 2.0 Flash** model for high-throughput OCR and embeddings, a FastAPI backend with an asynchronous processing pipeline, a React/Vite frontend, and a Memgraph database for GraphRAG. Background orchestration is handled through a Redis-backed queue with a dedicated worker service. The backend API and worker share a common Python package (`packages/backend-core`).
 
 ## 2) Goals & Non‑Goals
 **Goals**
@@ -25,6 +25,7 @@ Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered readi
   - Uses PostgreSQL for metadata + embeddings (pgvector).
   - **Redis Caching Layer**: High-performance caching for books, categories, and RAG results.
   - **Circuit Breaker**: Resilient protection for Redis and external AI services.
+  - **Memgraph Database**: Graph database (Bolt protocol, port 37687/7687) storing book semantic entities and relationships to support GraphRAG.
 
 
 - **Worker (`services/worker`)**
@@ -60,6 +61,8 @@ flowchart LR
   BE <-->|PDF/Covers| GCS[(Google Cloud Storage)]
   WK <-->|PDF/Covers| GCS
   BE <--Cache--> CACHE[(Redis Cache)]
+  BE --> MG[(Memgraph Graph DB)]
+  WK --> MG
 ```
 
 
@@ -75,7 +78,9 @@ flowchart LR
 /docker-compose.yml # Primary local dev entry point
 ```
 
-## 5) Data Model (PostgreSQL)
+## 5) Data Model
+
+### PostgreSQL
 **Books**
 - `status` statuses: `pending`, `ocr_processing`, `ocr_done`, `indexing`, `ready`, `error`
 - `pipeline_step`: Active pipeline stage (`ocr`, `chunking`, `embedding`, `spell_check`, `ready`)
@@ -93,6 +98,19 @@ flowchart LR
 **Chunks**
 - Semantic units with `pgvector(3072)` embeddings (Gemini Embedding v2 / `gemini-embedding-2`).
 
+### Memgraph (Knowledge Graph)
+Memgraph stores entities and their semantic relationships extracted from book chunks.
+
+**Nodes**
+- `Book`: Represents a book in the library. Properties: `id`, `title`, `author`, `summary`.
+- `Entity`: Represents a conceptual or concrete entity extracted from the text.
+  - Subtypes/Labels: `Person`, `Location`, `Organization`, `Work`, `Event`.
+  - Properties: `name`, `type` (e.g., "Person", "Location"), `description`.
+
+**Relationships**
+- `MENTIONS`: From `Book` to an `Entity`. Properties: `chunk_ids` (array of chunk UUIDs where the entity is mentioned), `count` (number of mentions).
+- `LIVES_IN` / `WRITTEN_BY` / `PARTICIPATED_IN` / `RELATED_TO` / etc.: Semantic relationships between `Entity` nodes. Properties: `description`, `source_chunk_ids`.
+
 ## 6) Key Flows
 
 ### A) PDF Processing Workflow (Realtime Pipeline)
@@ -103,6 +121,7 @@ flowchart LR
 5. **Embedding**: Worker generates and stores vectors for chunks. Sets `embedding_milestone` to `succeeded`.
 6. **AI Polish**: Worker performs spell-check identification.
 7. **Finalization**: Book marked `ready` when all pages reach their terminal milestones.
+8. **Summary & Graph Extraction**: Once the book is marked ready, the pipeline driver triggers `summary_job` (which generates the semantic summary) and `knowledge_graph_job` (which extracts entities and relationships from chunks using Gemini and upserts them to Memgraph) concurrently.
 
 ### B) RAG Chat
 
@@ -111,7 +130,7 @@ All questions go directly to `AgentRAGHandler` (priority=998), which runs a Lang
 **Agentic retrieval loop:**
 1. `_build_human_message` injects a `[Context]` block (current book ID, context book IDs, category filter) into the agent's first message — agent skips book-discovery when the context is known.
 2. Agent LLM decides which tools to call (up to 4 steps, early-exit at 8+ chunks). **(Gemini function calling)**
-3. Tools (10): `search_chunks` **(L1+L2 cache)**, `search_books_by_summary` **(L3 cache)**, `find_books_by_title`, `get_book_summary`, `get_current_page`, `get_sister_volumes`, `rewrite_query` **(L0 cache)**, `get_book_author`, `get_books_by_author`, `search_catalog`
+3. Tools (11): `search_chunks` **(L1+L2 cache)**, `search_books_by_summary` **(L3 cache)**, `find_books_by_title`, `get_book_summary`, `get_current_page`, `get_sister_volumes`, `rewrite_query` **(L0 cache)**, `get_book_author`, `get_books_by_author`, `search_catalog`, `query_knowledge_graph`
 4. `grade_context` filters low-relevance chunks by relative score threshold before answer generation.
 5. `generate_answer` streams the response; generating the final answer for the user.
 6. `format_observations_as_context` deduplicates chunks (sort by score DESC, cap at 15) and prepends metadata context from catalog/author tools.

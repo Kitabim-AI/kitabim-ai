@@ -76,6 +76,7 @@ class Book(BaseModel):
     pipeline_step: Optional[str] = None  # DB: pipeline_step, API: pipelineStep
     pipeline_stats: Optional[Dict[str, int]] = Field(default_factory=dict) # DB: pipeline_stats, API: pipelineStats
     has_summary: bool = False  # API: hasSummary
+    has_graph: bool = False  # API: hasGraph
     # Book-level milestones (denormalized from pages for performance)
     ocr_milestone: str = "idle"  # DB: ocr_milestone, API: ocrMilestone
     chunking_milestone: str = "idle"  # DB: chunking_milestone, API: chunkingMilestone
