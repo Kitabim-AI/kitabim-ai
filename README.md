@@ -62,6 +62,19 @@ See [docs/main/AGENTIC_RAG_DESIGN.md](docs/main/AGENTIC_RAG_DESIGN.md) for the f
 
 ---
 
+## Core Technologies & AI Stack
+
+We leverage several cutting-edge AI and database technologies to power our agentic reading assistant and processing pipelines:
+
+- **LangChain**: We use LangChain as the foundation for interfacing with Large Language Models (specifically Google's Gemini). It provides robust prompt templating, schema binding, and standard model integration. We utilize `ChatGoogleGenerativeAI` to execute structured output extraction, mapping model outputs directly into Pydantic models while handling transient generation/formatting errors gracefully using fallback mechanisms.
+- **LangGraph**: We utilize LangGraph to model and run our multi-step agentic RAG query loop. It provides state-machine control, allowing us to build stateful graphs with loops, conditional routing, and parallel execution. The query assistant runs as a LangGraph where nodes represent operations (like query decomposition, tool execution, and context grading) and edges govern the execution flow based on state variables.
+- **Memgraph**: We use Memgraph, an in-memory graph database, to store and query the semantic networks extracted from books. Graph data is ideal for capturing indirect relations between entities (characters, places, organizations) across different chapters or texts. We query Memgraph via high-performance Cypher statements to perform 1-hop subgraph retrieval, which is then fused into the LLM context.
+- **Ragas**: We employ the Ragas framework to evaluate the performance and quality of our retrieval-augmented generation. It allows us to quantitatively measure metrics like Faithfulness, Context Recall, and Answer Relevance. We run these evaluations asynchronously inside our worker queue, tracking metrics in PostgreSQL to display aggregate quality scores on the admin dashboard.
+- **pgvector (PostgreSQL)**: We use PostgreSQL with the `pgvector` extension to store page chunk embeddings and perform similarity searches. It acts as our dense retriever (L2 cache) for semantic text search, allowing fast vector index scans to retrieve relevant book passages.
+- **ARQ (Redis)**: We use ARQ as our lightweight, asynchronous task queue built on Redis. It orchestrates the background worker pipeline, driving the multi-stage ingestion workflow (OCR scanner, chunking, vector embedding, graph ingestion) and running scheduled system maintenance.
+
+---
+
 ## Features
 
 ### OCR & Digitization Pipeline
