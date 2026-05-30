@@ -32,6 +32,8 @@ async def run_pipeline_driver(ctx) -> None:
     async with db_session.async_session_factory() as session:
         config_repo = SystemConfigsRepository(session)
         max_retries = int(await config_repo.get_value("ocr_max_retry_count", "3"))
+        kg_enabled_val = await config_repo.get_value("knowledge_graph_enabled", "false")
+        kg_enabled = kg_enabled_val == "true"
 
         # ── 1. Initialize ──────────────────────────────────────────────────────
         # Ensure ocr_milestone is 'idle' for pages that need processing.
@@ -69,10 +71,26 @@ async def run_pipeline_driver(ctx) -> None:
         # UNION ALL of internal queries to force partial index usage for each leg.
         # This is much faster than OR across different columns.
         reset_queries = [
-            select(Page.id).where(Page.ocr_milestone.in_(["failed", "error"]), Page.retry_count < max_retries).limit(5000),
-            select(Page.id).where(Page.chunking_milestone.in_(["failed", "error"]), Page.retry_count < max_retries).limit(5000),
-            select(Page.id).where(Page.embedding_milestone.in_(["failed", "error"]), Page.retry_count < max_retries).limit(5000),
-            select(Page.id).where(Page.spell_check_milestone.in_(["failed", "error"]), Page.retry_count < max_retries).limit(5000),
+            select(Page.id).join(Book, Page.book_id == Book.id).where(
+                Page.ocr_milestone.in_(["failed", "error"]),
+                Page.retry_count < max_retries,
+                ~Book.status.in_(_V1_READY_STATUSES),
+            ).limit(5000),
+            select(Page.id).join(Book, Page.book_id == Book.id).where(
+                Page.chunking_milestone.in_(["failed", "error"]),
+                Page.retry_count < max_retries,
+                ~Book.status.in_(_V1_READY_STATUSES),
+            ).limit(5000),
+            select(Page.id).join(Book, Page.book_id == Book.id).where(
+                Page.embedding_milestone.in_(["failed", "error"]),
+                Page.retry_count < max_retries,
+                ~Book.status.in_(_V1_READY_STATUSES),
+            ).limit(5000),
+            select(Page.id).join(Book, Page.book_id == Book.id).where(
+                Page.spell_check_milestone.in_(["failed", "error"]),
+                Page.retry_count < max_retries,
+                ~Book.status.in_(_V1_READY_STATUSES),
+            ).limit(5000),
         ]
 
         reset_ids_stmt = union_all(*reset_queries).limit(5000)
@@ -202,6 +220,7 @@ async def run_pipeline_driver(ctx) -> None:
                     or_(
                         Book.pipeline_step != "ready",
                         Book.pipeline_step.is_(None),
+                        Book.status != "ready",
                     ),
                     BookSummary.book_id.is_(None)
                 )
@@ -217,9 +236,14 @@ async def run_pipeline_driver(ctx) -> None:
                     or_(
                         Book.pipeline_step != "ready",
                         Book.pipeline_step.is_(None),
+                        Book.status != "ready",
                     ),
                 )
-                .values(pipeline_step="ready", status="ready")
+                .values(
+                    pipeline_step="ready",
+                    status="ready",
+                    graph_milestone="in_progress" if kg_enabled else "idle"
+                )
             )).rowcount
 
             # Update book-level milestones for ready books
@@ -232,7 +256,10 @@ async def run_pipeline_driver(ctx) -> None:
                 update(Book)
                 .where(
                     Book.id.in_(has_failures_ids),
-                    Book.pipeline_step != "failed",
+                    or_(
+                        Book.pipeline_step != "failed",
+                        Book.status != "error",
+                    ),
                 )
                 .values(pipeline_step="failed", status="error")
             )).rowcount
@@ -253,11 +280,12 @@ async def run_pipeline_driver(ctx) -> None:
             book_id=book_id,
             _job_id=f"summary:{book_id}"
         )
-        await redis.enqueue_job(
-            "knowledge_graph_job",
-            book_id=book_id,
-            _job_id=f"knowledge_graph:{book_id}"
-        )
+        if kg_enabled:
+            await redis.enqueue_job(
+                "knowledge_graph_job",
+                book_id=book_id,
+                _job_id=f"knowledge_graph:{book_id}"
+            )
 
     log_json(
         logger, logging.INFO, "pipeline driver ran",
@@ -268,5 +296,5 @@ async def run_pipeline_driver(ctx) -> None:
         books_marked_ready=books_marked_ready,
         books_marked_error=books_marked_error,
         summary_jobs_enqueued=len(newly_ready_ids),
-        graph_jobs_enqueued=len(newly_ready_ids),
+        graph_jobs_enqueued=len(newly_ready_ids) if kg_enabled else 0,
     )

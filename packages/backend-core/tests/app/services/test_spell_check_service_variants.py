@@ -21,8 +21,8 @@ def test_insertion_variants():
     word = "ABC"
     variants = insertion_variants(word)
     # len(word)+1 positions * len(_VOWEL_INSERTIONS)
-    # _VOWEL_INSERTIONS has 5 elements now (lines 169-175)
-    assert len(variants) == (len(word) + 1) * 5 
+    # _VOWEL_INSERTIONS has 9 elements now
+    assert len(variants) == (len(word) + 1) * 9 
     assert " ABC" not in variants
 
 @pytest.mark.asyncio

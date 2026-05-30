@@ -36,6 +36,7 @@ async def run_chunking_scanner(ctx) -> None:
             .where(
                 Page.ocr_milestone == "succeeded",
                 Page.chunking_milestone == "idle",
+                ~Book.status.in_(["ready", "error"]),
             )
             .with_for_update(skip_locked=True)
             .limit(page_limit)

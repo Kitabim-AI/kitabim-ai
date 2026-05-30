@@ -18,8 +18,6 @@ from app.core.pipeline import (
 )
 from app.db.models import Book, Page, BookSummary
 from app.db.repositories.base import BaseRepository
-from app.db.repositories.graph import GraphRepository
-
 
 class BooksRepository(BaseRepository[Book]):
     """Repository for books with custom query methods"""
@@ -164,12 +162,7 @@ class BooksRepository(BaseRepository[Book]):
             summary_res = await self.session.execute(summary_stmt)
             has_summary = (summary_res.scalar() or 0) > 0
             
-            has_graph = False
-            graph_repo = GraphRepository()
-            try:
-                has_graph = await graph_repo.check_book_exists(book_id)
-            finally:
-                await graph_repo.close()
+            has_graph = book.graph_milestone == "complete"
 
             # For ready books, we still need to check if background spell check is running
             sc_stmt = (
@@ -276,13 +269,7 @@ class BooksRepository(BaseRepository[Book]):
             summary_res = await self.session.execute(summary_stmt)
             has_summary = (summary_res.scalar() or 0) > 0
 
-        has_graph = False
-        if not step or step == "graph":
-            graph_repo = GraphRepository()
-            try:
-                has_graph = await graph_repo.check_book_exists(book_id)
-            finally:
-                await graph_repo.close()
+        has_graph = book.graph_milestone == "complete"
 
         # Handle single-step response
         if step and step != PIPELINE_STEP_SUMMARY:
@@ -378,9 +365,9 @@ class BooksRepository(BaseRepository[Book]):
         
         # 0. Optimization: Identify which books are 'ready' vs 'processing'
         # For 'ready' books, we can assume 100% stats and skip scanning pages
-        books_stmt = select(Book.id, Book.status, Book.total_pages).where(Book.id.in_(book_ids))
+        books_stmt = select(Book.id, Book.status, Book.total_pages, Book.graph_milestone).where(Book.id.in_(book_ids))
         books_res = await self.session.execute(books_stmt)
-        books_info = {str(row.id): {"status": row.status, "total_pages": row.total_pages} for row in books_res.fetchall()}
+        books_info = {str(row.id): {"status": row.status, "total_pages": row.total_pages, "graph_milestone": row.graph_milestone} for row in books_res.fetchall()}
         
         # 1. Fetch milestone stats for ALL requested books
         # Note: We must scan all books because 'ready' books may still have background 
@@ -430,15 +417,7 @@ class BooksRepository(BaseRepository[Book]):
         summary_res = await self.session.execute(summary_stmt)
         books_with_summary = {row[0] for row in summary_res.fetchall()}
 
-        # Check which books have graphs in Memgraph
-        graph_repo = GraphRepository()
-        books_with_graph = set()
-        try:
-            books_with_graph = await graph_repo.check_books_exist(book_ids)
-        except Exception:
-            pass
-        finally:
-            await graph_repo.close()
+        books_with_graph = {bid for bid, info in books_info.items() if info.get("graph_milestone") == "complete"}
 
         # 3. Assemble final results
         final_results = {}

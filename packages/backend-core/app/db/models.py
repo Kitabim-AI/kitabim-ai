@@ -66,6 +66,9 @@ class Book(Base):
     spell_check_milestone: Mapped[str] = mapped_column(
         String(20), default="idle", server_default="idle", nullable=False
     )
+    graph_milestone: Mapped[str] = mapped_column(
+        String(20), default="idle", server_default="idle", nullable=False
+    )
 
     # Arrays (PostgreSQL)
     categories: Mapped[List[str]] = mapped_column(

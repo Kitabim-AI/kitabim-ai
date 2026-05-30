@@ -5,6 +5,9 @@ Chunks are grouped into batches before being sent to the LLM. This reduces the n
 calls (one per batch instead of one per chunk) and gives the model cross-chunk context so it
 can resolve coreferences (e.g. 'the Khan' → 'Genghis Khan') across nearby text.
 
+Only Entity nodes and Entity→Entity RELATED_TO edges are stored in Memgraph.
+Chunk nodes are not stored — chunk text lives in Postgres and is retrieved via vector search.
+
 Batch size and concurrency are both configurable via system_configs:
   kg_chunk_batch_size     — chunks per LLM call (default 10, ~5 000 chars per call)
   kg_max_parallel_chunks  — concurrent batch calls in-flight at once (default 5)
@@ -14,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.core.config import settings
 from app.db import session as db_session
@@ -36,6 +39,17 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
         # 1. Fetch settings from PostgreSQL
         async with db_session.async_session_factory() as session:
             config_repo = SystemConfigsRepository(session)
+            kg_enabled_val = await config_repo.get_value("knowledge_graph_enabled", "false")
+            if kg_enabled_val != "true":
+                await session.execute(
+                    update(Book)
+                    .where(Book.id == book_id)
+                    .values(graph_milestone="idle")
+                )
+                await session.commit()
+                log_json(logger, logging.WARNING, "knowledge graph job skipped: feature is disabled via system_configs", book_id=book_id)
+                return
+
             chat_model = await config_repo.get_value("gemini_chat_model", "gemini-2.0-flash-lite")
             max_parallel = int(await config_repo.get_value("kg_max_parallel_chunks", "5"))
             chunk_batch_size = int(await config_repo.get_value("kg_chunk_batch_size", "5"))
@@ -68,16 +82,6 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
         try:
             await graph_repo.init_constraints()
 
-            # Idempotency: wipe existing chunk/relationship data for this book before rebuilding
-            await graph_repo.clear_book_graph(book_id)
-            log_json(logger, logging.INFO, "cleared existing graph data for book", book_id=book_id)
-
-            # Book and Author nodes
-            author_name = book.author or "Unknown Author"
-            await graph_repo.upsert_book(book_id=str(book.id), title=book.title, author=author_name)
-            await graph_repo.upsert_author(name=author_name)
-            await graph_repo.connect_author_book(author_name=author_name, book_id=str(book.id))
-
             # 4. LLM with structured output
             llm = ChatGoogleGenerativeAI(
                 model=chat_model,
@@ -85,18 +89,7 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                 temperature=0.0,
             ).with_structured_output(KnowledgeExtraction)
 
-            # 5. Bulk upsert all Chunk nodes and book→chunk edges upfront to establish graph structure
-            chunks_bulk = []
-            for chunk in chunks:
-                text_preview = chunk.text[:100] + "..." if chunk.text else ""
-                chunks_bulk.append({
-                    "id": chunk.id,
-                    "page_number": chunk.page_number,
-                    "text_preview": text_preview,
-                })
-            await graph_repo.upsert_chunks_and_connect_bulk(str(book.id), chunks_bulk)
-
-            # 6. Group consecutive chunks into batches and process concurrently.
+            # 5. Group consecutive chunks into batches and process concurrently.
             #    Sending N chunks per call instead of 1:
             #      - cuts LLM calls by chunk_batch_size×
             #      - lets the model resolve coreferences across chunk boundaries
@@ -160,7 +153,7 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
             tasks = [extract_batch(batch) for batch in batches]
             results = await asyncio.gather(*tasks)
 
-            # 7. Process database inserts sequentially to avoid transaction deadlocks/lock conflicts
+            # 6. Process database inserts sequentially to avoid transaction deadlocks/lock conflicts
             for batch, extraction in results:
                 if not extraction:
                     continue
@@ -208,18 +201,8 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                     if entities_to_upsert:
                         await graph_repo.upsert_entities_bulk(entities_to_upsert)
 
-                    # Connect chunks to entities in bulk (cross-attribute all extracted entities to chunks in batch)
-                    pairs_to_connect = []
-                    for name in defined_entity_names:
-                        for chunk in chunks_with_text:
-                            pairs_to_connect.append({
-                                "chunk_id": chunk.id,
-                                "entity_name": name,
-                            })
-                    if pairs_to_connect:
-                        await graph_repo.connect_chunks_entities_bulk(pairs_to_connect)
-
-                    # Connect entities in bulk
+                    # Connect entities in bulk — include book_id so edges from different
+                    # books are stored as separate edges and never overwrite each other
                     relations_to_connect = []
                     for rel in extraction.relations:
                         src = rel.source_entity.strip() if rel.source_entity else ""
@@ -231,6 +214,7 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                             "source_name": src,
                             "rel_type": rtype,
                             "target_name": tgt,
+                            "book_id": str(book_id),
                         })
                     if relations_to_connect:
                         await graph_repo.connect_entities_bulk(relations_to_connect)
@@ -246,6 +230,15 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
         finally:
             await graph_repo.close()
 
+        # Update database status to complete
+        async with db_session.async_session_factory() as session:
+            await session.execute(
+                update(Book)
+                .where(Book.id == book_id)
+                .values(graph_milestone="complete")
+            )
+            await session.commit()
+
         log_json(
             logger, logging.INFO, "knowledge graph job completed",
             book_id=book_id,
@@ -256,4 +249,15 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
 
     except Exception as exc:
         log_json(logger, logging.ERROR, "knowledge graph job failed", book_id=book_id, error=str(exc))
+        # Update database status to failed
+        try:
+            async with db_session.async_session_factory() as session:
+                await session.execute(
+                    update(Book)
+                    .where(Book.id == book_id)
+                    .values(graph_milestone="failed")
+                )
+                await session.commit()
+        except Exception as db_exc:
+            log_json(logger, logging.ERROR, "failed to update book graph_milestone to failed in exception handler", book_id=book_id, error=str(db_exc))
         raise

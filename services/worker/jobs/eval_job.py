@@ -35,7 +35,7 @@ async def evaluate_rag_query(ctx, eval_id: int) -> None:
     the row is marked eval_status='failed' instead of being left as 'queued'.
     """
     log_json(logger, logging.INFO, "RAG eval job started",
-             eval_id=eval_id, attempt=ctx.job_try)
+             eval_id=eval_id, attempt=ctx["job_try"])
 
     # ── 1. Load the evaluation record ────────────────────────────────────────
     async with db_session.async_session_factory() as session:
@@ -74,13 +74,13 @@ async def evaluate_rag_query(ctx, eval_id: int) -> None:
             model_name=eval_model,
         )
     except Exception as exc:
-        is_final_attempt = ctx.job_try >= evaluate_rag_query.max_tries
+        is_final_attempt = ctx["job_try"] >= evaluate_rag_query.max_tries
         log_json(
             logger,
             logging.ERROR if is_final_attempt else logging.WARNING,
             "RAG eval failed" + (" — no more retries" if is_final_attempt else ", will retry"),
             eval_id=eval_id,
-            attempt=ctx.job_try,
+            attempt=ctx["job_try"],
             max_tries=evaluate_rag_query.max_tries,
             error=str(exc),
         )
