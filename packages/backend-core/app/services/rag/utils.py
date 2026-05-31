@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from difflib import SequenceMatcher
 from typing import List
 
 import numpy as np
@@ -52,10 +53,19 @@ def entity_matches_question(entity: str, question: str) -> bool:
 
     def _word_matches(e_word: str) -> bool:
         alt = e_word[:-1] + "ی" if e_word.endswith("ە") else None
-        return any(
+        if any(
             q_word.startswith(e_word) or (alt is not None and q_word.startswith(alt))
             for q_word in q_words
-        )
+        ):
+            return True
+        # Fuzzy fallback: catch single-character spelling variations (e.g. ھەمدى vs ھەمىدى).
+        # Both words must be ≥4 chars to avoid false positives on short tokens.
+        if len(e_word) < 4:
+            return False
+        for q_word in q_words:
+            if len(q_word) >= 4 and SequenceMatcher(None, e_word, q_word).ratio() >= 0.85:
+                return True
+        return False
 
     return all(_word_matches(e_word) for e_word in entity_words)
 
