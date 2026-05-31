@@ -196,6 +196,8 @@
       "noContentFound": "No content found",
       "foundBooks": "Found {{count}} books",
       "noBooksFound": "No books found",
+      "foundRecord": "Found {{count}} record",
+      "noRecordFound": "No record found",
       "keptContent": "{{kept}} of {{total}} content kept",
       "keptBooks": "{{kept}} of {{total}} books kept"
     }

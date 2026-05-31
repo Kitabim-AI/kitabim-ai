@@ -71,6 +71,11 @@ function getStepSublabel(
         ? t('chat.agent.noBooksFound')
         : t('chat.agent.foundBooks', { count: step.found });
     }
+    if (step.tool === 'get_book_author') {
+      return step.found === 0
+        ? t('chat.agent.noRecordFound')
+        : t('chat.agent.foundRecord', { count: step.found });
+    }
     return step.found === 0
       ? t('chat.agent.noContentFound')
       : t('chat.agent.foundContent', { count: step.found });

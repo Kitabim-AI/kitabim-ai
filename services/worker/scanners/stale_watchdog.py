@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import update, func
 
 from app.db import session as db_session
-from app.db.models import Page
+from app.db.models import Book, Page
 from app.services.book_milestone_service import BookMilestoneService
 from app.utils.observability import log_json
 
@@ -60,11 +60,28 @@ async def run_stale_watchdog(ctx) -> None:
         result = await session.execute(stmt)
         rows = result.fetchall()
         reset_ids = [row[0] for row in rows]
-        reset_book_ids = list(set(row[1] for row in rows))
+        reset_book_ids_from_pages = list(set(row[1] for row in rows))
 
-        if reset_book_ids:
-            for book_id in reset_book_ids:
+        if reset_book_ids_from_pages:
+            for book_id in reset_book_ids_from_pages:
                 await BookMilestoneService.update_book_milestones(session, book_id)
+
+        # Reset stale books stuck in graph_milestone == "in_progress" for > 1 hour
+        book_threshold = datetime.now(timezone.utc) - timedelta(hours=1)
+        book_stmt = (
+            update(Book)
+            .where(
+                Book.graph_milestone == "in_progress",
+                Book.last_updated < book_threshold
+            )
+            .values(
+                graph_milestone="idle",
+                last_updated=now
+            )
+            .returning(Book.id)
+        )
+        book_result = await session.execute(book_stmt)
+        reset_book_ids = [row[0] for row in book_result.fetchall()]
         
         await session.commit()
 
@@ -72,4 +89,10 @@ async def run_stale_watchdog(ctx) -> None:
         log_json(logger, logging.INFO, "stale watchdog reset pages", count=len(reset_ids))
     else:
         log_json(logger, logging.DEBUG, "stale watchdog: no stale pages found")
+
+    if reset_book_ids:
+        log_json(logger, logging.INFO, "stale watchdog reset books graph milestone", count=len(reset_book_ids))
+    else:
+        log_json(logger, logging.DEBUG, "stale watchdog: no stale books found")
+
 

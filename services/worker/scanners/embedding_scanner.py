@@ -12,7 +12,7 @@ import logging
 from sqlalchemy import select, update, func
 
 from app.db import session as db_session
-from app.db.models import Page
+from app.db.models import Page, Book
 from app.db.repositories.system_configs import SystemConfigsRepository
 from app.services.book_milestone_service import BookMilestoneService
 from app.utils.observability import log_json
@@ -30,9 +30,11 @@ async def run_embedding_scanner(ctx) -> None:
         # Atomically claim idle embedding pages across all books.
         id_stmt = (
             select(Page.id)
+            .join(Book, Page.book_id == Book.id)
             .where(
                 Page.chunking_milestone == "succeeded",
                 Page.embedding_milestone == "idle",
+                ~Book.status.in_(["ready", "error"]),
             )
             .with_for_update(skip_locked=True)
             .limit(page_limit)
