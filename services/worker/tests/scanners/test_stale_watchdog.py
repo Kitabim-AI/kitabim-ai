@@ -45,3 +45,26 @@ async def test_stale_watchdog_reset_stale_pages():
         mock_update_milestones.assert_called_with(mock_session, stale_book_id)
         # Verify commit was called
         mock_session.commit.assert_called()
+
+@pytest.mark.asyncio
+async def test_stale_watchdog_reset_stale_books():
+    ctx = {"redis": AsyncMock()}
+    stale_book_id = "book-2"
+    
+    with patch("app.db.session.async_session_factory") as mock_session_factory:
+        mock_session = AsyncMock()
+        mock_session_factory.return_value.__aenter__.return_value = mock_session
+        
+        mock_page_result = MagicMock()
+        mock_page_result.fetchall.return_value = []
+        
+        mock_book_result = MagicMock()
+        mock_book_result.fetchall.return_value = [(stale_book_id,)]
+        
+        mock_session.execute.side_effect = [mock_page_result, mock_book_result]
+        
+        await run_stale_watchdog(ctx)
+        
+        assert mock_session.execute.call_count == 2
+        mock_session.commit.assert_called()
+

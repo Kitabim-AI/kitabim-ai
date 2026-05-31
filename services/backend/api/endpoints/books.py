@@ -485,16 +485,9 @@ async def get_books(
         s_res = await session.execute(s_stmt)
         summary_ids = {str(row[0]) for row in s_res.fetchall()}
         
-        # Batch-fetch graph status from Memgraph
-        from app.db.repositories.graph import GraphRepository
-        graph_repo = GraphRepository()
-        graph_ids = set()
-        try:
-            graph_ids = await graph_repo.check_books_exist(bid_list)
-        except Exception:
-            pass
-        finally:
-            await graph_repo.close()
+        g_stmt = select(Book.id).where(Book.id.in_(bid_list), Book.graph_milestone == "complete")
+        g_res = await session.execute(g_stmt)
+        graph_ids = {str(row[0]) for row in g_res.fetchall()}
 
         for pydantic_book in books_data:
             if str(pydantic_book.id) in summary_ids:
@@ -1436,6 +1429,20 @@ async def reprocess_graph(
     if not book:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
+    configs_repo = SystemConfigsRepository(session)
+    kg_enabled = await configs_repo.get_value("knowledge_graph_enabled", "false")
+    if kg_enabled != "true":
+        raise HTTPException(status_code=400, detail="Knowledge Graph generation is currently disabled.")
+
+    # Set milestone to in_progress atomically before enqueuing
+    await books_repo.update_one(
+        book_id,
+        graph_milestone="in_progress",
+        last_updated=datetime.now(timezone.utc),
+        updated_by=current_user.email,
+    )
+    await session.commit()
+
     try:
         import arq
         redis_pool = await arq.create_pool(arq.connections.RedisSettings.from_dsn(settings.redis_url))
@@ -1444,6 +1451,14 @@ async def reprocess_graph(
         log_json(logger, logging.INFO, "manually enqueued knowledge_graph_job", book_id=book_id, user=current_user.email)
     except Exception as exc:
         log_json(logger, logging.ERROR, "failed to enqueue knowledge_graph_job", book_id=book_id, error=str(exc))
+        # Rollback graph milestone to idle if enqueueing failed
+        await books_repo.update_one(
+            book_id,
+            graph_milestone="idle",
+            last_updated=datetime.now(timezone.utc),
+            updated_by=current_user.email,
+        )
+        await session.commit()
         raise HTTPException(status_code=500, detail=t("errors.graph_enqueue_failed"))
 
     return {"status": "graph_reprocess_started", "message": "Knowledge Graph extraction queued."}

@@ -33,9 +33,9 @@ async def execute_tool_node(state: dict) -> dict:
 
     result = await dispatch_tool(tool_name, tool_args, ctx)
 
-    chunk_count = len(result.get("chunks", []))
-    log_json(logger, logging.INFO, "Tool executed", tool=tool_name, chunks=chunk_count)
-    writer({"type": "tool_result", "tool": tool_name, "found": chunk_count})
+    found_count = result.get("found_count", 0)
+    log_json(logger, logging.INFO, "Tool executed", tool=tool_name, found=found_count)
+    writer({"type": "tool_result", "tool": tool_name, "found": found_count})
 
     obs = {"tool": tool_name, "args": tool_args, "result": result}
     tool_msg = ToolMessage(

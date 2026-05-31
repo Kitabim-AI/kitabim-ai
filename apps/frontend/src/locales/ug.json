@@ -198,6 +198,8 @@
       "noContentFound": "مەزمۇن تېپىلمىدى",
       "foundBooks": "{{count}} كىتاب تاپتىم",
       "noBooksFound": "كىتاب تېپىلمىدى",
+      "foundRecord": "{{count}} رېكورد تاپتىم",
+      "noRecordFound": "رېكورد تېپىلمىدى",
       "keptContent": "{{kept}}/{{total}} پارچە مەزمۇن تاللاندى",
       "keptBooks": "{{kept}}/{{total}} كىتاب تاللاندى"
     }

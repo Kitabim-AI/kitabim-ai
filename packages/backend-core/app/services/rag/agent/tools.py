@@ -194,34 +194,45 @@ AGENT_TOOLS = [
 # ---------------------------------------------------------------------------
 
 async def dispatch_tool(tool_name: str, tool_args: dict, ctx: QueryContext) -> dict:
-    """Execute a named tool and return a serialisable result dict."""
+    """Execute a named tool and return a serialisable result dict with a found_count key."""
     try:
         if tool_name == "search_chunks":
-            return {"chunks": await _run_search_chunks(tool_args, ctx)}
+            chunks = await _run_search_chunks(tool_args, ctx)
+            return {"chunks": chunks, "found_count": len(chunks)}
         if tool_name == "search_books_by_summary":
-            return {"book_ids": await _run_search_books_by_summary(tool_args, ctx)}
+            book_ids = await _run_search_books_by_summary(tool_args, ctx)
+            return {"book_ids": book_ids, "found_count": len(book_ids)}
         if tool_name == "find_books_by_title":
-            return {"book_ids": await _run_find_books_by_title(tool_args, ctx)}
+            book_ids = await _run_find_books_by_title(tool_args, ctx)
+            return {"book_ids": book_ids, "found_count": len(book_ids)}
         if tool_name == "rewrite_query":
-            return await _run_rewrite_query(tool_args, ctx)
+            result = await _run_rewrite_query(tool_args, ctx)
+            return {**result, "found_count": 0}
         if tool_name == "get_book_author":
-            return await _run_get_book_author(tool_args, ctx)
+            result = await _run_get_book_author(tool_args, ctx)
+            return {**result, "found_count": 1 if result.get("author") is not None else 0}
         if tool_name == "get_books_by_author":
-            return await _run_get_books_by_author(tool_args, ctx)
+            result = await _run_get_books_by_author(tool_args, ctx)
+            return {**result, "found_count": len(result.get("books", []))}
         if tool_name == "search_catalog":
-            return await _run_search_catalog(tool_args, ctx)
+            result = await _run_search_catalog(tool_args, ctx)
+            return {**result, "found_count": result.get("book_count", 0)}
         if tool_name == "get_book_summary":
-            return await _run_get_book_summary(tool_args, ctx)
+            result = await _run_get_book_summary(tool_args, ctx)
+            return {**result, "found_count": len(result.get("summaries", []))}
         if tool_name == "get_sister_volumes":
-            return await _run_get_sister_volumes(tool_args, ctx)
+            result = await _run_get_sister_volumes(tool_args, ctx)
+            return {**result, "found_count": len(result.get("book_ids", []))}
         if tool_name == "get_current_page":
-            return await _run_get_current_page(ctx)
+            result = await _run_get_current_page(ctx)
+            return {**result, "found_count": 0}
         if tool_name == "query_knowledge_graph":
-            return await _run_query_knowledge_graph(tool_args, ctx)
-        return {"error": f"Unknown tool: {tool_name}"}
+            result = await _run_query_knowledge_graph(tool_args, ctx)
+            return {**result, "found_count": len(result.get("relations", []))}
+        return {"error": f"Unknown tool: {tool_name}", "found_count": 0}
     except Exception as exc:
         log_json(logger, logging.WARNING, "Agent tool failed", tool=tool_name, error=str(exc))
-        return {"error": str(exc)}
+        return {"error": str(exc), "found_count": 0}
 
 
 # ---------------------------------------------------------------------------
@@ -454,10 +465,16 @@ async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
     from app.langchain.models import build_text_llm
     from app.db.repositories.graph import GraphRepository
     import re
+    import unicodedata
 
     query = args.get("query", "")
     if not query:
-        return {"context": "No query provided.", "relations": []}
+        return {"context": "No query provided."}
+
+    # Skip if in single-book mode and graph has not been built for this book
+    if not ctx.is_global and ctx.book and getattr(ctx.book, "graph_milestone", None) != "complete":
+        log_json(logger, logging.INFO, "Agent tool query_knowledge_graph — skipped, graph not available", book_id=ctx.book_id)
+        return {"context": "Knowledge graph is not available for this book."}
 
     # Extract entities from the query using the LLM
     prompt = (
@@ -472,8 +489,8 @@ async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
         llm_response = await llm.ainvoke(prompt)
         
         entities = [
-            e.strip() 
-            for e in re.split(r"[,，\u060c\n]", llm_response) 
+            unicodedata.normalize("NFC", e.strip())
+            for e in re.split(r"[,，\u060c\n]", llm_response)
             if e.strip()
         ]
     except Exception as exc:
@@ -486,9 +503,10 @@ async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
 
     log_json(logger, logging.INFO, "Agent tool query_knowledge_graph", query=query[:60], entities=entities)
 
+    book_id = str(ctx.book_id) if not ctx.is_global and ctx.book_id else None
     graph_repo = GraphRepository()
     try:
-        records = await graph_repo.query_subgraph(entities)
+        records = await graph_repo.query_subgraph(entities, book_id=book_id)
     finally:
         await graph_repo.close()
 
@@ -508,4 +526,4 @@ async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
         lines.append(f"- ({source}: {source_type}) -[{rel}]-> ({target}: {target_type})")
 
     context_text = "\n".join(lines)
-    return {"context": context_text, "relations": records}
+    return {"context": context_text}
