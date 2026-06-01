@@ -30,6 +30,16 @@ export const HomeView: React.FC = () => {
   const [visibleCount, setVisibleCount] = useState(5);
   const [localSearch, setLocalSearch] = useState(searchQuery);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const localSearchRef = useRef(localSearch);
+
+  useEffect(() => {
+    localSearchRef.current = localSearch;
+  }, [localSearch]);
+
+  // Focus the search input by default on mount
+  useEffect(() => {
+    searchInputRef.current?.focus();
+  }, []);
 
   // Search is active if we have a category OR at least 3 characters
   const hasSearch = (searchQuery.length >= 3) || selectedCategory.length > 0;
@@ -55,7 +65,9 @@ export const HomeView: React.FC = () => {
 
   // Sync local search when global search is cleared or changed externally
   useEffect(() => {
-    setLocalSearch(searchQuery);
+    if (localSearchRef.current.trim() !== searchQuery) {
+      setLocalSearch(searchQuery);
+    }
   }, [searchQuery]);
 
   useEffect(() => {

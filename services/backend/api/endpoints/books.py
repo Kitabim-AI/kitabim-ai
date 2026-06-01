@@ -485,7 +485,7 @@ async def get_books(
         s_res = await session.execute(s_stmt)
         summary_ids = {str(row[0]) for row in s_res.fetchall()}
         
-        g_stmt = select(Book.id).where(Book.id.in_(bid_list), Book.graph_milestone == "complete")
+        g_stmt = select(BookDB.id).where(BookDB.id.in_(bid_list), BookDB.graph_milestone == "complete")
         g_res = await session.execute(g_stmt)
         graph_ids = {str(row[0]) for row in g_res.fetchall()}
 

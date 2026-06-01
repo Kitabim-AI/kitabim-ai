@@ -6,7 +6,7 @@ import { useAuth } from './useAuth';
 
 export interface AgentStep {
   id: string;
-  type: 'decomposing' | 'planning' | 'thinking' | 'tool' | 'grading';
+  type: 'decomposing' | 'planning' | 'thinking' | 'tool' | 'grading' | 'generating';
   tool?: string;
   found?: number;
   kept?: number;
@@ -36,6 +36,10 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     if (type === 'answer_start') {
       streamingMessageRef.current = '';
       setStreamingMessage('');
+      setAgentSteps(prev => {
+        const steps = prev.map(s => s.status === 'active' ? { ...s, status: 'done' as const } : s);
+        return [...steps, { id: 'generating', type: 'generating' as const, status: 'active' as const }];
+      });
       return;
     }
 
