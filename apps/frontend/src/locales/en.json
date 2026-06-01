@@ -180,6 +180,7 @@
     "agent": {
       "analyzing": "Analyzing your question",
       "thinking": "Thinking...",
+      "generatingAnswer": "Generating answer...",
       "searchingContent": "Searching content",
       "searchingBooks": "Searching books",
       "findingByTitle": "Finding books by title",
