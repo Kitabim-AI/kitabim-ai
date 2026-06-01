@@ -7,7 +7,7 @@ function stepIcon(step: AgentStep): React.ReactNode {
   const s = 11;
   const w = 2;
   if (step.status === 'done') return <Check size={s} strokeWidth={2.5} />;
-  if (step.type === 'thinking') return <Loader2 size={s} strokeWidth={w} className="animate-spin" />;
+  if (step.type === 'thinking' || step.type === 'generating') return <Loader2 size={s} strokeWidth={w} className="animate-spin" />;
   if (step.type === 'decomposing') return <SplitSquareHorizontal size={s} strokeWidth={w} />;
   if (step.type === 'grading') return <Filter size={s} strokeWidth={w} />;
   if (step.type === 'tool') {
@@ -34,6 +34,7 @@ function getStepLabel(step: AgentStep, t: (key: string, params?: Record<string, 
     case 'planning': return t('chat.agent.analyzing');
     case 'thinking': return t('chat.agent.thinking');
     case 'grading': return t('chat.agent.grading');
+    case 'generating': return t('chat.agent.generatingAnswer');
     case 'tool':
       switch (step.tool) {
         case 'search_chunks': return t('chat.agent.searchingContent');
