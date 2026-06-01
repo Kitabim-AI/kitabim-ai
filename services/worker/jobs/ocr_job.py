@@ -16,7 +16,7 @@ from app.core.config import settings
 from app.db import session as db_session
 from app.db.models import Book, Page, PipelineEvent
 from app.db.repositories.system_configs import SystemConfigsRepository
-from app.services.ocr_service import ocr_page_with_gemini
+from app.services.ocr_service import ocr_page
 from app.utils.text import is_toc_page
 from app.services.storage_service import storage
 from app.services.book_milestone_service import BookMilestoneService
@@ -36,6 +36,7 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
         gemini_ocr_model = await config_repo.get_value("gemini_ocr_model")
         if not gemini_ocr_model:
             raise RuntimeError("system_config 'gemini_ocr_model' is not set")
+        ocr_provider = await config_repo.get_value("ocr_provider", "gemini")
         max_parallel_pages = int(await config_repo.get_value("ocr_max_parallel_pages", "4"))
 
     # Mark book's active step
@@ -111,7 +112,13 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
         async with sem:
             try:
                 fitz_page = doc.load_page(page.page_number - 1)  # fitz is 0-indexed
-                text = await ocr_page_with_gemini(fitz_page, gemini_ocr_model)
+                text = await ocr_page(
+                    fitz_page,
+                    book_title=book_row.title if (book_row and book_row.title) else "Unknown",
+                    page_num=page.page_number,
+                    provider=ocr_provider,
+                    model_name=gemini_ocr_model,
+                )
                 is_toc = is_toc_page(text)
 
                 async with db_session.async_session_factory() as session:

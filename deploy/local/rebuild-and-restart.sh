@@ -2,7 +2,7 @@
 set -e
 
 # Quick rebuild and restart for development
-# Usage: ./rebuild-and-restart.sh [backend|worker|frontend|all]
+# Usage: ./rebuild-and-restart.sh [backend|worker|frontend|ocr-service|all]
 
 COMPONENT=${1:-all}
 
@@ -34,6 +34,10 @@ rebuild_component() {
     frontend)
       docker compose build frontend
       docker compose up -d frontend
+      ;;
+    ocr-service)
+      docker compose build ocr-service
+      docker compose up -d ocr-service
       ;;
     *)
       echo "Unknown component: $comp"

@@ -88,6 +88,8 @@ services:
         condition: service_healthy
       memgraph:
         condition: service_healthy
+      ocr-service:
+        condition: service_started
     env_file:
       - .env
     environment:
@@ -96,6 +98,8 @@ services:
       - MEMGRAPH_URL=bolt://memgraph:7687
       - DATA_DIR=/app/data
       - GOOGLE_APPLICATION_CREDENTIALS=/etc/gcs/key.json
+      - OCR_SERVICE_URL=http://ocr-service:8000
+      - OCR_SERVICE_TIMEOUT=${OCR_SERVICE_TIMEOUT:-60}
       # Connection pool settings (loaded from .env but explicitly listed for visibility)
       - DB_POOL_SIZE=${DB_POOL_SIZE:-5}
       - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-7}
@@ -158,6 +162,27 @@ services:
       resources:
         limits:
           memory: 256M
+
+  # ─── Tesseract OCR Microservice ───────────────────────────────────────────
+  ocr-service:
+    build:
+      context: services/ocr-service
+      dockerfile: Dockerfile
+    image: kitabim-ocr:local
+    restart: always
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    ports:
+      - "38000:8000"
+    environment:
+      - OCR_NUM_THREADS=${OCR_NUM_THREADS:-8}
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 3.0G
 
 
 volumes:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import random
 import asyncio
 import fitz
+import httpx
 
 from app.core.config import settings
 from app.core.prompts import OCR_PROMPT
@@ -37,11 +38,39 @@ async def ocr_page_with_gemini(page: fitz.Page, model_name: str = "gemini-2.0-fl
             raise
 
 
+async def ocr_page_with_easyocr(page: fitz.Page) -> str:
+    """
+    OCR a page using the self-hosted EasyOCR microservice.
+
+    Args:
+        page: The fitz.Page to OCR
+    """
+    # 3.0 matrix scales the PDF page image resolution for OCR accuracy
+    pix = page.get_pixmap(matrix=fitz.Matrix(3.0, 3.0))
+    img_bytes = pix.tobytes("jpeg")
+
+    async with httpx.AsyncClient(timeout=settings.ocr_service_timeout) as client:
+        response = await client.post(
+            f"{settings.ocr_service_url}/ocr",
+            files={"image": ("page.jpg", img_bytes, "image/jpeg")},
+        )
+        response.raise_for_status()
+
+    result = response.json()
+    return clean_uyghur_text(result["text"] or "")
+
+
 async def ocr_page(
     page: fitz.Page,
     book_title: str,
     page_num: int,
-    provider: str | None = None,
+    provider: str = "gemini",
+    model_name: str = "gemini-2.0-flash",
 ) -> str:
-    # We now exclusively use Gemini for OCR
-    return await ocr_page_with_gemini(page)
+    """
+    OCR a page using the configured provider (gemini or easyocr).
+    """
+    if provider == "easyocr":
+        return await ocr_page_with_easyocr(page)
+    return await ocr_page_with_gemini(page, model_name=model_name)
+

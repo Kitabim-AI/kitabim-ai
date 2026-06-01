@@ -58,6 +58,8 @@ class Settings:
 
     # OCR Settings
     ocr_max_retries: int = int(os.getenv("OCR_MAX_RETRIES", "4"))
+    ocr_service_url: str = os.getenv("OCR_SERVICE_URL", "http://ocr-service:8000")
+    ocr_service_timeout: int = int(os.getenv("OCR_SERVICE_TIMEOUT", "180"))
 
     # RAG Settings
     rag_score_threshold: float = float(os.getenv("RAG_SCORE_THRESHOLD", "0.50"))

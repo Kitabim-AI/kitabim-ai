@@ -47,6 +47,11 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Maximum number of pages to OCR concurrently within a single OCR job. Set to 1 to process pages strictly one at a time."
         },
         {
+            "key": "ocr_provider",
+            "value": "gemini",
+            "description": "OCR provider: gemini | easyocr"
+        },
+        {
             "key": "summary_scanner_batch_size",
             "value": "5",
             "description": "Number of books the summary scanner enqueues per run. Increase temporarily to speed up bulk regeneration, then reset to 5."
