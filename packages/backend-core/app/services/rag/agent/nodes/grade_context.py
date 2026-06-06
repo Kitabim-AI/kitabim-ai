@@ -29,24 +29,29 @@ async def grade_context_node(state: AgentState) -> dict:
     for obs in observations:
         if obs.get("tool") != "search_chunks":
             continue
-        for chunk in obs.get("result", {}).get("chunks", []):
-            key = (chunk.get("book_id"), chunk.get("page"))
-            if key in seen:
-                continue
-            seen.add(key)
-            documents.append(
-                Document(
-                    page_content=chunk.get("text", ""),
-                    metadata={
-                        "title": chunk.get("title") or "Unknown",
-                        "author": chunk.get("author") or None,
-                        "volume": chunk.get("volume"),
-                        "page": chunk.get("page"),
-                        "book_id": chunk.get("book_id"),
-                        "score": chunk.get("score", 0.0),
-                    },
+        res = obs.get("result", {})
+        if not res.get("ok", True):
+            continue
+        data = res.get("data") or res
+        if isinstance(data, dict):
+            for chunk in data.get("chunks", []):
+                key = (chunk.get("book_id"), chunk.get("page"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                documents.append(
+                    Document(
+                        page_content=chunk.get("text", ""),
+                        metadata={
+                            "title": chunk.get("title") or "Unknown",
+                            "author": chunk.get("author") or None,
+                            "volume": chunk.get("volume"),
+                            "page": chunk.get("page"),
+                            "book_id": chunk.get("book_id"),
+                            "score": chunk.get("score", 0.0),
+                        },
+                    )
                 )
-            )
 
     # If no chunk documents (pure catalog/metadata answer), pass retrieved_context through unchanged
     if not documents:
@@ -74,11 +79,14 @@ async def grade_context_node(state: AgentState) -> dict:
     writer({"type": "grading", "before": before_count, "after": len(graded)})
 
     # Extract metadata context directly from observations to prevent parsing issues
-    metadata_parts = [
-        obs["result"]["context"]
-        for obs in observations
-        if obs.get("result", {}).get("context")
-    ]
+    metadata_parts = []
+    for obs in observations:
+        res = obs.get("result", {})
+        if not res.get("ok", True):
+            continue
+        data = res.get("data") or res
+        if isinstance(data, dict) and data.get("context"):
+            metadata_parts.append(data["context"])
 
     chunk_parts = [format_document(d) for d in graded]
     all_parts = metadata_parts + chunk_parts

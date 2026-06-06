@@ -10,7 +10,10 @@
     "build": "npm --workspace apps/frontend run build",
     "preview": "npm --workspace apps/frontend run preview",
     "test": "npm --workspace apps/frontend run test",
-    "test:coverage": "npm --workspace apps/frontend run test:coverage"
+    "test:coverage": "npm --workspace apps/frontend run test:coverage",
+    "openapi:generate": "PYTHONPATH=packages/backend-core:services/backend .venv/bin/python scripts/generate_openapi.py",
+    "openapi:check": "PYTHONPATH=packages/backend-core:services/backend .venv/bin/python scripts/check_openapi.py",
+    "openapi:generate-types": "npx openapi-typescript docs/main/openapi.json -o packages/shared/src/api-types.ts"
   },
   "devDependencies": {
     "@types/react-dom": "^19.2.3"

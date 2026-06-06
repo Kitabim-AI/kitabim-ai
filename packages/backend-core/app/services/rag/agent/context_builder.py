@@ -17,11 +17,14 @@ def format_observations_as_context(observations: list[dict]) -> Tuple[str, List[
     MAX_CONTEXT_CHUNKS, and sorted by similarity score DESC.
     """
     # Metadata context from catalog/author/lookup tools (any tool returning a "context" key)
-    metadata_parts = [
-        obs["result"]["context"]
-        for obs in observations
-        if obs.get("result", {}).get("context")
-    ]
+    metadata_parts = []
+    for obs in observations:
+        res = obs.get("result", {})
+        if not res.get("ok", True):
+            continue
+        data = res.get("data") or res
+        if isinstance(data, dict) and data.get("context"):
+            metadata_parts.append(data["context"])
 
     # Chunk context from search_chunks
     seen: set[tuple] = set()
@@ -30,24 +33,29 @@ def format_observations_as_context(observations: list[dict]) -> Tuple[str, List[
     for obs in observations:
         if obs.get("tool") != "search_chunks":
             continue
-        for chunk in obs.get("result", {}).get("chunks", []):
-            key = (chunk.get("book_id"), chunk.get("page"))
-            if key in seen:
-                continue
-            seen.add(key)
-            documents.append(
-                Document(
-                    page_content=chunk.get("text", ""),
-                    metadata={
-                        "title": chunk.get("title") or "Unknown",
-                        "author": chunk.get("author") or None,
-                        "volume": chunk.get("volume"),
-                        "page": chunk.get("page"),
-                        "book_id": chunk.get("book_id"),
-                        "score": chunk.get("score", 0.0),
-                    },
+        res = obs.get("result", {})
+        if not res.get("ok", True):
+            continue
+        data = res.get("data") or res
+        if isinstance(data, dict):
+            for chunk in data.get("chunks", []):
+                key = (chunk.get("book_id"), chunk.get("page"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                documents.append(
+                    Document(
+                        page_content=chunk.get("text", ""),
+                        metadata={
+                            "title": chunk.get("title") or "Unknown",
+                            "author": chunk.get("author") or None,
+                            "volume": chunk.get("volume"),
+                            "page": chunk.get("page"),
+                            "book_id": chunk.get("book_id"),
+                            "score": chunk.get("score", 0.0),
+                        },
+                    )
                 )
-            )
 
     if not documents and not metadata_parts:
         return "NO RELEVANT DOCUMENTS FOUND IN THE LIBRARY.", [], 0
@@ -60,13 +68,20 @@ def format_observations_as_context(observations: list[dict]) -> Tuple[str, List[
     # Collect book IDs from both chunk results and get_book_summary results so the next
     # turn's context_book_ids is populated even when retrieval relied on summaries only.
     chunk_book_ids = {str(doc.metadata["book_id"]) for doc in documents if doc.metadata.get("book_id")}
-    summary_book_ids = {
-        str(summary["book_id"])
-        for obs in observations
-        if obs.get("tool") == "get_book_summary"
-        for summary in obs.get("result", {}).get("summaries", [])
-        if summary.get("book_id")
-    }
+    
+    summary_book_ids = set()
+    for obs in observations:
+        if obs.get("tool") != "get_book_summary":
+            continue
+        res = obs.get("result", {})
+        if not res.get("ok", True):
+            continue
+        data = res.get("data") or res
+        if isinstance(data, dict):
+            for summary in data.get("summaries", []):
+                if summary.get("book_id"):
+                    summary_book_ids.add(str(summary["book_id"]))
+                    
     used_book_ids = list(chunk_book_ids | summary_book_ids)
 
     return "\n\n---\n\n".join(parts), used_book_ids, len(documents)

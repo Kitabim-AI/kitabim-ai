@@ -1,8 +1,13 @@
 """Lazy-loaded LLM chains and embeddings — module-level singleton."""
 from __future__ import annotations
 
-from app.langchain import GeminiEmbeddings, build_text_chain
+from typing import TYPE_CHECKING
+from app.langchain import build_text_chain
 from app.core.prompts import QUERY_REWRITE_PROMPT, RAG_PROMPT_TEMPLATE
+from app.core.providers import get_embedding_provider
+
+if TYPE_CHECKING:
+    from app.core.protocols import EmbeddingProvider
 
 
 class LLMResources:
@@ -16,9 +21,9 @@ class LLMResources:
         self._rewrite_chains: dict = {}
         self._embeddings_cache: dict = {}
 
-    def get_embeddings(self, model_name: str) -> GeminiEmbeddings:
+    def get_embeddings(self, model_name: str) -> EmbeddingProvider:
         if model_name not in self._embeddings_cache:
-            self._embeddings_cache[model_name] = GeminiEmbeddings(model_name)
+            self._embeddings_cache[model_name] = get_embedding_provider(model_name)
         return self._embeddings_cache[model_name]
 
     def get_rag_chain(self, model_name: str):

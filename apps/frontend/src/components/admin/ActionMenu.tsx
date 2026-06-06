@@ -130,14 +130,16 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
           <span className="flex-1 text-right">{t('admin.table.reprocess.spell_check') || 'قايتا ئىملا تەكشۈرۈش'}</span>
         </button>
 
-        <button
-          onClick={() => { bookActions.handleReprocessStep(book.id, REPROCESS_STEP.GRAPH); close(); }}
-          disabled={book.pipelineStep === null || reprocessingStep === REPROCESS_STEP.GRAPH}
-          className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-teal-600 hover:bg-teal-50 disabled:opacity-30 disabled:cursor-not-allowed rounded-xl transition-all active:scale-[0.98]"
-        >
-          {reprocessingStep === REPROCESS_STEP.GRAPH ? <Loader2 size={16} className="animate-spin" /> : <Network size={16} />}
-          <span className="flex-1 text-right">{t('admin.table.reprocess.graph') || 'قايتا گىراف تۈزۈش'}</span>
-        </button>
+        {isAdmin && (
+          <button
+            onClick={() => { bookActions.handleReprocessStep(book.id, REPROCESS_STEP.GRAPH); close(); }}
+            disabled={book.pipelineStep === null || reprocessingStep === REPROCESS_STEP.GRAPH}
+            className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-teal-600 hover:bg-teal-50 disabled:opacity-30 disabled:cursor-not-allowed rounded-xl transition-all active:scale-[0.98]"
+          >
+            {reprocessingStep === REPROCESS_STEP.GRAPH ? <Loader2 size={16} className="animate-spin" /> : <Network size={16} />}
+            <span className="flex-1 text-right">{t('admin.table.reprocess.graph') || 'قايتا گىراف تۈزۈش'}</span>
+          </button>
+        )}
 
         <div className="h-px bg-slate-100/60 my-1.5 mx-2" />
 

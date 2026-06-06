@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_session
 from app.models.schemas import ChatRequest, ChatResponse, ChatUsageStatus
 from app.models.user import User
-from app.services.rag_service import rag_service
+from app.services.rag_service import get_rag_service, RAGService
 from app.services.chat_limit_service import chat_limit_service
 from app.utils.errors import record_book_error
 from app.utils.observability import log_json
@@ -35,6 +35,7 @@ async def chat_with_book_api(
     req: ChatRequest,
     current_user: User = Depends(require_reader),
     session: AsyncSession = Depends(get_session),
+    rag_service: RAGService = Depends(get_rag_service),
 ):
     """Chat with book using RAG with SQLAlchemy and role-based daily limits"""
     log_json(logger, logging.INFO, "Chat endpoint entered", user_id=current_user.id, book_id=req.book_id)
@@ -93,6 +94,7 @@ async def chat_with_book_stream(
     req: ChatRequest,
     current_user: User = Depends(require_reader),
     session: AsyncSession = Depends(get_session),
+    rag_service: RAGService = Depends(get_rag_service),
 ):
     """Stream chat responses using Server-Sent Events (SSE)"""
     log_json(logger, logging.INFO, "Chat stream endpoint entered", user_id=current_user.id, book_id=req.book_id)

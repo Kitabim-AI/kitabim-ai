@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.repositories.users import UsersRepository
 from app.db.models import User as UserDB
 from app.utils.security import hash_ip_if_present
+from app.services.cache_service import cache_service
+from app.core import cache_config
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +128,16 @@ async def update_user_role(session: AsyncSession, user_id: str, new_role: UserRo
     
     await session.flush()
     user_obj = await repo.get(user_id)
-    return _model_to_user(user_obj) if user_obj else None
+    if not user_obj:
+        return None
+        
+    user = _model_to_user(user_obj)
+    # Clear user cache in Redis
+    cache_key = cache_config.KEY_USER.format(user_id=user_id)
+    await cache_service.delete(cache_key)
+    # Publish user invalidation to other instances/workers via Redis Pub/Sub
+    await cache_service.publish_invalidation("user_invalidation", user_id)
+    return user
 
 
 async def update_user_status(session: AsyncSession, user_id: str, is_active: bool) -> Optional[User]:
@@ -138,7 +149,16 @@ async def update_user_status(session: AsyncSession, user_id: str, is_active: boo
     
     await session.flush()
     user_obj = await repo.get(user_id)
-    return _model_to_user(user_obj) if user_obj else None
+    if not user_obj:
+        return None
+        
+    user = _model_to_user(user_obj)
+    # Clear user cache in Redis
+    cache_key = cache_config.KEY_USER.format(user_id=user_id)
+    await cache_service.delete(cache_key)
+    # Publish user invalidation to other instances/workers via Redis Pub/Sub
+    await cache_service.publish_invalidation("user_invalidation", user_id)
+    return user
 
 
 async def list_users(session: AsyncSession, page: int = 1, page_size: int = 20, filter_dict: dict = None) -> Tuple[List[User], int]:

@@ -13,7 +13,8 @@ from app.services.rag.context import QueryContext
 from app.services.rag.llm_resources import llm_resources
 from app.services.rag.registry import get_registry
 from app.services.rag.utils import format_chat_history
-from app.utils.observability import log_json
+from app.utils.observability import log_json, request_id_var
+
 
 logger = logging.getLogger("app.rag")
 
@@ -108,6 +109,18 @@ class RAGService:
             await configs_repo.get_value("gemini_agent_loop_model")
             or chat_model
         )
+        agent_max_steps_str = await configs_repo.get_value("agent_max_steps", "6")
+        try:
+            agent_max_steps = int(agent_max_steps_str)
+        except ValueError:
+            agent_max_steps = 6
+
+        agent_enough_chunks_str = await configs_repo.get_value("agent_enough_chunks", "8")
+        try:
+            agent_enough_chunks = int(agent_enough_chunks_str)
+        except ValueError:
+            agent_enough_chunks = 8
+
         book = None
         if not is_global:
             books_repo = BooksRepository(session)
@@ -134,6 +147,9 @@ class RAGService:
             start_ts=time.monotonic(),
             agent_model=agent_model,
             context_book_ids=req.context_book_ids or [],
+            request_id=request_id_var.get(),
+            agent_max_steps=agent_max_steps,
+            agent_enough_chunks=agent_enough_chunks,
         )
 
     # ------------------------------------------------------------------
@@ -204,5 +220,7 @@ class RAGService:
             return None
 
 
-rag_service = RAGService()
+def get_rag_service() -> RAGService:
+    """FastAPI dependency to get a request-scoped RAGService instance."""
+    return RAGService()
 

@@ -1,32 +1,41 @@
 import pytest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 from services.worker.scanners.stale_watchdog import run_stale_watchdog
 
 @pytest.mark.asyncio
 async def test_stale_watchdog_no_stale_pages():
-    ctx = {"redis": AsyncMock()}
+    mock_redis = AsyncMock()
+    mock_redis.scan.return_value = (0, [b"worker:heartbeat:worker-1"])
+    ctx = {"redis": mock_redis}
     
     with patch("app.db.session.async_session_factory") as mock_session_factory:
         mock_session = AsyncMock()
         mock_session_factory.return_value.__aenter__.return_value = mock_session
         
-        # Mocking an empty result from execute
-        mock_result = MagicMock()
-        mock_result.fetchall.return_value = []
-        mock_session.execute.return_value = mock_result
+        # Page is in progress on active worker-1 and was claimed 5 mins ago (not stale)
+        mock_pages_result = MagicMock()
+        recent_time = datetime.now(timezone.utc) - timedelta(minutes=5)
+        mock_pages_result.fetchall.return_value = [(1, "book-1", "worker-1", recent_time)]
+        
+        # Book result
+        mock_books_result = MagicMock()
+        mock_books_result.fetchall.return_value = []
+        
+        mock_session.execute.side_effect = [mock_pages_result, mock_books_result]
         
         await run_stale_watchdog(ctx)
         
-        # Verify execute was called with update stmt
-        mock_session.execute.assert_called()
-        # Verify commit was called
+        # Execute should only be called twice (select Pages, update Book) and NOT update Page.
+        assert mock_session.execute.call_count == 2
         mock_session.commit.assert_called()
 
+
 @pytest.mark.asyncio
-async def test_stale_watchdog_reset_stale_pages():
-    ctx = {"redis": AsyncMock()}
-    stale_page_id = 1
-    stale_book_id = "book-1"
+async def test_stale_watchdog_reset_dead_worker():
+    mock_redis = AsyncMock()
+    mock_redis.scan.return_value = (0, [])  # No active workers
+    ctx = {"redis": mock_redis}
     
     with patch("app.db.session.async_session_factory") as mock_session_factory, \
          patch("services.worker.scanners.stale_watchdog.BookMilestoneService.update_book_milestones", new_callable=AsyncMock) as mock_update_milestones:
@@ -34,21 +43,95 @@ async def test_stale_watchdog_reset_stale_pages():
         mock_session = AsyncMock()
         mock_session_factory.return_value.__aenter__.return_value = mock_session
         
-        # Mocking a returned stale page result from update returning Page.id, Page.book_id
-        mock_result = MagicMock()
-        mock_result.fetchall.return_value = [(stale_page_id, stale_book_id)]
-        mock_session.execute.return_value = mock_result
+        # Page is in progress on dead worker and claimed 3 mins ago (stale)
+        mock_pages_result = MagicMock()
+        claimed_time = datetime.now(timezone.utc) - timedelta(minutes=3)
+        mock_pages_result.fetchall.return_value = [(1, "book-1", "dead-worker", claimed_time)]
+        
+        # Mock the update return value for pages
+        mock_update_result = MagicMock()
+        mock_update_result.fetchall.return_value = [(1, "book-1")]
+        
+        # Mock the update return value for books
+        mock_books_result = MagicMock()
+        mock_books_result.fetchall.return_value = []
+        
+        mock_session.execute.side_effect = [mock_pages_result, mock_update_result, mock_books_result]
         
         await run_stale_watchdog(ctx)
         
-        # Verify book milestone update was called for the book of the stale page
-        mock_update_milestones.assert_called_with(mock_session, stale_book_id)
-        # Verify commit was called
+        # Verify book milestones were updated for book-1
+        mock_update_milestones.assert_called_with(mock_session, "book-1")
         mock_session.commit.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_stale_watchdog_dead_worker_grace_period():
+    mock_redis = AsyncMock()
+    mock_redis.scan.return_value = (0, [])  # No active workers
+    ctx = {"redis": mock_redis}
+    
+    with patch("app.db.session.async_session_factory") as mock_session_factory:
+        mock_session = AsyncMock()
+        mock_session_factory.return_value.__aenter__.return_value = mock_session
+        
+        # Page is in progress on dead worker but claimed 30 seconds ago (within grace period, not stale)
+        mock_pages_result = MagicMock()
+        claimed_time = datetime.now(timezone.utc) - timedelta(seconds=30)
+        mock_pages_result.fetchall.return_value = [(1, "book-1", "dead-worker", claimed_time)]
+        
+        # Book result
+        mock_books_result = MagicMock()
+        mock_books_result.fetchall.return_value = []
+        
+        mock_session.execute.side_effect = [mock_pages_result, mock_books_result]
+        
+        await run_stale_watchdog(ctx)
+        
+        # Execute should only be called twice (select Pages, update Book) and NOT update Page.
+        assert mock_session.execute.call_count == 2
+        mock_session.commit.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_stale_watchdog_reset_hung_active_worker():
+    mock_redis = AsyncMock()
+    mock_redis.scan.return_value = (0, [b"worker:heartbeat:active-worker"])
+    ctx = {"redis": mock_redis}
+    
+    with patch("app.db.session.async_session_factory") as mock_session_factory, \
+         patch("services.worker.scanners.stale_watchdog.BookMilestoneService.update_book_milestones", new_callable=AsyncMock) as mock_update_milestones:
+        
+        mock_session = AsyncMock()
+        mock_session_factory.return_value.__aenter__.return_value = mock_session
+        
+        # Page is in progress on active worker but claimed 35 mins ago (exceeds STALE_THRESHOLD_MINUTES, stale)
+        mock_pages_result = MagicMock()
+        claimed_time = datetime.now(timezone.utc) - timedelta(minutes=35)
+        mock_pages_result.fetchall.return_value = [(1, "book-1", "active-worker", claimed_time)]
+        
+        # Mock the update return value for pages
+        mock_update_result = MagicMock()
+        mock_update_result.fetchall.return_value = [(1, "book-1")]
+        
+        # Mock the update return value for books
+        mock_books_result = MagicMock()
+        mock_books_result.fetchall.return_value = []
+        
+        mock_session.execute.side_effect = [mock_pages_result, mock_update_result, mock_books_result]
+        
+        await run_stale_watchdog(ctx)
+        
+        # Verify book milestones were updated for book-1
+        mock_update_milestones.assert_called_with(mock_session, "book-1")
+        mock_session.commit.assert_called()
+
 
 @pytest.mark.asyncio
 async def test_stale_watchdog_reset_stale_books():
-    ctx = {"redis": AsyncMock()}
+    mock_redis = AsyncMock()
+    mock_redis.scan.return_value = (0, [])
+    ctx = {"redis": mock_redis}
     stale_book_id = "book-2"
     
     with patch("app.db.session.async_session_factory") as mock_session_factory:
@@ -67,4 +150,3 @@ async def test_stale_watchdog_reset_stale_books():
         
         assert mock_session.execute.call_count == 2
         mock_session.commit.assert_called()
-

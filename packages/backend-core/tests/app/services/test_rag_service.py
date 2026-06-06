@@ -18,24 +18,32 @@ async def test_grade_context_node_preserves_metadata(monkeypatch):
         meta_obs = {
             "tool": "get_book_summary",
             "result": {
-                "context": "[BookID: book1, Book: Title1] Summary context text here."
+                "ok": True,
+                "data": {
+                    "context": "[BookID: book1, Book: Title1] Summary context text here."
+                },
+                "error": None
             }
         }
         # 2. Chunk documents observation
         chunk_obs = {
             "tool": "search_chunks",
             "result": {
-                "chunks": [
-                    {
-                        "text": "Chunk content",
-                        "score": 0.85,
-                        "book_id": "book2",
-                        "page": 25,
-                        "title": "Title2",
-                        "author": "Author2",
-                        "volume": 1
-                    }
-                ]
+                "ok": True,
+                "data": {
+                    "chunks": [
+                        {
+                            "text": "Chunk content",
+                            "score": 0.85,
+                            "book_id": "book2",
+                            "page": 25,
+                            "title": "Title2",
+                            "author": "Author2",
+                            "volume": 1
+                        }
+                    ]
+                },
+                "error": None
             }
         }
         
@@ -116,3 +124,64 @@ async def test_agent_rag_handler_handle_stream():
         
         # Verify terminal state populated context
         mock_populate.assert_called_once_with(ctx, {"final_answer": "Final", "step_count": 2})
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_node_handles_failure():
+    # Force import to register in sys.modules after mocking missing dependencies
+    import sys
+    import sqlalchemy.types as types
+    class MockVector(types.UserDefinedType):
+        def __init__(self, *args, **kwargs):
+            pass
+        def get_col_spec(self, **kw):
+            return "VECTOR"
+            
+    mock_neo4j = MagicMock()
+    sys.modules['neo4j'] = mock_neo4j
+    sys.modules['neo4j.exceptions'] = mock_neo4j
+    
+    mock_pgvector = MagicMock()
+    mock_pgvector.sqlalchemy = MagicMock()
+    mock_pgvector.sqlalchemy.Vector = MockVector
+    sys.modules['pgvector'] = mock_pgvector
+    sys.modules['pgvector.sqlalchemy'] = mock_pgvector.sqlalchemy
+    
+    import app.services.rag.agent.tools as agent_tools
+
+    # Mock stream writer and dispatch_tool
+    mock_writer = MagicMock()
+    mock_result = {
+        "ok": False,
+        "data": None,
+        "error": "Database connection timed out"
+    }
+    
+    with patch("app.services.rag.agent.nodes.execute_tool.get_stream_writer", return_value=mock_writer), \
+         patch("app.services.rag.agent.tools.dispatch_tool", return_value=mock_result):
+         
+        from app.services.rag.agent.nodes.execute_tool import execute_tool_node
+        
+        state = {
+            "ctx": MagicMock(),
+            "tool_call": {
+                "name": "search_chunks",
+                "args": {"query": "test query"},
+                "id": "call_1"
+            }
+        }
+        
+        res = await execute_tool_node(state)
+        
+        # Verify tool_call start was written
+        mock_writer.assert_any_call({"type": "tool_call", "tool": "search_chunks", "args": {"query": "test query"}})
+        
+        # Verify error event was written due to ok=False
+        mock_writer.assert_any_call({"type": "error", "code": "tool_failure", "recoverable": True})
+        
+        # Verify tool_result with found=0 was written
+        mock_writer.assert_any_call({"type": "tool_result", "tool": "search_chunks", "found": 0})
+        
+        # Verify result observation is added to state
+        assert len(res["observations"]) == 1
+        assert res["observations"][0]["result"]["ok"] is False

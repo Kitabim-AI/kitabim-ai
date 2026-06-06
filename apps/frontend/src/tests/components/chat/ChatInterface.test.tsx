@@ -138,7 +138,7 @@ test('ChatInterface handles input change and send message', () => {
     </I18nContext.Provider>
   );
 
-  const sendBtn = screen.getAllByRole('button').at(-1)!;
+  const sendBtn = screen.getByTestId('send-button');
   fireEvent.click(sendBtn);
   expect(onSendMessage).toHaveBeenCalled();
 });
@@ -157,7 +157,7 @@ test('ChatInterface shows loading state', () => {
     />
   );
 
-  expect(screen.getAllByRole('button').at(-1)).toBeDisabled();
+  expect(screen.getByTestId('send-button')).toBeDisabled();
 });
 
 test('ChatInterface renders global chat messages and close button', () => {
@@ -179,7 +179,7 @@ test('ChatInterface renders global chat messages and close button', () => {
 
   expect(screen.getByText('Hello')).toBeInTheDocument();
   expect(screen.getByText('Salam')).toBeInTheDocument();
-  fireEvent.click(screen.getAllByRole('button')[0]);
+  fireEvent.click(screen.getByTestId('close-button'));
   expect(onClose).toHaveBeenCalled();
 });
 
@@ -198,7 +198,7 @@ test('ChatInterface global send button disables when input empty', () => {
     />
   );
 
-  expect(screen.getAllByRole('button').at(-1)).toBeDisabled();
+  expect(screen.getByTestId('send-button')).toBeDisabled();
 });
 
 test('ChatInterface global input sends on Enter', () => {

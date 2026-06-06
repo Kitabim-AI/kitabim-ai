@@ -157,7 +157,7 @@ export const HomeView: React.FC = () => {
             ref={searchInputRef}
             type="text"
             className="w-full px-12 sm:px-16 py-4 sm:py-5 bg-white/60 backdrop-blur-2xl border-2 border-[#0369a1]/10 rounded-[32px] text-base sm:text-lg font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none focus:border-[#0369a1] focus:ring-[12px] focus:ring-[#0369a1]/5 transition-all shadow-xl uyghur-text"
-            placeholder={t('home.searchPlaceholder')}
+            placeholder={t('home.searchOrChatPlaceholder')}
             value={localSearch}
             onChange={(e) => setLocalSearch(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') handleSearchSubmit(); }}

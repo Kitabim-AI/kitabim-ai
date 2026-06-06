@@ -1,8 +1,9 @@
 import { Book } from '@shared/types';
-import React, { createContext, ReactNode, useContext, useRef, useState } from 'react';
+import React, { createContext, ReactNode, useContext, useEffect, useRef, useState } from 'react';
 import { useBookActions } from '../hooks/useBookActions';
 import { useBooks } from '../hooks/useBooks';
 import { useChat } from '../hooks/useChat';
+import { PersistenceService } from '../services/persistenceService';
 
 interface AppContextType {
   view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check';
@@ -55,12 +56,13 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const parsePath = (path: string): { view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check', tab: string } => {
+  const parsePath = (path: string): { view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check', tab: string, bookId?: string } => {
     const parts = path.toLowerCase().split('/').filter(Boolean);
     const viewPortion = parts[0] || 'home';
-    
+
     let view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' = 'home';
     let tab = 'books';
+    let bookId: string | undefined;
 
     if (viewPortion === 'library') view = 'library';
     else if (viewPortion === 'admin') {
@@ -71,13 +73,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     else if (viewPortion === 'join-us') view = 'join-us';
     else if (viewPortion === 'spell-check') view = 'spell-check';
     else if (viewPortion === 'reader') view = 'reader';
+    else if (viewPortion === 'books' && parts[1]) {
+      // Deep link from Facebook share: /books/<id>
+      view = 'library';
+      bookId = parts[1];
+    }
 
-    return { view, tab };
+    return { view, tab, bookId };
   };
 
   const initialRoute = parsePath(window.location.pathname);
   const [view, setViewInternal] = useState<'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check'>(initialRoute.view);
   const [activeTab, setActiveTabInternal] = useState<string>(initialRoute.tab);
+  const initialBookId = initialRoute.bookId;
   const [previousView, setPreviousView] = useState<'home' | 'library' | 'admin' | 'global-chat' | 'join-us' | 'spell-check'>('home');
 
   const getPathFromView = (v: string, t?: string) => {
@@ -149,6 +157,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [isReaderFullscreen, setIsReaderFullscreen] = useState(false);
   const [fontSize, setFontSize] = useState(18);
   const loaderRef = useRef<HTMLDivElement>(null);
+
+  // Open the reader directly when landing on a /books/<id> deep link (e.g. from a Facebook share)
+  useEffect(() => {
+    if (!initialBookId) return;
+    PersistenceService.getBookById(initialBookId).then(book => {
+      if (book) {
+        setSelectedBook(book);
+        setViewInternal('reader');
+        window.history.replaceState({}, '', '/');
+      }
+    });
+  }, []);
 
   const [modal, setModal] = useState<{
     isOpen: boolean;

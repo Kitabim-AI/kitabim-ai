@@ -252,8 +252,9 @@ async def get_books(
     cache_params_with_stats = {**cache_params_base, "includeStats": True}
     cache_params_no_stats = {**cache_params_base, "includeStats": False}
 
+    version = await cache_service.get_namespace_version("books:list")
     param_hash = hashlib.md5(json.dumps(cache_params_with_stats if includeStats else cache_params_no_stats, sort_keys=True).encode()).hexdigest()
-    cache_key = cache_config.KEY_BOOKS_LIST.format(hash=param_hash)
+    cache_key = cache_config.KEY_BOOKS_LIST.format(hash=f"{version}:{param_hash}")
 
     skip_cache = (
         settings.cache_skip_for_admins and
@@ -267,7 +268,7 @@ async def get_books(
     if not skip_cache and includeStats and current_user and current_user.role in ['admin', 'editor']:
         # Try loading from metadata-only cache (excludeStats version)
         metadata_hash = hashlib.md5(json.dumps(cache_params_no_stats, sort_keys=True).encode()).hexdigest()
-        metadata_cache_key = cache_config.KEY_BOOKS_LIST.format(hash=metadata_hash)
+        metadata_cache_key = cache_config.KEY_BOOKS_LIST.format(hash=f"{version}:{metadata_hash}")
         cached_metadata = await cache_service.get(metadata_cache_key)
 
     if not skip_cache and not includeStats:
@@ -630,8 +631,9 @@ async def get_top_categories(
         "sort": sort,
         "is_guest": current_user is None
     }
+    version = await cache_service.get_namespace_version("category")
     param_hash = hashlib.md5(json.dumps(cache_params, sort_keys=True).encode()).hexdigest()[:8]
-    cache_key = cache_config.KEY_CATEGORY.format(type="top", params=param_hash)
+    cache_key = cache_config.KEY_CATEGORY.format(type="top", params=f"{version}:{param_hash}")
 
     cached_result = await cache_service.get(cache_key)
     if cached_result:
@@ -1189,9 +1191,9 @@ async def upload_pdf(
 
     await session.commit()
 
-    # Invalidate lists
-    await cache_service.delete_pattern("books:list:*")
-    await cache_service.delete_pattern("category:*")
+    # Invalidate lists by bumping versions
+    await cache_service.bump_namespace_version("books:list")
+    await cache_service.bump_namespace_version("category")
 
     return {"bookId": book_id, "status": "uploaded"}
 
@@ -1417,7 +1419,7 @@ async def reprocess_spell_check(
 @router.post("/{book_id}/reprocess/graph")
 async def reprocess_graph(
     book_id: str,
-    current_user: User = Depends(require_editor),
+    current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
     """Manually trigger/reprocess Knowledge Graph extraction for a book.
@@ -1844,8 +1846,8 @@ async def create_book(
 
     # Invalidate cache
     await cache_service.delete(f"book:{book_id}")
-    await cache_service.delete_pattern("books:list:*")
-    await cache_service.delete_pattern("category:*")
+    await cache_service.bump_namespace_version("books:list")
+    await cache_service.bump_namespace_version("category")
 
     return {"status": "success"}
 
@@ -1962,9 +1964,9 @@ async def update_book_details(
 
     # Invalidate cache
     await cache_service.delete(f"book:{book_id}")
-    await cache_service.delete_pattern("books:list:*")
+    await cache_service.bump_namespace_version("books:list")
     if "categories" in book_update:
-        await cache_service.delete_pattern("category:*")
+        await cache_service.bump_namespace_version("category")
 
     return {"status": "updated", "modified": True}
 
@@ -2053,8 +2055,8 @@ async def delete_book(
     if deleted:
         # Invalidate cache
         await cache_service.delete(f"book:{book_id}")
-        await cache_service.delete_pattern("books:list:*")
-        await cache_service.delete_pattern("category:*")
+        await cache_service.bump_namespace_version("books:list")
+        await cache_service.bump_namespace_version("category")
         await cache_service.delete_pattern(f"rag:search:{book_id}:*")
         await cache_service.delete_pattern("rag:summary_search:*")
         return {"status": "deleted"}

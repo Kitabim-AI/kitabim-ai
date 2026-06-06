@@ -8,10 +8,16 @@ from __future__ import annotations
 
 import logging
 from typing import List, Optional
-
+import socket
+import asyncio
+import httpx
 from langchain_core.tools import tool
+from sqlalchemy.exc import DBAPIError, OperationalError
+from neo4j.exceptions import ServiceUnavailable, SessionExpired
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from app.services.rag.context import QueryContext
+from app.services.rag.agent.state import ToolResult
 from app.services.rag.retrieval import embed_query, find_books_by_title_in_question, vector_search
 from app.utils.observability import log_json
 
@@ -193,46 +199,86 @@ AGENT_TOOLS = [
 # Dispatch — routes tool call name+args to the real async implementation
 # ---------------------------------------------------------------------------
 
-async def dispatch_tool(tool_name: str, tool_args: dict, ctx: QueryContext) -> dict:
-    """Execute a named tool and return a serialisable result dict with a found_count key."""
+TRANSIENT_EXCEPTIONS = (
+    OperationalError,
+    DBAPIError,
+    ServiceUnavailable,
+    SessionExpired,
+    httpx.RequestError,
+    asyncio.TimeoutError,
+    socket.timeout,
+    ConnectionError,
+)
+
+def _log_retry(retry_state):
+    log_json(
+        logger,
+        logging.WARNING,
+        "Retrying tool execution due to transient error",
+        tool=retry_state.args[0] if retry_state.args else "unknown",
+        attempt=retry_state.attempt_number,
+        error=str(retry_state.outcome.exception()),
+    )
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    retry=retry_if_exception_type(TRANSIENT_EXCEPTIONS),
+    before_sleep=_log_retry,
+    reraise=True,
+)
+async def _dispatch_tool_with_retry(tool_name: str, tool_args: dict, ctx: QueryContext) -> dict:
+    if tool_name == "search_chunks":
+        chunks = await _run_search_chunks(tool_args, ctx)
+        return {"chunks": chunks, "found_count": len(chunks)}
+    if tool_name == "search_books_by_summary":
+        book_ids = await _run_search_books_by_summary(tool_args, ctx)
+        return {"book_ids": book_ids, "found_count": len(book_ids)}
+    if tool_name == "find_books_by_title":
+        book_ids = await _run_find_books_by_title(tool_args, ctx)
+        return {"book_ids": book_ids, "found_count": len(book_ids)}
+    if tool_name == "rewrite_query":
+        result = await _run_rewrite_query(tool_args, ctx)
+        return {**result, "found_count": 0}
+    if tool_name == "get_book_author":
+        result = await _run_get_book_author(tool_args, ctx)
+        return {**result, "found_count": 1 if result.get("author") is not None else 0}
+    if tool_name == "get_books_by_author":
+        result = await _run_get_books_by_author(tool_args, ctx)
+        return {**result, "found_count": len(result.get("books", []))}
+    if tool_name == "search_catalog":
+        result = await _run_search_catalog(tool_args, ctx)
+        return {**result, "found_count": result.get("book_count", 0)}
+    if tool_name == "get_book_summary":
+        result = await _run_get_book_summary(tool_args, ctx)
+        return {**result, "found_count": len(result.get("summaries", []))}
+    if tool_name == "get_sister_volumes":
+        result = await _run_get_sister_volumes(tool_args, ctx)
+        return {**result, "found_count": len(result.get("book_ids", []))}
+    if tool_name == "get_current_page":
+        result = await _run_get_current_page(ctx)
+        return {**result, "found_count": 0}
+    if tool_name == "query_knowledge_graph":
+        result = await _run_query_knowledge_graph(tool_args, ctx)
+        return {**result, "found_count": len(result.get("relations", []))}
+    raise ValueError(f"Unknown tool: {tool_name}")
+
+async def dispatch_tool(tool_name: str, tool_args: dict, ctx: QueryContext) -> ToolResult:
+    """Execute a named tool and return a ToolResult TypedDict."""
     try:
-        if tool_name == "search_chunks":
-            chunks = await _run_search_chunks(tool_args, ctx)
-            return {"chunks": chunks, "found_count": len(chunks)}
-        if tool_name == "search_books_by_summary":
-            book_ids = await _run_search_books_by_summary(tool_args, ctx)
-            return {"book_ids": book_ids, "found_count": len(book_ids)}
-        if tool_name == "find_books_by_title":
-            book_ids = await _run_find_books_by_title(tool_args, ctx)
-            return {"book_ids": book_ids, "found_count": len(book_ids)}
-        if tool_name == "rewrite_query":
-            result = await _run_rewrite_query(tool_args, ctx)
-            return {**result, "found_count": 0}
-        if tool_name == "get_book_author":
-            result = await _run_get_book_author(tool_args, ctx)
-            return {**result, "found_count": 1 if result.get("author") is not None else 0}
-        if tool_name == "get_books_by_author":
-            result = await _run_get_books_by_author(tool_args, ctx)
-            return {**result, "found_count": len(result.get("books", []))}
-        if tool_name == "search_catalog":
-            result = await _run_search_catalog(tool_args, ctx)
-            return {**result, "found_count": result.get("book_count", 0)}
-        if tool_name == "get_book_summary":
-            result = await _run_get_book_summary(tool_args, ctx)
-            return {**result, "found_count": len(result.get("summaries", []))}
-        if tool_name == "get_sister_volumes":
-            result = await _run_get_sister_volumes(tool_args, ctx)
-            return {**result, "found_count": len(result.get("book_ids", []))}
-        if tool_name == "get_current_page":
-            result = await _run_get_current_page(ctx)
-            return {**result, "found_count": 0}
-        if tool_name == "query_knowledge_graph":
-            result = await _run_query_knowledge_graph(tool_args, ctx)
-            return {**result, "found_count": len(result.get("relations", []))}
-        return {"error": f"Unknown tool: {tool_name}", "found_count": 0}
+        res = await _dispatch_tool_with_retry(tool_name, tool_args, ctx)
+        return {
+            "ok": True,
+            "data": res,
+            "error": None
+        }
     except Exception as exc:
-        log_json(logger, logging.WARNING, "Agent tool failed", tool=tool_name, error=str(exc))
-        return {"error": str(exc), "found_count": 0}
+        log_json(logger, logging.WARNING, "Agent tool failed after retries", tool=tool_name, error=str(exc))
+        return {
+            "ok": False,
+            "data": None,
+            "error": str(exc)
+        }
 
 
 # ---------------------------------------------------------------------------

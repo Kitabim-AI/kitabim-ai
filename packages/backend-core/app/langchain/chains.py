@@ -3,7 +3,7 @@ from __future__ import annotations
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
-from app.langchain.models import build_text_llm
+from app.core.providers import get_llm_provider
 
 
 def build_text_chain(
@@ -15,7 +15,7 @@ def build_text_chain(
     prompt = ChatPromptTemplate.from_template(template)
     if partials:
         prompt = prompt.partial(**partials)
-    llm = build_text_llm(model_name)
+    llm = get_llm_provider(model_name)
     chain = prompt | llm | StrOutputParser()
     if run_name:
         return chain.with_config(run_name=run_name)
@@ -31,7 +31,7 @@ def build_structured_chain(
     prompt = ChatPromptTemplate.from_template(template).partial(
         format_instructions=parser.get_format_instructions()
     )
-    llm = build_text_llm(model_name)
+    llm = get_llm_provider(model_name)
     chain = prompt | llm | StrOutputParser() | parser
     if run_name:
         return chain.with_config(run_name=run_name)
