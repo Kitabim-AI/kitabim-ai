@@ -11,7 +11,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-from api.endpoints import ai, auth, books, chat, users, system_configs, stats, contact, spell_check, auto_correct_rules, dictionary
+from api.endpoints import ai, auth, books, chat, users, system_configs, stats, contact, spell_check, auto_correct_rules, dictionary, share, cache
 from app.core.config import settings
 from app.db.session import init_db, close_db  # SQLAlchemy session management
 from app.core.i18n import I18n, set_current_lang, t
@@ -26,6 +26,47 @@ from fastapi.responses import RedirectResponse, FileResponse, JSONResponse
 import os as _os
 # Locales live next to main.py in services/backend/, not in packages/backend-core
 I18n._locales_dir = _os.path.join(_os.path.dirname(__file__), "locales")
+
+
+async def redis_pubsub_listener():
+    """Background task to listen to Redis Pub/Sub invalidation channel."""
+    import asyncio
+    from app.services.cache_service import cache_service
+    from auth.dependencies import user_lru_cache
+
+    logger = logging.getLogger("app.pubsub")
+    logger.info("Starting Redis Pub/Sub user invalidation listener...")
+    
+    while True:
+        try:
+            client = await cache_service.get_client()
+            if not client:
+                await asyncio.sleep(5)
+                continue
+                
+            pubsub = client.pubsub()
+            await pubsub.subscribe("user_invalidation")
+            
+            async for message in pubsub.listen():
+                if message and message.get("type") == "message":
+                    try:
+                        data = message["data"]
+                        user_id = data.decode("utf-8") if isinstance(data, bytes) else str(data)
+                        logger.info(f"Received user invalidation event for user_id: {user_id}")
+                        if user_id == "__ALL__":
+                            user_lru_cache.clear()
+                            logger.info("Cleared entire local user LRU cache")
+                        else:
+                            evicted = user_lru_cache.delete(user_id)
+                            logger.info(f"Evicted user_id {user_id} from local user LRU cache: {evicted}")
+                    except Exception as ex:
+                        logger.error(f"Error processing pubsub message: {ex}")
+        except asyncio.CancelledError:
+            logger.info("Redis Pub/Sub listener task cancelled.")
+            break
+        except Exception as e:
+            logger.error(f"Redis Pub/Sub listener error: {e}. Retrying in 5 seconds...")
+            await asyncio.sleep(5)
 
 
 @asynccontextmanager
@@ -58,7 +99,18 @@ async def lifespan(app: FastAPI):
         logger = logging.getLogger("app.startup")
         log_json(logger, logging.ERROR, "System config seeding failed", error=str(exc))
     
+    # Start Redis Pub/Sub background listener task
+    import asyncio
+    listener_task = asyncio.create_task(redis_pubsub_listener())
+    
     yield
+
+    # Cancel listener task on shutdown
+    listener_task.cancel()
+    try:
+        await listener_task
+    except asyncio.CancelledError:
+        pass
 
     # Cleanup SQLAlchemy engine
     await close_db()
@@ -334,6 +386,8 @@ app.include_router(contact.router, prefix="/api/contact", tags=["contact"])
 app.include_router(spell_check.router, prefix="/api/books", tags=["spell-check"])
 app.include_router(auto_correct_rules.router, prefix="/api", tags=["spell-check"])
 app.include_router(dictionary.router, prefix="/api", tags=["dictionary"])
+app.include_router(share.router, prefix="/api/share", tags=["share"])
+app.include_router(cache.router, prefix="/api/cache", tags=["cache"])
 
 
 @app.get("/api/config")

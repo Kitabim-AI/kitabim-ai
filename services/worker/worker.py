@@ -30,7 +30,6 @@ from scanners.embedding_scanner import run_embedding_scanner
 from scanners.spell_check_scanner import run_spell_check_scanner
 from scanners.stale_watchdog import run_stale_watchdog
 from scanners.summary_scanner import run_summary_scanner
-from scanners.graph_scanner import run_graph_scanner
 from scanners.event_dispatcher import run_event_dispatcher
 from scanners.maintenance_scanner import run_maintenance_scanner
 from scanners.auto_correct_scanner import run_auto_correct_scanner
@@ -69,7 +68,6 @@ class WorkerSettings:
         cron(run_spell_check_scanner),
         cron(run_stale_watchdog, minute={0, 30}),
         cron(run_summary_scanner, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}),
-        cron(run_graph_scanner, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}),
         cron(run_event_dispatcher, run_at_startup=True),
         cron(run_maintenance_scanner, hour=3, minute=0),
     ]
@@ -80,3 +78,10 @@ class WorkerSettings:
     job_timeout = settings.queue_job_timeout
     on_startup = worker_startup
     on_shutdown = worker_shutdown
+
+
+# Wrap all worker job functions with track_request_id to support request_id context propagation
+from app.utils.observability import track_request_id
+
+WorkerSettings.functions = [track_request_id(f) for f in WorkerSettings.functions]
+

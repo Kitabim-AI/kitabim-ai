@@ -271,7 +271,14 @@ def create_oauth_state_token(oauth_state: OAuthState) -> str:
         payload["cv"] = oauth_state.code_verifier
     if oauth_state.redirect_uri:
         payload["ru"] = oauth_state.redirect_uri
-    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+    
+    active_secret = settings.jwt_secrets.get(settings.jwt_active_kid, settings.jwt_secret_key)
+    return jwt.encode(
+        payload, 
+        active_secret, 
+        algorithm=settings.jwt_algorithm,
+        headers={"kid": settings.jwt_active_kid}
+    )
 
 
 def decode_oauth_state_token(token: str) -> Optional[OAuthState]:
@@ -285,7 +292,18 @@ def decode_oauth_state_token(token: str) -> Optional[OAuthState]:
         OAuthState if valid, None if expired or tampered.
     """
     try:
-        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        header = jwt.get_unverified_header(token)
+        kid = header.get("kid", "v1")
+    except JWTError:
+        return None
+
+    secret = settings.jwt_secrets.get(kid)
+    if not secret:
+        # Fallback to default secret key
+        secret = settings.jwt_secret_key
+
+    try:
+        payload = jwt.decode(token, secret, algorithms=[settings.jwt_algorithm])
         return OAuthState(
             state=payload["state"],
             nonce=payload["nonce"],

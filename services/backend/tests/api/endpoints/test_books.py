@@ -117,6 +117,7 @@ async def test_get_books():
     with patch("api.endpoints.books.cache_service") as mock_cache:
         mock_cache.get = AsyncMock(return_value=None)
         mock_cache.set = AsyncMock()
+        mock_cache.get_namespace_version = AsyncMock(return_value="v1")
 
         result = await get_books(
             page=1,

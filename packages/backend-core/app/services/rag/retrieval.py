@@ -44,7 +44,7 @@ async def embed_query(query: str, ctx: "QueryContext") -> List[float]:
         return vector or []
     except Exception as exc:
         log_json(logger, logging.WARNING, "Embedding failed", error=str(exc))
-        return []
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -69,8 +69,8 @@ async def vector_search(
     if book_ids is not None and not book_ids:
         return []
 
-    from app.db.repositories.chunks import ChunksRepository
-    chunks_repo = ChunksRepository(ctx.session)
+    from app.core.providers import get_vector_store
+    chunks_repo = get_vector_store(ctx.session)
 
     emb_hash = hashlib.md5(str(effective_vector).encode()).hexdigest()
     sorted_book_ids = sorted(book_ids) if book_ids else []
@@ -127,7 +127,7 @@ async def vector_search(
             await ctx.session.rollback()
         except Exception:
             pass
-        return []
+        raise
 
 
 # ---------------------------------------------------------------------------

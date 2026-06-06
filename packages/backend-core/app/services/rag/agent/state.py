@@ -6,6 +6,13 @@ from typing import Annotated, Any
 
 from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
+from typing import Optional, Any
+
+
+class ToolResult(TypedDict):
+    ok: bool
+    data: Any
+    error: Optional[str]
 
 
 class AgentState(TypedDict):
@@ -22,9 +29,6 @@ class AgentState(TypedDict):
     total_chunks: int                            # overwritten by collect_tools
     llm_calls: Annotated[int, add]               # incremented by agent_step
     step_count: Annotated[int, add]              # incremented by agent_step
-
-    # ── Planning (Phase 3: plan_query node) ───────────────────────────
-    query_plan: dict
 
     # ── Context & grading (build_context / grade_context) ─────────────
     retrieved_context: str

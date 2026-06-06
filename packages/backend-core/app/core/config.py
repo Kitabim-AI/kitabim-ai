@@ -104,6 +104,8 @@ class Settings:
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
     jwt_access_token_expire_minutes: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
     jwt_refresh_token_expire_days: int = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+    jwt_active_kid: str = os.getenv("JWT_ACTIVE_KID", "v1")
+    jwt_rotation_secrets: str = os.getenv("JWT_ROTATION_SECRETS", "")
 
     # Google OAuth
     google_client_id: str = os.getenv("GOOGLE_CLIENT_ID", "")
@@ -120,15 +122,23 @@ class Settings:
     twitter_client_secret: str = os.getenv("TWITTER_CLIENT_SECRET", "")
     twitter_redirect_uri: str = os.getenv("TWITTER_REDIRECT_URI", "http://localhost:8000/api/auth/twitter/callback")
 
+    # Instagram OAuth
+    instagram_client_id: str = os.getenv("INSTAGRAM_CLIENT_ID", "")
+    instagram_client_secret: str = os.getenv("INSTAGRAM_CLIENT_SECRET", "")
+    instagram_redirect_uri: str = os.getenv("INSTAGRAM_REDIRECT_URI", "http://localhost:8000/api/auth/instagram/callback")
+
     # Auth Behavior
     default_user_role: str = os.getenv("DEFAULT_USER_ROLE", "reader")
     admin_emails: str = os.getenv("ADMIN_EMAILS", "")  # Comma-separated list of admin emails
 
-    # Cookie Security (set COOKIE_SECURE=false for local HTTP dev)
-    cookie_secure: bool = os.getenv("COOKIE_SECURE", "true").lower() == "true"
+    # Cookie Security (set ALLOW_INSECURE_COOKIES=true for local HTTP dev)
+    cookie_secure: bool = os.getenv("ALLOW_INSECURE_COOKIES", "false").lower() != "true"
 
     # CORS Settings - Allowed origins for API access
     cors_origins: str = os.getenv("CORS_ORIGINS", "https://kitabim.ai,https://www.kitabim.ai,http://localhost:3000,http://localhost:30080")
+
+    # Base URL of the frontend app (used for generating share/deep-link URLs)
+    frontend_base_url: str = os.getenv("FRONTEND_BASE_URL", "https://kitabim.ai")
 
     # Environment (development, staging, production)
     environment: str = os.getenv("ENVIRONMENT", "development")
@@ -168,7 +178,30 @@ class Settings:
         "/api/bulk/,/api/multipart/,/api/upwload,/api/profile/,/api/account/,/api/users/avatar"
     )
     security_app_id: str = os.getenv("SECURITY_APP_ID", "")
+    operator_token: str = os.getenv("OPERATOR_TOKEN", "")
 
+    # Providers
+    embedding_provider: str = os.getenv("EMBEDDING_PROVIDER", "gemini")
+    llm_provider: str = os.getenv("LLM_PROVIDER", "gemini")
+    vector_store_provider: str = os.getenv("VECTOR_STORE_PROVIDER", "pgvector")
+
+    @property
+    def jwt_secrets(self) -> dict[str, str]:
+        secrets_map = {}
+        rotation_secrets = self.jwt_rotation_secrets
+        if rotation_secrets:
+            for pair in rotation_secrets.split(","):
+                if ":" in pair:
+                    kid, secret = pair.split(":", 1)
+                    secrets_map[kid.strip()] = secret.strip()
+        
+        # Only map the active kid to the default secret if it isn't already in the
+        # rotation map. Never inject historical kids (e.g. "v1") automatically —
+        # that would prevent key rotation from ever fully removing an old key.
+        if self.jwt_active_kid not in secrets_map and self.jwt_secret_key:
+            secrets_map[self.jwt_active_kid] = self.jwt_secret_key
+
+        return secrets_map
 
 
 settings = Settings()

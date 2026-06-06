@@ -1,9 +1,10 @@
 import { Book } from '@shared/types';
-import { BookOpen, Sparkles, Wand2, X } from 'lucide-react';
+import { BookOpen, Share2, Sparkles, Wand2, X } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useI18n } from '../../i18n/I18nContext';
 import { PersistenceService } from '../../services/persistenceService';
+import { ShareModal } from '../share/ShareModal';
 
 interface BookCardProps {
   book: Book;
@@ -96,6 +97,7 @@ const renderSummary = (text: string): React.ReactNode =>
 export const BookCard: React.FC<BookCardProps> = ({ book, onClick }) => {
   const { t } = useI18n();
   const [showSummary, setShowSummary] = useState(false);
+  const [showShare, setShowShare] = useState(false);
   const [summaryText, setSummaryText] = useState<string | null>(null);
   const [summaryGeneratedAt, setSummaryGeneratedAt] = useState<string | null>(null);
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
@@ -143,15 +145,24 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick }) => {
             </div>
           )}
 
-          {/* Summary icon — only for ready books */}
+          {/* Action icons — only for ready books */}
           {book.status === 'ready' && (
-            <button
-              onClick={handleSummaryClick}
-              title={t('bookCard.summary.title')}
-              className="absolute top-2 left-2 p-1.5 bg-white/80 backdrop-blur-sm rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-[#0369a1] hover:bg-white shadow-sm z-10"
-            >
-              <Wand2 size={14} strokeWidth={2.5} />
-            </button>
+            <div className="absolute top-2 left-2 flex flex-col gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
+              <button
+                onClick={handleSummaryClick}
+                title={t('bookCard.summary.title')}
+                className="p-1.5 bg-white/80 backdrop-blur-sm rounded-full text-[#0369a1] hover:bg-white shadow-sm"
+              >
+                <Wand2 size={14} strokeWidth={2.5} />
+              </button>
+              <button
+                onClick={e => { e.stopPropagation(); setShowShare(true); }}
+                title={t('share.shareBook')}
+                className="p-1.5 bg-white/80 backdrop-blur-sm rounded-full text-[#1877F2] hover:bg-white shadow-sm"
+              >
+                <Share2 size={14} strokeWidth={2.5} />
+              </button>
+            </div>
           )}
         </div>
 
@@ -187,6 +198,8 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick }) => {
           </div>
         </div>
       </div>
+
+      {showShare && <ShareModal book={book} onClose={() => setShowShare(false)} />}
 
       {/* Summary modal */}
       {showSummary && createPortal(

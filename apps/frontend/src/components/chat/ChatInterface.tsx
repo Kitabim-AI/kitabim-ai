@@ -1,5 +1,5 @@
 import { Book, Message } from '@shared/types';
-import { Bot, ChevronDown, LogIn, Send, ThumbsDown, ThumbsUp, User } from 'lucide-react';
+import { AlertTriangle, Bot, ChevronDown, LogIn, Send, ThumbsDown, ThumbsUp, User } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { CHARACTERS, DEFAULT_CHARACTER_ID } from '../../constants/characters';
 import { useAppContext } from '../../context/AppContext';
@@ -9,7 +9,6 @@ import { useI18n } from '../../i18n/I18nContext';
 import { translations } from '../../i18n/i18n';
 import { OAuthButtonGroup } from '../auth/AuthButton';
 import { MarkdownContent } from '../common/MarkdownContent';
-import { ProverbDisplay } from '../common/ProverbDisplay';
 import { AgentThinkingSteps } from './AgentThinkingSteps';
 import { ReferenceModal } from './ReferenceModal';
 
@@ -76,10 +75,13 @@ interface ChatInterfaceProps {
   onSendMessage: () => void;
   isChatting: boolean;
   streamingMessage?: string;
+  streamingPartialResult?: boolean;
 
+  bookId?: string;
+  bookTitle?: string;
+  bookAuthor?: string;
   agentSteps?: AgentStep[];
   currentPage?: number | null;
-  onClose?: () => void;
   chatContainerRef: React.RefObject<HTMLDivElement>;
   usageStatus?: { usage: number, limit: number | null, hasReachedLimit: boolean } | null;
   selectedCharacterId?: string;
@@ -95,6 +97,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onSendMessage,
   isChatting,
   streamingMessage = '',
+  streamingPartialResult = false,
 
   agentSteps = [],
   chatContainerRef,
@@ -178,28 +181,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   if (isGlobal) {
     return (
       <div className="w-full lg:max-w-5xl lg:mx-auto flex flex-col gap-3 md:gap-4 lg:gap-6 px-3 py-3 sm:px-6 md:px-0 lg:py-4 pb-24 min-h-[calc(100dvh-5rem)]" dir="rtl" lang="ug">
-        {/* Chat Header */}
-        <div className="flex bg-white/60 backdrop-blur-2xl px-4 sm:px-8 py-3 sm:py-4 items-center justify-between border border-[#0369a1]/10 shadow-sm group" style={{ borderRadius: '32px' }}>
-          <div className="flex items-center gap-3 sm:gap-5">
-            <div className="p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 icon-shake">
-              <Bot size={20} className="sm:w-7 sm:h-7" strokeWidth={2.5} />
-            </div>
-            <div>
-              <h1
-                className="font-normal text-[#1a1a1a] text-base sm:text-xl lg:text-2xl"
-                style={{ fontSize: `${fontSize + 2}px` }}
-              >
-                {t('chat.globalAssistant')}
-              </h1>
-              <ProverbDisplay
-                size="xs"
-                keywords={t('proverbs.chat')}
-                className="opacity-70 uppercase mt-[-2px] hidden sm:flex"
-                defaultText={t('chat.subtitle')}
-              />
-            </div>
-          </div>
-        </div>
 
         {/* Unified Chat Card — messages + input, auto height, never shrinks */}
         <div className="glass-panel border border-white/60 rounded-[24px] sm:rounded-[40px] flex flex-col overflow-hidden flex-1">
@@ -228,7 +209,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                       <span className="text-lg md:text-xl">{CHARACTERS.find(c => c.id === msg.characterId)?.avatar_emoji || currentCharacter.avatar_emoji}</span>
                     )}
                   </div>
-                  {/* Bubble + optional feedback buttons */}
+                  {/* Bubble + optional feedback/share buttons */}
                   <div className={`flex flex-col gap-1 min-w-0 ${msg.role === 'model' ? 'items-end' : 'items-start'}`}>
                     <div
                       className={`px-3 sm:px-5 lg:px-8 py-2 sm:py-3 lg:py-5 rounded-[20px] lg:rounded-[28px] font-normal uyghur-text shadow-sm ${msg.role === 'user' ? 'bg-white/80 border border-[#0369a1]/10 text-[#1a1a1a] rounded-tr-none' : 'bg-[#0369a1] text-white rounded-tl-none shadow-xl shadow-[#0369a1]/10'}`}
@@ -243,24 +224,34 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                         />
                       )}
                     </div>
-                    {msg.role === 'model' && msg.evalId !== undefined && !isChatting && (
+                    {msg.role === 'model' && msg.partialResult && (
+                      <div className="mt-1 flex items-start gap-1.5 text-amber-700 bg-amber-50 border border-amber-200/80 px-3 py-2 rounded-2xl text-xs max-w-md shadow-sm font-normal uyghur-text animate-in fade-in">
+                        <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                        <span>{t('chat.partialResultsWarning')}</span>
+                      </div>
+                    )}
+                    {msg.role === 'model' && !isChatting && (
                       <div dir="ltr" className="flex gap-0.5 items-center px-1">
-                        <button
-                          onClick={() => submitFeedback?.(idx, 'positive')}
-                          disabled={!!msg.feedback}
-                          title="👍"
-                          className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'positive' ? 'text-emerald-500 bg-emerald-50' : 'text-slate-300 hover:text-emerald-400 hover:bg-emerald-50/60'}`}
-                        >
-                          <ThumbsUp size={20} strokeWidth={2} />
-                        </button>
-                        <button
-                          onClick={() => submitFeedback?.(idx, 'negative')}
-                          disabled={!!msg.feedback}
-                          title="👎"
-                          className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'negative' ? 'text-red-500 bg-red-50' : 'text-slate-300 hover:text-red-400 hover:bg-red-50/60'}`}
-                        >
-                          <ThumbsDown size={20} strokeWidth={2} />
-                        </button>
+                        {msg.evalId !== undefined && (
+                          <>
+                            <button
+                              onClick={() => submitFeedback?.(idx, 'positive')}
+                              disabled={!!msg.feedback}
+                              title="👍"
+                              className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'positive' ? 'text-emerald-500 bg-emerald-50' : 'text-slate-300 hover:text-emerald-400 hover:bg-emerald-50/60'}`}
+                            >
+                              <ThumbsUp size={20} strokeWidth={2} />
+                            </button>
+                            <button
+                              onClick={() => submitFeedback?.(idx, 'negative')}
+                              disabled={!!msg.feedback}
+                              title="👎"
+                              className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'negative' ? 'text-red-500 bg-red-50' : 'text-slate-300 hover:text-red-400 hover:bg-red-50/60'}`}
+                            >
+                              <ThumbsDown size={20} strokeWidth={2} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -273,18 +264,26 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   <span className="text-lg md:text-xl">{currentCharacter.avatar_emoji}</span>
                 </div>
                 {streamingMessage ? (
-                  <div className={`px-3 sm:px-5 lg:px-8 py-2 sm:py-3 lg:py-5 rounded-[20px] lg:rounded-[28px] rounded-tl-none font-normal uyghur-text shadow-md shadow-[#0369a1]/5 bg-[#0369a1]/80 text-white transition-opacity duration-300 opacity-100`} style={{ fontSize: `${fontSize}px`, lineHeight: '1.8' }}>
-                    <MarkdownContent
-                      content={streamingMessage}
-                      onReferenceClick={handleReferenceClick}
-                      className="text-white/90 uyghur-text [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white [&_a]:text-blue-100 [&_button]:text-blue-100 [&_a]:decoration-blue-100/50 [&_button]:decoration-blue-100/50"
-                      style={{ fontSize: `${fontSize}px` }}
-                    />
-                    <div dir="ltr" className="flex gap-[3px] mt-2 items-end">
-                      <span className="w-1.5 h-1.5 rounded-full bg-white/60 animate-bounce" style={{ animationDelay: '0ms' }} />
-                      <span className="w-1.5 h-1.5 rounded-full bg-white/60 animate-bounce" style={{ animationDelay: '120ms' }} />
-                      <span className="w-1.5 h-1.5 rounded-full bg-white/60 animate-bounce" style={{ animationDelay: '240ms' }} />
+                  <div className="flex flex-col gap-1.5 min-w-0 items-end max-w-full">
+                    <div className={`px-3 sm:px-5 lg:px-8 py-2 sm:py-3 lg:py-5 rounded-[20px] lg:rounded-[28px] rounded-tl-none font-normal uyghur-text shadow-md shadow-[#0369a1]/5 bg-[#0369a1]/80 text-white transition-opacity duration-300 opacity-100`} style={{ fontSize: `${fontSize}px`, lineHeight: '1.8' }}>
+                      <MarkdownContent
+                        content={streamingMessage}
+                        onReferenceClick={handleReferenceClick}
+                        className="text-white/90 uyghur-text [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white [&_a]:text-blue-100 [&_button]:text-blue-100 [&_a]:decoration-blue-100/50 [&_button]:decoration-blue-100/50"
+                        style={{ fontSize: `${fontSize}px` }}
+                      />
+                      <div dir="ltr" className="flex gap-[3px] mt-2 items-end">
+                        <span className="w-1.5 h-1.5 rounded-full bg-white/60 animate-bounce" style={{ animationDelay: '0ms' }} />
+                        <span className="w-1.5 h-1.5 rounded-full bg-white/60 animate-bounce" style={{ animationDelay: '120ms' }} />
+                        <span className="w-1.5 h-1.5 rounded-full bg-white/60 animate-bounce" style={{ animationDelay: '240ms' }} />
+                      </div>
                     </div>
+                    {streamingPartialResult && (
+                      <div className="mt-1 flex items-start gap-1.5 text-amber-700 bg-amber-50 border border-amber-200/80 px-3 py-2 rounded-2xl text-xs max-w-md shadow-sm font-normal uyghur-text animate-in fade-in">
+                        <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                        <span>{t('chat.partialResultsWarning')}</span>
+                      </div>
+                    )}
                   </div>
                 ) : agentSteps.length > 0 ? (
                   <AgentThinkingSteps steps={agentSteps} fontSize={chatFontSize} />
@@ -322,6 +321,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     {/* Send button — absolute left */}
                     <button
                       onClick={onSendMessage}
+                      data-testid="send-button"
                       disabled={isChatting || !chatInput.trim() || usageStatus?.hasReachedLimit}
                       className="absolute left-[12px] sm:left-[20px] top-1/2 -translate-y-1/2 p-2 sm:p-3 bg-[#0369a1] text-white rounded-2xl shadow-lg shadow-[#0369a1]/20 hover:scale-105 active:scale-90 transition-all disabled:opacity-30"
                     >
@@ -365,17 +365,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             )}
           </div>
         </div>
-        {
-          selectedReference && (
-            <ReferenceModal
-              isOpen={!!selectedReference}
-              onClose={() => setSelectedReference(null)}
-              bookId={selectedReference.bookId}
-              pageNumbers={selectedReference.pageNums}
-            />
-          )
-        }
-      </div >
+        {selectedReference && (
+          <ReferenceModal
+            isOpen={!!selectedReference}
+            onClose={() => setSelectedReference(null)}
+            bookId={selectedReference.bookId}
+            pageNumbers={selectedReference.pageNums}
+          />
+        )}
+      </div>
     );
   }
 
@@ -441,24 +439,34 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   />
                 )}
               </div>
-              {msg.role === 'model' && msg.evalId !== undefined && !isChatting && (
+              {msg.role === 'model' && msg.partialResult && (
+                <div className="mt-1 flex items-start gap-1.5 text-amber-700 bg-amber-50 border border-amber-200/80 px-3 py-2 rounded-2xl text-xs max-w-md shadow-sm font-normal uyghur-text animate-in fade-in">
+                  <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                  <span>{t('chat.partialResultsWarning')}</span>
+                </div>
+              )}
+              {msg.role === 'model' && !isChatting && (
                 <div dir="ltr" className="flex gap-0.5 items-center px-1">
-                  <button
-                    onClick={() => submitFeedback?.(idx, 'positive')}
-                    disabled={!!msg.feedback}
-                    title="👍"
-                    className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'positive' ? 'text-emerald-500 bg-emerald-50' : 'text-slate-300 hover:text-emerald-400 hover:bg-emerald-50/60'}`}
-                  >
-                    <ThumbsUp size={18} strokeWidth={2} />
-                  </button>
-                  <button
-                    onClick={() => submitFeedback?.(idx, 'negative')}
-                    disabled={!!msg.feedback}
-                    title="👎"
-                    className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'negative' ? 'text-red-500 bg-red-50' : 'text-slate-300 hover:text-red-400 hover:bg-red-50/60'}`}
-                  >
-                    <ThumbsDown size={18} strokeWidth={2} />
-                  </button>
+                  {msg.evalId !== undefined && (
+                    <>
+                      <button
+                        onClick={() => submitFeedback?.(idx, 'positive')}
+                        disabled={!!msg.feedback}
+                        title="👍"
+                        className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'positive' ? 'text-emerald-500 bg-emerald-50' : 'text-slate-300 hover:text-emerald-400 hover:bg-emerald-50/60'}`}
+                      >
+                        <ThumbsUp size={18} strokeWidth={2} />
+                      </button>
+                      <button
+                        onClick={() => submitFeedback?.(idx, 'negative')}
+                        disabled={!!msg.feedback}
+                        title="👎"
+                        className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'negative' ? 'text-red-500 bg-red-50' : 'text-slate-300 hover:text-red-400 hover:bg-red-50/60'}`}
+                      >
+                        <ThumbsDown size={18} strokeWidth={2} />
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -487,6 +495,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     <span className="w-1 h-1 rounded-full bg-white/60 animate-bounce" style={{ animationDelay: '240ms' }} />
                   </div>
                 </div>
+                {streamingPartialResult && (
+                  <div className="mt-1 flex items-start gap-1.5 text-amber-700 bg-amber-50 border border-amber-200/80 px-3 py-2 rounded-2xl text-xs max-w-md shadow-sm font-normal uyghur-text animate-in fade-in">
+                    <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                    <span>{t('chat.partialResultsWarning')}</span>
+                  </div>
+                )}
               </div>
             ) : agentSteps.length > 0 ? (
               <AgentThinkingSteps steps={agentSteps} fontSize={chatFontSize} compact />
@@ -526,6 +540,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 />
                 <button
                   onClick={onSendMessage}
+                  data-testid="send-button"
                   disabled={isChatting || !chatInput.trim() || usageStatus?.hasReachedLimit}
                   className="absolute left-[12px] sm:left-[24px] top-1/2 -translate-y-1/2 p-2 sm:p-3 bg-[#0369a1] text-white rounded-2xl shadow-lg shadow-[#0369a1]/20 hover:scale-105 active:scale-90 transition-all disabled:opacity-30"
                 >

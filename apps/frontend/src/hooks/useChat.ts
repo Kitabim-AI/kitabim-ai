@@ -22,8 +22,10 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
   const [chatInput, setChatInput] = useState('');
   const [isChatting, setIsChatting] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState('');
+  const [streamingPartialResult, setStreamingPartialResult] = useState(false);
   const [agentSteps, setAgentSteps] = useState<AgentStep[]>([]);
   const streamingMessageRef = useRef('');
+  const hasToolFailureRef = useRef(false);
   const [usageStatus, setUsageStatus] = useState<{ usage: number, limit: number | null, hasReachedLimit: boolean } | null>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -32,6 +34,12 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
 
   const handleAgentEvent = useCallback((event: Record<string, any>) => {
     const { type } = event;
+
+    if (type === 'error' && event.code === 'tool_failure') {
+      hasToolFailureRef.current = true;
+      setStreamingPartialResult(true);
+      return;
+    }
 
     if (type === 'answer_start') {
       streamingMessageRef.current = '';
@@ -109,6 +117,9 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     streamingMessageRef.current = '';
     setIsChatting(false);
     setStreamingMessage('');
+    setStreamingPartialResult(false);
+    hasToolFailureRef.current = false;
+    setAgentSteps([]);
   };
 
   // Terminate chat if context changes (view or book switches)
@@ -147,6 +158,8 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     streamingMessageRef.current = '';
     setIsChatting(true);
     setStreamingMessage('');
+    setStreamingPartialResult(false);
+    hasToolFailureRef.current = false;
     // Seed with an active "thinking" step immediately so the bubble is already
     // at AgentThinkingSteps size before the first real event arrives — prevents
     // the small-TypingCarousel → large-steps resize jitter.
@@ -171,10 +184,18 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
           const finalMessage = streamingMessageRef.current;
           const evalId = pendingEvalIdRef.current ?? undefined;
           pendingEvalIdRef.current = null;
-          setChatMessages(prev => [...prev, { role: 'model', text: finalMessage, characterId: selectedCharacterId, evalId }]);
+          setChatMessages(prev => [...prev, {
+            role: 'model',
+            text: finalMessage,
+            characterId: selectedCharacterId,
+            evalId,
+            partialResult: hasToolFailureRef.current
+          }]);
           streamingMessageRef.current = '';
           setStreamingMessage('');
           setIsChatting(false);
+          setStreamingPartialResult(false);
+          hasToolFailureRef.current = false;
         },
         // onError
         (error: string) => {
@@ -182,6 +203,8 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
           setChatMessages(prev => [...prev, { role: 'model', text: error, characterId: selectedCharacterId }]);
           setStreamingMessage('');
           setIsChatting(false);
+          setStreamingPartialResult(false);
+          hasToolFailureRef.current = false;
         },
         controller.signal,
         selectedCharacterId,
@@ -209,6 +232,8 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
       setChatMessages(prev => [...prev, { role: 'model', text: "كەچۈرۈڭ، جاۋاب بېرەلمىدىم.", characterId: selectedCharacterId }]);
       setStreamingMessage('');
       setIsChatting(false);
+      setStreamingPartialResult(false);
+      hasToolFailureRef.current = false;
     } finally {
       if (abortControllerRef.current === controller) {
         abortControllerRef.current = null;
@@ -239,6 +264,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     setChatInput,
     isChatting,
     streamingMessage,
+    streamingPartialResult,
     agentSteps,
     usageStatus,
     handleSendMessage,

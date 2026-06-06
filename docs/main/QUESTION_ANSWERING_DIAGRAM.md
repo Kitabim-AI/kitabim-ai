@@ -22,14 +22,14 @@ flowchart TD
     subgraph AgentRAG [AgentRAGHandler — LangGraph]
         H_AG[AgentRAGHandler\npriority=998\nsole handler] --> INIT[build_initial_state\n_build_human_message\nInject Context block:\ncurrent book_id, context book IDs,\ncategory filter]
         INIT --> DQ[decompose_query\nsplit multi-question inputs\nemits: decompose]
-        DQ --> PQ[plan_query\nemits: planning]
+        DQ --> PQ[plan_query\ndetect intent — no LLM call\nemits: planning]
         PQ --> AS[agent_step\nemits: agent_thinking]
 
         AS -->|no tool calls\nconditional edge| BC[build_context]
         AS -->|tool calls\nSend API fan-out| ET["execute_tool ×N\n(parallel)\nemits: tool_call\ntool_result"]
 
         ET --> CT[collect_tools\nappend ToolMessages\nupdate total_chunks]
-        CT -->|total_chunks ≥ 8\nor step_count ≥ max\nconditional edge| BC
+        CT -->|total_chunks ≥ 8\nor step_count ≥ 6\nconditional edge| BC
         CT -->|otherwise| AS
 
         BC --> GC[grade_context\nfilter low-relevance chunks\nemits: grading]
@@ -50,7 +50,7 @@ flowchart TD
 
 ## Handler Routing Reference
 
-All questions route directly to `AgentRAGHandler`. There is no feature flag and no fast-path routing.
+All questions route directly to `AgentRAGHandler`. There is no fast-path routing.
 
 ```mermaid
 flowchart LR
@@ -178,8 +178,8 @@ flowchart TD
 | # | Call | Triggered By | Condition | Purpose |
 |---|------|-------------|-----------|---------|
 | 1 | Query decomposition | `decompose_query` node | Only when input has > 1 `?`/`؟` | Split multi-question inputs into sub-questions; zero-cost for single questions |
-| 2 | Agent ReAct loop (1–4×) | AgentRAGHandler | Always — every query | Tool-calling loop — choose and invoke retrieval tools |
-| 3 | Answer generation | AgentRAGHandler | Always | Stream answer from accumulated context |
+| 2 | Agent ReAct loop (1–6×) | `agent_step` node | Always — every query | Tool-calling loop — choose and invoke retrieval tools |
+| 3 | Answer generation | `generate_answer` node | Always | Stream answer from accumulated context |
 
 ---
 

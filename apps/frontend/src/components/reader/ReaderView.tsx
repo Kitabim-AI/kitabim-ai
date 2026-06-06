@@ -6,7 +6,10 @@ import {
   Edit3,
   Loader2,
   Maximize2, Minimize2,
+  PanelLeftClose,
+  PanelLeftOpen,
   Save,
+  Share2,
   X
 } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -16,6 +19,7 @@ import { useAuth, useIsEditor } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
 import { PersistenceService } from '../../services/persistenceService';
 import { ChatInterface } from '../chat/ChatInterface';
+import { ShareModal } from '../share/ShareModal';
 import { GlassPanel } from '../ui/GlassPanel';
 import { PageItem } from './PageItem';
 import VirtualScrollReader from './VirtualScrollReader';
@@ -55,6 +59,7 @@ export const ReaderView: React.FC = () => {
   const readerContentFontClassName = usesArabicReaderFont ? 'reader-font-adobe' : undefined;
 
   // Reader-specific state
+  const [showShare, setShowShare] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -79,6 +84,7 @@ export const ReaderView: React.FC = () => {
   const [hasMorePages, setHasMorePages] = useState(true);
   const [isFetchingContent, setIsFetchingContent] = useState(false);
   const [mobileTab, setMobileTab] = useState<'reader' | 'chat'>('reader');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [showFontSlider, setShowFontSlider] = useState(false);
   const [sliderPos, setSliderPos] = useState({ top: 0, left: 0 });
   const fontButtonRef = useRef<HTMLButtonElement>(null);
@@ -389,6 +395,8 @@ export const ReaderView: React.FC = () => {
   };
 
   return (
+    <>
+    {showShare && <ShareModal book={selectedBook} onClose={() => setShowShare(false)} />}
     <div className={isFullscreen
       ? 'fixed inset-0 z-50 flex flex-col bg-[#f0f4f8] notranslate'
       : `h-[calc(100dvh-72px)] sm:h-[calc(100dvh-88px)] md:h-[calc(100dvh-120px)] xl:h-[calc(100dvh-96px)] flex flex-col xl:flex-row-reverse ${mobileTab === 'chat' ? 'gap-3' : 'gap-4'} xl:gap-6 py-0 md:py-4 notranslate`
@@ -404,6 +412,16 @@ export const ReaderView: React.FC = () => {
             title="Exit fullscreen"
           >
             <Minimize2 size={20} />
+          </button>
+        )}
+        {/* Floating restore-chat button — desktop collapsed mode only */}
+        {isSidebarCollapsed && !isFullscreen && (
+          <button
+            onClick={() => setIsSidebarCollapsed(false)}
+            className="hidden xl:flex absolute top-1/2 -translate-y-1/2 left-4 z-20 p-2.5 bg-white/80 backdrop-blur-sm text-[#0369a1] hover:bg-white rounded-2xl shadow-lg border border-[#0369a1]/10 transition-all"
+            title={t('reader.showChat')}
+          >
+            <PanelLeftOpen size={20} />
           </button>
         )}
         {/* Header Ribbon */}
@@ -465,6 +483,16 @@ export const ReaderView: React.FC = () => {
               </div>
             )}
 
+            {selectedBook.status === 'ready' && (
+              <button
+                onClick={() => setShowShare(true)}
+                title={t('share.shareBook')}
+                className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 border border-[#1877F2]/20 text-[#1877F2] hover:bg-[#1877F2]/10"
+              >
+                <Share2 size={18} className="sm:w-5 sm:h-5" />
+              </button>
+            )}
+
             <div className="relative flex items-center">
               <button
                 ref={fontButtonRef}
@@ -512,7 +540,20 @@ export const ReaderView: React.FC = () => {
             >
               {isFullscreen ? <Minimize2 size={18} className="sm:w-5 sm:h-5" /> : <Maximize2 size={18} className="sm:w-5 sm:h-5" />}
             </button>
-            <button onClick={() => isEditing ? setIsEditing(false) : (editingPageNum !== null ? setEditingPageNum(null) : onClose())} className="p-1.5 sm:p-2.5 min-w-[32px] sm:min-w-[44px] min-h-[32px] sm:min-h-[44px] text-[#94a3b8] hover:bg-red-50 hover:text-red-500 rounded-xl transition-all"><X size={18} className="sm:w-5 sm:h-5" /></button>
+            <button
+              onClick={() => setIsSidebarCollapsed(prev => !prev)}
+              className="hidden xl:flex items-center justify-center p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 border border-[#0369a1]/20 text-[#0369a1] hover:bg-[#0369a1]/10"
+              title={isSidebarCollapsed ? t('reader.showChat') : t('reader.hideChat')}
+            >
+              {isSidebarCollapsed ? <PanelLeftOpen size={18} className="sm:w-5 sm:h-5" /> : <PanelLeftClose size={18} className="sm:w-5 sm:h-5" />}
+            </button>
+            <button
+              onClick={() => isEditing ? setIsEditing(false) : (editingPageNum !== null ? setEditingPageNum(null) : onClose())}
+              title={isEditing || editingPageNum !== null ? t('reader.cancel') : t('reader.backToLibrary')}
+              className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 border border-red-200 text-red-400 hover:bg-red-50 hover:text-red-500"
+            >
+              <X size={18} className="sm:w-5 sm:h-5" />
+            </button>
           </div>
         </div>
 
@@ -534,9 +575,10 @@ export const ReaderView: React.FC = () => {
               onPageChange={setCurrentPage}
               scrollParentRef={mainScrollRef}
               isFullscreen={isFullscreen}
+              isChatCollapsed={isSidebarCollapsed}
             />
           ) : (
-            <div className={`w-full max-w-4xl mx-auto ${editingPageNum !== null ? 'h-full flex flex-col' : isGuestOrReader ? 'pt-8' : 'space-y-4 pb-40'}`}>
+            <div className={`w-full mx-auto transition-all duration-300 ${isSidebarCollapsed ? 'max-w-6xl' : 'max-w-4xl'} ${editingPageNum !== null ? 'h-full flex flex-col' : isGuestOrReader ? 'pt-8' : 'space-y-4 pb-40'}`}>
               {[...loadedPages]
                 .sort((a, b) => a.pageNumber - b.pageNumber)
                 .filter(page => isGuestOrReader ? Number(page.pageNumber) === Number(currentPage) : (editingPageNum === null || Number(page.pageNumber) === Number(editingPageNum)))
@@ -581,7 +623,7 @@ export const ReaderView: React.FC = () => {
       </div>
 
       {/* Sidebar Area */}
-      <div className={`w-full xl:w-[500px] 2xl:w-[600px] flex-col gap-4 xl:gap-6 min-h-0 ${isFullscreen ? 'hidden' : mobileTab === 'chat' ? 'flex flex-grow' : 'hidden xl:flex'}`}>
+      <div className={`w-full xl:w-[500px] 2xl:w-[600px] flex-col gap-4 xl:gap-6 min-h-0 ${isFullscreen ? 'hidden' : mobileTab === 'chat' ? 'flex flex-grow' : isSidebarCollapsed ? 'hidden' : 'hidden xl:flex'}`}>
         <GlassPanel className={`flex-1 min-h-0 flex flex-col ${mobileTab === 'chat' ? 'rounded-[24px] border' : 'rounded-none xl:rounded-[32px] border'} shadow-xl border-[#0369a1]/10 overflow-hidden`}>
           {/* Chat tab header — mobile only, mirrors reader header without edit button */}
           {mobileTab === 'chat' && (
@@ -628,7 +670,7 @@ export const ReaderView: React.FC = () => {
                 >
                   <ALargeSmall size={21} className="sm:w-[23px] sm:h-[23px] -translate-x-[1px]" />
                 </button>
-                <button onClick={onClose} className="p-1.5 sm:p-2.5 min-w-[32px] sm:min-w-[44px] min-h-[32px] sm:min-h-[44px] text-[#94a3b8] hover:bg-red-50 hover:text-red-500 rounded-xl transition-all">
+                <button onClick={onClose} className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 border border-red-200 text-red-400 hover:bg-red-50 hover:text-red-500">
                   <X size={18} className="sm:w-5 sm:h-5" />
                 </button>
               </div>
@@ -638,12 +680,16 @@ export const ReaderView: React.FC = () => {
           <div className="flex-1 min-h-0 p-3 sm:p-4 xl:p-6 overflow-hidden flex flex-col">
             <ChatInterface
               type="book"
+              bookId={selectedBook.id}
+              bookTitle={selectedBook.title ?? undefined}
+              bookAuthor={selectedBook.author ?? undefined}
               chatMessages={chat.chatMessages}
               chatInput={chat.chatInput}
               setChatInput={chat.setChatInput}
               onSendMessage={chat.handleSendMessage}
               isChatting={chat.isChatting}
               streamingMessage={chat.streamingMessage}
+              streamingPartialResult={chat.streamingPartialResult}
               agentSteps={chat.agentSteps}
               currentPage={currentPage}
               usageStatus={chat.usageStatus}
@@ -665,5 +711,6 @@ export const ReaderView: React.FC = () => {
         document.body
       )}
     </div>
+    </>
   );
 };

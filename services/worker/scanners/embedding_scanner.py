@@ -53,7 +53,12 @@ async def run_embedding_scanner(ctx) -> None:
         await session.execute(
             update(Page)
             .where(Page.id.in_(page_ids))
-            .values(embedding_milestone="in_progress", last_updated=func.now())
+            .values(
+                embedding_milestone="in_progress",
+                worker_id=ctx.get("worker_id", "unknown"),
+                claimed_at=func.now(),
+                last_updated=func.now()
+            )
         )
         # Update book-level embedding milestones
         for book_id in book_ids:

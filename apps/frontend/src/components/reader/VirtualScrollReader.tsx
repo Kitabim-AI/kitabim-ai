@@ -14,6 +14,7 @@ interface VirtualScrollReaderProps {
   onPageChange?: (page: number) => void;
   scrollParentRef?: React.RefObject<HTMLDivElement>;
   isFullscreen?: boolean;
+  isChatCollapsed?: boolean;
 }
 
 const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
@@ -26,6 +27,7 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
   onPageChange,
   scrollParentRef,
   isFullscreen = false,
+  isChatCollapsed = false,
 }) => {
   const { t } = useI18n();
   const [pages, setPages] = useState<Map<number, any>>(new Map());
@@ -143,7 +145,7 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
   const allPageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
 
   return (
-    <div className="w-full max-w-4xl mx-auto select-none flex flex-col items-center" onContextMenu={(e) => e.preventDefault()}>
+    <div className={`w-full mx-auto select-none flex flex-col items-center transition-all duration-300 ${isChatCollapsed ? 'max-w-6xl' : 'max-w-4xl'}`} onContextMenu={(e) => e.preventDefault()}>
       <div className="w-full space-y-4 pb-64 flex flex-col items-center">
         {allPageNumbers.map(pageNum => {
           const page = pages.get(pageNum);

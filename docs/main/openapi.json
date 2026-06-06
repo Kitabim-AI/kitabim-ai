@@ -5,36 +5,90 @@
     "version": "0.1.0"
   },
   "paths": {
-    "/api/books/": {
+    "/api/covers/{book_id}.jpg": {
       "get": {
-        "tags": [
-          "books"
-        ],
-        "summary": "Get Books",
-        "operationId": "get_books_api_books__get",
+        "summary": "Get Cover",
+        "operationId": "get_cover_api_covers__book_id__jpg_get",
         "parameters": [
           {
-            "name": "page",
-            "in": "query",
-            "required": false,
+            "name": "book_id",
+            "in": "path",
+            "required": true,
             "schema": {
-              "type": "integer",
-              "default": 1,
-              "title": "Page"
+              "type": "string",
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Get Current User Profile",
+        "description": "Get the current authenticated user's profile.\n\nReturns:\n    UserPublic: The authenticated user's public profile.\n    \nRaises:\n    HTTPException 401: If not authenticated.",
+        "operationId": "get_current_user_profile_api_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPublic"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/auth/{provider}/login": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Oauth Login",
+        "description": "Initiate OAuth login flow for any provider.\n\nSupports: google, facebook, twitter (X)\n\nGenerates authorization URL and sets state cookie for CSRF protection.\n\nArgs:\n    provider: OAuth provider name (google, facebook, twitter)\n\nReturns:\n    Redirect to provider's authorization page.\n\nRaises:\n    HTTPException 400: If provider is unknown\n    HTTPException 503: If provider is not configured",
+        "operationId": "oauth_login_api_auth__provider__login_get",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Provider"
             }
           },
           {
-            "name": "pageSize",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 10,
-              "title": "Pagesize"
-            }
-          },
-          {
-            "name": "q",
+            "name": "next",
             "in": "query",
             "required": false,
             "schema": {
@@ -46,7 +100,595 @@
                   "type": "null"
                 }
               ],
+              "title": "Next"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/{provider}/callback": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Oauth Callback",
+        "description": "Handle OAuth callback for any provider.\n\nSupports: google, facebook, twitter (X)\n\nExchanges code for tokens, creates/updates user, and returns\nan HTML page that posts the access token to the opener window.\n\nArgs:\n    provider: OAuth provider name (google, facebook, twitter)\n\nReturns:\n    HTML response with embedded JavaScript for popup communication",
+        "operationId": "oauth_callback_api_auth__provider__callback_get",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Provider"
+            }
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Code"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Error"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/refresh": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Refresh Access Token",
+        "description": "Refresh an access token using a valid refresh token.",
+        "operationId": "refresh_access_token_api_auth_refresh_post",
+        "parameters": [
+          {
+            "name": "kitabim_refresh_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kitabim Refresh Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Logout",
+        "description": "Logout the current user.",
+        "operationId": "logout_api_auth_logout_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "kitabim_refresh_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kitabim Refresh Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/health": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Auth Health",
+        "description": "Health check endpoint for auth service.\n\nReturns:\n    dict: Status with list of configured OAuth providers.",
+        "operationId": "auth_health_api_auth_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "List All Users",
+        "description": "List all users with pagination.\n\nAdmin only. Returns paginated list of users with optional role and status filtering.",
+        "operationId": "list_all_users_api_users__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number"
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Items per page",
+              "default": 20,
+              "title": "Page Size"
+            },
+            "description": "Items per page"
+          },
+          {
+            "name": "role",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by role",
+              "title": "Role"
+            },
+            "description": "Filter by role"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by status (active/inactive)",
+              "title": "Status"
+            },
+            "description": "Filter by status (active/inactive)"
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Search by name or email",
+              "title": "Search"
+            },
+            "description": "Search by name or email"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedUsers"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/{user_id}": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Get User",
+        "description": "Get a specific user by ID.\n\nAdmin only.",
+        "operationId": "get_user_api_users__user_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/{user_id}/role": {
+      "patch": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Change User Role",
+        "description": "Change a user's role.\n\nAdmin only. Cannot change own role to prevent lockout.",
+        "operationId": "change_user_role_api_users__user_id__role_patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserRoleUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/{user_id}/status": {
+      "patch": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Change User Status",
+        "description": "Enable or disable a user account.\n\nAdmin only. Cannot disable own account.",
+        "operationId": "change_user_status_api_users__user_id__status_patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserStatusUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/": {
+      "get": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Get Books",
+        "description": "Get paginated books list with SQLAlchemy",
+        "operationId": "get_books_api_books__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 10,
+              "title": "Pagesize"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "title": "Q"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
             }
           },
           {
@@ -55,6 +697,7 @@
             "required": false,
             "schema": {
               "type": "string",
+              "pattern": "^(title|author|date|uploadDate|created_at|updated_at)$",
               "default": "title",
               "title": "Sortby"
             }
@@ -77,6 +720,16 @@
               "type": "boolean",
               "default": false,
               "title": "Groupbywork"
+            }
+          },
+          {
+            "name": "includeStats",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Includestats"
             }
           }
         ],
@@ -108,7 +761,13 @@
           "books"
         ],
         "summary": "Create Book",
+        "description": "Create or upsert book with SQLAlchemy",
         "operationId": "create_book_api_books__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -141,13 +800,171 @@
         }
       }
     },
+    "/api/books/random-proverb": {
+      "get": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Get Random Proverb",
+        "description": "Fetch a random proverb with SQLAlchemy",
+        "operationId": "get_random_proverb_api_books_random_proverb_get",
+        "parameters": [
+          {
+            "name": "keyword",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Keyword"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/top-categories": {
+      "get": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Get Top Categories",
+        "description": "Get categories with optional sorting and limit",
+        "operationId": "get_top_categories_api_books_top_categories_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "count",
+              "title": "Sort"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/suggest": {
+      "get": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Suggest Books",
+        "description": "Provide autocomplete suggestions with SQLAlchemy",
+        "operationId": "suggest_books_api_books_suggest_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/books/{book_id}": {
       "get": {
         "tags": [
           "books"
         ],
         "summary": "Get Book",
+        "description": "Get a single book by ID with SQLAlchemy - returns metadata only, no pages",
         "operationId": "get_book_api_books__book_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "book_id",
@@ -187,7 +1004,13 @@
           "books"
         ],
         "summary": "Update Book Details",
+        "description": "Update book details with SQLAlchemy",
         "operationId": "update_book_details_api_books__book_id__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "book_id",
@@ -237,7 +1060,13 @@
           "books"
         ],
         "summary": "Delete Book",
+        "description": "Delete book with SQLAlchemy",
         "operationId": "delete_book_api_books__book_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "book_id",
@@ -271,13 +1100,281 @@
         }
       }
     },
+    "/api/books/{book_id}/pipeline-stats": {
+      "get": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Get Book Pipeline Stats",
+        "description": "Fetch detailed page-level pipeline statistics for a single book (for UI hover)\n\nIf step is provided, only fetches stats for that specific pipeline step for performance.",
+        "operationId": "get_book_pipeline_stats_api_books__book_id__pipeline_stats_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          },
+          {
+            "name": "step",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Step"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/stats": {
+      "get": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Get Book Stats",
+        "description": "Get book statistics for admin dashboard",
+        "operationId": "get_book_stats_api_books_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/books/{book_id}/content": {
+      "get": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Get Book Content",
+        "description": "Get full book content with SQLAlchemy",
+        "operationId": "get_book_content_api_books__book_id__content_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/{book_id}/pages/{page_num}": {
+      "get": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Get Book Page",
+        "description": "Get a specific book page by page number with SQLAlchemy",
+        "operationId": "get_book_page_api_books__book_id__pages__page_num__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          },
+          {
+            "name": "page_num",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Page Num"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtractionResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/{book_id}/pages": {
+      "get": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Get Book Pages",
+        "description": "Get paginated book pages with SQLAlchemy",
+        "operationId": "get_book_pages_api_books__book_id__pages_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ExtractionResult"
+                  },
+                  "title": "Response Get Book Pages Api Books  Book Id  Pages Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/books/hash/{content_hash}": {
       "get": {
         "tags": [
           "books"
         ],
         "summary": "Get Book By Hash",
+        "description": "Get book by content hash with SQLAlchemy",
         "operationId": "get_book_by_hash_api_books_hash__content_hash__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "content_hash",
@@ -319,6 +1416,7 @@
           "books"
         ],
         "summary": "Upload Pdf",
+        "description": "Upload a PDF or DOCX book file.",
         "operationId": "upload_pdf_api_books_upload_post",
         "requestBody": {
           "content": {
@@ -349,16 +1447,257 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
-    "/api/books/{book_id}/reprocess": {
+    "/api/books/{book_id}/reprocess/ocr": {
       "post": {
         "tags": [
           "books"
         ],
-        "summary": "Reprocess Book",
-        "operationId": "reprocess_book_api_books__book_id__reprocess_post",
+        "summary": "Reprocess Ocr",
+        "description": "Reprocess OCR by resetting milestones. Text will be overwritten by OCR scanner.\n\nThis is a non-destructive operation that:\n- Resets OCR and downstream milestones to 'idle'\n- Preserves existing text until OCR scanner overwrites it\n- Preserves chunks until chunking scanner processes the new text\n- Allows scanners to handle data updates atomically",
+        "operationId": "reprocess_ocr_api_books__book_id__reprocess_ocr_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/{book_id}/reprocess/chunking": {
+      "post": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Reprocess Chunking",
+        "description": "Reprocess chunking by resetting milestones. Chunks will be recreated by chunking scanner.\n\nThis is a non-destructive operation that:\n- Resets chunking and downstream milestones to 'idle'\n- Preserves OCR text (not re-OCR'd)\n- Preserves chunks until chunking scanner deletes and recreates them atomically\n- Allows chunking scanner to handle chunk updates per-page",
+        "operationId": "reprocess_chunking_api_books__book_id__reprocess_chunking_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/{book_id}/reprocess/embedding": {
+      "post": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Reprocess Embedding",
+        "description": "Reprocess embeddings by resetting milestones. Preserves text and chunks.\n\nThis is a non-destructive operation that:\n- Resets embedding and downstream milestones to 'idle'\n- Clears chunk embeddings (vectors) to trigger regeneration\n- Preserves chunk text and all other data\n- Allows embedding scanner to regenerate vectors in place",
+        "operationId": "reprocess_embedding_api_books__book_id__reprocess_embedding_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/{book_id}/reprocess/spell-check": {
+      "post": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Reprocess Spell Check",
+        "description": "Reprocess spell check by resetting milestones. Preserves all existing data.\n\nThis operation:\n- Resets spell-check milestone to 'idle'\n- Preserves all text, chunks, embeddings, and word index\n- Allows spell-check scanner to reprocess pages",
+        "operationId": "reprocess_spell_check_api_books__book_id__reprocess_spell_check_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/{book_id}/reprocess/graph": {
+      "post": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Reprocess Graph",
+        "description": "Manually trigger/reprocess Knowledge Graph extraction for a book.\n\nThis queues the `knowledge_graph_job` to extract entities and relations in Memgraph.",
+        "operationId": "reprocess_graph_api_books__book_id__reprocess_graph_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/{book_id}/retry-failed": {
+      "post": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Retry Failed Pages",
+        "description": "Smart Retry: Reset failed milestones to 'idle' at their current step.",
+        "operationId": "retry_failed_pages_api_books__book_id__retry_failed_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "book_id",
@@ -398,7 +1737,13 @@
           "books"
         ],
         "summary": "Reset Page",
+        "description": "Reset a single page to ocr/idle so the v2 OCR scanner re-processes it.",
         "operationId": "reset_page_api_books__book_id__pages__page_num__reset_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "book_id",
@@ -447,7 +1792,13 @@
           "books"
         ],
         "summary": "Update Page Text",
+        "description": "Update page text with SQLAlchemy and synchronously re-chunk/re-embed (Edge Case #4a)",
         "operationId": "update_page_text_api_books__book_id__pages__page_num__update_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "book_id",
@@ -502,173 +1853,131 @@
         }
       }
     },
-    "/api/books/upload-cover": {
+    "/api/books/admin/bulk-reset-incomplete-ocr": {
       "post": {
         "tags": [
           "books"
         ],
-        "summary": "Upload Cover",
-        "description": "Upload a cover image for a book by its title.\nAccepts image files (PNG, JPG, JPEG, WebP) and converts to JPG.",
-        "operationId": "upload_cover_api_books_upload_cover_post",
+        "summary": "Bulk Reset Incomplete Ocr",
+        "description": "Bulk reset OCR milestones for all books that haven't completed OCR.\n\nFinds all books where ocr_milestone != 'succeeded' and resets them so the\nOCR scanner picks them up again. Use this to recover from stuck/stale state\non production when the worker was down or jobs crashed.\n\nSet include_error=true to also reset books already marked status='error'.",
+        "operationId": "bulk_reset_incomplete_ocr_api_books_admin_bulk_reset_incomplete_ocr_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "include_error",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Also reset books with status='error'",
+              "default": false,
+              "title": "Include Error"
+            },
+            "description": "Also reset books with status='error'"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/{book_id}/summary": {
+      "get": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Get Book Summary",
+        "description": "Return the AI-generated semantic summary for a book.\n\nAllows guest access for public books.",
+        "operationId": "get_book_summary_api_books__book_id__summary_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/{book_id}/cover": {
+      "post": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Update Book Cover",
+        "description": "Update book cover by book ID with SQLAlchemy and storage service",
+        "operationId": "update_book_cover_api_books__book_id__cover_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "multipart/form-data": {
               "schema": {
-                "$ref": "#/components/schemas/Body_upload_cover_api_books_upload_cover_post"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/books/{book_id}/spell-check": {
-      "post": {
-        "tags": [
-          "books"
-        ],
-        "summary": "Check Book Spelling",
-        "description": "Check all pages of a book for spelling and OCR errors.\nReturns a dictionary mapping page numbers to their spell check results.",
-        "operationId": "check_book_spelling_api_books__book_id__spell_check_post",
-        "parameters": [
-          {
-            "name": "book_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Book Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/books/{book_id}/pages/{page_num}/spell-check": {
-      "post": {
-        "tags": [
-          "books"
-        ],
-        "summary": "Check Page Spelling",
-        "description": "Check a single page for spelling and OCR errors.",
-        "operationId": "check_page_spelling_api_books__book_id__pages__page_num__spell_check_post",
-        "parameters": [
-          {
-            "name": "book_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Book Id"
-            }
-          },
-          {
-            "name": "page_num",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Page Num"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/books/{book_id}/pages/{page_num}/apply-corrections": {
-      "post": {
-        "tags": [
-          "books"
-        ],
-        "summary": "Apply Spelling Corrections",
-        "description": "Apply approved spelling corrections to a page.\nExpects payload: { \"corrections\": [...] }",
-        "operationId": "apply_spelling_corrections_api_books__book_id__pages__page_num__apply_corrections_post",
-        "parameters": [
-          {
-            "name": "book_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Book Id"
-            }
-          },
-          {
-            "name": "page_num",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Page Num"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": true,
-                "title": "Payload"
+                "$ref": "#/components/schemas/Body_update_book_cover_api_books__book_id__cover_post"
               }
             }
           }
@@ -693,6 +2002,79 @@
             }
           }
         }
+      }
+    },
+    "/api/books/{book_id}/download": {
+      "get": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Download Book",
+        "description": "Download the original book file (PDF or DOCX) from storage.",
+        "operationId": "download_book_api_books__book_id__download_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/chat/usage": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Get Chat Usage",
+        "description": "Get current user's chat usage and limit status.",
+        "operationId": "get_chat_usage_api_chat_usage_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatUsageStatus"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/chat/": {
@@ -701,6 +2083,7 @@
           "chat"
         ],
         "summary": "Chat With Book Api",
+        "description": "Chat with book using RAG with SQLAlchemy and role-based daily limits",
         "operationId": "chat_with_book_api_api_chat__post",
         "requestBody": {
           "content": {
@@ -733,6 +2116,1714 @@
               }
             }
           }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/chat/stream": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Chat With Book Stream",
+        "description": "Stream chat responses using Server-Sent Events (SSE)",
+        "operationId": "chat_with_book_stream_api_chat_stream_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/chat/feedback": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Submit Chat Feedback",
+        "description": "Record thumbs-up/down feedback for an assistant response.\n\nThumbs-down (negative) feedback immediately enqueues a Ragas evaluation\njob for that response, regardless of the background sampling rate.",
+        "operationId": "submit_chat_feedback_api_chat_feedback_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/ai/ocr": {
+      "post": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Ocr Image",
+        "operationId": "ocr_image_api_ai_ocr_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OcrRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OcrResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/system-configs/": {
+      "get": {
+        "tags": [
+          "system-configs"
+        ],
+        "summary": "List Configs",
+        "description": "List all system configurations (admin only)",
+        "operationId": "list_configs_api_system_configs__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SystemConfigResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Configs Api System Configs  Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "system-configs"
+        ],
+        "summary": "Create Config",
+        "description": "Create a new system configuration (admin only)",
+        "operationId": "create_config_api_system_configs__post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SystemConfigCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemConfigResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/system-configs/{key}": {
+      "get": {
+        "tags": [
+          "system-configs"
+        ],
+        "summary": "Get Config",
+        "description": "Get a specific system configuration (admin only)",
+        "operationId": "get_config_api_system_configs__key__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemConfigResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "system-configs"
+        ],
+        "summary": "Update Config",
+        "description": "Update a system configuration (admin only)",
+        "operationId": "update_config_api_system_configs__key__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SystemConfigUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemConfigResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/system-configs/circuit-breaker/status": {
+      "get": {
+        "tags": [
+          "system-configs"
+        ],
+        "summary": "Get Circuit Breaker Status Endpoint",
+        "description": "Get circuit breaker status (editor and above)",
+        "operationId": "get_circuit_breaker_status_endpoint_api_system_configs_circuit_breaker_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/system-configs/circuit-breaker/reset": {
+      "post": {
+        "tags": [
+          "system-configs"
+        ],
+        "summary": "Reset Circuit Breaker Endpoint",
+        "description": "Manually reset (close) circuit breakers (admin only)",
+        "operationId": "reset_circuit_breaker_endpoint_api_system_configs_circuit_breaker_reset_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/system-configs/circuit-breaker/open": {
+      "post": {
+        "tags": [
+          "system-configs"
+        ],
+        "summary": "Force Open Circuit Breaker Endpoint",
+        "description": "Manually open circuit breakers (admin only)",
+        "operationId": "force_open_circuit_breaker_endpoint_api_system_configs_circuit_breaker_open_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stats/": {
+      "get": {
+        "tags": [
+          "stats"
+        ],
+        "summary": "Get System Stats",
+        "description": "Get system-wide statistics (admin only)",
+        "operationId": "get_system_stats_api_stats__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemStats"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/stats/rag": {
+      "get": {
+        "tags": [
+          "stats"
+        ],
+        "summary": "Get Rag Quality Stats",
+        "description": "Get Ragas semantic quality metrics from graded RAG evaluations (admin only).\n\nSingle query using conditional aggregation \u2014 avoids three round-trips.",
+        "operationId": "get_rag_quality_stats_api_stats_rag_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RAGQualityStats"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/contact/submit": {
+      "post": {
+        "tags": [
+          "contact"
+        ],
+        "summary": "Submit Contact Form",
+        "description": "Submit a contact form from the Join Us page.\n\nPublic endpoint - no authentication required.",
+        "operationId": "submit_contact_form_api_contact_submit_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContactSubmissionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactSubmissionPublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/contact/admin/submissions": {
+      "get": {
+        "tags": [
+          "contact"
+        ],
+        "summary": "Get Contact Submissions",
+        "description": "Get all contact submissions with optional filtering.\n\nAdmin-only endpoint.\n\nQuery params:\n- status: Filter by submission status (new, reviewed, contacted, archived)\n- limit: Maximum number of results to return (default 100)\n- offset: Number of results to skip (default 0)",
+        "operationId": "get_contact_submissions_api_contact_admin_submissions_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ContactSubmissionAdmin"
+                  },
+                  "title": "Response Get Contact Submissions Api Contact Admin Submissions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/spell-check/random-book": {
+      "get": {
+        "tags": [
+          "spell-check"
+        ],
+        "summary": "Get Random Book With Issues",
+        "description": "Return a random book that has at least one open spell check issue.\n\nUses a two-step approach for better performance:\n1. Fast random sampling to get candidate book IDs\n2. Detailed query for the selected book",
+        "operationId": "get_random_book_with_issues_api_books_spell_check_random_book_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RandomBookOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/books/{book_id}/spell-check/summary": {
+      "get": {
+        "tags": [
+          "spell-check"
+        ],
+        "summary": "Get Spell Check Summary",
+        "description": "Issue counts per page for a book. Accessible by editors and admins.",
+        "operationId": "get_spell_check_summary_api_books__book_id__spell_check_summary_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookSpellSummaryOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/{book_id}/pages/{page_num}/spell-check": {
+      "get": {
+        "tags": [
+          "spell-check"
+        ],
+        "summary": "Get Page Spell Issues",
+        "description": "All spell check issues for a specific page, ordered by position.",
+        "operationId": "get_page_spell_issues_api_books__book_id__pages__page_num__spell_check_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          },
+          {
+            "name": "page_num",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Page Num"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageSpellCheckOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/{book_id}/pages/{page_num}/spell-check/apply": {
+      "post": {
+        "tags": [
+          "spell-check"
+        ],
+        "summary": "Apply Spell Corrections",
+        "description": "Apply corrections to page text.\n\nReplaces each corrected word by char offset (processed in reverse order so\nearlier offsets are not invalidated by later replacements). Marks the page\nas is_indexed=False to trigger re-embedding, and records the editor.\n\nIf is_auto_correction is True and user is admin, also creates a global\nauto-correction rule.",
+        "operationId": "apply_spell_corrections_api_books__book_id__pages__page_num__spell_check_apply_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          },
+          {
+            "name": "page_num",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Page Num"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyCorrectionsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/{book_id}/spell-check/trigger": {
+      "post": {
+        "tags": [
+          "spell-check"
+        ],
+        "summary": "Trigger Spell Check",
+        "description": "Reset spell_check_milestone to 'idle' for all OCR-complete pages in a book.\nThe spell check scanner will pick them up within its next cycle (~1 min).",
+        "operationId": "trigger_spell_check_api_books__book_id__spell_check_trigger_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/{book_id}/pages/{page_num}/spell-check/trigger": {
+      "post": {
+        "tags": [
+          "spell-check"
+        ],
+        "summary": "Trigger Page Spell Check",
+        "description": "Run spell check on a single page immediately (inline, no worker needed).\nReturns the number of issues found.",
+        "operationId": "trigger_page_spell_check_api_books__book_id__pages__page_num__spell_check_trigger_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          },
+          {
+            "name": "page_num",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Page Num"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/{book_id}/pages/{page_num}/spell-check/ignore": {
+      "post": {
+        "tags": [
+          "spell-check"
+        ],
+        "summary": "Ignore Spell Issues",
+        "description": "Mark spell check issues as ignored (will not be re-flagged on next scan).",
+        "operationId": "ignore_spell_issues_api_books__book_id__pages__page_num__spell_check_ignore_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          },
+          {
+            "name": "page_num",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Page Num"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IgnoreIssuesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auto-correct-rules": {
+      "get": {
+        "tags": [
+          "spell-check"
+        ],
+        "summary": "List Auto Correct Rules",
+        "description": "List all auto-correction rules with pagination and search.\n\nQuery params:\n- skip: Number of records to skip\n- limit: Maximum number of records to return\n- search: Search query (misspelled word, corrected word, or description)\n- auto_apply_only: If true, only return rules with is_active=True",
+        "operationId": "list_auto_correct_rules_api_auto_correct_rules_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "auto_apply_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Auto Apply Only"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoCorrectRulePaginatedOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "spell-check"
+        ],
+        "summary": "Create Auto Correct Rule",
+        "description": "Create a new auto-correction rule.\n\nIf a rule already exists for the misspelled word, it will be updated.",
+        "operationId": "create_auto_correct_rule_api_auto_correct_rules_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAutoCorrectRuleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoCorrectRuleOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auto-correct-rules/stats": {
+      "get": {
+        "tags": [
+          "spell-check"
+        ],
+        "summary": "Get Auto Correct Stats Endpoint",
+        "description": "Get statistics about auto-corrections.",
+        "operationId": "get_auto_correct_stats_endpoint_api_auto_correct_rules_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoCorrectStatsOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/auto-correct-rules/{word}": {
+      "get": {
+        "tags": [
+          "spell-check"
+        ],
+        "summary": "Get Auto Correct Rule",
+        "description": "Get a specific auto-correction rule.",
+        "operationId": "get_auto_correct_rule_api_auto_correct_rules__word__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "word",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Word"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoCorrectRuleOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "spell-check"
+        ],
+        "summary": "Update Auto Correct Rule",
+        "description": "Update an existing auto-correction rule.\n\nOnly provided fields will be updated.",
+        "operationId": "update_auto_correct_rule_api_auto_correct_rules__word__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "word",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Word"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAutoCorrectRuleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoCorrectRuleOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "spell-check"
+        ],
+        "summary": "Delete Auto Correct Rule",
+        "description": "Delete an auto-correction rule.",
+        "operationId": "delete_auto_correct_rule_api_auto_correct_rules__word__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "word",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Word"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/spell-check/dictionary": {
+      "post": {
+        "tags": [
+          "dictionary"
+        ],
+        "summary": "Add To Dictionary",
+        "description": "Add a word to the global spell check dictionary. Editor and Admin allowed.",
+        "operationId": "add_to_dictionary_api_spell_check_dictionary_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddToDictionaryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "dictionary"
+        ],
+        "summary": "List Dictionary Words",
+        "description": "List words in the dictionary with pagination, sorted by latest added (ID DESC).",
+        "operationId": "list_dictionary_words_api_spell_check_dictionary_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DictionaryWordOut"
+                  },
+                  "title": "Response List Dictionary Words Api Spell Check Dictionary Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/spell-check/dictionary/search": {
+      "get": {
+        "tags": [
+          "dictionary"
+        ],
+        "summary": "Search Dictionary",
+        "description": "Search for words in the dictionary (autocomplete).",
+        "operationId": "search_dictionary_api_spell_check_dictionary_search_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DictionaryWordOut"
+                  },
+                  "title": "Response Search Dictionary Api Spell Check Dictionary Search Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/spell-check/dictionary/stats": {
+      "get": {
+        "tags": [
+          "dictionary"
+        ],
+        "summary": "Get Dictionary Stats",
+        "description": "Get total word count in the dictionary.",
+        "operationId": "get_dictionary_stats_api_spell_check_dictionary_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DictionaryStatsOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/spell-check/dictionary/{word}": {
+      "delete": {
+        "tags": [
+          "dictionary"
+        ],
+        "summary": "Delete From Dictionary",
+        "description": "Remove a word from the dictionary. Only allowed for editors/admins.",
+        "operationId": "delete_from_dictionary_api_spell_check_dictionary__word__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "word",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Word"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/share/book/{book_id}": {
+      "get": {
+        "tags": [
+          "share"
+        ],
+        "summary": "Share Book",
+        "operationId": "share_book_api_share_book__book_id__get",
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/share/qa": {
+      "get": {
+        "tags": [
+          "share"
+        ],
+        "summary": "Share Qa",
+        "operationId": "share_qa_api_share_qa_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 400,
+              "title": "Q"
+            }
+          },
+          {
+            "name": "a",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 1000,
+              "title": "A"
+            }
+          },
+          {
+            "name": "book_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cache/invalidate": {
+      "post": {
+        "tags": [
+          "cache"
+        ],
+        "summary": "Invalidate Cache",
+        "description": "Operator-triggered cache invalidation endpoint.\nFlushes Redis caching patterns, bumps versions, and instructs all instances\nto clear their local in-process LRU caches immediately.",
+        "operationId": "invalidate_cache_api_cache_invalidate_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Operator-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Operator-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/config": {
+      "get": {
+        "summary": "Get Public Config",
+        "description": "Public endpoint \u2014 returns config the frontend needs before it can authenticate.",
+        "operationId": "get_public_config_api_config_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
         }
       }
     },
@@ -751,16 +3842,196 @@
           }
         }
       }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "summary": "Ready",
+        "operationId": "ready_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
-      "Body_upload_cover_api_books_upload_cover_post": {
+      "AddToDictionaryRequest": {
         "properties": {
-          "title": {
+          "word": {
             "type": "string",
-            "title": "Title"
+            "title": "Word"
+          }
+        },
+        "type": "object",
+        "required": [
+          "word"
+        ],
+        "title": "AddToDictionaryRequest"
+      },
+      "ApplyCorrectionsRequest": {
+        "properties": {
+          "corrections": {
+            "items": {
+              "$ref": "#/components/schemas/CorrectionItem"
+            },
+            "type": "array",
+            "title": "Corrections"
+          }
+        },
+        "type": "object",
+        "required": [
+          "corrections"
+        ],
+        "title": "ApplyCorrectionsRequest"
+      },
+      "AutoCorrectRuleOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
           },
+          "misspelled_word": {
+            "type": "string",
+            "title": "Misspelled Word"
+          },
+          "corrected_word": {
+            "type": "string",
+            "title": "Corrected Word"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "misspelled_word",
+          "corrected_word",
+          "is_active",
+          "description",
+          "created_at",
+          "updated_at",
+          "created_by"
+        ],
+        "title": "AutoCorrectRuleOut"
+      },
+      "AutoCorrectRulePaginatedOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AutoCorrectRuleOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "skip": {
+            "type": "integer",
+            "title": "Skip"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "skip",
+          "limit"
+        ],
+        "title": "AutoCorrectRulePaginatedOut"
+      },
+      "AutoCorrectStatsOut": {
+        "properties": {
+          "total_rules": {
+            "type": "integer",
+            "title": "Total Rules"
+          },
+          "active_rules": {
+            "type": "integer",
+            "title": "Active Rules"
+          },
+          "total_auto_corrected": {
+            "type": "integer",
+            "title": "Total Auto Corrected"
+          },
+          "pending_corrections": {
+            "type": "integer",
+            "title": "Pending Corrections"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_rules",
+          "active_rules",
+          "total_auto_corrected",
+          "pending_corrections"
+        ],
+        "title": "AutoCorrectStatsOut"
+      },
+      "Body_update_book_cover_api_books__book_id__cover_post": {
+        "properties": {
           "file": {
             "type": "string",
             "format": "binary",
@@ -769,10 +4040,9 @@
         },
         "type": "object",
         "required": [
-          "title",
           "file"
         ],
-        "title": "Body_upload_cover_api_books_upload_cover_post"
+        "title": "Body_update_book_cover_api_books__book_id__cover_post"
       },
       "Body_upload_pdf_api_books_upload_post": {
         "properties": {
@@ -821,20 +4091,9 @@
             "type": "integer",
             "title": "Totalpages"
           },
-          "content": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Content"
-          },
           "pages": {
             "items": {
-              "$ref": "#/components/schemas/Page"
+              "$ref": "#/components/schemas/ExtractionResult"
             },
             "type": "array",
             "title": "Pages"
@@ -871,7 +4130,34 @@
             ],
             "title": "Coverurl"
           },
-          "processingStep": {
+          "visibility": {
+            "type": "string",
+            "title": "Visibility",
+            "default": "private"
+          },
+          "categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorEvent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "readCount": {
+            "type": "integer",
+            "title": "Readcount",
+            "default": 0
+          },
+          "fileName": {
             "anyOf": [
               {
                 "type": "string"
@@ -880,16 +4166,73 @@
                 "type": "null"
               }
             ],
-            "title": "Processingstep",
-            "default": "ocr"
+            "title": "Filename"
           },
-          "categories": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Categories",
-            "default": []
+          "fileType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filetype"
+          },
+          "pipelineStep": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pipelinestep"
+          },
+          "pipelineStats": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pipelinestats"
+          },
+          "hasSummary": {
+            "type": "boolean",
+            "title": "Hassummary",
+            "default": false
+          },
+          "hasGraph": {
+            "type": "boolean",
+            "title": "Hasgraph",
+            "default": false
+          },
+          "ocrMilestone": {
+            "type": "string",
+            "title": "Ocrmilestone",
+            "default": "idle"
+          },
+          "chunkingMilestone": {
+            "type": "string",
+            "title": "Chunkingmilestone",
+            "default": "idle"
+          },
+          "embeddingMilestone": {
+            "type": "string",
+            "title": "Embeddingmilestone",
+            "default": "idle"
+          },
+          "spellCheckMilestone": {
+            "type": "string",
+            "title": "Spellcheckmilestone",
+            "default": "idle"
           }
         },
         "type": "object",
@@ -899,11 +4242,55 @@
           "title",
           "author",
           "totalPages",
-          "pages",
           "status",
           "uploadDate"
         ],
-        "title": "Book"
+        "title": "Book",
+        "description": "Book schema with automatic camelCase conversion from SQLAlchemy models.\n\nThe alias_generator converts snake_case DB fields to camelCase API fields automatically.\nExample: content_hash (DB) \u2192 contentHash (API)"
+      },
+      "BookSpellSummaryOut": {
+        "properties": {
+          "total_open": {
+            "type": "integer",
+            "title": "Total Open"
+          },
+          "total_issues": {
+            "type": "integer",
+            "title": "Total Issues"
+          },
+          "pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageSpellSummary"
+            },
+            "type": "array",
+            "title": "Pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_open",
+          "total_issues",
+          "pages"
+        ],
+        "title": "BookSpellSummaryOut"
+      },
+      "BookStatusCount": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "count"
+        ],
+        "title": "BookStatusCount"
       },
       "ChatRequest": {
         "properties": {
@@ -934,6 +4321,25 @@
               }
             ],
             "title": "Currentpage"
+          },
+          "characterId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Characterid"
+          },
+          "contextBookIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Contextbookids",
+            "default": []
           }
         },
         "type": "object",
@@ -941,13 +4347,24 @@
           "bookId",
           "question"
         ],
-        "title": "ChatRequest"
+        "title": "ChatRequest",
+        "description": "Chat request with automatic camelCase conversion"
       },
       "ChatResponse": {
         "properties": {
           "answer": {
             "type": "string",
             "title": "Answer"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatUsageStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -956,7 +4373,363 @@
         ],
         "title": "ChatResponse"
       },
-      "Page": {
+      "ChatUsageStatus": {
+        "properties": {
+          "usage": {
+            "type": "integer",
+            "title": "Usage"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit"
+          },
+          "has_reached_limit": {
+            "type": "boolean",
+            "title": "Has Reached Limit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "usage",
+          "limit",
+          "has_reached_limit"
+        ],
+        "title": "ChatUsageStatus"
+      },
+      "ChunkStats": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "embedded": {
+            "type": "integer",
+            "title": "Embedded"
+          },
+          "pending": {
+            "type": "integer",
+            "title": "Pending"
+          },
+          "percentage_embedded": {
+            "type": "number",
+            "title": "Percentage Embedded"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "embedded",
+          "pending",
+          "percentage_embedded"
+        ],
+        "title": "ChunkStats"
+      },
+      "ContactSubmissionAdmin": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "interest": {
+            "type": "string",
+            "title": "Interest"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "adminNotes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adminnotes"
+          },
+          "reviewedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewedby"
+          },
+          "reviewedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewedat"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "email",
+          "interest",
+          "message",
+          "status",
+          "createdAt"
+        ],
+        "title": "ContactSubmissionAdmin",
+        "description": "Admin view schema for contact submissions with all fields"
+      },
+      "ContactSubmissionCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "email": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 3,
+            "title": "Email"
+          },
+          "interest": {
+            "type": "string",
+            "enum": [
+              "editor",
+              "developer",
+              "other"
+            ],
+            "title": "Interest"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 5000,
+            "minLength": 10,
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "email",
+          "interest",
+          "message"
+        ],
+        "title": "ContactSubmissionCreate",
+        "description": "Schema for creating a new contact submission"
+      },
+      "ContactSubmissionPublic": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "createdAt"
+        ],
+        "title": "ContactSubmissionPublic",
+        "description": "Public response schema for contact submission"
+      },
+      "CorrectionItem": {
+        "properties": {
+          "issue_id": {
+            "type": "integer",
+            "title": "Issue Id"
+          },
+          "corrected_word": {
+            "type": "string",
+            "title": "Corrected Word"
+          },
+          "original_word": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Word"
+          },
+          "range": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Range"
+          },
+          "is_auto_correction": {
+            "type": "boolean",
+            "title": "Is Auto Correction",
+            "default": false
+          },
+          "is_dictionary_addition": {
+            "type": "boolean",
+            "title": "Is Dictionary Addition",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "issue_id",
+          "corrected_word"
+        ],
+        "title": "CorrectionItem"
+      },
+      "CreateAutoCorrectRuleRequest": {
+        "properties": {
+          "misspelled_word": {
+            "type": "string",
+            "title": "Misspelled Word"
+          },
+          "corrected_word": {
+            "type": "string",
+            "title": "Corrected Word"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": false
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "misspelled_word",
+          "corrected_word"
+        ],
+        "title": "CreateAutoCorrectRuleRequest"
+      },
+      "DictionaryStatsOut": {
+        "properties": {
+          "total_words": {
+            "type": "integer",
+            "title": "Total Words"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_words"
+        ],
+        "title": "DictionaryStatsOut"
+      },
+      "DictionaryWordOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "word": {
+            "type": "string",
+            "title": "Word"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "word"
+        ],
+        "title": "DictionaryWordOut"
+      },
+      "ErrorEvent": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ts"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "context": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "kind",
+          "message"
+        ],
+        "title": "ErrorEvent"
+      },
+      "ExtractionResult": {
         "properties": {
           "pageNumber": {
             "type": "integer",
@@ -977,11 +4750,6 @@
             "type": "string",
             "title": "Status"
           },
-          "isVerified": {
-            "type": "boolean",
-            "title": "Isverified",
-            "default": false
-          },
           "error": {
             "anyOf": [
               {
@@ -992,6 +4760,45 @@
               }
             ],
             "title": "Error"
+          },
+          "lastUpdated": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastupdated"
+          },
+          "pipelineStep": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pipelinestep"
+          },
+          "milestone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Milestone"
+          },
+          "isToc": {
+            "type": "boolean",
+            "title": "Istoc",
+            "default": false
           }
         },
         "type": "object",
@@ -999,7 +4806,26 @@
           "pageNumber",
           "status"
         ],
-        "title": "Page"
+        "title": "ExtractionResult",
+        "description": "Page extraction result with automatic camelCase conversion"
+      },
+      "FeedbackRequest": {
+        "properties": {
+          "eval_id": {
+            "type": "integer",
+            "title": "Eval Id"
+          },
+          "feedback": {
+            "type": "string",
+            "title": "Feedback"
+          }
+        },
+        "type": "object",
+        "required": [
+          "eval_id",
+          "feedback"
+        ],
+        "title": "FeedbackRequest"
       },
       "HTTPValidationError": {
         "properties": {
@@ -1013,6 +4839,170 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "IgnoreIssuesRequest": {
+        "properties": {
+          "issue_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Issue Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "issue_ids"
+        ],
+        "title": "IgnoreIssuesRequest"
+      },
+      "OcrRequest": {
+        "properties": {
+          "imageBase64": {
+            "type": "string",
+            "title": "Imagebase64"
+          }
+        },
+        "type": "object",
+        "required": [
+          "imageBase64"
+        ],
+        "title": "OcrRequest"
+      },
+      "OcrResponse": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "OcrResponse"
+      },
+      "PageSpellCheckOut": {
+        "properties": {
+          "milestone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Milestone"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/SpellIssueOut"
+            },
+            "type": "array",
+            "title": "Issues"
+          }
+        },
+        "type": "object",
+        "required": [
+          "milestone",
+          "issues"
+        ],
+        "title": "PageSpellCheckOut"
+      },
+      "PageSpellSummary": {
+        "properties": {
+          "page_number": {
+            "type": "integer",
+            "title": "Page Number"
+          },
+          "open_count": {
+            "type": "integer",
+            "title": "Open Count"
+          },
+          "total_count": {
+            "type": "integer",
+            "title": "Total Count"
+          },
+          "spell_check_milestone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spell Check Milestone"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page_number",
+          "open_count",
+          "total_count",
+          "spell_check_milestone"
+        ],
+        "title": "PageSpellSummary"
+      },
+      "PageStats": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "indexed": {
+            "type": "integer",
+            "title": "Indexed"
+          },
+          "unindexed": {
+            "type": "integer",
+            "title": "Unindexed"
+          },
+          "percentage_indexed": {
+            "type": "number",
+            "title": "Percentage Indexed"
+          },
+          "error": {
+            "type": "integer",
+            "title": "Error",
+            "default": 0
+          },
+          "pages_by_status": {
+            "items": {
+              "$ref": "#/components/schemas/PageStatusCount"
+            },
+            "type": "array",
+            "title": "Pages By Status",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "indexed",
+          "unindexed",
+          "percentage_indexed"
+        ],
+        "title": "PageStats"
+      },
+      "PageStatusCount": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "count"
+        ],
+        "title": "PageStatusCount"
       },
       "PaginatedBooks": {
         "properties": {
@@ -1050,6 +5040,471 @@
         ],
         "title": "PaginatedBooks"
       },
+      "PaginatedUsers": {
+        "properties": {
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/UserPublic"
+            },
+            "type": "array",
+            "title": "Users"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "users",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "PaginatedUsers",
+        "description": "Response model for paginated user list."
+      },
+      "RAGQualityStats": {
+        "properties": {
+          "total_evaluations": {
+            "type": "integer",
+            "title": "Total Evaluations"
+          },
+          "graded_evaluations": {
+            "type": "integer",
+            "title": "Graded Evaluations"
+          },
+          "avg_faithfulness": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Faithfulness"
+          },
+          "avg_answer_relevance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Answer Relevance"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_evaluations",
+          "graded_evaluations",
+          "avg_faithfulness",
+          "avg_answer_relevance"
+        ],
+        "title": "RAGQualityStats"
+      },
+      "RandomBookOut": {
+        "properties": {
+          "book_id": {
+            "type": "string",
+            "title": "Book Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "author": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author"
+          },
+          "volume": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume"
+          },
+          "total_pages": {
+            "type": "integer",
+            "title": "Total Pages"
+          },
+          "total_issues": {
+            "type": "integer",
+            "title": "Total Issues"
+          },
+          "pages_with_issues": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Pages With Issues"
+          },
+          "first_issue_page": {
+            "type": "integer",
+            "title": "First Issue Page"
+          }
+        },
+        "type": "object",
+        "required": [
+          "book_id",
+          "title",
+          "author",
+          "volume",
+          "total_pages",
+          "total_issues",
+          "pages_with_issues",
+          "first_issue_page"
+        ],
+        "title": "RandomBookOut"
+      },
+      "SpellIssueOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "word": {
+            "type": "string",
+            "title": "Word"
+          },
+          "char_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Char Offset"
+          },
+          "char_end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Char End"
+          },
+          "ocr_corrections": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Ocr Corrections"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "word",
+          "char_offset",
+          "char_end",
+          "ocr_corrections",
+          "status"
+        ],
+        "title": "SpellIssueOut"
+      },
+      "SystemConfigCreate": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "title": "SystemConfigCreate"
+      },
+      "SystemConfigResponse": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "value",
+          "updated_at"
+        ],
+        "title": "SystemConfigResponse"
+      },
+      "SystemConfigUpdate": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "title": "SystemConfigUpdate"
+      },
+      "SystemStats": {
+        "properties": {
+          "total_books": {
+            "type": "integer",
+            "title": "Total Books"
+          },
+          "books_by_status": {
+            "items": {
+              "$ref": "#/components/schemas/BookStatusCount"
+            },
+            "type": "array",
+            "title": "Books By Status"
+          },
+          "page_stats": {
+            "$ref": "#/components/schemas/PageStats"
+          },
+          "chunk_stats": {
+            "$ref": "#/components/schemas/ChunkStats"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_books",
+          "books_by_status",
+          "page_stats",
+          "chunk_stats"
+        ],
+        "title": "SystemStats"
+      },
+      "UpdateAutoCorrectRuleRequest": {
+        "properties": {
+          "corrected_word": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corrected Word"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "title": "UpdateAutoCorrectRuleRequest"
+      },
+      "UserPublic": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          },
+          "last_login_ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login Ip"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "display_name",
+          "role"
+        ],
+        "title": "UserPublic",
+        "description": "Public user info returned to clients."
+      },
+      "UserRole": {
+        "type": "string",
+        "enum": [
+          "admin",
+          "editor",
+          "reader"
+        ],
+        "title": "UserRole",
+        "description": "User role enumeration for RBAC."
+      },
+      "UserRoleUpdate": {
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role"
+        ],
+        "title": "UserRoleUpdate",
+        "description": "Request body for updating a user's role."
+      },
+      "UserStatusUpdate": {
+        "properties": {
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "required": [
+          "is_active"
+        ],
+        "title": "UserStatusUpdate",
+        "description": "Request body for updating a user's active status."
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -1082,6 +5537,12 @@
           "type"
         ],
         "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
       }
     }
   }
