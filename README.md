@@ -1,20 +1,30 @@
 # Kitabim.AI
 
-**Kitabim.AI** is an intelligent Uyghur Digital Library. It digitizes Uyghur books through AI-powered OCR, supports editorial curation, and lets readers have natural-language conversations with the library's contents.
+**Kitabim.AI** is the definitive intelligent knowledge base for Uyghur literature, history, and culture — semantically indexing every book published in the Uyghur language and making that knowledge explorable through AI-powered conversation.
+
+---
+
+## Mission & Scale
+
+Uyghur is spoken by millions yet remains severely underrepresented in the digital world. Kitabim.AI is building the most comprehensive and authentic Uyghur-language knowledge base ever assembled, targeting the complete corpus of Uyghur-language publications across literature, history, poetry, science, and culture.
+
+**Target:** every book published in Uyghur — the complete written record of a civilization.
+
+This is not a search index or a catalogue. It is a living, queryable knowledge base where the entire body of Uyghur written knowledge can be explored through natural-language conversation.
 
 ---
 
 ## The Problem We Solve
 
-Uyghur books have no digital search. A reader looking for a passage, a character, or a theme in a shelf of novels has no tool to help them. Even if text is extracted by OCR, a keyword search fails — Uyghur is agglutinative, pronouns are ambiguous, and the user rarely knows which of fifty books holds the answer.
+Uyghur literature, history, and culture exist almost entirely in physical form. Millions of speakers have no way to search, discover, or query the written knowledge of their own civilization — and as physical books become scarce, that knowledge risks being lost entirely. Even where text can be extracted by OCR, a keyword search fails: Uyghur is agglutinative, pronouns are ambiguous, and a reader rarely knows which of hundreds of books holds the answer they need.
 
-**Our solution is an agentic reading assistant** that reasons over the entire library before it answers. Instead of a single vector search, a language model agent decides which tools to call, in which order, to collect enough evidence before forming a response.
+**Our solution is a knowledge-base agent** that reasons over the entire corpus before it answers. Instead of a single vector search, a language-model agent decides which tools to call, in which order, to collect enough evidence before forming a response.
 
 ---
 
-## AI Reading Assistant — Agentic GraphRAG
+## Knowledge Base Agent — Agentic GraphRAG
 
-The chat interface is powered by an **agentic loop built on LangGraph** that runs for every question not handled by specialized fast-path metadata handlers.
+The knowledge-base agent chat interface is powered by an **agentic loop built on LangGraph** that runs for every question that isn't resolved by specialized fast-path handlers.
 
 ```mermaid
 graph TD
@@ -36,7 +46,7 @@ graph TD
 
 **How Agentic GraphRAG works:**
 
-1. **Context Injection** — before the first LLM call, the agent's opening message is enriched with the current book ID, previously-referenced book IDs from the conversation, and a genre/category filter. This often eliminates the discovery step entirely.
+1. **Context Injection** — before the first LLM call, the agent's opening message is enriched with the current book ID, previously-referenced book IDs from the conversation, and a genre/category filter. This often eliminates the discovery step.
 
 2. **Parallel Tool-Calling Loop** — the LangGraph agent decides which retrieval tools to call and can fan out to execute them in parallel (using LangGraph's `Send` primitive). These tools include:
    - `search_chunks` — pgvector similarity search over indexed passages in PostgreSQL (L1 + L2 cache).
@@ -49,29 +59,33 @@ graph TD
    - `get_book_author` / `get_books_by_author` — catalog metadata lookups.
    - `search_catalog` — library browsing and general listing queries.
 
-3. **Hybrid Context Fusion & Grading** — raw text chunks from PostgreSQL and structured graph relationships (e.g. `(سۇلتان سەئىدخام: Person) -[GRANDCHILD_OF]-> (يۇنۇسخان: Person)`) from Memgraph are fused together. The context is then analyzed by a `grade_context` node to filter out low-relevance information.
+3. **Hybrid Context Fusion & Grading** — raw text chunks from PostgreSQL and structured graph relationships (e.g. `(سۇلتان سەئىدخام: Person) -[GRANDCHILD_OF]-> (يۇنۇسخان: Person)`) from Memgraph are fused together. A `grade_context` node then filters out low-relevance information.
 
 4. **Answer Generation** — a separate LLM call produces a streaming response from the final graded context, complete with inline citations pointing to the source books, volumes, and page numbers.
 
-**Specialized fast-path handlers** (enabled via `rag_fast_handlers_enabled` system config, default off) handle common patterns before the agent runs: identity and capability questions, "who wrote X?" and "what did Y write?" metadata lookups, follow-up detection (Uyghur pronouns, "چۇ" topic-shift clitic), and in-reader page/volume scoped questions.
+**Specialized fast-path handlers** (enabled via `rag_fast_handlers_enabled` system config, default off) resolve common patterns before the agent runs:
+   - Identity and capability questions
+   - "Who wrote X?" and "What did Y write?" metadata lookups
+   - Follow-up detection (Uyghur pronouns, "چۇ" topic-shift clitic)
+   - In-reader page/volume-scoped questions
 
-**4-level cache** — query rewrite (L0), query embedding (L1), chunk search results (L2), book summary search results (L3) — minimizes redundant LLM and database calls within a session.
+**Four-level cache** — query rewrite (L0), query embedding (L1), chunk search results (L2), book summary search results (L3) — minimizes redundant LLM and database calls within a session.
 
 See [docs/main/AGENTIC_RAG_DESIGN.md](docs/main/AGENTIC_RAG_DESIGN.md) for the full design and [docs/feature/create-knowledge-graph/memgraph-knowledge-graph.md](docs/feature/create-knowledge-graph/memgraph-knowledge-graph.md) for details on the Memgraph Knowledge Graph integration.
 
 
 ---
 
-## Core Technologies & AI Stack
+## Core Technologies and AI Stack
 
-We leverage several cutting-edge AI and database technologies to power our agentic reading assistant and processing pipelines:
+The platform is built on several specialized AI and database technologies that power the knowledge-base agent and processing pipelines:
 
-- **LangChain**: We use LangChain as the foundation for interfacing with Large Language Models (specifically Google's Gemini). It provides robust prompt templating, schema binding, and standard model integration. We utilize `ChatGoogleGenerativeAI` to execute structured output extraction, mapping model outputs directly into Pydantic models while handling transient generation/formatting errors gracefully using fallback mechanisms.
-- **LangGraph**: We utilize LangGraph to model and run our multi-step agentic RAG query loop. It provides state-machine control, allowing us to build stateful graphs with loops, conditional routing, and parallel execution. The query assistant runs as a LangGraph where nodes represent operations (like query decomposition, tool execution, and context grading) and edges govern the execution flow based on state variables.
-- **Memgraph**: We use Memgraph, an in-memory graph database, to store and query the semantic networks extracted from books. Graph data is ideal for capturing indirect relations between entities (characters, places, organizations) across different chapters or texts. We query Memgraph via high-performance Cypher statements to perform 1-hop subgraph retrieval, which is then fused into the LLM context.
-- **Ragas**: We employ the Ragas framework to evaluate the performance and quality of our retrieval-augmented generation. It allows us to quantitatively measure metrics like Faithfulness, Context Recall, and Answer Relevance. We run these evaluations asynchronously inside our worker queue, tracking metrics in PostgreSQL to display aggregate quality scores on the admin dashboard.
-- **pgvector (PostgreSQL)**: We use PostgreSQL with the `pgvector` extension to store page chunk embeddings and perform similarity searches. It acts as our dense retriever (L2 cache) for semantic text search, allowing fast vector index scans to retrieve relevant book passages.
-- **ARQ (Redis)**: We use ARQ as our lightweight, asynchronous task queue built on Redis. It orchestrates the background worker pipeline, driving the multi-stage ingestion workflow (OCR scanner, chunking, vector embedding, graph ingestion) and running scheduled system maintenance.
+- **LangChain**: The foundation for interfacing with Large Language Models (specifically Google's Gemini). LangChain provides robust prompt templating, schema binding, and standard model integration. Through `ChatGoogleGenerativeAI`, the system executes structured output extraction, mapping model outputs directly into Pydantic models while handling transient generation/formatting errors gracefully via fallback mechanisms.
+- **LangGraph**: Models and runs the multi-step agentic RAG query loop. LangGraph provides state-machine control for building stateful graphs with loops, conditional routing, and parallel execution. The query assistant runs as a LangGraph where nodes represent operations (query decomposition, tool execution, context grading) and edges govern execution flow based on state variables.
+- **Memgraph**: An in-memory graph database that stores and queries the semantic networks extracted from books. Graph data is ideal for capturing indirect relations between entities (characters, places, organizations) across different chapters or texts. High-performance Cypher statements perform 1-hop subgraph retrieval, which is then fused into the LLM context.
+- **Ragas**: The evaluation framework for measuring retrieval-augmented generation quality. Ragas measures metrics like Faithfulness, Context Recall, and Answer Relevance. Evaluations run asynchronously inside the worker queue, with metrics tracked in PostgreSQL and surfaced as aggregate quality scores on the admin dashboard.
+- **pgvector (PostgreSQL)**: PostgreSQL with the `pgvector` extension stores page-chunk embeddings and performs similarity searches. It acts as the dense retriever (L2 cache) for semantic text search, enabling fast vector-index scans to retrieve relevant book passages.
+- **ARQ (Redis)**: A lightweight, asynchronous task queue built on Redis. ARQ orchestrates the background worker pipeline, driving the multi-stage ingestion workflow (OCR scanner, chunking, vector embedding, graph ingestion) and running scheduled system maintenance.
 
 ---
 
@@ -83,7 +97,7 @@ We leverage several cutting-edge AI and database technologies to power our agent
 - Text cleaning tailored for Uyghur script (removes OCR noise, header/footer markers)
 - Semantic chunking with overlapping windows; upsert strategy so re-chunking is idempotent
 - AI-generated book summaries stored with embeddings for topic-based book discovery
-- **Knowledge Graph Ingestion (GraphRAG)**: Extracts Person, Location, Organization, Work, and Event entities and their semantic relationships from book chunks, building a semantic network in Memgraph.
+- **Knowledge Graph Ingestion (GraphRAG)**: Extracts Person, Location, Organization, Work, and Event entities and their semantic relationships from book chunks, building a knowledge network in Memgraph.
 
 ### Curation Workspace
 - Per-page spell-check against a Uyghur dictionary with one-click corrections
@@ -91,10 +105,11 @@ We leverage several cutting-edge AI and database technologies to power our agent
 - Editor role with review queue; books go public only after editorial sign-off
 
 ### User Management & Admin
-- Google OAuth login; role-based access: **Admin**, **Editor**, **Reader**, **Guest**
+- OAuth login (Google, Facebook, X)
+- Role-based access: **Admin**, **Editor**, **Reader**, **Guest**
 - JWT access + refresh tokens via httpOnly cookies
 - Admin dashboard with per-book pipeline stats, user management, and RAG evaluation metrics
-- All AI models and thresholds configurable at runtime via `system_configs` table — no redeploy required
+- All AI models and thresholds are configurable at runtime via `system_configs` table — no redeploy required
 
 ---
 
