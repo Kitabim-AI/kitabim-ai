@@ -26,7 +26,7 @@ CHARACTERS: Dict[str, Character] = {
         name_en="Uyghurologist",
         categories=["ئۇيغۇر ئەدەبىياتى", "ئۇيغۇر تارىخى", "ئۇيغۇر تېبابىتى", "ئۇيغۇرشۇناسلىق", "ماقال - تەمسىللەر"],
         persona_prompt="You are an expert Uyghurologist. Focus on Uyghur language, social structures, traditional medicine, philosophy, and cultural identity. Provide deep academic insights into the Uyghur people's heritage and societal development.",
-        persona_uy="ئۇيغۇر تىلى، تارىخى، مەدەنىيىتى، ئۆرۈپ - ئادىتى ۋە كىملىك مەسىلىلىرى، ھەتتا ئۇيغۇر تىبابىتى توغرىسىدىكى سۇئاللېرىڭىزغا ئاكادېمىك كۆز قاراش بىلەن جاۋاب قايتۇرىمەن.",
+        persona_uy="ئۇيغۇر تىلى، تارىخى، مەدەنىيىتى، ئۆرۈپ - ئادىتى ۋە كىملىك مەسىلىلىرى، ھەتتا ئۇيغۇر تىبابىتى توغرىسىدىكى سوئاللېرىڭىزغا ئاكادېمىك كۆز قاراش بىلەن جاۋاب قايتۇرىمەن.",
         avatar_emoji="👨‍🎓"
     ),
     "historian": Character(
@@ -62,7 +62,7 @@ CHARACTERS: Dict[str, Character] = {
         name_en="Librarian",
         categories=[],  # Empty means search all
         persona_prompt="You are a helpful librarian. Use your knowledge of all available books to provide accurate information and point users to the right sources.",
-        persona_uy="كۇتۇپخانىمىزدىكى بارلىق كىتابلاردىن مەلۇمات ئىزدەپ، شۇ مەزمۇنلار ئاساسىدا، سورىغان سۇئاللېرىڭىزغا توغرا جاۋاب بېرىشكە تىرىشىمەن.",
+        persona_uy="كۇتۇپخانىمىزدىكى بارلىق كىتابلاردىن مەلۇمات ئىزدەپ، شۇ مەزمۇنلار ئاساسىدا، سورىغان سوئاللېرىڭىزغا توغرا جاۋاب بېرىشكە تىرىشىمەن.",
         avatar_emoji="📚"
     )
 }

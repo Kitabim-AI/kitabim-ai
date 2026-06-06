@@ -4,13 +4,22 @@
 
 ```mermaid
 flowchart TD
-    START([START]) --> plan_query
+    START([START]) --> decompose_query
+
+    decompose_query["decompose_query
+    ─────────────────
+    Heuristic: count ? / ؟
+    LLM split only if > 1 question
+    Emits: decompose"]
+
+    decompose_query --> plan_query
 
     plan_query["plan_query
     ─────────────────
     Heuristic intent detection
     No LLM call
-    Detects: current_page / catalog / content_search"]
+    Emits: planning
+    Intents: current_page / catalog / content_search"]
 
     plan_query --> agent_step
 
@@ -36,7 +45,7 @@ flowchart TD
     Aggregates results
     Recomputes total_chunks from search observations"]
 
-    collect_tools -->|"total_chunks ≥ 8 OR step_count ≥ 4"| build_context
+    collect_tools -->|"total_chunks ≥ 8 OR step_count ≥ 6"| build_context
     collect_tools -->|"else (loop back)"| agent_step
 
     build_context["build_context
@@ -49,7 +58,7 @@ flowchart TD
     grade_context["grade_context
     ─────────────────
     Filters chunks: keep ≥ 85% of top score
-    Min 3 chunks · hard cap 20 chunks
+    Min 3 chunks · hard cap 25 chunks
     Preserves metadata blocks"]
 
     grade_context --> generate_answer
@@ -57,13 +66,14 @@ flowchart TD
     generate_answer["generate_answer
     ─────────────────
     Streams answer tokens
-    Uses graded_context (falls back to retrieved)
+    Uses graded_context (falls back to retrieved_context)
     Emits via StreamWriter"]
 
     generate_answer --> END_NODE([END])
 
     style START fill:#2d6a4f,color:#fff,stroke:none
     style END_NODE fill:#1d3557,color:#fff,stroke:none
+    style decompose_query fill:#457b9d,color:#fff,stroke:none
     style plan_query fill:#457b9d,color:#fff,stroke:none
     style agent_step fill:#e63946,color:#fff,stroke:none
     style execute_tool fill:#f4a261,color:#000,stroke:none
@@ -77,15 +87,15 @@ flowchart TD
 
 | Loop | Nodes | Exit Condition |
 |------|-------|----------------|
-| **ReAct loop** | `agent_step` ↔ `collect_tools` | `total_chunks ≥ 8` or `step_count ≥ 4` |
+| **ReAct loop** | `agent_step` ↔ `collect_tools` | `total_chunks ≥ 8` or `step_count ≥ 6` |
 
 ## Thresholds
 
 | Constant | Value | Purpose |
 |----------|-------|---------|
-| `AGENT_MAX_STEPS` | 4 | Max ReAct iterations before forcing answer |
+| `AGENT_MAX_STEPS` | 6 | Max ReAct iterations before forcing answer |
 | `AGENT_ENOUGH_CHUNKS` | 8 | Early exit from ReAct loop |
-| `AGENT_MAX_CONTEXT_CHUNKS` | 20 | Hard cap on chunks passed to answer |
+| `AGENT_MAX_CONTEXT_CHUNKS` | 25 | Hard cap on chunks passed to answer LLM |
 | `GRADE_RELATIVE_THRESHOLD` | 0.85 | Keep chunks with score ≥ 85% of top |
 | `MIN_CHUNKS_AFTER_GRADING` | 3 | Safety floor — never drop below this |
 
@@ -97,12 +107,11 @@ flowchart TD
 | `messages` | list (add_messages) | agent_step, execute_tool |
 | `observations` | list[dict] (add) | execute_tool |
 | `total_chunks` | int | collect_tools |
-| `llm_calls` | int | agent_step |
-| `step_count` | int | agent_step |
-| `query_plan` | dict | plan_query |
+| `llm_calls` | int (add) | agent_step |
+| `step_count` | int (add) | agent_step |
+| `sub_questions` | list[str] | decompose_query |
 | `retrieved_context` | str | build_context |
 | `graded_context` | str | grade_context |
 | `used_book_ids` | list[str] | build_context |
 | `final_answer` | str | generate_answer |
 | `stop_reason` | str | error paths |
-```

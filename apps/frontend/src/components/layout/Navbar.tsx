@@ -10,19 +10,20 @@ export const Navbar: React.FC = () => {
   const { isAuthenticated } = useAuth();
   const isEditor = useIsEditor();
   const { t } = useI18n();
-  const { 
-    view, 
-    setView, 
-    setSearchQuery, 
+  const {
+    view,
+    previousView,
+    setView,
+    setSearchQuery,
     isGlobalSearchOpen,
     setIsGlobalSearchOpen,
-    homeSearchQuery, 
-    setHomeSearchQuery, 
-    bookActions, 
-    chat, 
-    setPage, 
-    isLoading, 
-    activeTab 
+    homeSearchQuery,
+    setHomeSearchQuery,
+    bookActions,
+    chat,
+    setPage,
+    isLoading,
+    activeTab
   } = useAppContext();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -68,7 +69,7 @@ export const Navbar: React.FC = () => {
               label={t('nav.home')}
             />
             <NavButton
-              active={view === 'library'}
+              active={view === 'library' || (view === 'reader' && previousView === 'library')}
               onClick={() => { setSearchQuery(''); setView('library'); }}
               icon={<LibraryBig size={20} strokeWidth={2.5} />}
               label={t('nav.library')}
@@ -89,7 +90,7 @@ export const Navbar: React.FC = () => {
             )}
             {isEditor && (
               <NavButton
-                active={view === 'admin'}
+                active={view === 'admin' || (view === 'reader' && previousView === 'admin')}
                 onClick={() => { setSearchQuery(''); setView('admin'); setPage(1); }}
                 icon={<Settings size={20} strokeWidth={2.5} />}
                 label={t('nav.admin')}
@@ -178,7 +179,7 @@ export const Navbar: React.FC = () => {
                 label={t('nav.home')}
               />
               <MobileNavButton
-                active={view === 'library'}
+                active={view === 'library' || (view === 'reader' && previousView === 'library')}
                 onClick={() => handleNavClick(() => setView('library'))}
                 icon={<LibraryBig size={20} strokeWidth={2.5} />}
                 label={t('nav.library')}
@@ -199,7 +200,7 @@ export const Navbar: React.FC = () => {
               )}
               {isEditor && (
                 <MobileNavButton
-                  active={view === 'admin'}
+                  active={view === 'admin' || (view === 'reader' && previousView === 'admin')}
                   onClick={() => handleNavClick(() => { setView('admin'); setPage(1); })}
                   icon={<Settings size={20} strokeWidth={2.5} />}
                   label={t('nav.admin')}

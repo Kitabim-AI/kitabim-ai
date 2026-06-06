@@ -6,6 +6,7 @@ rules, and applies the corrections to each page via the auto_correct_service.
 """
 from __future__ import annotations
 
+import time
 import logging
 import traceback
 import asyncio
@@ -20,7 +21,7 @@ from app.services.auto_correct_service import (
     get_correction_rules
 )
 from app.core.config import settings
-from app.utils.observability import log_json
+from app.utils.observability import log_json, make_pipeline_event_payload
 
 logger = logging.getLogger("app.worker.auto_correct_job")
 
@@ -67,6 +68,7 @@ async def auto_correct_job(ctx, page_ids: List[int]) -> None:
         processed_book_ids.add(book_id)
         
         async with semaphore:
+            start_time = time.perf_counter()
             try:
                 async with db_session.async_session_factory() as session:
                     corrections_applied = await apply_auto_corrections_to_page(
@@ -76,10 +78,14 @@ async def auto_correct_job(ctx, page_ids: List[int]) -> None:
                     )
 
                     if corrections_applied > 0:
+                        duration_ms = int((time.perf_counter() - start_time) * 1000)
                         session.add(PipelineEvent(
                             page_id=page_id,
                             event_type="auto_correct_succeeded",
-                            payload=f'{{"corrections": {corrections_applied}}}'
+                            payload=make_pipeline_event_payload(
+                                duration_ms=duration_ms,
+                                extra_fields={"corrections": corrections_applied}
+                            )
                         ))
                         await session.commit()
 
@@ -97,12 +103,16 @@ async def auto_correct_job(ctx, page_ids: List[int]) -> None:
                                  page=page_number)
 
             except Exception as exc:
+                duration_ms = int((time.perf_counter() - start_time) * 1000)
                 async with db_session.async_session_factory() as session:
                     error_msg = repr(exc)[:500]
                     session.add(PipelineEvent(
                         page_id=page_id,
                         event_type="auto_correct_failed",
-                        payload=f'{{"error": "{error_msg}"}}'
+                        payload=make_pipeline_event_payload(
+                            duration_ms=duration_ms,
+                            extra_fields={"error": error_msg}
+                        )
                     ))
                     await session.commit()
 

@@ -82,7 +82,12 @@ async def run_spell_check_scanner(ctx) -> None:
         await session.execute(
             update(Page)
             .where(Page.id.in_(page_ids))
-            .values(spell_check_milestone="in_progress", last_updated=func.now())
+            .values(
+                spell_check_milestone="in_progress",
+                worker_id=ctx.get("worker_id", "unknown"),
+                claimed_at=func.now(),
+                last_updated=func.now()
+            )
         )
         
         # Also update the Book record to show spell check is active in the Lite UI

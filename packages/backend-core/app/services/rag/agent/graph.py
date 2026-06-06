@@ -35,9 +35,13 @@ def _route_after_agent_step(state: AgentState):
 
 
 def _route_after_collect_tools(state: AgentState) -> str:
-    if state["total_chunks"] >= AGENT_ENOUGH_CHUNKS:
+    ctx = state.get("ctx")
+    enough_chunks = getattr(ctx, "agent_enough_chunks", AGENT_ENOUGH_CHUNKS)
+    max_steps = getattr(ctx, "agent_max_steps", AGENT_MAX_STEPS)
+
+    if state["total_chunks"] >= enough_chunks:
         return "build_context"
-    if state["step_count"] >= AGENT_MAX_STEPS:
+    if state["step_count"] >= max_steps:
         return "build_context"
     return "agent_step"
 
@@ -46,7 +50,28 @@ def _route_after_collect_tools(state: AgentState) -> str:
 # Graph construction
 # ---------------------------------------------------------------------------
 
-_graph = None
+def wrap_node_with_request_id(node_func):
+    import functools
+    from app.utils.observability import request_id_var
+
+    @functools.wraps(node_func)
+    async def wrapper(state, *args, **kwargs):
+        ctx = None
+        if isinstance(state, dict):
+            ctx = state.get("ctx")
+        elif hasattr(state, "ctx"):
+            ctx = state.ctx
+
+        token = None
+        if ctx and hasattr(ctx, "request_id") and ctx.request_id:
+            token = request_id_var.set(ctx.request_id)
+        try:
+            return await node_func(state, *args, **kwargs)
+        finally:
+            if token:
+                request_id_var.reset(token)
+
+    return wrapper
 
 
 def _build_graph():
@@ -61,14 +86,14 @@ def _build_graph():
 
     builder = StateGraph(AgentState)
 
-    builder.add_node("decompose_query", decompose_query_node)
-    builder.add_node("plan_query", plan_query_node)
-    builder.add_node("agent_step", agent_step_node)
-    builder.add_node("execute_tool", execute_tool_node)
-    builder.add_node("collect_tools", collect_tools_node)
-    builder.add_node("build_context", build_context_node)
-    builder.add_node("grade_context", grade_context_node)
-    builder.add_node("generate_answer", generate_answer_node)
+    builder.add_node("decompose_query", wrap_node_with_request_id(decompose_query_node))
+    builder.add_node("plan_query", wrap_node_with_request_id(plan_query_node))
+    builder.add_node("agent_step", wrap_node_with_request_id(agent_step_node))
+    builder.add_node("execute_tool", wrap_node_with_request_id(execute_tool_node))
+    builder.add_node("collect_tools", wrap_node_with_request_id(collect_tools_node))
+    builder.add_node("build_context", wrap_node_with_request_id(build_context_node))
+    builder.add_node("grade_context", wrap_node_with_request_id(grade_context_node))
+    builder.add_node("generate_answer", wrap_node_with_request_id(generate_answer_node))
 
     # Entry
     builder.add_edge(START, "decompose_query")
@@ -98,6 +123,9 @@ def _build_graph():
     builder.add_edge("generate_answer", END)
 
     return builder.compile()
+
+
+_graph = None
 
 
 def get_or_build_graph():
@@ -153,7 +181,6 @@ def build_initial_state(ctx) -> AgentState:
         total_chunks=0,
         llm_calls=0,
         step_count=0,
-        query_plan={},
         retrieved_context="",
         graded_context="",
         sub_questions=[],
@@ -169,8 +196,8 @@ def populate_ctx_from_state(ctx, state: AgentState) -> None:
     all_chunks = [
         chunk
         for obs in observations
-        if obs["tool"] == "search_chunks"
-        for chunk in obs["result"].get("chunks", [])
+        if obs["tool"] == "search_chunks" and obs["result"].get("ok", True)
+        for chunk in (obs["result"].get("data") or obs["result"]).get("chunks", [])
     ]
 
     ctx.used_book_ids = state.get("used_book_ids", [])

@@ -15,9 +15,9 @@ logger = logging.getLogger("app.rag.agent.nodes.collect_tools")
 
 async def collect_tools_node(state: AgentState) -> dict:
     total_chunks = sum(
-        len(obs["result"].get("chunks", []))
+        len((obs["result"].get("data") or obs["result"]).get("chunks", []))
         for obs in state["observations"]
-        if obs["tool"] == "search_chunks"
+        if obs["tool"] == "search_chunks" and obs["result"].get("ok", True)
     )
 
     log_json(

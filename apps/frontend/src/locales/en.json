@@ -95,6 +95,7 @@
     "switchLanguage": "Switch Language"
   },
   "home": {
+    "searchOrChatPlaceholder": "Ask questions or search books, authors or topics...",
     "searchPlaceholder": "Search books, authors or topics...",
     "topCategories": "All Categories",
     "searchResults": "Search Results",
@@ -170,6 +171,7 @@
     "referenceTitle": "Reference Content",
     "bookSummary": "Book Summary",
     "noContentFound": "No content found.",
+    "partialResultsWarning": "Warning: Some sources could not be searched due to a temporary system error. The answer below may be incomplete.",
     "thinkingPhrases": [
       "I understand your question",
       "Let me think about this",
@@ -220,6 +222,9 @@
     "category": "Category",
     "save": "Save",
     "cancel": "Cancel",
+    "backToLibrary": "Back to Library",
+    "hideChat": "Hide chat panel",
+    "showChat": "Show chat panel",
     "activeRecognizing": "Actively recognizing...",
     "goToPage": "Go to Page {{page}}",
     "reprocess": {
@@ -757,5 +762,17 @@
     "admin": "ئەمگەك,تېرىش",
     "chat": "ئەقىل,پاراسەت",
     "joinUs": "ئۆملۈك,بىرلىك,ياردەم"
+  },
+  "share": {
+    "shareBook": "Share Book",
+    "shareQA": "Share Answer",
+    "postToFacebook": "Post to Facebook",
+    "copyLink": "Copy Link",
+    "linkCopied": "Copied!",
+    "previewLabel": "Preview on Facebook",
+    "questionLabel": "Question",
+    "answerLabel": "Answer",
+    "textCopied": "Text Copied!",
+    "pasteHint": "Text copied — paste it into your Facebook post"
   }
 }

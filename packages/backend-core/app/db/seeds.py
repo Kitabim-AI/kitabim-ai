@@ -66,6 +66,16 @@ async def seed_system_configs(session: AsyncSession):
             "value": "5",
             "description": "Maximum number of concurrent LLM batch calls during knowledge graph extraction. Each call processes kg_chunk_batch_size chunks."
         },
+        {
+            "key": "agent_max_steps",
+            "value": "6",
+            "description": "Maximum ReAct iterations/steps per round in the agent loop."
+        },
+        {
+            "key": "agent_enough_chunks",
+            "value": "8",
+            "description": "Early-exit threshold: stop agent loop once this many chunks are collected."
+        },
     ]
     
     for item in defaults:

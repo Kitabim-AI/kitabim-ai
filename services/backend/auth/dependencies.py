@@ -17,9 +17,13 @@ from app.db.session import get_session
 from app.services.cache_service import cache_service
 from app.core import cache_config
 from app.core.config import settings
+from app.utils.lru_cache import LocalLRUCache
 
 logger = logging.getLogger(__name__)
 
+# In-process cache for user profiles — TTL matches Redis profile TTL so a
+# disabled account is always evicted within cache_ttl_user_profile seconds.
+user_lru_cache = LocalLRUCache(maxsize=1000, ttl=float(settings.cache_ttl_user_profile))
 
 # HTTPBearer with auto_error=False to allow guest access
 security = HTTPBearer(auto_error=False)
@@ -51,13 +55,32 @@ async def get_current_user_optional(
         payload = decode_jwt(credentials.credentials, expected_type="access")
         user_id = payload["sub"]
         
-        # Cache Lookup
+        # 1. Local LRU Cache Lookup (in-process)
+        cached_user = user_lru_cache.get(user_id)
+        if cached_user is not None:
+            if not cached_user.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User account is disabled",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            return cached_user
+        
+        # 2. Redis Cache Lookup
         cache_key = cache_config.KEY_USER.format(user_id=user_id)
-        cached_user = await cache_service.get(cache_key)
-        if cached_user:
-            return User.model_validate(cached_user)
+        cached_user_data = await cache_service.get(cache_key)
+        if cached_user_data:
+            user = User.model_validate(cached_user_data)
+            user_lru_cache.set(user_id, user)
+            if not user.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User account is disabled",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            return user
 
-        # DB Fetch
+        # 3. DB Fetch
         user = await get_user_by_id(db, user_id)
         
         if not user:
@@ -73,9 +96,9 @@ async def get_current_user_optional(
             user.model_dump(mode='json'), 
             ttl=settings.cache_ttl_user_profile
         )
+        user_lru_cache.set(user_id, user)
 
         if not user.is_active:
-
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="User account is disabled",

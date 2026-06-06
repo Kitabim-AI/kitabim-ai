@@ -4,14 +4,14 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_, case
+from sqlalchemy import select, func, or_, case, cast, Integer, desc
 
 from app.core.pipeline import (
     PIPELINE_STEP_EMBEDDING,
     PIPELINE_STEP_OCR,
 )
 from app.db.session import get_session
-from app.db.models import Book, Page, Chunk
+from app.db.models import Book, Page, Chunk, PipelineEvent
 from auth.dependencies import require_admin
 
 router = APIRouter()
@@ -212,3 +212,58 @@ async def get_rag_quality_stats(
         "avg_answer_relevance": round(avg_answer_relevance, 3) if avg_answer_relevance is not None else None,
     }
 
+
+class PipelineStageStats(BaseModel):
+    stage: str
+    avg_duration_ms: float
+    p95_duration_ms: float | None
+    max_duration_ms: int | None
+    total_events: int
+
+
+class PipelinePerformanceStats(BaseModel):
+    stages: list[PipelineStageStats]
+
+
+@router.get("/pipeline", response_model=PipelinePerformanceStats)
+async def get_pipeline_performance_stats(
+    current_user=Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    """Get pipeline stage performance metrics from PipelineEvent duration_ms (admin only).
+
+    Aggregates avg / p95 / max processing duration per event_type
+    using the JSON payload stored in each PipelineEvent row.
+    """
+    duration_expr = cast(
+        PipelineEvent.payload["duration_ms"].as_integer(), Integer
+    )
+
+    stmt = (
+        select(
+            PipelineEvent.event_type,
+            func.avg(duration_expr).label("avg_duration"),
+            func.percentile_cont(0.95).within_group(duration_expr).label("p95_duration"),
+            func.max(duration_expr).label("max_duration"),
+            func.count().label("count"),
+        )
+        .where(PipelineEvent.payload["duration_ms"].is_not(None))
+        .group_by(PipelineEvent.event_type)
+        .order_by(desc("count"))
+    )
+
+    result = await session.execute(stmt)
+    rows = result.all()
+
+    return {
+        "stages": [
+            PipelineStageStats(
+                stage=row.event_type,
+                avg_duration_ms=round(float(row.avg_duration or 0), 1),
+                p95_duration_ms=round(float(row.p95_duration), 1) if row.p95_duration is not None else None,
+                max_duration_ms=int(row.max_duration) if row.max_duration is not None else None,
+                total_events=row.count,
+            )
+            for row in rows
+        ]
+    }

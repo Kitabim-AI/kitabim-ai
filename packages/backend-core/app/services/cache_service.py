@@ -155,6 +155,50 @@ class CacheService:
             return None
         return self.redis
 
+    async def get_namespace_version(self, namespace: str) -> str:
+        """Get the current version of a cache namespace from Redis, defaulting to '1' if not set."""
+        if not settings.redis_cache_enabled:
+            return "1"
+        if await self._circuit_breaker.is_open():
+            return "1"
+        try:
+            full_key = f"{settings.redis_cache_key_prefix}version:{namespace}"
+            version = await self.redis.get(full_key)
+            if version is None:
+                await self.redis.set(full_key, "1")
+                return "1"
+            return version.decode() if isinstance(version, bytes) else str(version)
+        except Exception as e:
+            logger.warning(f"Failed to get cache version for namespace {namespace}: {e}")
+            return "1"
+
+    async def bump_namespace_version(self, namespace: str) -> str:
+        """Increment the version of a cache namespace in Redis, returning the new version."""
+        if not settings.redis_cache_enabled:
+            return "1"
+        if await self._circuit_breaker.is_open():
+            return "1"
+        try:
+            full_key = f"{settings.redis_cache_key_prefix}version:{namespace}"
+            new_version = await self.redis.incr(full_key)
+            logger.info(f"Bumped cache namespace '{namespace}' version to {new_version}")
+            return str(new_version)
+        except Exception as e:
+            logger.warning(f"Failed to bump cache version for namespace {namespace}: {e}")
+            return "1"
+
+    async def publish_invalidation(self, channel: str, message: str) -> None:
+        """Publish an invalidation message to a Redis Pub/Sub channel."""
+        if not settings.redis_cache_enabled:
+            return
+        if await self._circuit_breaker.is_open():
+            return
+        try:
+            await self.redis.publish(channel, message)
+            logger.info(f"Published invalidation event to channel '{channel}': {message}")
+        except Exception as e:
+            logger.warning(f"Failed to publish invalidation event to channel '{channel}': {e}")
+
 # Singleton instance
 
 cache_service = CacheService()

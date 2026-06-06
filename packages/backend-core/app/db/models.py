@@ -184,6 +184,8 @@ class Page(Base):
         nullable=False
     )
     updated_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    worker_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    claimed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     book: Mapped["Book"] = relationship("Book", back_populates="pages")

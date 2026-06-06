@@ -22,6 +22,7 @@ def mock_cache(monkeypatch):
     m = AsyncMock()
     m.get = AsyncMock(return_value=None)
     m.set = AsyncMock()
+    m.get_namespace_version = AsyncMock(return_value="v1")
     
     # We need to mock settings as well
     class MockSettings:
@@ -47,6 +48,10 @@ async def test_get_books_uses_cache(mock_cache):
     result = await books_endpoint.get_books(
         page=1,
         pageSize=20,
+        q=None,
+        category=None,
+        sortBy="title",
+        order=1,
         current_user=None,
         session=AsyncMock(),
     )

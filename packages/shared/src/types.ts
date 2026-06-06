@@ -1,57 +1,49 @@
+import { components } from './api-types';
 
-export interface ExtractionResult {
-  pageNumber: number;
-  text?: string;
-  status: 'pending' | 'ocr_processing' | 'ocr_done' | 'indexing' | 'indexed' | 'error';
-  pipelineStep?: 'ocr' | 'chunking' | 'embedding' | null;
-  milestone?: 'idle' | 'running' | 'succeeded' | 'failed' | null;
-  error?: string;
-}
-
-export interface ErrorEvent {
+export type ErrorEventSchema = components['schemas']['ErrorEvent'];
+export interface ErrorEvent extends Omit<ErrorEventSchema, 'ts' | 'context'> {
   ts: string | Date;
-  kind: string;
-  message: string;
   context?: Record<string, unknown>;
 }
 
-export interface Book {
-  id: string;
-  contentHash: string;
-  title: string;
-  author: string;
-  volume?: number | null;
-  totalPages: number;
-  pages: ExtractionResult[];
-  status: 'pending' | 'ocr_processing' | 'ocr_done' | 'indexing' | 'ready' | 'error';
+export type ExtractionResultSchema = components['schemas']['ExtractionResult'];
+export interface ExtractionResult extends Omit<ExtractionResultSchema, 'status' | 'pipelineStep' | 'milestone'> {
+  status: 'pending' | 'ocr_processing' | 'ocr_done' | 'indexing' | 'indexed' | 'error';
+  pipelineStep?: 'ocr' | 'chunking' | 'embedding' | null;
+  milestone?: 'idle' | 'running' | 'succeeded' | 'failed' | null;
+}
+
+export type BookSchema = components['schemas']['Book'];
+export interface Book extends Omit<
+  BookSchema,
+  | 'uploadDate'
+  | 'lastUpdated'
+  | 'lastError'
+  | 'pages'
+  | 'status'
+  | 'visibility'
+  | 'pipelineStep'
+  | 'ocrMilestone'
+  | 'chunkingMilestone'
+  | 'embeddingMilestone'
+  | 'spellCheckMilestone'
+> {
   uploadDate: Date;
   lastUpdated: Date | null;
-  coverUrl?: string;
-  visibility?: 'public' | 'private';
-  categories?: string[];
-  tags?: string[];
   lastError?: ErrorEvent | null;
-  readCount?: number;
-  fileType?: string;
-  fileName?: string;
-  source?: string;
+  pages: ExtractionResult[];
+  status: 'pending' | 'ocr_processing' | 'ocr_done' | 'indexing' | 'ready' | 'error';
+  visibility?: 'public' | 'private';
   pipelineStep?: 'ocr' | 'chunking' | 'embedding' | 'spell_check' | 'ready' | null;
-  pipelineStats?: Record<string, number>;
-  hasSummary?: boolean;
-  hasGraph?: boolean;
-  // Book-level milestones (denormalized from pages for performance)
   ocrMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';
   chunkingMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';
   embeddingMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';
   spellCheckMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';
 }
 
-export interface PaginatedBooks {
+export type PaginatedBooksSchema = components['schemas']['PaginatedBooks'];
+export interface PaginatedBooks extends Omit<PaginatedBooksSchema, 'books'> {
   books: Book[];
-  total: number;
-  totalReady: number;
-  page: number;
-  pageSize: number;
 }
 
 export interface Message {
@@ -62,4 +54,6 @@ export interface Message {
   evalId?: number;
   /** User thumbs rating once submitted ('positive' | 'negative'). */
   feedback?: 'positive' | 'negative';
+  /** Whether the message is a degraded/partial response due to a tool failure */
+  partialResult?: boolean;
 }

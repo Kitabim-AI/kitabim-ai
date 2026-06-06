@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import html as html_module
+import json
 import logging
 from typing import Optional
+from urllib.parse import urlencode, urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request, Cookie
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -118,6 +121,14 @@ async def oauth_login(request: Request, provider: str, response: Response, next:
     use_pkce = provider.lower() == "twitter"
     oauth_state = OAuthState.generate(use_pkce=use_pkce)
     if next:
+        _parsed_next = urlparse(next)
+        _allowed_origins = {o.strip() for o in settings.cors_origins.split(",") if o.strip()}
+        _next_origin = f"{_parsed_next.scheme}://{_parsed_next.netloc}"
+        if _parsed_next.scheme not in ("http", "https") or _next_origin not in _allowed_origins:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid redirect URI",
+            )
         oauth_state.redirect_uri = next
 
     # Encode all state into a signed JWT passed as the OAuth `state` parameter.
@@ -201,22 +212,22 @@ async def oauth_callback(
         user_info = await oauth_provider.get_user_info(access_token)
         logger.info(f"User info retrieved for {provider}")
 
-        # Check if email is verified (skip for Twitter placeholder emails)
-        if not user_info.email_verified and not user_info.email.endswith("@twitter.placeholder"):
+        # Check if email is verified (skip for Twitter/Facebook/Instagram placeholder emails)
+        if not user_info.email_verified and not user_info.email.endswith(("@twitter.placeholder", "@facebook.placeholder", "@instagram.placeholder")):
             return _error_response(t("errors.email_not_verified"))
 
         # Check if user exists with this provider
         user = await get_user_by_provider(session, provider, user_info.provider_id)
 
         if not user:
-            # Check if email exists with different provider (no auto-linking)
-            if not user_info.email.endswith(("@twitter.placeholder", "@facebook.placeholder")):
+            # If email exists under a different provider, link to that account.
+            # Verified OAuth emails are treated as proof of identity.
+            if user_info.email_verified and not user_info.email.endswith(("@twitter.placeholder", "@facebook.placeholder", "@instagram.placeholder")):
                 existing_user = await get_user_by_email(session, user_info.email)
                 if existing_user:
-                    return _error_response(
-                        t("errors.email_already_exists")
-                    )
+                    user = existing_user
 
+        if not user:
             # Determine role based on admin emails
             role = UserRole.ADMIN if is_admin_email(user_info.email) else UserRole.READER
 
@@ -254,14 +265,14 @@ async def oauth_callback(
         # Commit changes
         await session.commit()
 
-        # Mobile redirect flow: redirect back to app with token in URL
+        # Mobile redirect flow: redirect back to app with token in fragment
         if saved_state.redirect_uri:
-            from urllib.parse import urlencode, urlparse
             parsed = urlparse(saved_state.redirect_uri)
-            # Safety check: only allow same-host or relative redirects
-            request_host = request.headers.get("host", "")
-            if not parsed.netloc or parsed.netloc == request_host:
-                callback_url = f"{saved_state.redirect_uri}?{urlencode({'access_token': access_token})}"
+            allowed_origins = {o.strip() for o in settings.cors_origins.split(",") if o.strip()}
+            redirect_origin = f"{parsed.scheme}://{parsed.netloc}"
+            if parsed.scheme in ("http", "https") and redirect_origin in allowed_origins:
+                # Use fragment (#) so the token is never sent to the server or logged
+                callback_url = f"{saved_state.redirect_uri}#{urlencode({'access_token': access_token})}"
                 redirect_response = RedirectResponse(url=callback_url)
                 redirect_response.set_cookie(
                     key=REFRESH_TOKEN_COOKIE,
@@ -394,6 +405,7 @@ async def auth_health():
         "google_oauth": "google" in available_providers,
         "facebook_oauth": "facebook" in available_providers,
         "twitter_oauth": "twitter" in available_providers,
+        "instagram_oauth": "instagram" in available_providers,
     }
 
 
@@ -403,9 +415,9 @@ def _success_response(access_token: str, refresh_token: str) -> HTMLResponse:
     """
     # Get allowed origins for secure postMessage (no wildcards)
     allowed_origins_list = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
-    allowed_origins_json = str(allowed_origins_list).replace("'", '"')
+    allowed_origins_json = json.dumps(allowed_origins_list)
 
-    html = f"""
+    html_content = f"""
     <!DOCTYPE html>
     <html>
     <head>
@@ -450,22 +462,12 @@ def _success_response(access_token: str, refresh_token: str) -> HTMLResponse:
             const accessToken = "{access_token}";
             const allowedOrigins = {allowed_origins_json};
 
-            // Use BroadcastChannel as a robust alternative to postMessage
+            // BroadcastChannel used only as a last-resort fallback when no opener exists,
+            // so it never leaks the token to unrelated same-origin tabs during popup flow.
             const authChannel = new BroadcastChannel('kitabim_auth');
 
             function notifyAndClose() {{
                 console.log('[Kitabim Auth] Attempting to notify opener...');
-
-                // 1. Notify via BroadcastChannel (works even if opener is null)
-                try {{
-                    authChannel.postMessage({{
-                        type: 'OAUTH_SUCCESS',
-                        accessToken: accessToken
-                    }});
-                    console.log('[Kitabim Auth] Broadcast success via BroadcastChannel');
-                }} catch (e) {{
-                    console.error('[Kitabim Auth] BroadcastChannel error:', e);
-                }}
 
                 // Try to post to opener (popup flow)
                 if (window.opener && !window.opener.closed) {{
@@ -525,7 +527,11 @@ def _success_response(access_token: str, refresh_token: str) -> HTMLResponse:
 
                     // After all attempts, if still no opener, handle the fallback
                     if (!notified) {{
-                        console.log('[Kitabim Auth] Opener not found after retries, storing token and redirecting to app');
+                        console.log('[Kitabim Auth] Opener not found after retries, using BroadcastChannel fallback');
+                        // BroadcastChannel fallback — only fires when there is genuinely no popup
+                        // opener (i.e. browser-redirect flow, not popup flow).
+                        try {{ authChannel.postMessage({{ type: 'OAUTH_SUCCESS', accessToken: accessToken }}); }} catch (_) {{}}
+
                         // Store token in sessionStorage (clears when tab closes, not persisted).
                         // useAuth reads and clears it immediately on load via recoverSessionToken().
                         // window.close() is blocked by Safari when not opened via window.open(),
@@ -557,8 +563,8 @@ def _success_response(access_token: str, refresh_token: str) -> HTMLResponse:
     </html>
     """
     
-    response = HTMLResponse(content=html)
-    
+    response = HTMLResponse(content=html_content)
+
     # Set refresh token as httpOnly cookie
     response.set_cookie(
         key=REFRESH_TOKEN_COOKIE,
@@ -581,8 +587,9 @@ def _error_response(message: str) -> HTMLResponse:
     Generate HTML response for OAuth errors.
     """
     allowed_origins_list = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
-    allowed_origins_json = str(allowed_origins_list).replace("'", '"')
-    html = f"""
+    allowed_origins_json = json.dumps(allowed_origins_list)
+    _safe_message = html_module.escape(message)
+    html_content = f"""
     <!DOCTYPE html>
     <html>
     <head>
@@ -633,7 +640,7 @@ def _error_response(message: str) -> HTMLResponse:
         <div class="container">
             <div class="error-icon">⚠️</div>
             <h2>Login Failed</h2>
-            <div class="message">{message}</div>
+            <div class="message">{_safe_message}</div>
             <button onclick="window.close()">Close</button>
         </div>
         <script>
@@ -644,7 +651,7 @@ def _error_response(message: str) -> HTMLResponse:
                     for (const origin of allowedOrigins) {{
                         window.opener.postMessage({{
                             type: 'OAUTH_ERROR',
-                            error: "{message}"
+                            error: {json.dumps(message)}
                         }}, origin);
                     }}
                     // Auto-close after a short delay
@@ -659,7 +666,7 @@ def _error_response(message: str) -> HTMLResponse:
     """
     
     return HTMLResponse(
-        content=html, 
+        content=html_content,
         status_code=400,
         headers={
             # "Cross-Origin-Opener-Policy": "same-origin-allow-popups"

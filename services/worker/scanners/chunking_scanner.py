@@ -55,7 +55,12 @@ async def run_chunking_scanner(ctx) -> None:
         await session.execute(
             update(Page)
             .where(Page.id.in_(page_ids))
-            .values(chunking_milestone="in_progress", last_updated=func.now())
+            .values(
+                chunking_milestone="in_progress",
+                worker_id=ctx.get("worker_id", "unknown"),
+                claimed_at=func.now(),
+                last_updated=func.now()
+            )
         )
         # Update book-level chunking milestones
         for book_id in book_ids:

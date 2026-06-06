@@ -51,6 +51,7 @@ export function FacebookLoginButton({ className = '' }: LoginButtonProps) {
   );
 }
 
+
 export function TwitterLoginButton({ className = '' }: LoginButtonProps) {
   const { loginWithTwitter, isLoading } = useAuth();
   const { t } = useI18n();
@@ -73,7 +74,7 @@ export function TwitterLoginButton({ className = '' }: LoginButtonProps) {
 }
 
 export function OAuthButtonGroup({ className = '', align = 'down', side = 'left' }: { className?: string; align?: 'up' | 'down'; side?: 'left' | 'right' | 'center' }) {
-  const { loginWithGoogle, isLoading } = useAuth();
+  const { loginWithGoogle, loginWithFacebook, isLoading } = useAuth();
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -104,7 +105,6 @@ export function OAuthButtonGroup({ className = '', align = 'down', side = 'left'
       ),
       color: '#4285F4'
     },
-    /* Hidden for now
     {
       name: 'Facebook',
       onClick: loginWithFacebook,
@@ -117,19 +117,6 @@ export function OAuthButtonGroup({ className = '', align = 'down', side = 'left'
       ),
       color: '#1877F2'
     },
-    {
-      name: 'X',
-      onClick: loginWithTwitter,
-      icon: (
-        <div className="bg-black p-2 rounded-lg">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
-            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-          </svg>
-        </div>
-      ),
-      color: '#000000'
-    }
-    */
   ];
 
   return (

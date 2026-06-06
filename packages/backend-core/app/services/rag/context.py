@@ -53,3 +53,11 @@ class QueryContext:
     # ── Ragas eval payload — set by populate_ctx_from_state ─────────────────
     # Stores the final graded context text so _record_eval can persist it.
     graded_context: Optional[str] = None
+
+    # ── Correlation/Request ID ──────────────────────────────────────────────
+    request_id: Optional[str] = None
+
+    # ── Dynamic Agent Configurations ────────────────────────────────────────
+    agent_max_steps: int = 6
+    agent_enough_chunks: int = 8
+

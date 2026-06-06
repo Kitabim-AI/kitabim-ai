@@ -33,8 +33,15 @@ async def execute_tool_node(state: dict) -> dict:
 
     result = await dispatch_tool(tool_name, tool_args, ctx)
 
-    found_count = result.get("found_count", 0)
+    found_count = 0
+    if result.get("ok", True):
+        data = result.get("data") or result
+        if isinstance(data, dict):
+            found_count = data.get("found_count", 0)
+
     log_json(logger, logging.INFO, "Tool executed", tool=tool_name, found=found_count)
+    if not result.get("ok", True):
+        writer({"type": "error", "code": "tool_failure", "recoverable": True})
     writer({"type": "tool_result", "tool": tool_name, "found": found_count})
 
     obs = {"tool": tool_name, "args": tool_args, "result": result}
