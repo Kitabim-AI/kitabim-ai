@@ -25,8 +25,8 @@ from app.core.config import settings
 from app.core.prompts import BOOK_SUMMARY_PROMPT
 from app.db import session as db_session
 from app.db.models import Book, Page
-from app.db.repositories.book_summaries import BookSummariesRepository
-from app.db.repositories.system_configs import SystemConfigsRepository
+from app.db.repositories.book_summaries_repository import BookSummariesRepository
+from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.langchain import build_text_chain
 from app.langchain.models import GeminiEmbeddings
 from app.utils.observability import log_json

@@ -2,8 +2,8 @@ from __future__ import annotations
 import logging
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.repositories.system_configs import SystemConfigsRepository
-from app.db.repositories.user_chat_usage import UserChatUsageRepository
+from app.db.repositories.system_configs_repository import SystemConfigsRepository
+from app.db.repositories.user_chat_usage_repository import UserChatUsageRepository
 from app.models.user import UserRole, User
 from app.utils.observability import log_json
 

@@ -325,7 +325,7 @@ async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
 
 
 async def _run_search_books_by_summary(args: dict, ctx: QueryContext) -> List[str]:
-    from app.db.repositories.book_summaries import BookSummariesRepository
+    from app.db.repositories.book_summaries_repository import BookSummariesRepository
     from app.core.config import settings
 
     query = args.get("query", "")
@@ -349,7 +349,7 @@ async def _run_search_books_by_summary(args: dict, ctx: QueryContext) -> List[st
 
 
 async def _run_get_book_summary(args: dict, ctx: QueryContext) -> dict:
-    from app.db.repositories.book_summaries import BookSummariesRepository
+    from app.db.repositories.book_summaries_repository import BookSummariesRepository
 
     book_ids = args.get("book_ids") or []
     if not book_ids:
@@ -379,7 +379,7 @@ async def _run_get_book_summary(args: dict, ctx: QueryContext) -> dict:
 
 
 async def _run_get_sister_volumes(args: dict, ctx: QueryContext) -> dict:
-    from app.db.repositories.books import BooksRepository
+    from app.db.repositories.books_repository import BooksRepository
 
     book_id = args.get("book_id", "")
     if not book_id:
@@ -403,7 +403,7 @@ async def _run_get_sister_volumes(args: dict, ctx: QueryContext) -> dict:
 
 
 async def _run_get_current_page(ctx: QueryContext) -> dict:
-    from app.db.repositories.pages import PagesRepository
+    from app.db.repositories.pages_repository import PagesRepository
     from app.utils.markdown import strip_markdown
 
     if ctx.is_global or not ctx.current_page or not ctx.book:
@@ -455,7 +455,7 @@ async def _run_rewrite_query(args: dict, ctx: QueryContext) -> dict:
 
 
 async def _run_get_book_author(args: dict, ctx: QueryContext) -> dict:
-    from app.db.repositories.books import BooksRepository
+    from app.db.repositories.books_repository import BooksRepository
 
     question = args.get("question", "")
     repo = BooksRepository(ctx.session)
@@ -471,7 +471,7 @@ async def _run_get_book_author(args: dict, ctx: QueryContext) -> dict:
 
 
 async def _run_get_books_by_author(args: dict, ctx: QueryContext) -> dict:
-    from app.db.repositories.books import BooksRepository
+    from app.db.repositories.books_repository import BooksRepository
 
     question = args.get("question", "")
     repo = BooksRepository(ctx.session)
@@ -509,7 +509,7 @@ async def _run_search_catalog(args: dict, ctx: QueryContext) -> dict:
 
 async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
     from app.langchain.models import build_text_llm
-    from app.db.repositories.graph import GraphRepository
+    from app.db.repositories.graph_repository import GraphRepository
     import re
     import unicodedata
 

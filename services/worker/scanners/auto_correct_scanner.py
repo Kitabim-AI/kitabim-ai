@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 
 from app.db import session as db_session
-from app.db.repositories.system_configs import SystemConfigsRepository
+from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.services.auto_correct_service import (
     find_pages_with_auto_correctable_issues,
     cleanup_stale_auto_corrections

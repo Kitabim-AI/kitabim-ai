@@ -26,7 +26,7 @@ def get_llm_provider(model_name: str) -> LLMProvider:
 
 def get_vector_store(session: AsyncSession) -> VectorStore:
     if settings.vector_store_provider == "pgvector":
-        from app.db.repositories.chunks import ChunksRepository
+        from app.db.repositories.chunks_repository import ChunksRepository
         return ChunksRepository(session)
     else:
         raise ValueError(f"Unknown vector store provider: {settings.vector_store_provider}")

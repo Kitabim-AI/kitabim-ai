@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from sqlalchemy.exc import IntegrityError
 
 from app.db import session as db_session
-from app.db.repositories.books import BooksRepository
+from app.db.repositories.books_repository import BooksRepository
 from app.services.storage_service import storage
 from app.services.pdf_service import create_page_stubs, extract_pdf_cover
 from app.core.config import settings

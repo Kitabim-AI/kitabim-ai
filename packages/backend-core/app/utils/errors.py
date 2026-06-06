@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.repositories.books import BooksRepository
+from app.db.repositories.books_repository import BooksRepository
 
 
 async def record_book_error(

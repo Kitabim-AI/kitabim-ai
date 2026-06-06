@@ -82,8 +82,8 @@ class RAGService:
         user_id: Optional[str],
     ) -> QueryContext:
         """Resolve character, load LLM models, fetch book record if needed."""
-        from app.db.repositories.books import BooksRepository
-        from app.db.repositories.system_configs import SystemConfigsRepository
+        from app.db.repositories.books_repository import BooksRepository
+        from app.db.repositories.system_configs_repository import SystemConfigsRepository
         from app.core.i18n import t
 
         is_global = req.book_id == "global"
@@ -162,8 +162,8 @@ class RAGService:
             return None
         try:
             import random
-            from app.db.repositories.rag_evaluations import RAGEvaluationsRepository
-            from app.db.repositories.system_configs import SystemConfigsRepository
+            from app.db.repositories.rag_evaluations_repository import RAGEvaluationsRepository
+            from app.db.repositories.system_configs_repository import SystemConfigsRepository
 
             configs = SystemConfigsRepository(ctx.session)
             enabled = await configs.get_value("rag_eval_enabled", "false")
