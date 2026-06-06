@@ -28,7 +28,7 @@ from scanners.ocr_scanner import run_ocr_scanner
 from scanners.chunking_scanner import run_chunking_scanner
 from scanners.embedding_scanner import run_embedding_scanner
 from scanners.spell_check_scanner import run_spell_check_scanner
-from scanners.stale_watchdog import run_stale_watchdog
+from scanners.stale_watchdog_scanner import run_stale_watchdog
 from scanners.summary_scanner import run_summary_scanner
 from scanners.event_dispatcher import run_event_dispatcher
 from scanners.maintenance_scanner import run_maintenance_scanner

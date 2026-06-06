@@ -53,10 +53,10 @@ The rule: **endpoints call services, services call repositories, repositories ca
 
 All DB access goes through a repository. Repositories live in `packages/backend-core/app/db/repositories/`.
 
-**Base repository** (`repositories/base.py`) provides generic async CRUD — extend it or use it directly:
+**Base repository** (`repositories/base_repository.py`) provides generic async CRUD — extend it or use it directly:
 
 ```python
-from app.db.repositories.base import BaseRepository
+from app.db.repositories.base_repository import BaseRepository
 from app.db.models import MyModel
 
 class MyRepository(BaseRepository[MyModel]):

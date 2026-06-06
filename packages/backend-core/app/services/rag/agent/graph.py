@@ -75,14 +75,14 @@ def wrap_node_with_request_id(node_func):
 
 
 def _build_graph():
-    from app.services.rag.agent.nodes.agent_step import agent_step_node
-    from app.services.rag.agent.nodes.build_context import build_context_node
-    from app.services.rag.agent.nodes.collect_tools import collect_tools_node
-    from app.services.rag.agent.nodes.decompose import decompose_query_node
-    from app.services.rag.agent.nodes.execute_tool import execute_tool_node
-    from app.services.rag.agent.nodes.generate_answer import generate_answer_node
-    from app.services.rag.agent.nodes.grade_context import grade_context_node
-    from app.services.rag.agent.nodes.planner import plan_query_node
+    from app.services.rag.agent.nodes.agent_step_node import agent_step_node
+    from app.services.rag.agent.nodes.build_context_node import build_context_node
+    from app.services.rag.agent.nodes.collect_tools_node import collect_tools_node
+    from app.services.rag.agent.nodes.decompose_node import decompose_query_node
+    from app.services.rag.agent.nodes.execute_tool_node import execute_tool_node
+    from app.services.rag.agent.nodes.generate_answer_node import generate_answer_node
+    from app.services.rag.agent.nodes.grade_context_node import grade_context_node
+    from app.services.rag.agent.nodes.planner_node import plan_query_node
 
     builder = StateGraph(AgentState)
 

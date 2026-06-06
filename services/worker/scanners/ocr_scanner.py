@@ -12,7 +12,7 @@ from sqlalchemy import select, update, func
 
 from app.db import session as db_session
 from app.db.models import Page, Book
-from app.db.repositories.system_configs import SystemConfigsRepository
+from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.services.book_milestone_service import BookMilestoneService
 from app.utils.observability import log_json
 

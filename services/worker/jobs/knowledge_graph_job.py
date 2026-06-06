@@ -22,8 +22,8 @@ from sqlalchemy import select, update
 from app.core.config import settings
 from app.db import session as db_session
 from app.db.models import Book, Chunk
-from app.db.repositories.graph import GraphRepository
-from app.db.repositories.system_configs import SystemConfigsRepository
+from app.db.repositories.graph_repository import GraphRepository
+from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.services.knowledge_graph_service import KnowledgeExtraction, parse_and_clean_json_from_exception, EntityType
 from app.utils.observability import log_json
 

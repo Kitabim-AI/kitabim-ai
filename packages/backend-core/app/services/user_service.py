@@ -9,7 +9,7 @@ from typing import Optional, List, Tuple
 
 from app.models.user import User, UserRole
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.repositories.users import UsersRepository
+from app.db.repositories.users_repository import UsersRepository
 from app.db.models import User as UserDB
 from app.utils.security import hash_ip_if_present
 from app.services.cache_service import cache_service

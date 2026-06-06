@@ -43,7 +43,7 @@ Mirror the source tree under each package's `tests/` directory:
 ```
 packages/backend-core/
   app/
-    db/repositories/books.py          → tests/app/db/test_books_repository.py
+    db/repositories/books_repository.py  → tests/app/db/test_books_repository.py
     services/user_service.py          → tests/app/services/test_user_service.py
     utils/text.py                     → tests/app/utils/test_text.py
     core/i18n.py                      → tests/app/core/test_i18n.py

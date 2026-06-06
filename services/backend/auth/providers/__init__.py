@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Type
 
-from .base import OAuthProvider, ProviderUserInfo
-from .google import GoogleOAuthProvider
-from .facebook import FacebookOAuthProvider
-from .twitter import TwitterOAuthProvider
+from .base_provider import OAuthProvider, ProviderUserInfo
+from .google_provider import GoogleOAuthProvider
+from .facebook_provider import FacebookOAuthProvider
+from .twitter_provider import TwitterOAuthProvider
 
 # Export base classes and user info
 __all__ = [
