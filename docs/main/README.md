@@ -1,8 +1,8 @@
 # Kitabim.ai Documentation
 
-**Last Updated:** 2026-05-12
+**Last Updated:** 2026-06-06
 
-Welcome to the Kitabim.ai documentation. This directory contains comprehensive technical documentation for the platform.
+Welcome to the Kitabim.ai documentation. Kitabim.ai is the definitive intelligent knowledge base for Uyghur literature, history, and culture — targeting the complete corpus of Uyghur-language publications. This directory contains comprehensive technical documentation for the platform.
 
 ---
 
