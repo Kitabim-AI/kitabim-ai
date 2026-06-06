@@ -17,7 +17,7 @@ from sqlalchemy import select, or_, update
 
 from app.db import session as db_session
 from app.db.models import Book
-from app.db.repositories.system_configs import SystemConfigsRepository
+from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.graph_scanner")

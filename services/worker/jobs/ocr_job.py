@@ -16,7 +16,7 @@ import time
 from app.core.config import settings
 from app.db import session as db_session
 from app.db.models import Book, Page, PipelineEvent
-from app.db.repositories.system_configs import SystemConfigsRepository
+from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.services.ocr_service import ocr_page_with_gemini
 from app.utils.text import is_toc_page
 from app.services.storage_service import storage

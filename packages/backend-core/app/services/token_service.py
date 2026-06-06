@@ -9,7 +9,7 @@ from typing import Optional
 
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.repositories.refresh_tokens import RefreshTokensRepository
+from app.db.repositories.refresh_tokens_repository import RefreshTokensRepository
 from app.db.models import RefreshToken
 
 from app.core.config import settings

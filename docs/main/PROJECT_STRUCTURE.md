@@ -117,7 +117,7 @@ packages/backend-core/
     ├── db/                  # Database layer
     │   ├── postgres.py      # Connection and session management
     │   ├── repositories/    # Repository pattern implementations
-    │   │   └── graph.py     # Memgraph interface and Cypher queries
+    │   │   └── graph_repository.py     # Memgraph interface and Cypher queries
     │   └── models.py        # SQLAlchemy models
     ├── langchain/           # LangChain integrations
     │   ├── chains.py        # LCEL chains
@@ -752,7 +752,7 @@ python3.13 -m pytest services/backend/tests
 | `db/session.py` | PostgreSQL session management |
 | `db/models.py` | SQLAlchemy ORM models |
 | `db/repositories/` | Repository pattern implementations |
-| `db/repositories/graph.py` | Memgraph interface and Cypher queries |
+| `db/repositories/graph_repository.py` | Memgraph interface and Cypher queries |
 | `services/pdf_service.py` | PDF processing orchestration |
 | `services/storage_service.py` | GCS/local storage abstraction |
 | `services/rag_service.py` | RAG retrieval and chat logic |

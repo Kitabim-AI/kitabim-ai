@@ -1,6 +1,6 @@
 """Database seeding logic"""
 import logging
-from app.db.repositories.system_configs import SystemConfigsRepository
+from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.utils.observability import log_json
 

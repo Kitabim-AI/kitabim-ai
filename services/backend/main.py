@@ -11,7 +11,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-from api.endpoints import ai, auth, books, chat, users, system_configs, stats, contact, spell_check, auto_correct_rules, dictionary, share, cache
+from api.endpoints import ai_router, auth_router, books_router, chat_router, users_router, system_configs_router, stats_router, contact_router, spell_check_router, auto_correct_rules_router, dictionary_router, share_router, cache_router
 from app.core.config import settings
 from app.db.session import init_db, close_db  # SQLAlchemy session management
 from app.core.i18n import I18n, set_current_lang, t
@@ -375,19 +375,19 @@ async def get_cover(book_id: str, request: Request):
 # Keep the mount for legacy/local if needed, but the route above takes precedence
 app.mount("/api/covers", StaticFiles(directory=str(settings.covers_dir)), name="covers")
 
-app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
-app.include_router(users.router, prefix="/api/users", tags=["users"])
-app.include_router(books.router, prefix="/api/books", tags=["books"])
-app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
-app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
-app.include_router(system_configs.router, prefix="/api/system-configs", tags=["system-configs"])
-app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
-app.include_router(contact.router, prefix="/api/contact", tags=["contact"])
-app.include_router(spell_check.router, prefix="/api/books", tags=["spell-check"])
-app.include_router(auto_correct_rules.router, prefix="/api", tags=["spell-check"])
-app.include_router(dictionary.router, prefix="/api", tags=["dictionary"])
-app.include_router(share.router, prefix="/api/share", tags=["share"])
-app.include_router(cache.router, prefix="/api/cache", tags=["cache"])
+app.include_router(auth_router.router, prefix="/api/auth", tags=["auth"])
+app.include_router(users_router.router, prefix="/api/users", tags=["users"])
+app.include_router(books_router.router, prefix="/api/books", tags=["books"])
+app.include_router(chat_router.router, prefix="/api/chat", tags=["chat"])
+app.include_router(ai_router.router, prefix="/api/ai", tags=["ai"])
+app.include_router(system_configs_router.router, prefix="/api/system-configs", tags=["system-configs"])
+app.include_router(stats_router.router, prefix="/api/stats", tags=["stats"])
+app.include_router(contact_router.router, prefix="/api/contact", tags=["contact"])
+app.include_router(spell_check_router.router, prefix="/api/books", tags=["spell-check"])
+app.include_router(auto_correct_rules_router.router, prefix="/api", tags=["spell-check"])
+app.include_router(dictionary_router.router, prefix="/api", tags=["dictionary"])
+app.include_router(share_router.router, prefix="/api/share", tags=["share"])
+app.include_router(cache_router.router, prefix="/api/cache", tags=["cache"])
 
 
 @app.get("/api/config")

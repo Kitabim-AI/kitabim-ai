@@ -20,7 +20,7 @@ from sqlalchemy import update
 
 from app.db import session as db_session
 from app.db.models import RAGEvaluation
-from app.db.repositories.system_configs import SystemConfigsRepository
+from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.services.rag.eval import run_ragas_evaluation
 from app.utils.observability import log_json
 
