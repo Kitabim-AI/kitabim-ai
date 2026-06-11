@@ -180,14 +180,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
   if (isGlobal) {
     return (
-      <div className="w-full lg:max-w-5xl lg:mx-auto flex flex-col gap-3 md:gap-4 lg:gap-6 px-3 py-3 sm:px-6 md:px-0 lg:py-4 pb-24 min-h-[calc(100dvh-5rem)]" dir="rtl" lang="ug">
+      <div className="w-full lg:max-w-5xl lg:mx-auto flex flex-col gap-3 md:gap-4 lg:gap-6 px-3 py-3 sm:px-6 md:px-0 lg:py-4 flex-grow min-h-0" dir="rtl" lang="ug">
 
         {/* Unified Chat Card — messages + input, auto height, never shrinks */}
-        <div className="glass-panel border border-white/60 rounded-[24px] sm:rounded-[40px] flex flex-col overflow-hidden flex-1">
+        <div className="glass-panel border border-white/60 rounded-[24px] sm:rounded-[40px] flex flex-col overflow-hidden flex-1 min-h-0">
           {/* Messages */}
           <div
             ref={chatContainerRef}
-            className="flex-1 space-y-4 md:space-y-8 px-4 sm:px-6 lg:px-10 py-6 sm:py-8 lg:py-12 flex flex-col"
+            className="flex-1 overflow-y-auto custom-scrollbar-mini space-y-4 md:space-y-8 px-4 sm:px-6 lg:px-10 py-6 sm:py-8 lg:py-12 flex flex-col"
           >
             {chatMessages.length === 0 ? (
               <div className="flex flex-col items-center justify-center text-center py-12">
@@ -360,7 +360,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             ) : (
               <div className="flex items-center justify-between gap-2 px-4 py-2.5 sm:py-3 min-h-[52px] sm:min-h-[60px]">
                 <p className="text-[#1a1a1a] font-normal text-[11px] sm:text-sm leading-relaxed text-right">{t('auth.signInToUseChat')}</p>
-                <OAuthButtonGroup align="up" side="right" className="shrink-0" />
+                <OAuthButtonGroup align="up" side="left" className="shrink-0" />
               </div>
             )}
           </div>
@@ -554,7 +554,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             <p className="text-[#1a1a1a] font-normal text-[11px] sm:text-sm leading-relaxed text-right">
               {t('auth.signInToUseChat')}
             </p>
-            <OAuthButtonGroup align="up" side="right" className="shrink-0" />
+            <OAuthButtonGroup align="up" side="left" className="shrink-0" />
           </div>
         )}
       </div>

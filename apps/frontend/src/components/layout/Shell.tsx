@@ -26,23 +26,25 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
         <Navbar />
       </div>
 
-      <main className="flex-grow overflow-y-auto overscroll-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden pt-[72px] sm:pt-[88px] lg:pt-[96px] px-0 sm:px-2 md:px-4 lg:px-8 max-w-[1600px] mx-auto w-full relative z-10 flex flex-col">
+      <main className={`flex-grow overscroll-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden pt-[72px] sm:pt-[88px] lg:pt-[96px] px-0 sm:px-2 md:px-4 lg:px-8 max-w-[1600px] mx-auto w-full relative z-10 flex flex-col min-h-0 ${['global-chat', 'spell-check', 'reader'].includes(view) ? 'overflow-hidden' : 'overflow-y-auto'}`}>
 
-        <div className="flex-grow">
+        <div className="flex-grow flex flex-col min-h-0">
           {children}
         </div>
 
-        <footer className={`mt-8 mb-6 border-t border-[#0369a1]/10 pt-4 flex flex-col sm:flex-row items-center justify-between gap-2 w-full px-4 sm:px-2 ${view === 'join-us' ? 'max-w-6xl mx-auto' : ['global-chat', 'spell-check'].includes(view) ? 'lg:max-w-5xl lg:mx-auto' : ''}`} dir="rtl">
-          <p className="text-xs text-slate-400 font-normal uyghur-text">
-            © {new Date().getFullYear()} Kitabim.AI — {t('app.footer.copyright')}
-          </p>
-          <a
-            href="mailto:contact@kitabim.ai"
-            className="text-xs text-slate-400 font-normal uyghur-text hover:text-[#0369a1] transition-colors"
-          >
-            {t('app.footer.contactUs')}: contact@kitabim.ai
-          </a>
-        </footer>
+        {view !== 'reader' && (
+          <footer className={`border-t border-[#0369a1]/10 pt-4 flex flex-col sm:flex-row items-center justify-between gap-2 w-full px-4 sm:px-2 ${['global-chat', 'spell-check'].includes(view) ? 'mb-2 mt-4 lg:max-w-5xl lg:mx-auto' : 'mb-6 mt-8'} ${view === 'join-us' ? 'max-w-6xl mx-auto' : ''}`} dir="rtl">
+            <p className="text-xs text-slate-400 font-normal uyghur-text">
+              © {new Date().getFullYear()} Kitabim.AI — {t('app.footer.copyright')}
+            </p>
+            <a
+              href="mailto:contact@kitabim.ai"
+              className="text-xs text-slate-400 font-normal uyghur-text hover:text-[#0369a1] transition-colors"
+            >
+              {t('app.footer.contactUs')}: contact@kitabim.ai
+            </a>
+          </footer>
+        )}
       </main>
 
       <SearchOverlay />
