@@ -41,7 +41,7 @@ Current implementation uses granular milestone columns on the `pages` table and 
 | `ocr_milestone` | `varchar` | State of OCR: `idle \| in_progress \| succeeded \| failed` |
 | `chunking_milestone` | `varchar` | State of Chunking: `idle \| in_progress \| succeeded \| failed` |
 | `embedding_milestone` | `varchar` | State of Embedding: `idle \| in_progress \| succeeded \| failed` |
-| `spell_check_milestone` | `varchar` | State of Spell Check: `idle \| in_progress \| done \| failed` |
+| `spell_check_milestone` | `varchar` | State of Spell Check: `idle \| in_progress \| succeeded \| failed` |
 | `retry_count` | `integer` | Number of failed attempts for the current step. |
 
 ### `books` table
@@ -310,7 +310,7 @@ flowchart TD
     EMB_FAIL["embedding / failed"]
     SPELL_IDLE["spell_check / idle\n(independent quality layer)"]
     SPELL_IP["spell_check / in_progress"]
-    SPELL_OK["spell_check / done"]
+    SPELL_OK["spell_check / succeeded"]
     SPELL_FAIL["spell_check / failed"]
     TERMINAL["ocr|chunking|embedding failed\nretry_count >= max\n(mandatory step — skipped)"]
 

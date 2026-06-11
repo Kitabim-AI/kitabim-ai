@@ -124,6 +124,9 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
                         payload=make_pipeline_event_payload(extra_fields={"error": "Failed to obtain PDF"})
                     ))
                 await session.commit()
+            async with db_session.async_session_factory() as session:
+                await BookMilestoneService.update_book_milestone_for_step(session, book_id, 'ocr')
+                await session.commit()
             return
 
         # Load page records
