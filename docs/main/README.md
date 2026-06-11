@@ -15,7 +15,7 @@ Welcome to the Kitabim.ai documentation. Kitabim.ai is the definitive intelligen
 | [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md) | High-level system architecture and design decisions | ✅ Current |
 | [WORKER_DESIGN.md](WORKER_DESIGN.md) | Event-driven pipeline architecture and worker components | ✅ Current |
 | [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) | Monorepo structure and codebase organization | ✅ Current |
-| [AGENTIC_RAG_DESIGN.md](AGENTIC_RAG_DESIGN.md) | Agentic RAG design — LangGraph graph, 11 tools, context injection, self-critique | ✅ Current |
+| [AGENTIC_RAG_DESIGN.md](AGENTIC_RAG_DESIGN.md) | Agentic RAG design — Google ADK loop, 11 tools, context injection, grading | ✅ Current |
 | [QUESTION_ANSWERING_DIAGRAM.md](QUESTION_ANSWERING_DIAGRAM.md) | Visual pipeline diagram — current agentic RAG state | ✅ Current |
 | [BOOK_PROCESSING_DIAGRAM.md](BOOK_PROCESSING_DIAGRAM.md) | Visual diagrams of the book processing pipeline | ✅ Current |
 
@@ -36,7 +36,7 @@ Welcome to the Kitabim.ai documentation. Kitabim.ai is the definitive intelligen
 
 | Document | Description | Status |
 |----------|-------------|--------|
-| [AGENTIC_RAG_DESIGN.md](AGENTIC_RAG_DESIGN.md) | Agentic ReAct loop, 11 tools, LangGraph graph, self-critique | ✅ Current |
+| [AGENTIC_RAG_DESIGN.md](AGENTIC_RAG_DESIGN.md) | Agentic ReAct loop, 11 tools, Google ADK loop, grading | ✅ Current |
 | [QUESTION_ANSWERING_DIAGRAM.md](QUESTION_ANSWERING_DIAGRAM.md) | Full pipeline visual diagram — current state | ✅ Current |
 
 ### **🔧 Features & Implementation**
@@ -138,8 +138,9 @@ All docs should include:
 - **Deployment:** Docker Compose on GCP VM (e2-standard-2)
 
 ### Recent Major Changes
+- ✅ **2026-06-11:** Google ADK & google-genai Migration — migrated to Google ADK (for agent loops) and first-party google-genai SDK (for direct LLM tasks). Removed background evaluation jobs and simplified stats to focus on user feedback.
 - ✅ **2026-05-21:** GraphRAG with Memgraph Integration — added `query_knowledge_graph` tool (11 tools total), registered `knowledge_graph_job` running concurrently on book readiness to extract and index semantic entities and relationship networks in Memgraph database.
-- ✅ **2026-05-15:** Fast-path handlers permanently removed — `AgentRAGHandler` is now the sole handler; LangGraph `StateGraph` with self-critique node; `get_sister_volumes` added (10 tools total); streaming UX overhauled (isRetrying pattern, unified bubble, w-full AgentThinkingSteps)
+- ✅ **2026-05-15:** Fast-path handlers permanently removed — `AgentRAGHandler` is now the sole handler; `get_sister_volumes` added (10 tools total); streaming UX overhauled (isRetrying pattern, unified bubble, w-full AgentThinkingSteps)
 - ✅ **2026-05-10:** RAG pipeline refactoring — extracted shared retrieval module, centralized ReAct configurations, simplified handler boilerplate
 - ✅ **2026-05-09:** Agentic RAG fully promoted — always-on, context injection, "چۇ" follow-up detection
 - ✅ **2026-03-14:** Applied pipeline optimizations (2x speedup)
@@ -151,7 +152,8 @@ All docs should include:
 
 ### External Documentation
 - [FastAPI Docs](https://fastapi.tiangolo.com/)
-- [LangChain Docs](https://python.langchain.com/)
+- [Google ADK Docs](https://github.com/google/google-adk)
+- [Google GenAI SDK Docs](https://github.com/googleapis/google-genai)
 - [Gemini API Docs](https://ai.google.dev/gemini-api/docs)
 - [pgvector Docs](https://github.com/pgvector/pgvector)
 

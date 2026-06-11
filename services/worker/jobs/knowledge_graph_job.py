@@ -27,7 +27,8 @@ from app.db.repositories.system_configs_repository import SystemConfigsRepositor
 from app.services.knowledge_graph_service import KnowledgeExtraction, parse_and_clean_json_from_exception, EntityType
 from app.utils.observability import log_json
 
-from langchain_google_genai import ChatGoogleGenerativeAI
+from google import genai
+from google.genai import types
 
 logger = logging.getLogger("app.worker.knowledge_graph_job")
 
@@ -82,12 +83,8 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
         try:
             await graph_repo.init_constraints()
 
-            # 4. LLM with structured output
-            llm = ChatGoogleGenerativeAI(
-                model=chat_model,
-                google_api_key=api_key,
-                temperature=0.0,
-            ).with_structured_output(KnowledgeExtraction)
+            # 4. Initialize GenAI client
+            client = genai.Client(api_key=api_key)
 
             # 5. Group consecutive chunks into batches and process concurrently.
             #    Sending N chunks per call instead of 1:
@@ -128,11 +125,23 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                     )
 
                     extraction = None
+                    raw_text = None
                     try:
-                        extraction = await llm.ainvoke(prompt)
+                        response = await client.aio.models.generate_content(
+                            model=chat_model,
+                            contents=prompt,
+                            config=types.GenerateContentConfig(
+                                response_mime_type="application/json",
+                                response_schema=KnowledgeExtraction,
+                                temperature=0.0,
+                            ),
+                        )
+                        raw_text = response.text
+                        extraction = KnowledgeExtraction.model_validate_json(raw_text)
                     except Exception as e:
-                        # Attempt to parse and clean data from the exception/completion if it was a validation error
-                        extraction = parse_and_clean_json_from_exception(e, KnowledgeExtraction)
+                        # Attempt to parse and clean data from the raw text or exception if validation failed
+                        text_to_parse = raw_text if raw_text else str(e)
+                        extraction = parse_and_clean_json_from_exception(ValueError(text_to_parse), KnowledgeExtraction)
                         if extraction:
                             log_json(
                                 logger, logging.INFO, "recovered from output parsing validation error using fallback parser",

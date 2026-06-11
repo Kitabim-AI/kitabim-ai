@@ -10,7 +10,7 @@ Key characteristics:
 - **Mandatory pipeline** — `ocr → chunking → embedding` is sequential; a book becomes `ready` when embedding is terminal.
 - **Spell check is independent** — it only requires OCR to be done, runs in parallel with chunking/embedding, and does **not** block book readiness.
 - **Transactional Outbox** — the `pipeline_events` table captures successful milestones within the same database transaction as the result application.
-- **Event Dispatcher** — a low-latency scanner that polls the outbox and immediately enqueues the next required job, bypasses traditional 1-minute cron delays.
+- **Event Dispatcher** — a low-latency scanner that polls the outbox and immediately enqueues the next required job, bypassing traditional 1-minute cron delays.
 
 ---
 
@@ -27,7 +27,6 @@ Key characteristics:
 - Gemini Batch API mode (realtime only)
 - **Circuit breaker** — Implemented for AI services and Redis.
 - Backwards compatibility with v1 status columns
-
 
 ---
 
@@ -68,15 +67,14 @@ worker/
     stale_watchdog.py        ← resets stale in_progress pages to idle
     maintenance_scanner.py   ← cleans up processed outbox events (daily)
   jobs/
-    ocr_job.py            ← downloads PDF, OCRs pages via Gemini Vision
-    chunking_job.py       ← chunks page text into DB records
-    embedding_job.py      ← generates and stores embeddings
-    spell_check_job.py    ← identifies unknown words and suggests corrections
-    auto_correct_job.py   ← applies auto-correction rules to spell issues
-    summary_job.py        ← generates semantic book summaries for RAG routing
-    knowledge_graph_job.py ← extracts semantic entities and relationships to index in Memgraph
-  worker.py               ← ARQ WorkerSettings
-
+    ocr_job.py               ← downloads PDF, OCRs pages via Gemini Vision (google-genai)
+    chunking_job.py          ← chunks page text into DB records
+    embedding_job.py         ← generates and stores embeddings (google-genai)
+    spell_check_job.py       ← identifies unknown words and suggests corrections
+    auto_correct_job.py      ← applies auto-correction rules to spell issues
+    summary_job.py           ← generates semantic book summaries for RAG routing (google-genai)
+    knowledge_graph_job.py   ← extracts semantic entities and relationships to index in Memgraph (google-genai)
+  worker.py                  ← ARQ WorkerSettings
 ```
 
 ---
@@ -203,7 +201,7 @@ Jobs are pure executors — they process pages and report success or failure. Th
 1. Download PDF once from storage
 2. For each page (async, semaphore-limited concurrency):
      a. Render page as image (PyMuPDF, 1.5x zoom)
-     b. Call Gemini Vision API
+     b. Call Gemini Vision API (via google-genai client)
      c. Normalize text (Uyghur character normalization, markdown cleanup)
      d. Save extracted text to page record
      e. Set <step>_milestone = 'succeeded'
@@ -232,7 +230,7 @@ Jobs are pure executors — they process pages and report success or failure. Th
 ```
 1. For each page:
      a. Load chunks from DB
-     b. Generate 3072-dim embeddings via Gemini Embeddings API
+     b. Generate 3072-dim embeddings via Gemini Embeddings API (google-genai client)
      c. Store vectors on chunk records
      d. Set embedding_milestone = 'succeeded'
    On failure:
@@ -284,11 +282,10 @@ Runs every 30 minutes.
 | `spell_check_scanner`| Every 1 min | Cross-book |
 | `event_dispatcher` | Startup + 1 min (high frequency pool) | Triggers reactive progression |
 | `stale_watchdog` | Every 30 min | Uniform reset for all steps |
-| `maintenance_scanner`| Daily at 3 AM | Database house keeping |
+| `maintenance_scanner`| Daily at 3 AM | Database housekeeping |
 | `summary_scanner`     | Every 5 min | Regenerates missing book summaries |
 | `graph_scanner`       | Every 5 min | Regenerates missing book knowledge graphs |
 | `auto_correct_scanner` | Daily at 3 AM | Bulk applies spell corrections |
-
 
 ---
 
@@ -367,7 +364,7 @@ flowchart TD
 
 Retry state is tracked on the page row via `retry_count`.
 
-| Scenario | Behaviour |
+| Scenario | Behavior |
 |---|---|
 | Job sets `milestone = failed` | `retry_count++` |
 | Scanner finds `milestone = failed AND retry_count < max` | Resets to `idle` — page will be retried |
@@ -375,6 +372,3 @@ Retry state is tracked on the page row via `retry_count`.
 | Stale watchdog fires | Resets `in_progress → idle`, does **not** increment `retry_count` (timeout ≠ failure) |
 
 Max retries is configurable via `system_configs` (e.g. `ocr_max_retry_count`, default `10`).
-
----
-

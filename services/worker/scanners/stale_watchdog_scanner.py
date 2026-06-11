@@ -58,10 +58,12 @@ async def run_stale_watchdog(ctx) -> None:
             if cursor == 0:
                 break
                 
+        prefix = "worker:heartbeat:"
         active_workers = set()
         for k in keys:
             key_str = k.decode() if isinstance(k, bytes) else str(k)
-            active_workers.add(key_str.split(":")[-1])
+            if key_str.startswith(prefix):
+                active_workers.add(key_str[len(prefix):])
             
         stale_page_ids = []
         for pid, book_id, worker_id, claimed_at in rows:

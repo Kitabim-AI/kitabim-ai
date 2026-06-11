@@ -139,28 +139,3 @@ async def test_patch_arq_enqueue_job():
         request_id_var.set(None)
 
 
-@pytest.mark.asyncio
-async def test_wrap_node_with_request_id():
-    from app.services.rag.agent.graph import wrap_node_with_request_id
-
-    # Reset any request ID from previous tests
-    request_id_var.set(None)
-
-    # Create dummy QueryContext
-    class DummyContext:
-        def __init__(self):
-            self.request_id = "graph-req-id"
-
-    # Dummy node
-    async def sample_node(state):
-        assert request_id_var.get() == "graph-req-id"
-        return {"result": "success"}
-
-    wrapped = wrap_node_with_request_id(sample_node)
-    
-    # Test dictionary state
-    res = await wrapped({"ctx": DummyContext()})
-    assert res == {"result": "success"}
-    assert request_id_var.get() is None
-
-

@@ -198,11 +198,7 @@ async def submit_chat_feedback(
     current_user: User = Depends(require_reader),
     session: AsyncSession = Depends(get_session),
 ):
-    """Record thumbs-up/down feedback for an assistant response.
-
-    Thumbs-down (negative) feedback immediately enqueues a Ragas evaluation
-    job for that response, regardless of the background sampling rate.
-    """
+    """Record thumbs-up/down feedback for an assistant response."""
     if req.feedback not in ("positive", "negative"):
         raise HTTPException(status_code=400, detail="feedback must be 'positive' or 'negative'")
 
@@ -211,7 +207,7 @@ async def submit_chat_feedback(
 
     # Verify the record exists and belongs to this user before mutating it.
     # eval_id is a sequential integer — without this check any authenticated
-    # reader could trigger Ragas jobs on other users' responses.
+    # reader could trigger updates on other users' responses.
     record = await session.get(RAGEvaluation, req.eval_id)
     if record is None or record.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Evaluation record not found")
@@ -225,16 +221,7 @@ async def submit_chat_feedback(
     if evaluation is None:
         raise HTTPException(status_code=404, detail="Evaluation record not found")
 
-    # For thumbs-down: always enqueue Ragas evaluation (bypasses sampling)
-    if req.feedback == "negative" and evaluation.answer and evaluation.retrieved_context:
-        try:
-            import arq
-            from app.core.config import settings
-            redis_pool = await arq.create_pool(arq.connections.RedisSettings.from_dsn(settings.redis_url))
-            await redis_pool.enqueue_job("evaluate_rag_query", req.eval_id)
-            await redis_pool.aclose()
-            log_json(logger, logging.INFO, "Ragas job queued via negative feedback", eval_id=req.eval_id, user_id=current_user.id)
-        except Exception as exc:
-            log_json(logger, logging.WARNING, "Failed to enqueue Ragas job from feedback", error=str(exc))
+    log_json(logger, logging.INFO, "Chat feedback recorded", eval_id=req.eval_id, user_id=current_user.id, feedback=req.feedback)
 
     return {"ok": True, "eval_id": req.eval_id, "feedback": req.feedback}
+

@@ -146,16 +146,9 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
         eval_id: int,
         feedback: str,
     ) -> Optional[RAGEvaluation]:
-        """Record user thumbs-up/down feedback on an evaluation row.
-
-        For negative feedback the row is also moved to 'queued' so the
-        admin panel can distinguish rows awaiting the Ragas job from rows
-        that were permanently skipped by the sampling rate.
-        """
+        """Record user thumbs-up/down feedback on an evaluation row."""
         from sqlalchemy import update as sql_update
         values: dict = {"user_feedback": feedback}
-        if feedback == "negative":
-            values["eval_status"] = "queued"
 
         await self.session.execute(
             sql_update(RAGEvaluation)

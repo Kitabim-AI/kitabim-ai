@@ -862,9 +862,6 @@ export interface paths {
         /**
          * Submit Chat Feedback
          * @description Record thumbs-up/down feedback for an assistant response.
-         *
-         *     Thumbs-down (negative) feedback immediately enqueues a Ragas evaluation
-         *     job for that response, regardless of the background sampling rate.
          */
         post: operations["submit_chat_feedback_api_chat_feedback_post"];
         delete?: never;
@@ -1027,11 +1024,32 @@ export interface paths {
         };
         /**
          * Get Rag Quality Stats
-         * @description Get Ragas semantic quality metrics from graded RAG evaluations (admin only).
-         *
-         *     Single query using conditional aggregation — avoids three round-trips.
+         * @description Get RAG user feedback and quality statistics (admin only).
          */
         get: operations["get_rag_quality_stats_api_stats_rag_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stats/pipeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Pipeline Performance Stats
+         * @description Get pipeline stage performance metrics from PipelineEvent duration_ms (admin only).
+         *
+         *     Aggregates avg / p95 / max processing duration per event_type
+         *     using the JSON payload stored in each PipelineEvent row.
+         */
+        get: operations["get_pipeline_performance_stats_api_stats_pipeline_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2016,16 +2034,38 @@ export interface components {
             /** Page Size */
             page_size: number;
         };
+        /** PipelinePerformanceStats */
+        PipelinePerformanceStats: {
+            /** Stages */
+            stages: components["schemas"]["PipelineStageStats"][];
+        };
+        /** PipelineStageStats */
+        PipelineStageStats: {
+            /** Stage */
+            stage: string;
+            /** Avg Duration Ms */
+            avg_duration_ms: number;
+            /** P95 Duration Ms */
+            p95_duration_ms: number | null;
+            /** Max Duration Ms */
+            max_duration_ms: number | null;
+            /** Total Events */
+            total_events: number;
+        };
         /** RAGQualityStats */
         RAGQualityStats: {
             /** Total Evaluations */
             total_evaluations: number;
             /** Graded Evaluations */
             graded_evaluations: number;
+            /** Thumbs Up Count */
+            thumbs_up_count: number;
+            /** Thumbs Down Count */
+            thumbs_down_count: number;
             /** Avg Faithfulness */
-            avg_faithfulness: number | null;
+            avg_faithfulness?: number | null;
             /** Avg Answer Relevance */
-            avg_answer_relevance: number | null;
+            avg_answer_relevance?: number | null;
         };
         /** RandomBookOut */
         RandomBookOut: {
@@ -3765,6 +3805,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RAGQualityStats"];
+                };
+            };
+        };
+    };
+    get_pipeline_performance_stats_api_stats_pipeline_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelinePerformanceStats"];
                 };
             };
         };

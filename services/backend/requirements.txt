@@ -6,13 +6,9 @@ pymupdf
 python-dotenv
 numpy
 httpx
+aiohttp
 pillow
-langchain
-langchain-core
-langchain-community
-langchain-google-genai
-langgraph
-langgraph-checkpoint-redis
+google-adk
 arq
 python-jose[cryptography]
 slowapi>=0.1.9

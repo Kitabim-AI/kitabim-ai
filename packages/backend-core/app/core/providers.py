@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 def get_embedding_provider(model_name: str) -> EmbeddingProvider:
     if settings.embedding_provider == "gemini":
-        from app.langchain.models import GeminiEmbeddings
+        from app.llm.models import GeminiEmbeddings
         return GeminiEmbeddings(model_name)
     else:
         raise ValueError(f"Unknown embedding provider: {settings.embedding_provider}")
@@ -18,7 +18,7 @@ def get_embedding_provider(model_name: str) -> EmbeddingProvider:
 
 def get_llm_provider(model_name: str) -> LLMProvider:
     if settings.llm_provider == "gemini":
-        from app.langchain.models import build_text_llm
+        from app.llm.models import build_text_llm
         return build_text_llm(model_name)
     else:
         raise ValueError(f"Unknown LLM provider: {settings.llm_provider}")

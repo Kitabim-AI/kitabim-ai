@@ -1,8 +1,6 @@
 """Agent tool schemas and dispatch for the agentic RAG loop.
 
 Each tool wraps existing retrieval code — no new retrieval logic lives here.
-The @tool decorator provides the JSON schema that Gemini uses for function calling.
-dispatch_tool() routes a tool call name+args to the real async implementation.
 """
 from __future__ import annotations
 
@@ -11,13 +9,11 @@ from typing import List, Optional
 import socket
 import asyncio
 import httpx
-from langchain_core.tools import tool
 from sqlalchemy.exc import DBAPIError, OperationalError
 from neo4j.exceptions import ServiceUnavailable, SessionExpired
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from google.adk.tools import ToolContext
 
 from app.services.rag.context import QueryContext
-from app.services.rag.agent.state import ToolResult
 from app.services.rag.retrieval import embed_query, find_books_by_title_in_question, vector_search
 from app.utils.observability import log_json
 
@@ -25,11 +21,45 @@ logger = logging.getLogger("app.rag.agent.tools")
 
 
 # ---------------------------------------------------------------------------
-# Tool schemas (bodies are never executed — only the schema is used by bind_tools)
+# ADK Tool implementations and observation logging helper
 # ---------------------------------------------------------------------------
 
-@tool
-def search_chunks(query: str, book_ids: Optional[List[str]] = None) -> str:
+async def _execute_and_record_tool(
+    tool_context: ToolContext | None,
+    tool_name: str,
+    tool_args: dict,
+) -> dict:
+    if tool_context is None:
+        raise ValueError("ADK ToolContext is required")
+        
+    ctx: QueryContext = tool_context.state["query_context"]
+    try:
+        res = await _dispatch_tool_with_retry(tool_name, tool_args, ctx)
+    except Exception as exc:
+        log_json(logger, logging.WARNING, "Agent tool failed after retries", tool=tool_name, error=str(exc))
+        if "observations" in tool_context.state:
+            tool_context.state["observations"] = list(tool_context.state["observations"]) + [{
+                "tool": tool_name,
+                "args": tool_args,
+                "result": {"ok": False, "error": str(exc)},
+            }]
+        raise
+
+    # Append to observations list in session state for context building and grading
+    if "observations" in tool_context.state:
+        tool_context.state["observations"] = list(tool_context.state["observations"]) + [{
+            "tool": tool_name,
+            "args": tool_args,
+            "result": res,
+        }]
+    return res
+
+
+async def search_chunks(
+    query: str,
+    book_ids: Optional[List[str]] = None,
+    tool_context: ToolContext = None,
+) -> dict:
     """Vector-search book chunks for passages relevant to a query.
 
     Args:
@@ -39,11 +69,15 @@ def search_chunks(query: str, book_ids: Optional[List[str]] = None) -> str:
                   scoped search returned fewer than 4 results, or after discovery tools found
                   no usable book IDs.
     """
-    return ""
+    args = {"query": query, "book_ids": book_ids}
+    return await _execute_and_record_tool(tool_context, "search_chunks", args)
 
 
-@tool
-def search_books_by_summary(query: str, book_ids: Optional[List[str]] = None) -> str:
+async def search_books_by_summary(
+    query: str,
+    book_ids: Optional[List[str]] = None,
+    tool_context: ToolContext = None,
+) -> dict:
     """Find books whose summaries are most relevant to a query.
 
     Call this before search_chunks when you don't know which books to search.
@@ -53,11 +87,14 @@ def search_books_by_summary(query: str, book_ids: Optional[List[str]] = None) ->
         query: The question or topic to match against book summaries.
         book_ids: Optional candidate set to restrict to (e.g. character-filtered books).
     """
-    return ""
+    args = {"query": query, "book_ids": book_ids}
+    return await _execute_and_record_tool(tool_context, "search_books_by_summary", args)
 
 
-@tool
-def find_books_by_title(question: str) -> str:
+async def find_books_by_title(
+    question: str,
+    tool_context: ToolContext = None,
+) -> dict:
     """Return book IDs for a title explicitly mentioned in the question.
 
     Handles both «quoted» exact match and fuzzy word-prefix match.
@@ -66,11 +103,14 @@ def find_books_by_title(question: str) -> str:
     Args:
         question: The full user question (title extraction is done server-side).
     """
-    return ""
+    args = {"question": question}
+    return await _execute_and_record_tool(tool_context, "find_books_by_title", args)
 
 
-@tool
-def rewrite_query(question: str) -> str:
+async def rewrite_query(
+    question: str,
+    tool_context: ToolContext = None,
+) -> dict:
     """Resolve pronouns and co-references in a follow-up question using chat history.
 
     Call ONLY when the pronoun cannot be resolved within the same question — i.e., when
@@ -83,11 +123,14 @@ def rewrite_query(question: str) -> str:
     Args:
         question: The user's original question that contains unresolved references.
     """
-    return ""
+    args = {"question": question}
+    return await _execute_and_record_tool(tool_context, "rewrite_query", args)
 
 
-@tool
-def get_book_author(question: str) -> str:
+async def get_book_author(
+    question: str,
+    tool_context: ToolContext = None,
+) -> dict:
     """Look up the author of a specific book title mentioned in the question.
 
     Call when the user asks who wrote a book or wants the author of a title.
@@ -96,11 +139,14 @@ def get_book_author(question: str) -> str:
     Args:
         question: The user's question or a phrase containing the book title to look up.
     """
-    return ""
+    args = {"question": question}
+    return await _execute_and_record_tool(tool_context, "get_book_author", args)
 
 
-@tool
-def get_books_by_author(question: str) -> str:
+async def get_books_by_author(
+    question: str,
+    tool_context: ToolContext = None,
+) -> dict:
     """Look up all books written by an author named in the question.
 
     Call when the user asks what books a specific author has written.
@@ -109,11 +155,14 @@ def get_books_by_author(question: str) -> str:
     Args:
         question: The user's question or a phrase containing the author name to look up.
     """
-    return ""
+    args = {"question": question}
+    return await _execute_and_record_tool(tool_context, "get_books_by_author", args)
 
 
-@tool
-def search_catalog(query: str) -> str:
+async def search_catalog(
+    query: str,
+    tool_context: ToolContext = None,
+) -> dict:
     """Search the library catalog for books, authors, or general library listings.
 
     Call for general library browsing questions: what books exist, what an author has
@@ -123,11 +172,14 @@ def search_catalog(query: str) -> str:
     Args:
         query: The user's question about the library catalog.
     """
-    return ""
+    args = {"query": query}
+    return await _execute_and_record_tool(tool_context, "search_catalog", args)
 
 
-@tool
-def get_book_summary(book_ids: List[str]) -> str:
+async def get_book_summary(
+    book_ids: List[str],
+    tool_context: ToolContext = None,
+) -> dict:
     """Get the full semantic summary of specific books.
 
     Call this when asked about the main characters, plot, themes, or identity of a person/character.
@@ -137,11 +189,14 @@ def get_book_summary(book_ids: List[str]) -> str:
         book_ids: List of book IDs to fetch summaries for. Limit to at most 5 IDs —
                   each summary is large; passing more is wasteful and dilutes the answer.
     """
-    return ""
+    args = {"book_ids": book_ids}
+    return await _execute_and_record_tool(tool_context, "get_book_summary", args)
 
 
-@tool
-def get_sister_volumes(book_id: str) -> str:
+async def get_sister_volumes(
+    book_id: str,
+    tool_context: ToolContext = None,
+) -> dict:
     """Return all volumes of the same book series as the given book.
 
     Call when the user asks about a different volume of the current book — next volume,
@@ -151,11 +206,13 @@ def get_sister_volumes(book_id: str) -> str:
     Args:
         book_id: The ID of any volume in the series (use the current book_id from [Context]).
     """
-    return ""
+    args = {"book_id": book_id}
+    return await _execute_and_record_tool(tool_context, "get_sister_volumes", args)
 
 
-@tool
-def get_current_page() -> str:
+async def get_current_page(
+    tool_context: ToolContext = None,
+) -> dict:
     """Retrieve the full text of the page the user is currently reading.
 
     Call this ONLY when the user explicitly asks about the current page they are on
@@ -164,11 +221,13 @@ def get_current_page() -> str:
     number when it applies.
     Do NOT call search_chunks after calling this.
     """
-    return ""
+    return await _execute_and_record_tool(tool_context, "get_current_page", {})
 
 
-@tool
-def query_knowledge_graph(query: str) -> str:
+async def query_knowledge_graph(
+    query: str,
+    tool_context: ToolContext = None,
+) -> dict:
     """Query the book knowledge graph to retrieve connections and relationships between entities.
 
     Call this tool when the query asks about historical figures, events, locations, concepts,
@@ -177,7 +236,8 @@ def query_knowledge_graph(query: str) -> str:
     Args:
         query: The search query or question containing entities to query.
     """
-    return ""
+    args = {"query": query}
+    return await _execute_and_record_tool(tool_context, "query_knowledge_graph", args)
 
 
 AGENT_TOOLS = [
@@ -220,65 +280,41 @@ def _log_retry(retry_state):
         error=str(retry_state.outcome.exception()),
     )
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=1, max=10),
-    retry=retry_if_exception_type(TRANSIENT_EXCEPTIONS),
-    before_sleep=_log_retry,
-    reraise=True,
-)
 async def _dispatch_tool_with_retry(tool_name: str, tool_args: dict, ctx: QueryContext) -> dict:
     if tool_name == "search_chunks":
         chunks = await _run_search_chunks(tool_args, ctx)
-        return {"chunks": chunks, "found_count": len(chunks)}
+        return {"ok": True, "chunks": chunks, "found_count": len(chunks)}
     if tool_name == "search_books_by_summary":
         book_ids = await _run_search_books_by_summary(tool_args, ctx)
-        return {"book_ids": book_ids, "found_count": len(book_ids)}
+        return {"ok": True, "book_ids": book_ids, "found_count": len(book_ids)}
     if tool_name == "find_books_by_title":
         book_ids = await _run_find_books_by_title(tool_args, ctx)
-        return {"book_ids": book_ids, "found_count": len(book_ids)}
+        return {"ok": True, "book_ids": book_ids, "found_count": len(book_ids)}
     if tool_name == "rewrite_query":
         result = await _run_rewrite_query(tool_args, ctx)
-        return {**result, "found_count": 0}
+        return {"ok": True, **result, "found_count": 0}
     if tool_name == "get_book_author":
         result = await _run_get_book_author(tool_args, ctx)
-        return {**result, "found_count": 1 if result.get("author") is not None else 0}
+        return {"ok": True, **result, "found_count": 1 if result.get("author") is not None else 0}
     if tool_name == "get_books_by_author":
         result = await _run_get_books_by_author(tool_args, ctx)
-        return {**result, "found_count": len(result.get("books", []))}
+        return {"ok": True, **result, "found_count": len(result.get("books", []))}
     if tool_name == "search_catalog":
         result = await _run_search_catalog(tool_args, ctx)
-        return {**result, "found_count": result.get("book_count", 0)}
+        return {"ok": True, **result, "found_count": result.get("book_count", 0)}
     if tool_name == "get_book_summary":
         result = await _run_get_book_summary(tool_args, ctx)
-        return {**result, "found_count": len(result.get("summaries", []))}
+        return {"ok": True, **result, "found_count": len(result.get("summaries", []))}
     if tool_name == "get_sister_volumes":
         result = await _run_get_sister_volumes(tool_args, ctx)
-        return {**result, "found_count": len(result.get("book_ids", []))}
+        return {"ok": True, **result, "found_count": len(result.get("book_ids", []))}
     if tool_name == "get_current_page":
         result = await _run_get_current_page(ctx)
-        return {**result, "found_count": 0}
+        return {"ok": True, **result, "found_count": 0}
     if tool_name == "query_knowledge_graph":
         result = await _run_query_knowledge_graph(tool_args, ctx)
-        return {**result, "found_count": len(result.get("relations", []))}
+        return {"ok": True, **result, "found_count": len(result.get("relations", []))}
     raise ValueError(f"Unknown tool: {tool_name}")
-
-async def dispatch_tool(tool_name: str, tool_args: dict, ctx: QueryContext) -> ToolResult:
-    """Execute a named tool and return a ToolResult TypedDict."""
-    try:
-        res = await _dispatch_tool_with_retry(tool_name, tool_args, ctx)
-        return {
-            "ok": True,
-            "data": res,
-            "error": None
-        }
-    except Exception as exc:
-        log_json(logger, logging.WARNING, "Agent tool failed after retries", tool=tool_name, error=str(exc))
-        return {
-            "ok": False,
-            "data": None,
-            "error": str(exc)
-        }
 
 
 # ---------------------------------------------------------------------------
@@ -406,7 +442,7 @@ async def _run_get_current_page(ctx: QueryContext) -> dict:
     from app.db.repositories.pages_repository import PagesRepository
     from app.utils.markdown import strip_markdown
 
-    if ctx.is_global or not ctx.current_page or not ctx.book:
+    if ctx.is_global or ctx.current_page is None or not ctx.book:
         log_json(logger, logging.INFO, "Agent tool get_current_page — not available", is_global=ctx.is_global)
         return {"context": "Current page is not available in this context."}
 
@@ -508,19 +544,19 @@ async def _run_search_catalog(args: dict, ctx: QueryContext) -> dict:
 
 
 async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
-    from app.langchain.models import build_text_llm
+    from app.llm.models import build_text_llm
     from app.db.repositories.graph_repository import GraphRepository
     import re
     import unicodedata
 
     query = args.get("query", "")
     if not query:
-        return {"context": "No query provided."}
+        return {"context": "No query provided.", "relations": []}
 
     # Skip if in single-book mode and graph has not been built for this book
     if not ctx.is_global and ctx.book and getattr(ctx.book, "graph_milestone", None) != "complete":
         log_json(logger, logging.INFO, "Agent tool query_knowledge_graph — skipped, graph not available", book_id=ctx.book_id)
-        return {"context": "Knowledge graph is not available for this book."}
+        return {"context": "Knowledge graph is not available for this book.", "relations": []}
 
     # Extract entities from the query using the LLM
     prompt = (
@@ -572,4 +608,4 @@ async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
         lines.append(f"- ({source}: {source_type}) -[{rel}]-> ({target}: {target_type})")
 
     context_text = "\n".join(lines)
-    return {"context": context_text}
+    return {"context": context_text, "relations": records}

@@ -174,8 +174,10 @@ async def get_system_stats(
 class RAGQualityStats(BaseModel):
     total_evaluations: int
     graded_evaluations: int
-    avg_faithfulness: float | None
-    avg_answer_relevance: float | None
+    thumbs_up_count: int
+    thumbs_down_count: int
+    avg_faithfulness: float | None = None
+    avg_answer_relevance: float | None = None
 
 
 @router.get("/rag", response_model=RAGQualityStats)
@@ -183,33 +185,34 @@ async def get_rag_quality_stats(
     current_user=Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
-    """Get Ragas semantic quality metrics from graded RAG evaluations (admin only).
-
-    Single query using conditional aggregation — avoids three round-trips.
-    """
+    """Get RAG user feedback and quality statistics (admin only)."""
     from sqlalchemy import case
     from app.db.models import RAGEvaluation
 
-    is_completed = RAGEvaluation.eval_status == "completed"
+    is_positive = RAGEvaluation.user_feedback == "positive"
+    is_negative = RAGEvaluation.user_feedback == "negative"
 
     result = await session.execute(
         select(
             func.count().label("total"),
-            func.count(case((is_completed, 1))).label("graded"),
-            func.avg(case((is_completed, RAGEvaluation.faithfulness_score))).label("avg_faithfulness"),
-            func.avg(case((is_completed, RAGEvaluation.answer_relevance_score))).label("avg_answer_relevance"),
+            func.count(case((is_positive, 1))).label("thumbs_up"),
+            func.count(case((is_negative, 1))).label("thumbs_down"),
         ).select_from(RAGEvaluation)
     )
     row = result.fetchone()
 
-    avg_faithfulness = float(row.avg_faithfulness) if row and row.avg_faithfulness is not None else None
-    avg_answer_relevance = float(row.avg_answer_relevance) if row and row.avg_answer_relevance is not None else None
+    total = row.total if row else 0
+    thumbs_up = row.thumbs_up if row else 0
+    thumbs_down = row.thumbs_down if row else 0
+    graded = thumbs_up + thumbs_down
 
     return {
-        "total_evaluations": row.total if row else 0,
-        "graded_evaluations": row.graded if row else 0,
-        "avg_faithfulness": round(avg_faithfulness, 3) if avg_faithfulness is not None else None,
-        "avg_answer_relevance": round(avg_answer_relevance, 3) if avg_answer_relevance is not None else None,
+        "total_evaluations": total,
+        "graded_evaluations": graded,
+        "thumbs_up_count": thumbs_up,
+        "thumbs_down_count": thumbs_down,
+        "avg_faithfulness": None,
+        "avg_answer_relevance": None,
     }
 
 
