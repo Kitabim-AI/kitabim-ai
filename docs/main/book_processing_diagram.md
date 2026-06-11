@@ -158,7 +158,7 @@ flowchart TD
 | `ocr` | Extraction of text from image/PDF | `succeeded` |
 | `chunking` | Recursive character splitting of text into overlapping chunks | `succeeded` |
 | `embedding` | Generation of vector embeddings | `succeeded` |
-| `spell_check` | Identifying unknown words | `done` |
+| `spell_check` | Identifying unknown words | `succeeded` |
 
 ---
 
