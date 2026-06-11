@@ -166,8 +166,11 @@ class RAGService:
             from app.db.repositories.system_configs_repository import SystemConfigsRepository
 
             configs = SystemConfigsRepository(ctx.session)
-            enabled = await configs.get_value("rag_eval_enabled", "false")
-            if enabled != "true":
+            enabled = await configs.get_value("rag_eval_enabled")
+            if enabled is None:
+                log_json(logger, logging.WARNING, "RAG eval skipped: 'rag_eval_enabled' key not found in system_configs")
+                return None
+            if enabled.lower() != "true":
                 return None
 
             repo = RAGEvaluationsRepository(ctx.session)

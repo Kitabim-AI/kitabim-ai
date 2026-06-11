@@ -30,7 +30,7 @@ async def _execute_and_record_tool(
     tool_args: dict,
 ) -> dict:
     if tool_context is None:
-        raise ValueError("ADK ToolContext is required")
+        raise ValueError(f"ADK ToolContext is required but was None for tool '{tool_name}'")
         
     ctx: QueryContext = tool_context.state["query_context"]
     try:
@@ -95,7 +95,7 @@ async def find_books_by_title(
     question: str,
     tool_context: ToolContext = None,
 ) -> dict:
-    """Return book IDs for a title explicitly mentioned in the question.
+    """Return book IDs and metadata (including title, author, and volume) for titles explicitly mentioned in the question.
 
     Handles both «quoted» exact match and fuzzy word-prefix match.
     Returns an empty list if no recognisable title is found.
@@ -288,8 +288,14 @@ async def _dispatch_tool_with_retry(tool_name: str, tool_args: dict, ctx: QueryC
         book_ids = await _run_search_books_by_summary(tool_args, ctx)
         return {"ok": True, "book_ids": book_ids, "found_count": len(book_ids)}
     if tool_name == "find_books_by_title":
-        book_ids = await _run_find_books_by_title(tool_args, ctx)
-        return {"ok": True, "book_ids": book_ids, "found_count": len(book_ids)}
+        books = await _run_find_books_by_title(tool_args, ctx)
+        book_ids = [b["id"] for b in books]
+        return {
+            "ok": True,
+            "book_ids": book_ids,
+            "books": books,
+            "found_count": len(book_ids),
+        }
     if tool_name == "rewrite_query":
         result = await _run_rewrite_query(tool_args, ctx)
         return {"ok": True, **result, "found_count": 0}
@@ -338,7 +344,7 @@ async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
     # Transparent context-switch fallback: if the LLM passed the previous
     # answer's book IDs verbatim and the similarity scores are weak (different
     # topic), rediscover relevant books via the summary index and re-search within them.
-    if book_ids and ctx.context_book_ids and set(book_ids) == set(ctx.context_book_ids):
+    if book_ids and ctx.context_book_ids and set(book_ids) == {str(x) for x in ctx.context_book_ids}:
         top_score = max((r.get("score", 0.0) for r in results), default=0.0)
         if top_score < CONTEXT_SWITCH_SCORE_THRESHOLD:
             log_json(
@@ -467,23 +473,22 @@ async def _run_get_current_page(ctx: QueryContext) -> dict:
     return {"context": context}
 
 
-async def _run_find_books_by_title(args: dict, ctx: QueryContext) -> List[str]:
+async def _run_find_books_by_title(args: dict, ctx: QueryContext) -> List[dict]:
     question = args.get("question", "")
-    book_ids = await find_books_by_title_in_question(
+    books = await find_books_by_title_in_question(
         question, ctx.session, categories=ctx.character_categories or None
     )
-    result = book_ids or []
+    result = books or []
     log_json(logger, logging.INFO, "Agent tool find_books_by_title", question=question[:120], books=len(result))
     return result
 
 
 async def _run_rewrite_query(args: dict, ctx: QueryContext) -> dict:
-    if ctx.enriched_question:
-        log_json(logger, logging.INFO, "Agent tool rewrite_query — already rewritten, skipping")
-        return {"rewritten_question": ctx.enriched_question}
-
     from app.services.rag.query_rewriter import QueryRewriter
 
+    # Always rewrite when the agent explicitly calls this tool — the agent has
+    # deliberate intent to resolve co-references, so a stale upstream enriched
+    # question must not override the fresh rewrite.
     rewritten = await QueryRewriter().rewrite(ctx)
     ctx.enriched_question = rewritten
     log_json(logger, logging.INFO, "Agent tool rewrite_query", rewritten=rewritten[:80])
@@ -589,6 +594,12 @@ async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
     graph_repo = GraphRepository()
     try:
         records = await graph_repo.query_subgraph(entities, book_id=book_id)
+    except Exception as kg_exc:
+        log_json(logger, logging.WARNING, "Knowledge graph query failed — returning empty result", error=str(kg_exc))
+        return {
+            "context": "Knowledge graph is temporarily unavailable.",
+            "relations": [],
+        }
     finally:
         await graph_repo.close()
 

@@ -8,7 +8,12 @@ numpy
 httpx
 aiohttp
 pillow
-google-adk
+google-adk[gcp]
+pandas
+rouge-score
+tabulate
+pytest
+pytest-asyncio
 arq
 python-jose[cryptography]
 slowapi>=0.1.9

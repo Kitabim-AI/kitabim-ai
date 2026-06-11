@@ -162,7 +162,14 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
             tasks = [extract_batch(batch) for batch in batches]
             results = await asyncio.gather(*tasks)
 
-            # 6. Process database inserts sequentially to avoid transaction deadlocks/lock conflicts
+            # 6. Accumulate all entities and relations across all batches, then write
+            #    to Memgraph in exactly 2 round-trips (upsert + connect) instead of 2×N.
+            #    Entity names are deduplicated — the same historical figure appears in
+            #    many batches and Memgraph MERGE handles it, but sending 1 entry is cheaper.
+            seen_entity_names: set[str] = set()
+            all_entities: list[dict] = []
+            all_relations: list[dict] = []
+
             for batch, extraction in results:
                 if not extraction:
                     continue
@@ -171,80 +178,77 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                 if not chunks_with_text:
                     continue
 
-                try:
-                    # Collect all entity names defined in extraction.entities
-                    defined_entity_names = {e.name.strip() for e in extraction.entities if e.name and e.name.strip()}
+                # Collect entity names defined in this extraction
+                defined_entity_names = {e.name.strip() for e in extraction.entities if e.name and e.name.strip()}
 
-                    # Extract and format entities
-                    entities_to_upsert = []
-                    for entity in extraction.entities:
-                        name = entity.name.strip() if entity.name else ""
-                        if not name:
-                            continue
-                        entities_to_upsert.append({
-                            "name": name,
-                            "type": entity.type.value if entity.type else EntityType.OTHER.value,
-                            "subtype": entity.subtype,
-                        })
+                for entity in extraction.entities:
+                    name = entity.name.strip() if entity.name else ""
+                    if not name or name in seen_entity_names:
+                        continue
+                    seen_entity_names.add(name)
+                    all_entities.append({
+                        "name": name,
+                        "type": entity.type.value if entity.type else EntityType.OTHER.value,
+                        "subtype": entity.subtype,
+                    })
 
-                    # Scan relations for any entities not in defined_entity_names to ensure MATCH matches them
-                    fallback_entities = []
-                    for rel in extraction.relations:
-                        src = rel.source_entity.strip() if rel.source_entity else ""
-                        tgt = rel.target_entity.strip() if rel.target_entity else ""
-                        if src and src not in defined_entity_names:
-                            fallback_entities.append(src)
-                            defined_entity_names.add(src)
-                        if tgt and tgt not in defined_entity_names:
-                            fallback_entities.append(tgt)
-                            defined_entity_names.add(tgt)
+                # Ensure relation endpoints exist as entities (fallback to Concept type)
+                for rel in extraction.relations:
+                    src = rel.source_entity.strip() if rel.source_entity else ""
+                    tgt = rel.target_entity.strip() if rel.target_entity else ""
+                    for name in (src, tgt):
+                        if name and name not in seen_entity_names:
+                            seen_entity_names.add(name)
+                            defined_entity_names.add(name)
+                            all_entities.append({
+                                "name": name,
+                                "type": "Concept",
+                                "subtype": "Auto-extracted from relation",
+                            })
 
-                    for name in fallback_entities:
-                        entities_to_upsert.append({
-                            "name": name,
-                            "type": "Concept",  # Fallback type
-                            "subtype": "Auto-extracted from relation",
-                        })
+                    rtype = rel.relation_type.strip() if rel.relation_type else ""
+                    if not src or not tgt or not rtype:
+                        continue
+                    all_relations.append({
+                        "source_name": src,
+                        "rel_type": rtype,
+                        "target_name": tgt,
+                        "book_id": str(book_id),
+                    })
 
-                    # Upsert entities in bulk
-                    if entities_to_upsert:
-                        await graph_repo.upsert_entities_bulk(entities_to_upsert)
-
-                    # Connect entities in bulk — include book_id so edges from different
-                    # books are stored as separate edges and never overwrite each other
-                    relations_to_connect = []
-                    for rel in extraction.relations:
-                        src = rel.source_entity.strip() if rel.source_entity else ""
-                        tgt = rel.target_entity.strip() if rel.target_entity else ""
-                        rtype = rel.relation_type.strip() if rel.relation_type else ""
-                        if not src or not tgt or not rtype:
-                            continue
-                        relations_to_connect.append({
-                            "source_name": src,
-                            "rel_type": rtype,
-                            "target_name": tgt,
-                            "book_id": str(book_id),
-                        })
-                    if relations_to_connect:
-                        await graph_repo.connect_entities_bulk(relations_to_connect)
-
-                except Exception as save_exc:
-                    log_json(
-                        logger, logging.ERROR, "failed to save parsed/recovered entities/relations to Memgraph",
-                        book_id=book_id,
-                        chunk_ids=[c.id for c in batch],
-                        error=str(save_exc),
-                    )
+            # Single bulk write: 2 Memgraph round-trips for the entire book
+            save_errors = 0
+            try:
+                if all_entities:
+                    await graph_repo.upsert_entities_bulk(all_entities)
+                if all_relations:
+                    await graph_repo.connect_entities_bulk(all_relations)
+                log_json(
+                    logger, logging.INFO, "Memgraph bulk write complete",
+                    book_id=book_id, entities=len(all_entities), relations=len(all_relations),
+                )
+            except Exception as save_exc:
+                save_errors += 1
+                log_json(
+                    logger, logging.ERROR, "failed to save entities/relations to Memgraph",
+                    book_id=book_id, error=str(save_exc),
+                )
 
         finally:
             await graph_repo.close()
 
-        # Update database status to complete
+        # Update database status — 'partial' if any batch saves failed, 'complete' otherwise
+        final_milestone = "partial" if save_errors > 0 else "complete"
+        if save_errors > 0:
+            log_json(
+                logger, logging.WARNING, "knowledge graph job completed with batch save errors",
+                book_id=book_id, save_errors=save_errors, milestone=final_milestone,
+            )
         async with db_session.async_session_factory() as session:
             await session.execute(
                 update(Book)
                 .where(Book.id == book_id)
-                .values(graph_milestone="complete")
+                .values(graph_milestone=final_milestone)
             )
             await session.commit()
 

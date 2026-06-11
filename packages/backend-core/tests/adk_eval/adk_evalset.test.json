@@ -1,0 +1,207 @@
+{
+  "eval_set_id": "kitabim_eval_set",
+  "name": "Kitabim RAG Agent Evaluation Set",
+  "description": "Evaluation set for testing Kitabim RAG Agent tool trajectories and final responses.",
+  "eval_cases": [
+    {
+      "eval_id": "test_find_book_author",
+      "conversation": [
+        {
+          "invocation_id": "fc-1",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "«لېيىغان بۇلاق» كىتابىنى كىم يازغان؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "بۇ كىتابنى جالالىدىن بەھرام يازغان."
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "get_book_author",
+                "args": {
+                  "question": "«لېيىغان بۇلاق» كىتابىنى كىم يازغان؟"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          },
+          "observations": []
+        }
+      }
+    },
+    {
+      "eval_id": "test_search_catalog_discovery",
+      "conversation": [
+        {
+          "invocation_id": "fc-2",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "قايسى كىتابلار بار؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "كۇتۇبخانىدا بىر قىسىم كىتابلار بار، مەسىلەن «لېيىغان بۇلاق»."
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "search_catalog",
+                "args": {
+                  "query": "قايسى كىتابلار بار؟"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          },
+          "observations": []
+        }
+      }
+    },
+    {
+      "eval_id": "test_find_book_author_ana_yurt",
+      "conversation": [
+        {
+          "invocation_id": "fc-ana-yurt",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "«ئانا يۇرت» كىتابىنى كىم يازغان؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "بۇ كىتابنى زوردۇن سابىر يازغان."
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "get_book_author",
+                "args": {
+                  "question": "«ئانا يۇرت» كىتابىنى كىم يازغان؟"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          },
+          "observations": []
+        }
+      }
+    },
+    {
+      "eval_id": "test_find_book_author_bahadirname",
+      "conversation": [
+        {
+          "invocation_id": "fc-bahadirname",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "«باھادىرنامە» كىتابىنى كىم يازغان؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "بۇ كىتابنى ياسىنجان سادىق چوغلان يازغان."
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "get_book_author",
+                "args": {
+                  "question": "«باھادىرنامە» كىتابىنى كىم يازغان؟"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          },
+          "observations": []
+        }
+      }
+    }
+  ]
+}

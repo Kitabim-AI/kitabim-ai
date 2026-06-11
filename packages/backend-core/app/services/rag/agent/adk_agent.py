@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from google.adk.agents import Agent
+from google.genai import types
 from app.services.rag.agent.tools import (
     search_chunks,
     search_books_by_summary,
@@ -26,6 +27,7 @@ def build_rag_agent(model_name: str) -> Agent:
         name="kitabim_retrieval_agent",
         model=model,
         instruction=AGENT_SYSTEM_PROMPT,
+        generate_content_config=types.GenerateContentConfig(temperature=0.0),
         tools=[
             search_chunks,
             search_books_by_summary,
@@ -40,3 +42,4 @@ def build_rag_agent(model_name: str) -> Agent:
             query_knowledge_graph,
         ],
     )
+

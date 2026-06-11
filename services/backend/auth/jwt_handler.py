@@ -116,11 +116,7 @@ def decode_jwt(token: str, expected_type: str = "access") -> Dict[str, Any]:
 
     secret = settings.jwt_secrets.get(kid)
     if not secret:
-        # Fallback to default secret key if key ID is not found in secrets map
-        logger.warning(f"JWT header specified unknown kid '{kid}'. Trying default fallback secret.")
-        secret = settings.jwt_secret_key
-        if not secret:
-            raise TokenInvalidError(f"JWT signature verification failed: unknown kid '{kid}' and no default secret configured")
+        raise TokenInvalidError(f"JWT signature verification failed: unknown kid '{kid}'")
 
     try:
         payload = jwt.decode(

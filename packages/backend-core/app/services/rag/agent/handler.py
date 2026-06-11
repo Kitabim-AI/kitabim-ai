@@ -284,8 +284,8 @@ class AgentRAGHandler(QueryHandler):
                             "name": part.function_call.name,
                         }
 
-            # 2. Yield agent thinking traces
-            if event.content and event.content.parts:
+            # 2. Yield agent thinking traces (only on final events to prevent duplicates)
+            if not event.partial and event.content and event.content.parts:
                 for part in event.content.parts:
                     if part.text:
                         yield {"type": "agent_thinking", "text": part.text}
@@ -350,7 +350,9 @@ class AgentRAGHandler(QueryHandler):
                 graded_context = event["graded_context"]
 
         if graded_context is None or sub_questions is None:
-            raise RuntimeError("Agent workflow failed to yield results")
+            log_json(logger, logging.WARNING, "ADK agent yielded no result events — using empty-context fallback")
+            graded_context = "NO RELEVANT DOCUMENTS FOUND IN THE LIBRARY."
+            sub_questions = [question]
 
         # 5. Generate Answer
         final_question = "\n".join(f"{i + 1}. {q}" for i, q in enumerate(sub_questions)) if len(sub_questions) > 1 else (ctx.enriched_question or ctx.question)
@@ -392,7 +394,9 @@ class AgentRAGHandler(QueryHandler):
                 yield event
 
         if graded_context is None or sub_questions is None:
-            raise RuntimeError("Agent workflow failed to yield results")
+            log_json(logger, logging.WARNING, "ADK agent yielded no result events — using empty-context fallback")
+            graded_context = "NO RELEVANT DOCUMENTS FOUND IN THE LIBRARY."
+            sub_questions = [question]
 
         if before_count > 0:
             yield {"type": "grading", "before": before_count, "after": after_count}
