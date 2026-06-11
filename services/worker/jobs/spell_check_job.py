@@ -69,6 +69,14 @@ async def spell_check_job(ctx, page_ids: List[int]) -> None:
                     async with db_session.async_session_factory() as session:
                         issue_count = await run_spell_check_for_page(session, page, cache=cache)
                         duration_ms = int((time.perf_counter() - start_time) * 1000)
+                        await session.execute(
+                            update(Page)
+                            .where(Page.id == page.id)
+                            .values(
+                                spell_check_milestone="succeeded",
+                                last_updated=func.now(),
+                            )
+                        )
                         session.add(PipelineEvent(
                             page_id=page.id,
                             event_type="spell_check_succeeded",

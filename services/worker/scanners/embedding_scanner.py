@@ -28,13 +28,17 @@ async def run_embedding_scanner(ctx) -> None:
         page_limit = int(await config_repo.get_value("scanner_page_limit", "100"))
 
         # Atomically claim idle embedding pages across all books.
+        # Note: we do NOT filter by book status. auto_correct_service resets
+        # embedding_milestone='idle' on corrected pages (even for ready books) so
+        # the corrected text gets re-indexed. Excluding ready books would leave
+        # those pages permanently stuck at idle.
         id_stmt = (
             select(Page.id)
             .join(Book, Page.book_id == Book.id)
             .where(
                 Page.chunking_milestone == "succeeded",
                 Page.embedding_milestone == "idle",
-                ~Book.status.in_(["ready", "error"]),
+                ~Book.status.in_(["error"]),
             )
             .with_for_update(skip_locked=True)
             .limit(page_limit)

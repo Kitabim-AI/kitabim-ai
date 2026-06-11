@@ -157,9 +157,7 @@ async def chunking_job(ctx, page_ids: List[int]) -> None:
                          book_id=page.book_id, page=page.page_number, error=str(exc))
 
         # Update book-level chunking milestone after processing batch
-        # Get book_id from first page
-        if pages:
-            book_id = pages[0].book_id
+        for book_id in book_ids:
             async with db_session.async_session_factory() as session:
                 await BookMilestoneService.update_book_milestone_for_step(session, book_id, 'chunking')
                 await session.commit()

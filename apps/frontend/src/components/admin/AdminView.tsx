@@ -78,27 +78,35 @@ const getPipelineIconClass = (
   return 'text-slate-300';
 };
 
+const MANDATORY_PIPELINE_STEPS = [PIPELINE_STEP.OCR, PIPELINE_STEP.CHUNKING, PIPELINE_STEP.EMBEDDING] as const;
+
 const getMilestoneColor = (book: any, stepKey: string) => {
-  // Map step key to milestone field
   const milestoneField = MILESTONE_FIELD_BY_STEP[stepKey as keyof typeof MILESTONE_FIELD_BY_STEP];
   if (!milestoneField) return 'text-slate-300';
 
-  // Special case for summary: use boolean flag
   if (stepKey === PIPELINE_STEP.SUMMARY) {
     return book.hasSummary ? 'text-emerald-500' : 'text-slate-300';
   }
-  // Special case for graph: use boolean flag
   if (stepKey === PIPELINE_STEP.GRAPH) {
     return book.hasGraph ? 'text-emerald-500' : 'text-slate-300';
   }
 
   const milestone = book[milestoneField];
 
+  // For mandatory steps (OCR, Chunking, Embedding) on a ready book:
+  // book.status === 'ready' guarantees these steps are terminal. If the DB field
+  // still shows 'idle' or 'in_progress', it is stale denormalized data.
+  if (MANDATORY_PIPELINE_STEPS.includes(stepKey as typeof MANDATORY_PIPELINE_STEPS[number]) && book.status === 'ready') {
+    if (!milestone || milestone === 'idle' || milestone === 'in_progress') {
+      return 'text-emerald-500';
+    }
+  }
+
   switch (milestone) {
     case 'complete':
       return 'text-emerald-500';
     case 'partial_failure':
-      return 'text-yellow-500'; // Yellow for partial failures
+      return 'text-yellow-500';
     case 'failed':
       return 'text-red-500';
     case 'in_progress':

@@ -28,7 +28,10 @@ async def run_chunking_scanner(ctx) -> None:
         page_limit = int(await config_repo.get_value("scanner_page_limit", "100"))
 
         # Atomically claim idle chunking pages across all books.
-        # Ensure we only process non-terminal books.
+        # Note: we do NOT filter by book status. auto_correct_service resets
+        # chunking_milestone='idle' on corrected pages (even for ready books) so
+        # the corrected text gets re-indexed. Excluding ready books would leave
+        # those pages permanently stuck at idle.
         from app.db.models import Book
         id_stmt = (
             select(Page.id)
@@ -36,7 +39,7 @@ async def run_chunking_scanner(ctx) -> None:
             .where(
                 Page.ocr_milestone == "succeeded",
                 Page.chunking_milestone == "idle",
-                ~Book.status.in_(["ready", "error"]),
+                ~Book.status.in_(["error"]),
             )
             .with_for_update(skip_locked=True)
             .limit(page_limit)

@@ -16,8 +16,10 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
 
   const [sortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'uploadDate', direction: 'desc' });
 
-  // Pipeline stats are now lazy-loaded on-demand (click refresh button) for performance
-  const includeStats = false;
+  // Admin view needs live pipeline_stats to compute icon colors accurately.
+  // includeStats=true fetches fresh get_batch_stats even when book metadata is cached,
+  // so icon colors are always derived from real page counts, not stale DB milestone fields.
+  const includeStats = view === 'admin';
 
   // Helper to determine if we should use shelf-style (infinite scroll) behavior
   const isShelfView = useMemo(() => {

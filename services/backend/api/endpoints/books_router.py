@@ -540,7 +540,7 @@ async def get_books(
 
             # Cache metadata version (longer TTL since metadata is stable)
             metadata_hash = hashlib.md5(json.dumps(cache_params_no_stats, sort_keys=True).encode()).hexdigest()
-            metadata_cache_key = cache_config.KEY_BOOKS_LIST.format(hash=metadata_hash)
+            metadata_cache_key = cache_config.KEY_BOOKS_LIST.format(hash=f"{version}:{metadata_hash}")
             await cache_service.set(metadata_cache_key, metadata_result, ttl=cache_ttl * 2)  # 20 min for metadata
 
             # Note: We do NOT cache the full stats result to ensure stats are always fresh

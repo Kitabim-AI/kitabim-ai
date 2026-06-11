@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.pipeline import (
     FAILED_PAGE_MILESTONES,
     PAGE_MILESTONE_ATTR_BY_STEP,
-    PAGE_MILESTONE_DONE,
     PAGE_MILESTONE_IDLE,
     PAGE_MILESTONE_IN_PROGRESS,
     PAGE_MILESTONE_SUCCEEDED,
@@ -167,7 +166,7 @@ class BooksRepository(BaseRepository[Book]):
             # For ready books, we still need to check if background spell check is running
             sc_stmt = (
                 select(
-                    func.count(case((Page.spell_check_milestone == PAGE_MILESTONE_DONE, 1))).label("done"),
+                    func.count(case((Page.spell_check_milestone == PAGE_MILESTONE_SUCCEEDED, 1))).label("done"),
                     func.count(case((Page.spell_check_milestone.in_(FAILED_PAGE_MILESTONES), 1))).label("failed"),
                     func.count(case((Page.spell_check_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))).label("active")
                 )
@@ -249,7 +248,7 @@ class BooksRepository(BaseRepository[Book]):
                     func.count(case((Page.embedding_milestone == PAGE_MILESTONE_SUCCEEDED, 1))).label("embedding_done"),
                     func.count(case((Page.embedding_milestone.in_(FAILED_PAGE_MILESTONES), 1))).label("embedding_failed"),
                     func.count(case((Page.embedding_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))).label("embedding_active"),
-                    func.count(case((Page.spell_check_milestone == PAGE_MILESTONE_DONE, 1))).label("spell_check_done"),
+                    func.count(case((Page.spell_check_milestone == PAGE_MILESTONE_SUCCEEDED, 1))).label("spell_check_done"),
                     func.count(case((Page.spell_check_milestone.in_(FAILED_PAGE_MILESTONES), 1))).label("spell_check_failed"),
                     func.count(case((Page.spell_check_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))).label("spell_check_active"),
                     func.count(case((Page.milestone == PAGE_MILESTONE_IDLE, 1))).label("pending_count"),
@@ -384,7 +383,7 @@ class BooksRepository(BaseRepository[Book]):
                 func.count(case((Page.embedding_milestone == PAGE_MILESTONE_SUCCEEDED, 1))).label("embedding"),
                 func.count(case((Page.embedding_milestone.in_(FAILED_PAGE_MILESTONES), 1))).label("embedding_failed"),
                 func.count(case((Page.embedding_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))).label("embedding_active"),
-                func.count(case((Page.spell_check_milestone == PAGE_MILESTONE_DONE, 1))).label("spell_check"),
+                func.count(case((Page.spell_check_milestone == PAGE_MILESTONE_SUCCEEDED, 1))).label("spell_check"),
                 func.count(case((Page.spell_check_milestone.in_(FAILED_PAGE_MILESTONES), 1))).label("spell_check_failed"),
                 func.count(case((Page.spell_check_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))).label("spell_check_active"),
             )

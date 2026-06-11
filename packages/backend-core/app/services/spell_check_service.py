@@ -420,7 +420,7 @@ async def run_spell_check_for_page(
         await session.execute(
             update(Page)
             .where(Page.id == page.id)
-            .values(spell_check_milestone="done", last_updated=func.now())
+            .values(spell_check_milestone="succeeded", last_updated=func.now())
         )
         return 0
 
@@ -455,7 +455,7 @@ async def run_spell_check_for_page(
     await session.execute(
         update(Page)
         .where(Page.id == page.id)
-        .values(spell_check_milestone="done", last_updated=func.now())
+        .values(spell_check_milestone="succeeded", last_updated=func.now())
     )
 
     return len(issues)
