@@ -298,7 +298,7 @@ class GeminiEmbeddings:
     def __init__(self, model_name: str | None = None) -> None:
         if not model_name:
             raise ValueError("model_name is required for GeminiEmbeddings")
-        self.model_name = model_name
+        self.model_name = model_name.replace("models/", "", 1) if model_name.startswith("models/") else model_name
 
     async def aembed_documents(self, texts: List[str]) -> List[List[float]]:
         if not texts:
@@ -308,17 +308,14 @@ class GeminiEmbeddings:
         from app.core.config import settings
 
         model_name = self.model_name
-        if not model_name.startswith("models/"):
-            model_name = f"models/{model_name}"
-            
         dimensions = 3072 if "gemini-embedding-2" in model_name else 768
 
         async def _call():
-            url = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:batchEmbedContents?key={settings.gemini_api_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:batchEmbedContents?key={settings.gemini_api_key}"
             requests = []
             for t in texts:
                 req = {
-                    "model": model_name,
+                    "model": f"models/{model_name}",
                     "content": {"parts": [{"text": t}]}
                 }
                 if dimensions:
@@ -343,15 +340,12 @@ class GeminiEmbeddings:
         from app.core.config import settings
 
         model_name = self.model_name
-        if not model_name.startswith("models/"):
-            model_name = f"models/{model_name}"
-            
         dimensions = 3072 if "gemini-embedding-2" in model_name else 768
 
         async def _call():
-            url = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:embedContent?key={settings.gemini_api_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:embedContent?key={settings.gemini_api_key}"
             req = {
-                "model": model_name,
+                "model": f"models/{model_name}",
                 "content": {"parts": [{"text": text}]}
             }
             if dimensions:

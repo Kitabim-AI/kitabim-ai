@@ -98,7 +98,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
 
   useEffect(() => {
     scrollToBottom();
-  }, [chatMessages, isChatting, view, streamingMessage]);
+  }, [chatMessages, isChatting, view, streamingMessage, agentSteps]);
 
   // Fetch usage status once when in a chat-capable view
   useEffect(() => {
