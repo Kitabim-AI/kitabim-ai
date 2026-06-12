@@ -141,9 +141,10 @@ def _grade_context(observations: list[dict]) -> tuple[str, int, int]:
         if isinstance(data, dict) and data.get("context"):
             metadata_parts.append(data["context"])
 
-    seen: set[tuple] = set()
-    documents: list[Document] = []
+    all_graded_documents: list[Document] = []
     total_raw_chunks = 0
+    seen: set[tuple] = set()
+
     for obs in observations:
         if obs.get("tool") != "search_chunks":
             continue
@@ -151,55 +152,68 @@ def _grade_context(observations: list[dict]) -> tuple[str, int, int]:
         if not res.get("ok", False):
             continue
         data = res.get("data") or res
-        if isinstance(data, dict):
-            chunks = data.get("chunks", [])
-            total_raw_chunks += len(chunks)
-            for chunk in chunks:
-                key = (chunk.get("book_id"), chunk.get("page"))
-                if key in seen:
-                    continue
-                seen.add(key)
-                documents.append(
-                    Document(
-                        page_content=chunk.get("text", ""),
-                        metadata={
-                            "title": chunk.get("title") or "Unknown",
-                            "author": chunk.get("author") or None,
-                            "volume": chunk.get("volume"),
-                            "page": chunk.get("page"),
-                            "book_id": chunk.get("book_id"),
-                            "score": chunk.get("score", 0.0),
-                        },
-                    )
-                )
+        if not isinstance(data, dict):
+            continue
 
-    if documents:
-        documents.sort(key=lambda d: d.metadata["score"], reverse=True)
-        before_count = total_raw_chunks
+        chunks = data.get("chunks", [])
+        if not chunks:
+            continue
 
-        top_score = documents[0].metadata["score"]
+        total_raw_chunks += len(chunks)
+
+        # Convert to Document list for this search tool call
+        search_docs = [
+            Document(
+                page_content=c.get("text", ""),
+                metadata={
+                    "title": c.get("title") or "Unknown",
+                    "author": c.get("author") or None,
+                    "volume": c.get("volume"),
+                    "page": c.get("page"),
+                    "book_id": c.get("book_id"),
+                    "score": c.get("score", 0.0),
+                },
+            )
+            for c in chunks
+        ]
+
+        # Grade this specific search call's results
+        search_docs.sort(key=lambda d: d.metadata["score"], reverse=True)
+        top_score = search_docs[0].metadata["score"]
         score_floor = top_score * GRADE_RELATIVE_THRESHOLD
-        graded = [d for d in documents if d.metadata["score"] >= score_floor]
 
-        if len(graded) < MIN_CHUNKS_AFTER_GRADING:
-            graded = documents[:MIN_CHUNKS_AFTER_GRADING]
+        graded_search_docs = [
+            d for d in search_docs if d.metadata["score"] >= score_floor
+        ]
 
-        graded = graded[:AGENT_MAX_CONTEXT_CHUNKS]
+        # Fallback to keep minimum chunks for this specific search if drop is steep
+        if len(graded_search_docs) < MIN_CHUNKS_AFTER_GRADING:
+            graded_search_docs = search_docs[:MIN_CHUNKS_AFTER_GRADING]
 
+        # Append to our global pool, deduplicating along the way
+        for doc in graded_search_docs:
+            key = (doc.metadata["book_id"], doc.metadata["page"])
+            if key in seen:
+                continue
+            seen.add(key)
+            all_graded_documents.append(doc)
+
+    # Final global sort and limit cap
+    if all_graded_documents:
+        # Sort the globally aggregated list so the highest overall scoring context comes first
+        all_graded_documents.sort(key=lambda d: d.metadata["score"], reverse=True)
+        graded = all_graded_documents[:AGENT_MAX_CONTEXT_CHUNKS]
         log_json(
             logger,
             logging.INFO,
-            "Context graded",
-            before=before_count,
+            "Context graded (per-search)",
+            before=total_raw_chunks,
             after=len(graded),
-            top_score=round(top_score, 3),
-            score_floor=round(score_floor, 3),
         )
         chunk_parts = [format_document(d) for d in graded]
         after_count = len(graded)
     else:
         chunk_parts = []
-        before_count = 0
         after_count = 0
 
     all_parts = metadata_parts + chunk_parts
@@ -208,7 +222,7 @@ def _grade_context(observations: list[dict]) -> tuple[str, int, int]:
         if all_parts
         else "NO RELEVANT DOCUMENTS FOUND IN THE LIBRARY."
     )
-    return graded_context, before_count, after_count
+    return graded_context, total_raw_chunks, after_count
 
 
 def _extract_used_book_ids(observations: list[dict]) -> list[str]:
@@ -268,7 +282,6 @@ class AgentRAGHandler(QueryHandler):
     """Google ADK agentic RAG handler. Fallback for all unmatched intents."""
 
     intent_name = "agent_rag"
-    priority = 998
 
     def can_handle(self, _ctx: QueryContext) -> bool:
         return True

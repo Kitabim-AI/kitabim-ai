@@ -14,13 +14,9 @@ class QueryHandler(ABC):
 
     Handlers are stateless singletons.  All per-request state lives in
     ``QueryContext`` which is passed to every method.
-
-    Priority ordering: lower value = higher priority.
-    ``AgentRAGHandler`` uses priority=998 as the guaranteed fallback.
     """
 
     intent_name: str = "base"
-    priority: int = 50
 
     def can_handle(self, _ctx: "QueryContext") -> bool:
         """Sync, fast check — must NOT perform I/O.

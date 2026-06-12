@@ -3,69 +3,20 @@
 from __future__ import annotations
 
 import logging
-from typing import AsyncIterator, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Book
-from app.services.rag.base_handler import QueryHandler
 from app.services.rag.context import QueryContext
-from app.services.rag.utils import entity_matches_question, is_author_or_catalog_query
-from app.services.rag.answer_builder import generate_answer, generate_answer_stream
+from app.services.rag.utils import entity_matches_question
 
 logger = logging.getLogger("app.rag.catalog")
 
 
-class CatalogHandler(QueryHandler):
-    intent_name = "catalog"
-    priority = 50
-
-    def can_handle(self, ctx: QueryContext) -> bool:
-        return is_author_or_catalog_query(ctx.question)
-
-    async def handle(self, ctx: QueryContext) -> str:
-        context, retrieved_count = await self._build_catalog_context(
-            ctx.question, ctx.session, ctx.character_categories
-        )
-        context = self._prepend_current_book(context, ctx)
-        ctx.retrieved_count = retrieved_count
-        ctx.context_chars = len(context)
-        ctx.category_filter = ctx.character_categories
-        ctx.graded_context = context  # persisted for Ragas evaluation
-
-        return await generate_answer(
-            context,
-            ctx.question,
-            ctx.rag_chain,
-            chat_history=ctx.chat_history_str,
-            suppress_page_notice=True,
-            persona_prompt=ctx.persona_prompt,
-            is_global=ctx.is_global,
-            has_categories=bool(ctx.character_categories),
-        )
-
-    async def handle_stream(self, ctx: QueryContext) -> AsyncIterator[str]:
-        context, retrieved_count = await self._build_catalog_context(
-            ctx.question, ctx.session, ctx.character_categories
-        )
-        context = self._prepend_current_book(context, ctx)
-        ctx.retrieved_count = retrieved_count
-        ctx.context_chars = len(context)
-        ctx.category_filter = ctx.character_categories
-        ctx.graded_context = context  # persisted for Ragas evaluation
-
-        async for chunk in generate_answer_stream(
-            context,
-            ctx.question,
-            ctx.rag_chain,
-            chat_history=ctx.chat_history_str,
-            suppress_page_notice=True,
-            persona_prompt=ctx.persona_prompt,
-            is_global=ctx.is_global,
-            has_categories=bool(ctx.character_categories),
-        ):
-            yield chunk
+class CatalogHandler:
+    """Helper utilities for querying catalog and book metadata."""
 
     # ------------------------------------------------------------------
     # Helpers

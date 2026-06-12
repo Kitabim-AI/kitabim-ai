@@ -105,3 +105,74 @@ def test_detect_intent():
     ]
     for q in questions:
         assert _detect_intent(q, ctx) == "catalog"
+
+
+def test_grade_context_local_grading():
+    from app.services.rag.agent.handler import _grade_context
+
+    # Simulate two search calls.
+    # Search A: high similarity scores (e.g. 0.95, 0.90) -> top_score = 0.95, floor = 0.8075 (keeps both)
+    # Search B: lower similarity scores (e.g. 0.78, 0.77) -> top_score = 0.78, floor = 0.6630 (keeps both)
+    # Under global grading, Search B would be completely pruned because 0.78 < (0.95 * 0.85 = 0.8075).
+    # Under local grading, Search B keeps both chunks.
+    observations = [
+        {
+            "tool": "search_chunks",
+            "result": {
+                "ok": True,
+                "data": {
+                    "chunks": [
+                        {
+                            "book_id": "book_a",
+                            "page": 10,
+                            "text": "Content A1 from book A",
+                            "score": 0.95,
+                            "title": "Book A",
+                        },
+                        {
+                            "book_id": "book_a",
+                            "page": 11,
+                            "text": "Content A2 from book A",
+                            "score": 0.90,
+                            "title": "Book A",
+                        },
+                    ]
+                },
+            },
+        },
+        {
+            "tool": "search_chunks",
+            "result": {
+                "ok": True,
+                "data": {
+                    "chunks": [
+                        {
+                            "book_id": "book_b",
+                            "page": 20,
+                            "text": "Content B1 from book B",
+                            "score": 0.78,
+                            "title": "Book B",
+                        },
+                        {
+                            "book_id": "book_b",
+                            "page": 21,
+                            "text": "Content B2 from book B",
+                            "score": 0.77,
+                            "title": "Book B",
+                        },
+                    ]
+                },
+            },
+        },
+    ]
+
+    graded_context, before_count, after_count = _grade_context(observations)
+
+    # 4 chunks before, 4 chunks after
+    assert before_count == 4
+    assert after_count == 4
+
+    assert "Book A" in graded_context
+    assert "Book B" in graded_context
+    assert "Content A1" in graded_context
+    assert "Content B1" in graded_context
