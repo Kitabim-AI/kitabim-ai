@@ -4,7 +4,12 @@ from __future__ import annotations
 import logging
 from typing import AsyncIterator, List, Optional
 
-from langchain_core.documents import Document
+from dataclasses import dataclass
+
+@dataclass
+class Document:
+    page_content: str
+    metadata: dict
 
 from app.core.i18n import t
 from app.utils.observability import log_json

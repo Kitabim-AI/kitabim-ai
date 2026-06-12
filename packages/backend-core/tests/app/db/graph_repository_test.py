@@ -3,6 +3,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.db.repositories.graph_repository import GraphRepository
 
 
+@pytest.fixture(autouse=True)
+async def cleanup_graph_driver():
+    """Ensure class-level graph driver is clean before and after each test."""
+    GraphRepository._driver = None
+    yield
+    await GraphRepository.close_driver()
+
+
 @pytest.mark.asyncio
 async def test_graph_repository_init_constraints():
     mock_session = AsyncMock()
@@ -16,7 +24,7 @@ async def test_graph_repository_init_constraints():
         await repo.init_constraints()
 
         assert mock_session.run.call_count == 1
-        await repo.close()
+        await GraphRepository.close_driver()
         assert mock_driver.close.called
 
 

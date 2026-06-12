@@ -98,7 +98,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
 
   useEffect(() => {
     scrollToBottom();
-  }, [chatMessages, isChatting, view, streamingMessage]);
+  }, [chatMessages, isChatting, view, streamingMessage, agentSteps]);
 
   // Fetch usage status once when in a chat-capable view
   useEffect(() => {
@@ -221,7 +221,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
         view === 'global-chat' ? contextBookIdsRef.current : [],
         // onContextBookIds — store new context for the next request
         view === 'global-chat' ? (ids: string[]) => { contextBookIdsRef.current = ids; } : undefined,
-        // onAgentEvent — live LangGraph step events
+        // onAgentEvent — live agent step events
         handleAgentEvent,
         // onEvalId — capture eval id from done event
         (evalId: number) => { pendingEvalIdRef.current = evalId; },

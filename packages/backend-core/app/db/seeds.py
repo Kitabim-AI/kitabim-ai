@@ -28,7 +28,7 @@ async def seed_system_configs(session: AsyncSession):
         },
         {
             "key": "gemini_embedding_model",
-            "value": "models/gemini-embedding-2",
+            "value": "gemini-embedding-2",
             "description": "Gemini model used for generating text embeddings (vector search)."
         },
         {

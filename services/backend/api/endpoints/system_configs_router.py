@@ -13,7 +13,7 @@ from app.db.repositories.system_configs_repository import SystemConfigsRepositor
 from auth.dependencies import require_admin, require_editor
 from app.models.user import User
 from app.core.i18n import t
-from app.langchain.models import (
+from app.llm.models import (
     get_circuit_breaker_status,
     reset_circuit_breakers,
     force_open_circuit_breakers,

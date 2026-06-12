@@ -2175,7 +2175,7 @@
           "chat"
         ],
         "summary": "Submit Chat Feedback",
-        "description": "Record thumbs-up/down feedback for an assistant response.\n\nThumbs-down (negative) feedback immediately enqueues a Ragas evaluation\njob for that response, regardless of the background sampling rate.",
+        "description": "Record thumbs-up/down feedback for an assistant response.",
         "operationId": "submit_chat_feedback_api_chat_feedback_post",
         "requestBody": {
           "content": {
@@ -2604,7 +2604,7 @@
           "stats"
         ],
         "summary": "Get Rag Quality Stats",
-        "description": "Get Ragas semantic quality metrics from graded RAG evaluations (admin only).\n\nSingle query using conditional aggregation \u2014 avoids three round-trips.",
+        "description": "Get RAG user feedback and quality statistics (admin only).",
         "operationId": "get_rag_quality_stats_api_stats_rag_get",
         "responses": {
           "200": {
@@ -2613,6 +2613,33 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RAGQualityStats"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/stats/pipeline": {
+      "get": {
+        "tags": [
+          "stats"
+        ],
+        "summary": "Get Pipeline Performance Stats",
+        "description": "Get pipeline stage performance metrics from PipelineEvent duration_ms (admin only).\n\nAggregates avg / p95 / max processing duration per event_type\nusing the JSON payload stored in each PipelineEvent row.",
+        "operationId": "get_pipeline_performance_stats_api_stats_pipeline_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelinePerformanceStats"
                 }
               }
             }
@@ -5072,6 +5099,69 @@
         "title": "PaginatedUsers",
         "description": "Response model for paginated user list."
       },
+      "PipelinePerformanceStats": {
+        "properties": {
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/PipelineStageStats"
+            },
+            "type": "array",
+            "title": "Stages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stages"
+        ],
+        "title": "PipelinePerformanceStats"
+      },
+      "PipelineStageStats": {
+        "properties": {
+          "stage": {
+            "type": "string",
+            "title": "Stage"
+          },
+          "avg_duration_ms": {
+            "type": "number",
+            "title": "Avg Duration Ms"
+          },
+          "p95_duration_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 Duration Ms"
+          },
+          "max_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Duration Ms"
+          },
+          "total_events": {
+            "type": "integer",
+            "title": "Total Events"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stage",
+          "avg_duration_ms",
+          "p95_duration_ms",
+          "max_duration_ms",
+          "total_events"
+        ],
+        "title": "PipelineStageStats"
+      },
       "RAGQualityStats": {
         "properties": {
           "total_evaluations": {
@@ -5081,6 +5171,14 @@
           "graded_evaluations": {
             "type": "integer",
             "title": "Graded Evaluations"
+          },
+          "thumbs_up_count": {
+            "type": "integer",
+            "title": "Thumbs Up Count"
+          },
+          "thumbs_down_count": {
+            "type": "integer",
+            "title": "Thumbs Down Count"
           },
           "avg_faithfulness": {
             "anyOf": [
@@ -5109,8 +5207,8 @@
         "required": [
           "total_evaluations",
           "graded_evaluations",
-          "avg_faithfulness",
-          "avg_answer_relevance"
+          "thumbs_up_count",
+          "thumbs_down_count"
         ],
         "title": "RAGQualityStats"
       },

@@ -376,13 +376,13 @@ export const StatsPanel: React.FC = () => {
           </div>
         </div>
 
-        {/* ── RAG Quality (Ragas) ── */}
+        {/* ── RAG Quality & Feedback ── */}
         <div className="glass-panel overflow-hidden rounded-[24px] p-8 shadow-xl border border-[#0369a1]/10">
           <div className="space-y-3">
             <div className="flex items-center gap-2 mb-4">
               <ShieldCheck size={16} className="text-[#0369a1]" />
               <h4 className="text-base font-semibold text-[#0369a1] uppercase tracking-wide">
-                {t('admin.stats.ragQualityTitle') || 'RAG Quality (Ragas)'}
+                {t('admin.stats.ragQualityTitle') || 'RAG Quality & Feedback'}
               </h4>
             </div>
 
@@ -405,7 +405,7 @@ export const StatsPanel: React.FC = () => {
               <div className="flex items-center justify-between mb-2">
                 <span className="flex items-center gap-1.5 text-sm font-medium text-indigo-700">
                   <CheckCircle size={14} />
-                  {t('admin.stats.gradedEvaluations') || 'Graded by Ragas'}
+                  {t('admin.stats.gradedEvaluations') || 'Feedback Submissions'}
                 </span>
                 <span className="text-2xl font-bold text-indigo-700">{(ragQuality?.graded_evaluations ?? 0).toLocaleString()}</span>
               </div>

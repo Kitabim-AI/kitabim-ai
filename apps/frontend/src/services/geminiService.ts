@@ -48,7 +48,7 @@ export const chatWithBook = async (
     });
 
     if (response.status === 401) {
-      return "سوئالغا جاۋاب بېرىش ئۈچۈن تىزىملىتىڭ.";
+      return "بۇ ئىقتىدارنى ئىشلىتىش ئۈچۈن تىزىملىتىڭ.";
     }
     if (response.status === 403) {
       return "بۇ ئىقتىدارنى ئىشلىتىش ھوقۇقىڭىز يوق.";
@@ -103,7 +103,7 @@ export const chatWithBookStream = async (
     });
 
     if (response.status === 401) {
-      onError("سوئالغا جاۋاب بېرىش ئۈچۈن تىزىملىتىڭ.");
+      onError("بۇ ئىقتىدارنى ئىشلىتىش ئۈچۈن تىزىملىتىڭ.");
       return;
     }
     if (response.status === 403) {

@@ -48,11 +48,14 @@ _STEP_4_CONTENT = (
     "volume's book_id (determine which volume from the question and the series list returned).\n"
     "      - Otherwise, call search_chunks with the current book_id directly — skip book discovery entirely.\n"
     "   e. If no title/author is explicitly named, [Context] provides previous response book IDs, AND the question "
-    'specifically asks who or what a character or person is (e.g. "X كىم؟", "X توغرىسىدا ئېيت", "tell me about X") → '
+    'specifically asks who or what a character or person is (e.g. "X كىم؟", "X توغرىسىدا ئېيت", "tell me about X") '
+    "(EXCEPTION: If the question is a follow-up asking for details, specific events, historical facts, passages, or explanations "
+    "about a fact/event/topic mentioned in the previous response or summary, you MUST skip this step and call search_chunks instead) → "
     "first call search_books_by_summary(query, book_ids=context_book_ids) to verify those books actually contain "
     "information about the queried person. If results are returned, call get_book_summary with those book_ids (at most 5). "
     "If search_books_by_summary returns no results, the topic has changed — proceed to step g.\n"
-    "   f. If no title/author is explicitly named but [Context] provides previous response book IDs (and it is not a character question):\n"
+    "   f. If no title/author is explicitly named but [Context] provides previous response book IDs (and it is not a character/person identity question, "
+    "OR it is a follow-up asking for details, specific events, historical facts, passages, or explanations about a fact/event/topic mentioned in the previous response or summary):\n"
     "      - If the question asks about a DIFFERENT volume of those books (mentions next/previous/numbered volume), "
     "call get_sister_volumes with the first context book_id to discover the full series, then call search_chunks "
     "with the relevant sister volume's book_id.\n"
@@ -60,12 +63,12 @@ _STEP_4_CONTENT = (
     "If fewer than 4 results are returned, the topic may have changed — proceed to step g.\n"
     "   g. In all other cases (e.g. general topics, character lookups with no prior context), call search_books_by_summary first "
     "to identify the most relevant books, then call search_chunks with the returned book_ids for precise passage retrieval. "
-    'If the question is a "who is X" or "tell me about X" question (not asking for specific passages), '
+    'If the question is a "who is X" or "tell me about X" question (where X is a person or character, and it is NOT asking for specific details, events, facts, passages, or explanations about them), '
     "call get_book_summary instead of search_chunks — but pass at most 5 of the most relevant book IDs. "
     "After get_book_summary completes for a 'who is X' / 'tell me about X' question about a SINGLE entity, "
     "stop immediately — do NOT call search_chunks, search_catalog, or any other tool afterward. "
-    "EXCEPTION: If the question asks you to compare, contrast, or find commonality between multiple books or entities, "
-    "you MUST retrieve information for ALL named books/entities before stopping.\n"
+    "IMPORTANT: If the question is about specific details, events, facts, or descriptions (even if it uses phrases like 'tell me about Y' or 'what is Y' to refer to a specific event, action, or fact), "
+    "you MUST call search_chunks to retrieve the actual page passages rather than get_book_summary.\n"
     "   h. If the question asks about relationships, lineages, or connections between characters, locations, events, or concepts (e.g. 'how are X and Y related?', 'who is the grandchild/child of Z?', 'list the events in location W'), AND [Context] shows 'Graph available: yes' (or no Graph available line is present, meaning global mode), call query_knowledge_graph first to retrieve semantic relationship networks. Combine this with search_chunks if precise textual passages are also needed. If [Context] shows 'Graph available: no', skip query_knowledge_graph entirely and go straight to search_chunks.\n"
     "   i. If search_chunks (not get_book_summary) returns fewer than 4 results, retry with a rephrased query or "
     "broaden by calling search_chunks with an empty book_ids list to search the entire library. "

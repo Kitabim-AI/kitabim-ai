@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from langchain_core.documents import Document
+from app.services.rag.answer_builder import Document
 
 from app.services.rag.utils import (
     is_current_volume_query,

@@ -16,7 +16,6 @@ from app.core.config import settings
 from app.db.session import init_db, close_db  # SQLAlchemy session management
 from app.core.i18n import I18n, set_current_lang, t
 
-from app.langchain import configure_langchain
 from app.utils.observability import configure_logging, log_json, request_id_var
 from auth.jwt_handler import validate_jwt_secret
 
@@ -72,7 +71,6 @@ async def redis_pubsub_listener():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging()
-    configure_langchain()
     I18n.load_translations()
     
     # Validate JWT secret key at startup (fail fast in production)

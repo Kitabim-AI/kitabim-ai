@@ -120,6 +120,12 @@ async def close_db() -> None:
         await engine.dispose()
         engine = None
 
+    try:
+        from app.db.repositories.graph_repository import GraphRepository
+        await GraphRepository.close_driver()
+    except Exception as exc:
+        log_json(logger, logging.WARNING, "Failed to close graph driver during close_db", error=str(exc))
+
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """

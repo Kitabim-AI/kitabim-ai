@@ -6,7 +6,7 @@ import fitz
 
 from app.core.config import settings
 from app.core.prompts import OCR_PROMPT
-from app.langchain.models import generate_text_with_image
+from app.llm.models import generate_text_with_image
 from app.utils.text import clean_uyghur_text
 
 

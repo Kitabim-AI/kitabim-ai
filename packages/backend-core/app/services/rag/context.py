@@ -61,3 +61,8 @@ class QueryContext:
     agent_max_steps: int = 6
     agent_enough_chunks: int = 8
 
+    def __deepcopy__(self, memo):
+        # Return self directly to prevent copy.deepcopy from failing on non-pickleable
+        # attributes (like AsyncSession, chains, embeddings, etc.) while sharing state.
+        return self
+

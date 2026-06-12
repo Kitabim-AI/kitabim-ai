@@ -18,46 +18,63 @@ class GraphRepository:
 
     Allows mapping and querying entity-relationship networks of books.
     """
+    _driver = None
 
     def __init__(self, uri: Optional[str] = None) -> None:
         self._uri = uri or settings.memgraph_url
-        
-        # Parse credentials from the URI if present, as the Neo4j driver does not support
-        # credentials embedded directly in the URI scheme.
-        parsed = urlparse(self._uri)
-        if parsed.username and parsed.password:
-            auth = (parsed.username, parsed.password)
-            # Reconstruct clean URI without credentials
-            clean_uri = f"{parsed.scheme}://{parsed.hostname}"
-            if parsed.port:
-                clean_uri += f":{parsed.port}"
-            if parsed.path:
-                clean_uri += parsed.path
-        else:
-            auth = None
-            clean_uri = self._uri
+        if GraphRepository._driver is None:
+            # Parse credentials from the URI if present, as the Neo4j driver does not support
+            # credentials embedded directly in the URI scheme.
+            parsed = urlparse(self._uri)
+            if parsed.username and parsed.password:
+                auth = (parsed.username, parsed.password)
+                # Reconstruct clean URI without credentials
+                clean_uri = f"{parsed.scheme}://{parsed.hostname}"
+                if parsed.port:
+                    clean_uri += f":{parsed.port}"
+                if parsed.path:
+                    clean_uri += parsed.path
+            else:
+                auth = None
+                clean_uri = self._uri
 
-        # liveness_check_timeout=0: verify each pooled connection is alive before
-        #   returning it to the caller — prevents "defunct connection" errors that occur
-        #   when Memgraph closes an idle connection server-side while it is still in the pool.
-        # max_connection_lifetime=300: recycle connections after 5 minutes so they are
-        #   never older than the server-side idle timeout.
-        # max_connection_pool_size=20: explicit cap; one worker job with max_parallel=5
-        #   batches at 2 graph calls each fits comfortably within this limit.
-        # connection_timeout=30: fail fast rather than waiting indefinitely on a dead host.
-        self._driver = AsyncGraphDatabase.driver(
-            clean_uri,
-            auth=auth,
-            max_connection_pool_size=20,
-            max_connection_lifetime=300,
-            connection_timeout=30,
-            liveness_check_timeout=0,
-            keep_alive=True,
-        )
+            # liveness_check_timeout=0: verify each pooled connection is alive before
+            #   returning it to the caller — prevents "defunct connection" errors that occur
+            #   when Memgraph closes an idle connection server-side while it is still in the pool.
+            # max_connection_lifetime=300: recycle connections after 5 minutes so they are
+            #   never older than the server-side idle timeout.
+            # max_connection_pool_size=20: explicit cap; one worker job with max_parallel=5
+            #   batches at 2 graph calls each fits comfortably within this limit.
+            # connection_timeout=30: fail fast rather than waiting indefinitely on a dead host.
+            GraphRepository._driver = AsyncGraphDatabase.driver(
+                clean_uri,
+                auth=auth,
+                max_connection_pool_size=20,
+                max_connection_lifetime=300,
+                connection_timeout=30,
+                liveness_check_timeout=0,
+                keep_alive=True,
+            )
+        self._driver = GraphRepository._driver
+
+    @property
+    def _driver_instance(self):
+        return GraphRepository._driver
 
     async def close(self) -> None:
+        """No-op when driver is shared. Driver cleanup is handled at app shutdown."""
+        pass
+
+    @classmethod
+    async def close_driver(cls) -> None:
         """Close driver session connection pool."""
-        await self._driver.close()
+        if cls._driver is not None:
+            try:
+                await cls._driver.close()
+            except TypeError:
+                if hasattr(cls._driver, "close") and callable(cls._driver.close):
+                    cls._driver.close()
+            cls._driver = None
 
     async def init_constraints(self) -> None:
         """Initialize uniqueness constraints and indexes in Memgraph.

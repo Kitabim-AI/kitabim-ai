@@ -51,7 +51,9 @@ def create_access_token(user: User) -> str:
         "iat": now,
         "exp": now + timedelta(minutes=settings.jwt_access_token_expire_minutes),
     }
-    active_secret = settings.jwt_secrets.get(settings.jwt_active_kid, settings.jwt_secret_key)
+    active_secret = settings.jwt_secrets.get(settings.jwt_active_kid)
+    if not active_secret:
+        raise RuntimeError(f"JWT active secret for kid '{settings.jwt_active_kid}' is not configured")
     return jwt.encode(
         payload, 
         active_secret, 
@@ -79,7 +81,9 @@ def create_refresh_token(user: User) -> tuple[str, str]:
         "iat": now,
         "exp": now + timedelta(days=settings.jwt_refresh_token_expire_days),
     }
-    active_secret = settings.jwt_secrets.get(settings.jwt_active_kid, settings.jwt_secret_key)
+    active_secret = settings.jwt_secrets.get(settings.jwt_active_kid)
+    if not active_secret:
+        raise RuntimeError(f"JWT active secret for kid '{settings.jwt_active_kid}' is not configured")
     token = jwt.encode(
         payload, 
         active_secret, 
@@ -112,9 +116,7 @@ def decode_jwt(token: str, expected_type: str = "access") -> Dict[str, Any]:
 
     secret = settings.jwt_secrets.get(kid)
     if not secret:
-        # Fallback to default secret key if key ID is not found in secrets map
-        logger.warning(f"JWT header specified unknown kid '{kid}'. Trying default fallback secret.")
-        secret = settings.jwt_secret_key
+        raise TokenInvalidError(f"JWT signature verification failed: unknown kid '{kid}'")
 
     try:
         payload = jwt.decode(

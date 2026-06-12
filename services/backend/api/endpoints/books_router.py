@@ -34,7 +34,7 @@ from app.models.user import User
 from app.services.storage_service import storage
 from app.services.chunking_service import chunking_service
 from app.utils.markdown import normalize_markdown, strip_markdown
-from app.langchain.models import GeminiEmbeddings
+from app.llm.models import GeminiEmbeddings
 from auth.dependencies import (
     get_current_user_optional,
     require_admin,

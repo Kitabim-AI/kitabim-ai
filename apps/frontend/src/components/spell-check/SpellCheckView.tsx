@@ -328,7 +328,7 @@ export const SpellCheckView: React.FC = () => {
 
   return (
     <div
-      className="h-[calc(100dvh-72px)] sm:h-[calc(100dvh-88px)] md:h-[calc(100dvh-88px)] lg:h-[calc(100dvh-96px)] w-full lg:max-w-5xl lg:mx-auto flex flex-col gap-3 md:gap-4 lg:gap-6 px-3 py-3 sm:px-6 md:px-0 lg:py-4"
+      className="w-full lg:max-w-5xl lg:mx-auto flex flex-col gap-3 md:gap-4 lg:gap-6 px-3 py-3 sm:px-6 md:px-0 lg:py-4 flex-grow min-h-0"
       dir="rtl"
       lang="ug"
     >

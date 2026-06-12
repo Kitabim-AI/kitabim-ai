@@ -27,8 +27,8 @@ from app.db import session as db_session
 from app.db.models import Book, Page
 from app.db.repositories.book_summaries_repository import BookSummariesRepository
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
-from app.langchain import build_text_chain
-from app.langchain.models import GeminiEmbeddings
+from app.llm import build_text_chain
+from app.llm.models import GeminiEmbeddings
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.summary_job")
@@ -42,6 +42,12 @@ def _sample_text(pages_text: list[str], max_chars: int) -> str:
     full_text = "\n\n".join(t for t in pages_text if t)
     if len(full_text) <= max_chars:
         return full_text
+
+    log_json(
+        logger, logging.WARNING,
+        "Truncating book text for summary LLM request",
+        original_length=len(full_text), target_length=max_chars
+    )
 
     first = full_text[: int(max_chars * 0.4)]
     mid_start = len(full_text) // 2 - int(max_chars * 0.1)
@@ -84,9 +90,24 @@ async def summary_job(ctx, book_id: str) -> None:
             log_json(logger, logging.WARNING, "summary job: no page text found", book_id=book_id)
             return
 
-        # Full text is passed directly; _sample_text only truncates the rare outlier book
-        # that exceeds the model's context window (safety ceiling: SUMMARY_MAX_CHARS=3M chars)
-        sampled_text = _sample_text(pages_text, settings.summary_max_chars)
+        # Determine safety limit based on model name
+        max_chars = settings.summary_max_chars
+        # If it's a 1.0 model or custom/smaller, restrict to a safe default (e.g., 100k chars)
+        # to prevent API errors. Most modern models (1.5, 2.0) support 1M+ tokens.
+        is_large_context_model = any(
+            m in gemini_chat_model.lower() 
+            for m in ["1.5", "2.0", "flash", "pro", "ultra"]
+        ) and not ("1.0" in gemini_chat_model.lower())
+        
+        if not is_large_context_model:
+            max_chars = min(max_chars, 100_000)
+            log_json(
+                logger, logging.INFO, 
+                "Detected smaller model context window, limiting text sample size",
+                model=gemini_chat_model, max_chars=max_chars
+            )
+
+        sampled_text = _sample_text(pages_text, max_chars)
 
         # Generate summary via Gemini chat model
         chain = build_text_chain(

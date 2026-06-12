@@ -166,17 +166,12 @@ class RAGService:
             from app.db.repositories.system_configs_repository import SystemConfigsRepository
 
             configs = SystemConfigsRepository(ctx.session)
-            enabled = await configs.get_value("rag_eval_enabled", "false")
-            if enabled != "true":
+            enabled = await configs.get_value("rag_eval_enabled")
+            if enabled is None:
+                log_json(logger, logging.WARNING, "RAG eval skipped: 'rag_eval_enabled' key not found in system_configs")
                 return None
-
-            # Determine whether this query should be graded by Ragas
-            sampling_rate_str = await configs.get_value("rag_eval_sampling_rate", "0.05")
-            try:
-                sampling_rate = float(sampling_rate_str)
-            except ValueError:
-                sampling_rate = 0.05
-            should_grade = random.random() < sampling_rate
+            if enabled.lower() != "true":
+                return None
 
             repo = RAGEvaluationsRepository(ctx.session)
             evaluation = await repo.create_evaluation(
@@ -195,24 +190,11 @@ class RAGService:
                 tools_called=ctx.agent_tools_called or None,
                 retry_count=ctx.agent_retry_count,
                 final_chunk_count=ctx.agent_final_chunk_count,
-                # Ragas fields — always store answer/context so feedback can trigger evaluation
-                eval_status="queued" if should_grade else "skipped",
+                eval_status="skipped",
                 answer=answer,
                 retrieved_context=ctx.graded_context,
             )
             await ctx.session.commit()
-
-            # Enqueue the background Ragas scoring job if selected
-            if should_grade and evaluation.id is not None:
-                try:
-                    import arq
-                    from app.core.config import settings
-                    redis_pool = await arq.create_pool(arq.connections.RedisSettings.from_dsn(settings.redis_url))
-                    await redis_pool.enqueue_job("evaluate_rag_query", evaluation.id)
-                    await redis_pool.aclose()
-                    log_json(logger, logging.INFO, "RAG eval job queued", eval_id=evaluation.id)
-                except Exception as exc:
-                    log_json(logger, logging.WARNING, "Failed to enqueue RAG eval job", error=str(exc))
 
             return evaluation.id
         except Exception as exc:
