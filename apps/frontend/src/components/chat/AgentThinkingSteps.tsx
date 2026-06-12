@@ -59,6 +59,15 @@ function getStepSublabel(
   allSteps: AgentStep[]
 ): string | null {
   if (step.type === 'tool' && step.status === 'done' && step.found !== undefined) {
+    const isUtilityTool = [
+      'rewrite_query',
+      'get_current_page',
+    ].includes(step.tool ?? '');
+
+    if (isUtilityTool) {
+      return null;
+    }
+
     const isBookTool = [
       'find_books_by_title',
       'search_books_by_summary',

@@ -14,7 +14,6 @@ PYTHONPATH=packages/backend-core python -m arq app.worker.WorkerSettings
   /app
     /api
     /services
-    /langchain
     /core
     /db
     /models

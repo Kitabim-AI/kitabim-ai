@@ -73,10 +73,6 @@ class Settings:
     chunk_size: int = int(os.getenv("CHUNK_SIZE", "1500"))
     chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "300"))
 
-    # LangChain / Observability
-    langchain_cache_enabled: bool = os.getenv("LANGCHAIN_CACHE", "false").lower() == "true"
-    langchain_tracing_enabled: bool = os.getenv("LANGCHAIN_TRACING", "false").lower() == "true"
-    langchain_project: str | None = os.getenv("LANGCHAIN_PROJECT")
 
     # Logging
     log_level: str = os.getenv("LOG_LEVEL", "WARNING")  # DEBUG, INFO, WARNING, ERROR
@@ -185,8 +181,8 @@ class Settings:
     llm_provider: str = os.getenv("LLM_PROVIDER", "gemini")
     vector_store_provider: str = os.getenv("VECTOR_STORE_PROVIDER", "pgvector")
 
-    @property
-    def jwt_secrets(self) -> dict[str, str]:
+    def __post_init__(self) -> None:
+        # Compute jwt_secrets dict once on startup
         secrets_map = {}
         rotation_secrets = self.jwt_rotation_secrets
         if rotation_secrets:
@@ -195,13 +191,14 @@ class Settings:
                     kid, secret = pair.split(":", 1)
                     secrets_map[kid.strip()] = secret.strip()
         
-        # Only map the active kid to the default secret if it isn't already in the
-        # rotation map. Never inject historical kids (e.g. "v1") automatically —
-        # that would prevent key rotation from ever fully removing an old key.
         if self.jwt_active_kid not in secrets_map and self.jwt_secret_key:
             secrets_map[self.jwt_active_kid] = self.jwt_secret_key
 
-        return secrets_map
+        object.__setattr__(self, "_jwt_secrets_cache", secrets_map)
+
+    @property
+    def jwt_secrets(self) -> dict[str, str]:
+        return self._jwt_secrets_cache
 
 
 settings = Settings()

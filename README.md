@@ -22,94 +22,84 @@ Uyghur literature, history, and culture exist almost entirely in physical form. 
 
 ---
 
-## Knowledge Base Agent — Agentic GraphRAG
+## Knowledge Base Agent — Agentic RAG with Google ADK
 
-The knowledge-base agent chat interface is powered by an **agentic loop built on LangGraph** that runs for every question that isn't resolved by specialized fast-path handlers.
+The query assistant interface runs an **agentic loop built on Google ADK** as the primary fallback handler for all questions. Before running the agent, a lightweight preprocessing pipeline determines intent and decomposes compound queries.
 
 ```mermaid
 graph TD
-    START([START]) --> Decompose[decompose_query]
-    Decompose --> Plan[plan_query]
-    Plan --> AgentStep[agent_step]
-    
-    AgentStep -->|Parallel Fan-out| ExecuteTool[execute_tool]
-    AgentStep -->|No Tool Calls| BuildContext[build_context]
-    
-    ExecuteTool --> CollectTools[collect_tools]
-    CollectTools -->|Conditional Loop| AgentStep
-    CollectTools -->|Limit Reached| BuildContext
-    
-    BuildContext --> GradeContext[grade_context]
-    GradeContext --> GenerateAnswer[generate_answer]
+    START([START]) --> Intent[Intent Detection]
+    Intent --> Decompose[Query Decomposition]
+    Decompose --> ContextInj[Context Injection]
+    ContextInj --> ADKLoop[Google ADK ReAct Loop]
+    ADKLoop -->|Call Tools| ExecuteTool[Execute Tool]
+    ExecuteTool -->|Tool Observations| ADKLoop
+    ADKLoop -->|Finish Loop / Max Steps| PostProcess[Post-Processing]
+    PostProcess --> ExtractIDs[Extract Used Book IDs]
+    ExtractIDs --> ContextGrade[Context Grading]
+    ContextGrade --> GenerateAnswer[Answer Synthesis]
     GenerateAnswer --> END([END])
 ```
 
-**How Agentic GraphRAG works:**
+**How Agentic RAG works:**
 
-1. **Context Injection** — before the first LLM call, the agent's opening message is enriched with the current book ID, previously-referenced book IDs from the conversation, and a genre/category filter. This often eliminates the discovery step.
+1. **Preprocessing Pipeline (Intent & Decomposition)**
+   - **Intent detection** — detects page-specific questions, metadata queries, and general content search.
+   - **Query Decomposition** — for queries containing multiple questions, a cheap LLM call splits them into up to 4 self-contained sub-questions so the agent can retrieve relevant context for all of them.
 
-2. **Parallel Tool-Calling Loop** — the LangGraph agent decides which retrieval tools to call and can fan out to execute them in parallel (using LangGraph's `Send` primitive). These tools include:
+2. **Context Injection** — before the first LLM call, the agent's query is enriched with a `[Context]` block including the current book ID (if reading), previously-referenced book IDs from the conversation history, and category filters. This helps the agent skip the book-discovery step.
+
+3. **Google ADK Agentic ReAct Loop** — the stateless agent executes a reasoning loop using an `InMemoryRunner`, choosing from 11 specialized retrieval and metadata tools:
    - `search_chunks` — pgvector similarity search over indexed passages in PostgreSQL (L1 + L2 cache).
-   - `query_knowledge_graph` — **GraphRAG Tool**: extracts key entities (persons, locations, events, organizations, historical eras, or concepts) from the query using Gemini, then executes a Cypher query on **Memgraph** to retrieve a 1-hop subgraph of connections.
-   - `search_books_by_summary` — embedding search over AI-generated book summaries, used to discover which books cover a topic (L3 cache).
-   - `find_books_by_title` — resolve a book title named in the question to internal IDs.
-   - `get_book_summary` — fetch the full semantic summary for a specific book.
-   - `get_current_page` — raw text of the page currently open in the reader.
-   - `rewrite_query` — resolve Uyghur pronouns and co-references via LLM rewrite (L0 cache).
+   - `query_knowledge_graph` — **GraphRAG Tool**: extracts entity terms from the query, then queries **Memgraph** for a 1-hop subgraph of entity connections.
+   - `search_books_by_summary` — embedding search over AI-generated book summaries, used to locate books covering a topic (L3 cache).
+   - `find_books_by_title` — resolve a book title to internal IDs.
+   - `get_book_summary` — fetch the full semantic summary for specific books.
+   - `get_current_page` — retrieve raw text of the page currently open in the reader.
+   - `rewrite_query` — resolve pronouns and follow-up markers ("چۇ" clitic) via LLM rewrite (L0 cache).
    - `get_book_author` / `get_books_by_author` — catalog metadata lookups.
    - `search_catalog` — library browsing and general listing queries.
 
-3. **Hybrid Context Fusion & Grading** — raw text chunks from PostgreSQL and structured graph relationships (e.g. `(سۇلتان سەئىدخام: Person) -[GRANDCHILD_OF]-> (يۇنۇسخان: Person)`) from Memgraph are fused together. A `grade_context` node then filters out low-relevance information.
-
-4. **Answer Generation** — a separate LLM call produces a streaming response from the final graded context, complete with inline citations pointing to the source books, volumes, and page numbers.
-
-**Specialized fast-path handlers** (enabled via `rag_fast_handlers_enabled` system config, default off) resolve common patterns before the agent runs:
-   - Identity and capability questions
-   - "Who wrote X?" and "What did Y write?" metadata lookups
-   - Follow-up detection (Uyghur pronouns, "چۇ" topic-shift clitic)
-   - In-reader page/volume-scoped questions
-
-**Four-level cache** — query rewrite (L0), query embedding (L1), chunk search results (L2), book summary search results (L3) — minimizes redundant LLM and database calls within a session.
-
-See [docs/main/AGENTIC_RAG_DESIGN.md](docs/main/AGENTIC_RAG_DESIGN.md) for the full design and [docs/feature/create-knowledge-graph/memgraph-knowledge-graph.md](docs/feature/create-knowledge-graph/memgraph-knowledge-graph.md) for details on the Memgraph Knowledge Graph integration.
-
+4. **Post-Processing (Grading & Synthesis)**
+   - **Deduplication and Grading** — merges retrieved passages and structures them. A relative score-based grading filter filters out low-relevance information.
+   - **Answer Synthesis** — generates a streaming response with inline citations pointing to the source books, volumes, and page numbers.
 
 ---
 
 ## Core Technologies and AI Stack
 
-The platform is built on several specialized AI and database technologies that power the knowledge-base agent and processing pipelines:
+The platform is built on specialized database, AI, and backend technologies:
 
-- **LangChain**: The foundation for interfacing with Large Language Models (specifically Google's Gemini). LangChain provides robust prompt templating, schema binding, and standard model integration. Through `ChatGoogleGenerativeAI`, the system executes structured output extraction, mapping model outputs directly into Pydantic models while handling transient generation/formatting errors gracefully via fallback mechanisms.
-- **LangGraph**: Models and runs the multi-step agentic RAG query loop. LangGraph provides state-machine control for building stateful graphs with loops, conditional routing, and parallel execution. The query assistant runs as a LangGraph where nodes represent operations (query decomposition, tool execution, context grading) and edges govern execution flow based on state variables.
-- **Memgraph**: An in-memory graph database that stores and queries the semantic networks extracted from books. Graph data is ideal for capturing indirect relations between entities (characters, places, organizations) across different chapters or texts. High-performance Cypher statements perform 1-hop subgraph retrieval, which is then fused into the LLM context.
-- **Ragas**: The evaluation framework for measuring retrieval-augmented generation quality. Ragas measures metrics like Faithfulness, Context Recall, and Answer Relevance. Evaluations run asynchronously inside the worker queue, with metrics tracked in PostgreSQL and surfaced as aggregate quality scores on the admin dashboard.
-- **pgvector (PostgreSQL)**: PostgreSQL with the `pgvector` extension stores page-chunk embeddings and performs similarity searches. It acts as the dense retriever (L2 cache) for semantic text search, enabling fast vector-index scans to retrieve relevant book passages.
-- **ARQ (Redis)**: A lightweight, asynchronous task queue built on Redis. ARQ orchestrates the background worker pipeline, driving the multi-stage ingestion workflow (OCR scanner, chunking, vector embedding, graph ingestion) and running scheduled system maintenance.
+- **Google ADK (`google-adk`)**: Serves as the agentic reasoning engine, coordinating the ReAct loop and automated tool dispatching for the RAG assistant.
+- **google-genai SDK (`google-genai`)**: Used for all direct LLM generation and embedding calls across the application (OCR pipeline, summarization, entity extraction, text/structured chains).
+- **Memgraph**: An in-memory graph database storing semantic networks of entities (Persons, Locations, Organizations, Works, Events) extracted from books, queried using Cypher for GraphRAG.
+- **pgvector (PostgreSQL)**: PostgreSQL with `pgvector` stores page-chunk embeddings (Gemini Embedding v2) and performs similarity searches.
+- **ARQ (Redis)**: Asynchronous task queue running background processing pipelines (OCR, chunking, embedding, summary extraction, and Memgraph ingestion).
+- **FastAPI**: Asynchronous Python web framework providing API routes, user auth, rate limits, and streaming responses.
 
 ---
 
 ## Features
 
 ### OCR & Digitization Pipeline
-- Upload PDFs and extract Uyghur text page-by-page using Google Gemini Vision
-- Milestone-based processing (`ocr → chunking → embedding`) with resumable jobs and real-time progress tracking
-- Text cleaning tailored for Uyghur script (removes OCR noise, header/footer markers)
-- Semantic chunking with overlapping windows; upsert strategy so re-chunking is idempotent
-- AI-generated book summaries stored with embeddings for topic-based book discovery
+- Upload PDFs and extract Uyghur text page-by-page using Google Gemini Vision.
+- Milestone-based processing (`ocr → chunking → embedding`) with resumable jobs and real-time progress tracking.
+- Text cleaning tailored for Uyghur script (removes OCR noise, header/footer markers).
+- Semantic chunking with overlapping windows; upsert strategy so re-chunking is idempotent.
+- AI-generated book summaries stored with embeddings for topic-based book discovery.
 - **Knowledge Graph Ingestion (GraphRAG)**: Extracts Person, Location, Organization, Work, and Event entities and their semantic relationships from book chunks, building a knowledge network in Memgraph.
 
 ### Curation Workspace
-- Per-page spell-check against a Uyghur dictionary with one-click corrections
-- Auto-correction rules for common OCR errors applied in bulk
-- Editor role with review queue; books go public only after editorial sign-off
+- Per-page spell-check against a Uyghur dictionary with one-click corrections.
+- Auto-correction rules for common OCR errors applied in bulk.
+- Editor role with review queue; books go public only after editorial sign-off.
 
 ### User Management & Admin
-- OAuth login (Google, Facebook, X)
-- Role-based access: **Admin**, **Editor**, **Reader**, **Guest**
-- JWT access + refresh tokens via httpOnly cookies
-- Admin dashboard with per-book pipeline stats, user management, and RAG evaluation metrics
-- All AI models and thresholds are configurable at runtime via `system_configs` table — no redeploy required
+- OAuth login (Google, Facebook, X).
+- Role-based access: **Admin**, **Editor**, **Reader**, **Guest**.
+- JWT access + refresh tokens via httpOnly cookies.
+- Admin dashboard with per-book pipeline stats, user management, and user feedback analytics.
+- All AI models and thresholds are configurable at runtime via `system_configs` table — no redeploy required.
 
 ---
 
@@ -150,6 +140,8 @@ docker compose logs -f worker
 
 ## Documentation
 
+All architectural and design documents are located under the `docs/` directory.
+
 | Document | Contents |
 |----------|----------|
 | [docs/main/SYSTEM_DESIGN.md](docs/main/SYSTEM_DESIGN.md) | Architecture overview, data model, key flows, technology stack |
@@ -162,4 +154,3 @@ docker compose logs -f worker
 | [docs/main/UI_CSS_STANDARD.md](docs/main/UI_CSS_STANDARD.md) | Frontend CSS and Tailwind conventions |
 | [docs/main/SECURITY_AUDIT.md](docs/main/SECURITY_AUDIT.md) | Security controls and audit findings |
 | [docs/main/openapi.json](docs/main/openapi.json) | OpenAPI 3.0 spec for the REST API |
-

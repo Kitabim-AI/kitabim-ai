@@ -136,8 +136,8 @@ async def vector_search(
 
 async def find_books_by_title_in_question(
     question: str, session, categories: Optional[List[str]] = None
-) -> Optional[List[str]]:
-    """Return IDs for all volumes of a title mentioned in *question*, or None.
+) -> Optional[List[dict]]:
+    """Return metadata (id, title, author, volume) for all volumes of a title mentioned in *question*, or None.
 
     If the question contains a title in «» quotes, exact (normalized) matching
     is tried first so that a quoted title is not accidentally matched to a
@@ -148,7 +148,7 @@ async def find_books_by_title_in_question(
 
     q = question.strip()
     
-    stmt = select(Book.id, Book.title).where(Book.status != "error")
+    stmt = select(Book.id, Book.title, Book.author, Book.volume).where(Book.status != "error")
     if categories:
         from sqlalchemy import text as sa_text
         stmt = stmt.where(sa_text("categories && CAST(:cats AS text[])").bindparams(cats=categories))
@@ -156,29 +156,34 @@ async def find_books_by_title_in_question(
     title_result = await session.execute(stmt)
     rows = title_result.fetchall()
 
-    title_to_ids: dict = {}
+    title_to_books: dict = {}
     for row in rows:
-        book_id, title = str(row[0]), row[1]
+        book_id, title, author, volume = str(row[0]), row[1], row[2], row[3]
         if title:
-            title_to_ids.setdefault(title, []).append(book_id)
+            title_to_books.setdefault(title, []).append({
+                "id": book_id,
+                "title": title,
+                "author": author,
+                "volume": volume,
+            })
 
     # --- Exact match for «quoted» titles ---
     quoted = re.findall(r'«([^»]+)»', q)
     if quoted:
         for candidate in quoted:
             candidate_norm = normalize_uyghur(candidate.strip())
-            for title, ids in title_to_ids.items():
+            for title, books in title_to_books.items():
                 if normalize_uyghur(title.strip()) == candidate_norm:
-                    return ids
+                    return books
         # Quoted title present but no exact match — don't fall through to fuzzy
         # (avoids wrong-book answers like the «ئۇيغۇر تارىخى» case).
         return None
 
     # --- Fuzzy word-prefix match (no quotes in question) ---
-    # Collect ALL matching titles so multi-book questions return IDs for every
+    # Collect ALL matching titles so multi-book questions return info for every
     # named book (not just the first one that happens to match).
-    all_matching_ids: list = []
-    for title, ids in title_to_ids.items():
+    all_matching_books: list = []
+    for title, books in title_to_books.items():
         if entity_matches_question(title, q):
-            all_matching_ids.extend(ids)
-    return all_matching_ids if all_matching_ids else None
+            all_matching_books.extend(books)
+    return all_matching_books if all_matching_books else None

@@ -204,7 +204,7 @@
       "foundRecord": "{{count}} رېكورد تاپتىم",
       "noRecordFound": "رېكورد تېپىلمىدى",
       "keptContent": "{{kept}}/{{total}} پارچە مەزمۇن تاللاندى",
-      "keptBooks": "{{kept}}/{{total}} كىتاب تاللاندى"
+      "keptBooks": "{{kept}}/{{total}} پارچە كىتاب تاللاندى"
     }
   },
   "reader": {
@@ -258,9 +258,9 @@
       "totalChunks": "جەمئىي بۆلەك",
       "embeddedChunks": "ۋېكتورلانغان بۆلەك",
       "pendingChunks": "ساقلاۋاتقان بۆلەك",
-      "ragQualityTitle": "RAG سۈپەت ستاتىستىكىسى (Ragas)",
+      "ragQualityTitle": "RAG سۈپەت ۋە ئىنكاس ستاتىستىكىسى",
       "totalQueries": "جەمئىي سوئال",
-      "gradedEvaluations": "Ragas باھالىغىنى",
+      "gradedEvaluations": "ئىشلەتكۈچى ئىنكاسى",
       "avgFaithfulness": "ئوتتۇرىچە ئىشەنچلىك قىممىتى",
       "avgFaithfulnessNoData": "ئوتتۇرىچە ئىشەنچلىك قىممىتى — ھېسابلانمىدى",
       "avgAnswerRelevance": "ئوتتۇرىچە مۇناسىۋەتلىك قىممىتى",

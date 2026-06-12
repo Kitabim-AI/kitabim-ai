@@ -145,19 +145,26 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
   // iOS fix: keyboard overlaps the chat. Cap maxHeight to the visible viewport area
   // so the flex column shrinks and keeps the input above the keyboard.
-  // keyboardHeight > 100 guards against firing on desktop or minor viewport changes.
+  // rect.top is captured once when the keyboard first opens so that subsequent
+  // scroll events (iOS scrolls the page as the keyboard animates) don't cause
+  // the available height to recalculate and produce a bounce animation.
   useEffect(() => {
     const viewport = window.visualViewport;
     if (!viewport) return;
+    const capturedTop = new Map<HTMLElement, number>();
     const update = () => {
       const keyboardHeight = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
       for (const ref of [readerOuterRef, globalOuterRef]) {
         if (!ref.current) continue;
         if (keyboardHeight > 100) {
-          const rect = ref.current.getBoundingClientRect();
-          const available = viewport.height - Math.max(0, rect.top);
+          if (!capturedTop.has(ref.current)) {
+            capturedTop.set(ref.current, ref.current.getBoundingClientRect().top);
+          }
+          const top = capturedTop.get(ref.current)!;
+          const available = viewport.height - Math.max(0, top);
           ref.current.style.maxHeight = `${Math.max(100, available)}px`;
         } else {
+          capturedTop.delete(ref.current);
           ref.current.style.maxHeight = '';
         }
       }
@@ -180,14 +187,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
   if (isGlobal) {
     return (
-      <div className="w-full lg:max-w-5xl lg:mx-auto flex flex-col gap-3 md:gap-4 lg:gap-6 px-3 py-3 sm:px-6 md:px-0 lg:py-4 pb-24 min-h-[calc(100dvh-5rem)]" dir="rtl" lang="ug">
+      <div ref={globalOuterRef} className="w-full lg:max-w-5xl lg:mx-auto flex flex-col gap-3 md:gap-4 lg:gap-6 px-3 py-3 sm:px-6 md:px-0 lg:py-4 flex-grow min-h-0" dir="rtl" lang="ug">
 
         {/* Unified Chat Card — messages + input, auto height, never shrinks */}
-        <div className="glass-panel border border-white/60 rounded-[24px] sm:rounded-[40px] flex flex-col overflow-hidden flex-1">
+        <div className="glass-panel border border-white/60 rounded-[24px] sm:rounded-[40px] flex flex-col overflow-hidden flex-1 min-h-0">
           {/* Messages */}
           <div
             ref={chatContainerRef}
-            className="flex-1 space-y-4 md:space-y-8 px-4 sm:px-6 lg:px-10 py-6 sm:py-8 lg:py-12 flex flex-col"
+            className="flex-1 overflow-y-auto custom-scrollbar-mini space-y-4 md:space-y-8 px-4 sm:px-6 lg:px-10 py-6 sm:py-8 lg:py-12 flex flex-col"
           >
             {chatMessages.length === 0 ? (
               <div className="flex flex-col items-center justify-center text-center py-12">
@@ -360,7 +367,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             ) : (
               <div className="flex items-center justify-between gap-2 px-4 py-2.5 sm:py-3 min-h-[52px] sm:min-h-[60px]">
                 <p className="text-[#1a1a1a] font-normal text-[11px] sm:text-sm leading-relaxed text-right">{t('auth.signInToUseChat')}</p>
-                <OAuthButtonGroup align="up" side="right" className="shrink-0" />
+                <OAuthButtonGroup align="up" side="left" className="shrink-0" />
               </div>
             )}
           </div>
@@ -532,6 +539,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && !isChatting && !usageStatus?.hasReachedLimit && onSendMessage()}
+                  onFocus={(e) => { const el = e.target; setTimeout(() => el?.scrollIntoView({ block: 'nearest' }), 300); }}
                   ref={readerInputRef}
                   className="w-full bg-transparent border-none py-2 sm:py-3 pl-[52px] sm:pl-[76px] pr-2 sm:pr-4 font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none uyghur-text"
                   style={{ fontSize: `${chatFontSize}px` }}
@@ -554,7 +562,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             <p className="text-[#1a1a1a] font-normal text-[11px] sm:text-sm leading-relaxed text-right">
               {t('auth.signInToUseChat')}
             </p>
-            <OAuthButtonGroup align="up" side="right" className="shrink-0" />
+            <OAuthButtonGroup align="up" side="left" className="shrink-0" />
           </div>
         )}
       </div>

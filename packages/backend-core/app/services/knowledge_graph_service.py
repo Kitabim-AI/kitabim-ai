@@ -119,7 +119,7 @@ def _extract_json_by_braces(text: str) -> str | None:
 
 
 def parse_and_clean_json_from_exception(exc: Exception, model_class: type[BaseModel]) -> BaseModel | None:
-    """Attempts to extract a JSON string from a LangChain output parsing failure,
+    """Attempts to extract a JSON string from a Pydantic validation parsing failure,
     filter out any invalid/empty dictionary objects from its lists, and validate it.
     """
     exc_str = str(exc)

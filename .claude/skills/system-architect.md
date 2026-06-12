@@ -126,7 +126,7 @@ packages/backend-core/     ← imported by BOTH backend and worker
     services/    business logic (no FastAPI/arq imports)
     models/      Pydantic schemas
     core/        config, cache_config, pipeline constants, i18n, prompts
-    langchain/   LLM + embedding models
+    llm/         LLM + embedding models
     utils/       observability, errors, text, security
 
 services/backend/          ← backend-only

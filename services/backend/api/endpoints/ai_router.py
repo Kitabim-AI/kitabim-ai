@@ -12,7 +12,7 @@ from app.core.prompts import OCR_PROMPT
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.db.session import get_session
 from app.models.user import User
-from app.langchain.models import generate_text_with_image
+from app.llm.models import generate_text_with_image
 from app.utils.observability import log_json
 from app.utils.text import clean_uyghur_text
 from auth.dependencies import require_editor

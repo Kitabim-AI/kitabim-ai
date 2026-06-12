@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from app.langchain import build_text_chain
+from app.llm import build_text_chain
 from app.core.prompts import QUERY_REWRITE_PROMPT, RAG_PROMPT_TEMPLATE
 from app.core.providers import get_embedding_provider
 

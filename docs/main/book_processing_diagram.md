@@ -1,6 +1,6 @@
 # Book Processing Pipeline Diagram
 
-Visual representation of the book processing pipeline, including triggers, stage transitions, admin recovery actions, and outputs. All processing is synchronous/realtime — no Gemini Batch API is used.
+Visual representation of the book processing pipeline, including triggers, stage transitions, admin recovery actions, and outputs. All processing is synchronous/real-time — no Gemini Batch API is used.
 
 ---
 

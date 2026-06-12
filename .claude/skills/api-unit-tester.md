@@ -383,7 +383,7 @@ session.execute.assert_not_called()
 
 ### Do NOT test:
 - SQLAlchemy internals or ORM query construction
-- Third-party library behavior (LangChain, Redis, GCS)
+- Third-party library behavior (Google ADK, Redis, GCS)
 - `conftest.py` env-setup hooks
 - Models/Pydantic schemas beyond basic field presence
 

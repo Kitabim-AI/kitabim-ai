@@ -1,6 +1,4 @@
-# Prompt Engineer Skill — Kitabim AI
-
-You are writing, editing, and reviewing prompts for the Kitabim AI system. All prompts are used with Google Gemini models via LangChain. The system serves Uyghur-language content — every prompt that touches text output must produce correct Perso-Arabic Uyghur script.
+You are writing, editing, and reviewing prompts for the Kitabim AI system. All prompts are used with Google Gemini models via Google GenAI SDK. The system serves Uyghur-language content — every prompt that touches text output must produce correct Perso-Arabic Uyghur script.
 
 ---
 
@@ -10,7 +8,7 @@ All production prompts are constants in `packages/backend-core/app/core/prompts.
 
 ```
 packages/backend-core/app/core/prompts.py   ← all prompts defined here
-packages/backend-core/app/langchain/models.py ← model construction + circuit breaker
+packages/backend-core/app/llm/models.py ← model construction + circuit breaker
 packages/backend-core/app/services/rag/      ← RAG pipeline (uses RAG_PROMPT_TEMPLATE)
 packages/backend-core/app/services/ocr_service.py ← uses OCR_PROMPT
 packages/backend-core/app/services/rag/handlers/standard_rag.py ← builds final RAG prompt
@@ -61,21 +59,21 @@ Set parameters in `_build_chat_model(model_name, temperature=..., thinking_budge
 
 ### Plain text generation (backend or worker)
 ```python
-from app.langchain.models import generate_text
+from app.llm.models import generate_text
 
 text = await generate_text(prompt_string, model_name=gemini_chat_model)
 ```
 
 ### Vision OCR (worker only)
 ```python
-from app.langchain.models import generate_text_with_image
+from app.llm.models import generate_text_with_image
 
 text = await generate_text_with_image(OCR_PROMPT, image_bytes, model_name=gemini_ocr_model)
 ```
 
 ### RAG chat with streaming (backend only)
 ```python
-from app.langchain.models import build_text_llm, ProtectedLLM
+from app.llm.models import build_text_llm, ProtectedLLM
 
 llm: ProtectedLLM = build_text_llm(model_name)
 # Non-streaming:
@@ -87,7 +85,7 @@ async for chunk in llm.astream(prompt_string):
 
 ### Embeddings (backend + worker)
 ```python
-from app.langchain.models import GeminiEmbeddings
+from app.llm.models import GeminiEmbeddings
 
 embeddings = GeminiEmbeddings(model_name=gemini_embedding_model)
 doc_vecs = await embeddings.aembed_documents(texts)   # RETRIEVAL_DOCUMENT task type
@@ -205,7 +203,7 @@ Task: Identify which of the available categories are most relevant...
 |-------------|-------------|
 | `{categories}` | Comma-separated list of book category names available in the library |
 | `{question}` | The raw user question |
-| `{format_instructions}` | LangChain output parser instructions (list format) |
+| `{format_instructions}` | Output parser instructions / Pydantic schema constraints |
 
 The model returns a list — empty list means "general question, no category match." This result drives the hierarchical RAG book selection in `standard_rag.py`.
 
@@ -225,7 +223,7 @@ The model returns a list — empty list means "general question, no category mat
 
 ### 3. Output format
 - If the output must be parseable (list, JSON, table), specify the exact format and provide an example.
-- For structured output, use LangChain output parsers — pass `{format_instructions}` as a placeholder and inject at call time.
+- For structured output, use Pydantic schemas — pass `{format_instructions}` as a placeholder and inject at call time if needed, or rely on native SDK structured output.
 - Never ask the model to "try to" follow a format — state it as a hard requirement.
 
 ### 4. Negative instructions
@@ -263,7 +261,7 @@ The model returns a list — empty list means "general question, no category mat
 3. Document which model/temperature/thinking_budget it expects (in a comment above the constant).
 4. Call it through `generate_text()`, `generate_text_with_image()`, or `build_text_llm()` — never call the Gemini SDK directly.
 5. If it's a new worker task, read the model name from `SystemConfigsRepository` at job startup.
-6. If it produces structured output, write a LangChain output parser and inject `{format_instructions}`.
+6. If it produces structured output, define a Pydantic schema model.
 7. Add the system config key + default value to `packages/backend-core/app/db/seeds.py`.
 
 ### Testing a prompt change

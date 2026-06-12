@@ -16,7 +16,6 @@ import uuid
 from app.core.config import settings
 from app.db import session as db_session
 from app.db.session import init_db, close_db
-from app.langchain import configure_langchain
 from app.utils.observability import configure_logging, log_json
 from app.utils.circuit_breaker import get_redis
 
@@ -41,7 +40,6 @@ async def heartbeat_loop(redis_client, worker_id):
 async def worker_startup(ctx):
     log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
     configure_logging(level=log_level)
-    configure_langchain()
     await init_db(service_name="worker")
 
     # Initialize worker_id

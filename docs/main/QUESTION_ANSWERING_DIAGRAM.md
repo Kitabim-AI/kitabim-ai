@@ -1,6 +1,6 @@
-# Question Answering Pipeline Diagram
+# Question Answering Pipeline Diagram (Google ADK Version)
 
-Visual representation of the current RAG question answering pipeline.
+Visual representation of the current RAG question answering pipeline using the Google ADK and google-genai SDK.
 
 ---
 
@@ -18,43 +18,42 @@ flowchart TD
 
     CTX --> H_AG
 
-    %% Agentic RAG — LangGraph graph
-    subgraph AgentRAG [AgentRAGHandler — LangGraph]
-        H_AG[AgentRAGHandler\npriority=998\nsole handler] --> INIT[build_initial_state\n_build_human_message\nInject Context block:\ncurrent book_id, context book IDs,\ncategory filter]
-        INIT --> DQ[decompose_query\nsplit multi-question inputs\nemits: decompose]
-        DQ --> PQ[plan_query\ndetect intent — no LLM call\nemits: planning]
-        PQ --> AS[agent_step\nemits: agent_thinking]
+    %% Agentic RAG — Google ADK Execution Flow
+    subgraph AgentRAG [AgentRAGHandler — Google ADK]
+        H_AG[AgentRAGHandler\npriority=998\nsole handler] --> INTENT[Intent Detection\n_detect_intent\nemits: planning]
+        INTENT --> DECOMP[Query Decomposition\n_llm_split\nemits: decompose]
+        DECOMP --> CTX_INJ[Context Injection\n_build_human_message\nInject [Context] block:\ncurrent book_id, context book IDs,\ncategory filter]
+        CTX_INJ --> ADK[ADK Agent Execution\nInMemoryRunner.run_async\nemits: agent_thinking]
 
-        AS -->|no tool calls\nconditional edge| BC[build_context]
-        AS -->|tool calls\nSend API fan-out| ET["execute_tool ×N\n(parallel)\nemits: tool_call\ntool_result"]
+        ADK -->|Call Tools| TOOL[Execute Tool\n(11 tools available)\nemits: tool_call\ntool_result]
+        TOOL -->|Return observation\ndata| ADK
 
-        ET --> CT[collect_tools\nappend ToolMessages\nupdate total_chunks]
-        CT -->|total_chunks ≥ 8\nor step_count ≥ 6\nconditional edge| BC
-        CT -->|otherwise| AS
-
-        BC --> GC[grade_context\nfilter low-relevance chunks\nemits: grading]
-        GC --> GA[generate_answer\nstream tokens\nemits: answer_start\nchunk × N\nanswer_end]
-        GA --> GRAPH_END([END\nwrite final_answer])
+        ADK -->|Finish Loop / Max Steps| DEDUP[Deduplicate Observations\nby book_id and page]
+        DEDUP --> GRADE[Context Grading\n_grade_context\nfilter low-relevance chunks\nemits: grading]
+        GRADE --> SYNTHESIS[Answer Synthesis\ngenerate_answer_stream\nemits: answer_start\nchunk × N\nanswer_end]
+        SYNTHESIS --> END_AG([END\nwrite final_answer])
     end
 
-    GRAPH_END --> ANS([Answer delivered to user])
+    END_AG --> ANS([Answer delivered to user])
 
     classDef handler fill:#e9edc9,stroke:#606c38,stroke-width:2px
-    classDef llm fill:#d4f1f4,stroke:#189ab4,stroke-width:1px
-    classDef decision fill:#fef9c3,stroke:#854d0e,stroke-width:1px
+    classDef tool fill:#dcfce7,stroke:#16a34a,stroke-width:1px
+    classDef process fill:#d4f1f4,stroke:#189ab4,stroke-width:1px
 
     class H_AG handler
+    class TOOL tool
+    class INTENT,DECOMP,CTX_INJ,ADK,DEDUP,GRADE,SYNTHESIS process
 ```
 
 ---
 
 ## Handler Routing Reference
 
-All questions route directly to `AgentRAGHandler`. There is no fast-path routing.
+All questions route directly to `AgentRAGHandler`.
 
 ```mermaid
 flowchart LR
-    Q([Question]) --> RAGENT[AgentRAGHandler\npriority=998\nLangGraph ReAct loop — 11 tools]
+    Q([Question]) --> RAGENT[AgentRAGHandler\npriority=998\nGoogle ADK ReAct loop — 11 tools]
     RAGENT --> ANS([Answer])
 ```
 
@@ -148,17 +147,17 @@ flowchart TD
 
 | Tool | Type | Wraps | When agent calls it |
 |------|------|-------|---------------------|
-| `rewrite_query` | Utility | `QueryRewriter` | Question has pronouns or "چۇ" particle and chat history exists; short-circuits if `ctx.enriched_question` is already set. After returning, agent re-evaluates the rewritten question from step 2 — if a title is now explicit, `find_books_by_title` is mandatory and stale context IDs must not be reused |
-| `find_books_by_title` | Content | `BooksRepository` title match | Question explicitly names a book title (including after rewrite resolves a pronoun to a title) |
-| `search_books_by_summary` | Content | `BookSummariesRepository` | Finding which books cover a topic; also used with `context_book_ids` to verify a "who is X" question still matches the previous topic (step 4e) |
-| `search_chunks` | Content | pgvector similarity search | Retrieving passages; uses L1+L2 cache; called directly with `[Context]` book_id when available. Step 4h retry (empty book_ids) applies only when `search_chunks` returned < 4 results — never triggered after `get_book_summary` |
-| `get_book_author` | Metadata | `BooksRepository` | Author lookup for who-wrote-X questions |
-| `get_books_by_author` | Metadata | `BooksRepository` | Book list for what-did-Y-write questions |
-| `get_book_summary` | Content | `BookSummariesRepository.get_summaries_for_books` | Plot, themes, or main characters of a specific book (step 4a); or "who is X / tell me about X" questions (steps 4e, 4g). After `get_book_summary` completes for a "who is X" question, the agent stops immediately — no further tools |
-| `get_current_page` | Content | `PagesRepository.find_one` | Raw text of the page the user is currently reading; only available in single-book in-reader mode (step 3) |
-| `get_sister_volumes` | Content | `BooksRepository.find_sister_volumes` | All volumes of the same title+author series as a given book_id; called when the question references a different volume (next/previous/numbered) of the current or previously-discussed book — gives the agent the correct book_id before calling `search_chunks` |
-| `search_catalog` | Metadata | `CatalogHandler._build_catalog_context` | Library browsing, listing, general catalog questions only — never for person/character lookups |
-| `query_knowledge_graph` | Content | `GraphRepository.query_subgraph` | Multi-hop relationship queries, tracing links between historical figures, locations, eras, and concepts. Called when the query requires mapping connection networks or retrieving multi-hop relationship facts |
+| `rewrite_query` | Utility | `QueryRewriter` | Question has pronouns or follow-up markers ("چۇ" clitic) and chat history exists. |
+| `find_books_by_title` | Content | `BooksRepository` title match | Question explicitly names a book title. |
+| `search_books_by_summary` | Content | `BookSummariesRepository` | Finding which books cover a topic; also used with `context_book_ids` to verify a "who is X" question. |
+| `search_chunks` | Content | pgvector similarity search | Retrieving passages; uses L1+L2 cache; called directly with `[Context]` book_id when available. |
+| `get_book_author` | Metadata | `BooksRepository` | Author lookup for "who wrote X?" questions. |
+| `get_books_by_author` | Metadata | `BooksRepository` | Book list for "what did Y write?" questions. |
+| `get_book_summary` | Content | `BookSummariesRepository` | Plot, themes, or main characters of specific books. |
+| `get_current_page` | Content | `PagesRepository.find_one` | Raw text of the page the user is currently reading (in-reader mode). |
+| `get_sister_volumes` | Content | `BooksRepository` | All volumes of the same series as a given book_id. |
+| `search_catalog` | Metadata | `CatalogHandler` | Library browsing and general listing queries. |
+| `query_knowledge_graph` | Content | `GraphRepository` | Queries Memgraph to retrieve connections between entities. |
 
 ---
 
@@ -166,10 +165,10 @@ flowchart TD
 
 | Level | Key | Populated By | Purpose |
 |-------|-----|-------------|---------|
-| **L0** | `KEY_RAG_REWRITE` | `rewrite_query` tool via `QueryRewriter` | Deduplicate follow-up rewrites |
-| **L1** | `KEY_RAG_EMBEDDING` | First embed call per query | Reuse embeddings across all tools |
-| **L2** | `KEY_RAG_SEARCH_SINGLE/MULTI` | `search_chunks` tool | Reuse pgvector search results |
-| **L3** | `KEY_RAG_SUMMARY_SEARCH` | `search_books_by_summary` tool | Reuse book-selection results |
+| **L0** | `KEY_RAG_REWRITE` | `rewrite_query` tool | Deduplicate follow-up pronoun rewrites |
+| **L1** | `KEY_RAG_EMBEDDING` | First embed call per query | Reuse query embeddings across multiple tools |
+| **L2** | `KEY_RAG_SEARCH_SINGLE/MULTI` | `search_chunks` tool | Cache pgvector similarity search results |
+| **L3** | `KEY_RAG_SUMMARY_SEARCH` | `search_books_by_summary` tool | Cache summary search results for book selection |
 
 ---
 
@@ -177,9 +176,10 @@ flowchart TD
 
 | # | Call | Triggered By | Condition | Purpose |
 |---|------|-------------|-----------|---------|
-| 1 | Query decomposition | `decompose_query` node | Only when input has > 1 `?`/`؟` | Split multi-question inputs into sub-questions; zero-cost for single questions |
-| 2 | Agent ReAct loop (1–6×) | `agent_step` node | Always — every query | Tool-calling loop — choose and invoke retrieval tools |
-| 3 | Answer generation | `generate_answer` node | Always | Stream answer from accumulated context |
+| 1 | Query decomposition | Pre-processing (`_llm_split`) | Only when input has > 1 `?`/`؟` | Split multi-question inputs into sub-questions. |
+| 2 | Agent ReAct loop (1–4×) | ADK Agent run | Always | Reasoning loop — choose and invoke retrieval tools. |
+| 3 | Entity Extraction | `query_knowledge_graph` tool | When KG tool runs | Extract query entities for Cypher generation. |
+| 4 | Answer generation | Post-processing (`generate_answer_stream`) | Always | Stream final answer from accumulated context. |
 
 ---
 
@@ -187,15 +187,13 @@ flowchart TD
 
 | Component | Role |
 |-----------|------|
-| **HandlerRegistry** | Single registered handler (`AgentRAGHandler`, priority=998); `_select()` always returns it |
-| **AgentRAGHandler** | Sole handler — builds LangGraph initial state, invokes graph via `ainvoke` or `astream` |
-| **LangGraph StateGraph** | Compiled graph: `decompose_query → plan_query → agent_step → execute_tool → collect_tools → build_context → grade_context → generate_answer` |
-| **QueryRewriter** | LLM-based standalone question generator; resolves pronouns using conversation history; called via `rewrite_query` tool |
-| **_build_human_message** | Enriches the agent's first HumanMessage with current book_id, context book IDs, and category filter; enables agent to skip book-discovery step |
-| **format_observations_as_context** | Combines metadata context (catalog/author tools) + deduplicated, score-sorted chunks (cap 15) |
-| **retrieval.py** | Shared I/O primitives (`embed_query`, `vector_search`, `find_books_by_title_in_question`) used by agent tools |
-| **agent/config.py** | Centralized loop constants (`AGENT_MAX_STEPS`, `AGENT_ENOUGH_CHUNKS`, `AGENT_MAX_CONTEXT_CHUNKS`, `GRADE_RELATIVE_THRESHOLD`, `MIN_CHUNKS_AFTER_GRADING`, `CONTEXT_SWITCH_SCORE_THRESHOLD`) |
-| **ChunksRepository** | pgvector `similarity_search` against `chunks` table |
-| **BookSummariesRepository** | pgvector `summary_search` against `book_summaries` for book selection |
-| **CatalogHandler** | Utility class (not in registry); used by `search_catalog` tool |
-| **QueryContext** | Mutable dataclass threaded through the pipeline; accumulates enriched question, vector, book IDs, scores, and agent metrics |
+| **HandlerRegistry** | Single registered handler (`AgentRAGHandler`, priority=998). |
+| **AgentRAGHandler** | Main execution driver — performs pre-agent decomposition, invokes ADK runner, collects observations, executes grading, and runs synthesis. |
+| **Google ADK Agent** | Stateless agent compiled with tools and system prompts. |
+| **InMemoryRunner** | Stateless runner executing the agent ReAct loop. |
+| **QueryRewriter** | Resolves pronouns using conversation history (L0 cached). |
+| **_grade_context** | Post-processing method sorting chunks by score DESC, applying a relative grading threshold, and capping at 10. |
+| **retrieval.py** | Shared database retrieval primitives (`embed_query`, `vector_search`, `find_books_by_title_in_question`). |
+| **agent/config.py** | Centralized loop constants (`AGENT_MAX_STEPS`, `AGENT_ENOUGH_CHUNKS`, `AGENT_MAX_CONTEXT_CHUNKS`, etc.). |
+| **ChunksRepository** | pgvector `similarity_search` against PostgreSQL `chunks` table. |
+| **BookSummariesRepository** | pgvector `summary_search` against `book_summaries` for book discovery. |
