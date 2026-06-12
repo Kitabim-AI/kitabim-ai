@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 from typing import Any, AsyncIterator, List, Optional
 
@@ -9,7 +8,11 @@ from google import genai
 from google.genai import types
 
 from app.core.config import settings
-from app.utils.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitBreakerOpen
+from app.utils.circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    CircuitBreakerOpen,
+)
 from app.utils.observability import log_json
 from app.utils.rate_limiter import RedisRateLimiter
 
@@ -59,7 +62,10 @@ async def is_llm_available() -> bool:
     embed_st = (await _EMBED_BREAKER._get_state()).get("state")
     return text_st == "closed" and ocr_st == "closed" and embed_st == "closed"
 
-def update_breaker_config(failure_threshold: int | None = None, recovery_timeout: float | None = None) -> None:
+
+def update_breaker_config(
+    failure_threshold: int | None = None, recovery_timeout: float | None = None
+) -> None:
     """Update defaults for all circuit breakers."""
     for breaker in [_TEXT_BREAKER, _OCR_BREAKER, _EMBED_BREAKER]:
         if failure_threshold is not None:
@@ -73,7 +79,7 @@ async def reset_circuit_breakers(name: Optional[str] = None) -> dict:
     breakers = [_TEXT_BREAKER, _OCR_BREAKER, _EMBED_BREAKER]
     if name:
         breakers = [b for b in breakers if b.name == name]
-    
+
     for breaker in breakers:
         await breaker.reset()
 
@@ -85,7 +91,7 @@ async def force_open_circuit_breakers(name: Optional[str] = None) -> dict:
     breakers = [_TEXT_BREAKER, _OCR_BREAKER, _EMBED_BREAKER]
     if name:
         breakers = [b for b in breakers if b.name == name]
-        
+
     for breaker in breakers:
         await breaker.force_open()
 
@@ -118,6 +124,7 @@ async def get_circuit_breaker_status() -> dict:
 
 _client: genai.Client | None = None
 
+
 def _get_genai_client() -> genai.Client:
     global _client
     if _client is None:
@@ -134,7 +141,9 @@ def _normalize_prompt_value(value: Any) -> str:
     return str(value)
 
 
-_STREAM_FIRST_CHUNK_TIMEOUT = 60.0  # seconds to wait for the first chunk before treating as failure
+_STREAM_FIRST_CHUNK_TIMEOUT = (
+    60.0  # seconds to wait for the first chunk before treating as failure
+)
 _INVOKE_TIMEOUT = 30.0  # seconds to wait for a non-streaming ainvoke to complete
 
 
@@ -146,7 +155,13 @@ async def _call_with_breaker(breaker: CircuitBreaker, fn, *args, **kwargs):
         try:
             return await asyncio.wait_for(fn(*args, **kwargs), timeout=_INVOKE_TIMEOUT)
         except asyncio.TimeoutError:
-            log_json(_logger, logging.ERROR, "LLM invoke timed out", timeout=_INVOKE_TIMEOUT, breaker=breaker.name)
+            log_json(
+                _logger,
+                logging.ERROR,
+                "LLM invoke timed out",
+                timeout=_INVOKE_TIMEOUT,
+                breaker=breaker.name,
+            )
             raise TimeoutError(f"LLM did not respond within {_INVOKE_TIMEOUT}s")
 
     try:
@@ -155,7 +170,13 @@ async def _call_with_breaker(breaker: CircuitBreaker, fn, *args, **kwargs):
         log_json(_logger, logging.ERROR, "LLM circuit open", error=str(exc))
         raise
     except Exception as exc:
-        log_json(_logger, logging.ERROR, "LLM call failed", error=str(exc), breaker=breaker.name)
+        log_json(
+            _logger,
+            logging.ERROR,
+            "LLM call failed",
+            error=str(exc),
+            breaker=breaker.name,
+        )
         raise
 
 
@@ -163,7 +184,9 @@ async def _stream_with_breaker(breaker: CircuitBreaker, fn, *args, **kwargs):
     allowed, state = await breaker._allow_call()
     if not allowed:
         if state == "half_open":
-            raise CircuitBreakerOpen(f"Circuit breaker '{breaker.name}' is half-open (recovering but at capacity)")
+            raise CircuitBreakerOpen(
+                f"Circuit breaker '{breaker.name}' is half-open (recovering but at capacity)"
+            )
         raise CircuitBreakerOpen(f"Circuit breaker '{breaker.name}' is open")
 
     try:
@@ -179,15 +202,25 @@ async def _stream_with_breaker(breaker: CircuitBreaker, fn, *args, **kwargs):
             try:
                 if first:
                     # Timeout only on the first chunk — if the model connects but never responds
-                    chunk = await asyncio.wait_for(aiter.__anext__(), timeout=_STREAM_FIRST_CHUNK_TIMEOUT)
+                    chunk = await asyncio.wait_for(
+                        aiter.__anext__(), timeout=_STREAM_FIRST_CHUNK_TIMEOUT
+                    )
                     await breaker._on_success()
                     first = False
                 else:
                     chunk = await aiter.__anext__()
             except asyncio.TimeoutError:
                 await breaker._on_failure()
-                log_json(_logger, logging.ERROR, "LLM stream timed out waiting for first chunk", timeout=_STREAM_FIRST_CHUNK_TIMEOUT, breaker=breaker.name)
-                raise TimeoutError(f"LLM did not respond within {_STREAM_FIRST_CHUNK_TIMEOUT}s")
+                log_json(
+                    _logger,
+                    logging.ERROR,
+                    "LLM stream timed out waiting for first chunk",
+                    timeout=_STREAM_FIRST_CHUNK_TIMEOUT,
+                    breaker=breaker.name,
+                )
+                raise TimeoutError(
+                    f"LLM did not respond within {_STREAM_FIRST_CHUNK_TIMEOUT}s"
+                )
             except StopAsyncIteration:
                 break
             yield chunk
@@ -195,13 +228,23 @@ async def _stream_with_breaker(breaker: CircuitBreaker, fn, *args, **kwargs):
         raise
     except Exception as exc:
         await breaker._on_failure()
-        log_json(_logger, logging.ERROR, "LLM stream failed", error=str(exc), breaker=breaker.name)
+        log_json(
+            _logger,
+            logging.ERROR,
+            "LLM stream failed",
+            error=str(exc),
+            breaker=breaker.name,
+        )
         raise
 
 
 async def generate_text(prompt: str, model_name: str) -> str:
     client = _get_genai_client()
-    model = model_name.replace("models/", "", 1) if model_name.startswith("models/") else model_name
+    model = (
+        model_name.replace("models/", "", 1)
+        if model_name.startswith("models/")
+        else model_name
+    )
 
     async def _call():
         response = await client.aio.models.generate_content(
@@ -211,13 +254,24 @@ async def generate_text(prompt: str, model_name: str) -> str:
         return response.text or ""
 
     text = await _call_with_breaker(_TEXT_BREAKER, _call)
-    log_json(_logger, logging.INFO, "LLM response received", text_length=len(text) if text else 0)
+    log_json(
+        _logger,
+        logging.INFO,
+        "LLM response received",
+        text_length=len(text) if text else 0,
+    )
     return text
 
 
-async def generate_text_with_image(prompt: str, image_bytes: bytes, model_name: str) -> str:
+async def generate_text_with_image(
+    prompt: str, image_bytes: bytes, model_name: str
+) -> str:
     client = _get_genai_client()
-    model = model_name.replace("models/", "", 1) if model_name.startswith("models/") else model_name
+    model = (
+        model_name.replace("models/", "", 1)
+        if model_name.startswith("models/")
+        else model_name
+    )
     image_part = types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
     config = types.GenerateContentConfig(temperature=0.0)
 
@@ -230,7 +284,12 @@ async def generate_text_with_image(prompt: str, image_bytes: bytes, model_name: 
         return response.text or ""
 
     text = await _call_with_breaker(_OCR_BREAKER, _call)
-    log_json(_logger, logging.INFO, "LLM response received", text_length=len(text) if text else 0)
+    log_json(
+        _logger,
+        logging.INFO,
+        "LLM response received",
+        text_length=len(text) if text else 0,
+    )
     return text
 
 
@@ -239,6 +298,7 @@ class ProtectedLLM:
     A protected LLM wrapper that adds circuit breaker protection
     for both non-streaming (ainvoke) and streaming (astream) calls.
     """
+
     def __init__(self, model_name: str, breaker: CircuitBreaker):
         self.model_name = model_name
         self.breaker = breaker
@@ -248,18 +308,25 @@ class ProtectedLLM:
     ) -> str:
         client = _get_genai_client()
         prompt = _normalize_prompt_value(input)
-        model = self.model_name.replace("models/", "", 1) if self.model_name.startswith("models/") else self.model_name
+        model = (
+            self.model_name.replace("models/", "", 1)
+            if self.model_name.startswith("models/")
+            else self.model_name
+        )
 
         async def _call():
             response = await client.aio.models.generate_content(
-                model=model,
-                contents=prompt,
-                **kwargs
+                model=model, contents=prompt, **kwargs
             )
             return response.text or ""
 
         text = await _call_with_breaker(self.breaker, _call)
-        log_json(_logger, logging.INFO, "ProtectedLLM response received", text_length=len(text) if text else 0)
+        log_json(
+            _logger,
+            logging.INFO,
+            "ProtectedLLM response received",
+            text_length=len(text) if text else 0,
+        )
         return text
 
     async def astream(
@@ -267,14 +334,16 @@ class ProtectedLLM:
     ) -> AsyncIterator[str]:
         client = _get_genai_client()
         prompt = _normalize_prompt_value(input)
-        model = self.model_name.replace("models/", "", 1) if self.model_name.startswith("models/") else self.model_name
+        model = (
+            self.model_name.replace("models/", "", 1)
+            if self.model_name.startswith("models/")
+            else self.model_name
+        )
         log_json(_logger, logging.INFO, "ProtectedLLM stream started", model=model)
 
         async def _get_stream():
             return await client.aio.models.generate_content_stream(
-                model=model,
-                contents=prompt,
-                **kwargs
+                model=model, contents=prompt, **kwargs
             )
 
         chunk_count = 0
@@ -283,7 +352,9 @@ class ProtectedLLM:
             if text_chunk:
                 chunk_count += 1
                 yield text_chunk
-        log_json(_logger, logging.INFO, "ProtectedLLM stream completed", chunks=chunk_count)
+        log_json(
+            _logger, logging.INFO, "ProtectedLLM stream completed", chunks=chunk_count
+        )
 
     def invoke(self, input: Any, config: Any | None = None, **kwargs: Any) -> str:
         return _run_sync(self.ainvoke(input, config, **kwargs))
@@ -298,12 +369,16 @@ class GeminiEmbeddings:
     def __init__(self, model_name: str | None = None) -> None:
         if not model_name:
             raise ValueError("model_name is required for GeminiEmbeddings")
-        self.model_name = model_name.replace("models/", "", 1) if model_name.startswith("models/") else model_name
+        self.model_name = (
+            model_name.replace("models/", "", 1)
+            if model_name.startswith("models/")
+            else model_name
+        )
 
     async def aembed_documents(self, texts: List[str]) -> List[List[float]]:
         if not texts:
             return []
-            
+
         import aiohttp
         from app.core.config import settings
 
@@ -316,12 +391,12 @@ class GeminiEmbeddings:
             for t in texts:
                 req = {
                     "model": f"models/{model_name}",
-                    "content": {"parts": [{"text": t}]}
+                    "content": {"parts": [{"text": t}]},
                 }
                 if dimensions:
                     req["outputDimensionality"] = dimensions
                 requests.append(req)
-                
+
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, json={"requests": requests}) as resp:
                     resp.raise_for_status()
@@ -335,7 +410,7 @@ class GeminiEmbeddings:
     async def aembed_query(self, text: str) -> List[float]:
         if not text:
             return []
-            
+
         import aiohttp
         from app.core.config import settings
 
@@ -346,11 +421,11 @@ class GeminiEmbeddings:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:embedContent?key={settings.gemini_api_key}"
             req = {
                 "model": f"models/{model_name}",
-                "content": {"parts": [{"text": text}]}
+                "content": {"parts": [{"text": text}]},
             }
             if dimensions:
                 req["outputDimensionality"] = dimensions
-                
+
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, json=req) as resp:
                     resp.raise_for_status()

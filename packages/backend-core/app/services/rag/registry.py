@@ -1,4 +1,5 @@
-"""Handler registry — priority-ordered intent dispatch."""
+"""Handler registry — intent dispatch."""
+
 from __future__ import annotations
 
 import logging
@@ -16,12 +17,11 @@ logger = logging.getLogger("app.rag.registry")
 class HandlerRegistry:
     """Routes a QueryContext to the first handler whose ``can_handle()`` returns True.
 
-    Handlers are sorted by ``priority`` (ascending) once at construction time.
-    ``AgentRAGHandler`` (priority=998) always matches and acts as the fallback.
+    ``AgentRAGHandler`` always matches and acts as the fallback.
     """
 
     def __init__(self, handlers: List["QueryHandler"]) -> None:
-        self._handlers = sorted(handlers, key=lambda h: h.priority)
+        self._handlers = handlers
 
     def _select(self, ctx: "QueryContext") -> "QueryHandler":
         for handler in self._handlers:
@@ -59,9 +59,11 @@ _registry_singleton: Optional[HandlerRegistry] = None
 def build_default_registry() -> HandlerRegistry:
     from app.services.rag.agent.handler import AgentRAGHandler
 
-    return HandlerRegistry([
-        AgentRAGHandler(),        # priority=998 — sole handler, catches all queries
-    ])
+    return HandlerRegistry(
+        [
+            AgentRAGHandler(),  # sole handler, catches all queries
+        ]
+    )
 
 
 def get_registry() -> HandlerRegistry:

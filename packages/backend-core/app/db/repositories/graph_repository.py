@@ -1,4 +1,5 @@
 """Repository for interacting with Memgraph using the async Neo4j driver."""
+
 from __future__ import annotations
 
 import logging
@@ -18,6 +19,7 @@ class GraphRepository:
 
     Allows mapping and querying entity-relationship networks of books.
     """
+
     _driver = None
 
     def __init__(self, uri: Optional[str] = None) -> None:
@@ -91,14 +93,21 @@ class GraphRepository:
                     await session.run(constraint)
                 except Exception as exc:
                     # Memgraph might raise warnings if index/constraint already exists
-                    log_json(logger, logging.DEBUG, "constraint already exists or warning", detail=str(exc))
+                    log_json(
+                        logger,
+                        logging.DEBUG,
+                        "constraint already exists or warning",
+                        detail=str(exc),
+                    )
 
     async def upsert_entities_bulk(self, entities: List[Dict[str, Any]]) -> None:
         """Create or update Entity nodes in bulk."""
         if not entities:
             return
         normalized = [
-            {**e, "name": unicodedata.normalize("NFC", e["name"])} if e.get("name") else e
+            {**e, "name": unicodedata.normalize("NFC", e["name"])}
+            if e.get("name")
+            else e
             for e in entities
         ]
         query = """
@@ -128,7 +137,9 @@ class GraphRepository:
         async with self._driver.session() as session:
             await session.run(query, relations_data=relations)
 
-    async def query_subgraph(self, entity_names: List[str], book_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def query_subgraph(
+        self, entity_names: List[str], book_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """Query 1-hop relationships for a list of entity names to construct context.
 
         When book_id is provided (single-book mode), only relationships extracted from
@@ -146,5 +157,3 @@ class GraphRepository:
             result = await session.run(query, entity_names=normalized, book_id=book_id)
             records = await result.data()
             return records
-
-

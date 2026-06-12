@@ -38,7 +38,13 @@ async def chat_with_book_api(
     rag_service: RAGService = Depends(get_rag_service),
 ):
     """Chat with book using RAG with SQLAlchemy and role-based daily limits"""
-    log_json(logger, logging.INFO, "Chat endpoint entered", user_id=current_user.id, book_id=req.book_id)
+    log_json(
+        logger,
+        logging.INFO,
+        "Chat endpoint entered",
+        user_id=current_user.id,
+        book_id=req.book_id,
+    )
     # 1. Check if user is within their daily limit
     usage_status = await chat_limit_service.get_user_usage_status(current_user, session)
     if usage_status["has_reached_limit"]:
@@ -49,44 +55,45 @@ async def chat_with_book_api(
             user_id=current_user.id,
             role=current_user.role,
             usage=usage_status["usage"],
-            limit=usage_status["limit"]
+            limit=usage_status["limit"],
         )
-        raise HTTPException(
-            status_code=429,
-            detail=t("errors.daily_limit_reached")
-        )
+        raise HTTPException(status_code=429, detail=t("errors.daily_limit_reached"))
 
     try:
         # 2. Process chat request
-        answer = await rag_service.answer_question(req, session, user_id=current_user.id)
+        answer = await rag_service.answer_question(
+            req, session, user_id=current_user.id
+        )
 
         # 2.5. Fix malformed citation references
         answer = fix_malformed_citations(answer)
 
         # 3. Increment usage on successful answer
         await chat_limit_service.increment_usage(current_user, session)
-        usage_status = await chat_limit_service.get_user_usage_status(current_user, session)
+        usage_status = await chat_limit_service.get_user_usage_status(
+            current_user, session
+        )
 
         return {"answer": answer, "usage": usage_status}
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
         error_str = str(exc)
-        log_json(logger, logging.ERROR, "Chat request failed", book_id=req.book_id, error=error_str)
+        log_json(
+            logger,
+            logging.ERROR,
+            "Chat request failed",
+            book_id=req.book_id,
+            error=error_str,
+        )
 
         # Check for 429 RESOURCE_EXHAUSTED from Google/Gemini
         if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
-            raise HTTPException(
-                status_code=429,
-                detail=t("errors.system_busy")
-            )
+            raise HTTPException(status_code=429, detail=t("errors.system_busy"))
 
         # Record error using SQLAlchemy
         await record_book_error(session, req.book_id, "chat", error_str)
-        raise HTTPException(
-            status_code=500,
-            detail=t("errors.system_busy_generic")
-        )
+        raise HTTPException(status_code=500, detail=t("errors.system_busy_generic"))
 
 
 @router.post("/stream")
@@ -97,7 +104,13 @@ async def chat_with_book_stream(
     rag_service: RAGService = Depends(get_rag_service),
 ):
     """Stream chat responses using Server-Sent Events (SSE)"""
-    log_json(logger, logging.INFO, "Chat stream endpoint entered", user_id=current_user.id, book_id=req.book_id)
+    log_json(
+        logger,
+        logging.INFO,
+        "Chat stream endpoint entered",
+        user_id=current_user.id,
+        book_id=req.book_id,
+    )
 
     # Check if user is within their daily limit
     usage_status = await chat_limit_service.get_user_usage_status(current_user, session)
@@ -109,7 +122,7 @@ async def chat_with_book_stream(
             user_id=current_user.id,
             role=current_user.role,
             usage=usage_status["usage"],
-            limit=usage_status["limit"]
+            limit=usage_status["limit"],
         )
 
         async def error_stream():
@@ -125,7 +138,9 @@ async def chat_with_book_stream(
             # str   → raw text token from fast handlers; wrap as {"chunk": str}
             # dict  → typed event from graph handler; pass through as-is,
             #         except {"type": "chunk", "text": ...} which also feeds accumulator
-            async for event in rag_service.answer_question_stream(req, session, user_id=current_user.id, metadata_out=stream_meta):
+            async for event in rag_service.answer_question_stream(
+                req, session, user_id=current_user.id, metadata_out=stream_meta
+            ):
                 if isinstance(event, str):
                     accumulated_response += event
                     yield f'data: {json.dumps({"chunk": event})}\n\n'
@@ -138,20 +153,27 @@ async def chat_with_book_stream(
                         # A new answer generation cycle is starting.
                         # Reset the accumulator so the citation fixer only sees the final answer.
                         accumulated_response = ""
-                        yield f'data: {json.dumps(event)}\n\n'
+                        yield f"data: {json.dumps(event)}\n\n"
                     else:
                         # Status events (planning, tool_call, tool_result, grading, etc.)
-                        yield f'data: {json.dumps(event)}\n\n'
+                        yield f"data: {json.dumps(event)}\n\n"
 
             # After streaming completes, apply citation fixer and send fixed version if needed
             fixed_response = fix_malformed_citations(accumulated_response)
             if fixed_response != accumulated_response:
-                log_json(logger, logging.INFO, "Citations were fixed in stream", user_id=current_user.id)
+                log_json(
+                    logger,
+                    logging.INFO,
+                    "Citations were fixed in stream",
+                    user_id=current_user.id,
+                )
                 yield f'data: {json.dumps({"correction": fixed_response})}\n\n'
 
             # Increment usage on successful stream completion
             await chat_limit_service.increment_usage(current_user, session)
-            updated_usage = await chat_limit_service.get_user_usage_status(current_user, session)
+            updated_usage = await chat_limit_service.get_user_usage_status(
+                current_user, session
+            )
 
             yield f'data: {json.dumps({"done": True, "usage": updated_usage, "contextBookIds": stream_meta.get("used_book_ids", []), "evalId": stream_meta.get("eval_id")})}\n\n'
 
@@ -161,7 +183,13 @@ async def chat_with_book_stream(
             yield f'data: {json.dumps({"error": str(exc)})}\n\n'
         except Exception as exc:
             error_str = str(exc)
-            log_json(logger, logging.ERROR, "Stream failed", book_id=req.book_id, error=error_str)
+            log_json(
+                logger,
+                logging.ERROR,
+                "Stream failed",
+                book_id=req.book_id,
+                error=error_str,
+            )
 
             # Check for rate limit errors from Gemini
             error_msg = t("errors.system_busy_generic")
@@ -170,7 +198,12 @@ async def chat_with_book_stream(
             try:
                 await record_book_error(session, req.book_id, "chat_stream", error_str)
             except Exception as record_exc:
-                log_json(logger, logging.WARNING, "record_book_error failed", error=str(record_exc))
+                log_json(
+                    logger,
+                    logging.WARNING,
+                    "record_book_error failed",
+                    error=str(record_exc),
+                )
 
     return StreamingResponse(
         event_generator(),
@@ -179,13 +212,14 @@ async def chat_with_book_stream(
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",  # Disable nginx buffering
-        }
+        },
     )
 
 
 # ---------------------------------------------------------------------------
 # Feedback endpoint
 # ---------------------------------------------------------------------------
+
 
 class FeedbackRequest(BaseModel):
     eval_id: int
@@ -200,7 +234,9 @@ async def submit_chat_feedback(
 ):
     """Record thumbs-up/down feedback for an assistant response."""
     if req.feedback not in ("positive", "negative"):
-        raise HTTPException(status_code=400, detail="feedback must be 'positive' or 'negative'")
+        raise HTTPException(
+            status_code=400, detail="feedback must be 'positive' or 'negative'"
+        )
 
     from app.db.repositories.rag_evaluations_repository import RAGEvaluationsRepository
     from app.db.models import RAGEvaluation
@@ -221,7 +257,13 @@ async def submit_chat_feedback(
     if evaluation is None:
         raise HTTPException(status_code=404, detail="Evaluation record not found")
 
-    log_json(logger, logging.INFO, "Chat feedback recorded", eval_id=req.eval_id, user_id=current_user.id, feedback=req.feedback)
+    log_json(
+        logger,
+        logging.INFO,
+        "Chat feedback recorded",
+        eval_id=req.eval_id,
+        user_id=current_user.id,
+        feedback=req.feedback,
+    )
 
     return {"ok": True, "eval_id": req.eval_id, "feedback": req.feedback}
-

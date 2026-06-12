@@ -1,4 +1,5 @@
 """Chunks repository with pgvector similarity search"""
+
 from __future__ import annotations
 
 from typing import List, Optional
@@ -36,7 +37,7 @@ class ChunksRepository(BaseRepository[Chunk]):
             set_={
                 "text": stmt.excluded.text,
                 "embedding": stmt.excluded.embedding,
-            }
+            },
         )
 
         await self.session.execute(stmt)
@@ -52,8 +53,7 @@ class ChunksRepository(BaseRepository[Chunk]):
     async def delete_by_page(self, book_id: str, page_number: int) -> int:
         """Delete chunks for a specific page"""
         stmt = delete(Chunk).where(
-            Chunk.book_id == book_id,
-            Chunk.page_number == page_number
+            Chunk.book_id == book_id, Chunk.page_number == page_number
         )
         result = await self.session.execute(stmt)
         await self.session.flush()
@@ -76,7 +76,7 @@ class ChunksRepository(BaseRepository[Chunk]):
         book_ids: Optional[List[str]] = None,
         categories: Optional[List[str]] = None,
         limit: int = 12,
-        threshold: float = 0.35
+        threshold: float = 0.35,
     ) -> List[dict]:
         """
         Vector similarity search using pgvector cosine distance.
@@ -99,8 +99,10 @@ class ChunksRepository(BaseRepository[Chunk]):
         """
         # Convert embedding to PostgreSQL array format
         embedding_str = str(query_embedding)
-        
-        cat_filter = "AND b.categories && CAST(:categories AS text[])" if categories else ""
+
+        cat_filter = (
+            "AND b.categories && CAST(:categories AS text[])" if categories else ""
+        )
 
         # Build query with or without book_ids filter
         # Use CAST() instead of :: to avoid conflicts with SQLAlchemy parameter binding
@@ -133,7 +135,7 @@ class ChunksRepository(BaseRepository[Chunk]):
                 "embedding": embedding_str,
                 "book_ids": [str(bid) for bid in book_ids],
                 "threshold": threshold,
-                "limit": limit
+                "limit": limit,
             }
             if categories:
                 params["categories"] = categories
@@ -161,7 +163,7 @@ class ChunksRepository(BaseRepository[Chunk]):
             params = {
                 "embedding": embedding_str,
                 "threshold": threshold,
-                "limit": limit
+                "limit": limit,
             }
             if categories:
                 params["categories"] = categories

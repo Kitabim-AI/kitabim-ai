@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 def get_embedding_provider(model_name: str) -> EmbeddingProvider:
     if settings.embedding_provider == "gemini":
         from app.llm.models import GeminiEmbeddings
+
         return GeminiEmbeddings(model_name)
     else:
         raise ValueError(f"Unknown embedding provider: {settings.embedding_provider}")
@@ -19,6 +20,7 @@ def get_embedding_provider(model_name: str) -> EmbeddingProvider:
 def get_llm_provider(model_name: str) -> LLMProvider:
     if settings.llm_provider == "gemini":
         from app.llm.models import build_text_llm
+
         return build_text_llm(model_name)
     else:
         raise ValueError(f"Unknown LLM provider: {settings.llm_provider}")
@@ -27,6 +29,9 @@ def get_llm_provider(model_name: str) -> LLMProvider:
 def get_vector_store(session: AsyncSession) -> VectorStore:
     if settings.vector_store_provider == "pgvector":
         from app.db.repositories.chunks_repository import ChunksRepository
+
         return ChunksRepository(session)
     else:
-        raise ValueError(f"Unknown vector store provider: {settings.vector_store_provider}")
+        raise ValueError(
+            f"Unknown vector store provider: {settings.vector_store_provider}"
+        )

@@ -28,33 +28,34 @@ user_lru_cache = LocalLRUCache(maxsize=1000, ttl=float(settings.cache_ttl_user_p
 # HTTPBearer with auto_error=False to allow guest access
 security = HTTPBearer(auto_error=False)
 
+
 async def get_current_user_optional(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: AsyncSession = Depends(get_session),
 ) -> Optional[User]:
     """
     Get the current user if a valid token is provided.
-    
+
     Returns None only when no token is provided (guest access).
     Raises HTTPException if token is provided but invalid.
-    
+
     Args:
         credentials: Optional Bearer token credentials.
         db: Database session.
-        
+
     Returns:
         User object if authenticated, None for guests.
-        
+
     Raises:
         HTTPException 401: If token is provided but invalid/expired.
     """
     if not credentials:
         return None
-    
+
     try:
         payload = decode_jwt(credentials.credentials, expected_type="access")
         user_id = payload["sub"]
-        
+
         # 1. Local LRU Cache Lookup (in-process)
         cached_user = user_lru_cache.get(user_id)
         if cached_user is not None:
@@ -65,7 +66,7 @@ async def get_current_user_optional(
                     headers={"WWW-Authenticate": "Bearer"},
                 )
             return cached_user
-        
+
         # 2. Redis Cache Lookup
         cache_key = cache_config.KEY_USER.format(user_id=user_id)
         cached_user_data = await cache_service.get(cache_key)
@@ -82,19 +83,17 @@ async def get_current_user_optional(
 
         # 3. DB Fetch
         user = await get_user_by_id(db, user_id)
-        
+
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="User not found",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        
+
         # Cache User Result
         await cache_service.set(
-            cache_key, 
-            user.model_dump(mode='json'), 
-            ttl=settings.cache_ttl_user_profile
+            cache_key, user.model_dump(mode="json"), ttl=settings.cache_ttl_user_profile
         )
         user_lru_cache.set(user_id, user)
 
@@ -104,9 +103,9 @@ async def get_current_user_optional(
                 detail="User account is disabled",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        
+
         return user
-        
+
     except TokenExpiredError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -126,13 +125,13 @@ async def get_current_user(
 ) -> User:
     """
     Require an authenticated user.
-    
+
     Args:
         user: User from get_current_user_optional dependency.
-        
+
     Returns:
         The authenticated User.
-        
+
     Raises:
         HTTPException 401: If no user is authenticated.
     """
@@ -148,21 +147,22 @@ async def get_current_user(
 def require_role(*allowed_roles: UserRole):
     """
     Dependency factory for role-based access control.
-    
+
     Creates a dependency that requires the authenticated user
     to have one of the specified roles.
-    
+
     Args:
         *allowed_roles: One or more UserRole values that are permitted.
-        
+
     Returns:
         A FastAPI dependency function.
-        
+
     Example:
         @router.delete("/books/{id}", dependencies=[Depends(require_role(UserRole.ADMIN))])
         async def delete_book(id: str):
             ...
     """
+
     async def role_checker(user: User = Depends(get_current_user)) -> User:
         if user.role not in allowed_roles:
             raise HTTPException(
@@ -170,7 +170,7 @@ def require_role(*allowed_roles: UserRole):
                 detail=f"Insufficient permissions. Required roles: {[r.value for r in allowed_roles]}",
             )
         return user
-    
+
     return role_checker
 
 

@@ -1,6 +1,7 @@
 """
 Dictionary Management API — search, add, and remove words from the global dictionary.
 """
+
 from __future__ import annotations
 
 from typing import List
@@ -20,6 +21,7 @@ router = APIRouter()
 
 # ── Response/Request schemas ──────────────────────────────────────────────────
 
+
 class AddToDictionaryRequest(BaseModel):
     word: str
 
@@ -36,6 +38,7 @@ class DictionaryWordOut(BaseModel):
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
 
 @router.post("/spell-check/dictionary")
 async def add_to_dictionary(
@@ -56,7 +59,7 @@ async def add_to_dictionary(
 
     new_word = Dictionary(word=word)
     session.add(new_word)
-    
+
     # Also mark all matching OPEN issues across the entire system as 'ignored'
     # since the word is now valid.
     await session.execute(
@@ -64,7 +67,7 @@ async def add_to_dictionary(
         .where(PageSpellIssue.word == word, PageSpellIssue.status == "open")
         .values(status="ignored")
     )
-    
+
     await session.commit()
     return {"added": 1}
 
@@ -110,12 +113,7 @@ async def list_dictionary_words(
     session: AsyncSession = Depends(get_session),
 ):
     """List words in the dictionary with pagination, sorted by latest added (ID DESC)."""
-    stmt = (
-        select(Dictionary)
-        .order_by(Dictionary.id.desc())
-        .offset(skip)
-        .limit(limit)
-    )
+    stmt = select(Dictionary).order_by(Dictionary.id.desc()).offset(skip).limit(limit)
     res = await session.execute(stmt)
     return res.scalars().all()
 
@@ -135,11 +133,11 @@ async def delete_from_dictionary(
     stmt = select(Dictionary).where(Dictionary.word == word)
     res = await session.execute(stmt)
     entry = res.scalar_one_or_none()
-    
+
     if not entry:
         raise HTTPException(status_code=404, detail="Word not found in dictionary")
 
     await session.delete(entry)
     await session.commit()
-    
+
     return {"deleted": True, "word": word}

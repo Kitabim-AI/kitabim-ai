@@ -1,4 +1,5 @@
 """Statistics API endpoints"""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
@@ -52,7 +53,7 @@ class SystemStats(BaseModel):
 
 @router.get("/", response_model=SystemStats)
 async def get_system_stats(
-    current_user = Depends(require_admin),
+    current_user=Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
     """Get system-wide statistics (admin only)"""
@@ -63,10 +64,7 @@ async def get_system_stats(
 
     # Count books by pipeline_step (with fallback to status for legacy)
     books_by_status_result = await session.execute(
-        select(
-            func.coalesce(Book.pipeline_step, Book.status), 
-            func.count(Book.id)
-        )
+        select(func.coalesce(Book.pipeline_step, Book.status), func.count(Book.id))
         .group_by(func.coalesce(Book.pipeline_step, Book.status))
         .order_by(func.count(Book.id).desc())
     )
@@ -75,11 +73,11 @@ async def get_system_stats(
     for status, count in books_by_status_result.all():
         # Map legacy or technical statuses to clean ones
         status = (status or "unknown").lower()
-        if status in ('ocr_processing', 'ocr_done'):
+        if status in ("ocr_processing", "ocr_done"):
             status = PIPELINE_STEP_OCR
-        elif status == 'indexing':
+        elif status == "indexing":
             status = PIPELINE_STEP_EMBEDDING
-        
+
         raw_books_by_status[status] = raw_books_by_status.get(status, 0) + count
 
     books_by_status = [
@@ -93,13 +91,15 @@ async def get_system_stats(
 
     # Count indexed pages (terminal state)
     indexed_pages_result = await session.execute(
-        select(func.count()).select_from(Page).where(Page.is_indexed == True)
+        select(func.count()).select_from(Page).where(Page.is_indexed.is_(True))
     )
     indexed_pages = indexed_pages_result.scalar() or 0
 
     # Count error pages
     error_pages_result = await session.execute(
-        select(func.count()).select_from(Page).where(
+        select(func.count())
+        .select_from(Page)
+        .where(
             or_(
                 Page.ocr_milestone.in_(["failed", "error"]),
                 Page.chunking_milestone.in_(["failed", "error"]),
@@ -113,24 +113,28 @@ async def get_system_stats(
     # Pages by pipeline state summary - derived from decoupled milestones
     current_status_expr = case(
         (Page.ocr_milestone != "succeeded", func.concat("ocr:", Page.ocr_milestone)),
-        (Page.chunking_milestone != "succeeded", func.concat("chunking:", Page.chunking_milestone)),
-        (Page.embedding_milestone != "succeeded", func.concat("embedding:", Page.embedding_milestone)),
-        (Page.spell_check_milestone.notin_(["idle", "succeeded"]), func.concat("spell_check:", Page.spell_check_milestone)),
-        else_="indexed"
+        (
+            Page.chunking_milestone != "succeeded",
+            func.concat("chunking:", Page.chunking_milestone),
+        ),
+        (
+            Page.embedding_milestone != "succeeded",
+            func.concat("embedding:", Page.embedding_milestone),
+        ),
+        (
+            Page.spell_check_milestone.notin_(["idle", "succeeded"]),
+            func.concat("spell_check:", Page.spell_check_milestone),
+        ),
+        else_="indexed",
     )
 
     pages_by_status_result = await session.execute(
-        select(
-            current_status_expr, 
-            func.count(Page.id)
-        )
-        .where(
-            Page.is_indexed == False
-        )
+        select(current_status_expr, func.count(Page.id))
+        .where(Page.is_indexed.is_(False))
         .group_by(current_status_expr)
         .order_by(func.count(Page.id).desc())
     )
-    
+
     pages_by_status = [
         PageStatusCount(status=status, count=count)
         for status, count in pages_by_status_result.all()
@@ -149,7 +153,9 @@ async def get_system_stats(
     )
     embedded_chunks = embedded_chunks_result.scalar() or 0
     pending_chunks = total_chunks - embedded_chunks
-    percentage_embedded = (embedded_chunks / total_chunks * 100) if total_chunks > 0 else 0.0
+    percentage_embedded = (
+        (embedded_chunks / total_chunks * 100) if total_chunks > 0 else 0.0
+    )
 
     return {
         "total_books": total_books,
@@ -160,14 +166,14 @@ async def get_system_stats(
             "unindexed": unindexed_pages,
             "percentage_indexed": round(percentage_indexed, 2),
             "error": error_pages,
-            "pages_by_status": pages_by_status
+            "pages_by_status": pages_by_status,
         },
         "chunk_stats": {
             "total": total_chunks,
             "embedded": embedded_chunks,
             "pending": pending_chunks,
-            "percentage_embedded": round(percentage_embedded, 2)
-        }
+            "percentage_embedded": round(percentage_embedded, 2),
+        },
     }
 
 
@@ -238,15 +244,15 @@ async def get_pipeline_performance_stats(
     Aggregates avg / p95 / max processing duration per event_type
     using the JSON payload stored in each PipelineEvent row.
     """
-    duration_expr = cast(
-        PipelineEvent.payload["duration_ms"].as_integer(), Integer
-    )
+    duration_expr = cast(PipelineEvent.payload["duration_ms"].as_integer(), Integer)
 
     stmt = (
         select(
             PipelineEvent.event_type,
             func.avg(duration_expr).label("avg_duration"),
-            func.percentile_cont(0.95).within_group(duration_expr).label("p95_duration"),
+            func.percentile_cont(0.95)
+            .within_group(duration_expr)
+            .label("p95_duration"),
             func.max(duration_expr).label("max_duration"),
             func.count().label("count"),
         )
@@ -263,8 +269,12 @@ async def get_pipeline_performance_stats(
             PipelineStageStats(
                 stage=row.event_type,
                 avg_duration_ms=round(float(row.avg_duration or 0), 1),
-                p95_duration_ms=round(float(row.p95_duration), 1) if row.p95_duration is not None else None,
-                max_duration_ms=int(row.max_duration) if row.max_duration is not None else None,
+                p95_duration_ms=round(float(row.p95_duration), 1)
+                if row.p95_duration is not None
+                else None,
+                max_duration_ms=int(row.max_duration)
+                if row.max_duration is not None
+                else None,
                 total_events=row.count,
             )
             for row in rows

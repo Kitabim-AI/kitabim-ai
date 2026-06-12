@@ -3,6 +3,7 @@ Auto-Correction Rules API — manage global substitution rules.
 
 All endpoints require admin role.
 """
+
 from __future__ import annotations
 
 from typing import List, Optional
@@ -23,6 +24,7 @@ router = APIRouter()
 
 
 # ── Response schemas ──────────────────────────────────────────────────────────
+
 
 class AutoCorrectRuleOut(BaseModel):
     id: int
@@ -57,24 +59,25 @@ class ApplyRulesResponse(BaseModel):
 
 # ── Request schemas ───────────────────────────────────────────────────────────
 
+
 class CreateAutoCorrectRuleRequest(BaseModel):
     misspelled_word: str
     corrected_word: str
     is_active: bool = False
     description: Optional[str] = None
 
-    @field_validator('misspelled_word', 'corrected_word')
+    @field_validator("misspelled_word", "corrected_word")
     @classmethod
     def validate_not_empty(cls, v: str) -> str:
         if not v or not v.strip():
-            raise ValueError('Word cannot be empty')
+            raise ValueError("Word cannot be empty")
         return v.strip()
 
-    @field_validator('corrected_word')
+    @field_validator("corrected_word")
     @classmethod
     def validate_different(cls, v: str, info) -> str:
-        if 'misspelled_word' in info.data and v == info.data['misspelled_word']:
-            raise ValueError('Corrected word must be different from misspelled word')
+        if "misspelled_word" in info.data and v == info.data["misspelled_word"]:
+            raise ValueError("Corrected word must be different from misspelled word")
         return v
 
 
@@ -83,15 +86,16 @@ class UpdateAutoCorrectRuleRequest(BaseModel):
     is_active: Optional[bool] = None
     description: Optional[str] = None
 
-    @field_validator('corrected_word')
+    @field_validator("corrected_word")
     @classmethod
     def validate_not_empty(cls, v: Optional[str]) -> Optional[str]:
         if v is not None and (not v or not v.strip()):
-            raise ValueError('Corrected word cannot be empty')
+            raise ValueError("Corrected word cannot be empty")
         return v.strip() if v else None
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
 
 @router.get("/auto-correct-rules", response_model=AutoCorrectRulePaginatedOut)
 async def list_auto_correct_rules(
@@ -111,7 +115,9 @@ async def list_auto_correct_rules(
     - search: Search query (misspelled word, corrected word, or description)
     - auto_apply_only: If true, only return rules with is_active=True
     """
-    stmt = select(AutoCorrectRule).order_by(func.lower(AutoCorrectRule.misspelled_word), AutoCorrectRule.id)
+    stmt = select(AutoCorrectRule).order_by(
+        func.lower(AutoCorrectRule.misspelled_word), AutoCorrectRule.id
+    )
     count_stmt = select(func.count()).select_from(AutoCorrectRule)
 
     filters = []
@@ -122,7 +128,7 @@ async def list_auto_correct_rules(
         search_filter = or_(
             AutoCorrectRule.misspelled_word.ilike(f"%{search}%"),
             AutoCorrectRule.corrected_word.ilike(f"%{search}%"),
-            AutoCorrectRule.description.ilike(f"%{search}%")
+            AutoCorrectRule.description.ilike(f"%{search}%"),
         )
         filters.append(search_filter)
 
@@ -139,12 +145,7 @@ async def list_auto_correct_rules(
     result = await session.execute(stmt)
     items = list(result.scalars().all())
 
-    return {
-        "items": items,
-        "total": total,
-        "skip": skip,
-        "limit": limit
-    }
+    return {"items": items, "total": total, "skip": skip, "limit": limit}
 
 
 @router.get("/auto-correct-rules/stats", response_model=AutoCorrectStatsOut)
@@ -165,8 +166,7 @@ async def get_auto_correct_rule(
 ):
     """Get a specific auto-correction rule."""
     result = await session.execute(
-        select(AutoCorrectRule)
-        .where(AutoCorrectRule.misspelled_word == word)
+        select(AutoCorrectRule).where(AutoCorrectRule.misspelled_word == word)
     )
     rule = result.scalar_one_or_none()
 
@@ -189,8 +189,9 @@ async def create_auto_correct_rule(
     """
     # Check if rule already exists
     existing = await session.execute(
-        select(AutoCorrectRule)
-        .where(AutoCorrectRule.misspelled_word == body.misspelled_word)
+        select(AutoCorrectRule).where(
+            AutoCorrectRule.misspelled_word == body.misspelled_word
+        )
     )
     existing_rule = existing.scalar_one_or_none()
 
@@ -231,8 +232,7 @@ async def update_auto_correct_rule(
     Only provided fields will be updated.
     """
     result = await session.execute(
-        select(AutoCorrectRule)
-        .where(AutoCorrectRule.misspelled_word == word)
+        select(AutoCorrectRule).where(AutoCorrectRule.misspelled_word == word)
     )
     rule = result.scalar_one_or_none()
 
@@ -244,7 +244,7 @@ async def update_auto_correct_rule(
         if body.corrected_word == word:
             raise HTTPException(
                 status_code=400,
-                detail="Corrected word must be different from misspelled word"
+                detail="Corrected word must be different from misspelled word",
             )
         rule.corrected_word = body.corrected_word
 
@@ -279,5 +279,3 @@ async def delete_auto_correct_rule(
 
     await session.commit()
     return None
-
-

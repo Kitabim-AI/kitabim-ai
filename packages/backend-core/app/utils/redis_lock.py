@@ -1,13 +1,14 @@
 import logging
 import uuid
-from typing import List, Optional
+from typing import List
 from redis.asyncio import Redis
 
 logger = logging.getLogger("app.redis_lock")
 
+
 class RedisLock:
     """A standard Redis-based distributed lock (Redlock style for single instance)."""
-    
+
     def __init__(self, redis_client: Redis, name: str, timeout: int = 3600):
         """
         Args:
@@ -24,7 +25,9 @@ class RedisLock:
         """Acquire the lock. Returns True if successful, False otherwise."""
         try:
             # px expects timeout in milliseconds
-            res = await self.redis.set(self.name, self.token, px=self.timeout * 1000, nx=True)
+            res = await self.redis.set(
+                self.name, self.token, px=self.timeout * 1000, nx=True
+            )
             return bool(res)
         except Exception as e:
             logger.warning(f"Failed to acquire Redis lock for {self.name}: {e}")
@@ -65,7 +68,9 @@ class MultiPageLock:
                 self.locks[pid] = lock
                 self.locked_page_ids.append(pid)
             else:
-                logger.warning(f"Could not acquire distributed lock for page {pid}. Page is skipped.")
+                logger.warning(
+                    f"Could not acquire distributed lock for page {pid}. Page is skipped."
+                )
         return self.locked_page_ids
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):

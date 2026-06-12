@@ -13,22 +13,22 @@ flowchart TD
         T2[GCS Discovery] -->|Discovers Book| InitDB
     end
 
-    InitDB([Book: pending\nMilestones: idle])
+    InitDB(["Book: pending<br/>Milestones: idle"])
 
     %% Mandatory sequential pipeline
-    subgraph Pipeline [Mandatory Pipeline — OCR → Chunking → Embedding]
+    subgraph Pipeline ["Mandatory Pipeline — OCR → Chunking → Embedding"]
         S_OCR[OCR Scanner] -->|Claim idle| J_OCR[OCR Job]
-        S_CH[Chunking Scanner] -->|Claim idle\ndep: ocr=succeeded| J_CH[Chunking Job]
-        S_EM[Embedding Scanner] -->|Claim idle\ndep: chunking=succeeded| J_EM[Embedding Job]
+        S_CH[Chunking Scanner] -->|"Claim idle<br/>dep: ocr=succeeded"| J_CH[Chunking Job]
+        S_EM[Embedding Scanner] -->|"Claim idle<br/>dep: chunking=succeeded"| J_EM[Embedding Job]
     end
 
     InitDB --> S_OCR
 
     %% Event Bus / Outbox — reactive low-latency triggers
     subgraph Outbox [Transactional Outbox]
-        J_OCR -->|Write Event\nocr_succeeded| OB[(Pipeline Events)]
-        J_CH -->|Write Event\nchunking_succeeded| OB
-        J_EM -->|Write Event\nembedding_succeeded| OB
+        J_OCR -->|"Write Event<br/>ocr_succeeded"| OB[(Pipeline Events)]
+        J_CH -->|"Write Event<br/>chunking_succeeded"| OB
+        J_EM -->|"Write Event<br/>embedding_succeeded"| OB
 
         OB -->|Poll| ED[Event Dispatcher]
 
@@ -37,7 +37,7 @@ flowchart TD
     end
 
     %% Book readiness — driven by PipelineDriver, not spell check
-    J_EM -->|embedding terminal| PD[Pipeline Driver\nevery 1 min]
+    J_EM -->|embedding terminal| PD["Pipeline Driver<br/>every 1 min"]
     PD -->|all pages terminal| Ready([Book: ready])
 
     Ready -->|Enqueue| J_SUM[Summary Job]
@@ -53,13 +53,13 @@ flowchart TD
 
     %% Independent quality layer — runs in parallel, does NOT block readiness
     subgraph SpellCheck [Independent Quality Layer]
-        S_SC[Spell Check Scanner\ndep: ocr=succeeded only] -->|Claim idle| J_SC[Spell Check Job]
+        S_SC["Spell Check Scanner<br/>dep: ocr=succeeded only"] -->|Claim idle| J_SC[Spell Check Job]
     end
     InitDB -.->|ocr done| S_SC
 
     %% Monitoring
-    Watchdog[Stale Watchdog] -.->|Reset in_progress > 30m| Pipeline
-    Watchdog -.->|Reset in_progress > 30m| SpellCheck
+    Watchdog[Stale Watchdog] -.->|"Reset in_progress > 30m"| Pipeline
+    Watchdog -.->|"Reset in_progress > 30m"| SpellCheck
 
     classDef stage fill:#e9edc9,stroke:#606c38,stroke-width:2px
     classDef job fill:#d4f1f4,stroke:#189ab4,stroke-width:1px
@@ -94,15 +94,15 @@ flowchart TD
     fail -->|Retry count < max| idle
 
     %% Admin: Reprocess / Retry
-    fail -->|"Reset Failed Pages\n(set milestone → idle)"| idle
-    succ -->|"Reprocess Step (OCR/Chunk/Embed/...)\n(set milestone → idle at that step)"| idle
-    in_proc -->|"Stale Watchdog\n(timeout: set milestone → idle)"| idle
+    fail -->|"Reset Failed Pages<br/>(set milestone → idle)"| idle
+    succ -->|"Reprocess Step (OCR/Chunk/Embed/...)<br/>(set milestone → idle at that step)"| idle
+    in_proc -->|"Stale Watchdog<br/>(timeout: set milestone → idle)"| idle
 
     %% Admin: Reindex
-    succ -->|"Reindex\n(set pipeline_step → chunking\nset milestone → idle)"| idle
+    succ -->|"Reindex<br/>(set pipeline_step → chunking<br/>set milestone → idle)"| idle
 
     %% Manual Edit (Sync)
-    any_state -->|"Update Page Text\n(Sync chunk/embed\nset milestone → succeeded)"| succ
+    any_state -->|"Update Page Text<br/>(Sync chunk/embed<br/>set milestone → succeeded)"| succ
 
     classDef state fill:#e9edc9,stroke:#606c38,stroke-width:2px
     classDef errState fill:#ffcccb,stroke:#d32f2f,stroke-width:2px
@@ -123,9 +123,9 @@ When a page repeatedly fails OCR, it is automatically marked as `failed` after `
 flowchart TD
     A[Milestone: idle] --> B[Job Picked Up]
     B --> C[Milestone: in_progress]
-    C -->|Success| D[Milestone: succeeded\npipeline_step++]
+    C -->|Success| D["Milestone: succeeded<br/>pipeline_step++"]
     C -->|Failure| E[retry_count++]
-    E --> F{retry_count\n>= max_retry?}
+    E --> F{"retry_count<br/>>= max_retry?"}
     F -->|No| G[Milestone: idle]
     G --> B
     F -->|Yes| H[Milestone: failed]

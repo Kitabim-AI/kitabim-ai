@@ -1,4 +1,5 @@
 """QueryRewriter — LLM-based follow-up question rewriting for better embedding search."""
+
 from __future__ import annotations
 
 import hashlib
@@ -40,7 +41,12 @@ class QueryRewriter:
                 log_json(logger, logging.DEBUG, "Query rewrite cache hit")
                 return cached
         except Exception as exc:
-            log_json(logger, logging.WARNING, "Query rewrite cache read failed", error=str(exc))
+            log_json(
+                logger,
+                logging.WARNING,
+                "Query rewrite cache read failed",
+                error=str(exc),
+            )
 
         try:
             rewritten: str = await ctx.rewrite_chain.ainvoke(
@@ -51,18 +57,32 @@ class QueryRewriter:
                 return ctx.question
 
             log_json(
-                logger, logging.INFO, "Query rewritten",
+                logger,
+                logging.INFO,
+                "Query rewritten",
                 original=ctx.question[:120],
                 rewritten=rewritten[:120],
             )
 
             try:
-                await cache_service.set(cache_key, rewritten, ttl=settings.cache_ttl_rag_query)
+                await cache_service.set(
+                    cache_key, rewritten, ttl=settings.cache_ttl_rag_query
+                )
             except Exception as exc:
-                log_json(logger, logging.WARNING, "Query rewrite cache write failed", error=str(exc))
+                log_json(
+                    logger,
+                    logging.WARNING,
+                    "Query rewrite cache write failed",
+                    error=str(exc),
+                )
 
             return rewritten
 
         except Exception as exc:
-            log_json(logger, logging.WARNING, "Query rewrite LLM failed, using original", error=str(exc))
+            log_json(
+                logger,
+                logging.WARNING,
+                "Query rewrite LLM failed, using original",
+                error=str(exc),
+            )
             return ctx.question

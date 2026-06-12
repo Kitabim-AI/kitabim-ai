@@ -1,4 +1,5 @@
 """Pages repository with upsert operations"""
+
 from __future__ import annotations
 
 from typing import List, Optional
@@ -17,10 +18,7 @@ class PagesRepository(BaseRepository[Page]):
         super().__init__(session, Page)
 
     async def find_by_book(
-        self,
-        book_id: str,
-        skip: int = 0,
-        limit: int = 10000
+        self, book_id: str, skip: int = 0, limit: int = 10000
     ) -> List[Page]:
         """Find all pages for a book, ordered by page number"""
         stmt = (
@@ -33,15 +31,10 @@ class PagesRepository(BaseRepository[Page]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def find_one(
-        self,
-        book_id: str,
-        page_number: int
-    ) -> Optional[Page]:
+    async def find_one(self, book_id: str, page_number: int) -> Optional[Page]:
         """Find a specific page by book ID and page number"""
         stmt = select(Page).where(
-            Page.book_id == book_id,
-            Page.page_number == page_number
+            Page.book_id == book_id, Page.page_number == page_number
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -62,7 +55,7 @@ class PagesRepository(BaseRepository[Page]):
                 "error": stmt.excluded.error,
                 "updated_by": stmt.excluded.updated_by,
                 "last_updated": func.now(),
-            }
+            },
         )
         stmt = stmt.returning(Page)
 
@@ -71,11 +64,7 @@ class PagesRepository(BaseRepository[Page]):
         return result.scalar_one()
 
     async def update_status(
-        self,
-        book_id: str,
-        page_number: int,
-        status: str,
-        error: Optional[str] = None
+        self, book_id: str, page_number: int, status: str, error: Optional[str] = None
     ) -> Optional[Page]:
         """Update page status and optional error message"""
         from sqlalchemy import update
@@ -86,10 +75,7 @@ class PagesRepository(BaseRepository[Page]):
 
         stmt = (
             update(Page)
-            .where(
-                Page.book_id == book_id,
-                Page.page_number == page_number
-            )
+            .where(Page.book_id == book_id, Page.page_number == page_number)
             .values(**values)
             .returning(Page)
         )
@@ -98,20 +84,14 @@ class PagesRepository(BaseRepository[Page]):
         return result.scalar_one_or_none()
 
     async def update_many_status(
-        self,
-        book_id: str,
-        page_numbers: List[int],
-        status: str
+        self, book_id: str, page_numbers: List[int], status: str
     ) -> int:
         """Update status for multiple pages"""
         from sqlalchemy import update
 
         stmt = (
             update(Page)
-            .where(
-                Page.book_id == book_id,
-                Page.page_number.in_(page_numbers)
-            )
+            .where(Page.book_id == book_id, Page.page_number.in_(page_numbers))
             .values(status=status, last_updated=func.now())
         )
         result = await self.session.execute(stmt)

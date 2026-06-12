@@ -1,4 +1,5 @@
 """Base repository with common CRUD operations"""
+
 from __future__ import annotations
 
 from typing import Generic, TypeVar, Type, List, Optional, Any
@@ -25,17 +26,13 @@ class BaseRepository(Generic[ModelType]):
     async def get(self, id: Any) -> Optional[ModelType]:
         """Get single record by primary key"""
         from sqlalchemy import inspect
+
         pk_column = inspect(self.model).primary_key[0]
-        result = await self.session.execute(
-            select(self.model).where(pk_column == id)
-        )
+        result = await self.session.execute(select(self.model).where(pk_column == id))
         return result.scalar_one_or_none()
 
     async def get_all(
-        self,
-        skip: int = 0,
-        limit: int = 100,
-        order_by: str = "id"
+        self, skip: int = 0, limit: int = 100, order_by: str = "id"
     ) -> List[ModelType]:
         """Get all records with pagination"""
         stmt = select(self.model).offset(skip).limit(limit)
@@ -58,6 +55,7 @@ class BaseRepository(Generic[ModelType]):
     async def update_one(self, id: Any, **kwargs) -> Optional[ModelType]:
         """Update record by primary key"""
         from sqlalchemy import inspect
+
         pk_column = inspect(self.model).primary_key[0]
         stmt = (
             update(self.model)
@@ -72,6 +70,7 @@ class BaseRepository(Generic[ModelType]):
     async def delete_one(self, id: Any) -> bool:
         """Delete record by primary key"""
         from sqlalchemy import inspect
+
         pk_column = inspect(self.model).primary_key[0]
         stmt = delete(self.model).where(pk_column == id)
         result = await self.session.execute(stmt)
@@ -93,6 +92,7 @@ class BaseRepository(Generic[ModelType]):
     async def exists(self, id: Any) -> bool:
         """Check if record exists by primary key"""
         from sqlalchemy import inspect
+
         pk_column = inspect(self.model).primary_key[0]
         result = await self.session.execute(
             select(func.count()).select_from(self.model).where(pk_column == id)

@@ -9,8 +9,10 @@ from app.core.config import settings
 
 T = TypeVar("T")
 
+
 class CircuitBreakerOpen(Exception):
     pass
+
 
 @dataclass
 class CircuitBreakerConfig:
@@ -19,13 +21,16 @@ class CircuitBreakerConfig:
     half_open_max_calls: int = 1
     cooling_period: float = 0.0
 
+
 _redis_client = None
+
 
 def get_redis() -> redis.Redis:
     global _redis_client
     if _redis_client is None:
         _redis_client = redis.from_url(settings.redis_url, decode_responses=True)
     return _redis_client
+
 
 class CircuitBreaker:
     def __init__(self, name: str, config: CircuitBreakerConfig | None = None) -> None:
@@ -73,17 +78,27 @@ class CircuitBreaker:
 
     async def reset(self) -> None:
         r = get_redis()
-        await r.hset(self.key, mapping={"state": "closed", "failures": "0", "in_flight": "0", "opened_at": "0"})
+        await r.hset(
+            self.key,
+            mapping={
+                "state": "closed",
+                "failures": "0",
+                "in_flight": "0",
+                "opened_at": "0",
+            },
+        )
 
     async def force_open(self) -> None:
         r = get_redis()
         now = str(time.time())
-        await r.hset(self.key, mapping={"state": "open", "in_flight": "0", "opened_at": now})
+        await r.hset(
+            self.key, mapping={"state": "open", "in_flight": "0", "opened_at": now}
+        )
 
     async def _allow_call(self) -> bool:
         r = get_redis()
         now = time.time()
-        
+
         script = """
         local key = KEYS[1]
         local now = tonumber(ARGV[1])
@@ -117,7 +132,14 @@ class CircuitBreaker:
         
         return {1, state}
         """
-        result = await r.eval(script, 1, self.key, str(now), str(self.config.recovery_timeout), str(self.config.half_open_max_calls))
+        result = await r.eval(
+            script,
+            1,
+            self.key,
+            str(now),
+            str(self.config.recovery_timeout),
+            str(self.config.half_open_max_calls),
+        )
         # result is {1/0, state_string}
         return bool(result[0]), result[1]
 
@@ -132,7 +154,7 @@ class CircuitBreaker:
     async def _on_failure(self) -> None:
         r = get_redis()
         now = time.time()
-        
+
         script = """
         local key = KEYS[1]
         local now = tonumber(ARGV[1])
@@ -156,13 +178,22 @@ class CircuitBreaker:
             redis.call('HSET', key, 'state', 'open', 'opened_at', now, 'in_flight', '0')
         end
         """
-        await r.eval(script, 1, self.key, str(now), str(self.config.failure_threshold), str(self.config.cooling_period))
+        await r.eval(
+            script,
+            1,
+            self.key,
+            str(now),
+            str(self.config.failure_threshold),
+            str(self.config.cooling_period),
+        )
 
     async def call(self, fn: Callable[..., Awaitable[T]], *args, **kwargs) -> T:
         allowed, state = await self._allow_call()
         if not allowed:
             if state == "half_open":
-                raise CircuitBreakerOpen(f"Circuit breaker '{self.name}' is half-open (recovering but at capacity)")
+                raise CircuitBreakerOpen(
+                    f"Circuit breaker '{self.name}' is half-open (recovering but at capacity)"
+                )
             raise CircuitBreakerOpen(f"Circuit breaker '{self.name}' is open")
 
         try:

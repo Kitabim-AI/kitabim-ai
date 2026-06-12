@@ -2,6 +2,7 @@
 Test script for ThreadSafeSpellCheckCache
 Verifies thread safety and statistics tracking
 """
+
 import asyncio
 import sys
 from pathlib import Path
@@ -22,12 +23,12 @@ async def test_concurrent_access():
             word = f"word_{i % 50}"  # Overlap to test locking
 
             # Simulate cache miss then hit
-            async with cache._locks['unknown']:
+            async with cache._locks["unknown"]:
                 if word not in cache.unknown_words:
-                    cache._stats['unknown_misses'] += 1
-                    cache.unknown_words[word] = (i % 2 == 0)
+                    cache._stats["unknown_misses"] += 1
+                    cache.unknown_words[word] = i % 2 == 0
                 else:
-                    cache._stats['unknown_hits'] += 1
+                    cache._stats["unknown_hits"] += 1
 
     # Run 20 workers concurrently
     await asyncio.gather(*(worker(i) for i in range(20)))
@@ -42,7 +43,9 @@ async def test_concurrent_access():
     print(f"   Misses: {stats['unknown_words']['misses']}")
 
     # Verify counts add up
-    assert stats['unknown_words']['hits'] + stats['unknown_words']['misses'] == 2000, "Total should be 20 workers × 100 iterations"
+    assert (
+        stats["unknown_words"]["hits"] + stats["unknown_words"]["misses"] == 2000
+    ), "Total should be 20 workers × 100 iterations"
     assert len(cache.unknown_words) == 50, "Should have exactly 50 unique words"
 
     print("\n✅ All assertions passed!")
@@ -53,22 +56,22 @@ async def test_statistics_tracking():
     cache = ThreadSafeSpellCheckCache()
 
     # Add some data to each cache type
-    async with cache._locks['unknown']:
-        cache.unknown_words['word1'] = True
-        cache._stats['unknown_misses'] += 1
+    async with cache._locks["unknown"]:
+        cache.unknown_words["word1"] = True
+        cache._stats["unknown_misses"] += 1
 
-    async with cache._locks['ocr']:
-        cache.ocr_corrections['word2'] = ['correction1']
-        cache._stats['ocr_misses'] += 1
+    async with cache._locks["ocr"]:
+        cache.ocr_corrections["word2"] = ["correction1"]
+        cache._stats["ocr_misses"] += 1
 
     # Simulate hits
-    async with cache._locks['unknown']:
-        if 'word1' in cache.unknown_words:
-            cache._stats['unknown_hits'] += 1
+    async with cache._locks["unknown"]:
+        if "word1" in cache.unknown_words:
+            cache._stats["unknown_hits"] += 1
 
-    async with cache._locks['ocr']:
-        if 'word2' in cache.ocr_corrections:
-            cache._stats['ocr_hits'] += 1
+    async with cache._locks["ocr"]:
+        if "word2" in cache.ocr_corrections:
+            cache._stats["ocr_hits"] += 1
 
     stats = cache.get_stats()
 
@@ -77,9 +80,11 @@ async def test_statistics_tracking():
     print(f"   Unknown words hit rate: {stats['unknown_words']['hit_rate']:.2%}")
     print(f"   OCR corrections hit rate: {stats['ocr_corrections']['hit_rate']:.2%}")
 
-    assert stats['overall_hit_rate'] == 0.5, "Should have 50% overall hit rate (2 hits / 4 total)"
-    assert stats['unknown_words']['hit_rate'] == 0.5, "Should have 50% unknown hit rate"
-    assert stats['ocr_corrections']['hit_rate'] == 0.5, "Should have 50% OCR hit rate"
+    assert (
+        stats["overall_hit_rate"] == 0.5
+    ), "Should have 50% overall hit rate (2 hits / 4 total)"
+    assert stats["unknown_words"]["hit_rate"] == 0.5, "Should have 50% unknown hit rate"
+    assert stats["ocr_corrections"]["hit_rate"] == 0.5, "Should have 50% OCR hit rate"
 
     print("\n✅ All statistics assertions passed!")
 

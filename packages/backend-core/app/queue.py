@@ -4,6 +4,7 @@ Shared ARQ worker lifecycle hooks.
 Imported by services/worker/worker/worker.py.
 All job functions live in services/worker/worker/ (scanners and jobs).
 """
+
 from __future__ import annotations
 
 import logging
@@ -34,7 +35,9 @@ async def heartbeat_loop(redis_client, worker_id):
             pass
         raise
     except Exception as exc:
-        log_json(logger, logging.WARNING, "Error in worker heartbeat loop", error=str(exc))
+        log_json(
+            logger, logging.WARNING, "Error in worker heartbeat loop", error=str(exc)
+        )
 
 
 async def worker_startup(ctx):
@@ -53,10 +56,13 @@ async def worker_startup(ctx):
 
     try:
         from app.db.seeds import seed_system_configs
+
         async with db_session.async_session_factory() as session:
             await seed_system_configs(session)
     except Exception as exc:
-        log_json(logger, logging.ERROR, "Worker system config seeding failed", error=str(exc))
+        log_json(
+            logger, logging.ERROR, "Worker system config seeding failed", error=str(exc)
+        )
 
 
 async def worker_shutdown(ctx):
@@ -76,6 +82,11 @@ async def worker_shutdown(ctx):
             redis_client = ctx.get("redis") or get_redis()
             await redis_client.delete(f"worker:heartbeat:{worker_id}")
         except Exception as exc:
-            log_json(logger, logging.WARNING, "Failed to delete worker heartbeat key", error=str(exc))
+            log_json(
+                logger,
+                logging.WARNING,
+                "Failed to delete worker heartbeat key",
+                error=str(exc),
+            )
 
     await close_db()

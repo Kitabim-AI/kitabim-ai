@@ -53,10 +53,11 @@ graph TD
    - `search_chunks` — pgvector similarity search over indexed passages in PostgreSQL (L1 + L2 cache).
    - `query_knowledge_graph` — **GraphRAG Tool**: extracts entity terms from the query, then queries **Memgraph** for a 1-hop subgraph of entity connections.
    - `search_books_by_summary` — embedding search over AI-generated book summaries, used to locate books covering a topic (L3 cache).
-   - `find_books_by_title` — resolve a book title to internal IDs.
-   - `get_book_summary` — fetch the full semantic summary for specific books.
+   - `find_books_by_title` — resolve a book title to internal IDs, titles, authors, and volumes.
+   - `get_book_summary` — fetch the full semantic summary for specific books (used to identify characters/persons).
    - `get_current_page` — retrieve raw text of the page currently open in the reader.
    - `rewrite_query` — resolve pronouns and follow-up markers ("چۇ" clitic) via LLM rewrite (L0 cache).
+   - `get_sister_volumes` — retrieve other volumes of the same series as a given book.
    - `get_book_author` / `get_books_by_author` — catalog metadata lookups.
    - `search_catalog` — library browsing and general listing queries.
 

@@ -43,7 +43,9 @@ class TwitterOAuthProvider(OAuthProvider):
             return False
         return True
 
-    def get_auth_url(self, state: str, nonce: str, code_challenge: Optional[str] = None) -> str:
+    def get_auth_url(
+        self, state: str, nonce: str, code_challenge: Optional[str] = None
+    ) -> str:
         """
         Generate X (Twitter) OAuth 2.0 authorization URL with PKCE.
 
@@ -69,7 +71,9 @@ class TwitterOAuthProvider(OAuthProvider):
         }
         return f"{self.AUTH_URL}?{urlencode(params)}"
 
-    async def exchange_code_for_tokens(self, code: str, code_verifier: Optional[str] = None) -> dict:
+    async def exchange_code_for_tokens(
+        self, code: str, code_verifier: Optional[str] = None
+    ) -> dict:
         """
         Exchange authorization code for access token using PKCE.
 
@@ -107,7 +111,9 @@ class TwitterOAuthProvider(OAuthProvider):
             )
 
             if response.status_code != 200:
-                logger.error(f"Twitter token exchange failed: {response.status_code} - {response.text}")
+                logger.error(
+                    f"Twitter token exchange failed: {response.status_code} - {response.text}"
+                )
                 response.raise_for_status()
 
             return response.json()
@@ -138,7 +144,9 @@ class TwitterOAuthProvider(OAuthProvider):
             )
 
             if response.status_code != 200:
-                logger.error(f"Twitter user info fetch failed: {response.status_code} - {response.text}")
+                logger.error(
+                    f"Twitter user info fetch failed: {response.status_code} - {response.text}"
+                )
                 response.raise_for_status()
 
             json_response = response.json()
@@ -150,9 +158,15 @@ class TwitterOAuthProvider(OAuthProvider):
 
             # X email access is restricted - use username as fallback
             username = data.get("username", "")
-            email = f"{username}@twitter.placeholder" if username else f"{data['id']}@twitter.placeholder"
+            email = (
+                f"{username}@twitter.placeholder"
+                if username
+                else f"{data['id']}@twitter.placeholder"
+            )
 
-            logger.info(f"X user {data['id']} authenticated (email not available, using placeholder)")
+            logger.info(
+                f"X user {data['id']} authenticated (email not available, using placeholder)"
+            )
 
             return ProviderUserInfo(
                 provider_id=data["id"],

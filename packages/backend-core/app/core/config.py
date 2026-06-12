@@ -45,12 +45,16 @@ class Settings:
     data_dir: Path = Path(os.getenv("DATA_DIR", str(REPO_ROOT / "data")))
     uploads_dir: Path = data_dir / "uploads"
     covers_dir: Path = data_dir / "covers"
-    max_cover_upload_bytes: int = int(os.getenv("MAX_COVER_UPLOAD_BYTES", str(5 * 1024 * 1024)))
+    max_cover_upload_bytes: int = int(
+        os.getenv("MAX_COVER_UPLOAD_BYTES", str(5 * 1024 * 1024))
+    )
     max_cover_image_pixels: int = int(os.getenv("MAX_COVER_IMAGE_PIXELS", "25000000"))
 
     # Parallel Processing
     max_parallel_spell_check: int = int(os.getenv("MAX_PARALLEL_SPELL_CHECK", "6"))
-    max_concurrent_spell_check_books: int = int(os.getenv("MAX_CONCURRENT_SPELL_CHECK_BOOKS", "3"))
+    max_concurrent_spell_check_books: int = int(
+        os.getenv("MAX_CONCURRENT_SPELL_CHECK_BOOKS", "3")
+    )
     max_parallel_auto_correct: int = int(os.getenv("MAX_PARALLEL_AUTO_CORRECT", "10"))
 
     # Batch Sizes
@@ -73,7 +77,6 @@ class Settings:
     chunk_size: int = int(os.getenv("CHUNK_SIZE", "1500"))
     chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "300"))
 
-
     # Logging
     log_level: str = os.getenv("LOG_LEVEL", "WARNING")  # DEBUG, INFO, WARNING, ERROR
 
@@ -81,7 +84,9 @@ class Settings:
     llm_cb_failure_threshold: int = int(os.getenv("LLM_CB_FAILURE_THRESHOLD", "5"))
     llm_cb_recovery_seconds: int = int(os.getenv("LLM_CB_RECOVERY_SECONDS", "30"))
     llm_cb_half_open_max_calls: int = int(os.getenv("LLM_CB_HALF_OPEN_MAX_CALLS", "1"))
-    llm_cb_cooling_period: int = int(os.getenv("LLM_CB_COOLING_PERIOD", "60"))  # Grace period after service restart (seconds)
+    llm_cb_cooling_period: int = int(
+        os.getenv("LLM_CB_COOLING_PERIOD", "60")
+    )  # Grace period after service restart (seconds)
 
     # Queue / Workers
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -98,40 +103,57 @@ class Settings:
     # Authentication / JWT
     jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "")
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
-    jwt_access_token_expire_minutes: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
-    jwt_refresh_token_expire_days: int = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+    jwt_access_token_expire_minutes: int = int(
+        os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "60")
+    )
+    jwt_refresh_token_expire_days: int = int(
+        os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7")
+    )
     jwt_active_kid: str = os.getenv("JWT_ACTIVE_KID", "v1")
     jwt_rotation_secrets: str = os.getenv("JWT_ROTATION_SECRETS", "")
 
     # Google OAuth
     google_client_id: str = os.getenv("GOOGLE_CLIENT_ID", "")
     google_client_secret: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
-    google_redirect_uri: str = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/auth/google/callback")
+    google_redirect_uri: str = os.getenv(
+        "GOOGLE_REDIRECT_URI", "http://localhost:8000/api/auth/google/callback"
+    )
 
     # Facebook OAuth
     facebook_client_id: str = os.getenv("FACEBOOK_CLIENT_ID", "")
     facebook_client_secret: str = os.getenv("FACEBOOK_CLIENT_SECRET", "")
-    facebook_redirect_uri: str = os.getenv("FACEBOOK_REDIRECT_URI", "http://localhost:8000/api/auth/facebook/callback")
+    facebook_redirect_uri: str = os.getenv(
+        "FACEBOOK_REDIRECT_URI", "http://localhost:8000/api/auth/facebook/callback"
+    )
 
     # Twitter OAuth
     twitter_client_id: str = os.getenv("TWITTER_CLIENT_ID", "")
     twitter_client_secret: str = os.getenv("TWITTER_CLIENT_SECRET", "")
-    twitter_redirect_uri: str = os.getenv("TWITTER_REDIRECT_URI", "http://localhost:8000/api/auth/twitter/callback")
+    twitter_redirect_uri: str = os.getenv(
+        "TWITTER_REDIRECT_URI", "http://localhost:8000/api/auth/twitter/callback"
+    )
 
     # Instagram OAuth
     instagram_client_id: str = os.getenv("INSTAGRAM_CLIENT_ID", "")
     instagram_client_secret: str = os.getenv("INSTAGRAM_CLIENT_SECRET", "")
-    instagram_redirect_uri: str = os.getenv("INSTAGRAM_REDIRECT_URI", "http://localhost:8000/api/auth/instagram/callback")
+    instagram_redirect_uri: str = os.getenv(
+        "INSTAGRAM_REDIRECT_URI", "http://localhost:8000/api/auth/instagram/callback"
+    )
 
     # Auth Behavior
     default_user_role: str = os.getenv("DEFAULT_USER_ROLE", "reader")
-    admin_emails: str = os.getenv("ADMIN_EMAILS", "")  # Comma-separated list of admin emails
+    admin_emails: str = os.getenv(
+        "ADMIN_EMAILS", ""
+    )  # Comma-separated list of admin emails
 
     # Cookie Security (set ALLOW_INSECURE_COOKIES=true for local HTTP dev)
     cookie_secure: bool = os.getenv("ALLOW_INSECURE_COOKIES", "false").lower() != "true"
 
     # CORS Settings - Allowed origins for API access
-    cors_origins: str = os.getenv("CORS_ORIGINS", "https://kitabim.ai,https://www.kitabim.ai,http://localhost:3000,http://localhost:30080")
+    cors_origins: str = os.getenv(
+        "CORS_ORIGINS",
+        "https://kitabim.ai,https://www.kitabim.ai,http://localhost:3000,http://localhost:30080",
+    )
 
     # Base URL of the frontend app (used for generating share/deep-link URLs)
     frontend_base_url: str = os.getenv("FRONTEND_BASE_URL", "https://kitabim.ai")
@@ -143,7 +165,9 @@ class Settings:
     ip_salt: str = os.getenv("IP_SALT", "")
 
     # Redis Cache
-    redis_cache_enabled: bool = os.getenv("REDIS_CACHE_ENABLED", "true").lower() == "true"
+    redis_cache_enabled: bool = (
+        os.getenv("REDIS_CACHE_ENABLED", "true").lower() == "true"
+    )
     redis_cache_default_ttl: int = int(os.getenv("REDIS_CACHE_DEFAULT_TTL", "300"))
     redis_cache_key_prefix: str = os.getenv("REDIS_CACHE_KEY_PREFIX", "kitabim:cache:")
 
@@ -155,23 +179,26 @@ class Settings:
     cache_ttl_user_profile: int = int(os.getenv("CACHE_TTL_USER_PROFILE", "300"))
     cache_ttl_stats: int = int(os.getenv("CACHE_TTL_STATS", "120"))
     cache_ttl_summary_search: int = int(os.getenv("CACHE_TTL_SUMMARY_SEARCH", "1800"))
-    cache_ttl_proverbs: int = int(os.getenv("CACHE_TTL_PROVERBS", "86400")) # 1 day by default
+    cache_ttl_proverbs: int = int(
+        os.getenv("CACHE_TTL_PROVERBS", "86400")
+    )  # 1 day by default
 
     # Cache behavior
-    cache_skip_for_admins: bool = os.getenv("CACHE_SKIP_FOR_ADMINS", "true").lower() == "true"
-    cache_max_keys_per_pattern: int = int(os.getenv("CACHE_MAX_KEYS_PER_PATTERN", "1000"))
+    cache_skip_for_admins: bool = (
+        os.getenv("CACHE_SKIP_FOR_ADMINS", "true").lower() == "true"
+    )
+    cache_max_keys_per_pattern: int = int(
+        os.getenv("CACHE_MAX_KEYS_PER_PATTERN", "1000")
+    )
 
     # Security - Blocked paths/prefixes for crawler noise reduction
     # These are common attack/scan paths that are not used by the application
-    security_block_paths: str = os.getenv(
-        "SECURITY_BLOCK_PATHS", 
-        ""
-    )
+    security_block_paths: str = os.getenv("SECURITY_BLOCK_PATHS", "")
     security_block_prefixes: str = os.getenv(
-        "SECURITY_BLOCK_PREFIXES", 
+        "SECURITY_BLOCK_PREFIXES",
         "/api/v1/,/api/v2/,/api/uploads/,/api/media/,/api/files/,/api/storage/,/api/blob/,/api/import/,"
         "/api/assets/,/api/products/,/api/catalog/,/api/gallery/,/api/drive/,/api/s3/,/api/batch/,"
-        "/api/bulk/,/api/multipart/,/api/upwload,/api/profile/,/api/account/,/api/users/avatar"
+        "/api/bulk/,/api/multipart/,/api/upwload,/api/profile/,/api/account/,/api/users/avatar",
     )
     security_app_id: str = os.getenv("SECURITY_APP_ID", "")
     operator_token: str = os.getenv("OPERATOR_TOKEN", "")
@@ -190,7 +217,7 @@ class Settings:
                 if ":" in pair:
                     kid, secret = pair.split(":", 1)
                     secrets_map[kid.strip()] = secret.strip()
-        
+
         if self.jwt_active_kid not in secrets_map and self.jwt_secret_key:
             secrets_map[self.jwt_active_kid] = self.jwt_secret_key
 

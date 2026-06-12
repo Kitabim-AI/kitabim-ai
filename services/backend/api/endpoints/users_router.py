@@ -31,16 +31,19 @@ logger = logging.getLogger(__name__)
 
 class UserRoleUpdate(BaseModel):
     """Request body for updating a user's role."""
+
     role: UserRole
 
 
 class UserStatusUpdate(BaseModel):
     """Request body for updating a user's active status."""
+
     is_active: bool
 
 
 class PaginatedUsers(BaseModel):
     """Response model for paginated user list."""
+
     users: List[UserPublic]
     total: int
     page: int
@@ -52,7 +55,9 @@ async def list_all_users(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     role: Optional[str] = Query(None, description="Filter by role"),
-    status: Optional[str] = Query(None, description="Filter by status (active/inactive)"),
+    status: Optional[str] = Query(
+        None, description="Filter by status (active/inactive)"
+    ),
     search: Optional[str] = Query(None, description="Search by name or email"),
     current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
@@ -68,7 +73,9 @@ async def list_all_users(
         try:
             filter_dict["role"] = UserRole(role)
         except ValueError:
-            raise HTTPException(status_code=400, detail=t("errors.invalid_role", role=role))
+            raise HTTPException(
+                status_code=400, detail=t("errors.invalid_role", role=role)
+            )
 
     if status:
         if status == "active":
@@ -76,7 +83,9 @@ async def list_all_users(
         elif status == "inactive":
             filter_dict["is_active"] = False
         else:
-            raise HTTPException(status_code=400, detail=t("errors.invalid_status", status=status))
+            raise HTTPException(
+                status_code=400, detail=t("errors.invalid_status", status=status)
+            )
 
     if search:
         filter_dict["search"] = search
@@ -99,14 +108,14 @@ async def get_user(
 ):
     """
     Get a specific user by ID.
-    
+
     Admin only.
     """
     user = await get_user_by_id(session, user_id)
-    
+
     if not user:
         raise HTTPException(status_code=404, detail=t("errors.user_not_found"))
-    
+
     return UserPublic.from_user(user)
 
 
@@ -119,33 +128,29 @@ async def change_user_role(
 ):
     """
     Change a user's role.
-    
+
     Admin only. Cannot change own role to prevent lockout.
     """
     # Prevent admin from changing their own role
     if user_id == current_user.id:
-        raise HTTPException(
-            status_code=400,
-            detail=t("errors.cannot_change_own_role")
-        )
-    
+        raise HTTPException(status_code=400, detail=t("errors.cannot_change_own_role"))
+
     user = await get_user_by_id(session, user_id)
     if not user:
         raise HTTPException(status_code=404, detail=t("errors.user_not_found"))
-    
+
     updated_user = await update_user_role(session, user_id, role_update.role)
     if not updated_user:
         raise HTTPException(status_code=500, detail=t("errors.failed_update_role"))
-    
+
     await session.commit()
     await cache_service.delete(cache_config.KEY_USER.format(user_id=user_id))
-    
-    logger.info(
 
+    logger.info(
         f"Admin {current_user.email} changed role of {updated_user.email} "
         f"from {user.role.value} to {role_update.role.value}"
     )
-    
+
     return UserPublic.from_user(updated_user)
 
 
@@ -158,31 +163,26 @@ async def change_user_status(
 ):
     """
     Enable or disable a user account.
-    
+
     Admin only. Cannot disable own account.
     """
     # Prevent admin from disabling themselves
     if user_id == current_user.id and not status_update.is_active:
-        raise HTTPException(
-            status_code=400,
-            detail=t("errors.cannot_disable_self")
-        )
-    
+        raise HTTPException(status_code=400, detail=t("errors.cannot_disable_self"))
+
     user = await get_user_by_id(session, user_id)
     if not user:
         raise HTTPException(status_code=404, detail=t("errors.user_not_found"))
-    
+
     updated_user = await update_user_status(session, user_id, status_update.is_active)
     if not updated_user:
         raise HTTPException(status_code=500, detail=t("errors.failed_update_status"))
-    
+
     await session.commit()
     await cache_service.delete(cache_config.KEY_USER.format(user_id=user_id))
-    
+
     action = "enabled" if status_update.is_active else "disabled"
 
     logger.info(f"Admin {current_user.email} {action} user {updated_user.email}")
-    
+
     return UserPublic.from_user(updated_user)
-
-

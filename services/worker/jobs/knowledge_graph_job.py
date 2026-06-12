@@ -12,6 +12,7 @@ Batch size and concurrency are both configurable via system_configs:
   kg_chunk_batch_size     — chunks per LLM call (default 10, ~5 000 chars per call)
   kg_max_parallel_chunks  — concurrent batch calls in-flight at once (default 5)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -24,7 +25,11 @@ from app.db import session as db_session
 from app.db.models import Book, Chunk
 from app.db.repositories.graph_repository import GraphRepository
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
-from app.services.knowledge_graph_service import KnowledgeExtraction, parse_and_clean_json_from_exception, EntityType
+from app.services.knowledge_graph_service import (
+    KnowledgeExtraction,
+    parse_and_clean_json_from_exception,
+    EntityType,
+)
 from app.utils.observability import log_json
 
 from google import genai
@@ -40,7 +45,9 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
         # 1. Fetch settings from PostgreSQL
         async with db_session.async_session_factory() as session:
             config_repo = SystemConfigsRepository(session)
-            kg_enabled_val = await config_repo.get_value("knowledge_graph_enabled", "false")
+            kg_enabled_val = await config_repo.get_value(
+                "knowledge_graph_enabled", "false"
+            )
             if kg_enabled_val != "true":
                 await session.execute(
                     update(Book)
@@ -48,17 +55,33 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                     .values(graph_milestone="idle")
                 )
                 await session.commit()
-                log_json(logger, logging.WARNING, "knowledge graph job skipped: feature is disabled via system_configs", book_id=book_id)
+                log_json(
+                    logger,
+                    logging.WARNING,
+                    "knowledge graph job skipped: feature is disabled via system_configs",
+                    book_id=book_id,
+                )
                 return
 
-            chat_model = await config_repo.get_value("gemini_chat_model", "gemini-2.0-flash-lite")
-            max_parallel = int(await config_repo.get_value("kg_max_parallel_chunks", "5"))
-            chunk_batch_size = int(await config_repo.get_value("kg_chunk_batch_size", "5"))
+            chat_model = await config_repo.get_value(
+                "gemini_chat_model", "gemini-2.0-flash-lite"
+            )
+            max_parallel = int(
+                await config_repo.get_value("kg_max_parallel_chunks", "5")
+            )
+            chunk_batch_size = int(
+                await config_repo.get_value("kg_chunk_batch_size", "5")
+            )
 
             result = await session.execute(select(Book).where(Book.id == book_id))
             book = result.scalar_one_or_none()
             if not book:
-                log_json(logger, logging.WARNING, "knowledge_graph_job: book not found", book_id=book_id)
+                log_json(
+                    logger,
+                    logging.WARNING,
+                    "knowledge_graph_job: book not found",
+                    book_id=book_id,
+                )
                 return
 
             # Fetch all chunks ordered so batches are contiguous pages of text
@@ -70,7 +93,12 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
             chunks = list(result.scalars().all())
 
         if not chunks:
-            log_json(logger, logging.WARNING, "knowledge_graph_job: no chunks found for book", book_id=book_id)
+            log_json(
+                logger,
+                logging.WARNING,
+                "knowledge_graph_job: no chunks found for book",
+                book_id=book_id,
+            )
             return
 
         # 2. Check API key
@@ -96,7 +124,9 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
             ]
             semaphore = asyncio.Semaphore(max_parallel)
 
-            async def extract_batch(batch: list[Chunk]) -> tuple[list[Chunk], KnowledgeExtraction | None]:
+            async def extract_batch(
+                batch: list[Chunk],
+            ) -> tuple[list[Chunk], KnowledgeExtraction | None]:
                 async with semaphore:
                     chunks_with_text = [c for c in batch if c.text]
                     if not chunks_with_text:
@@ -141,17 +171,23 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                     except Exception as e:
                         # Attempt to parse and clean data from the raw text or exception if validation failed
                         text_to_parse = raw_text if raw_text else str(e)
-                        extraction = parse_and_clean_json_from_exception(ValueError(text_to_parse), KnowledgeExtraction)
+                        extraction = parse_and_clean_json_from_exception(
+                            ValueError(text_to_parse), KnowledgeExtraction
+                        )
                         if extraction:
                             log_json(
-                                logger, logging.INFO, "recovered from output parsing validation error using fallback parser",
+                                logger,
+                                logging.INFO,
+                                "recovered from output parsing validation error using fallback parser",
                                 book_id=book_id,
                                 chunk_ids=[c.id for c in batch],
                                 error=str(e),
                             )
                         else:
                             log_json(
-                                logger, logging.WARNING, "failed to extract/index chunk batch",
+                                logger,
+                                logging.WARNING,
+                                "failed to extract/index chunk batch",
                                 book_id=book_id,
                                 chunk_ids=[c.id for c in batch],
                                 error=str(e),
@@ -179,18 +215,26 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                     continue
 
                 # Collect entity names defined in this extraction
-                defined_entity_names = {e.name.strip() for e in extraction.entities if e.name and e.name.strip()}
+                defined_entity_names = {
+                    e.name.strip()
+                    for e in extraction.entities
+                    if e.name and e.name.strip()
+                }
 
                 for entity in extraction.entities:
                     name = entity.name.strip() if entity.name else ""
                     if not name or name in seen_entity_names:
                         continue
                     seen_entity_names.add(name)
-                    all_entities.append({
-                        "name": name,
-                        "type": entity.type.value if entity.type else EntityType.OTHER.value,
-                        "subtype": entity.subtype,
-                    })
+                    all_entities.append(
+                        {
+                            "name": name,
+                            "type": entity.type.value
+                            if entity.type
+                            else EntityType.OTHER.value,
+                            "subtype": entity.subtype,
+                        }
+                    )
 
                 # Ensure relation endpoints exist as entities (fallback to Concept type)
                 for rel in extraction.relations:
@@ -200,21 +244,25 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                         if name and name not in seen_entity_names:
                             seen_entity_names.add(name)
                             defined_entity_names.add(name)
-                            all_entities.append({
-                                "name": name,
-                                "type": "Concept",
-                                "subtype": "Auto-extracted from relation",
-                            })
+                            all_entities.append(
+                                {
+                                    "name": name,
+                                    "type": "Concept",
+                                    "subtype": "Auto-extracted from relation",
+                                }
+                            )
 
                     rtype = rel.relation_type.strip() if rel.relation_type else ""
                     if not src or not tgt or not rtype:
                         continue
-                    all_relations.append({
-                        "source_name": src,
-                        "rel_type": rtype,
-                        "target_name": tgt,
-                        "book_id": str(book_id),
-                    })
+                    all_relations.append(
+                        {
+                            "source_name": src,
+                            "rel_type": rtype,
+                            "target_name": tgt,
+                            "book_id": str(book_id),
+                        }
+                    )
 
             # Single bulk write: 2 Memgraph round-trips for the entire book
             save_errors = 0
@@ -224,14 +272,21 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                 if all_relations:
                     await graph_repo.connect_entities_bulk(all_relations)
                 log_json(
-                    logger, logging.INFO, "Memgraph bulk write complete",
-                    book_id=book_id, entities=len(all_entities), relations=len(all_relations),
+                    logger,
+                    logging.INFO,
+                    "Memgraph bulk write complete",
+                    book_id=book_id,
+                    entities=len(all_entities),
+                    relations=len(all_relations),
                 )
             except Exception as save_exc:
                 save_errors += 1
                 log_json(
-                    logger, logging.ERROR, "failed to save entities/relations to Memgraph",
-                    book_id=book_id, error=str(save_exc),
+                    logger,
+                    logging.ERROR,
+                    "failed to save entities/relations to Memgraph",
+                    book_id=book_id,
+                    error=str(save_exc),
                 )
 
         finally:
@@ -241,8 +296,12 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
         final_milestone = "partial" if save_errors > 0 else "complete"
         if save_errors > 0:
             log_json(
-                logger, logging.WARNING, "knowledge graph job completed with batch save errors",
-                book_id=book_id, save_errors=save_errors, milestone=final_milestone,
+                logger,
+                logging.WARNING,
+                "knowledge graph job completed with batch save errors",
+                book_id=book_id,
+                save_errors=save_errors,
+                milestone=final_milestone,
             )
         async with db_session.async_session_factory() as session:
             await session.execute(
@@ -253,7 +312,9 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
             await session.commit()
 
         log_json(
-            logger, logging.INFO, "knowledge graph job completed",
+            logger,
+            logging.INFO,
+            "knowledge graph job completed",
             book_id=book_id,
             chunk_count=len(chunks),
             batch_count=len(batches),
@@ -261,7 +322,13 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
         )
 
     except Exception as exc:
-        log_json(logger, logging.ERROR, "knowledge graph job failed", book_id=book_id, error=str(exc))
+        log_json(
+            logger,
+            logging.ERROR,
+            "knowledge graph job failed",
+            book_id=book_id,
+            error=str(exc),
+        )
         # Update database status to failed
         try:
             async with db_session.async_session_factory() as session:
@@ -272,5 +339,11 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                 )
                 await session.commit()
         except Exception as db_exc:
-            log_json(logger, logging.ERROR, "failed to update book graph_milestone to failed in exception handler", book_id=book_id, error=str(db_exc))
+            log_json(
+                logger,
+                logging.ERROR,
+                "failed to update book graph_milestone to failed in exception handler",
+                book_id=book_id,
+                error=str(db_exc),
+            )
         raise

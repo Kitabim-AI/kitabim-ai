@@ -8,6 +8,7 @@ A page is eligible when:
 
 Runs every 5 minutes (configurable via system_configs).
 """
+
 from __future__ import annotations
 
 import logging
@@ -16,7 +17,7 @@ from app.db import session as db_session
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.services.auto_correct_service import (
     find_pages_with_auto_correctable_issues,
-    cleanup_stale_auto_corrections
+    cleanup_stale_auto_corrections,
 )
 from app.utils.observability import log_json
 
@@ -38,25 +39,45 @@ async def run_auto_correct_scanner(ctx) -> None:
             # Check if auto-correction is enabled
             if (await config_repo.get_value("auto_correct_enabled", "false")) != "true":
                 return
-                
+
             # Cleanup stale jobs first (only on first iteration)
             if total_dispatched == 0:
                 reverted = await cleanup_stale_auto_corrections(session)
                 if reverted > 0:
-                    log_json(logger, logging.INFO, "cleaned up stale auto-corrections", count=reverted)
+                    log_json(
+                        logger,
+                        logging.INFO,
+                        "cleaned up stale auto-corrections",
+                        count=reverted,
+                    )
 
             # Get batch size from config
-            batch_size = int(await config_repo.get_value("auto_correct_batch_size", "500"))
+            batch_size = int(
+                await config_repo.get_value("auto_correct_batch_size", "500")
+            )
 
             # Find pages with auto-correctable issues
-            page_ids = await find_pages_with_auto_correctable_issues(session, limit=batch_size)
+            page_ids = await find_pages_with_auto_correctable_issues(
+                session, limit=batch_size
+            )
 
             if not page_ids:
                 if total_dispatched > 0:
-                    log_json(logger, logging.INFO, "auto-correction dispatch complete", total_pages=total_dispatched)
+                    log_json(
+                        logger,
+                        logging.INFO,
+                        "auto-correction dispatch complete",
+                        total_pages=total_dispatched,
+                    )
                 return
 
         # Enqueue the auto-correction job
         await redis.enqueue_job("auto_correct_job", page_ids=page_ids)
         total_dispatched += len(page_ids)
-        log_json(logger, logging.INFO, "auto-correction job dispatched", page_count=len(page_ids), current_total=total_dispatched)
+        log_json(
+            logger,
+            logging.INFO,
+            "auto-correction job dispatched",
+            page_count=len(page_ids),
+            current_total=total_dispatched,
+        )

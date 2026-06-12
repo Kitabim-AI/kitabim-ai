@@ -1,4 +1,5 @@
 """Contact submissions repository for Join Us form"""
+
 from __future__ import annotations
 
 from typing import List, Optional
@@ -16,19 +17,11 @@ class ContactSubmissionsRepository(BaseRepository[ContactSubmission]):
         super().__init__(session, ContactSubmission)
 
     async def create_submission(
-        self,
-        name: str,
-        email: str,
-        interest: str,
-        message: str
+        self, name: str, email: str, interest: str, message: str
     ) -> ContactSubmission:
         """Create a new contact submission"""
         submission = ContactSubmission(
-            name=name,
-            email=email,
-            interest=interest,
-            message=message,
-            status="new"
+            name=name, email=email, interest=interest, message=message, status="new"
         )
         self.session.add(submission)
         await self.session.flush()
@@ -36,10 +29,7 @@ class ContactSubmissionsRepository(BaseRepository[ContactSubmission]):
         return submission
 
     async def find_many(
-        self,
-        status: Optional[str] = None,
-        skip: int = 0,
-        limit: int = 100
+        self, status: Optional[str] = None, skip: int = 0, limit: int = 100
     ) -> List[ContactSubmission]:
         """Find contact submissions with optional filtering by status"""
         stmt = select(ContactSubmission)
@@ -47,7 +37,9 @@ class ContactSubmissionsRepository(BaseRepository[ContactSubmission]):
         if status:
             stmt = stmt.where(ContactSubmission.status == status)
 
-        stmt = stmt.order_by(ContactSubmission.created_at.desc()).offset(skip).limit(limit)
+        stmt = (
+            stmt.order_by(ContactSubmission.created_at.desc()).offset(skip).limit(limit)
+        )
 
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
@@ -63,6 +55,8 @@ class ContactSubmissionsRepository(BaseRepository[ContactSubmission]):
         return result.scalar_one()
 
 
-def get_contact_submissions_repository(session: AsyncSession) -> ContactSubmissionsRepository:
+def get_contact_submissions_repository(
+    session: AsyncSession,
+) -> ContactSubmissionsRepository:
     """Factory function for dependency injection"""
     return ContactSubmissionsRepository(session)

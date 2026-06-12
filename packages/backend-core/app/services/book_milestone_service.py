@@ -1,4 +1,5 @@
 """Service for maintaining book-level milestone status based on page milestones."""
+
 from sqlalchemy import select, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.pipeline import (
@@ -20,7 +21,9 @@ class BookMilestoneService:
     """Manages book-level milestone computation and updates."""
 
     @staticmethod
-    def compute_milestone_status(done: int, failed: int, active: int, total: int) -> str:
+    def compute_milestone_status(
+        done: int, failed: int, active: int, total: int
+    ) -> str:
         """
         Compute milestone status from page counts.
 
@@ -67,28 +70,67 @@ class BookMilestoneService:
             book_id: ID of the book to update
         """
         # Query page milestone counts
-        stmt = (
-            select(
-                func.count(Page.id).label("total"),
-                # OCR
-                func.count(case((Page.ocr_milestone == STEP_DONE_MILESTONE_BY_STEP["ocr"], 1))).label("ocr_done"),
-                func.count(case((Page.ocr_milestone.in_(FAILED_PAGE_MILESTONES), 1))).label("ocr_failed"),
-                func.count(case((Page.ocr_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))).label("ocr_active"),
-                # Chunking
-                func.count(case((Page.chunking_milestone == STEP_DONE_MILESTONE_BY_STEP["chunking"], 1))).label("chunking_done"),
-                func.count(case((Page.chunking_milestone.in_(FAILED_PAGE_MILESTONES), 1))).label("chunking_failed"),
-                func.count(case((Page.chunking_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))).label("chunking_active"),
-                # Embedding
-                func.count(case((Page.embedding_milestone == STEP_DONE_MILESTONE_BY_STEP["embedding"], 1))).label("embedding_done"),
-                func.count(case((Page.embedding_milestone.in_(FAILED_PAGE_MILESTONES), 1))).label("embedding_failed"),
-                func.count(case((Page.embedding_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))).label("embedding_active"),
-                # Spell Check
-                func.count(case((Page.spell_check_milestone == STEP_DONE_MILESTONE_BY_STEP["spell_check"], 1))).label("spell_check_done"),
-                func.count(case((Page.spell_check_milestone.in_(FAILED_PAGE_MILESTONES), 1))).label("spell_check_failed"),
-                func.count(case((Page.spell_check_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))).label("spell_check_active"),
-            )
-            .where(Page.book_id == book_id)
-        )
+        stmt = select(
+            func.count(Page.id).label("total"),
+            # OCR
+            func.count(
+                case((Page.ocr_milestone == STEP_DONE_MILESTONE_BY_STEP["ocr"], 1))
+            ).label("ocr_done"),
+            func.count(case((Page.ocr_milestone.in_(FAILED_PAGE_MILESTONES), 1))).label(
+                "ocr_failed"
+            ),
+            func.count(
+                case((Page.ocr_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))
+            ).label("ocr_active"),
+            # Chunking
+            func.count(
+                case(
+                    (
+                        Page.chunking_milestone
+                        == STEP_DONE_MILESTONE_BY_STEP["chunking"],
+                        1,
+                    )
+                )
+            ).label("chunking_done"),
+            func.count(
+                case((Page.chunking_milestone.in_(FAILED_PAGE_MILESTONES), 1))
+            ).label("chunking_failed"),
+            func.count(
+                case((Page.chunking_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))
+            ).label("chunking_active"),
+            # Embedding
+            func.count(
+                case(
+                    (
+                        Page.embedding_milestone
+                        == STEP_DONE_MILESTONE_BY_STEP["embedding"],
+                        1,
+                    )
+                )
+            ).label("embedding_done"),
+            func.count(
+                case((Page.embedding_milestone.in_(FAILED_PAGE_MILESTONES), 1))
+            ).label("embedding_failed"),
+            func.count(
+                case((Page.embedding_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))
+            ).label("embedding_active"),
+            # Spell Check
+            func.count(
+                case(
+                    (
+                        Page.spell_check_milestone
+                        == STEP_DONE_MILESTONE_BY_STEP["spell_check"],
+                        1,
+                    )
+                )
+            ).label("spell_check_done"),
+            func.count(
+                case((Page.spell_check_milestone.in_(FAILED_PAGE_MILESTONES), 1))
+            ).label("spell_check_failed"),
+            func.count(
+                case((Page.spell_check_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))
+            ).label("spell_check_active"),
+        ).where(Page.book_id == book_id)
 
         result = await db.execute(stmt)
         stats = result.one_or_none()
@@ -109,7 +151,10 @@ class BookMilestoneService:
             stats.embedding_done, stats.embedding_failed, stats.embedding_active, total
         )
         spell_check_milestone = BookMilestoneService.compute_milestone_status(
-            stats.spell_check_done, stats.spell_check_failed, stats.spell_check_active, total
+            stats.spell_check_done,
+            stats.spell_check_failed,
+            stats.spell_check_active,
+            total,
         )
 
         # Update book record
@@ -128,9 +173,7 @@ class BookMilestoneService:
 
     @staticmethod
     async def update_book_milestone_for_step(
-        db: AsyncSession,
-        book_id: str,
-        step: str
+        db: AsyncSession, book_id: str, step: str
     ) -> None:
         """
         Update a specific milestone for a book (more efficient than updating all).
@@ -143,9 +186,13 @@ class BookMilestoneService:
         # Map step to page milestone field and count expressions
         step_configs = {
             step_name: {
-                "done_field": getattr(Page, PAGE_MILESTONE_ATTR_BY_STEP[step_name]) == STEP_DONE_MILESTONE_BY_STEP[step_name],
-                "failed_field": getattr(Page, PAGE_MILESTONE_ATTR_BY_STEP[step_name]).in_(FAILED_PAGE_MILESTONES),
-                "active_field": getattr(Page, PAGE_MILESTONE_ATTR_BY_STEP[step_name]) == PAGE_MILESTONE_IN_PROGRESS,
+                "done_field": getattr(Page, PAGE_MILESTONE_ATTR_BY_STEP[step_name])
+                == STEP_DONE_MILESTONE_BY_STEP[step_name],
+                "failed_field": getattr(
+                    Page, PAGE_MILESTONE_ATTR_BY_STEP[step_name]
+                ).in_(FAILED_PAGE_MILESTONES),
+                "active_field": getattr(Page, PAGE_MILESTONE_ATTR_BY_STEP[step_name])
+                == PAGE_MILESTONE_IN_PROGRESS,
                 "book_field": BOOK_MILESTONE_ATTR_BY_STEP[step_name],
             }
             for step_name in PAGE_MILESTONE_ATTR_BY_STEP
@@ -157,15 +204,12 @@ class BookMilestoneService:
         config = step_configs[step]
 
         # Query page counts for this specific step
-        stmt = (
-            select(
-                func.count(Page.id).label("total"),
-                func.count(case((config['done_field'], 1))).label("done"),
-                func.count(case((config['failed_field'], 1))).label("failed"),
-                func.count(case((config['active_field'], 1))).label("active"),
-            )
-            .where(Page.book_id == book_id)
-        )
+        stmt = select(
+            func.count(Page.id).label("total"),
+            func.count(case((config["done_field"], 1))).label("done"),
+            func.count(case((config["failed_field"], 1))).label("failed"),
+            func.count(case((config["active_field"], 1))).label("active"),
+        ).where(Page.book_id == book_id)
 
         result = await db.execute(stmt)
         stats = result.one_or_none()
@@ -184,6 +228,6 @@ class BookMilestoneService:
         book = book_result.scalar_one_or_none()
 
         if book:
-            setattr(book, config['book_field'], milestone_status)
+            setattr(book, config["book_field"], milestone_status)
             # Removed internal commit to allow caller-managed transactions
             # await db.commit()

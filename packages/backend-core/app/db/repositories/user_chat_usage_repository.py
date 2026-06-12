@@ -1,4 +1,5 @@
 """User chat usage repository with SQLAlchemy"""
+
 from __future__ import annotations
 
 from datetime import date
@@ -23,14 +24,15 @@ class UserChatUsageRepository(BaseRepository[UserChatUsage]):
 
         stmt = select(UserChatUsage.count).where(
             and_(
-                UserChatUsage.user_id == user_id,
-                UserChatUsage.usage_date == usage_date
+                UserChatUsage.user_id == user_id, UserChatUsage.usage_date == usage_date
             )
         )
         result = await self.session.execute(stmt)
         return result.scalar() or 0
 
-    async def increment_usage(self, user_id: str, usage_date: Optional[date] = None) -> int:
+    async def increment_usage(
+        self, user_id: str, usage_date: Optional[date] = None
+    ) -> int:
         """
         Increment chat usage count for a user.
         Returns the new count.
@@ -41,8 +43,7 @@ class UserChatUsageRepository(BaseRepository[UserChatUsage]):
         # Find existing record
         stmt = select(UserChatUsage).where(
             and_(
-                UserChatUsage.user_id == user_id,
-                UserChatUsage.usage_date == usage_date
+                UserChatUsage.user_id == user_id, UserChatUsage.usage_date == usage_date
             )
         )
         result = await self.session.execute(stmt)
@@ -52,7 +53,7 @@ class UserChatUsageRepository(BaseRepository[UserChatUsage]):
             usage.count += 1
             await self.session.commit()
             return usage.count
-        
+
         # Create new record
         new_usage = UserChatUsage(user_id=user_id, usage_date=usage_date, count=1)
         self.session.add(new_usage)

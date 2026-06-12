@@ -17,23 +17,25 @@ books_endpoint = importlib.util.module_from_spec(spec)
 assert spec is not None and spec.loader is not None
 spec.loader.exec_module(books_endpoint)
 
+
 @pytest.fixture
 def mock_cache(monkeypatch):
     m = AsyncMock()
     m.get = AsyncMock(return_value=None)
     m.set = AsyncMock()
     m.get_namespace_version = AsyncMock(return_value="v1")
-    
+
     # We need to mock settings as well
     class MockSettings:
         redis_cache_enabled = True
         redis_cache_key_prefix = "test:"
         cache_skip_for_admins = False
         cache_ttl_books = 600
-    
+
     monkeypatch.setattr(books_endpoint, "settings", MockSettings())
     monkeypatch.setattr(books_endpoint, "cache_service", m)
     return m
+
 
 @pytest.mark.asyncio
 async def test_get_books_uses_cache(mock_cache):

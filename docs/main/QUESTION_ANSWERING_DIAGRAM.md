@@ -9,40 +9,42 @@ Visual representation of the current RAG question answering pipeline using the G
 ```mermaid
 flowchart TD
     %% Entry
-    Q([User Question\n+ Chat History\n+ Context]) --> BUILD
+    Q(["User Question<br/>+ Chat History<br/>+ Context"]) --> BUILD
 
     %% Context build
-    subgraph ContextBuild [_build_context — rag_service.py]
-        BUILD[Resolve character, models\nread system_configs] --> CTX[QueryContext]
+    subgraph ContextBuild ["_build_context — rag_service.py"]
+        BUILD["Resolve character, models<br/>read system_configs"] --> CTX[QueryContext]
     end
 
     CTX --> H_AG
 
     %% Agentic RAG — Google ADK Execution Flow
-    subgraph AgentRAG [AgentRAGHandler — Google ADK]
-        H_AG[AgentRAGHandler\npriority=998\nsole handler] --> INTENT[Intent Detection\n_detect_intent\nemits: planning]
-        INTENT --> DECOMP[Query Decomposition\n_llm_split\nemits: decompose]
-        DECOMP --> CTX_INJ[Context Injection\n_build_human_message\nInject [Context] block:\ncurrent book_id, context book IDs,\ncategory filter]
-        CTX_INJ --> ADK[ADK Agent Execution\nInMemoryRunner.run_async\nemits: agent_thinking]
+    subgraph AgentRAG ["AgentRAGHandler — Google ADK"]
+        H_AG["AgentRAGHandler<br/>sole handler"] --> INTENT["Intent Detection<br/>_detect_intent<br/>emits: planning"]
+        INTENT --> DECOMP["[LLM] Query Decomposition<br/>_llm_split<br/>emits: decompose"]
+        DECOMP --> CTX_INJ["Context Injection<br/>_build_human_message<br/>Inject [Context] block:<br/>current book_id, context book IDs,<br/>category filter"]
+        CTX_INJ --> ADK["[LLM] ADK Agent Execution<br/>InMemoryRunner.run_async<br/>emits: agent_thinking"]
 
-        ADK -->|Call Tools| TOOL[Execute Tool\n(11 tools available)\nemits: tool_call\ntool_result]
-        TOOL -->|Return observation\ndata| ADK
+        ADK -->|Call Tools| TOOL["Execute Tool<br/>(11 tools available)<br/>emits: tool_call<br/>tool_result"]
+        TOOL -->|Return observation<br/>data| ADK
 
-        ADK -->|Finish Loop / Max Steps| DEDUP[Deduplicate Observations\nby book_id and page]
-        DEDUP --> GRADE[Context Grading\n_grade_context\nfilter low-relevance chunks\nemits: grading]
-        GRADE --> SYNTHESIS[Answer Synthesis\ngenerate_answer_stream\nemits: answer_start\nchunk × N\nanswer_end]
-        SYNTHESIS --> END_AG([END\nwrite final_answer])
+        ADK -->|Finish Loop / Max Steps| DEDUP["Deduplicate Observations<br/>by book_id and page"]
+        DEDUP --> GRADE["Context Grading<br/>_grade_context<br/>filter low-relevance chunks<br/>emits: grading"]
+        GRADE --> SYNTHESIS["[LLM] Answer Synthesis<br/>generate_answer_stream<br/>emits: answer_start<br/>chunk × N<br/>answer_end"]
+        SYNTHESIS --> END_AG(["END<br/>write final_answer"])
     end
 
-    END_AG --> ANS([Answer delivered to user])
+    END_AG --> ANS(["Answer delivered to user"])
 
     classDef handler fill:#e9edc9,stroke:#606c38,stroke-width:2px
     classDef tool fill:#dcfce7,stroke:#16a34a,stroke-width:1px
     classDef process fill:#d4f1f4,stroke:#189ab4,stroke-width:1px
+    classDef llm fill:#fef08a,stroke:#ca8a04,stroke-width:2px
 
     class H_AG handler
     class TOOL tool
-    class INTENT,DECOMP,CTX_INJ,ADK,DEDUP,GRADE,SYNTHESIS process
+    class INTENT,CTX_INJ,DEDUP,GRADE process
+    class DECOMP,ADK,SYNTHESIS llm
 ```
 
 ---
@@ -53,7 +55,7 @@ All questions route directly to `AgentRAGHandler`.
 
 ```mermaid
 flowchart LR
-    Q([Question]) --> RAGENT[AgentRAGHandler\npriority=998\nGoogle ADK ReAct loop — 11 tools]
+    Q([Question]) --> RAGENT["AgentRAGHandler<br/>Google ADK ReAct loop — 11 tools"]
     RAGENT --> ANS([Answer])
 ```
 
@@ -65,69 +67,73 @@ This diagram illustrates the agent's internal decision tree for tool selection, 
 
 ```mermaid
 flowchart TD
-    Q([User Question]) --> PRON{Step 1:\nPronouns/چۇ particle\n+ chat history?}
+    Q([User Question]) --> PRON{"Step 1:<br/>Pronouns/چۇ particle<br/>+ chat history?"}
 
     %% Step 1 — pronoun / co-reference rewrite
     PRON -->|No| INTENT
-    PRON -->|Yes| REWRITE[Tool: rewrite_query]
-    REWRITE --> RETITLE{Rewritten question\nnow names a title?}
-    RETITLE -->|Yes — MUST use find_books_by_title\ndo NOT reuse stale context IDs| FBT_R[Tool: find_books_by_title]
-    RETITLE -->|No — re-evaluate rewritten\nquestion from step 2| INTENT
+    PRON -->|Yes| REWRITE["[LLM] Tool: rewrite_query"]
+    REWRITE --> RETITLE{"Rewritten question<br/>now names a title?"}
+    RETITLE -->|"Yes — MUST use find_books_by_title<br/>do NOT reuse stale context IDs"| FBT_R[Tool: find_books_by_title]
+    RETITLE -->|"No — re-evaluate rewritten<br/>question from step 2"| INTENT
 
-    FBT_R --> CHAR_R{Characters /\nplot / themes?}
+    FBT_R --> CHAR_R{"Characters /<br/>plot / themes?"}
     CHAR_R -->|Yes| GBS_R[Tool: get_book_summary] --> STOP
-    CHAR_R -->|No — passages| SC_R[Tool: search_chunks] --> CHK
+    CHAR_R -->|"No — passages"| SC_R[Tool: search_chunks] --> CHK
 
     %% Shared intent branch
-    INTENT{Steps 2–4:\nIntent + context}
+    INTENT{"Steps 2–4:<br/>Intent + context"}
 
-    %% Step 2 — catalog / metadata / graph
-    INTENT -->|who wrote title? — step 2| T_AUTH[Tool: get_book_author] --> STOP
-    INTENT -->|what did author write? — step 2| T_BAUTH[Tool: get_books_by_author] --> STOP
-    INTENT -->|library browsing — step 2| T_CAT[Tool: search_catalog] --> STOP
-    INTENT -->|Multi-hop / relationships — step 2| T_KG[Tool: query_knowledge_graph] --> STOP
+    %% Step 2 — catalog / metadata
+    INTENT -->|"who wrote title? — step 2"| T_AUTH[Tool: get_book_author] --> STOP
+    INTENT -->|"what did author write? — step 2"| T_BAUTH[Tool: get_books_by_author] --> STOP
+    INTENT -->|"library browsing — step 2"| T_CAT[Tool: search_catalog] --> STOP
 
     %% Step 3 — current page shortcut
-    INTENT -->|Content on current page\ncontext has current_page — step 3| T_CUR[Tool: get_current_page] --> STOP
+    INTENT -->|"Content on current page<br/>context has current_page — step 3"| T_CUR[Tool: get_current_page] --> STOP
 
     %% Step 4a — named title + plot/characters/themes
-    INTENT -->|Named title +\nplot/characters/themes — 4a| FBT_A[Tool: find_books_by_title]
+    INTENT -->|"Named title +<br/>plot/characters/themes — 4a"| FBT_A[Tool: find_books_by_title]
     FBT_A -->|IDs| GBS_A[Tool: get_book_summary] --> STOP
 
     %% Step 4b — named title + passages
-    INTENT -->|Named title +\npassages/details — 4b| FBT_B[Tool: find_books_by_title]
+    INTENT -->|"Named title +<br/>passages/details — 4b"| FBT_B[Tool: find_books_by_title]
     FBT_B -->|IDs| SC_B[Tool: search_chunks] --> CHK
 
     %% Step 4c — named author
-    INTENT -->|Named author — 4c| GBA_C[Tool: get_books_by_author]
+    INTENT -->|"Named author — 4c"| GBA_C[Tool: get_books_by_author]
     GBA_C -->|IDs| SC_C[Tool: search_chunks] --> CHK
 
     %% Step 4d — current book_id in context
-    INTENT -->|No title/author;\ncontext: current book_id — 4d| VOL_D{Sister volume\nquestion?\nnext/prev/numbered volume}
-    VOL_D -->|Yes| GSV_D[Tool: get_sister_volumes\nwith current book_id]
-    GSV_D --> SC_D_SIS[Tool: search_chunks\nwith sister volume book_id] --> CHK
-    VOL_D -->|No| SC_D[Tool: search_chunks\nwith current book_id] --> CHK
+    INTENT -->|"No title/author;<br/>context: current book_id — 4d"| VOL_D{"Sister volume<br/>question?<br/>next/prev/numbered volume"}
+    VOL_D -->|Yes| GSV_D[Tool: get_sister_volumes<br/>with current book_id]
+    GSV_D --> SC_D_SIS[Tool: search_chunks<br/>with sister volume book_id] --> CHK
+    VOL_D -->|No| SC_D[Tool: search_chunks<br/>with current book_id] --> CHK
 
     %% Step 4e — previous book IDs + who is X
-    INTENT -->|No title/author;\ncontext: prev book IDs;\nwho is X / tell me about X — 4e| SBS_E[Tool: search_books_by_summary\nwith context_book_ids]
+    INTENT -->|"No title/author;<br/>context: prev book IDs;<br/>who is X / tell me about X — 4e"| SBS_E[Tool: search_books_by_summary<br/>with context_book_ids]
     SBS_E -->|Results — topic still matches| GBS_E[Tool: get_book_summary] --> STOP
     SBS_E -->|No results — topic shifted| SBS_G
 
     %% Step 4f — previous book IDs, non-character
-    INTENT -->|No title/author;\ncontext: prev book IDs;\nnon-character question — 4f| VOL_F{Sister volume\nquestion?}
-    VOL_F -->|Yes| GSV_F[Tool: get_sister_volumes\nwith context_book_ids[0]]
-    GSV_F --> SC_F_SIS[Tool: search_chunks\nwith sister volume book_id] --> CHK
-    VOL_F -->|No| SC_F[Tool: search_chunks\nwith context_book_ids] --> CHK
+    INTENT -->|"No title/author;<br/>context: prev book IDs;<br/>non-character question — 4f"| VOL_F{"Sister volume<br/>question?"}
+    VOL_F -->|Yes| GSV_F[Tool: get_sister_volumes<br/>with context_book_ids[0]]
+    GSV_F --> SC_F_SIS[Tool: search_chunks<br/>with sister volume book_id] --> CHK
+    VOL_F -->|No| SC_F[Tool: search_chunks<br/>with context_book_ids] --> CHK
 
     %% Step 4g — no context / general fallback
-    INTENT -->|No title/author/context\nor fallthrough from 4e/4f — 4g| SBS_G[Tool: search_books_by_summary]
-    SBS_G --> WHO{Who is X /\ntell me about X?}
-    WHO -->|Yes| GBS_G[Tool: get_book_summary\nmax 5 IDs] --> STOP
-    WHO -->|No| SC_G[Tool: search_chunks\nwith returned book_ids] --> CHK
+    INTENT -->|"No title/author/context<br/>or fallthrough from 4e/4f — 4g"| SBS_G[Tool: search_books_by_summary]
+    SBS_G --> WHO{"Who is X /<br/>tell me about X?"}
+    WHO -->|Yes| GBS_G[Tool: get_book_summary<br/>max 5 IDs] --> STOP
+    WHO -->|No| SC_G[Tool: search_chunks<br/>with returned book_ids] --> CHK
 
-    %% Step 4h — retry (search_chunks only, never after get_book_summary)
-    CHK{Step 4h:\nsearch_chunks < 4 results?\nNever applies after\nget_book_summary}
-    CHK -->|Yes| SC_H[Tool: search_chunks\nempty book_ids = entire library] --> STOP
+    %% Step 4h — relationships / connections
+    INTENT -->|"Relationships / connections — 4h"| T_KG["[LLM] Tool: query_knowledge_graph"]
+    T_KG -->|Precise passages needed| SC_KG[Tool: search_chunks] --> CHK
+    T_KG -->|Only graph relations| STOP
+
+    %% Step 4i — retry (search_chunks only, never after get_book_summary)
+    CHK{"Step 4i:<br/>search_chunks < 4 results?<br/>Never applies after<br/>get_book_summary"}
+    CHK -->|Yes| SC_H[Tool: search_chunks<br/>empty book_ids = entire library] --> STOP
     CHK -->|No — sufficient context| STOP
 
     STOP([Stop — respond with no tool calls\nto signal completion])
@@ -135,10 +141,12 @@ flowchart TD
     classDef tool fill:#dcfce7,stroke:#16a34a,stroke-width:2px
     classDef decision fill:#fef9c3,stroke:#854d0e,stroke-width:1px
     classDef stop fill:#fee2e2,stroke:#dc2626,stroke-width:2px
+    classDef llm fill:#fef08a,stroke:#ca8a04,stroke-width:2px
 
-    class REWRITE,FBT_R,GBS_R,SC_R,T_AUTH,T_BAUTH,T_CAT,T_CUR,FBT_A,GBS_A,FBT_B,SC_B,GBA_C,SC_C,SC_D,SBS_E,GBS_E,SBS_G,GBS_G,SC_G,SC_H,GSV_D,SC_D_SIS,GSV_F,SC_F_SIS,T_KG tool
+    class FBT_R,GBS_R,SC_R,T_AUTH,T_BAUTH,T_CAT,T_CUR,FBT_A,GBS_A,FBT_B,SC_B,GBA_C,SC_C,SC_D,SBS_E,GBS_E,SBS_G,GBS_G,SC_G,SC_H,GSV_D,SC_D_SIS,GSV_F,SC_F_SIS,SC_KG tool
     class PRON,RETITLE,CHAR_R,INTENT,WHO,CHK,VOL_D,VOL_F decision
     class STOP stop
+    class REWRITE,T_KG llm
 ```
 
 ---
@@ -148,12 +156,12 @@ flowchart TD
 | Tool | Type | Wraps | When agent calls it |
 |------|------|-------|---------------------|
 | `rewrite_query` | Utility | `QueryRewriter` | Question has pronouns or follow-up markers ("چۇ" clitic) and chat history exists. |
-| `find_books_by_title` | Content | `BooksRepository` title match | Question explicitly names a book title. |
+| `find_books_by_title` | Content | `BooksRepository` title match | Question explicitly names a book title; returns book IDs, title, author, and volume metadata. |
 | `search_books_by_summary` | Content | `BookSummariesRepository` | Finding which books cover a topic; also used with `context_book_ids` to verify a "who is X" question. |
 | `search_chunks` | Content | pgvector similarity search | Retrieving passages; uses L1+L2 cache; called directly with `[Context]` book_id when available. |
 | `get_book_author` | Metadata | `BooksRepository` | Author lookup for "who wrote X?" questions. |
 | `get_books_by_author` | Metadata | `BooksRepository` | Book list for "what did Y write?" questions. |
-| `get_book_summary` | Content | `BookSummariesRepository` | Plot, themes, or main characters of specific books. |
+| `get_book_summary` | Content | `BookSummariesRepository` | Plot, themes, or main characters of specific books; or identifying characters/persons. |
 | `get_current_page` | Content | `PagesRepository.find_one` | Raw text of the page the user is currently reading (in-reader mode). |
 | `get_sister_volumes` | Content | `BooksRepository` | All volumes of the same series as a given book_id. |
 | `search_catalog` | Metadata | `CatalogHandler` | Library browsing and general listing queries. |
@@ -187,12 +195,12 @@ flowchart TD
 
 | Component | Role |
 |-----------|------|
-| **HandlerRegistry** | Single registered handler (`AgentRAGHandler`, priority=998). |
+| **HandlerRegistry** | Registry for the active RAG query handler (`AgentRAGHandler`). |
 | **AgentRAGHandler** | Main execution driver — performs pre-agent decomposition, invokes ADK runner, collects observations, executes grading, and runs synthesis. |
 | **Google ADK Agent** | Stateless agent compiled with tools and system prompts. |
 | **InMemoryRunner** | Stateless runner executing the agent ReAct loop. |
 | **QueryRewriter** | Resolves pronouns using conversation history (L0 cached). |
-| **_grade_context** | Post-processing method sorting chunks by score DESC, applying a relative grading threshold, and capping at 10. |
+| **_grade_context** | Post-processing method applying relative grading thresholds per search tool call to keep diverse topic matches, deduplicating, and capping at `AGENT_MAX_CONTEXT_CHUNKS` (25 chunks). |
 | **retrieval.py** | Shared database retrieval primitives (`embed_query`, `vector_search`, `find_books_by_title_in_question`). |
 | **agent/config.py** | Centralized loop constants (`AGENT_MAX_STEPS`, `AGENT_ENOUGH_CHUNKS`, `AGENT_MAX_CONTEXT_CHUNKS`, etc.). |
 | **ChunksRepository** | pgvector `similarity_search` against PostgreSQL `chunks` table. |

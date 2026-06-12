@@ -1,4 +1,5 @@
 """System configuration API endpoints"""
+
 from __future__ import annotations
 
 from typing import List, Optional
@@ -58,7 +59,7 @@ async def list_configs(
             key=config.key,
             value=config.value,
             description=config.description,
-            updated_at=config.updated_at.isoformat()
+            updated_at=config.updated_at.isoformat(),
         )
         for config in configs
     ]
@@ -75,14 +76,15 @@ async def get_config(
     config = await repo.get(key)
 
     if not config:
-        raise HTTPException(status_code=404, detail=t("errors.config_not_found", key=key))
-
+        raise HTTPException(
+            status_code=404, detail=t("errors.config_not_found", key=key)
+        )
 
     return SystemConfigResponse(
         key=config.key,
         value=config.value,
         description=config.description,
-        updated_at=config.updated_at.isoformat()
+        updated_at=config.updated_at.isoformat(),
     )
 
 
@@ -99,14 +101,11 @@ async def create_config(
     existing = await repo.get(data.key)
     if existing:
         raise HTTPException(
-            status_code=400,
-            detail=t("errors.config_already_exists", key=data.key)
+            status_code=400, detail=t("errors.config_already_exists", key=data.key)
         )
 
     config = await repo.create(
-        key=data.key,
-        value=data.value,
-        description=data.description
+        key=data.key, value=data.value, description=data.description
     )
     await session.commit()
 
@@ -114,7 +113,7 @@ async def create_config(
         key=config.key,
         value=config.value,
         description=config.description,
-        updated_at=config.updated_at.isoformat()
+        updated_at=config.updated_at.isoformat(),
     )
 
 
@@ -130,7 +129,9 @@ async def update_config(
 
     config = await repo.get(key)
     if not config:
-        raise HTTPException(status_code=404, detail=t("errors.config_not_found", key=key))
+        raise HTTPException(
+            status_code=404, detail=t("errors.config_not_found", key=key)
+        )
 
     config.value = data.value
     if data.description is not None:
@@ -143,7 +144,7 @@ async def update_config(
         key=config.key,
         value=config.value,
         description=config.description,
-        updated_at=config.updated_at.isoformat()
+        updated_at=config.updated_at.isoformat(),
     )
 
 

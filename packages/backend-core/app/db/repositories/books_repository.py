@@ -1,4 +1,5 @@
 """Books repository with SQLAlchemy"""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -17,6 +18,7 @@ from app.core.pipeline import (
 )
 from app.db.models import Book, Page, BookSummary
 from app.db.repositories.base_repository import BaseRepository
+
 
 class BooksRepository(BaseRepository[Book]):
     """Repository for books with custom query methods"""
@@ -47,7 +49,7 @@ class BooksRepository(BaseRepository[Book]):
         skip: int = 0,
         limit: int = 100,
         sort_by: str = "upload_date",
-        sort_order: str = "DESC"
+        sort_order: str = "DESC",
     ) -> List[Book]:
         """
         Find books with filtering, search, and pagination.
@@ -73,9 +75,10 @@ class BooksRepository(BaseRepository[Book]):
         if search_query:
             # Check if the query ends with a volume number (e.g. "لېيىغان بۇلاق 7")
             import re
-            volume_match = re.search(r'\s+(\d+)\s*$', search_query)
+
+            volume_match = re.search(r"\s+(\d+)\s*$", search_query)
             if volume_match:
-                title_part = search_query[:volume_match.start()].strip()
+                title_part = search_query[: volume_match.start()].strip()
                 volume_num = int(volume_match.group(1))
                 if title_part:
                     search_filter = or_(
@@ -86,16 +89,20 @@ class BooksRepository(BaseRepository[Book]):
                     conditions.append(Book.volume == volume_num)
                 else:
                     # Only a number was typed — fall back to normal search
-                    conditions.append(or_(
-                        Book.title.ilike(f"%{search_query}%"),
-                        Book.author.ilike(f"%{search_query}%"),
-                    ))
+                    conditions.append(
+                        or_(
+                            Book.title.ilike(f"%{search_query}%"),
+                            Book.author.ilike(f"%{search_query}%"),
+                        )
+                    )
             else:
                 # Full-text search across title and author
-                conditions.append(or_(
-                    Book.title.ilike(f"%{search_query}%"),
-                    Book.author.ilike(f"%{search_query}%"),
-                ))
+                conditions.append(
+                    or_(
+                        Book.title.ilike(f"%{search_query}%"),
+                        Book.author.ilike(f"%{search_query}%"),
+                    )
+                )
 
         if conditions:
             stmt = stmt.where(and_(*conditions))
@@ -105,21 +112,23 @@ class BooksRepository(BaseRepository[Book]):
             # Enhanced sorting: Group by (title, author) but sort groups by latest arrival,
             # and then sort volumes within each group.
             # This uses a window function to find the max upload date for each 'Work' (Series)
-            series_latest = func.max(Book.upload_date).over(partition_by=[Book.title, Book.author])
-            
+            series_latest = func.max(Book.upload_date).over(
+                partition_by=[Book.title, Book.author]
+            )
+
             if sort_order.upper() == "DESC":
                 stmt = stmt.order_by(
-                    series_latest.desc(), 
-                    Book.title.asc(), 
+                    series_latest.desc(),
+                    Book.title.asc(),
                     Book.author.asc(),
-                    Book.volume.asc().nulls_first()
+                    Book.volume.asc().nulls_first(),
                 )
             else:
                 stmt = stmt.order_by(
-                    series_latest.asc(), 
-                    Book.title.asc(), 
+                    series_latest.asc(),
+                    Book.title.asc(),
                     Book.author.asc(),
-                    Book.volume.asc().nulls_first()
+                    Book.volume.asc().nulls_first(),
                 )
         elif hasattr(Book, sort_by):
             order_col = getattr(Book, sort_by)
@@ -129,8 +138,15 @@ class BooksRepository(BaseRepository[Book]):
                 stmt = stmt.order_by(order_col.asc())
         else:
             # Default fallback (same as upload_date enhanced)
-            series_latest = func.max(Book.upload_date).over(partition_by=[Book.title, Book.author])
-            stmt = stmt.order_by(series_latest.desc(), Book.title.asc(), Book.author.asc(), Book.volume.asc().nulls_first())
+            series_latest = func.max(Book.upload_date).over(
+                partition_by=[Book.title, Book.author]
+            )
+            stmt = stmt.order_by(
+                series_latest.desc(),
+                Book.title.asc(),
+                Book.author.asc(),
+                Book.volume.asc().nulls_first(),
+            )
 
         # Pagination
         stmt = stmt.offset(skip).limit(limit)
@@ -138,7 +154,9 @@ class BooksRepository(BaseRepository[Book]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_with_page_stats(self, book_id: str, step: Optional[str] = None) -> Optional[dict]:
+    async def get_with_page_stats(
+        self, book_id: str, step: Optional[str] = None
+    ) -> Optional[dict]:
         """
         Get book with aggregated page statistics.
 
@@ -157,25 +175,43 @@ class BooksRepository(BaseRepository[Book]):
         # Optimization: If book is ready, we can return 100% stats for core steps
         if book.status == "ready":
             tp = book.total_pages or 0
-            summary_stmt = select(func.count(BookSummary.book_id)).where(BookSummary.book_id == book_id)
+            summary_stmt = select(func.count(BookSummary.book_id)).where(
+                BookSummary.book_id == book_id
+            )
             summary_res = await self.session.execute(summary_stmt)
             has_summary = (summary_res.scalar() or 0) > 0
-            
+
             has_graph = book.graph_milestone == "complete"
 
             # For ready books, we still need to check if background spell check is running
             sc_stmt = (
                 select(
-                    func.count(case((Page.spell_check_milestone == PAGE_MILESTONE_SUCCEEDED, 1))).label("done"),
-                    func.count(case((Page.spell_check_milestone.in_(FAILED_PAGE_MILESTONES), 1))).label("failed"),
-                    func.count(case((Page.spell_check_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))).label("active")
+                    func.count(
+                        case(
+                            (Page.spell_check_milestone == PAGE_MILESTONE_SUCCEEDED, 1)
+                        )
+                    ).label("done"),
+                    func.count(
+                        case(
+                            (Page.spell_check_milestone.in_(FAILED_PAGE_MILESTONES), 1)
+                        )
+                    ).label("failed"),
+                    func.count(
+                        case(
+                            (
+                                Page.spell_check_milestone
+                                == PAGE_MILESTONE_IN_PROGRESS,
+                                1,
+                            )
+                        )
+                    ).label("active"),
                 )
                 .where(Page.book_id == book_id)
                 .group_by(Page.book_id)
             )
             sc_res = await self.session.execute(sc_stmt)
             sc_row = sc_res.fetchone()
-            
+
             sc_done = sc_row.done if sc_row else 0
             sc_failed = sc_row.failed if sc_row else 0
             sc_active = sc_row.active if sc_row else 0
@@ -184,11 +220,17 @@ class BooksRepository(BaseRepository[Book]):
                 "book": book,
                 "page_stats": {},
                 "pipeline_stats": {
-                    "ocr": tp, "ocr_failed": 0, "ocr_active": 0,
-                    "chunking": tp, "chunking_failed": 0, "chunking_active": 0,
-                    "embedding": tp, "embedding_failed": 0, "embedding_active": 0,
-                    "spell_check": sc_done, 
-                    "spell_check_failed": sc_failed, 
+                    "ocr": tp,
+                    "ocr_failed": 0,
+                    "ocr_active": 0,
+                    "chunking": tp,
+                    "chunking_failed": 0,
+                    "chunking_active": 0,
+                    "embedding": tp,
+                    "embedding_failed": 0,
+                    "embedding_active": 0,
+                    "spell_check": sc_done,
+                    "spell_check_failed": sc_failed,
                     "spell_check_active": sc_active,
                 },
                 "has_summary": has_summary,
@@ -227,9 +269,15 @@ class BooksRepository(BaseRepository[Book]):
             stats_stmt = (
                 select(
                     func.count(Page.id).label("total"),
-                    func.count(case((milestone_field == done_value, 1))).label(f"{step}_done"),
-                    func.count(case((milestone_field.in_(FAILED_PAGE_MILESTONES), 1))).label(f"{step}_failed"),
-                    func.count(case((milestone_field == PAGE_MILESTONE_IN_PROGRESS, 1))).label(f"{step}_active"),
+                    func.count(case((milestone_field == done_value, 1))).label(
+                        f"{step}_done"
+                    ),
+                    func.count(
+                        case((milestone_field.in_(FAILED_PAGE_MILESTONES), 1))
+                    ).label(f"{step}_failed"),
+                    func.count(
+                        case((milestone_field == PAGE_MILESTONE_IN_PROGRESS, 1))
+                    ).label(f"{step}_active"),
                 )
                 .where(Page.book_id == book_id)
                 .group_by(Page.book_id)
@@ -239,20 +287,60 @@ class BooksRepository(BaseRepository[Book]):
             stats_stmt = (
                 select(
                     func.count(Page.id).label("total"),
-                    func.count(case((Page.ocr_milestone == PAGE_MILESTONE_SUCCEEDED, 1))).label("ocr_done"),
-                    func.count(case((Page.ocr_milestone.in_(FAILED_PAGE_MILESTONES), 1))).label("ocr_failed"),
-                    func.count(case((Page.ocr_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))).label("ocr_active"),
-                    func.count(case((Page.chunking_milestone == PAGE_MILESTONE_SUCCEEDED, 1))).label("chunking_done"),
-                    func.count(case((Page.chunking_milestone.in_(FAILED_PAGE_MILESTONES), 1))).label("chunking_failed"),
-                    func.count(case((Page.chunking_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))).label("chunking_active"),
-                    func.count(case((Page.embedding_milestone == PAGE_MILESTONE_SUCCEEDED, 1))).label("embedding_done"),
-                    func.count(case((Page.embedding_milestone.in_(FAILED_PAGE_MILESTONES), 1))).label("embedding_failed"),
-                    func.count(case((Page.embedding_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))).label("embedding_active"),
-                    func.count(case((Page.spell_check_milestone == PAGE_MILESTONE_SUCCEEDED, 1))).label("spell_check_done"),
-                    func.count(case((Page.spell_check_milestone.in_(FAILED_PAGE_MILESTONES), 1))).label("spell_check_failed"),
-                    func.count(case((Page.spell_check_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))).label("spell_check_active"),
-                    func.count(case((Page.milestone == PAGE_MILESTONE_IDLE, 1))).label("pending_count"),
-                    func.count(case((Page.milestone == PAGE_MILESTONE_IN_PROGRESS, 1))).label("processing_count")
+                    func.count(
+                        case((Page.ocr_milestone == PAGE_MILESTONE_SUCCEEDED, 1))
+                    ).label("ocr_done"),
+                    func.count(
+                        case((Page.ocr_milestone.in_(FAILED_PAGE_MILESTONES), 1))
+                    ).label("ocr_failed"),
+                    func.count(
+                        case((Page.ocr_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))
+                    ).label("ocr_active"),
+                    func.count(
+                        case((Page.chunking_milestone == PAGE_MILESTONE_SUCCEEDED, 1))
+                    ).label("chunking_done"),
+                    func.count(
+                        case((Page.chunking_milestone.in_(FAILED_PAGE_MILESTONES), 1))
+                    ).label("chunking_failed"),
+                    func.count(
+                        case((Page.chunking_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))
+                    ).label("chunking_active"),
+                    func.count(
+                        case((Page.embedding_milestone == PAGE_MILESTONE_SUCCEEDED, 1))
+                    ).label("embedding_done"),
+                    func.count(
+                        case((Page.embedding_milestone.in_(FAILED_PAGE_MILESTONES), 1))
+                    ).label("embedding_failed"),
+                    func.count(
+                        case(
+                            (Page.embedding_milestone == PAGE_MILESTONE_IN_PROGRESS, 1)
+                        )
+                    ).label("embedding_active"),
+                    func.count(
+                        case(
+                            (Page.spell_check_milestone == PAGE_MILESTONE_SUCCEEDED, 1)
+                        )
+                    ).label("spell_check_done"),
+                    func.count(
+                        case(
+                            (Page.spell_check_milestone.in_(FAILED_PAGE_MILESTONES), 1)
+                        )
+                    ).label("spell_check_failed"),
+                    func.count(
+                        case(
+                            (
+                                Page.spell_check_milestone
+                                == PAGE_MILESTONE_IN_PROGRESS,
+                                1,
+                            )
+                        )
+                    ).label("spell_check_active"),
+                    func.count(case((Page.milestone == PAGE_MILESTONE_IDLE, 1))).label(
+                        "pending_count"
+                    ),
+                    func.count(
+                        case((Page.milestone == PAGE_MILESTONE_IN_PROGRESS, 1))
+                    ).label("processing_count"),
                 )
                 .where(Page.book_id == book_id)
                 .group_by(Page.book_id)
@@ -264,7 +352,9 @@ class BooksRepository(BaseRepository[Book]):
         # Determine if summary exists (only if requested or querying all)
         has_summary = False
         if not step or step == PIPELINE_STEP_SUMMARY:
-            summary_stmt = select(func.count(BookSummary.book_id)).where(BookSummary.book_id == book_id)
+            summary_stmt = select(func.count(BookSummary.book_id)).where(
+                BookSummary.book_id == book_id
+            )
             summary_res = await self.session.execute(summary_stmt)
             has_summary = (summary_res.scalar() or 0) > 0
 
@@ -312,10 +402,18 @@ class BooksRepository(BaseRepository[Book]):
                 "book": book,
                 "page_stats": {},
                 "pipeline_stats": {
-                    "ocr": 0, "ocr_failed": 0, "ocr_active": 0,
-                    "chunking": 0, "chunking_failed": 0, "chunking_active": 0,
-                    "embedding": 0, "embedding_failed": 0, "embedding_active": 0,
-                    "spell_check": 0, "spell_check_failed": 0, "spell_check_active": 0,
+                    "ocr": 0,
+                    "ocr_failed": 0,
+                    "ocr_active": 0,
+                    "chunking": 0,
+                    "chunking_failed": 0,
+                    "chunking_active": 0,
+                    "embedding": 0,
+                    "embedding_failed": 0,
+                    "embedding_active": 0,
+                    "spell_check": 0,
+                    "spell_check_failed": 0,
+                    "spell_check_active": 0,
                 },
                 "has_summary": has_summary,
                 "has_graph": has_graph,
@@ -327,7 +425,7 @@ class BooksRepository(BaseRepository[Book]):
 
         return {
             "book": book,
-            "page_stats": {}, # Removed detailed_stats to avoid DB errors; use pipeline_stats instead
+            "page_stats": {},  # Removed detailed_stats to avoid DB errors; use pipeline_stats instead
             "pipeline_stats": {
                 "ocr": row.ocr_done or 0,
                 "ocr_failed": row.ocr_failed or 0,
@@ -345,7 +443,10 @@ class BooksRepository(BaseRepository[Book]):
             "has_summary": has_summary,
             "has_graph": has_graph,
             "ocr_done_count": row.ocr_done or 0,
-            "error_count": (row.ocr_failed or 0) + (row.chunking_failed or 0) + (row.embedding_failed or 0) + (row.spell_check_failed or 0),
+            "error_count": (row.ocr_failed or 0)
+            + (row.chunking_failed or 0)
+            + (row.embedding_failed or 0)
+            + (row.spell_check_failed or 0),
             "pending_count": row.pending_count or 0,
             "ocr_processing_count": row.processing_count or 0,
         }
@@ -358,34 +459,67 @@ class BooksRepository(BaseRepository[Book]):
         if not book_ids:
             return {}
 
-        # Use a short-lived cache for batch stats to avoid hitting the pages table 
+        # Use a short-lived cache for batch stats to avoid hitting the pages table
         # on every admin page refresh/poll (books don't change that fast)
         # Note: We use a simple in-memory cache for now
-        
+
         # 0. Optimization: Identify which books are 'ready' vs 'processing'
         # For 'ready' books, we can assume 100% stats and skip scanning pages
-        books_stmt = select(Book.id, Book.status, Book.total_pages, Book.graph_milestone).where(Book.id.in_(book_ids))
+        books_stmt = select(
+            Book.id, Book.status, Book.total_pages, Book.graph_milestone
+        ).where(Book.id.in_(book_ids))
         books_res = await self.session.execute(books_stmt)
-        books_info = {str(row.id): {"status": row.status, "total_pages": row.total_pages, "graph_milestone": row.graph_milestone} for row in books_res.fetchall()}
-        
+        books_info = {
+            str(row.id): {
+                "status": row.status,
+                "total_pages": row.total_pages,
+                "graph_milestone": row.graph_milestone,
+            }
+            for row in books_res.fetchall()
+        }
+
         # 1. Fetch milestone stats for ALL requested books
-        # Note: We must scan all books because 'ready' books may still have background 
+        # Note: We must scan all books because 'ready' books may still have background
         # spell-check or word-indexing tasks running (or reset to idle).
         milestone_stats_stmt = (
             select(
                 Page.book_id,
-                func.count(case((Page.ocr_milestone == PAGE_MILESTONE_SUCCEEDED, 1))).label("ocr"),
-                func.count(case((Page.ocr_milestone.in_(FAILED_PAGE_MILESTONES), 1))).label("ocr_failed"),
-                func.count(case((Page.ocr_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))).label("ocr_active"),
-                func.count(case((Page.chunking_milestone == PAGE_MILESTONE_SUCCEEDED, 1))).label("chunking"),
-                func.count(case((Page.chunking_milestone.in_(FAILED_PAGE_MILESTONES), 1))).label("chunking_failed"),
-                func.count(case((Page.chunking_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))).label("chunking_active"),
-                func.count(case((Page.embedding_milestone == PAGE_MILESTONE_SUCCEEDED, 1))).label("embedding"),
-                func.count(case((Page.embedding_milestone.in_(FAILED_PAGE_MILESTONES), 1))).label("embedding_failed"),
-                func.count(case((Page.embedding_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))).label("embedding_active"),
-                func.count(case((Page.spell_check_milestone == PAGE_MILESTONE_SUCCEEDED, 1))).label("spell_check"),
-                func.count(case((Page.spell_check_milestone.in_(FAILED_PAGE_MILESTONES), 1))).label("spell_check_failed"),
-                func.count(case((Page.spell_check_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))).label("spell_check_active"),
+                func.count(
+                    case((Page.ocr_milestone == PAGE_MILESTONE_SUCCEEDED, 1))
+                ).label("ocr"),
+                func.count(
+                    case((Page.ocr_milestone.in_(FAILED_PAGE_MILESTONES), 1))
+                ).label("ocr_failed"),
+                func.count(
+                    case((Page.ocr_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))
+                ).label("ocr_active"),
+                func.count(
+                    case((Page.chunking_milestone == PAGE_MILESTONE_SUCCEEDED, 1))
+                ).label("chunking"),
+                func.count(
+                    case((Page.chunking_milestone.in_(FAILED_PAGE_MILESTONES), 1))
+                ).label("chunking_failed"),
+                func.count(
+                    case((Page.chunking_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))
+                ).label("chunking_active"),
+                func.count(
+                    case((Page.embedding_milestone == PAGE_MILESTONE_SUCCEEDED, 1))
+                ).label("embedding"),
+                func.count(
+                    case((Page.embedding_milestone.in_(FAILED_PAGE_MILESTONES), 1))
+                ).label("embedding_failed"),
+                func.count(
+                    case((Page.embedding_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))
+                ).label("embedding_active"),
+                func.count(
+                    case((Page.spell_check_milestone == PAGE_MILESTONE_SUCCEEDED, 1))
+                ).label("spell_check"),
+                func.count(
+                    case((Page.spell_check_milestone.in_(FAILED_PAGE_MILESTONES), 1))
+                ).label("spell_check_failed"),
+                func.count(
+                    case((Page.spell_check_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))
+                ).label("spell_check_active"),
             )
             .where(Page.book_id.in_(book_ids))
             .group_by(Page.book_id)
@@ -410,13 +544,19 @@ class BooksRepository(BaseRepository[Book]):
                     "spell_check_active": row.spell_check_active,
                 }
             }
-        
+
         # 2. Determine which books have summaries in one query
-        summary_stmt = select(BookSummary.book_id).where(BookSummary.book_id.in_(book_ids))
+        summary_stmt = select(BookSummary.book_id).where(
+            BookSummary.book_id.in_(book_ids)
+        )
         summary_res = await self.session.execute(summary_stmt)
         books_with_summary = {row[0] for row in summary_res.fetchall()}
 
-        books_with_graph = {bid for bid, info in books_info.items() if info.get("graph_milestone") == "complete"}
+        books_with_graph = {
+            bid
+            for bid, info in books_info.items()
+            if info.get("graph_milestone") == "complete"
+        }
 
         # 3. Assemble final results
         final_results = {}
@@ -435,19 +575,23 @@ class BooksRepository(BaseRepository[Book]):
                 # we still assume 0 to be safe
                 stats = {
                     "ocr": tp if status == "ready" else 0,
-                    "ocr_failed": 0, "ocr_active": 0,
+                    "ocr_failed": 0,
+                    "ocr_active": 0,
                     "chunking": tp if status == "ready" else 0,
-                    "chunking_failed": 0, "chunking_active": 0,
+                    "chunking_failed": 0,
+                    "chunking_active": 0,
                     "embedding": tp if status == "ready" else 0,
-                    "embedding_failed": 0, "embedding_active": 0,
-                    "spell_check": 0, "spell_check_failed": 0, "spell_check_active": 0,
+                    "embedding_failed": 0,
+                    "embedding_active": 0,
+                    "spell_check": 0,
+                    "spell_check_failed": 0,
+                    "spell_check_active": 0,
                 }
 
-            
             final_results[bid] = {
                 "pipeline_stats": stats,
                 "has_summary": bid in books_with_summary,
-                "has_graph": bid in books_with_graph
+                "has_graph": bid in books_with_graph,
             }
 
         return final_results
@@ -456,9 +600,13 @@ class BooksRepository(BaseRepository[Book]):
         """Count books by status"""
         return await self.count(status=status)
 
-    async def count_by_visibility(self, visibility: str, status: Optional[str] = None) -> int:
+    async def count_by_visibility(
+        self, visibility: str, status: Optional[str] = None
+    ) -> int:
         """Count books by visibility and optional status"""
-        stmt = select(func.count()).select_from(Book).where(Book.visibility == visibility)
+        stmt = (
+            select(func.count()).select_from(Book).where(Book.visibility == visibility)
+        )
 
         if status:
             stmt = stmt.where(Book.status == status)
@@ -469,10 +617,7 @@ class BooksRepository(BaseRepository[Book]):
     async def find_stale_processing_books(self, cutoff_time: datetime) -> List[Book]:
         """Find books stuck in processing state since before cutoff_time"""
         stmt = select(Book).where(
-            and_(
-                Book.status == 'ocr_processing',
-                Book.last_updated < cutoff_time
-            )
+            and_(Book.status == "ocr_processing", Book.last_updated < cutoff_time)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
@@ -480,10 +625,7 @@ class BooksRepository(BaseRepository[Book]):
     async def find_stale_pending_books(self, cutoff_time: datetime) -> List[Book]:
         """Find books stuck in pending state since before cutoff_time"""
         stmt = select(Book).where(
-            and_(
-                Book.status == 'pending',
-                Book.last_updated < cutoff_time
-            )
+            and_(Book.status == "pending", Book.last_updated < cutoff_time)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
@@ -492,10 +634,7 @@ class BooksRepository(BaseRepository[Book]):
         """Find books stuck in ocr_done state since before cutoff_time.
         These have finished OCR but indexing/embedding never started."""
         stmt = select(Book).where(
-            and_(
-                Book.status == 'ocr_done',
-                Book.last_updated < cutoff_time
-            )
+            and_(Book.status == "ocr_done", Book.last_updated < cutoff_time)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
@@ -504,10 +643,7 @@ class BooksRepository(BaseRepository[Book]):
         """Find books stuck in indexing state since before cutoff_time.
         These started embedding but never finished (e.g. process crashed mid-embedding)."""
         stmt = select(Book).where(
-            and_(
-                Book.status == 'indexing',
-                Book.last_updated < cutoff_time
-            )
+            and_(Book.status == "indexing", Book.last_updated < cutoff_time)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
@@ -531,16 +667,20 @@ class BooksRepository(BaseRepository[Book]):
         )
         if categories:
             from sqlalchemy import text as sa_text
-            stmt = stmt.where(sa_text("categories && :cats").bindparams(cats=categories))
+
+            stmt = stmt.where(
+                sa_text("categories && :cats").bindparams(cats=categories)
+            )
 
         result = await self.session.execute(stmt)
         rows = [(row[0], row[1]) for row in result.fetchall() if row[0] and row[1]]
 
         import re
+
         q = question.strip()
 
         # Exact match when the question contains a «quoted» title
-        quoted = re.findall(r'«([^»]+)»', q)
+        quoted = re.findall(r"«([^»]+)»", q)
         if quoted:
             for candidate in quoted:
                 candidate_norm = _normalize_uyghur(candidate.strip())
@@ -570,7 +710,10 @@ class BooksRepository(BaseRepository[Book]):
         )
         if categories:
             from sqlalchemy import text as sa_text
-            stmt = stmt.where(sa_text("categories && :cats").bindparams(cats=categories))
+
+            stmt = stmt.where(
+                sa_text("categories && :cats").bindparams(cats=categories)
+            )
 
         result = await self.session.execute(stmt)
         authors = [row[0] for row in result.fetchall() if row[0]]
@@ -600,7 +743,11 @@ class BooksRepository(BaseRepository[Book]):
 
         stmt = (
             select(Book)
-            .where(Book.title == book.title, Book.author == book.author, Book.status != "error")
+            .where(
+                Book.title == book.title,
+                Book.author == book.author,
+                Book.status != "error",
+            )
             .order_by(Book.volume.asc().nulls_first())
         )
         result = await self.session.execute(stmt)
@@ -618,22 +765,31 @@ class BooksRepository(BaseRepository[Book]):
         stmt = select(Book.title).where(Book.status != "error")
         if categories:
             from sqlalchemy import text as sa_text
-            stmt = stmt.where(sa_text("categories && :cats").bindparams(cats=categories))
+
+            stmt = stmt.where(
+                sa_text("categories && :cats").bindparams(cats=categories)
+            )
 
         result = await self.session.execute(stmt)
         titles = [row[0] for row in result.fetchall() if row[0]]
 
         import re
+
         q = question.strip()
 
         # Exact match when the question contains a «quoted» title
-        quoted = re.findall(r'«([^»]+)»', q)
+        quoted = re.findall(r"«([^»]+)»", q)
         matched_title = None
         if quoted:
             for candidate in quoted:
                 candidate_norm = _normalize_uyghur(candidate.strip())
                 matched_title = next(
-                    (t for t in titles if _normalize_uyghur(t.strip()) == candidate_norm), None
+                    (
+                        t
+                        for t in titles
+                        if _normalize_uyghur(t.strip()) == candidate_norm
+                    ),
+                    None,
                 )
                 if matched_title:
                     break
@@ -660,16 +816,16 @@ class BooksRepository(BaseRepository[Book]):
 # Module-level helpers for Uyghur entity matching (used by catalog methods)
 # ---------------------------------------------------------------------------
 
+
 def _normalize_uyghur(text: str) -> str:
     return (
-        text
-        .replace("\u06D0", "\u06CC")
-        .replace("\u0649", "\u06CC")
-        .replace("\u064A", "\u06CC")
+        text.replace("\u06d0", "\u06cc")
+        .replace("\u0649", "\u06cc")
+        .replace("\u064a", "\u06cc")
     )
 
 
-_PUNCT = "«»،؟!()[]{}\"""''"
+_PUNCT = '«»،؟!()[]{}"' "''"
 
 
 def _entity_matches_question(entity: str, question: str) -> bool:
@@ -687,10 +843,7 @@ def _entity_matches_question(entity: str, question: str) -> bool:
         return False
     if len(entity_words) == 1 and len(entity_words[0]) < 4:
         return False
-    q_words = [
-        _normalize_uyghur(w).strip(_PUNCT)
-        for w in question.strip().split()
-    ]
+    q_words = [_normalize_uyghur(w).strip(_PUNCT) for w in question.strip().split()]
 
     def _word_matches(e_word: str) -> bool:
         alt = e_word[:-1] + "ی" if e_word.endswith("ە") else None

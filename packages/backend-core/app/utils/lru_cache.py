@@ -4,6 +4,7 @@ from collections import OrderedDict
 from threading import Lock
 from typing import Any, Optional
 
+
 class LocalLRUCache:
     """Thread-safe, process-local in-memory LRU cache with optional per-entry TTL."""
 
@@ -19,7 +20,10 @@ class LocalLRUCache:
         with self.lock:
             if key not in self.cache:
                 return None
-            if self.ttl is not None and time.monotonic() - self.timestamps[key] > self.ttl:
+            if (
+                self.ttl is not None
+                and time.monotonic() - self.timestamps[key] > self.ttl
+            ):
                 del self.cache[key]
                 del self.timestamps[key]
                 return None
