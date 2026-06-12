@@ -47,7 +47,7 @@ packages/backend-core/app/
     user.py                      # User, UserPublic, UserRole
     schemas.py                   # Pydantic request/response schemas (camelCase)
   services/                      # Business logic (no FastAPI deps)
-  langchain/models.py            # LLM / embeddings
+  llm/models.py                  # LLM / embeddings
   utils/observability.py         # log_json(), request_id_var
 ```
 

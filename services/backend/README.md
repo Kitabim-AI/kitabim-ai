@@ -1,4 +1,4 @@
-# Kitabim.AI Backend (LangChain)
+# Kitabim.AI Backend
 
 ## Setup
 - Create `.env` at the repo root with the same variables as `.env.example`.
@@ -11,7 +11,6 @@
   /app
     /api
     /services
-    /langchain
     /core
     /db
     /models
@@ -30,4 +29,4 @@
 - Redis is required for background jobs (`REDIS_URL`).
 - Core code now lives in `packages/backend-core`.
 - API contract matches `docs/openapi.json`.
-- LangChain-native chains/adapters live under `app/langchain`.
+

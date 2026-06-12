@@ -17,12 +17,12 @@ This file provides guidance for automated agents working in this repo.
 
 ## Technology Stack
 - **Frontend**: React 19, TypeScript, Vite, Tailwind CSS
-- **Backend API**: Python, FastAPI, SQLAlchemy, Alembic
+- **Backend API**: Python, FastAPI, SQLAlchemy
 - **Worker**: Python, ARQ (async task queue over Redis)
 - **Database**: PostgreSQL
 - **Cache / Queue**: Redis
 - **Storage**: Google Cloud Storage + local `./data/` volume
-- **AI/ML**: Google Gemini API, LangChain, vector embeddings
+- **AI/ML**: Google Gemini API, Google ADK, vector embeddings
 - **Auth**: JWT + OAuth2 (Google, Facebook, Twitter/X)
 
 ## Key Domains
