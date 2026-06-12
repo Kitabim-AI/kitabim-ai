@@ -4,6 +4,7 @@ and marks each page succeeded or failed.
 
 Receives: book_id, page_ids (list of Page.id already set to in_progress by scanner).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -28,8 +29,13 @@ logger = logging.getLogger("app.worker.ocr_job")
 
 
 async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
-    log_json(logger, logging.INFO, "OCR job started",
-             book_id=book_id, page_count=len(page_ids))
+    log_json(
+        logger,
+        logging.INFO,
+        "OCR job started",
+        book_id=book_id,
+        page_count=len(page_ids),
+    )
 
     from app.utils.redis_lock import MultiPageLock
     from app.utils.circuit_breaker import get_redis
@@ -40,7 +46,12 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
 
     try:
         if not locked_page_ids:
-            log_json(logger, logging.WARNING, "No page locks acquired, exiting job", book_id=book_id)
+            log_json(
+                logger,
+                logging.WARNING,
+                "No page locks acquired, exiting job",
+                book_id=book_id,
+            )
             return
 
         # Update worker_id and claimed_at to current executing worker
@@ -51,7 +62,7 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
                 .values(
                     worker_id=ctx.get("worker_id", "unknown"),
                     claimed_at=func.now(),
-                    last_updated=func.now()
+                    last_updated=func.now(),
                 )
             )
             await session.commit()
@@ -62,7 +73,9 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
             gemini_ocr_model = await config_repo.get_value("gemini_ocr_model")
             if not gemini_ocr_model:
                 raise RuntimeError("system_config 'gemini_ocr_model' is not set")
-            max_parallel_pages = int(await config_repo.get_value("ocr_max_parallel_pages", "4"))
+            max_parallel_pages = int(
+                await config_repo.get_value("ocr_max_parallel_pages", "4")
+            )
 
         # Mark book's active step
         async with db_session.async_session_factory() as session:
@@ -75,7 +88,9 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
         # Build candidate GCS paths: standardized name first, then original file_name as fallback.
         file_path = settings.uploads_dir / f"{book_id}.pdf"
         async with db_session.async_session_factory() as session:
-            book_row = (await session.execute(select(Book).where(Book.id == book_id))).scalar_one_or_none()
+            book_row = (
+                await session.execute(select(Book).where(Book.id == book_id))
+            ).scalar_one_or_none()
         remote_paths = [f"uploads/{book_id}.pdf"]
         if book_row and book_row.file_name and book_row.file_name != f"{book_id}.pdf":
             remote_paths.append(f"uploads/{book_row.file_name}")
@@ -103,8 +118,13 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
                 await _download_pdf()
                 doc = fitz.open(file_path)
         except Exception as exc:
-            log_json(logger, logging.ERROR, "OCR job: failed to obtain PDF",
-                     book_id=book_id, error=str(exc))
+            log_json(
+                logger,
+                logging.ERROR,
+                "OCR job: failed to obtain PDF",
+                book_id=book_id,
+                error=str(exc),
+            )
             # Mark all claimed pages as failed so the driver can retry them
             async with db_session.async_session_factory() as session:
                 await session.execute(
@@ -118,20 +138,28 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
                 )
                 # Create events for failure
                 for pid in locked_page_ids:
-                    session.add(PipelineEvent(
-                        page_id=pid,
-                        event_type="ocr_failed",
-                        payload=make_pipeline_event_payload(extra_fields={"error": "Failed to obtain PDF"})
-                    ))
+                    session.add(
+                        PipelineEvent(
+                            page_id=pid,
+                            event_type="ocr_failed",
+                            payload=make_pipeline_event_payload(
+                                extra_fields={"error": "Failed to obtain PDF"}
+                            ),
+                        )
+                    )
                 await session.commit()
             async with db_session.async_session_factory() as session:
-                await BookMilestoneService.update_book_milestone_for_step(session, book_id, 'ocr')
+                await BookMilestoneService.update_book_milestone_for_step(
+                    session, book_id, "ocr"
+                )
                 await session.commit()
             return
 
         # Load page records
         async with db_session.async_session_factory() as session:
-            result = await session.execute(select(Page).where(Page.id.in_(locked_page_ids)))
+            result = await session.execute(
+                select(Page).where(Page.id.in_(locked_page_ids))
+            )
             pages = list(result.scalars().all())
 
         sem = asyncio.Semaphore(max_parallel_pages)
@@ -157,15 +185,24 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
                             )
                         )
                         # Emit event for chunking and word index to pick up
-                        session.add(PipelineEvent(
-                            page_id=page.id,
-                            event_type="ocr_succeeded",
-                            payload=make_pipeline_event_payload(duration_ms=duration_ms)
-                        ))
+                        session.add(
+                            PipelineEvent(
+                                page_id=page.id,
+                                event_type="ocr_succeeded",
+                                payload=make_pipeline_event_payload(
+                                    duration_ms=duration_ms
+                                ),
+                            )
+                        )
                         await session.commit()
 
-                    log_json(logger, logging.INFO, "OCR page succeeded",
-                             book_id=book_id, page=page.page_number)
+                    log_json(
+                        logger,
+                        logging.INFO,
+                        "OCR page succeeded",
+                        book_id=book_id,
+                        page=page.page_number,
+                    )
 
                 except Exception as exc:
                     duration_ms = int((time.perf_counter() - start_time) * 1000)
@@ -181,18 +218,26 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
                                 last_updated=func.now(),
                             )
                         )
-                        session.add(PipelineEvent(
-                            page_id=page.id,
-                            event_type="ocr_failed",
-                            payload=make_pipeline_event_payload(
-                                duration_ms=duration_ms,
-                                extra_fields={"error": error_msg}
+                        session.add(
+                            PipelineEvent(
+                                page_id=page.id,
+                                event_type="ocr_failed",
+                                payload=make_pipeline_event_payload(
+                                    duration_ms=duration_ms,
+                                    extra_fields={"error": error_msg},
+                                ),
                             )
-                        ))
+                        )
                         await session.commit()
 
-                    log_json(logger, logging.WARNING, "OCR page failed",
-                             book_id=book_id, page=page.page_number, error=str(exc))
+                    log_json(
+                        logger,
+                        logging.WARNING,
+                        "OCR page failed",
+                        book_id=book_id,
+                        page=page.page_number,
+                        error=str(exc),
+                    )
 
         try:
             await asyncio.gather(*[process_page(p) for p in pages])
@@ -201,10 +246,17 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
 
         # Update book-level OCR milestone after processing batch
         async with db_session.async_session_factory() as session:
-            await BookMilestoneService.update_book_milestone_for_step(session, book_id, 'ocr')
+            await BookMilestoneService.update_book_milestone_for_step(
+                session, book_id, "ocr"
+            )
             await session.commit()
 
-        log_json(logger, logging.INFO, "OCR job completed",
-                 book_id=book_id, page_count=len(locked_page_ids))
+        log_json(
+            logger,
+            logging.INFO,
+            "OCR job completed",
+            book_id=book_id,
+            page_count=len(locked_page_ids),
+        )
     finally:
         await lock_manager.__aexit__(None, None, None)

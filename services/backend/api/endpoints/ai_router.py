@@ -45,18 +45,24 @@ async def ocr_image(
     session: AsyncSession = Depends(get_session),
 ):
     if not settings.gemini_api_key:
-        raise HTTPException(status_code=500, detail=t("errors.ai.gemini_api_key_missing"))
+        raise HTTPException(
+            status_code=500, detail=t("errors.ai.gemini_api_key_missing")
+        )
 
     try:
         img_bytes = _decode_base64_image(req.imageBase64)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=t("errors.ai.invalid_base64_image", error=str(exc)))
+        raise HTTPException(
+            status_code=400, detail=t("errors.ai.invalid_base64_image", error=str(exc))
+        )
 
     # Fetch OCR model from system_configs (no fallback — must be configured in DB)
     config_repo = SystemConfigsRepository(session)
     gemini_ocr_model = await config_repo.get_value("gemini_ocr_model")
     if not gemini_ocr_model:
-        raise HTTPException(status_code=500, detail="system_config 'gemini_ocr_model' is not set")
+        raise HTTPException(
+            status_code=500, detail="system_config 'gemini_ocr_model' is not set"
+        )
 
     try:
         text = await generate_text_with_image(
@@ -67,4 +73,6 @@ async def ocr_image(
         return {"text": clean_uyghur_text(text or "")}
     except Exception as exc:
         log_json(logger, logging.ERROR, "OCR image failed", error=str(exc))
-        raise HTTPException(status_code=500, detail=t("errors.ai.ocr_failed", error=str(exc)))
+        raise HTTPException(
+            status_code=500, detail=t("errors.ai.ocr_failed", error=str(exc))
+        )

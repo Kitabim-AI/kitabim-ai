@@ -202,6 +202,306 @@
           "observations": []
         }
       }
+    },
+    {
+      "eval_id": "test_find_book_author_ana_yurt_opt1",
+      "conversation": [
+        {
+          "invocation_id": "fc-ana-yurt-opt1",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "ئانا يۇرت رومانىنىڭ ئاپتورى كىم؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "بۇ كىتابنى زوردۇن سابىر يازغان."
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "get_book_author",
+                "args": {
+                  "question": "ئانا يۇرت رومانىنىڭ ئاپتورى كىم؟"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          },
+          "observations": []
+        }
+      }
+    },
+    {
+      "eval_id": "test_find_book_author_ana_yurt_opt2",
+      "conversation": [
+        {
+          "invocation_id": "fc-ana-yurt-opt2",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "ئانا يۇرت رومانى كىمنىڭ؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "بۇ كىتابنى زوردۇن سابىر يازغان."
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "get_book_author",
+                "args": {
+                  "question": "ئانا يۇرت رومانى كىمنىڭ؟"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          },
+          "observations": []
+        }
+      }
+    },
+    {
+      "eval_id": "test_find_book_author_ana_yurt_opt3",
+      "conversation": [
+        {
+          "invocation_id": "fc-ana-yurt-opt3",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "ئانا يۇرت رومانىنى كىم يازغان؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "بۇ كىتابنى زوردۇن سابىر يازغان."
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "get_book_author",
+                "args": {
+                  "question": "ئانا يۇرت رومانىنى كىم يازغان؟"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          },
+          "observations": []
+        }
+      }
+    },
+    {
+      "eval_id": "test_find_book_author_ana_yurt_opt4",
+      "conversation": [
+        {
+          "invocation_id": "fc-ana-yurt-opt4",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "ئانا يۇرت رومانى قايسى داڭلىق يازغۇچىنىڭ؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "بۇ كىتابنى زوردۇن سابىر يازغان."
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "get_book_author",
+                "args": {
+                  "question": "ئانا يۇرت رومانى قايسى داڭلىق يازغۇچىنىڭ؟"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          },
+          "observations": []
+        }
+      }
+    },
+    {
+      "eval_id": "test_find_book_author_ana_yurt_opt5",
+      "conversation": [
+        {
+          "invocation_id": "fc-ana-yurt-opt5",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "ئانا يۇرت كىمنىڭ؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "بۇ كىتابنى زوردۇن سابىر يازغان."
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "get_book_author",
+                "args": {
+                  "question": "ئانا يۇرت كىمنىڭ؟"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          },
+          "observations": []
+        }
+      }
+    },
+    {
+      "eval_id": "test_find_book_author_ana_yurt_opt6",
+      "conversation": [
+        {
+          "invocation_id": "fc-ana-yurt-opt6",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "ئانا يۇرتنىڭ ئاپتورى كىم؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "بۇ كىتابنى زوردۇن سابىر يازغان."
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "get_book_author",
+                "args": {
+                  "question": "ئانا يۇرتنىڭ ئاپتورى كىم؟"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          },
+          "observations": []
+        }
+      }
     }
   ]
 }

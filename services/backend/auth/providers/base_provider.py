@@ -63,7 +63,9 @@ class OAuthProvider(ABC):
         pass
 
     @abstractmethod
-    async def exchange_code_for_tokens(self, code: str, code_verifier: Optional[str] = None) -> dict:
+    async def exchange_code_for_tokens(
+        self, code: str, code_verifier: Optional[str] = None
+    ) -> dict:
         """
         Exchange the authorization code for access and refresh tokens.
 

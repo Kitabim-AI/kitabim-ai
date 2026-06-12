@@ -12,6 +12,7 @@ from app.db.session import get_session
 logger = logging.getLogger("app.api.cache")
 router = APIRouter()
 
+
 async def verify_operator_access(
     x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token"),
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
@@ -32,24 +33,23 @@ async def verify_operator_access(
 
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail="Insufficient permissions. A valid operator token or admin session is required."
+        detail="Insufficient permissions. A valid operator token or admin session is required.",
     )
 
+
 @router.post("/invalidate")
-async def invalidate_cache(
-    authorized: bool = Depends(verify_operator_access)
-):
+async def invalidate_cache(authorized: bool = Depends(verify_operator_access)):
     """
     Operator-triggered cache invalidation endpoint.
     Flushes Redis caching patterns, bumps versions, and instructs all instances
     to clear their local in-process LRU caches immediately.
     """
     logger.info("Operator triggered global cache invalidation")
-    
+
     # 1. Bump namespace versions to invalidate aggregated keys
     await cache_service.bump_namespace_version("books:list")
     await cache_service.bump_namespace_version("category")
-    
+
     # 2. Delete Redis pattern caches (excluding configuration/chat usage to avoid data loss)
     await cache_service.delete_pattern("book:*")
     await cache_service.delete_pattern("books:list:*")
@@ -58,11 +58,11 @@ async def invalidate_cache(
     await cache_service.delete_pattern("rag:summary_search:*")
     await cache_service.delete_pattern("proverb:*")
     await cache_service.delete_pattern("stats:*")
-    
+
     # 3. Publish global local-cache eviction message to all processes
     await cache_service.publish_invalidation("user_invalidation", "__ALL__")
-    
+
     return {
         "status": "success",
-        "message": "Global cache invalidation triggered successfully"
+        "message": "Global cache invalidation triggered successfully",
     }

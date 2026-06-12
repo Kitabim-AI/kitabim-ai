@@ -1,4 +1,5 @@
 """Proverbs repository"""
+
 from __future__ import annotations
 
 from typing import List, Optional
@@ -23,7 +24,9 @@ class ProverbsRepository(BaseRepository[Proverb]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_random_proverb(self, text_pattern: Optional[str] = None) -> Optional[Proverb]:
+    async def get_random_proverb(
+        self, text_pattern: Optional[str] = None
+    ) -> Optional[Proverb]:
         """
         Get a random proverb, optionally filtered by text pattern.
 
@@ -42,8 +45,10 @@ class ProverbsRepository(BaseRepository[Proverb]):
 
     async def count_matching(self, text_pattern: str) -> int:
         """Count proverbs matching a text pattern"""
-        stmt = select(func.count()).select_from(Proverb).where(
-            Proverb.text.op("~*")(text_pattern)
+        stmt = (
+            select(func.count())
+            .select_from(Proverb)
+            .where(Proverb.text.op("~*")(text_pattern))
         )
         result = await self.session.execute(stmt)
         return result.scalar_one()

@@ -62,7 +62,9 @@ class FacebookOAuthProvider(OAuthProvider):
         }
         return f"{self.AUTH_URL}?{urlencode(params)}"
 
-    async def exchange_code_for_tokens(self, code: str, code_verifier: Optional[str] = None) -> dict:
+    async def exchange_code_for_tokens(
+        self, code: str, code_verifier: Optional[str] = None
+    ) -> dict:
         """
         Exchange authorization code for access token.
 
@@ -89,7 +91,9 @@ class FacebookOAuthProvider(OAuthProvider):
             )
 
             if response.status_code != 200:
-                logger.error(f"Facebook token exchange failed: {response.status_code} - {response.text}")
+                logger.error(
+                    f"Facebook token exchange failed: {response.status_code} - {response.text}"
+                )
                 response.raise_for_status()
 
             return response.json()
@@ -118,7 +122,9 @@ class FacebookOAuthProvider(OAuthProvider):
             )
 
             if response.status_code != 200:
-                logger.error(f"Facebook user info fetch failed: {response.status_code} - {response.text}")
+                logger.error(
+                    f"Facebook user info fetch failed: {response.status_code} - {response.text}"
+                )
                 response.raise_for_status()
 
             data = response.json()

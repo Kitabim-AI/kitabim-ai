@@ -6,7 +6,10 @@ from fastapi import HTTPException
 from unittest.mock import AsyncMock, MagicMock, patch
 
 BACKEND_DIR = str(Path(__file__).resolve().parents[3])
-BACKEND_CORE_DIR = str(Path(__file__).resolve().parents[5] / "packages" / "backend-core")
+BACKEND_CORE_DIR = str(
+    Path(__file__).resolve().parents[5] / "packages" / "backend-core"
+)
+
 
 def setup_paths():
     # Force reload of api modules to avoid cache shadowing from tests/api
@@ -17,6 +20,7 @@ def setup_paths():
         if p in sys.path:
             sys.path.remove(p)
         sys.path.insert(0, p)
+
 
 def test_books_basic():
     """Basic unit test scaffold for books."""
@@ -38,8 +42,12 @@ async def test_reprocess_graph_disabled():
     mock_configs_repo = MagicMock()
     mock_configs_repo.get_value = AsyncMock(return_value="false")
 
-    with patch("api.endpoints.books_router.BooksRepository", return_value=mock_repo), \
-         patch("api.endpoints.books_router.SystemConfigsRepository", return_value=mock_configs_repo):
+    with patch(
+        "api.endpoints.books_router.BooksRepository", return_value=mock_repo
+    ), patch(
+        "api.endpoints.books_router.SystemConfigsRepository",
+        return_value=mock_configs_repo,
+    ):
         with pytest.raises(HTTPException) as excinfo:
             await reprocess_graph(
                 book_id="some-book-id",
@@ -84,7 +92,7 @@ async def test_get_books():
         chunking_milestone="succeeded",
         embedding_milestone="succeeded",
         spell_check_milestone="succeeded",
-        graph_milestone="complete"
+        graph_milestone="complete",
     )
 
     # Mock count results
@@ -111,7 +119,7 @@ async def test_get_books():
         mock_count_res,
         mock_books_res,
         mock_summary_res,
-        mock_graph_res
+        mock_graph_res,
     ]
 
     with patch("api.endpoints.books_router.cache_service") as mock_cache:
@@ -127,7 +135,7 @@ async def test_get_books():
             sortBy="title",
             order=1,
             current_user=mock_user,
-            session=mock_session
+            session=mock_session,
         )
 
     assert result["total"] == 1
@@ -135,4 +143,3 @@ async def test_get_books():
     assert result["books"][0].id == "book-1"
     assert result["books"][0].has_summary is True
     assert result["books"][0].has_graph is True
-

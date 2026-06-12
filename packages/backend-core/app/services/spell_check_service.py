@@ -2,6 +2,7 @@
 Spell Check Service — core per-page spell check logic shared between
 the API (on-demand) and the background worker (batch).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -17,10 +18,12 @@ from app.db.models import Page, PageSpellIssue, AutoCorrectRule
 from app.utils.text import normalize_uyghur_chars
 from sqlalchemy import select
 
+
 class SpellCheckCache(TypedDict, total=False):
     """Optional per-job cache to avoid redundant DB lookups."""
+
     unknown_words: Dict[str, bool]  # word -> is_unknown
-    ocr_corrections: Dict[str, list[str]] # word -> corrections
+    ocr_corrections: Dict[str, list[str]]  # word -> corrections
     _locks: Dict[str, asyncio.Lock]  # Internal locks for thread safety
     _stats: Dict[str, int]  # Cache hit/miss statistics
 
@@ -31,40 +34,41 @@ class ThreadSafeSpellCheckCache:
     def __init__(self):
         self.unknown_words: Dict[str, bool] = {}
         self.ocr_corrections: Dict[str, list[str]] = {}
-        self._locks = {
-            'unknown': asyncio.Lock(),
-            'ocr': asyncio.Lock()
-        }
+        self._locks = {"unknown": asyncio.Lock(), "ocr": asyncio.Lock()}
         self._stats = {
-            'unknown_hits': 0,
-            'unknown_misses': 0,
-            'ocr_hits': 0,
-            'ocr_misses': 0
+            "unknown_hits": 0,
+            "unknown_misses": 0,
+            "ocr_hits": 0,
+            "ocr_misses": 0,
         }
 
     def get_stats(self) -> dict:
         """Return cache statistics including hit rates."""
-        total_unknown = self._stats['unknown_hits'] + self._stats['unknown_misses']
-        total_ocr = self._stats['ocr_hits'] + self._stats['ocr_misses']
+        total_unknown = self._stats["unknown_hits"] + self._stats["unknown_misses"]
+        total_ocr = self._stats["ocr_hits"] + self._stats["ocr_misses"]
 
         return {
-            'unknown_words': {
-                'hits': self._stats['unknown_hits'],
-                'misses': self._stats['unknown_misses'],
-                'hit_rate': self._stats['unknown_hits'] / total_unknown if total_unknown > 0 else 0
+            "unknown_words": {
+                "hits": self._stats["unknown_hits"],
+                "misses": self._stats["unknown_misses"],
+                "hit_rate": self._stats["unknown_hits"] / total_unknown
+                if total_unknown > 0
+                else 0,
             },
-            'ocr_corrections': {
-                'hits': self._stats['ocr_hits'],
-                'misses': self._stats['ocr_misses'],
-                'hit_rate': self._stats['ocr_hits'] / total_ocr if total_ocr > 0 else 0
+            "ocr_corrections": {
+                "hits": self._stats["ocr_hits"],
+                "misses": self._stats["ocr_misses"],
+                "hit_rate": self._stats["ocr_hits"] / total_ocr if total_ocr > 0 else 0,
             },
-            'total_lookups': total_unknown + total_ocr,
-            'overall_hit_rate': (
-                (self._stats['unknown_hits'] + self._stats['ocr_hits']) /
-                (total_unknown + total_ocr)
-                if (total_unknown + total_ocr) > 0 else 0
-            )
+            "total_lookups": total_unknown + total_ocr,
+            "overall_hit_rate": (
+                (self._stats["unknown_hits"] + self._stats["ocr_hits"])
+                / (total_unknown + total_ocr)
+                if (total_unknown + total_ocr) > 0
+                else 0
+            ),
         }
+
 
 # ── Tokenizer ──────────────────────────────────────────────────────────────────
 
@@ -74,7 +78,6 @@ _WORD_RE = re.compile(
     r"[\u0621-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF\u200C\u200D]+"
 )
 _MIN_WORD_LEN = 4
-
 
 
 def tokenize(page_text: str) -> list[tuple[str, int, int]]:
@@ -88,10 +91,13 @@ def tokenize(page_text: str) -> list[tuple[str, int, int]]:
     for m in _WORD_RE.finditer(page_text):
         raw = m.group()
         left = 0
-        while left < len(raw) and unicodedata.category(raw[left])[0] not in ('L', 'M'):
+        while left < len(raw) and unicodedata.category(raw[left])[0] not in ("L", "M"):
             left += 1
         right = len(raw)
-        while right > left and unicodedata.category(raw[right - 1])[0] not in ('L', 'M'):
+        while right > left and unicodedata.category(raw[right - 1])[0] not in (
+            "L",
+            "M",
+        ):
             right -= 1
         if left >= right:
             continue
@@ -100,34 +106,36 @@ def tokenize(page_text: str) -> list[tuple[str, int, int]]:
         # The raw word (as it appears in the source text) is used for display
         word_raw = raw[left:right]
         if len(word_normalized) >= _MIN_WORD_LEN:
-            tokens.append((word_normalized, word_raw, m.start() + left, m.start() + right))
+            tokens.append(
+                (word_normalized, word_raw, m.start() + left, m.start() + right)
+            )
     return tokens
 
 
 # ── OCR character confusion pairs ──────────────────────────────────────────────
 
 _OCR_PAIRS: list[tuple[str, str, str]] = [
-    ("\u0643", "\u06AD", "ك→ڭ"),
-    ("\u06AD", "\u0643", "ڭ→ك"),
-    ("\u0648", "\u06C7", "و→ۇ"),
-    ("\u06C7", "\u0648", "ۇ→و"),
-    ("\u06C6", "\u06C7", "ۆ→ۇ"),
-    ("\u06C7", "\u06C6", "ۇ→ۆ"),
-    ("\u06D5", "\u06BE", "ە→ھ"),
-    ("\u06BE", "\u06D5", "ھ→ە"),
-    ("\u0646", "\u06AD", "ن→ڭ"),
-    ("\u06AF", "\u0643", "گ→ك"),
-    ("\u0643", "\u06AF", "ك→گ"),
-    ("\u06CB", "\u0648", "ۋ→و"),
-    ("\u0648", "\u06CB", "و→ۋ"),
+    ("\u0643", "\u06ad", "ك→ڭ"),
+    ("\u06ad", "\u0643", "ڭ→ك"),
+    ("\u0648", "\u06c7", "و→ۇ"),
+    ("\u06c7", "\u0648", "ۇ→و"),
+    ("\u06c6", "\u06c7", "ۆ→ۇ"),
+    ("\u06c7", "\u06c6", "ۇ→ۆ"),
+    ("\u06d5", "\u06be", "ە→ھ"),
+    ("\u06be", "\u06d5", "ھ→ە"),
+    ("\u0646", "\u06ad", "ن→ڭ"),
+    ("\u06af", "\u0643", "گ→ك"),
+    ("\u0643", "\u06af", "ك→گ"),
+    ("\u06cb", "\u0648", "ۋ→و"),
+    ("\u0648", "\u06cb", "و→ۋ"),
     ("\u0631", "\u0632", "ر→ز"),
     ("\u0632", "\u0631", "ز→ر"),
     ("\u0642", "\u0641", "ق→ف"),
     ("\u0641", "\u0642", "ف→ق"),
-    ("\u0639", "\u063A", "ع→غ"),
-    ("\u063A", "\u0639", "غ→ع"),
-    ("\u062D", "\u062E", "ح→خ"),
-    ("\u062E", "\u062D", "خ→ح"),
+    ("\u0639", "\u063a", "ع→غ"),
+    ("\u063a", "\u0639", "غ→ع"),
+    ("\u062d", "\u062e", "ح→خ"),
+    ("\u062e", "\u062d", "خ→ح"),
 ]
 
 
@@ -146,7 +154,7 @@ def ocr_variants(word: str) -> list[str]:
                 pos = w.find(wrong, idx)
                 if pos == -1:
                     break
-                out.append(w[:pos] + correct + w[pos + len(wrong):])
+                out.append(w[:pos] + correct + w[pos + len(wrong) :])
                 idx = pos + 1
         return out
 
@@ -168,15 +176,15 @@ def ocr_variants(word: str) -> list[str]:
 # Uyghur vowels most commonly dropped or fused by OCR engines.
 # Including all 8 standard Uyghur vowels + common variants.
 _VOWEL_INSERTIONS: list[str] = [
-    "\u06D0",   # ې Ee — frequently dropped or misread as nothing
-    "\u0649",   # ى I (dotless) — very common drop
-    "\u0648",   # و O (Waw) — common drop
-    "\u06C8",   # ۈ Ue — common drop
-    "\u064A",   # ي Y/I (dotted) — sometimes misread as ى
-    "\u0627",   # ا A (Alif)
-    "\u06D5",   # ە Ae
-    "\u06C7",   # ۇ U
-    "\u06C6",   # ۆ Oe
+    "\u06d0",  # ې Ee — frequently dropped or misread as nothing
+    "\u0649",  # ى I (dotless) — very common drop
+    "\u0648",  # و O (Waw) — common drop
+    "\u06c8",  # ۈ Ue — common drop
+    "\u064a",  # ي Y/I (dotted) — sometimes misread as ى
+    "\u0627",  # ا A (Alif)
+    "\u06d5",  # ە Ae
+    "\u06c7",  # ۇ U
+    "\u06c6",  # ۆ Oe
 ]
 
 
@@ -195,12 +203,14 @@ def insertion_variants(word: str) -> list[str]:
                 results.append(variant)
     return results
 
+
 # ── DB helpers ─────────────────────────────────────────────────────────────────
+
 
 async def find_unknown_words(
     session: AsyncSession,
     words: list[str],
-    cache: SpellCheckCache | ThreadSafeSpellCheckCache | None = None
+    cache: SpellCheckCache | ThreadSafeSpellCheckCache | None = None,
 ) -> set[str]:
     """Find words not in dictionary. Uses parameterized query (safe from SQL injection)."""
     if not words:
@@ -215,14 +225,14 @@ async def find_unknown_words(
     if cache is not None:
         if is_thread_safe:
             # Thread-safe cache with locking and statistics
-            async with cache._locks['unknown']:
+            async with cache._locks["unknown"]:
                 for w in words:
                     if w in cache.unknown_words:
-                        cache._stats['unknown_hits'] += 1
+                        cache._stats["unknown_hits"] += 1
                         if cache.unknown_words[w]:
                             unknown.add(w)
                     else:
-                        cache._stats['unknown_misses'] += 1
+                        cache._stats["unknown_misses"] += 1
                         to_query.append(w)
         else:
             # Legacy TypedDict cache (backwards compatible)
@@ -252,23 +262,20 @@ async def find_unknown_words(
 
         if cache is not None:
             if is_thread_safe:
-                async with cache._locks['unknown']:
+                async with cache._locks["unknown"]:
                     for w in to_query:
-                        cache.unknown_words[w] = (w in queried_unknown)
+                        cache.unknown_words[w] = w in queried_unknown
             else:
                 for w in to_query:
-                    cache["unknown_words"][w] = (w in queried_unknown)
+                    cache["unknown_words"][w] = w in queried_unknown
 
     return unknown
-
-
-
 
 
 async def get_ocr_corrections_batch(
     session: AsyncSession,
     unknowns: set[str],
-    cache: SpellCheckCache | ThreadSafeSpellCheckCache | None = None
+    cache: SpellCheckCache | ThreadSafeSpellCheckCache | None = None,
 ) -> dict[str, list[str]]:
     """
     Batch correction lookup combining substitution and insertion variants.
@@ -283,14 +290,14 @@ async def get_ocr_corrections_batch(
 
     if cache is not None:
         if is_thread_safe:
-            async with cache._locks['ocr']:
+            async with cache._locks["ocr"]:
                 for w in unknowns:
                     if w in cache.ocr_corrections:
-                        cache._stats['ocr_hits'] += 1
+                        cache._stats["ocr_hits"] += 1
                         if cache.ocr_corrections[w]:
                             corrections[w] = cache.ocr_corrections[w]
                     else:
-                        cache._stats['ocr_misses'] += 1
+                        cache._stats["ocr_misses"] += 1
                         to_lookup_unknowns.add(w)
         else:
             if "ocr_corrections" not in cache:
@@ -318,7 +325,7 @@ async def get_ocr_corrections_batch(
         # Mark all as having no corrections in cache
         if cache is not None:
             if is_thread_safe:
-                async with cache._locks['ocr']:
+                async with cache._locks["ocr"]:
                     for w in to_lookup_unknowns:
                         cache.ocr_corrections[w] = []
             else:
@@ -340,7 +347,7 @@ async def get_ocr_corrections_batch(
 
     if cache is not None:
         if is_thread_safe:
-            async with cache._locks['ocr']:
+            async with cache._locks["ocr"]:
                 for w in to_lookup_unknowns:
                     cache.ocr_corrections[w] = corrections.get(w, [])
         else:
@@ -352,10 +359,9 @@ async def get_ocr_corrections_batch(
 
 # ── Core per-page function ─────────────────────────────────────────────────────
 
+
 async def run_spell_check_for_page(
-    session: AsyncSession,
-    page: Page,
-    cache: SpellCheckCache | None = None
+    session: AsyncSession, page: Page, cache: SpellCheckCache | None = None
 ) -> int:
     """
     Run spell check for a single page within the given session.
@@ -376,12 +382,13 @@ async def run_spell_check_for_page(
     Does NOT commit — caller is responsible for committing.
     """
     raw_text = page.text or ""
-    
+
     # S-NEW-AUTO: Fetch and apply global correction rules immediately
     # This prevents manual review of words we already have a solution for.
     rules_result = await session.execute(
-        select(AutoCorrectRule.misspelled_word, AutoCorrectRule.corrected_word)
-        .where(AutoCorrectRule.is_active)
+        select(AutoCorrectRule.misspelled_word, AutoCorrectRule.corrected_word).where(
+            AutoCorrectRule.is_active
+        )
     )
     rules = {row.misspelled_word: row.corrected_word for row in rules_result.fetchall()}
 
@@ -391,18 +398,21 @@ async def run_spell_check_for_page(
         applied_rules = {w: c for w, c in rules.items() if w in raw_text}
         if applied_rules:
             # Sort rules by length (desc) to avoid partial replacements of longer phrases
-            sorted_rules = sorted(applied_rules.items(), key=lambda x: len(x[0]), reverse=True)
+            sorted_rules = sorted(
+                applied_rules.items(), key=lambda x: len(x[0]), reverse=True
+            )
             for misspelled, corrected in sorted_rules:
                 if misspelled in raw_text:
                     # Use robust regex to handle character variants (e.g. hamza seat variations)
                     from app.utils.text import generate_uyghur_regex
+
                     misspelled_regex = generate_uyghur_regex(misspelled)
-                    
+
                     # Use negative lookbehind/lookahead with Uyghur character range as word boundaries
                     # \b doesn't work well with non-ASCII.
                     boundaries = r"[\u0621-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF\u200C\u200D]"
                     pattern = f"(?<!{boundaries}){misspelled_regex}(?!{boundaries})"
-                    
+
                     new_text = re.sub(pattern, corrected, raw_text)
                     if new_text != raw_text:
                         raw_text = new_text

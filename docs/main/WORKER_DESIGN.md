@@ -305,11 +305,11 @@ flowchart TD
     EMB_IP["embedding / in_progress"]
     EMB_OK["embedding / succeeded"]
     EMB_FAIL["embedding / failed"]
-    SPELL_IDLE["spell_check / idle\n(independent quality layer)"]
+    SPELL_IDLE["spell_check / idle<br/>(independent quality layer)"]
     SPELL_IP["spell_check / in_progress"]
     SPELL_OK["spell_check / succeeded"]
     SPELL_FAIL["spell_check / failed"]
-    TERMINAL["ocr|chunking|embedding failed\nretry_count >= max\n(mandatory step — skipped)"]
+    TERMINAL["ocr|chunking|embedding failed<br/>retry_count >= max<br/>(mandatory step — skipped)"]
 
     OCR_IDLE -->|OcrScanner: claim| OCR_IP
     OCR_IP -->|OcrJob: success| OCR_OK
@@ -331,17 +331,17 @@ flowchart TD
     EMB_IP -->|EmbeddingJob: failure| EMB_FAIL
     EMB_FAIL -->|Scanner retry| EMB_IDLE
     EMB_FAIL -->|retry_count >= max| TERMINAL
-    EMB_OK -->|PipelineDriver: mandatory terminal| BookReady([book.pipeline_step = ready])
+    EMB_OK -->|PipelineDriver: mandatory terminal| BookReady(["book.pipeline_step = ready"])
     TERMINAL -->|PipelineDriver: mandatory terminal| BookReady
 
-    BookReady -->|Enqueue| SummaryJob[summary_job\n(Gen summary)]
-    BookReady -->|Enqueue| KGJob[knowledge_graph_job\n(Extract Graph)]
+    BookReady -->|Enqueue| SummaryJob["summary_job<br/>(Gen summary)"]
+    BookReady -->|Enqueue| KGJob["knowledge_graph_job<br/>(Extract Graph)"]
 
     SPELL_IDLE -->|SpellCheckScanner: claim| SPELL_IP
     SPELL_IP -->|SpellCheckJob: success| SPELL_OK
     SPELL_IP -->|SpellCheckJob: failure| SPELL_FAIL
     SPELL_FAIL -->|Scanner retry| SPELL_IDLE
-    SPELL_FAIL -->|retry_count >= max| SPELL_TERMINAL[spell_check / exhausted]
+    SPELL_FAIL -->|retry_count >= max| SPELL_TERMINAL["spell_check / exhausted"]
 
     classDef idle fill:#e9edc9,stroke:#606c38
     classDef active fill:#fff3cd,stroke:#856404

@@ -1,4 +1,5 @@
 """QueryContext — per-request state passed to every RAG handler."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -22,7 +23,7 @@ class QueryContext:
     history: List[dict]
 
     # ── Resolved at facade entry (_build_context) ───────────────────────────
-    book: Optional["Book"]          # None when is_global=True
+    book: Optional["Book"]  # None when is_global=True
     persona_prompt: Optional[str]
     character_categories: List[str]
     chat_history_str: str
@@ -30,13 +31,19 @@ class QueryContext:
     rewrite_chain: object
     embeddings: object
     start_ts: float
-    agent_model: str                # gemini_agent_loop_model → gemini_chat_model
+    agent_model: str  # gemini_agent_loop_model → gemini_chat_model
 
     # ── Mutated by handlers ─────────────────────────────────────────────────
     query_vector: List[float] = field(default_factory=list)
-    enriched_question: Optional[str] = None   # QueryRewriter rewrites follow-up question here
-    context_book_ids: List[str] = field(default_factory=list)  # from ChatRequest — reliable frontend-tracked context
-    used_book_ids: List[str] = field(default_factory=list)     # populated by retrieval, returned in done event
+    enriched_question: Optional[str] = (
+        None  # QueryRewriter rewrites follow-up question here
+    )
+    context_book_ids: List[str] = field(
+        default_factory=list
+    )  # from ChatRequest — reliable frontend-tracked context
+    used_book_ids: List[str] = field(
+        default_factory=list
+    )  # populated by retrieval, returned in done event
 
     # ── Eval metadata — populated by handlers for facade _record_eval ───────
     retrieved_count: int = 0
@@ -65,4 +72,3 @@ class QueryContext:
         # Return self directly to prevent copy.deepcopy from failing on non-pickleable
         # attributes (like AsyncSession, chains, embeddings, etc.) while sharing state.
         return self
-

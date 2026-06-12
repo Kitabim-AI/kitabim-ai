@@ -16,13 +16,14 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+
 def hash_token(token: str) -> str:
     """
     Hash a token for secure storage.
-    
+
     Args:
         token: The token to hash.
-        
+
     Returns:
         SHA-256 hash of the token.
     """
@@ -39,7 +40,7 @@ async def store_refresh_token(
     """Store a refresh token in the database."""
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(days=settings.jwt_refresh_token_expire_days)
-    
+
     RefreshTokensRepository(session)
     token_obj = RefreshToken(
         user_id=user_id,
@@ -55,21 +56,23 @@ async def store_refresh_token(
     logger.debug(f"Stored refresh token for user {user_id}, jti={jti}")
 
 
-async def validate_refresh_token(session: AsyncSession, jti: str, token: str) -> Optional[str]:
+async def validate_refresh_token(
+    session: AsyncSession, jti: str, token: str
+) -> Optional[str]:
     """Validate a refresh token and return the user ID."""
     token_hash = hash_token(token)
     repo = RefreshTokensRepository(session)
-    
+
     token_doc = await repo.find_valid(jti, token_hash)
     if not token_doc:
         logger.warning(f"Refresh token not found or revoked: jti={jti}")
         return None
-    
+
     # Check expiration
     if token_doc.expires_at and token_doc.expires_at < datetime.now(timezone.utc):
         logger.warning(f"Refresh token expired: jti={jti}")
         return None
-    
+
     return str(token_doc.user_id)
 
 

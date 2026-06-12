@@ -7,6 +7,7 @@ PipelineDriver picks them up on its next run and initializes their pages into oc
 No rate limiting here — the cron interval controls frequency (every 5 minutes).
 No auto-OCR triggering — PipelineDriver handles pipeline entry.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -68,7 +69,9 @@ async def run_gcs_discovery_scanner(ctx) -> None:
                     duplicate_count += 1
                     continue
 
-            title_from_pdf, author_from_pdf, page_count = _extract_pdf_metadata(temp_path, remote_path)
+            title_from_pdf, author_from_pdf, page_count = _extract_pdf_metadata(
+                temp_path, remote_path
+            )
 
             book_id = hashlib.md5(
                 f"{file_name}{datetime.now(timezone.utc)}".encode()
@@ -91,12 +94,21 @@ async def run_gcs_discovery_scanner(ctx) -> None:
                 await storage.upload_file(temp_path, standard_path)
                 try:
                     await storage.delete_file(remote_path)
-                    log_json(logger, logging.INFO, "discovery: standardized GCS path",
-                             original=remote_path, standardized=standard_path)
+                    log_json(
+                        logger,
+                        logging.INFO,
+                        "discovery: standardized GCS path",
+                        original=remote_path,
+                        standardized=standard_path,
+                    )
                 except Exception as e:
-                    log_json(logger, logging.WARNING,
-                             "discovery: failed to delete original after standardization",
-                             path=remote_path, error=str(e))
+                    log_json(
+                        logger,
+                        logging.WARNING,
+                        "discovery: failed to delete original after standardization",
+                        path=remote_path,
+                        error=str(e),
+                    )
 
             # ── Insert book + page stubs in one transaction ────────────────────
             now = datetime.now(timezone.utc)
@@ -107,7 +119,9 @@ async def run_gcs_discovery_scanner(ctx) -> None:
                         id=book_id,
                         content_hash=content_hash,
                         title=normalize_uyghur_chars(final_title),
-                        author=normalize_uyghur_chars(author_from_pdf) if author_from_pdf else None,
+                        author=normalize_uyghur_chars(author_from_pdf)
+                        if author_from_pdf
+                        else None,
                         file_name=file_name,
                         status="pending",
                         total_pages=page_count,
@@ -122,26 +136,47 @@ async def run_gcs_discovery_scanner(ctx) -> None:
                     create_page_stubs(session, book_id, page_count)
                     await session.commit()
                     new_count += 1
-                    log_json(logger, logging.INFO, "discovery: registered new book",
-                             title=final_title, book_id=book_id, pages=page_count)
+                    log_json(
+                        logger,
+                        logging.INFO,
+                        "discovery: registered new book",
+                        title=final_title,
+                        book_id=book_id,
+                        pages=page_count,
+                    )
                 except IntegrityError:
                     duplicate_count += 1
-                    log_json(logger, logging.DEBUG,
-                             "discovery: book created concurrently, skipping",
-                             file_name=file_name)
+                    log_json(
+                        logger,
+                        logging.DEBUG,
+                        "discovery: book created concurrently, skipping",
+                        file_name=file_name,
+                    )
 
         except Exception as e:
-            log_json(logger, logging.ERROR, "discovery: failed to process GCS file",
-                     path=remote_path, error=str(e))
+            log_json(
+                logger,
+                logging.ERROR,
+                "discovery: failed to process GCS file",
+                path=remote_path,
+                error=str(e),
+            )
         finally:
             temp_path.unlink(missing_ok=True)
 
     if new_count or duplicate_count:
-        log_json(logger, logging.INFO, "GCS discovery scanner finished",
-                 discovered=new_count, skipped=skipped_count, duplicates=duplicate_count)
+        log_json(
+            logger,
+            logging.INFO,
+            "GCS discovery scanner finished",
+            discovered=new_count,
+            skipped=skipped_count,
+            duplicates=duplicate_count,
+        )
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+
 
 def _sha256(path) -> str:
     hasher = hashlib.sha256()
@@ -154,14 +189,20 @@ def _sha256(path) -> str:
 def _extract_pdf_metadata(path, remote_path: str) -> tuple[str | None, str | None, int]:
     try:
         import fitz
+
         doc = fitz.open(path)
         meta = doc.metadata or {}
         page_count = len(doc)
         doc.close()
         return meta.get("title"), meta.get("author"), page_count
     except Exception as e:
-        log_json(logger, logging.WARNING, "discovery: failed to read PDF metadata",
-                 path=remote_path, error=str(e))
+        log_json(
+            logger,
+            logging.WARNING,
+            "discovery: failed to read PDF metadata",
+            path=remote_path,
+            error=str(e),
+        )
         return None, None, 0
 
 

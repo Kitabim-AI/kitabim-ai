@@ -1,4 +1,5 @@
 """Users repository for authentication and user management"""
+
 from __future__ import annotations
 
 from typing import List, Optional
@@ -28,8 +29,7 @@ class UsersRepository(BaseRepository[User]):
         """Find user by OAuth provider and provider ID"""
         result = await self.session.execute(
             select(User).where(
-                User.provider == provider,
-                User.provider_id == provider_id
+                User.provider == provider, User.provider_id == provider_id
             )
         )
         return result.scalar_one_or_none()
@@ -40,7 +40,7 @@ class UsersRepository(BaseRepository[User]):
         is_active: Optional[bool] = None,
         search: Optional[str] = None,
         skip: int = 0,
-        limit: int = 100
+        limit: int = 100,
     ) -> List[User]:
         """Find users with optional filtering by role and active status"""
         stmt = select(User)
@@ -54,13 +54,17 @@ class UsersRepository(BaseRepository[User]):
         if search:
             search_pattern = f"%{search.lower()}%"
             from sqlalchemy import or_
-            conditions.append(or_(
-                func.lower(User.email).like(search_pattern),
-                func.lower(User.display_name).like(search_pattern)
-            ))
+
+            conditions.append(
+                or_(
+                    func.lower(User.email).like(search_pattern),
+                    func.lower(User.display_name).like(search_pattern),
+                )
+            )
 
         if conditions:
             from sqlalchemy import and_
+
             stmt = stmt.where(and_(*conditions))
 
         stmt = stmt.order_by(User.created_at.desc()).offset(skip).limit(limit)
@@ -68,14 +72,21 @@ class UsersRepository(BaseRepository[User]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def update_last_login(self, user_id: UUID, ip_address: Optional[str] = None) -> None:
+    async def update_last_login(
+        self, user_id: UUID, ip_address: Optional[str] = None
+    ) -> None:
         """Update user's last login timestamp and IP address"""
         updates = {"last_login_at": datetime.now(timezone.utc)}
         if ip_address:
             updates["last_login_ip"] = ip_address
         await self.update_one(user_id, **updates)
 
-    async def count_by_role(self, role: Optional[str] = None, is_active: Optional[bool] = None, search: Optional[str] = None) -> int:
+    async def count_by_role(
+        self,
+        role: Optional[str] = None,
+        is_active: Optional[bool] = None,
+        search: Optional[str] = None,
+    ) -> int:
         """Count users, optionally filtered by role, active status, and search query"""
         stmt = select(func.count()).select_from(User)
         conditions = []
@@ -86,13 +97,17 @@ class UsersRepository(BaseRepository[User]):
         if search:
             search_pattern = f"%{search.lower()}%"
             from sqlalchemy import or_
-            conditions.append(or_(
-                func.lower(User.email).like(search_pattern),
-                func.lower(User.display_name).like(search_pattern)
-            ))
+
+            conditions.append(
+                or_(
+                    func.lower(User.email).like(search_pattern),
+                    func.lower(User.display_name).like(search_pattern),
+                )
+            )
 
         if conditions:
             from sqlalchemy import and_
+
             stmt = stmt.where(and_(*conditions))
 
         result = await self.session.execute(stmt)
@@ -118,6 +133,7 @@ class RefreshTokensRepository(BaseRepository[RefreshToken]):
     async def delete_by_user(self, user_id: UUID) -> int:
         """Delete all refresh tokens for a user (logout from all devices)"""
         from sqlalchemy import delete
+
         stmt = delete(RefreshToken).where(RefreshToken.user_id == user_id)
         result = await self.session.execute(stmt)
         await self.session.flush()
@@ -126,7 +142,10 @@ class RefreshTokensRepository(BaseRepository[RefreshToken]):
     async def delete_expired(self) -> int:
         """Delete all expired refresh tokens"""
         from sqlalchemy import delete
-        stmt = delete(RefreshToken).where(RefreshToken.expires_at < datetime.now(timezone.utc))
+
+        stmt = delete(RefreshToken).where(
+            RefreshToken.expires_at < datetime.now(timezone.utc)
+        )
         result = await self.session.execute(stmt)
         await self.session.flush()
         return result.rowcount

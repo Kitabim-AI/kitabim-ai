@@ -1,7 +1,13 @@
 import logging
 import json
 from unittest.mock import MagicMock, patch
-from app.utils.observability import JsonFormatter, log_json, configure_logging, request_id_var
+from app.utils.observability import (
+    JsonFormatter,
+    log_json,
+    configure_logging,
+    request_id_var,
+)
+
 
 def test_json_formatter():
     formatter = JsonFormatter()
@@ -12,17 +18,18 @@ def test_json_formatter():
         lineno=10,
         msg="test message",
         args=(),
-        exc_info=None
+        exc_info=None,
     )
     request_id_var.set("req-123")
-    
+
     formatted = formatter.format(record)
     data = json.loads(formatted)
-    
+
     assert data["message"] == "test message"
     assert data["logger"] == "test_logger"
     assert data["request_id"] == "req-123"
     assert "ts" in data
+
 
 def test_json_formatter_with_fields():
     formatter = JsonFormatter()
@@ -33,13 +40,14 @@ def test_json_formatter_with_fields():
         lineno=10,
         msg="test message",
         args=(),
-        exc_info=None
+        exc_info=None,
     )
     record.fields = {"key": "value"}
-    
+
     formatted = formatter.format(record)
     data = json.loads(formatted)
     assert data["key"] == "value"
+
 
 def test_json_formatter_with_exception():
     formatter = JsonFormatter()
@@ -47,6 +55,7 @@ def test_json_formatter_with_exception():
         raise ValueError("error")
     except ValueError:
         import sys
+
         record = logging.LogRecord(
             name="test_logger",
             level=logging.ERROR,
@@ -54,17 +63,21 @@ def test_json_formatter_with_exception():
             lineno=10,
             msg="test error",
             args=(),
-            exc_info=sys.exc_info()
+            exc_info=sys.exc_info(),
         )
         formatted = formatter.format(record)
         data = json.loads(formatted)
         assert "exception" in data
         assert "ValueError: error" in data["exception"]
 
+
 def test_log_json():
     mock_logger = MagicMock()
     log_json(mock_logger, logging.INFO, "msg", key="value")
-    mock_logger.log.assert_called_with(logging.INFO, "msg", extra={"fields": {"key": "value"}})
+    mock_logger.log.assert_called_with(
+        logging.INFO, "msg", extra={"fields": {"key": "value"}}
+    )
+
 
 def test_configure_logging():
     with patch("logging.StreamHandler"):
@@ -74,6 +87,7 @@ def test_configure_logging():
 
 
 import pytest
+
 
 @pytest.mark.asyncio
 async def test_track_request_id():
@@ -115,11 +129,11 @@ async def test_patch_arq_enqueue_job():
 
     mock_pipeline = AsyncMock()
     mock_pipeline.exists.return_value = False
-    
+
     mock_context_manager = MagicMock()
     mock_context_manager.__aenter__ = AsyncMock(return_value=mock_pipeline)
     mock_context_manager.__aexit__ = AsyncMock(return_value=False)
-    
+
     mock_redis.pipeline.return_value = mock_context_manager
 
     try:
@@ -127,7 +141,7 @@ async def test_patch_arq_enqueue_job():
             mock_serialize.return_value = b"serialized-job"
             # Call enqueue_job as a class method passing mock_redis as self
             await ArqRedis.enqueue_job(mock_redis, "test_job", 1, val="abc")
-            
+
             # Verify serialize_job was called with injected request_id in kwargs
             mock_serialize.assert_called_once()
             args_passed = mock_serialize.call_args[0]
@@ -137,5 +151,3 @@ async def test_patch_arq_enqueue_job():
             assert kwargs_passed["val"] == "abc"
     finally:
         request_id_var.set(None)
-
-

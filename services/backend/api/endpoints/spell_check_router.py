@@ -3,6 +3,7 @@ Spell Check API — dictionary-based spell check results per book/page.
 
 All endpoints require editor or admin role.
 """
+
 from __future__ import annotations
 
 from typing import List, Optional
@@ -28,6 +29,7 @@ router = APIRouter()
 
 
 # ── Response schemas ──────────────────────────────────────────────────────────
+
 
 class SpellIssueOut(BaseModel):
     id: int
@@ -60,6 +62,7 @@ class BookSpellSummaryOut(BaseModel):
 
 # ── Request schemas ───────────────────────────────────────────────────────────
 
+
 class CorrectionItem(BaseModel):
     issue_id: int
     corrected_word: str
@@ -89,6 +92,7 @@ class RandomBookOut(BaseModel):
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
 
 @router.get("/spell-check/random-book", response_model=RandomBookOut)
 async def get_random_book_with_issues(
@@ -127,7 +131,9 @@ async def get_random_book_with_issues(
 
     book_row = book_id_result.fetchone()
     if not book_row:
-        raise HTTPException(status_code=404, detail="No books with open spell check issues found")
+        raise HTTPException(
+            status_code=404, detail="No books with open spell check issues found"
+        )
 
     selected_book_id = book_row.book_id
 
@@ -162,13 +168,15 @@ async def get_random_book_with_issues(
             CROSS JOIN issue_count ic
             WHERE b.id = :book_id
         """),
-        {"book_id": selected_book_id}
+        {"book_id": selected_book_id},
     )
 
     row = result.fetchone()
 
     if not row:
-        raise HTTPException(status_code=404, detail="No books with open spell check issues found")
+        raise HTTPException(
+            status_code=404, detail="No books with open spell check issues found"
+        )
 
     pages_list = row.pages_with_issues if row.pages_with_issues else []
 
@@ -207,9 +215,7 @@ async def get_spell_check_summary(
         select(
             PageSpellIssue.page_id,
             func.count().label("total"),
-            func.sum(
-                case((PageSpellIssue.status == "open", 1), else_=0)
-            ).label("open"),
+            func.sum(case((PageSpellIssue.status == "open", 1), else_=0)).label("open"),
         )
         .where(PageSpellIssue.page_id.in_(page_ids))
         .group_by(PageSpellIssue.page_id)
@@ -226,12 +232,14 @@ async def get_spell_check_summary(
         total_count = int(counts.total or 0) if counts else 0
         total_open += open_count
         total_issues += total_count
-        page_summaries.append(PageSpellSummary(
-            page_number=page.page_number,
-            open_count=open_count,
-            total_count=total_count,
-            spell_check_milestone=page.spell_check_milestone,
-        ))
+        page_summaries.append(
+            PageSpellSummary(
+                page_number=page.page_number,
+                open_count=open_count,
+                total_count=total_count,
+                spell_check_milestone=page.spell_check_milestone,
+            )
+        )
 
     return BookSpellSummaryOut(
         total_open=total_open,
@@ -257,6 +265,7 @@ async def get_page_spell_issues(
 
     # Proactively apply any matching auto-correction rules so the user doesn't see them
     from app.services.auto_correct_service import apply_auto_corrections_to_page
+
     applied_count = await apply_auto_corrections_to_page(session, page.id)
     if applied_count > 0:
         await session.commit()
@@ -314,27 +323,29 @@ async def apply_spell_corrections(
 
     # Sort by offset descending so we apply from end → start, preserving positions
     replacements = []
-    processed_auto_corrections = set()  # Track unique misspelled words to avoid redundant rule creation
+    processed_auto_corrections = (
+        set()
+    )  # Track unique misspelled words to avoid redundant rule creation
     processed_dict_additions = set()
-    
+
     for c in body.corrections:
         issue = issues_by_id.get(c.issue_id)
         if not issue:
             continue
-            
-        # Global auto-correction rule creation 
+
+        # Global auto-correction rule creation
         # (Editors and Admins both allowed to help build the global ruleset)
         word_to_save = c.original_word or issue.word
         if c.is_auto_correction and word_to_save not in processed_auto_corrections:
             processed_auto_corrections.add(word_to_save)
-            
+
             # Upsert into auto_correct_rules
             existing_stmt = select(AutoCorrectRule).where(
                 AutoCorrectRule.misspelled_word == word_to_save
             )
             existing_res = await session.execute(existing_stmt)
             existing_rule = existing_res.scalar_one_or_none()
-            
+
             if existing_rule:
                 existing_rule.corrected_word = c.corrected_word
                 existing_rule.is_active = True
@@ -344,24 +355,27 @@ async def apply_spell_corrections(
                     misspelled_word=word_to_save,
                     corrected_word=c.corrected_word,
                     is_active=True,
-                    created_by=current_user.id
+                    created_by=current_user.id,
                 )
                 session.add(new_rule)
 
         # Global Dictionary addition
         if c.is_dictionary_addition and word_to_save not in processed_dict_additions:
             processed_dict_additions.add(word_to_save)
-            
+
             # Check if already in dictionary
             dict_stmt = select(Dictionary).where(Dictionary.word == word_to_save)
             dict_res = await session.execute(dict_stmt)
             if not dict_res.scalar_one_or_none():
                 session.add(Dictionary(word=word_to_save))
-                
+
                 # Proactively mark all matching OPEN issues everywhere as 'ignored'
                 await session.execute(
                     update(PageSpellIssue)
-                    .where(PageSpellIssue.word == word_to_save, PageSpellIssue.status == "open")
+                    .where(
+                        PageSpellIssue.word == word_to_save,
+                        PageSpellIssue.status == "open",
+                    )
                     .values(status="ignored")
                 )
 
@@ -372,16 +386,16 @@ async def apply_spell_corrections(
             if issue.char_offset is None or issue.char_end is None:
                 continue
             start, end = issue.char_offset, issue.char_end
-            
+
         replacements.append((start, end, c.corrected_word, issue.id))
-    
+
     replacements.sort(key=lambda x: x[0], reverse=True)
 
     # Apply updates to the Page object
     page_text = page.text or ""
     for start, end, corrected, _ in replacements:
         page_text = page_text[:start] + corrected + page_text[end:]
-    
+
     page.text = page_text
     page.is_indexed = False
     page.chunking_milestone = PAGE_MILESTONE_IDLE
@@ -398,12 +412,17 @@ async def apply_spell_corrections(
 
     # Flush changes so the milestone statistics see the new states
     await session.flush()
-    
+
     # Update book milestones (calculates from flushed page states)
     from app.services.book_milestone_service import BookMilestoneService
-    await BookMilestoneService.update_book_milestone_for_step(session, book_id, PIPELINE_STEP_CHUNKING)
-    await BookMilestoneService.update_book_milestone_for_step(session, book_id, PIPELINE_STEP_EMBEDDING)
-    
+
+    await BookMilestoneService.update_book_milestone_for_step(
+        session, book_id, PIPELINE_STEP_CHUNKING
+    )
+    await BookMilestoneService.update_book_milestone_for_step(
+        session, book_id, PIPELINE_STEP_EMBEDDING
+    )
+
     await session.commit()
 
     return {"applied": len(corrected_ids)}
@@ -464,7 +483,9 @@ async def trigger_page_spell_check(
     if not page:
         raise HTTPException(status_code=404, detail="Page not found")
 
-    if page.milestone != PAGE_MILESTONE_SUCCEEDED or (page.pipeline_step is not None and page.pipeline_step != PIPELINE_STEP_EMBEDDING):
+    if page.milestone != PAGE_MILESTONE_SUCCEEDED or (
+        page.pipeline_step is not None and page.pipeline_step != PIPELINE_STEP_EMBEDDING
+    ):
         raise HTTPException(
             status_code=400,
             detail="Page has not completed OCR/embedding pipeline yet.",
@@ -503,5 +524,3 @@ async def ignore_spell_issues(
     await session.commit()
 
     return {"ignored": len(body.issue_ids)}
-
-

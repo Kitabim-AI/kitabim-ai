@@ -1,4 +1,5 @@
 """Share endpoints — return OG-tagged HTML for social media crawlers."""
+
 from __future__ import annotations
 
 import html
@@ -52,7 +53,13 @@ async def share_book(
         repo = BooksRepository(session)
         book = await repo.get(book_id)
     except Exception as exc:
-        log_json(logger, logging.WARNING, "Share endpoint DB error", book_id=book_id, error=str(exc))
+        log_json(
+            logger,
+            logging.WARNING,
+            "Share endpoint DB error",
+            book_id=book_id,
+            error=str(exc),
+        )
         return RedirectResponse(url=deep_link, status_code=302)
 
     if not book or book.status != "ready" or book.visibility == "private":
@@ -62,7 +69,13 @@ async def share_book(
     author = html.escape(book.author or "")
     description = f"{title} — {author}".strip(" —") if author else title
 
-    log_json(logger, logging.INFO, "Book share page served to scraper", book_id=book_id, agent=user_agent[:80])
+    log_json(
+        logger,
+        logging.INFO,
+        "Book share page served to scraper",
+        book_id=book_id,
+        agent=user_agent[:80],
+    )
 
     page_html = f"""<!DOCTYPE html>
 <html lang="ug" dir="rtl">
@@ -126,12 +139,24 @@ async def share_qa(
             if book and book.status == "ready":
                 og_image = f"{base_url}/api/covers/{safe_book_id}.jpg"
         except Exception as exc:
-            log_json(logger, logging.WARNING, "QA share: book lookup failed", book_id=book_id, error=str(exc))
+            log_json(
+                logger,
+                logging.WARNING,
+                "QA share: book lookup failed",
+                book_id=book_id,
+                error=str(exc),
+            )
 
-    image_meta = f'<meta property="og:image" content="{og_image}">\n  <meta name="twitter:image" content="{og_image}">' if og_image else ""
+    image_meta = (
+        f'<meta property="og:image" content="{og_image}">\n  <meta name="twitter:image" content="{og_image}">'
+        if og_image
+        else ""
+    )
     card_type = "summary_large_image" if og_image else "summary"
 
-    log_json(logger, logging.INFO, "QA share page served to scraper", agent=user_agent[:80])
+    log_json(
+        logger, logging.INFO, "QA share page served to scraper", agent=user_agent[:80]
+    )
 
     page_html = f"""<!DOCTYPE html>
 <html lang="ug" dir="rtl">

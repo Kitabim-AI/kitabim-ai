@@ -19,7 +19,10 @@ async def test_graph_repository_init_constraints():
     mock_driver.close = AsyncMock()
     mock_driver.session.return_value = mock_session
 
-    with patch("app.db.repositories.graph_repository.AsyncGraphDatabase.driver", return_value=mock_driver):
+    with patch(
+        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
+        return_value=mock_driver,
+    ):
         repo = GraphRepository()
         await repo.init_constraints()
 
@@ -38,7 +41,10 @@ async def test_graph_repository_query_subgraph():
     mock_driver = MagicMock()
     mock_driver.session.return_value = mock_session
 
-    with patch("app.db.repositories.graph_repository.AsyncGraphDatabase.driver", return_value=mock_driver):
+    with patch(
+        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
+        return_value=mock_driver,
+    ):
         repo = GraphRepository()
         records = await repo.query_subgraph(["A", "B"])
 
@@ -57,7 +63,10 @@ async def test_graph_repository_bulk_ops():
     mock_driver = MagicMock()
     mock_driver.session.return_value = mock_session
 
-    with patch("app.db.repositories.graph_repository.AsyncGraphDatabase.driver", return_value=mock_driver):
+    with patch(
+        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
+        return_value=mock_driver,
+    ):
         repo = GraphRepository()
 
         # 1. Test upsert_entities_bulk

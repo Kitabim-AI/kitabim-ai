@@ -7,13 +7,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.repositories.jobs import JobsRepository
 
 
-async def create_or_reset_job(session: AsyncSession, job_key: str, job_type: str, book_id: str, metadata: Optional[dict] = None):
+async def create_or_reset_job(
+    session: AsyncSession,
+    job_key: str,
+    job_type: str,
+    book_id: str,
+    metadata: Optional[dict] = None,
+):
     repo = JobsRepository(session)
     job = await repo.create_or_reset(job_key, job_type, book_id, metadata)
     return job
 
 
-async def update_job_status(session: AsyncSession, job_key: str, status: str, error: Optional[str] = None) -> None:
+async def update_job_status(
+    session: AsyncSession, job_key: str, status: str, error: Optional[str] = None
+) -> None:
     repo = JobsRepository(session)
     await repo.update_status(job_key, status, error)
 

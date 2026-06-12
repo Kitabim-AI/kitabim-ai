@@ -61,7 +61,9 @@ class InstagramOAuthProvider(OAuthProvider):
         }
         return f"{self.AUTH_URL}?{urlencode(params)}"
 
-    async def exchange_code_for_tokens(self, code: str, code_verifier: Optional[str] = None) -> dict:
+    async def exchange_code_for_tokens(
+        self, code: str, code_verifier: Optional[str] = None
+    ) -> dict:
         """
         Exchange authorization code for access token.
 
@@ -88,7 +90,9 @@ class InstagramOAuthProvider(OAuthProvider):
             )
 
             if response.status_code != 200:
-                logger.error(f"Instagram token exchange failed: {response.status_code} - {response.text}")
+                logger.error(
+                    f"Instagram token exchange failed: {response.status_code} - {response.text}"
+                )
                 response.raise_for_status()
 
             return response.json()
@@ -117,14 +121,18 @@ class InstagramOAuthProvider(OAuthProvider):
             )
 
             if response.status_code != 200:
-                logger.error(f"Instagram user info fetch failed: {response.status_code} - {response.text}")
+                logger.error(
+                    f"Instagram user info fetch failed: {response.status_code} - {response.text}"
+                )
                 response.raise_for_status()
 
             data = response.json()
 
             # Validate required fields
             if not data.get("id"):
-                raise ValueError("Missing required user info fields from Instagram (id)")
+                raise ValueError(
+                    "Missing required user info fields from Instagram (id)"
+                )
 
             # Instagram does not provide email, generate a placeholder
             username = data.get("username", "instagram_user")

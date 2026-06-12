@@ -10,6 +10,7 @@ on top of already-searchable books and does not block any other step.
 
 Runs every 1 minute.
 """
+
 from __future__ import annotations
 
 import logging
@@ -41,7 +42,7 @@ async def run_spell_check_scanner(ctx) -> None:
 
         # 2. Identify allowed books for this run
         allowed_book_ids = list(active_book_ids)
-        
+
         # If we have room for more books, find candidates
         if len(allowed_book_ids) < settings.max_concurrent_spell_check_books:
             # Find books that have 'idle' spell_check pages and satisfy OCR dependency
@@ -51,10 +52,12 @@ async def run_spell_check_scanner(ctx) -> None:
                 .where(
                     Page.ocr_milestone == "succeeded",
                     Page.spell_check_milestone == "idle",
-                    ~Page.book_id.in_(allowed_book_ids) if allowed_book_ids else True
+                    ~Page.book_id.in_(allowed_book_ids) if allowed_book_ids else True,
                 )
                 .distinct()
-                .limit(settings.max_concurrent_spell_check_books - len(allowed_book_ids))
+                .limit(
+                    settings.max_concurrent_spell_check_books - len(allowed_book_ids)
+                )
             )
             candidates_res = await session.execute(candidates_stmt)
             allowed_book_ids.extend([row[0] for row in candidates_res.fetchall()])
@@ -86,16 +89,16 @@ async def run_spell_check_scanner(ctx) -> None:
                 spell_check_milestone="in_progress",
                 worker_id=ctx.get("worker_id", "unknown"),
                 claimed_at=func.now(),
-                last_updated=func.now()
+                last_updated=func.now(),
             )
         )
-        
+
         # Also update the Book record to show spell check is active in the Lite UI
         # Get unique book IDs from the claimed pages
         book_ids_stmt = select(Page.book_id).where(Page.id.in_(page_ids)).distinct()
         book_ids_res = await session.execute(book_ids_stmt)
         book_ids = [row[0] for row in book_ids_res.fetchall()]
-        
+
         if book_ids:
             await session.execute(
                 update(Book)
@@ -104,9 +107,13 @@ async def run_spell_check_scanner(ctx) -> None:
             )
             # Update book-level spell-check milestones to 'in_progress'
             for book_id in book_ids:
-                await BookMilestoneService.update_book_milestone_for_step(session, book_id, 'spell_check')
-            
+                await BookMilestoneService.update_book_milestone_for_step(
+                    session, book_id, "spell_check"
+                )
+
         await session.commit()
 
     await redis.enqueue_job("spell_check_job", page_ids=page_ids)
-    log_json(logger, logging.INFO, "spell check job dispatched", page_count=len(page_ids))
+    log_json(
+        logger, logging.INFO, "spell check job dispatched", page_count=len(page_ids)
+    )

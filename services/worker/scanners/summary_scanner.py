@@ -9,6 +9,7 @@ Catches three cases the pipeline_driver hook misses:
 Runs every 5 minutes. Batch size controlled by system_config 'summary_scanner_batch_size'
 (default 5). Increase temporarily to speed up bulk regeneration, then reset to 5.
 """
+
 from __future__ import annotations
 
 import logging
@@ -28,7 +29,9 @@ async def run_summary_scanner(ctx) -> None:
 
     async with db_session.async_session_factory() as session:
         batch_size = int(
-            await SystemConfigsRepository(session).get_value("summary_scanner_batch_size", "5")
+            await SystemConfigsRepository(session).get_value(
+                "summary_scanner_batch_size", "5"
+            )
         )
         stmt = (
             select(Book.id)
@@ -53,16 +56,21 @@ async def run_summary_scanner(ctx) -> None:
     newly_enqueued = []
     for book_id in book_ids:
         job = await redis.enqueue_job(
-            "summary_job",
-            book_id=book_id,
-            _job_id=f"summary:{book_id}"
+            "summary_job", book_id=book_id, _job_id=f"summary:{book_id}"
         )
         if job is not None:
             newly_enqueued.append(book_id)
         else:
-            log_json(logger, logging.DEBUG, "summary scanner: job already queued or running", book_id=book_id)
+            log_json(
+                logger,
+                logging.DEBUG,
+                "summary scanner: job already queued or running",
+                book_id=book_id,
+            )
 
     if not newly_enqueued:
         return
 
-    log_json(logger, logging.INFO, "summary scanner enqueued jobs", count=len(newly_enqueued))
+    log_json(
+        logger, logging.INFO, "summary scanner enqueued jobs", count=len(newly_enqueued)
+    )

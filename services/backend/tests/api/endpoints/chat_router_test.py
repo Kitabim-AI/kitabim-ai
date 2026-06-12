@@ -5,7 +5,9 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 BACKEND_DIR = str(Path(__file__).resolve().parents[3])
-BACKEND_CORE_DIR = str(Path(__file__).resolve().parents[5] / "packages" / "backend-core")
+BACKEND_CORE_DIR = str(
+    Path(__file__).resolve().parents[5] / "packages" / "backend-core"
+)
 
 
 def setup_paths():
@@ -31,11 +33,7 @@ async def test_chat_endpoint_uses_injected_rag_service():
     mock_user.id = "user-123"
     mock_user.role = "reader"
 
-    req = ChatRequest(
-        book_id="book-abc",
-        question="سۇئال",
-        history=[]
-    )
+    req = ChatRequest(book_id="book-abc", question="سۇئال", history=[])
 
     mock_usage = {"usage": 1, "limit": 10, "has_reached_limit": False}
     mock_limit_service = AsyncMock()
@@ -50,12 +48,14 @@ async def test_chat_endpoint_uses_injected_rag_service():
             req=req,
             current_user=mock_user,
             session=mock_session,
-            rag_service=mock_rag_service
+            rag_service=mock_rag_service,
         )
 
     assert response["answer"] == "جاۋاب"
     assert response["usage"] == mock_usage
-    mock_rag_service.answer_question.assert_called_once_with(req, mock_session, user_id="user-123")
+    mock_rag_service.answer_question.assert_called_once_with(
+        req, mock_session, user_id="user-123"
+    )
 
 
 @pytest.mark.asyncio
@@ -71,11 +71,7 @@ async def test_chat_stream_endpoint_uses_injected_rag_service():
     mock_user.id = "user-123"
     mock_user.role = "reader"
 
-    req = ChatRequest(
-        book_id="book-abc",
-        question="سۇئال",
-        history=[]
-    )
+    req = ChatRequest(book_id="book-abc", question="سۇئال", history=[])
 
     mock_usage = {"usage": 1, "limit": 10, "has_reached_limit": False}
     mock_limit_service = AsyncMock()
@@ -99,7 +95,7 @@ async def test_chat_stream_endpoint_uses_injected_rag_service():
             req=req,
             current_user=mock_user,
             session=mock_session,
-            rag_service=mock_rag_service
+            rag_service=mock_rag_service,
         )
 
     # Read events from response body

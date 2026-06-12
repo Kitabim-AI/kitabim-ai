@@ -7,6 +7,7 @@ Each page is processed in its own session scope for error isolation.
 
 Receives: page_ids (list of Page.id already set to in_progress by scanner).
 """
+
 from __future__ import annotations
 
 import time
@@ -24,6 +25,7 @@ from app.core.config import settings
 from app.utils.observability import log_json, make_pipeline_event_payload
 
 logger = logging.getLogger("app.worker.embedding_job")
+
 
 # Batch size for Gemini API embeddings (managed via Settings)
 async def embedding_job(ctx, page_ids: List[int]) -> None:
@@ -49,7 +51,7 @@ async def embedding_job(ctx, page_ids: List[int]) -> None:
                 .values(
                     worker_id=ctx.get("worker_id", "unknown"),
                     claimed_at=func.now(),
-                    last_updated=func.now()
+                    last_updated=func.now(),
                 )
             )
             await session.commit()
@@ -57,13 +59,17 @@ async def embedding_job(ctx, page_ids: List[int]) -> None:
         # Fetch embedding model from system_configs (no fallback — must be configured in DB)
         async with db_session.async_session_factory() as session:
             config_repo = SystemConfigsRepository(session)
-            gemini_embedding_model = await config_repo.get_value("gemini_embedding_model")
+            gemini_embedding_model = await config_repo.get_value(
+                "gemini_embedding_model"
+            )
             if not gemini_embedding_model:
                 raise RuntimeError("system_config 'gemini_embedding_model' is not set")
 
         # Load page records
         async with db_session.async_session_factory() as session:
-            result = await session.execute(select(Page).where(Page.id.in_(locked_page_ids)))
+            result = await session.execute(
+                select(Page).where(Page.id.in_(locked_page_ids))
+            )
             pages = list(result.scalars().all())
 
         # Update book pipeline steps for all unique books in this batch
@@ -108,11 +114,15 @@ async def embedding_job(ctx, page_ids: List[int]) -> None:
                                 last_updated=func.now(),
                             )
                         )
-                        session.add(PipelineEvent(
-                            page_id=page.id,
-                            event_type="embedding_succeeded",
-                            payload=make_pipeline_event_payload(duration_ms=duration_ms)
-                        ))
+                        session.add(
+                            PipelineEvent(
+                                page_id=page.id,
+                                event_type="embedding_succeeded",
+                                payload=make_pipeline_event_payload(
+                                    duration_ms=duration_ms
+                                ),
+                            )
+                        )
                         await session.commit()
                         succeeded += 1
                         continue
@@ -144,17 +154,26 @@ async def embedding_job(ctx, page_ids: List[int]) -> None:
                             last_updated=func.now(),
                         )
                     )
-                    session.add(PipelineEvent(
-                        page_id=page.id,
-                        event_type="embedding_succeeded",
-                        payload=make_pipeline_event_payload(duration_ms=duration_ms)
-                    ))
+                    session.add(
+                        PipelineEvent(
+                            page_id=page.id,
+                            event_type="embedding_succeeded",
+                            payload=make_pipeline_event_payload(
+                                duration_ms=duration_ms
+                            ),
+                        )
+                    )
                     await session.commit()
 
                 succeeded += 1
-                log_json(logger, logging.DEBUG, "embedding page succeeded",
-                         book_id=page.book_id, page=page.page_number,
-                         chunks=len(chunks))
+                log_json(
+                    logger,
+                    logging.DEBUG,
+                    "embedding page succeeded",
+                    book_id=page.book_id,
+                    page=page.page_number,
+                    chunks=len(chunks),
+                )
 
             except Exception as exc:
                 duration_ms = int((time.perf_counter() - start_time) * 1000)
@@ -170,27 +189,42 @@ async def embedding_job(ctx, page_ids: List[int]) -> None:
                             last_updated=func.now(),
                         )
                     )
-                    session.add(PipelineEvent(
-                        page_id=page.id,
-                        event_type="embedding_failed",
-                        payload=make_pipeline_event_payload(
-                            duration_ms=duration_ms,
-                            extra_fields={"error": error_msg}
+                    session.add(
+                        PipelineEvent(
+                            page_id=page.id,
+                            event_type="embedding_failed",
+                            payload=make_pipeline_event_payload(
+                                duration_ms=duration_ms,
+                                extra_fields={"error": error_msg},
+                            ),
                         )
-                    ))
+                    )
                     await session.commit()
 
                 failed += 1
-                log_json(logger, logging.WARNING, "embedding page failed",
-                         book_id=page.book_id, page=page.page_number, error=str(exc))
+                log_json(
+                    logger,
+                    logging.WARNING,
+                    "embedding page failed",
+                    book_id=page.book_id,
+                    page=page.page_number,
+                    error=str(exc),
+                )
 
         # Update book-level embedding milestone after processing batch
         for book_id in book_ids:
             async with db_session.async_session_factory() as session:
-                await BookMilestoneService.update_book_milestone_for_step(session, book_id, 'embedding')
+                await BookMilestoneService.update_book_milestone_for_step(
+                    session, book_id, "embedding"
+                )
                 await session.commit()
 
-        log_json(logger, logging.INFO, "embedding job completed",
-                 succeeded=succeeded, failed=failed)
+        log_json(
+            logger,
+            logging.INFO,
+            "embedding job completed",
+            succeeded=succeeded,
+            failed=failed,
+        )
     finally:
         await lock_manager.__aexit__(None, None, None)

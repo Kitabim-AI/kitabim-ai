@@ -36,7 +36,9 @@ async def get_user_by_email(session: AsyncSession, email: str) -> Optional[User]
     return _model_to_user(user_obj)
 
 
-async def get_user_by_provider(session: AsyncSession, provider: str, provider_id: str) -> Optional[User]:
+async def get_user_by_provider(
+    session: AsyncSession, provider: str, provider_id: str
+) -> Optional[User]:
     """Fetch a user by OAuth provider and provider-specific ID."""
     repo = UsersRepository(session)
     user_obj = await repo.find_by_provider(provider, provider_id)
@@ -84,15 +86,20 @@ async def create_user(
         last_login_ip=hash_ip_if_present(last_login_ip),  # Hash for privacy
         is_active=True,
     )
-    
+
     session.add(user_obj)
     await session.flush()
     logger.info(f"Created new user: {user_id} ({email}) with role {role.value}")
-    
+
     return _model_to_user(user_obj)
 
 
-async def update_user_login(session: AsyncSession, user_id: str, avatar_url: Optional[str] = None, ip_address: Optional[str] = None) -> None:
+async def update_user_login(
+    session: AsyncSession,
+    user_id: str,
+    avatar_url: Optional[str] = None,
+    ip_address: Optional[str] = None,
+) -> None:
     """Update user's last login time, IP address (hashed) and optionally their avatar.
 
     Args:
@@ -119,18 +126,22 @@ async def update_user_login(session: AsyncSession, user_id: str, avatar_url: Opt
         logger.error(f"Failed to update user login: {e}")
 
 
-async def update_user_role(session: AsyncSession, user_id: str, new_role: UserRole) -> Optional[User]:
+async def update_user_role(
+    session: AsyncSession, user_id: str, new_role: UserRole
+) -> Optional[User]:
     """Update a user's role."""
     repo = UsersRepository(session)
-    success = await repo.update_one(user_id, role=new_role.value, updated_at=datetime.now(timezone.utc))
+    success = await repo.update_one(
+        user_id, role=new_role.value, updated_at=datetime.now(timezone.utc)
+    )
     if not success:
         return None
-    
+
     await session.flush()
     user_obj = await repo.get(user_id)
     if not user_obj:
         return None
-        
+
     user = _model_to_user(user_obj)
     # Clear user cache in Redis
     cache_key = cache_config.KEY_USER.format(user_id=user_id)
@@ -140,18 +151,22 @@ async def update_user_role(session: AsyncSession, user_id: str, new_role: UserRo
     return user
 
 
-async def update_user_status(session: AsyncSession, user_id: str, is_active: bool) -> Optional[User]:
+async def update_user_status(
+    session: AsyncSession, user_id: str, is_active: bool
+) -> Optional[User]:
     """Enable or disable a user account."""
     repo = UsersRepository(session)
-    success = await repo.update_one(user_id, is_active=is_active, updated_at=datetime.now(timezone.utc))
+    success = await repo.update_one(
+        user_id, is_active=is_active, updated_at=datetime.now(timezone.utc)
+    )
     if not success:
         return None
-    
+
     await session.flush()
     user_obj = await repo.get(user_id)
     if not user_obj:
         return None
-        
+
     user = _model_to_user(user_obj)
     # Clear user cache in Redis
     cache_key = cache_config.KEY_USER.format(user_id=user_id)
@@ -161,7 +176,9 @@ async def update_user_status(session: AsyncSession, user_id: str, is_active: boo
     return user
 
 
-async def list_users(session: AsyncSession, page: int = 1, page_size: int = 20, filter_dict: dict = None) -> Tuple[List[User], int]:
+async def list_users(
+    session: AsyncSession, page: int = 1, page_size: int = 20, filter_dict: dict = None
+) -> Tuple[List[User], int]:
     """List users with pagination and filtering."""
     repo = UsersRepository(session)
     skip = (page - 1) * page_size
@@ -170,7 +187,9 @@ async def list_users(session: AsyncSession, page: int = 1, page_size: int = 20, 
     is_active = filter_dict.get("is_active") if filter_dict else None
     search = filter_dict.get("search") if filter_dict else None
 
-    users_objs = await repo.find_many(role=role, is_active=is_active, search=search, skip=skip, limit=page_size)
+    users_objs = await repo.find_many(
+        role=role, is_active=is_active, search=search, skip=skip, limit=page_size
+    )
     total = await repo.count_by_role(role=role, is_active=is_active, search=search)
 
     users = [_model_to_user(obj) for obj in users_objs]

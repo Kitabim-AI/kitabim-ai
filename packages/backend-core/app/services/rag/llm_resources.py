@@ -1,4 +1,5 @@
 """Lazy-loaded LLM chains and embeddings — module-level singleton."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

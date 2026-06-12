@@ -98,13 +98,15 @@ _HARD_LIMITS = (
     "When done retrieving, respond with no tool calls to signal completion."
 )
 
-AGENT_SYSTEM_PROMPT = "\n\n".join([
-    _ROLE,
-    _STEP_1_COREFERENCE,
-    _STEP_2_CATALOG,
-    _STEP_3_CURRENT_PAGE,
-    _STEP_4_CONTENT,
-    _STEP_5_STOP,
-    _STEP_MULTI_QUESTION,
-    _HARD_LIMITS,
-])
+AGENT_SYSTEM_PROMPT = "\n\n".join(
+    [
+        _ROLE,
+        _STEP_1_COREFERENCE,
+        _STEP_2_CATALOG,
+        _STEP_3_CURRENT_PAGE,
+        _STEP_4_CONTENT,
+        _STEP_5_STOP,
+        _STEP_MULTI_QUESTION,
+        _HARD_LIMITS,
+    ]
+)

@@ -1,4 +1,5 @@
 """Contact form submission API endpoints"""
+
 from __future__ import annotations
 
 from typing import List, Optional
@@ -7,18 +8,24 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
-from app.db.repositories.contact_submissions_repository import ContactSubmissionsRepository
+from app.db.repositories.contact_submissions_repository import (
+    ContactSubmissionsRepository,
+)
 from app.models.schemas import (
     ContactSubmissionCreate,
     ContactSubmissionPublic,
-    ContactSubmissionAdmin
+    ContactSubmissionAdmin,
 )
 from auth.dependencies import require_admin
 
 router = APIRouter()
 
 
-@router.post("/submit", response_model=ContactSubmissionPublic, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/submit",
+    response_model=ContactSubmissionPublic,
+    status_code=status.HTTP_201_CREATED,
+)
 async def submit_contact_form(
     submission: ContactSubmissionCreate,
     session: AsyncSession = Depends(get_session),
@@ -34,7 +41,7 @@ async def submit_contact_form(
         name=submission.name,
         email=submission.email,
         interest=submission.interest,
-        message=submission.message
+        message=submission.message,
     )
 
     await session.commit()
@@ -47,7 +54,7 @@ async def get_contact_submissions(
     status: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
-    current_user = Depends(require_admin),
+    current_user=Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
     """
@@ -62,10 +69,6 @@ async def get_contact_submissions(
     """
     repo = ContactSubmissionsRepository(session)
 
-    submissions = await repo.find_many(
-        status=status,
-        skip=offset,
-        limit=limit
-    )
+    submissions = await repo.find_many(status=status, skip=offset, limit=limit)
 
     return [ContactSubmissionAdmin.model_validate(sub) for sub in submissions]

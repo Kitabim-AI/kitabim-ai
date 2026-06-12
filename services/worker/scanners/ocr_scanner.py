@@ -4,6 +4,7 @@ OCR Scanner — claims idle ocr pages (grouped by book) and dispatches OcrJobs.
 Groups by book because OCR needs the PDF file — one download per job.
 Runs every 1 minute.
 """
+
 from __future__ import annotations
 
 import logging
@@ -68,11 +69,13 @@ async def run_ocr_scanner(ctx) -> None:
                     ocr_milestone="in_progress",
                     worker_id=ctx.get("worker_id", "unknown"),
                     claimed_at=func.now(),
-                    last_updated=func.now()
+                    last_updated=func.now(),
                 )
             )
             # Update book-level OCR milestone to 'in_progress' immediately
-            await BookMilestoneService.update_book_milestone_for_step(session, book_id, 'ocr')
+            await BookMilestoneService.update_book_milestone_for_step(
+                session, book_id, "ocr"
+            )
             await session.commit()
 
         await redis.enqueue_job(
@@ -81,9 +84,16 @@ async def run_ocr_scanner(ctx) -> None:
             page_ids=page_ids,
             _job_id=f"v2_ocr:{book_id}",
         )
-        log_json(logger, logging.INFO, "OCR job dispatched",
-                 book_id=book_id, page_count=len(page_ids))
+        log_json(
+            logger,
+            logging.INFO,
+            "OCR job dispatched",
+            book_id=book_id,
+            page_count=len(page_ids),
+        )
         dispatched += 1
 
     if dispatched:
-        log_json(logger, logging.INFO, "OCR scanner finished", jobs_dispatched=dispatched)
+        log_json(
+            logger, logging.INFO, "OCR scanner finished", jobs_dispatched=dispatched
+        )

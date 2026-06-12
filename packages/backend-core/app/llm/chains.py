@@ -9,6 +9,7 @@ from app.llm.models import _get_genai_client
 
 _logger = logging.getLogger("app.llm.chains")
 
+
 class TextChain:
     def __init__(
         self,
@@ -56,13 +57,18 @@ class StructuredChain:
 
     async def ainvoke(self, input: dict[str, Any], **kwargs: Any) -> BaseModel:
         client = _get_genai_client()
-        model = self.model_name.replace("models/", "", 1) if self.model_name.startswith("models/") else self.model_name
+        model = (
+            self.model_name.replace("models/", "", 1)
+            if self.model_name.startswith("models/")
+            else self.model_name
+        )
 
         # If the template has format_instructions, we pass an empty string since SDK handles schema formatting natively
         params = {**input, "format_instructions": ""}
         formatted = self.template.format(**params)
 
         from google.genai import types
+
         config = types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=self.response_schema,
@@ -70,18 +76,18 @@ class StructuredChain:
         )
 
         from app.llm.models import _TEXT_BREAKER, _call_with_breaker
+
         async def _call():
             response = await client.aio.models.generate_content(
-                model=model,
-                contents=formatted,
-                config=config,
-                **kwargs
+                model=model, contents=formatted, config=config, **kwargs
             )
             return response.text or ""
 
         raw_response = await _call_with_breaker(_TEXT_BREAKER, _call)
         if not raw_response:
-            raise ValueError(f"Empty LLM response for schema {self.response_schema.__name__}")
+            raise ValueError(
+                f"Empty LLM response for schema {self.response_schema.__name__}"
+            )
         return self.response_schema.model_validate_json(raw_response)
 
 
@@ -107,4 +113,6 @@ def build_structured_chain(
         schema = parser.schema
     else:
         schema = parser
-    return StructuredChain(template, model_name, response_schema=schema, run_name=run_name)
+    return StructuredChain(
+        template, model_name, response_schema=schema, run_name=run_name
+    )

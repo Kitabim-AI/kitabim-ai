@@ -1,4 +1,5 @@
 """RAG evaluations repository"""
+
 from __future__ import annotations
 
 from typing import List, Optional
@@ -70,9 +71,7 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
         return evaluation
 
     async def get_recent_evaluations(
-        self,
-        limit: int = 100,
-        book_id: Optional[str] = None
+        self, limit: int = 100, book_id: Optional[str] = None
     ) -> List[RAGEvaluation]:
         """Get recent evaluations, optionally filtered by book"""
         stmt = select(RAGEvaluation).order_by(RAGEvaluation.ts.desc()).limit(limit)
@@ -84,9 +83,7 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
         return list(result.scalars().all())
 
     async def get_average_latency(
-        self,
-        since: Optional[datetime] = None,
-        book_id: Optional[str] = None
+        self, since: Optional[datetime] = None, book_id: Optional[str] = None
     ) -> float:
         """Calculate average latency for RAG queries"""
         stmt = select(func.avg(RAGEvaluation.latency_ms))
@@ -99,16 +96,14 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
 
         if conditions:
             from sqlalchemy import and_
+
             stmt = stmt.where(and_(*conditions))
 
         result = await self.session.execute(stmt)
         avg = result.scalar_one_or_none()
         return float(avg) if avg is not None else 0.0
 
-    async def get_stats_summary(
-        self,
-        since: Optional[datetime] = None
-    ) -> dict:
+    async def get_stats_summary(self, since: Optional[datetime] = None) -> dict:
         """
         Get summary statistics for RAG evaluations.
 
@@ -121,7 +116,9 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
             func.avg(RAGEvaluation.context_chars).label("avg_context_chars"),
             func.avg(RAGEvaluation.answer_chars).label("avg_answer_chars"),
             func.avg(RAGEvaluation.faithfulness_score).label("avg_faithfulness"),
-            func.avg(RAGEvaluation.answer_relevance_score).label("avg_answer_relevance"),
+            func.avg(RAGEvaluation.answer_relevance_score).label(
+                "avg_answer_relevance"
+            ),
         )
 
         if since:
@@ -136,10 +133,13 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
             "avg_retrieved": float(row.avg_retrieved or 0),
             "avg_context_chars": float(row.avg_context_chars or 0),
             "avg_answer_chars": float(row.avg_answer_chars or 0),
-            "avg_faithfulness": float(row.avg_faithfulness) if row.avg_faithfulness is not None else None,
-            "avg_answer_relevance": float(row.avg_answer_relevance) if row.avg_answer_relevance is not None else None,
+            "avg_faithfulness": float(row.avg_faithfulness)
+            if row.avg_faithfulness is not None
+            else None,
+            "avg_answer_relevance": float(row.avg_answer_relevance)
+            if row.avg_answer_relevance is not None
+            else None,
         }
-
 
     async def update_feedback(
         self,
@@ -148,6 +148,7 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
     ) -> Optional[RAGEvaluation]:
         """Record user thumbs-up/down feedback on an evaluation row."""
         from sqlalchemy import update as sql_update
+
         values: dict = {"user_feedback": feedback}
 
         await self.session.execute(
