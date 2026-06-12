@@ -5,6 +5,7 @@ Pages from any book can be grouped together since chunking only needs the
 text already stored in the database.
 Runs every 1 minute.
 """
+
 from __future__ import annotations
 
 import logging
@@ -33,6 +34,7 @@ async def run_chunking_scanner(ctx) -> None:
         # the corrected text gets re-indexed. Excluding ready books would leave
         # those pages permanently stuck at idle.
         from app.db.models import Book
+
         id_stmt = (
             select(Page.id)
             .join(Book, Page.book_id == Book.id)
@@ -45,9 +47,7 @@ async def run_chunking_scanner(ctx) -> None:
             .limit(page_limit)
         )
 
-        result = await session.execute(
-            id_stmt.add_columns(Page.book_id)
-        )
+        result = await session.execute(id_stmt.add_columns(Page.book_id))
         rows = result.fetchall()
         page_ids = [row[0] for row in rows]
         book_ids = list(set(row[1] for row in rows))
@@ -62,12 +62,14 @@ async def run_chunking_scanner(ctx) -> None:
                 chunking_milestone="in_progress",
                 worker_id=ctx.get("worker_id", "unknown"),
                 claimed_at=func.now(),
-                last_updated=func.now()
+                last_updated=func.now(),
             )
         )
         # Update book-level chunking milestones
         for book_id in book_ids:
-            await BookMilestoneService.update_book_milestone_for_step(session, book_id, 'chunking')
+            await BookMilestoneService.update_book_milestone_for_step(
+                session, book_id, "chunking"
+            )
         await session.commit()
 
     await redis.enqueue_job("chunking_job", page_ids=page_ids)

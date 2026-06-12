@@ -2,12 +2,12 @@
 
 Streams custom events: planning, decompose, tool_call, answer_start, chunk, answer_end.
 """
+
 from __future__ import annotations
 
 import json
 import logging
 import re
-import time
 from typing import AsyncIterator, Union
 
 from google.adk.runners import InMemoryRunner
@@ -21,7 +21,13 @@ logger = logging.getLogger("app.rag.agent.handler")
 
 
 # Heuristics for planning & decompose steps
-_CATALOG_PATTERNS = {"كىم يازغان", "ئاپتورى كىم", "ئاپتور كىم", "نىمە يازغان", "قانداق كىتاب"}
+_CATALOG_PATTERNS = {
+    "كىم يازغان",
+    "ئاپتورى كىم",
+    "ئاپتور كىم",
+    "نىمە يازغان",
+    "قانداق كىتاب",
+}
 _PAGE_PATTERNS = {"بۇ بەتتە", "بەتتە نېمە", "بۇ بەت", "read this page", "current page"}
 _MAX_SUB_QUESTIONS = 4
 
@@ -69,15 +75,22 @@ async def _llm_split(question: str, model_name: str) -> list[str]:
             if isinstance(parts, list) and all(isinstance(p, str) for p in parts):
                 return [p.strip() for p in parts if p.strip()][:_MAX_SUB_QUESTIONS]
     except Exception as exc:
-        log_json(logger, logging.WARNING, "decompose LLM call failed, keeping original", error=str(exc))
+        log_json(
+            logger,
+            logging.WARNING,
+            "decompose LLM call failed, keeping original",
+            error=str(exc),
+        )
     return [question]
 
 
 def _detect_intent(question: str, ctx: QueryContext) -> str:
+    from app.services.rag.utils import is_author_or_catalog_query
+
     q = question.lower()
     if ctx.current_page is not None and any(p in q for p in _PAGE_PATTERNS):
         return "current_page"
-    if any(p in q for p in _CATALOG_PATTERNS):
+    if is_author_or_catalog_query(question) or any(p in q for p in _CATALOG_PATTERNS):
         return "catalog"
     return "content_search"
 
@@ -98,7 +111,9 @@ def _build_human_message(ctx: QueryContext, question: str) -> str:
         lines.append(f"Graph available: {'yes' if graph_available else 'no'}")
     elif ctx.is_global:
         if ctx.context_book_ids:
-            lines.append(f"Previous response book IDs: {', '.join(ctx.context_book_ids[:10])}")
+            lines.append(
+                f"Previous response book IDs: {', '.join(ctx.context_book_ids[:10])}"
+            )
         if ctx.character_categories:
             lines.append(f"Category filter: {', '.join(ctx.character_categories)}")
     if ctx.history:
@@ -109,7 +124,11 @@ def _build_human_message(ctx: QueryContext, question: str) -> str:
 
 
 def _grade_context(observations: list[dict]) -> tuple[str, int, int]:
-    from app.services.rag.agent.config import AGENT_MAX_CONTEXT_CHUNKS, GRADE_RELATIVE_THRESHOLD, MIN_CHUNKS_AFTER_GRADING
+    from app.services.rag.agent.config import (
+        AGENT_MAX_CONTEXT_CHUNKS,
+        GRADE_RELATIVE_THRESHOLD,
+        MIN_CHUNKS_AFTER_GRADING,
+    )
     from app.services.rag.answer_builder import format_document, Document
 
     # Build metadata context from any tool returning a "context" key
@@ -168,9 +187,13 @@ def _grade_context(observations: list[dict]) -> tuple[str, int, int]:
         graded = graded[:AGENT_MAX_CONTEXT_CHUNKS]
 
         log_json(
-            logger, logging.INFO, "Context graded",
-            before=before_count, after=len(graded),
-            top_score=round(top_score, 3), score_floor=round(score_floor, 3),
+            logger,
+            logging.INFO,
+            "Context graded",
+            before=before_count,
+            after=len(graded),
+            top_score=round(top_score, 3),
+            score_floor=round(score_floor, 3),
         )
         chunk_parts = [format_document(d) for d in graded]
         after_count = len(graded)
@@ -180,7 +203,11 @@ def _grade_context(observations: list[dict]) -> tuple[str, int, int]:
         after_count = 0
 
     all_parts = metadata_parts + chunk_parts
-    graded_context = "\n\n---\n\n".join(all_parts) if all_parts else "NO RELEVANT DOCUMENTS FOUND IN THE LIBRARY."
+    graded_context = (
+        "\n\n---\n\n".join(all_parts)
+        if all_parts
+        else "NO RELEVANT DOCUMENTS FOUND IN THE LIBRARY."
+    )
     return graded_context, before_count, after_count
 
 
@@ -212,19 +239,27 @@ def _extract_used_book_ids(observations: list[dict]) -> list[str]:
     return list(chunk_book_ids | summary_book_ids)
 
 
-def _populate_ctx_from_observations(ctx: QueryContext, observations: list[dict], graded_context: str, llm_calls: int) -> None:
+def _populate_ctx_from_observations(
+    ctx: QueryContext, observations: list[dict], graded_context: str, llm_calls: int
+) -> None:
     all_chunks = [
         chunk
         for obs in observations
         if obs.get("tool") == "search_chunks"
-        for chunk in (obs.get("result", {}).get("data") or obs.get("result", {})).get("chunks", [])
+        for chunk in (obs.get("result", {}).get("data") or obs.get("result", {})).get(
+            "chunks", []
+        )
     ]
 
     ctx.retrieved_count = len(all_chunks)
     ctx.scores = [c.get("score", 0.0) for c in all_chunks]
     ctx.agent_steps = llm_calls
-    ctx.agent_tools_called = [obs.get("tool", "") for obs in observations if obs.get("tool")]
-    ctx.agent_retry_count = sum(1 for obs in observations if obs.get("tool") == "search_chunks")
+    ctx.agent_tools_called = [
+        obs.get("tool", "") for obs in observations if obs.get("tool")
+    ]
+    ctx.agent_retry_count = sum(
+        1 for obs in observations if obs.get("tool") == "search_chunks"
+    )
     ctx.agent_final_chunk_count = graded_context.count("[BookID:")
     ctx.graded_context = graded_context
 
@@ -238,7 +273,9 @@ class AgentRAGHandler(QueryHandler):
     def can_handle(self, _ctx: QueryContext) -> bool:
         return True
 
-    async def _execute_workflow_stream(self, ctx: QueryContext, question: str) -> AsyncIterator[dict]:
+    async def _execute_workflow_stream(
+        self, ctx: QueryContext, question: str
+    ) -> AsyncIterator[dict]:
         from app.services.rag.agent.adk_agent import build_rag_agent
 
         # 1. Intent Detection
@@ -251,7 +288,9 @@ class AgentRAGHandler(QueryHandler):
             sub_questions = await _llm_split(question, ctx.agent_model)
             if len(sub_questions) > 1:
                 yield {"type": "decompose", "count": len(sub_questions)}
-                numbered = "\n".join(f"{i + 1}. {q}" for i, q in enumerate(sub_questions))
+                numbered = "\n".join(
+                    f"{i + 1}. {q}" for i, q in enumerate(sub_questions)
+                )
                 question = question + f"\n\n[Sub-questions]\n{numbered}"
 
         # 3. Agent Execution
@@ -260,23 +299,30 @@ class AgentRAGHandler(QueryHandler):
         session = await runner.session_service.create_session(
             app_name="kitabim",
             user_id=ctx.user_id or "anon",
-            state={"query_context": ctx, "observations": []}
+            state={"query_context": ctx, "observations": []},
         )
 
         human_msg = _build_human_message(ctx, question)
-        content = types.Content(role="user", parts=[types.Part.from_text(text=human_msg)])
+        content = types.Content(
+            role="user", parts=[types.Part.from_text(text=human_msg)]
+        )
 
         # Collect observations inline from the event stream — more reliable than reading
         # session.state after the run, which ADK's InMemoryRunner does not always persist.
         inline_observations: list[dict] = []
         pending_calls: dict[str, str] = {}  # call_id → tool_name
 
-        async for event in runner.run_async(user_id=session.user_id, session_id=session.id, new_message=content):
+        async for event in runner.run_async(
+            user_id=session.user_id, session_id=session.id, new_message=content
+        ):
             # 1. Yield tool calls (only on final non-partial events to prevent duplicates)
             if not event.partial and event.content and event.content.parts:
                 for part in event.content.parts:
                     if part.function_call:
-                        call_id = getattr(part.function_call, "id", None) or part.function_call.name
+                        call_id = (
+                            getattr(part.function_call, "id", None)
+                            or part.function_call.name
+                        )
                         pending_calls[call_id] = part.function_call.name
                         yield {
                             "type": "tool_call",
@@ -297,11 +343,17 @@ class AgentRAGHandler(QueryHandler):
                     response_data = fr.response or {}
                     call_id = getattr(fr, "id", None) or fr.name
                     tool_name = pending_calls.pop(call_id, fr.name)
-                    inline_observations.append({
-                        "tool": tool_name,
-                        "result": response_data,
-                    })
-                    found = response_data.get("found_count", 0) if isinstance(response_data, dict) else 0
+                    inline_observations.append(
+                        {
+                            "tool": tool_name,
+                            "result": response_data,
+                        }
+                    )
+                    found = (
+                        response_data.get("found_count", 0)
+                        if isinstance(response_data, dict)
+                        else 0
+                    )
                     yield {
                         "type": "tool_result",
                         "tool": tool_name,
@@ -322,7 +374,7 @@ class AgentRAGHandler(QueryHandler):
         llm_calls = len(observations)
 
         _populate_ctx_from_observations(ctx, observations, graded_context, llm_calls)
-        
+
         yield {
             "type": "result",
             "sub_questions": sub_questions,
@@ -337,26 +389,39 @@ class AgentRAGHandler(QueryHandler):
         from app.utils.citation_fixer import fix_malformed_citations
         from app.services.rag.answer_builder import generate_answer_stream
 
-        log_json(logger, logging.INFO, "ADK agent invoked (non-stream)", model=ctx.agent_model)
+        log_json(
+            logger,
+            logging.INFO,
+            "ADK agent invoked (non-stream)",
+            model=ctx.agent_model,
+        )
 
         question = ctx.enriched_question or ctx.question
-        
+
         sub_questions = None
         graded_context = None
-        
+
         async for event in self._execute_workflow_stream(ctx, question):
             if event.get("type") == "result":
                 sub_questions = event["sub_questions"]
                 graded_context = event["graded_context"]
 
         if graded_context is None or sub_questions is None:
-            log_json(logger, logging.WARNING, "ADK agent yielded no result events — using empty-context fallback")
+            log_json(
+                logger,
+                logging.WARNING,
+                "ADK agent yielded no result events — using empty-context fallback",
+            )
             graded_context = "NO RELEVANT DOCUMENTS FOUND IN THE LIBRARY."
             sub_questions = [question]
 
         # 5. Generate Answer
-        final_question = "\n".join(f"{i + 1}. {q}" for i, q in enumerate(sub_questions)) if len(sub_questions) > 1 else (ctx.enriched_question or ctx.question)
-        
+        final_question = (
+            "\n".join(f"{i + 1}. {q}" for i, q in enumerate(sub_questions))
+            if len(sub_questions) > 1
+            else (ctx.enriched_question or ctx.question)
+        )
+
         answer_chunks = []
         async for token in generate_answer_stream(
             graded_context,
@@ -375,10 +440,12 @@ class AgentRAGHandler(QueryHandler):
     async def handle_stream(self, ctx: QueryContext) -> AsyncIterator[Union[str, dict]]:
         from app.services.rag.answer_builder import generate_answer_stream
 
-        log_json(logger, logging.INFO, "ADK agent invoked (stream)", model=ctx.agent_model)
+        log_json(
+            logger, logging.INFO, "ADK agent invoked (stream)", model=ctx.agent_model
+        )
 
         question = ctx.enriched_question or ctx.question
-        
+
         sub_questions = None
         graded_context = None
         before_count = 0
@@ -394,7 +461,11 @@ class AgentRAGHandler(QueryHandler):
                 yield event
 
         if graded_context is None or sub_questions is None:
-            log_json(logger, logging.WARNING, "ADK agent yielded no result events — using empty-context fallback")
+            log_json(
+                logger,
+                logging.WARNING,
+                "ADK agent yielded no result events — using empty-context fallback",
+            )
             graded_context = "NO RELEVANT DOCUMENTS FOUND IN THE LIBRARY."
             sub_questions = [question]
 
@@ -402,8 +473,12 @@ class AgentRAGHandler(QueryHandler):
             yield {"type": "grading", "before": before_count, "after": after_count}
 
         # 5. Generate Answer
-        final_question = "\n".join(f"{i + 1}. {q}" for i, q in enumerate(sub_questions)) if len(sub_questions) > 1 else (ctx.enriched_question or ctx.question)
-        
+        final_question = (
+            "\n".join(f"{i + 1}. {q}" for i, q in enumerate(sub_questions))
+            if len(sub_questions) > 1
+            else (ctx.enriched_question or ctx.question)
+        )
+
         yield {"type": "answer_start"}
         async for token in generate_answer_stream(
             graded_context,

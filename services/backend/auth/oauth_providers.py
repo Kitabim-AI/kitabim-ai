@@ -28,10 +28,11 @@ GOOGLE_CERTS_URL = "https://www.googleapis.com/oauth2/v3/certs"
 @dataclass
 class OAuthState:
     """OAuth state for CSRF protection, nonce validation, and PKCE support."""
+
     state: str
     nonce: str
     code_verifier: Optional[str] = None  # For PKCE (Twitter)
-    redirect_uri: Optional[str] = None   # For mobile redirect flow
+    redirect_uri: Optional[str] = None  # For mobile redirect flow
 
     @classmethod
     def generate(cls, use_pkce: bool = False) -> "OAuthState":
@@ -62,7 +63,7 @@ class OAuthState:
         if not self.code_verifier:
             return None
         digest = hashlib.sha256(self.code_verifier.encode()).digest()
-        return base64.urlsafe_b64encode(digest).decode().rstrip('=')
+        return base64.urlsafe_b64encode(digest).decode().rstrip("=")
 
     def to_cookie_value(self) -> str:
         """
@@ -76,7 +77,11 @@ class OAuthState:
             parts.append(self.code_verifier or "")
         if self.redirect_uri:
             # base64url encode so colons in URLs don't break parsing
-            encoded = base64.urlsafe_b64encode(self.redirect_uri.encode()).decode().rstrip("=")
+            encoded = (
+                base64.urlsafe_b64encode(self.redirect_uri.encode())
+                .decode()
+                .rstrip("=")
+            )
             parts.append(encoded)
         return ":".join(parts)
 
@@ -113,6 +118,7 @@ class OAuthState:
 @dataclass
 class GoogleUserInfo:
     """User information from Google OAuth."""
+
     id: str
     email: str
     verified_email: bool
@@ -125,11 +131,11 @@ class GoogleUserInfo:
 def get_google_auth_url(state: str, nonce: str) -> str:
     """
     Generate Google OAuth authorization URL.
-    
+
     Args:
         state: Random state for CSRF protection.
         nonce: Random nonce for ID token validation.
-        
+
     Returns:
         Full authorization URL to redirect user to.
     """
@@ -149,13 +155,13 @@ def get_google_auth_url(state: str, nonce: str) -> str:
 async def exchange_code_for_tokens(code: str) -> dict:
     """
     Exchange authorization code for access and ID tokens.
-    
+
     Args:
         code: Authorization code from OAuth callback.
-        
+
     Returns:
         Token response containing access_token, id_token, refresh_token, etc.
-        
+
     Raises:
         httpx.HTTPStatusError: If token exchange fails.
     """
@@ -171,24 +177,26 @@ async def exchange_code_for_tokens(code: str) -> dict:
             },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
-        
+
         if response.status_code != 200:
-            logger.error(f"Token exchange failed: {response.status_code} - {response.text}")
+            logger.error(
+                f"Token exchange failed: {response.status_code} - {response.text}"
+            )
             response.raise_for_status()
-        
+
         return response.json()
 
 
 async def get_google_user_info(access_token: str) -> GoogleUserInfo:
     """
     Fetch user profile from Google using access token.
-    
+
     Args:
         access_token: Valid Google access token.
-        
+
     Returns:
         GoogleUserInfo with user's profile data.
-        
+
     Raises:
         httpx.HTTPStatusError: If user info fetch fails.
         ValueError: If response is missing required fields.
@@ -198,17 +206,19 @@ async def get_google_user_info(access_token: str) -> GoogleUserInfo:
             GOOGLE_USERINFO_URL,
             headers={"Authorization": f"Bearer {access_token}"},
         )
-        
+
         if response.status_code != 200:
-            logger.error(f"User info fetch failed: {response.status_code} - {response.text}")
+            logger.error(
+                f"User info fetch failed: {response.status_code} - {response.text}"
+            )
             response.raise_for_status()
-        
+
         data = response.json()
-        
+
         # Validate required fields
         if not data.get("id") or not data.get("email"):
             raise ValueError("Missing required user info fields from Google")
-        
+
         return GoogleUserInfo(
             id=data["id"],
             email=data["email"],
@@ -223,7 +233,7 @@ async def get_google_user_info(access_token: str) -> GoogleUserInfo:
 def validate_oauth_config() -> bool:
     """
     Check if Google OAuth is properly configured.
-    
+
     Returns:
         True if all required settings are present.
     """
@@ -239,13 +249,17 @@ def validate_oauth_config() -> bool:
 def get_admin_emails_list() -> list[str]:
     """
     Get list of admin emails from configuration.
-    
+
     Returns:
         List of email addresses that should be auto-promoted to admin.
     """
     if not settings.admin_emails:
         return []
-    return [email.strip().lower() for email in settings.admin_emails.split(",") if email.strip()]
+    return [
+        email.strip().lower()
+        for email in settings.admin_emails.split(",")
+        if email.strip()
+    ]
 
 
 def create_oauth_state_token(oauth_state: OAuthState) -> str:
@@ -271,13 +285,15 @@ def create_oauth_state_token(oauth_state: OAuthState) -> str:
         payload["cv"] = oauth_state.code_verifier
     if oauth_state.redirect_uri:
         payload["ru"] = oauth_state.redirect_uri
-    
-    active_secret = settings.jwt_secrets.get(settings.jwt_active_kid, settings.jwt_secret_key)
+
+    active_secret = settings.jwt_secrets.get(
+        settings.jwt_active_kid, settings.jwt_secret_key
+    )
     return jwt.encode(
-        payload, 
-        active_secret, 
+        payload,
+        active_secret,
         algorithm=settings.jwt_algorithm,
-        headers={"kid": settings.jwt_active_kid}
+        headers={"kid": settings.jwt_active_kid},
     )
 
 
@@ -317,10 +333,10 @@ def decode_oauth_state_token(token: str) -> Optional[OAuthState]:
 def is_admin_email(email: str) -> bool:
     """
     Check if an email should be auto-promoted to admin.
-    
+
     Args:
         email: Email address to check.
-        
+
     Returns:
         True if email is in the admin emails list.
     """

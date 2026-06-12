@@ -10,10 +10,11 @@ from app.utils.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, get_
 
 logger = logging.getLogger("app.cache")
 
+
 class CacheService:
     """Redis cache service with graceful degradation.
-    
-    Uses the existing Redis-backed CircuitBreaker so that failure state persists 
+
+    Uses the existing Redis-backed CircuitBreaker so that failure state persists
     across pod restarts and is shared across all workers.
     """
 
@@ -23,7 +24,7 @@ class CacheService:
             config=CircuitBreakerConfig(
                 failure_threshold=5,
                 recovery_timeout=30.0,
-            )
+            ),
         )
 
     @property
@@ -50,12 +51,7 @@ class CacheService:
             await self._circuit_breaker._on_failure()
             return None
 
-    async def set(
-        self,
-        key: str,
-        value: Any,
-        ttl: Optional[int] = None
-    ) -> bool:
+    async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
         """Set value in cache."""
         if not settings.redis_cache_enabled:
             return False
@@ -76,11 +72,7 @@ class CacheService:
             else:
                 serialized_value = value
 
-            await self.redis.setex(
-                full_key,
-                ttl,
-                json.dumps(serialized_value)
-            )
+            await self.redis.setex(full_key, ttl, json.dumps(serialized_value))
             await self._circuit_breaker._on_success()
             return True
         except Exception as e:
@@ -136,10 +128,12 @@ class CacheService:
             max_mem = info.get("maxmemory", 0)
             # Guard against maxmemory=0 (often the default in local/unconfigured redis)
             used_memory_percent = (used_mem / max_mem * 100) if max_mem > 0 else 0
-            
+
             return {
                 "enabled": settings.redis_cache_enabled,
-                "circuit_breaker_state": (await self._circuit_breaker.get_info()).get("state"),
+                "circuit_breaker_state": (await self._circuit_breaker.get_info()).get(
+                    "state"
+                ),
                 "used_memory_human": info.get("used_memory_human", "0B"),
                 "used_memory_percent": round(used_memory_percent, 2),
                 "total_keys": info.get("db0", {}).get("keys", 0),
@@ -169,7 +163,9 @@ class CacheService:
                 return "1"
             return version.decode() if isinstance(version, bytes) else str(version)
         except Exception as e:
-            logger.warning(f"Failed to get cache version for namespace {namespace}: {e}")
+            logger.warning(
+                f"Failed to get cache version for namespace {namespace}: {e}"
+            )
             return "1"
 
     async def bump_namespace_version(self, namespace: str) -> str:
@@ -181,10 +177,14 @@ class CacheService:
         try:
             full_key = f"{settings.redis_cache_key_prefix}version:{namespace}"
             new_version = await self.redis.incr(full_key)
-            logger.info(f"Bumped cache namespace '{namespace}' version to {new_version}")
+            logger.info(
+                f"Bumped cache namespace '{namespace}' version to {new_version}"
+            )
             return str(new_version)
         except Exception as e:
-            logger.warning(f"Failed to bump cache version for namespace {namespace}: {e}")
+            logger.warning(
+                f"Failed to bump cache version for namespace {namespace}: {e}"
+            )
             return "1"
 
     async def publish_invalidation(self, channel: str, message: str) -> None:
@@ -195,9 +195,14 @@ class CacheService:
             return
         try:
             await self.redis.publish(channel, message)
-            logger.info(f"Published invalidation event to channel '{channel}': {message}")
+            logger.info(
+                f"Published invalidation event to channel '{channel}': {message}"
+            )
         except Exception as e:
-            logger.warning(f"Failed to publish invalidation event to channel '{channel}': {e}")
+            logger.warning(
+                f"Failed to publish invalidation event to channel '{channel}': {e}"
+            )
+
 
 # Singleton instance
 

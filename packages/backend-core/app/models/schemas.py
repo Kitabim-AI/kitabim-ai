@@ -14,8 +14,8 @@ def to_camel(string: str) -> str:
 
     This eliminates the need for manual conversion in postgres_helpers.py.
     """
-    components = string.split('_')
-    return components[0] + ''.join(x.title() for x in components[1:])
+    components = string.split("_")
+    return components[0] + "".join(x.title() for x in components[1:])
 
 
 class ErrorEvent(BaseModel):
@@ -27,10 +27,9 @@ class ErrorEvent(BaseModel):
 
 class ExtractionResult(BaseModel):
     """Page extraction result with automatic camelCase conversion"""
+
     model_config = ConfigDict(
-        alias_generator=to_camel,
-        populate_by_name=True,
-        from_attributes=True
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
     )
 
     page_number: int  # DB: page_number, API: pageNumber
@@ -50,10 +49,11 @@ class Book(BaseModel):
     The alias_generator converts snake_case DB fields to camelCase API fields automatically.
     Example: content_hash (DB) → contentHash (API)
     """
+
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,  # Accept both snake_case and camelCase
-        from_attributes=True    # Enable .model_validate() from SQLAlchemy models
+        from_attributes=True,  # Enable .model_validate() from SQLAlchemy models
     )
 
     id: str
@@ -74,21 +74,25 @@ class Book(BaseModel):
     file_name: Optional[str] = None  # Original uploaded filename
     file_type: Optional[str] = None  # File extension (e.g., 'pdf', 'docx')
     pipeline_step: Optional[str] = None  # DB: pipeline_step, API: pipelineStep
-    pipeline_stats: Optional[Dict[str, int]] = Field(default_factory=dict) # DB: pipeline_stats, API: pipelineStats
+    pipeline_stats: Optional[Dict[str, int]] = Field(
+        default_factory=dict
+    )  # DB: pipeline_stats, API: pipelineStats
     has_summary: bool = False  # API: hasSummary
     has_graph: bool = False  # API: hasGraph
     # Book-level milestones (denormalized from pages for performance)
     ocr_milestone: str = "idle"  # DB: ocr_milestone, API: ocrMilestone
     chunking_milestone: str = "idle"  # DB: chunking_milestone, API: chunkingMilestone
-    embedding_milestone: str = "idle"  # DB: embedding_milestone, API: embeddingMilestone
-    spell_check_milestone: str = "idle"  # DB: spell_check_milestone, API: spellCheckMilestone
+    embedding_milestone: str = (
+        "idle"  # DB: embedding_milestone, API: embeddingMilestone
+    )
+    spell_check_milestone: str = (
+        "idle"  # DB: spell_check_milestone, API: spellCheckMilestone
+    )
 
 
 class PaginatedBooks(BaseModel):
     model_config = ConfigDict(
-        alias_generator=to_camel,
-        populate_by_name=True,
-        from_attributes=True
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
     )
     books: List[Book]
     total: int
@@ -99,10 +103,9 @@ class PaginatedBooks(BaseModel):
 
 class ChatRequest(BaseModel):
     """Chat request with automatic camelCase conversion"""
+
     model_config = ConfigDict(
-        alias_generator=to_camel,
-        populate_by_name=True,
-        from_attributes=True
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
     )
 
     book_id: str  # API: bookId
@@ -110,7 +113,9 @@ class ChatRequest(BaseModel):
     history: List[dict] = []
     current_page: Optional[int] = None  # API: currentPage
     character_id: Optional[str] = None  # API: characterId
-    context_book_ids: List[str] = []  # API: contextBookIds — book IDs from the previous response, sent by frontend
+    context_book_ids: List[
+        str
+    ] = []  # API: contextBookIds — book IDs from the previous response, sent by frontend
 
 
 class ChatResponse(BaseModel):
@@ -126,6 +131,7 @@ class ChatUsageStatus(BaseModel):
 
 class ContactSubmissionCreate(BaseModel):
     """Schema for creating a new contact submission"""
+
     name: str = Field(..., min_length=1, max_length=255)
     email: str = Field(..., min_length=3, max_length=255)
     interest: Literal["editor", "developer", "other"]
@@ -134,10 +140,9 @@ class ContactSubmissionCreate(BaseModel):
 
 class ContactSubmissionPublic(BaseModel):
     """Public response schema for contact submission"""
+
     model_config = ConfigDict(
-        alias_generator=to_camel,
-        populate_by_name=True,
-        from_attributes=True
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
     )
 
     id: int
@@ -147,10 +152,9 @@ class ContactSubmissionPublic(BaseModel):
 
 class ContactSubmissionAdmin(BaseModel):
     """Admin view schema for contact submissions with all fields"""
+
     model_config = ConfigDict(
-        alias_generator=to_camel,
-        populate_by_name=True,
-        from_attributes=True
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
     )
 
     id: int

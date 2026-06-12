@@ -1,4 +1,5 @@
 """Book summaries repository — vector search over per-book semantic summaries."""
+
 from __future__ import annotations
 
 from typing import List, Optional
@@ -12,7 +13,6 @@ from app.db.repositories.base_repository import BaseRepository
 
 
 class BookSummariesRepository(BaseRepository[BookSummary]):
-
     def __init__(self, session: AsyncSession):
         super().__init__(session, BookSummary)
 
@@ -35,7 +35,9 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
         embedding_str = str(query_embedding)
         limit_clause = "LIMIT :limit" if limit is not None else ""
         join_clause = "JOIN books b ON s.book_id = b.id" if categories else ""
-        cat_filter = "AND b.categories && CAST(:categories AS text[])" if categories else ""
+        cat_filter = (
+            "AND b.categories && CAST(:categories AS text[])" if categories else ""
+        )
 
         if book_ids is not None:
             if not book_ids:
@@ -52,7 +54,11 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
                 ORDER BY similarity DESC
                 {limit_clause}
             """)
-            params = {"embedding": embedding_str, "threshold": threshold, "book_ids": book_ids}
+            params = {
+                "embedding": embedding_str,
+                "threshold": threshold,
+                "book_ids": book_ids,
+            }
         else:
             query = text(f"""
                 SELECT
@@ -94,7 +100,9 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
         await self.session.execute(stmt)
         await self.session.flush()
 
-    async def upsert_draft(self, book_id: str, summary: str, embedding: List[float]) -> None:
+    async def upsert_draft(
+        self, book_id: str, summary: str, embedding: List[float]
+    ) -> None:
         """Write regenerated summary + embedding to staging columns during migration 039→040.
 
         Updates summary and embedding_draft only — the active 'embedding' column is
@@ -124,7 +132,13 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
         from sqlalchemy import or_
 
         stmt = (
-            select(BookSummary.book_id, BookSummary.summary, Book.title, Book.volume, Book.author)
+            select(
+                BookSummary.book_id,
+                BookSummary.summary,
+                Book.title,
+                Book.volume,
+                Book.author,
+            )
             .join(Book, Book.id == BookSummary.book_id)
             .where(BookSummary.book_id.in_(book_ids))
             .where(BookSummary.summary.isnot(None))

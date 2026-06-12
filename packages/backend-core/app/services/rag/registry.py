@@ -1,4 +1,5 @@
 """Handler registry — priority-ordered intent dispatch."""
+
 from __future__ import annotations
 
 import logging
@@ -59,9 +60,11 @@ _registry_singleton: Optional[HandlerRegistry] = None
 def build_default_registry() -> HandlerRegistry:
     from app.services.rag.agent.handler import AgentRAGHandler
 
-    return HandlerRegistry([
-        AgentRAGHandler(),        # priority=998 — sole handler, catches all queries
-    ])
+    return HandlerRegistry(
+        [
+            AgentRAGHandler(),  # priority=998 — sole handler, catches all queries
+        ]
+    )
 
 
 def get_registry() -> HandlerRegistry:

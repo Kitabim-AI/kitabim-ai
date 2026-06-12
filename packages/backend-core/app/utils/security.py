@@ -31,7 +31,7 @@ def hash_ip_address(ip_address: str) -> str:
     salt = settings.ip_salt or ""
 
     # Create salted hash
-    salted_value = f"{ip_address}{salt}".encode('utf-8')
+    salted_value = f"{ip_address}{salt}".encode("utf-8")
     hash_obj = hashlib.sha256(salted_value)
 
     # Return first 16 characters (64 bits) - sufficient for uniqueness

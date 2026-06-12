@@ -1,4 +1,5 @@
 """RAG service facade — public API unchanged, logic delegated to handler registry."""
+
 from __future__ import annotations
 
 import logging
@@ -83,7 +84,9 @@ class RAGService:
     ) -> QueryContext:
         """Resolve character, load LLM models, fetch book record if needed."""
         from app.db.repositories.books_repository import BooksRepository
-        from app.db.repositories.system_configs_repository import SystemConfigsRepository
+        from app.db.repositories.system_configs_repository import (
+            SystemConfigsRepository,
+        )
         from app.core.i18n import t
 
         is_global = req.book_id == "global"
@@ -93,9 +96,13 @@ class RAGService:
         character_categories = character.categories if character else []
 
         log_json(
-            logger, logging.INFO, "RAG request",
-            book_id=req.book_id, is_global=is_global,
-            char_id=char_id, categories=character_categories,
+            logger,
+            logging.INFO,
+            "RAG request",
+            book_id=req.book_id,
+            is_global=is_global,
+            char_id=char_id,
+            categories=character_categories,
         )
 
         configs_repo = SystemConfigsRepository(session)
@@ -106,8 +113,7 @@ class RAGService:
         if not embedding_model:
             raise RuntimeError("system_config 'gemini_embedding_model' is not set")
         agent_model = (
-            await configs_repo.get_value("gemini_agent_loop_model")
-            or chat_model
+            await configs_repo.get_value("gemini_agent_loop_model") or chat_model
         )
         agent_max_steps_str = await configs_repo.get_value("agent_max_steps", "6")
         try:
@@ -115,7 +121,9 @@ class RAGService:
         except ValueError:
             agent_max_steps = 6
 
-        agent_enough_chunks_str = await configs_repo.get_value("agent_enough_chunks", "8")
+        agent_enough_chunks_str = await configs_repo.get_value(
+            "agent_enough_chunks", "8"
+        )
         try:
             agent_enough_chunks = int(agent_enough_chunks_str)
         except ValueError:
@@ -161,14 +169,21 @@ class RAGService:
         if ctx.session is None:
             return None
         try:
-            import random
-            from app.db.repositories.rag_evaluations_repository import RAGEvaluationsRepository
-            from app.db.repositories.system_configs_repository import SystemConfigsRepository
+            from app.db.repositories.rag_evaluations_repository import (
+                RAGEvaluationsRepository,
+            )
+            from app.db.repositories.system_configs_repository import (
+                SystemConfigsRepository,
+            )
 
             configs = SystemConfigsRepository(ctx.session)
             enabled = await configs.get_value("rag_eval_enabled")
             if enabled is None:
-                log_json(logger, logging.WARNING, "RAG eval skipped: 'rag_eval_enabled' key not found in system_configs")
+                log_json(
+                    logger,
+                    logging.WARNING,
+                    "RAG eval skipped: 'rag_eval_enabled' key not found in system_configs",
+                )
                 return None
             if enabled.lower() != "true":
                 return None
@@ -205,4 +220,3 @@ class RAGService:
 def get_rag_service() -> RAGService:
     """FastAPI dependency to get a request-scoped RAGService instance."""
     return RAGService()
-

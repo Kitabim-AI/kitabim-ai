@@ -67,10 +67,10 @@ async def get_current_user_profile(
 ) -> UserPublic:
     """
     Get the current authenticated user's profile.
-    
+
     Returns:
         UserPublic: The authenticated user's public profile.
-        
+
     Raises:
         HTTPException 401: If not authenticated.
     """
@@ -85,7 +85,9 @@ async def get_current_user_profile(
 
 @router.get("/{provider}/login")
 @limiter.limit("10/minute")  # Max 10 login attempts per minute per IP
-async def oauth_login(request: Request, provider: str, response: Response, next: Optional[str] = None):
+async def oauth_login(
+    request: Request, provider: str, response: Response, next: Optional[str] = None
+):
     """
     Initiate OAuth login flow for any provider.
 
@@ -108,7 +110,7 @@ async def oauth_login(request: Request, provider: str, response: Response, next:
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported OAuth provider: {provider}"
+            detail=f"Unsupported OAuth provider: {provider}",
         )
 
     if not oauth_provider.validate_config():
@@ -122,9 +124,14 @@ async def oauth_login(request: Request, provider: str, response: Response, next:
     oauth_state = OAuthState.generate(use_pkce=use_pkce)
     if next:
         _parsed_next = urlparse(next)
-        _allowed_origins = {o.strip() for o in settings.cors_origins.split(",") if o.strip()}
+        _allowed_origins = {
+            o.strip() for o in settings.cors_origins.split(",") if o.strip()
+        }
         _next_origin = f"{_parsed_next.scheme}://{_parsed_next.netloc}"
-        if _parsed_next.scheme not in ("http", "https") or _next_origin not in _allowed_origins:
+        if (
+            _parsed_next.scheme not in ("http", "https")
+            or _next_origin not in _allowed_origins
+        ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid redirect URI",
@@ -140,9 +147,7 @@ async def oauth_login(request: Request, provider: str, response: Response, next:
     if use_pkce and oauth_state.code_verifier:
         code_challenge = oauth_state.get_code_challenge()
         auth_url = oauth_provider.get_auth_url(
-            state_jwt,
-            oauth_state.nonce,
-            code_challenge=code_challenge
+            state_jwt, oauth_state.nonce, code_challenge=code_challenge
         )
     else:
         auth_url = oauth_provider.get_auth_url(state_jwt, oauth_state.nonce)
@@ -183,7 +188,9 @@ async def oauth_callback(
     # Handle OAuth errors
     if error:
         logger.warning(f"OAuth error from {provider}: {error}")
-        return _error_response(t("errors.oauth_login_failed", provider=provider, error=error))
+        return _error_response(
+            t("errors.oauth_login_failed", provider=provider, error=error)
+        )
 
     if not code or not state:
         return _error_response(t("errors.missing_oauth_params"))
@@ -198,8 +205,7 @@ async def oauth_callback(
         # Exchange code for tokens (with PKCE code_verifier for Twitter)
         logger.info(f"Exchanging OAuth code for {provider} tokens...")
         token_response = await oauth_provider.exchange_code_for_tokens(
-            code,
-            code_verifier=saved_state.code_verifier
+            code, code_verifier=saved_state.code_verifier
         )
         access_token = token_response.get("access_token")
 
@@ -213,7 +219,9 @@ async def oauth_callback(
         logger.info(f"User info retrieved for {provider}")
 
         # Check if email is verified (skip for Twitter/Facebook/Instagram placeholder emails)
-        if not user_info.email_verified and not user_info.email.endswith(("@twitter.placeholder", "@facebook.placeholder", "@instagram.placeholder")):
+        if not user_info.email_verified and not user_info.email.endswith(
+            ("@twitter.placeholder", "@facebook.placeholder", "@instagram.placeholder")
+        ):
             return _error_response(t("errors.email_not_verified"))
 
         # Check if user exists with this provider
@@ -222,14 +230,22 @@ async def oauth_callback(
         if not user:
             # If email exists under a different provider, link to that account.
             # Verified OAuth emails are treated as proof of identity.
-            if user_info.email_verified and not user_info.email.endswith(("@twitter.placeholder", "@facebook.placeholder", "@instagram.placeholder")):
+            if user_info.email_verified and not user_info.email.endswith(
+                (
+                    "@twitter.placeholder",
+                    "@facebook.placeholder",
+                    "@instagram.placeholder",
+                )
+            ):
                 existing_user = await get_user_by_email(session, user_info.email)
                 if existing_user:
                     user = existing_user
 
         if not user:
             # Determine role based on admin emails
-            role = UserRole.ADMIN if is_admin_email(user_info.email) else UserRole.READER
+            role = (
+                UserRole.ADMIN if is_admin_email(user_info.email) else UserRole.READER
+            )
 
             # Create new user
             client_ip = request.client.host if request.client else None
@@ -248,7 +264,9 @@ async def oauth_callback(
             # Update last login and avatar
             client_ip = request.client.host if request.client else None
             await update_user_login(session, user.id, user_info.picture, client_ip)
-            logger.info(f"User logged in via {provider} OAuth: {user.id} from {client_ip}")
+            logger.info(
+                f"User logged in via {provider} OAuth: {user.id} from {client_ip}"
+            )
 
         # Check if user is active
         if not user.is_active:
@@ -260,7 +278,9 @@ async def oauth_callback(
 
         # Store refresh token
         user_agent = request.headers.get("User-Agent", "unknown")
-        await store_refresh_token(session, user.id, jti, refresh_token, user_agent[:200])
+        await store_refresh_token(
+            session, user.id, jti, refresh_token, user_agent[:200]
+        )
 
         # Commit changes
         await session.commit()
@@ -268,9 +288,14 @@ async def oauth_callback(
         # Mobile redirect flow: redirect back to app with token in fragment
         if saved_state.redirect_uri:
             parsed = urlparse(saved_state.redirect_uri)
-            allowed_origins = {o.strip() for o in settings.cors_origins.split(",") if o.strip()}
+            allowed_origins = {
+                o.strip() for o in settings.cors_origins.split(",") if o.strip()
+            }
             redirect_origin = f"{parsed.scheme}://{parsed.netloc}"
-            if parsed.scheme in ("http", "https") and redirect_origin in allowed_origins:
+            if (
+                parsed.scheme in ("http", "https")
+                and redirect_origin in allowed_origins
+            ):
                 # Use fragment (#) so the token is never sent to the server or logged
                 callback_url = f"{saved_state.redirect_uri}#{urlencode({'access_token': access_token})}"
                 redirect_response = RedirectResponse(url=callback_url)
@@ -288,7 +313,7 @@ async def oauth_callback(
 
         # Popup flow: return HTML that posts token to opener
         return _success_response(access_token, refresh_token)
-        
+
     except Exception as e:
         # Log detailed error for debugging but don't expose to user
         logger.exception(f"OAuth callback error for {provider}: {e}")
@@ -311,19 +336,19 @@ async def refresh_access_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=t("errors.refresh_token_required"),
         )
-    
+
     try:
         # Decode refresh token
         payload = decode_jwt(refresh_token, expected_type="refresh")
         jti = payload.get("jti")
         user_id = payload.get("sub")
-        
+
         if not jti or not user_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=t("errors.invalid_refresh_token"),
             )
-        
+
         # Validate token is not revoked
         validated_user_id = await validate_refresh_token(session, jti, refresh_token)
         if not validated_user_id or validated_user_id != user_id:
@@ -331,22 +356,23 @@ async def refresh_access_token(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=t("errors.refresh_token_revoked"),
             )
-        
+
         # Get fresh user data
         from app.services.user_service import get_user_by_id
+
         user = await get_user_by_id(session, user_id)
-        
+
         if not user or not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=t("errors.user_not_found_inactive"),
             )
-        
+
         # Generate new access token
         new_access_token = create_access_token(user)
-        
+
         return {"access_token": new_access_token, "token_type": "bearer"}
-        
+
     except TokenExpiredError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -380,11 +406,11 @@ async def logout(
         except (TokenExpiredError, TokenInvalidError):
             # Token invalid, but still clear cookies
             pass
-    
+
     # Clear cookies
     response.delete_cookie(REFRESH_TOKEN_COOKIE, path="/")
     response.delete_cookie(OAUTH_STATE_COOKIE, path="/")
-    
+
     return {"message": t("messages.logged_out")}
 
 
@@ -414,7 +440,9 @@ def _success_response(access_token: str, refresh_token: str) -> HTMLResponse:
     Generate HTML response for successful OAuth that posts token to opener.
     """
     # Get allowed origins for secure postMessage (no wildcards)
-    allowed_origins_list = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
+    allowed_origins_list = [
+        origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()
+    ]
     allowed_origins_json = json.dumps(allowed_origins_list)
 
     html_content = f"""
@@ -562,7 +590,7 @@ def _success_response(access_token: str, refresh_token: str) -> HTMLResponse:
     </body>
     </html>
     """
-    
+
     response = HTMLResponse(content=html_content)
 
     # Set refresh token as httpOnly cookie
@@ -575,10 +603,10 @@ def _success_response(access_token: str, refresh_token: str) -> HTMLResponse:
         samesite="lax",
         path="/",
     )
-    
+
     # Clear the OAuth state cookie
     response.delete_cookie(OAUTH_STATE_COOKIE, path="/")
-    
+
     return response
 
 
@@ -586,7 +614,9 @@ def _error_response(message: str) -> HTMLResponse:
     """
     Generate HTML response for OAuth errors.
     """
-    allowed_origins_list = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
+    allowed_origins_list = [
+        origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()
+    ]
     allowed_origins_json = json.dumps(allowed_origins_list)
     _safe_message = html_module.escape(message)
     html_content = f"""
@@ -664,11 +694,11 @@ def _error_response(message: str) -> HTMLResponse:
     </body>
     </html>
     """
-    
+
     return HTMLResponse(
         content=html_content,
         status_code=400,
         headers={
             # "Cross-Origin-Opener-Policy": "same-origin-allow-popups"
-        }
+        },
     )

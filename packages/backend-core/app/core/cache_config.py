@@ -25,4 +25,3 @@ KEY_STATS = "stats:system"
 KEY_CONFIG = "config:{key}"
 KEY_CHAT_USAGE = "chat:usage:{user_id}:{date}"
 KEY_RAG_REWRITE = "rag:rewrite:{hash}"
-

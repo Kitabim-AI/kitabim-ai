@@ -17,6 +17,7 @@ Cron schedule:
   graph_scanner        every 5 min  — backfill/retry book knowledge graphs for ready books
   maintenance_scanner  daily at 3AM — cleanup old processed events/logs
 """
+
 from arq.connections import RedisSettings
 from arq.cron import cron
 
@@ -58,19 +59,22 @@ class WorkerSettings:
     # Build cron jobs list conditionally based on feature flags
     cron_jobs = [
         cron(run_auto_correct_scanner, hour=3, minute=0, run_at_startup=False),
-        cron(run_gcs_discovery_scanner, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}),
+        cron(
+            run_gcs_discovery_scanner,
+            minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55},
+        ),
         cron(run_pipeline_driver, run_at_startup=True),
         cron(run_ocr_scanner),
         cron(run_chunking_scanner),
         cron(run_embedding_scanner),
         cron(run_spell_check_scanner),
         cron(run_stale_watchdog, minute={0, 30}),
-        cron(run_summary_scanner, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}),
+        cron(
+            run_summary_scanner, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}
+        ),
         cron(run_event_dispatcher, run_at_startup=True),
         cron(run_maintenance_scanner, hour=3, minute=0),
     ]
-
-
 
     max_jobs = settings.queue_max_jobs
     job_timeout = settings.queue_job_timeout
@@ -82,4 +86,3 @@ class WorkerSettings:
 from app.utils.observability import track_request_id
 
 WorkerSettings.functions = [track_request_id(f) for f in WorkerSettings.functions]
-

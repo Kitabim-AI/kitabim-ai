@@ -4,6 +4,7 @@ Auto-Correction Service — applies automatic corrections to spell check issues.
 This service finds open spell check issues that match entries in the
 auto_correct_rules table and applies the corrections to page text.
 """
+
 from __future__ import annotations
 
 import logging
@@ -20,8 +21,7 @@ logger = logging.getLogger("app.services.auto_correct")
 
 
 async def get_correction_rules(
-    session: AsyncSession,
-    auto_apply_only: bool = False
+    session: AsyncSession, auto_apply_only: bool = False
 ) -> Dict[str, str]:
     """
     Fetch all correction rules as a dictionary {misspelled_word: corrected_word}.
@@ -33,10 +33,7 @@ async def get_correction_rules(
     Returns:
         Dictionary mapping misspelled words to their corrections
     """
-    stmt = select(
-        AutoCorrectRule.misspelled_word,
-        AutoCorrectRule.corrected_word
-    )
+    stmt = select(AutoCorrectRule.misspelled_word, AutoCorrectRule.corrected_word)
 
     if auto_apply_only:
         stmt = stmt.where(AutoCorrectRule.is_active)
@@ -45,10 +42,7 @@ async def get_correction_rules(
     return {row.misspelled_word: row.corrected_word for row in result.fetchall()}
 
 
-async def get_correction_for_word(
-    session: AsyncSession,
-    word: str
-) -> Optional[str]:
+async def get_correction_for_word(session: AsyncSession, word: str) -> Optional[str]:
     """
     Get the correction for a specific word if it exists.
 
@@ -60,8 +54,9 @@ async def get_correction_for_word(
         The corrected word, or None if no correction exists
     """
     result = await session.execute(
-        select(AutoCorrectRule.corrected_word)
-        .where(AutoCorrectRule.misspelled_word == word)
+        select(AutoCorrectRule.corrected_word).where(
+            AutoCorrectRule.misspelled_word == word
+        )
     )
     row = result.fetchone()
     return row.corrected_word if row else None
@@ -70,7 +65,7 @@ async def get_correction_for_word(
 async def apply_auto_corrections_to_page(
     session: AsyncSession,
     page_id: int,
-    correction_rules: Optional[Dict[str, str]] = None
+    correction_rules: Optional[Dict[str, str]] = None,
 ) -> int:
     """
     Apply all applicable auto-corrections to a single page.
@@ -122,7 +117,7 @@ async def apply_auto_corrections_to_page(
             .where(
                 PageSpellIssue.page_id == page_id,
                 PageSpellIssue.status == "open",
-                PageSpellIssue.word.in_(correction_rules.keys())
+                PageSpellIssue.word.in_(correction_rules.keys()),
             )
             .order_by(PageSpellIssue.char_offset.desc())
         )
@@ -149,12 +144,16 @@ async def apply_auto_corrections_to_page(
         page_text = page_text[:start] + corrected_word + page_text[end:]
         corrected_issue_ids.append(issue.id)
 
-        log_json(logger, logging.DEBUG, "applied auto-correction",
-                 page_id=page_id,
-                 issue_id=issue.id,
-                 original=issue.word,
-                 corrected=corrected_word,
-                 offset=start)
+        log_json(
+            logger,
+            logging.DEBUG,
+            "applied auto-correction",
+            page_id=page_id,
+            issue_id=issue.id,
+            original=issue.word,
+            corrected=corrected_word,
+            offset=start,
+        )
 
     if not corrected_issue_ids:
         return 0
@@ -163,10 +162,7 @@ async def apply_auto_corrections_to_page(
     await session.execute(
         update(PageSpellIssue)
         .where(PageSpellIssue.id.in_(corrected_issue_ids))
-        .values(
-            status="corrected",
-            auto_corrected_at=func.now()
-        )
+        .values(status="corrected", auto_corrected_at=func.now())
     )
 
     # Update the page text and mark for re-indexing
@@ -177,24 +173,26 @@ async def apply_auto_corrections_to_page(
             text=page_text,
             is_indexed=False,  # Trigger re-embedding
             chunking_milestone=PAGE_MILESTONE_IDLE,  # Force re-chunking of modified text
-            embedding_milestone=PAGE_MILESTONE_IDLE, # Force re-embedding of modified text
-            last_updated=func.now()
+            embedding_milestone=PAGE_MILESTONE_IDLE,  # Force re-embedding of modified text
+            last_updated=func.now(),
         )
     )
 
-
-    log_json(logger, logging.INFO, "auto-corrections applied to page",
-             page_id=page_id,
-             book_id=page.book_id,
-             page_number=page.page_number,
-             corrections_count=len(corrected_issue_ids))
+    log_json(
+        logger,
+        logging.INFO,
+        "auto-corrections applied to page",
+        page_id=page_id,
+        book_id=page.book_id,
+        page_number=page.page_number,
+        corrections_count=len(corrected_issue_ids),
+    )
 
     return len(corrected_issue_ids)
 
 
 async def find_pages_with_auto_correctable_issues(
-    session: AsyncSession,
-    limit: int = 50
+    session: AsyncSession, limit: int = 50
 ) -> List[int]:
     """
     Find page IDs that have open spell issues matching auto-correction rules,
@@ -224,7 +222,7 @@ async def find_pages_with_auto_correctable_issues(
             LIMIT :issue_limit
             FOR UPDATE OF psi SKIP LOCKED
         """),
-        {"issue_limit": limit * 10}
+        {"issue_limit": limit * 10},
     )
     rows = candidates_result.fetchall()
 
@@ -235,14 +233,14 @@ async def find_pages_with_auto_correctable_issues(
     unique_page_ids = []
     seen_pages = set()
     claimed_issue_ids = []
-    
+
     for row in rows:
         if row.page_id not in seen_pages:
             if len(unique_page_ids) >= limit:
                 break
             unique_page_ids.append(row.page_id)
             seen_pages.add(row.page_id)
-        
+
         # Only claim issues for the pages we are actually returning
         if row.page_id in seen_pages:
             claimed_issue_ids.append(row.id)
@@ -255,10 +253,7 @@ async def find_pages_with_auto_correctable_issues(
     await session.execute(
         update(PageSpellIssue)
         .where(PageSpellIssue.id.in_(claimed_issue_ids))
-        .values(
-            status="processing",
-            claimed_at=func.now()
-        )
+        .values(status="processing", claimed_at=func.now())
     )
 
     # Commit to release the locks and save the 'processing' status
@@ -318,13 +313,12 @@ async def get_auto_correction_stats(session: AsyncSession) -> Dict:
         "total_rules": total_rules,
         "active_rules": active_rules,
         "total_auto_corrected": total_auto_corrected,
-        "pending_corrections": pending_corrections
+        "pending_corrections": pending_corrections,
     }
 
 
 async def cleanup_stale_auto_corrections(
-    session: AsyncSession,
-    timeout_minutes: int = 15
+    session: AsyncSession, timeout_minutes: int = 15
 ) -> int:
     """
     Revert 'processing' issues that have been stuck for too long back to 'open'.
@@ -342,7 +336,8 @@ async def cleanup_stale_auto_corrections(
         .where(
             and_(
                 PageSpellIssue.status == "processing",
-                PageSpellIssue.claimed_at < func.now() - text(f"interval '{timeout_minutes} minutes'")
+                PageSpellIssue.claimed_at
+                < func.now() - text(f"interval '{timeout_minutes} minutes'"),
             )
         )
         .values(status="open")

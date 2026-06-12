@@ -1,4 +1,5 @@
 """CatalogHandler — answers author/catalog questions using an LLM over book metadata."""
+
 from __future__ import annotations
 
 import logging
@@ -104,30 +105,39 @@ class CatalogHandler(QueryHandler):
         stmt = select(Book.title).where(Book.status != "error")
         if categories:
             from sqlalchemy import text as sa_text
-            stmt = stmt.where(sa_text("categories && :cats").bindparams(cats=categories))
+
+            stmt = stmt.where(
+                sa_text("categories && :cats").bindparams(cats=categories)
+            )
 
         title_result = await session.execute(stmt)
         titles = [row[0] for row in title_result.fetchall() if row[0]]
-        matched_title = next(
-            (t for t in titles if entity_matches_question(t, q)), None
-        )
+        matched_title = next((t for t in titles if entity_matches_question(t, q)), None)
 
         if matched_title:
-            stmt = select(
-                Book.title, Book.author, Book.volume, Book.total_pages, Book.status
-            ).where(
-                Book.status != "error",
-                Book.title == matched_title,
-            ).order_by(Book.volume)
+            stmt = (
+                select(
+                    Book.title, Book.author, Book.volume, Book.total_pages, Book.status
+                )
+                .where(
+                    Book.status != "error",
+                    Book.title == matched_title,
+                )
+                .order_by(Book.volume)
+            )
             result = await session.execute(stmt)
             books = result.fetchall()
             if books:
                 lines = [f"Information about '{matched_title}':"]
                 for book in books:
                     author = book.author or "Unknown"
-                    volume = f", Volume {book.volume}" if book.volume is not None else ""
+                    volume = (
+                        f", Volume {book.volume}" if book.volume is not None else ""
+                    )
                     pages = f", {book.total_pages} pages" if book.total_pages else ""
-                    status_tag = f" [Status: {book.status}]" if book.status != "ready" else ""
+                    status_tag = (
+                        f" [Status: {book.status}]" if book.status != "ready" else ""
+                    )
                     lines.append(
                         f"- Title: {book.title}{volume}, Author: {author}{pages}{status_tag}"
                     )
@@ -141,7 +151,10 @@ class CatalogHandler(QueryHandler):
         )
         if categories:
             from sqlalchemy import text as sa_text
-            stmt = stmt.where(sa_text("categories && :cats").bindparams(cats=categories))
+
+            stmt = stmt.where(
+                sa_text("categories && :cats").bindparams(cats=categories)
+            )
 
         author_result = await session.execute(stmt)
         authors = [row[0] for row in author_result.fetchall() if row[0]]
@@ -150,27 +163,38 @@ class CatalogHandler(QueryHandler):
         )
 
         if matched_author:
-            stmt = select(
-                Book.title, Book.author, Book.volume, Book.total_pages, Book.status
-            ).where(
-                Book.status != "error",
-                Book.author == matched_author,
-            ).order_by(Book.volume, Book.title)
+            stmt = (
+                select(
+                    Book.title, Book.author, Book.volume, Book.total_pages, Book.status
+                )
+                .where(
+                    Book.status != "error",
+                    Book.author == matched_author,
+                )
+                .order_by(Book.volume, Book.title)
+            )
             result = await session.execute(stmt)
             books = result.fetchall()
             lines = [f"Books by author '{matched_author}' in the library:"]
             for book in books:
                 volume = f", Volume {book.volume}" if book.volume is not None else ""
                 pages = f", {book.total_pages} pages" if book.total_pages else ""
-                status_tag = f" [Status: {book.status}]" if book.status != "ready" else ""
+                status_tag = (
+                    f" [Status: {book.status}]" if book.status != "ready" else ""
+                )
                 lines.append(f"- {book.title}{volume}{pages}{status_tag}")
             return "\n".join(lines), len(books)
 
         # ── 3. Full catalog fallback ─────────────────────────────────────────
-        stmt = select(Book.title, Book.author, Book.status).where(Book.status != "error")
+        stmt = select(Book.title, Book.author, Book.status).where(
+            Book.status != "error"
+        )
         if categories:
             from sqlalchemy import text as sa_text
-            stmt = stmt.where(sa_text("categories && :cats").bindparams(cats=categories))
+
+            stmt = stmt.where(
+                sa_text("categories && :cats").bindparams(cats=categories)
+            )
         stmt = stmt.order_by(Book.title)
 
         result = await session.execute(stmt)

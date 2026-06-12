@@ -3,6 +3,7 @@ Event Dispatcher — processes the pipeline_events outbox and triggers downstrea
 
 This allows the pipeline to be reactive and run faster than 1-minute crons.
 """
+
 from __future__ import annotations
 
 import logging
@@ -14,6 +15,7 @@ from app.db.models import PipelineEvent
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.event_dispatcher")
+
 
 async def run_event_dispatcher(ctx) -> None:
     redis = ctx["redis"]
@@ -45,7 +47,7 @@ async def run_event_dispatcher(ctx) -> None:
                     # but for immediate dispatch, single page jobs are fine.
                     await redis.enqueue_job("chunking_job", page_ids=[event.page_id])
                     enqueued += 1
-                
+
                 elif event.event_type == "chunking_succeeded":
                     # Chunking success -> Trigger Embedding
                     await redis.enqueue_job("embedding_job", page_ids=[event.page_id])
@@ -54,13 +56,17 @@ async def run_event_dispatcher(ctx) -> None:
                 elif event.event_type == "embedding_succeeded":
                     # Embedding success -> Nothing to trigger (Driver handles book ready)
                     pass
-                
 
                 processed_ids.append(event.id)
 
             except Exception as exc:
-                log_json(logger, logging.ERROR, "event dispatcher: failed to handle event",
-                         event_id=event.id, error=str(exc))
+                log_json(
+                    logger,
+                    logging.ERROR,
+                    "event dispatcher: failed to handle event",
+                    event_id=event.id,
+                    error=str(exc),
+                )
 
         if processed_ids:
             await session.execute(
@@ -71,5 +77,10 @@ async def run_event_dispatcher(ctx) -> None:
             await session.commit()
 
         if enqueued:
-            log_json(logger, logging.INFO, "event dispatcher run complete",
-                     events_processed=len(processed_ids), jobs_enqueued=enqueued)
+            log_json(
+                logger,
+                logging.INFO,
+                "event dispatcher run complete",
+                events_processed=len(processed_ids),
+                jobs_enqueued=enqueued,
+            )

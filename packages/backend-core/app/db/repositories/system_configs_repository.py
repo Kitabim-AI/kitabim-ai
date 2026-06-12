@@ -1,4 +1,5 @@
 """System configuration repository with SQLAlchemy"""
+
 from __future__ import annotations
 
 from typing import Optional
@@ -8,6 +9,7 @@ from app.db.models import SystemConfig
 from app.db.repositories.base_repository import BaseRepository
 from app.services.cache_service import cache_service
 from app.core.config import settings
+
 
 class SystemConfigsRepository(BaseRepository[SystemConfig]):
     """Repository for system configurations"""
@@ -27,15 +29,14 @@ class SystemConfigsRepository(BaseRepository[SystemConfig]):
 
         if value is not None:
             await cache_service.set(
-                cache_key,
-                value,
-                ttl=settings.cache_ttl_system_config
+                cache_key, value, ttl=settings.cache_ttl_system_config
             )
 
         return value
 
-
-    async def set_value(self, key: str, value: str, description: Optional[str] = None) -> SystemConfig:
+    async def set_value(
+        self, key: str, value: str, description: Optional[str] = None
+    ) -> SystemConfig:
         """Set config value, creating it if it doesn't exist"""
         config = await self.get(key)
         if config:
@@ -46,11 +47,9 @@ class SystemConfigsRepository(BaseRepository[SystemConfig]):
             await cache_service.delete(f"config:{key}")
             return config
 
-        
         config = await self.create(key=key, value=value, description=description)
         await cache_service.delete(f"config:{key}")
         return config
-
 
 
 def get_system_configs_repository(session: AsyncSession) -> SystemConfigsRepository:

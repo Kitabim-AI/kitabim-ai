@@ -15,6 +15,7 @@ Process:
 Job failure does not affect book availability — books without summaries fall
 back to the existing category-based search in rag_service.
 """
+
 from __future__ import annotations
 
 import logging
@@ -44,16 +45,18 @@ def _sample_text(pages_text: list[str], max_chars: int) -> str:
         return full_text
 
     log_json(
-        logger, logging.WARNING,
+        logger,
+        logging.WARNING,
         "Truncating book text for summary LLM request",
-        original_length=len(full_text), target_length=max_chars
+        original_length=len(full_text),
+        target_length=max_chars,
     )
 
     first = full_text[: int(max_chars * 0.4)]
     mid_start = len(full_text) // 2 - int(max_chars * 0.1)
     mid_end = mid_start + int(max_chars * 0.2)
     middle = full_text[mid_start:mid_end]
-    last = full_text[-int(max_chars * 0.4):]
+    last = full_text[-int(max_chars * 0.4) :]
     return first + "\n\n...\n\n" + middle + "\n\n...\n\n" + last
 
 
@@ -67,7 +70,9 @@ async def summary_job(ctx, book_id: str) -> None:
             gemini_chat_model = await config_repo.get_value("gemini_chat_model")
             if not gemini_chat_model:
                 raise RuntimeError("system_config 'gemini_chat_model' is not set")
-            gemini_embedding_model = await config_repo.get_value("gemini_embedding_model")
+            gemini_embedding_model = await config_repo.get_value(
+                "gemini_embedding_model"
+            )
             if not gemini_embedding_model:
                 raise RuntimeError("system_config 'gemini_embedding_model' is not set")
 
@@ -75,36 +80,55 @@ async def summary_job(ctx, book_id: str) -> None:
             result = await session.execute(select(Book).where(Book.id == book_id))
             book = result.scalar_one_or_none()
             if not book:
-                log_json(logger, logging.WARNING, "summary job: book not found", book_id=book_id)
+                log_json(
+                    logger,
+                    logging.WARNING,
+                    "summary job: book not found",
+                    book_id=book_id,
+                )
                 return
 
             # Load all page texts ordered by page_number, excluding TOC
             result = await session.execute(
                 select(Page.text)
-                .where(Page.book_id == book_id, Page.text.isnot(None), Page.is_toc.is_(False))
+                .where(
+                    Page.book_id == book_id,
+                    Page.text.isnot(None),
+                    Page.is_toc.is_(False),
+                )
                 .order_by(Page.page_number)
             )
             pages_text = [row[0] for row in result.fetchall() if row[0]]
 
         if not pages_text:
-            log_json(logger, logging.WARNING, "summary job: no page text found", book_id=book_id)
+            log_json(
+                logger,
+                logging.WARNING,
+                "summary job: no page text found",
+                book_id=book_id,
+            )
             return
 
         # Determine safety limit based on model name
         max_chars = settings.summary_max_chars
         # If it's a 1.0 model or custom/smaller, restrict to a safe default (e.g., 100k chars)
         # to prevent API errors. Most modern models (1.5, 2.0) support 1M+ tokens.
-        is_large_context_model = any(
-            m in gemini_chat_model.lower() 
-            for m in ["1.5", "2.0", "flash", "pro", "ultra"]
-        ) and not ("1.0" in gemini_chat_model.lower())
-        
+        is_large_context_model = (
+            any(
+                m in gemini_chat_model.lower()
+                for m in ["1.5", "2.0", "flash", "pro", "ultra"]
+            )
+            and "1.0" not in gemini_chat_model.lower()
+        )
+
         if not is_large_context_model:
             max_chars = min(max_chars, 100_000)
             log_json(
-                logger, logging.INFO, 
+                logger,
+                logging.INFO,
                 "Detected smaller model context window, limiting text sample size",
-                model=gemini_chat_model, max_chars=max_chars
+                model=gemini_chat_model,
+                max_chars=max_chars,
             )
 
         sampled_text = _sample_text(pages_text, max_chars)
@@ -124,7 +148,12 @@ async def summary_job(ctx, book_id: str) -> None:
         )
         summary = (summary or "").strip()
         if not summary:
-            log_json(logger, logging.WARNING, "summary job: LLM returned empty summary", book_id=book_id)
+            log_json(
+                logger,
+                logging.WARNING,
+                "summary job: LLM returned empty summary",
+                book_id=book_id,
+            )
             return
 
         # Embed the summary
@@ -138,12 +167,16 @@ async def summary_job(ctx, book_id: str) -> None:
             await session.commit()
 
         log_json(
-            logger, logging.INFO, "summary job completed",
+            logger,
+            logging.INFO,
+            "summary job completed",
             book_id=book_id,
             summary_chars=len(summary),
             text_chars=len(sampled_text),
         )
 
     except Exception as exc:
-        log_json(logger, logging.ERROR, "summary job failed", book_id=book_id, error=str(exc))
+        log_json(
+            logger, logging.ERROR, "summary job failed", book_id=book_id, error=str(exc)
+        )
         raise

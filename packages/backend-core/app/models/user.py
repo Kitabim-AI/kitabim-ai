@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict
 
 class UserRole(str, Enum):
     """User role enumeration for RBAC."""
+
     ADMIN = "admin"
     EDITOR = "editor"
     READER = "reader"
@@ -17,6 +18,7 @@ class UserRole(str, Enum):
 
 class UserBase(BaseModel):
     """Base user fields shared across schemas."""
+
     email: str
     display_name: str
     avatar_url: Optional[str] = None
@@ -24,6 +26,7 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     """Schema for creating a new user (internal use)."""
+
     provider: str
     provider_id: str
     role: UserRole = UserRole.READER
@@ -31,6 +34,7 @@ class UserCreate(UserBase):
 
 class User(UserBase):
     """Full user model as stored in database."""
+
     id: str
     role: UserRole
     provider: str
@@ -46,6 +50,7 @@ class User(UserBase):
 
 class UserPublic(BaseModel):
     """Public user info returned to clients."""
+
     id: str
     email: str
     display_name: str
@@ -74,6 +79,7 @@ class UserPublic(BaseModel):
 
 class UserInToken(BaseModel):
     """User info embedded in JWT token."""
+
     sub: str  # user id
     email: str
     role: str
@@ -84,6 +90,7 @@ class UserInToken(BaseModel):
 
 class UserUpdate(BaseModel):
     """Schema for updating user details (admin use)."""
+
     display_name: Optional[str] = None
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
@@ -91,6 +98,7 @@ class UserUpdate(BaseModel):
 
 class UserList(BaseModel):
     """Paginated list of users for admin."""
+
     users: List[UserPublic]
     total: int
     page: int

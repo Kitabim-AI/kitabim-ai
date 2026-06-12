@@ -1,6 +1,7 @@
 """
 Maintenance Scanner — periodically cleans up old processed events and logs.
 """
+
 from __future__ import annotations
 
 import logging
@@ -16,6 +17,7 @@ from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.maintenance_scanner")
 
+
 async def run_maintenance_scanner(ctx) -> None:
     """
     Periodic task to clean up old data.
@@ -26,12 +28,21 @@ async def run_maintenance_scanner(ctx) -> None:
             # 1. Fetch dynamic retention setting from DB
             repo = SystemConfigsRepository(session)
             db_retention = await repo.get_value("maintenance_retention_days")
-            
-            retention_days = int(db_retention) if db_retention else settings.maintenance_retention_days
+
+            retention_days = (
+                int(db_retention)
+                if db_retention
+                else settings.maintenance_retention_days
+            )
             cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
 
-            log_json(logger, logging.INFO, "maintenance scanner: starting cleanup", 
-                     retention_days=retention_days, cutoff_date=cutoff_date.isoformat())
+            log_json(
+                logger,
+                logging.INFO,
+                "maintenance scanner: starting cleanup",
+                retention_days=retention_days,
+                cutoff_date=cutoff_date.isoformat(),
+            )
 
             # 2. Clean up processed PipelineEvents
             stmt = (
@@ -45,8 +56,12 @@ async def run_maintenance_scanner(ctx) -> None:
             # Commit the deletions
             await session.commit()
 
-            log_json(logger, logging.INFO, "maintenance scanner: cleanup complete",
-                     deleted_events=deleted_events)
+            log_json(
+                logger,
+                logging.INFO,
+                "maintenance scanner: cleanup complete",
+                deleted_events=deleted_events,
+            )
 
     except Exception as exc:
         log_json(logger, logging.ERROR, "maintenance scanner failed", error=str(exc))

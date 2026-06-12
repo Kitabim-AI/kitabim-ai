@@ -9,6 +9,7 @@ Catches three cases:
 Runs every 5 minutes. Batch size controlled by system_config 'graph_scanner_batch_size'
 (default 5).
 """
+
 from __future__ import annotations
 
 import logging
@@ -32,12 +33,14 @@ async def run_graph_scanner(ctx) -> None:
         # Check if Knowledge Graph is enabled
         kg_enabled_val = await config_repo.get_value("knowledge_graph_enabled", "false")
         if kg_enabled_val != "true":
-            log_json(logger, logging.DEBUG, "graph scanner: knowledge graph generation is disabled via system_configs")
+            log_json(
+                logger,
+                logging.DEBUG,
+                "graph scanner: knowledge graph generation is disabled via system_configs",
+            )
             return
 
-        batch_size = int(
-            await config_repo.get_value("graph_scanner_batch_size", "5")
-        )
+        batch_size = int(await config_repo.get_value("graph_scanner_batch_size", "5"))
         # Find books that are 'ready' but have 'idle' or 'failed' graph milestone
         stmt = (
             select(Book.id)
@@ -46,7 +49,7 @@ async def run_graph_scanner(ctx) -> None:
                 or_(
                     Book.graph_milestone == "idle",
                     Book.graph_milestone == "failed",
-                )
+                ),
             )
             .with_for_update(skip_locked=True)
             .limit(batch_size)
@@ -70,14 +73,23 @@ async def run_graph_scanner(ctx) -> None:
     newly_enqueued = []
     for book_id in book_ids:
         job = await redis.enqueue_job(
-            "knowledge_graph_job",
-            book_id=book_id,
-            _job_id=f"knowledge_graph:{book_id}"
+            "knowledge_graph_job", book_id=book_id, _job_id=f"knowledge_graph:{book_id}"
         )
         if job is not None:
             newly_enqueued.append(book_id)
         else:
-            log_json(logger, logging.DEBUG, "graph scanner: job already queued or running", book_id=book_id)
+            log_json(
+                logger,
+                logging.DEBUG,
+                "graph scanner: job already queued or running",
+                book_id=book_id,
+            )
 
     if newly_enqueued:
-        log_json(logger, logging.INFO, "graph scanner enqueued jobs", count=len(newly_enqueued), book_ids=newly_enqueued)
+        log_json(
+            logger,
+            logging.INFO,
+            "graph scanner enqueued jobs",
+            count=len(newly_enqueued),
+            book_ids=newly_enqueued,
+        )

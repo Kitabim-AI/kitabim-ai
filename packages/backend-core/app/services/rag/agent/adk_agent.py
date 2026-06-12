@@ -21,8 +21,12 @@ from app.services.rag.agent.prompts import AGENT_SYSTEM_PROMPT
 def build_rag_agent(model_name: str) -> Agent:
     """Build the Google ADK Agent with standard tools and system instructions."""
     # Strip 'models/' prefix from model name if present
-    model = model_name.replace("models/", "", 1) if model_name.startswith("models/") else model_name
-    
+    model = (
+        model_name.replace("models/", "", 1)
+        if model_name.startswith("models/")
+        else model_name
+    )
+
     return Agent(
         name="kitabim_retrieval_agent",
         model=model,
@@ -42,4 +46,3 @@ def build_rag_agent(model_name: str) -> Agent:
             query_knowledge_graph,
         ],
     )
-

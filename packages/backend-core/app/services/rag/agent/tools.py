@@ -2,6 +2,7 @@
 
 Each tool wraps existing retrieval code — no new retrieval logic lives here.
 """
+
 from __future__ import annotations
 
 import logging
@@ -14,7 +15,11 @@ from neo4j.exceptions import ServiceUnavailable, SessionExpired
 from google.adk.tools import ToolContext
 
 from app.services.rag.context import QueryContext
-from app.services.rag.retrieval import embed_query, find_books_by_title_in_question, vector_search
+from app.services.rag.retrieval import (
+    embed_query,
+    find_books_by_title_in_question,
+    vector_search,
+)
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.rag.agent.tools")
@@ -24,34 +29,51 @@ logger = logging.getLogger("app.rag.agent.tools")
 # ADK Tool implementations and observation logging helper
 # ---------------------------------------------------------------------------
 
+
 async def _execute_and_record_tool(
     tool_context: ToolContext | None,
     tool_name: str,
     tool_args: dict,
 ) -> dict:
     if tool_context is None:
-        raise ValueError(f"ADK ToolContext is required but was None for tool '{tool_name}'")
-        
+        raise ValueError(
+            f"ADK ToolContext is required but was None for tool '{tool_name}'"
+        )
+
     ctx: QueryContext = tool_context.state["query_context"]
     try:
         res = await _dispatch_tool_with_retry(tool_name, tool_args, ctx)
     except Exception as exc:
-        log_json(logger, logging.WARNING, "Agent tool failed after retries", tool=tool_name, error=str(exc))
+        log_json(
+            logger,
+            logging.WARNING,
+            "Agent tool failed after retries",
+            tool=tool_name,
+            error=str(exc),
+        )
         if "observations" in tool_context.state:
-            tool_context.state["observations"] = list(tool_context.state["observations"]) + [{
-                "tool": tool_name,
-                "args": tool_args,
-                "result": {"ok": False, "error": str(exc)},
-            }]
+            tool_context.state["observations"] = list(
+                tool_context.state["observations"]
+            ) + [
+                {
+                    "tool": tool_name,
+                    "args": tool_args,
+                    "result": {"ok": False, "error": str(exc)},
+                }
+            ]
         raise
 
     # Append to observations list in session state for context building and grading
     if "observations" in tool_context.state:
-        tool_context.state["observations"] = list(tool_context.state["observations"]) + [{
-            "tool": tool_name,
-            "args": tool_args,
-            "result": res,
-        }]
+        tool_context.state["observations"] = list(
+            tool_context.state["observations"]
+        ) + [
+            {
+                "tool": tool_name,
+                "args": tool_args,
+                "result": res,
+            }
+        ]
     return res
 
 
@@ -270,6 +292,7 @@ TRANSIENT_EXCEPTIONS = (
     ConnectionError,
 )
 
+
 def _log_retry(retry_state):
     log_json(
         logger,
@@ -280,7 +303,10 @@ def _log_retry(retry_state):
         error=str(retry_state.outcome.exception()),
     )
 
-async def _dispatch_tool_with_retry(tool_name: str, tool_args: dict, ctx: QueryContext) -> dict:
+
+async def _dispatch_tool_with_retry(
+    tool_name: str, tool_args: dict, ctx: QueryContext
+) -> dict:
     if tool_name == "search_chunks":
         chunks = await _run_search_chunks(tool_args, ctx)
         return {"ok": True, "chunks": chunks, "found_count": len(chunks)}
@@ -301,7 +327,11 @@ async def _dispatch_tool_with_retry(tool_name: str, tool_args: dict, ctx: QueryC
         return {"ok": True, **result, "found_count": 0}
     if tool_name == "get_book_author":
         result = await _run_get_book_author(tool_args, ctx)
-        return {"ok": True, **result, "found_count": 1 if result.get("author") is not None else 0}
+        return {
+            "ok": True,
+            **result,
+            "found_count": 1 if result.get("author") is not None else 0,
+        }
     if tool_name == "get_books_by_author":
         result = await _run_get_books_by_author(tool_args, ctx)
         return {"ok": True, **result, "found_count": len(result.get("books", []))}
@@ -327,13 +357,16 @@ async def _dispatch_tool_with_retry(tool_name: str, tool_args: dict, ctx: QueryC
 # Implementations
 # ---------------------------------------------------------------------------
 
+
 async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
     from app.services.rag.agent.config import CONTEXT_SWITCH_SCORE_THRESHOLD
 
     query = args.get("query", "")
     # Preserve None (agent omitted book_ids = global search) vs [] (agent passed empty = no books found).
     book_ids_arg = args.get("book_ids")
-    book_ids: Optional[List[str]] = [str(bid) for bid in book_ids_arg] if book_ids_arg is not None else None
+    book_ids: Optional[List[str]] = (
+        [str(bid) for bid in book_ids_arg] if book_ids_arg is not None else None
+    )
 
     query_vector = await embed_query(query, ctx)
     if not query_vector:
@@ -344,24 +377,42 @@ async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
     # Transparent context-switch fallback: if the LLM passed the previous
     # answer's book IDs verbatim and the similarity scores are weak (different
     # topic), rediscover relevant books via the summary index and re-search within them.
-    if book_ids and ctx.context_book_ids and set(book_ids) == {str(x) for x in ctx.context_book_ids}:
+    if (
+        book_ids
+        and ctx.context_book_ids
+        and set(book_ids) == {str(x) for x in ctx.context_book_ids}
+    ):
         top_score = max((r.get("score", 0.0) for r in results), default=0.0)
         if top_score < CONTEXT_SWITCH_SCORE_THRESHOLD:
             log_json(
-                logger, logging.INFO, "Context switch detected — rediscovering books via summaries",
-                top_score=round(top_score, 3), threshold=CONTEXT_SWITCH_SCORE_THRESHOLD,
+                logger,
+                logging.INFO,
+                "Context switch detected — rediscovering books via summaries",
+                top_score=round(top_score, 3),
+                threshold=CONTEXT_SWITCH_SCORE_THRESHOLD,
             )
             new_book_ids = await _run_search_books_by_summary({"query": query}, ctx)
             if new_book_ids:
-                broader = await vector_search(ctx, new_book_ids, query_vector=query_vector)
+                broader = await vector_search(
+                    ctx, new_book_ids, query_vector=query_vector
+                )
                 if broader:
                     results = broader
                     book_ids = new_book_ids
-                    log_json(logger, logging.INFO, "Context-switch re-search succeeded", new_books=len(new_book_ids))
+                    log_json(
+                        logger,
+                        logging.INFO,
+                        "Context-switch re-search succeeded",
+                        new_books=len(new_book_ids),
+                    )
 
     log_json(
-        logger, logging.INFO, "Agent tool search_chunks",
-        query=query[:60], book_count=len(book_ids) if book_ids is not None else 0, results=len(results),
+        logger,
+        logging.INFO,
+        "Agent tool search_chunks",
+        query=query[:60],
+        book_count=len(book_ids) if book_ids is not None else 0,
+        results=len(results),
     )
     return results
 
@@ -386,7 +437,13 @@ async def _run_search_books_by_summary(args: dict, ctx: QueryContext) -> List[st
         limit=20,
     )
 
-    log_json(logger, logging.INFO, "Agent tool search_books_by_summary", query=query[:60], books=len(book_ids))
+    log_json(
+        logger,
+        logging.INFO,
+        "Agent tool search_books_by_summary",
+        query=query[:60],
+        books=len(book_ids),
+    )
     return book_ids
 
 
@@ -402,21 +459,24 @@ async def _run_get_book_summary(args: dict, ctx: QueryContext) -> dict:
 
     if not summaries:
         log_json(logger, logging.INFO, "Agent tool get_book_summary", count=0)
-        return {"context": "No summaries found for the provided book IDs.", "summaries": []}
+        return {
+            "context": "No summaries found for the provided book IDs.",
+            "summaries": [],
+        }
 
     lines = []
     for s in summaries:
         header_parts = [f"BookID: {s['book_id']}", f"Book: {s['title']}"]
-        if s.get('author'):
+        if s.get("author"):
             header_parts.append(f"Author: {s['author']}")
-        if s.get('volume') is not None:
+        if s.get("volume") is not None:
             header_parts.append(f"Volume: {s['volume']}")
         header_parts.append("SUMMARY")
         lines.append(f"[{', '.join(header_parts)}]\n{s['summary']}")
 
     context_text = "\n\n".join(lines)
     log_json(logger, logging.INFO, "Agent tool get_book_summary", count=len(summaries))
-    
+
     return {"context": context_text, "summaries": summaries}
 
 
@@ -430,7 +490,12 @@ async def _run_get_sister_volumes(args: dict, ctx: QueryContext) -> dict:
     repo = BooksRepository(ctx.session)
     books = await repo.find_sister_volumes(book_id)
     if not books:
-        log_json(logger, logging.INFO, "Agent tool get_sister_volumes — no results", book_id=book_id)
+        log_json(
+            logger,
+            logging.INFO,
+            "Agent tool get_sister_volumes — no results",
+            book_id=book_id,
+        )
         return {"context": "No volumes found for this book.", "book_ids": []}
 
     lines = ["Volumes in this series:"]
@@ -440,7 +505,13 @@ async def _run_get_sister_volumes(args: dict, ctx: QueryContext) -> dict:
         lines.append(f"- {b.title}, {volume} (ID: {b.id})")
         book_ids.append(str(b.id))
 
-    log_json(logger, logging.INFO, "Agent tool get_sister_volumes", book_id=book_id, count=len(books))
+    log_json(
+        logger,
+        logging.INFO,
+        "Agent tool get_sister_volumes",
+        book_id=book_id,
+        count=len(books),
+    )
     return {"context": "\n".join(lines), "book_ids": book_ids}
 
 
@@ -449,14 +520,24 @@ async def _run_get_current_page(ctx: QueryContext) -> dict:
     from app.utils.markdown import strip_markdown
 
     if ctx.is_global or ctx.current_page is None or not ctx.book:
-        log_json(logger, logging.INFO, "Agent tool get_current_page — not available", is_global=ctx.is_global)
+        log_json(
+            logger,
+            logging.INFO,
+            "Agent tool get_current_page — not available",
+            is_global=ctx.is_global,
+        )
         return {"context": "Current page is not available in this context."}
 
     pages_repo = PagesRepository(ctx.session)
     page_rec = await pages_repo.find_one(ctx.book_id, ctx.current_page)
 
     if not page_rec or not page_rec.text:
-        log_json(logger, logging.INFO, "Agent tool get_current_page — no text", page=ctx.current_page)
+        log_json(
+            logger,
+            logging.INFO,
+            "Agent tool get_current_page — no text",
+            page=ctx.current_page,
+        )
         return {"context": f"No text found for page {ctx.current_page}."}
 
     book = ctx.book
@@ -469,7 +550,13 @@ async def _run_get_current_page(ctx: QueryContext) -> dict:
         f"{author_info}{volume_info}, Page {ctx.current_page}]\n"
         f"{page_text}"
     )
-    log_json(logger, logging.INFO, "Agent tool get_current_page", page=ctx.current_page, chars=len(page_text))
+    log_json(
+        logger,
+        logging.INFO,
+        "Agent tool get_current_page",
+        page=ctx.current_page,
+        chars=len(page_text),
+    )
     return {"context": context}
 
 
@@ -479,7 +566,13 @@ async def _run_find_books_by_title(args: dict, ctx: QueryContext) -> List[dict]:
         question, ctx.session, categories=ctx.character_categories or None
     )
     result = books or []
-    log_json(logger, logging.INFO, "Agent tool find_books_by_title", question=question[:120], books=len(result))
+    log_json(
+        logger,
+        logging.INFO,
+        "Agent tool find_books_by_title",
+        question=question[:120],
+        books=len(result),
+    )
     return result
 
 
@@ -505,8 +598,18 @@ async def _run_get_book_author(args: dict, ctx: QueryContext) -> dict:
     )
     if result:
         title, author = result
-        log_json(logger, logging.INFO, "Agent tool get_book_author", title=title, author=author)
-        return {"context": f"The book '{title}' was written by {author}.", "title": title, "author": author}
+        log_json(
+            logger,
+            logging.INFO,
+            "Agent tool get_book_author",
+            title=title,
+            author=author,
+        )
+        return {
+            "context": f"The book '{title}' was written by {author}.",
+            "title": title,
+            "author": author,
+        }
     log_json(logger, logging.INFO, "Agent tool get_book_author", found=False)
     return {"context": "", "title": None, "author": None}
 
@@ -530,9 +633,23 @@ async def _run_get_books_by_author(args: dict, ctx: QueryContext) -> dict:
         volume = f", Volume {b.volume}" if b.volume is not None else ""
         pages = f", {b.total_pages} pages" if b.total_pages else ""
         lines.append(f"- {b.title}{volume}{pages} (ID: {b.id})")
-        book_list.append({"id": str(b.id), "title": b.title, "author": b.author, "volume": b.volume, "total_pages": b.total_pages})
+        book_list.append(
+            {
+                "id": str(b.id),
+                "title": b.title,
+                "author": b.author,
+                "volume": b.volume,
+                "total_pages": b.total_pages,
+            }
+        )
 
-    log_json(logger, logging.INFO, "Agent tool get_books_by_author", author=author, count=len(books))
+    log_json(
+        logger,
+        logging.INFO,
+        "Agent tool get_books_by_author",
+        author=author,
+        count=len(books),
+    )
     return {"context": "\n".join(lines), "books": book_list}
 
 
@@ -544,7 +661,9 @@ async def _run_search_catalog(args: dict, ctx: QueryContext) -> dict:
         query, ctx.session, ctx.character_categories or None
     )
     context_text = CatalogHandler._prepend_current_book(context_text, ctx)
-    log_json(logger, logging.INFO, "Agent tool search_catalog", query=query[:60], books=count)
+    log_json(
+        logger, logging.INFO, "Agent tool search_catalog", query=query[:60], books=count
+    )
     return {"context": context_text, "book_count": count}
 
 
@@ -559,9 +678,21 @@ async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
         return {"context": "No query provided.", "relations": []}
 
     # Skip if in single-book mode and graph has not been built for this book
-    if not ctx.is_global and ctx.book and getattr(ctx.book, "graph_milestone", None) != "complete":
-        log_json(logger, logging.INFO, "Agent tool query_knowledge_graph — skipped, graph not available", book_id=ctx.book_id)
-        return {"context": "Knowledge graph is not available for this book.", "relations": []}
+    if (
+        not ctx.is_global
+        and ctx.book
+        and getattr(ctx.book, "graph_milestone", None) != "complete"
+    ):
+        log_json(
+            logger,
+            logging.INFO,
+            "Agent tool query_knowledge_graph — skipped, graph not available",
+            book_id=ctx.book_id,
+        )
+        return {
+            "context": "Knowledge graph is not available for this book.",
+            "relations": [],
+        }
 
     # Extract entities from the query using the LLM
     prompt = (
@@ -574,28 +705,52 @@ async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
     try:
         llm = build_text_llm(ctx.agent_model)
         llm_response = await llm.ainvoke(prompt)
-        
+
         entities = [
             unicodedata.normalize("NFC", e.strip())
             for e in re.split(r"[,，\u060c\n]", llm_response)
             if e.strip()
         ]
     except Exception as exc:
-        log_json(logger, logging.WARNING, "Failed to extract entities for knowledge graph query", error=str(exc))
+        log_json(
+            logger,
+            logging.WARNING,
+            "Failed to extract entities for knowledge graph query",
+            error=str(exc),
+        )
         entities = []
 
     if not entities:
-        log_json(logger, logging.INFO, "Agent tool query_knowledge_graph — no entities extracted", query=query[:60])
-        return {"context": "No entities extracted from the query to match in the knowledge graph.", "relations": []}
+        log_json(
+            logger,
+            logging.INFO,
+            "Agent tool query_knowledge_graph — no entities extracted",
+            query=query[:60],
+        )
+        return {
+            "context": "No entities extracted from the query to match in the knowledge graph.",
+            "relations": [],
+        }
 
-    log_json(logger, logging.INFO, "Agent tool query_knowledge_graph", query=query[:60], entities=entities)
+    log_json(
+        logger,
+        logging.INFO,
+        "Agent tool query_knowledge_graph",
+        query=query[:60],
+        entities=entities,
+    )
 
     book_id = str(ctx.book_id) if not ctx.is_global and ctx.book_id else None
     graph_repo = GraphRepository()
     try:
         records = await graph_repo.query_subgraph(entities, book_id=book_id)
     except Exception as kg_exc:
-        log_json(logger, logging.WARNING, "Knowledge graph query failed — returning empty result", error=str(kg_exc))
+        log_json(
+            logger,
+            logging.WARNING,
+            "Knowledge graph query failed — returning empty result",
+            error=str(kg_exc),
+        )
         return {
             "context": "Knowledge graph is temporarily unavailable.",
             "relations": [],
@@ -606,7 +761,7 @@ async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
     if not records:
         return {
             "context": f"No knowledge graph relationships found for entities: {', '.join(entities)}.",
-            "relations": []
+            "relations": [],
         }
 
     lines = [f"Knowledge Graph Relationships for: {', '.join(entities)}"]
@@ -616,7 +771,9 @@ async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
         rel = rec.get("rel", "RELATED_TO")
         target = rec.get("target")
         target_type = rec.get("target_type", "Entity")
-        lines.append(f"- ({source}: {source_type}) -[{rel}]-> ({target}: {target_type})")
+        lines.append(
+            f"- ({source}: {source_type}) -[{rel}]-> ({target}: {target_type})"
+        )
 
     context_text = "\n".join(lines)
     return {"context": context_text, "relations": records}

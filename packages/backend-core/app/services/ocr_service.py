@@ -10,7 +10,9 @@ from app.llm.models import generate_text_with_image
 from app.utils.text import clean_uyghur_text
 
 
-async def ocr_page_with_gemini(page: fitz.Page, model_name: str = "gemini-2.0-flash") -> str:
+async def ocr_page_with_gemini(
+    page: fitz.Page, model_name: str = "gemini-2.0-flash"
+) -> str:
     """
     OCR a page using Gemini Vision model.
 
@@ -31,7 +33,13 @@ async def ocr_page_with_gemini(page: fitz.Page, model_name: str = "gemini-2.0-fl
             return clean_uyghur_text(text or "")
         except Exception as exc:
             err_msg = str(exc)
-            if any(x in err_msg or x in err_msg.lower() for x in ["429", "503", "overloaded", "resource_exhausted"]) and attempt < settings.ocr_max_retries - 1:
+            if (
+                any(
+                    x in err_msg or x in err_msg.lower()
+                    for x in ["429", "503", "overloaded", "resource_exhausted"]
+                )
+                and attempt < settings.ocr_max_retries - 1
+            ):
                 await asyncio.sleep((2 ** (attempt + 1)) + random.uniform(0, 1))
                 continue
             raise

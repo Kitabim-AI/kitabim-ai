@@ -20,23 +20,21 @@ class RefreshTokensRepository(BaseRepository[RefreshToken]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def find_valid(self, jti: str | UUID, token_hash: str) -> Optional[RefreshToken]:
+    async def find_valid(
+        self, jti: str | UUID, token_hash: str
+    ) -> Optional[RefreshToken]:
         stmt = select(RefreshToken).where(
             and_(
                 RefreshToken.jti == jti,
                 RefreshToken.token_hash == token_hash,
-                ~RefreshToken.revoked
+                ~RefreshToken.revoked,
             )
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def revoke_by_jti(self, jti: str | UUID) -> bool:
-        stmt = (
-            update(RefreshToken)
-            .where(RefreshToken.jti == jti)
-            .values(revoked=True)
-        )
+        stmt = update(RefreshToken).where(RefreshToken.jti == jti).values(revoked=True)
         result = await self.session.execute(stmt)
         await self.session.flush()
         return result.rowcount > 0
@@ -53,12 +51,10 @@ class RefreshTokensRepository(BaseRepository[RefreshToken]):
 
     async def delete_expired_or_revoked(self) -> int:
         from datetime import timezone
+
         now = datetime.now(timezone.utc)
         stmt = delete(RefreshToken).where(
-            or_(
-                RefreshToken.expires_at < now,
-                RefreshToken.revoked
-            )
+            or_(RefreshToken.expires_at < now, RefreshToken.revoked)
         )
         result = await self.session.execute(stmt)
         await self.session.flush()

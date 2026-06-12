@@ -1,4 +1,5 @@
 """Pure utility functions for RAG service (no I/O, no side-effects)."""
+
 from __future__ import annotations
 
 import re
@@ -14,6 +15,7 @@ from app.core.i18n import t
 # Uyghur character normalization
 # ---------------------------------------------------------------------------
 
+
 def normalize_uyghur(text: str) -> str:
     """Normalize Uyghur character variants for reliable keyword matching.
 
@@ -21,10 +23,9 @@ def normalize_uyghur(text: str) -> str:
     ى (U+06CC) depending on keyboard/input method.
     """
     return (
-        text
-        .replace("\u06D0", "\u06CC")
-        .replace("\u0649", "\u06CC")
-        .replace("\u064A", "\u06CC")
+        text.replace("\u06d0", "\u06cc")
+        .replace("\u0649", "\u06cc")
+        .replace("\u064a", "\u06cc")
     )
 
 
@@ -45,11 +46,8 @@ def entity_matches_question(entity: str, question: str) -> bool:
         return False
     if len(entity_words) == 1 and len(entity_words[0]) < 4:
         return False
-    _PUNCT = "«»،؟!()[]{}\"""''"
-    q_words = [
-        normalize_uyghur(w).strip(_PUNCT)
-        for w in question.strip().split()
-    ]
+    _PUNCT = '«»،؟!()[]{}"' "''"
+    q_words = [normalize_uyghur(w).strip(_PUNCT) for w in question.strip().split()]
 
     def _word_matches(e_word: str) -> bool:
         alt = e_word[:-1] + "ی" if e_word.endswith("ە") else None
@@ -63,7 +61,10 @@ def entity_matches_question(entity: str, question: str) -> bool:
         if len(e_word) < 4:
             return False
         for q_word in q_words:
-            if len(q_word) >= 4 and SequenceMatcher(None, e_word, q_word).ratio() >= 0.85:
+            if (
+                len(q_word) >= 4
+                and SequenceMatcher(None, e_word, q_word).ratio() >= 0.85
+            ):
                 return True
         return False
 
@@ -74,14 +75,18 @@ def entity_matches_question(entity: str, question: str) -> bool:
 # Intent detection
 # ---------------------------------------------------------------------------
 
+
 def is_current_volume_query(question: str) -> bool:
     if not question:
         return False
     q = question.strip()
     keywords = [
-        "ئۇشبۇ تومدا", "ئۇشبۇ قىسىمدا",
-        "مەزكور تومدا", "مەزكور قىسىمدا",
-        "بۇ تومدا", "بۇ قىسىمدا",
+        "ئۇشبۇ تومدا",
+        "ئۇشبۇ قىسىمدا",
+        "مەزكور تومدا",
+        "مەزكور قىسىمدا",
+        "بۇ تومدا",
+        "بۇ قىسىمدا",
     ]
     return any(k in q for k in keywords)
 
@@ -101,15 +106,32 @@ def is_author_or_catalog_query(question: str) -> bool:
     q = normalize_uyghur(question.strip())
     keywords = [
         # Author-related — "who wrote X" / "author of X"
-        "مۇئەللىپ", "مۇئەللىپى", "يازغۇچى", "يازغۇچىسى", "ئاپتور", "ئاپتورى",
-        "كىم يازغان", "يازغان كىشى", "يازغان كىم",
-        "كىم تەرىپىدىن", "يازغانلىقى", "كىمنىڭ", "كىمنىكى",
+        "مۇئەللىپ",
+        "مۇئەللىپى",
+        "يازغۇچى",
+        "يازغۇچىسى",
+        "ئاپتور",
+        "ئاپتورى",
+        "كىم يازغان",
+        "يازغان كىشى",
+        "يازغان كىم",
+        "كىم تەرىپىدىن",
+        "يازغانلىقى",
+        "كىمنىڭ",
+        "كىمنىكى",
         # Author-related — "X's books / works"
-        "ئەسەر يازغان", "ئەسەرلىرى", "كىتابلىرى",
+        "ئەسەر يازغان",
+        "ئەسەرلىرى",
+        "كىتابلىرى",
         # Catalog / book-list related
-        "كىتابلىرىڭىز", "كىتاب بارمۇ", "كىتابخانىڭىز",
-        "كىتاب تىزىملىكى", "قانچە كىتاب", "نەچچە كىتاب",
-        "قايسى كىتابلار", "قايسى ئەسەر",
+        "كىتابلىرىڭىز",
+        "كىتاب بارمۇ",
+        "كىتابخانىڭىز",
+        "كىتاب تىزىملىكى",
+        "قانچە كىتاب",
+        "نەچچە كىتاب",
+        "قايسى كىتابلار",
+        "قايسى ئەسەر",
     ]
     normalized_keywords = [normalize_uyghur(k) for k in keywords]
     if not any(k in q for k in normalized_keywords):
@@ -118,9 +140,13 @@ def is_author_or_catalog_query(question: str) -> bool:
     # "قايسى ئەسەردىكى X" / "قايسى كىتابتا X" are content queries ("X is in which work"),
     # not catalog queries — even though they contain "قايسى ئەسەر".
     content_signals = [
-        "پېرسوناژ", "ئوبراز", "قەھرىمان",          # character references
-        "قايسى ئەسەردىكى", "قايسى كىتابتا",         # "in which work/book" patterns
-        "قايسى ئەسەردە", "قايسى كىتابدا",
+        "پېرسوناژ",
+        "ئوبراز",
+        "قەھرىمان",  # character references
+        "قايسى ئەسەردىكى",
+        "قايسى كىتابتا",  # "in which work/book" patterns
+        "قايسى ئەسەردە",
+        "قايسى كىتابدا",
     ]
     normalized_signals = [normalize_uyghur(k) for k in content_signals]
     if any(k in q for k in normalized_signals):
@@ -133,8 +159,11 @@ def is_author_or_catalog_query(question: str) -> bool:
 # Text helpers
 # ---------------------------------------------------------------------------
 
+
 def extract_keywords(question: str) -> List[str]:
-    tokens = [re.sub(r"[^\w]", "", k, flags=re.UNICODE).strip() for k in question.split()]
+    tokens = [
+        re.sub(r"[^\w]", "", k, flags=re.UNICODE).strip() for k in question.split()
+    ]
     return [k for k in tokens if len(k) > 2]
 
 
@@ -170,5 +199,3 @@ def cosine_similarity(v1: List[float], v2: List[float]) -> float:
     if denom == 0:
         return 0.0
     return float(np.dot(a, b) / denom)
-
-

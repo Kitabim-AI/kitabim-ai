@@ -1,4 +1,5 @@
 """Service for extracting text and cover from .docx files."""
+
 from __future__ import annotations
 
 import logging
@@ -26,7 +27,9 @@ def _load_footnotes(docx_path: Path) -> dict[str, str]:
                 return result
             xml_bytes = z.read("word/footnotes.xml")
     except Exception as e:
-        logger.warning("docx_service: could not read footnotes path=%s error=%s", docx_path, e)
+        logger.warning(
+            "docx_service: could not read footnotes path=%s error=%s", docx_path, e
+        )
         return result
 
     root = ET.fromstring(xml_bytes.decode("utf-8"))
@@ -50,11 +53,7 @@ def _is_heading_para(para_el) -> bool:
     runs = para_el.findall(f"{{{_NS}}}r")
     if not runs:
         return False
-    full_text = "".join(
-        (t.text or "")
-        for r in runs
-        for t in r.findall(f"{{{_NS}}}t")
-    )
+    full_text = "".join((t.text or "") for r in runs for t in r.findall(f"{{{_NS}}}t"))
     if not full_text.strip() or len(full_text.strip()) >= 200:
         return False
     return all(r.find(f".//{{{_NS}}}b") is not None for r in runs)
@@ -136,7 +135,9 @@ def extract_docx_pages(path: Path) -> list[str]:
     if len(pages) <= 1:
         full_text = pages[0] if pages else ""
         block_size = 3000
-        pages = [full_text[i:i + block_size] for i in range(0, len(full_text), block_size)]
+        pages = [
+            full_text[i : i + block_size] for i in range(0, len(full_text), block_size)
+        ]
 
     # Preserve DOCX text exactly as extracted. Uyghur normalization is intended
     # for OCR-derived text, not for already-encoded document text.
@@ -152,6 +153,7 @@ def extract_docx_cover(docx_path: Path, cover_path: Path) -> bool:
     """
     try:
         from docx import Document
+
         doc = Document(docx_path)
         for rel in doc.part.rels.values():
             if "image" in rel.reltype:
@@ -159,5 +161,7 @@ def extract_docx_cover(docx_path: Path, cover_path: Path) -> bool:
                     f.write(rel.target_part.blob)
                 return True
     except Exception as e:
-        logger.warning("docx_service: failed to extract cover path=%s error=%s", docx_path, e)
+        logger.warning(
+            "docx_service: failed to extract cover path=%s error=%s", docx_path, e
+        )
     return False

@@ -1,4 +1,5 @@
 """SQLAlchemy async session configuration and management"""
+
 from __future__ import annotations
 
 import logging
@@ -10,7 +11,7 @@ from sqlalchemy.ext.asyncio import (
     AsyncSession,
     create_async_engine,
     async_sessionmaker,
-    AsyncEngine
+    AsyncEngine,
 )
 from app.core.config import settings
 from app.utils.observability import log_json
@@ -35,8 +36,8 @@ def get_database_url() -> str:
         raise ValueError("DATABASE_URL environment variable is required")
 
     # Convert postgresql:// to postgresql+asyncpg://
-    if url.startswith('postgresql://'):
-        return url.replace('postgresql://', 'postgresql+asyncpg://')
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+asyncpg://")
 
     return url
 
@@ -55,7 +56,13 @@ async def init_db(service_name: str = "backend") -> None:
     database_url = get_database_url()
 
     parsed = urlparse(database_url)
-    safe_url = urlunparse(parsed._replace(netloc=parsed.netloc.replace(f":{parsed.password}@", ":***@") if parsed.password else parsed.netloc))
+    safe_url = urlunparse(
+        parsed._replace(
+            netloc=parsed.netloc.replace(f":{parsed.password}@", ":***@")
+            if parsed.password
+            else parsed.netloc
+        )
+    )
 
     # Use service-specific pool configuration
     if service_name == "worker":
@@ -67,9 +74,15 @@ async def init_db(service_name: str = "backend") -> None:
         max_overflow = settings.db_max_overflow
         app_name = "kitabim-ai-backend"
 
-    log_json(logger, logging.INFO, "Initializing SQLAlchemy",
-             url=safe_url, service=service_name,
-             pool_size=pool_size, max_overflow=max_overflow)
+    log_json(
+        logger,
+        logging.INFO,
+        "Initializing SQLAlchemy",
+        url=safe_url,
+        service=service_name,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+    )
 
     # Create async engine
     engine = create_async_engine(
@@ -81,11 +94,9 @@ async def init_db(service_name: str = "backend") -> None:
         pool_pre_ping=True,  # Verify connections before using
         pool_recycle=3600,  # Recycle connections after 1 hour
         connect_args={
-            "server_settings": {
-                "application_name": app_name
-            },
+            "server_settings": {"application_name": app_name},
             "command_timeout": settings.db_query_timeout,
-        }
+        },
     )
 
     # Create session factory
@@ -102,7 +113,12 @@ async def init_db(service_name: str = "backend") -> None:
         async with engine.begin() as conn:
             result = await conn.execute(text("SELECT version()"))
             version = result.scalar()
-            log_json(logger, logging.INFO, "SQLAlchemy connected", version=version[:50] if version else "unknown")
+            log_json(
+                logger,
+                logging.INFO,
+                "SQLAlchemy connected",
+                version=version[:50] if version else "unknown",
+            )
     except Exception as exc:
         log_json(logger, logging.ERROR, "SQLAlchemy connection failed", error=str(exc))
         raise
@@ -122,9 +138,15 @@ async def close_db() -> None:
 
     try:
         from app.db.repositories.graph_repository import GraphRepository
+
         await GraphRepository.close_driver()
     except Exception as exc:
-        log_json(logger, logging.WARNING, "Failed to close graph driver during close_db", error=str(exc))
+        log_json(
+            logger,
+            logging.WARNING,
+            "Failed to close graph driver during close_db",
+            error=str(exc),
+        )
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:

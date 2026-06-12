@@ -29,7 +29,7 @@ async def record_book_error(
     repo = BooksRepository(session)
     await repo.update_one(
         book_id,
-        last_error=message, # Store message string in last_error
+        last_error=message,  # Store message string in last_error
         # Note: 'errors' is a JSONB array in the model
         # For now, we just keep the last error message in last_error field
         # TODO: Implement proper error history in JSONB array if needed

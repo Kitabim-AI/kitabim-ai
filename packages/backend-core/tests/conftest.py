@@ -6,6 +6,7 @@ import pytest
 os.environ["STORAGE_BACKEND"] = "local"
 os.environ["ENVIRONMENT"] = "test"
 
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_sessionstart(session):
     pass

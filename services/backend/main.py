@@ -11,7 +11,21 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-from api.endpoints import ai_router, auth_router, books_router, chat_router, users_router, system_configs_router, stats_router, contact_router, spell_check_router, auto_correct_rules_router, dictionary_router, share_router, cache_router
+from api.endpoints import (
+    ai_router,
+    auth_router,
+    books_router,
+    chat_router,
+    users_router,
+    system_configs_router,
+    stats_router,
+    contact_router,
+    spell_check_router,
+    auto_correct_rules_router,
+    dictionary_router,
+    share_router,
+    cache_router,
+)
 from app.core.config import settings
 from app.db.session import init_db, close_db  # SQLAlchemy session management
 from app.core.i18n import I18n, set_current_lang, t
@@ -23,6 +37,7 @@ from app.services.storage_service import storage
 from fastapi.responses import RedirectResponse, FileResponse, JSONResponse
 
 import os as _os
+
 # Locales live next to main.py in services/backend/, not in packages/backend-core
 I18n._locales_dir = _os.path.join(_os.path.dirname(__file__), "locales")
 
@@ -35,29 +50,37 @@ async def redis_pubsub_listener():
 
     logger = logging.getLogger("app.pubsub")
     logger.info("Starting Redis Pub/Sub user invalidation listener...")
-    
+
     while True:
         try:
             client = await cache_service.get_client()
             if not client:
                 await asyncio.sleep(5)
                 continue
-                
+
             pubsub = client.pubsub()
             await pubsub.subscribe("user_invalidation")
-            
+
             async for message in pubsub.listen():
                 if message and message.get("type") == "message":
                     try:
                         data = message["data"]
-                        user_id = data.decode("utf-8") if isinstance(data, bytes) else str(data)
-                        logger.info(f"Received user invalidation event for user_id: {user_id}")
+                        user_id = (
+                            data.decode("utf-8")
+                            if isinstance(data, bytes)
+                            else str(data)
+                        )
+                        logger.info(
+                            f"Received user invalidation event for user_id: {user_id}"
+                        )
                         if user_id == "__ALL__":
                             user_lru_cache.clear()
                             logger.info("Cleared entire local user LRU cache")
                         else:
                             evicted = user_lru_cache.delete(user_id)
-                            logger.info(f"Evicted user_id {user_id} from local user LRU cache: {evicted}")
+                            logger.info(
+                                f"Evicted user_id {user_id} from local user LRU cache: {evicted}"
+                            )
                     except Exception as ex:
                         logger.error(f"Error processing pubsub message: {ex}")
         except asyncio.CancelledError:
@@ -72,7 +95,7 @@ async def redis_pubsub_listener():
 async def lifespan(app: FastAPI):
     configure_logging()
     I18n.load_translations()
-    
+
     # Validate JWT secret key at startup (fail fast in production)
     logger = logging.getLogger("app.startup")
     try:
@@ -80,9 +103,15 @@ async def lifespan(app: FastAPI):
     except ValueError as e:
         log_json(logger, logging.ERROR, "JWT secret validation failed", error=str(e))
         if settings.environment == "production":
-            raise RuntimeError(f"Cannot start in production without valid JWT secret: {e}")
+            raise RuntimeError(
+                f"Cannot start in production without valid JWT secret: {e}"
+            )
         else:
-            log_json(logger, logging.WARNING, "Authentication features will not work properly")
+            log_json(
+                logger,
+                logging.WARNING,
+                "Authentication features will not work properly",
+            )
 
     # Initialize SQLAlchemy (replaces db_manager.connect_to_storage())
     await init_db()
@@ -91,16 +120,18 @@ async def lifespan(app: FastAPI):
     try:
         from app.db.seeds import seed_system_configs
         from app.db import session as db_session
+
         async with db_session.async_session_factory() as session:
             await seed_system_configs(session)
     except Exception as exc:
         logger = logging.getLogger("app.startup")
         log_json(logger, logging.ERROR, "System config seeding failed", error=str(exc))
-    
+
     # Start Redis Pub/Sub background listener task
     import asyncio
+
     listener_task = asyncio.create_task(redis_pubsub_listener())
-    
+
     yield
 
     # Cancel listener task on shutdown
@@ -126,7 +157,7 @@ app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["127.0.0.1", "::1"])
 async def global_exception_handler(request: Request, exc: Exception):
     import traceback
     from fastapi.responses import JSONResponse
-    
+
     logger = logging.getLogger("app.error")
     log_json(
         logger,
@@ -137,21 +168,19 @@ async def global_exception_handler(request: Request, exc: Exception):
         error=str(exc),
         traceback=traceback.format_exc(),
     )
-    
+
     # Return error detail in development/editor environments
     # In production, we keep it generic to avoid leaking system info
-    detail = str(exc) if settings.environment != "production" else "Internal Server Error"
-    return JSONResponse(
-        status_code=500,
-        content={"detail": detail}
+    detail = (
+        str(exc) if settings.environment != "production" else "Internal Server Error"
     )
+    return JSONResponse(status_code=500, content={"detail": detail})
 
 
 # Initialize rate limiter
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
 
 
 @app.middleware("http")
@@ -163,11 +192,12 @@ async def add_language_header(request: Request, call_next):
     response = await call_next(request)
     return response
 
+
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
     """Add security headers to all responses"""
     response = await call_next(request)
-    
+
     # Security headers — always set for defense-in-depth
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -177,13 +207,17 @@ async def add_security_headers(request: Request, call_next):
     # response.headers["X-XSS-Protection"] = "1; mode=block" (REMOVED)
 
     # Permissions-Policy to restrict sensitive features
-    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+    response.headers["Permissions-Policy"] = (
+        "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+    )
 
     if settings.environment == "production":
         # HSTS set here for backends not behind Nginx (e.g. direct access).
         # Nginx also sets it — duplicate headers are harmless; missing it is not.
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
+
     # Swagger UI loads assets from cdn.jsdelivr.net — skip strict CSP for docs paths.
     if request.url.path not in ("/docs", "/redoc", "/openapi.json"):
         response.headers["Content-Security-Policy"] = (
@@ -197,8 +231,6 @@ async def add_security_headers(request: Request, call_next):
             "object-src 'none';"
         )
     return response
-
-
 
 
 # Request context & ID middleware - REGISTERED LAST to be OUTERMOST
@@ -220,6 +252,7 @@ async def add_request_id(request: Request, call_next):
         return response
     except Exception as exc:
         import traceback
+
         log_json(
             logger,
             logging.ERROR,
@@ -252,12 +285,14 @@ async def block_noisy_requests(request: Request, call_next):
     Returns 404 for known forbidden prefixes or specific noisy paths.
     """
     path = request.url.path
-    
+
     # Check prefixes
-    blocked_prefixes = [p.strip() for p in settings.security_block_prefixes.split(",") if p.strip()]
+    blocked_prefixes = [
+        p.strip() for p in settings.security_block_prefixes.split(",") if p.strip()
+    ]
     for prefix in blocked_prefixes:
         if path.startswith(prefix):
-            # We log it as a scan attempt at WARNING level, but return early 
+            # We log it as a scan attempt at WARNING level, but return early
             # so the main request-id middleware doesn't log it as a normal request.
             logger = logging.getLogger("app.security")
             log_json(
@@ -266,15 +301,14 @@ async def block_noisy_requests(request: Request, call_next):
                 "Crawler/Scanner path blocked",
                 method=request.method,
                 path=path,
-                ip=request.client.host if request.client else "unknown"
+                ip=request.client.host if request.client else "unknown",
             )
-            return JSONResponse(
-                status_code=404,
-                content={"detail": "Not Found"}
-            )
-            
+            return JSONResponse(status_code=404, content={"detail": "Not Found"})
+
     # Check exact paths
-    blocked_paths = [p.strip() for p in settings.security_block_paths.split(",") if p.strip()]
+    blocked_paths = [
+        p.strip() for p in settings.security_block_paths.split(",") if p.strip()
+    ]
     if path in blocked_paths:
         logger = logging.getLogger("app.security")
         log_json(
@@ -283,12 +317,9 @@ async def block_noisy_requests(request: Request, call_next):
             "Crawler/Scanner path blocked",
             method=request.method,
             path=path,
-            ip=request.client.host if request.client else "unknown"
+            ip=request.client.host if request.client else "unknown",
         )
-        return JSONResponse(
-            status_code=404,
-            content={"detail": "Not Found"}
-        )
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
 
     return await call_next(request)
 
@@ -310,13 +341,18 @@ async def enforce_app_id(request: Request, call_next):
 
     # Exempt auth bootstrap endpoints — they are protected by their own mechanisms
     # (refresh cookie, OAuth state) and must work before the client knows the app ID.
-    exempt_paths = ("/api/auth/refresh", "/api/auth/google/", "/api/auth/facebook/", "/api/auth/twitter/")
+    exempt_paths = (
+        "/api/auth/refresh",
+        "/api/auth/google/",
+        "/api/auth/facebook/",
+        "/api/auth/twitter/",
+    )
     if any(request.url.path.startswith(p) for p in exempt_paths):
         return await call_next(request)
 
     # Check for the Application ID header
     app_id = request.headers.get("X-Kitabim-App-Id")
-    
+
     if app_id != settings.security_app_id:
         logger = logging.getLogger("app.security")
         log_json(
@@ -325,18 +361,22 @@ async def enforce_app_id(request: Request, call_next):
             "Unauthorized client: Missing or invalid App ID",
             method=request.method,
             path=request.url.path,
-            ip=request.client.host if request.client else "unknown"
+            ip=request.client.host if request.client else "unknown",
         )
         return JSONResponse(
             status_code=403,
-            content={"detail": "Unauthorized: Request must originate from the authorized application"}
+            content={
+                "detail": "Unauthorized: Request must originate from the authorized application"
+            },
         )
 
     return await call_next(request)
 
 
 # CORS Configuration - Allow only specific origins
-allowed_origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
+allowed_origins = [
+    origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
@@ -346,12 +386,13 @@ app.add_middleware(
     expose_headers=["X-Request-ID"],
 )
 
+
 @app.get("/api/covers/{book_id}.jpg")
 async def get_cover(book_id: str, request: Request):
     local_path = settings.covers_dir / f"{book_id}.jpg"
     if local_path.exists():
         return FileResponse(local_path)
-    
+
     # Try storage
     remote_path = f"covers/{book_id}.jpg"
     if storage.exists(remote_path):
@@ -362,13 +403,15 @@ async def get_cover(book_id: str, request: Request):
             v = request.query_params.get("v")
             if v:
                 from urllib.parse import urlencode
+
                 url += f"?{urlencode({'v': v})}"
             return RedirectResponse(url)
         else:
             await storage.download_file(remote_path, local_path)
             return FileResponse(local_path)
-    
+
     raise HTTPException(status_code=404, detail=t("errors.cover_not_found"))
+
 
 # Keep the mount for legacy/local if needed, but the route above takes precedence
 app.mount("/api/covers", StaticFiles(directory=str(settings.covers_dir)), name="covers")
@@ -378,11 +421,15 @@ app.include_router(users_router.router, prefix="/api/users", tags=["users"])
 app.include_router(books_router.router, prefix="/api/books", tags=["books"])
 app.include_router(chat_router.router, prefix="/api/chat", tags=["chat"])
 app.include_router(ai_router.router, prefix="/api/ai", tags=["ai"])
-app.include_router(system_configs_router.router, prefix="/api/system-configs", tags=["system-configs"])
+app.include_router(
+    system_configs_router.router, prefix="/api/system-configs", tags=["system-configs"]
+)
 app.include_router(stats_router.router, prefix="/api/stats", tags=["stats"])
 app.include_router(contact_router.router, prefix="/api/contact", tags=["contact"])
 app.include_router(spell_check_router.router, prefix="/api/books", tags=["spell-check"])
-app.include_router(auto_correct_rules_router.router, prefix="/api", tags=["spell-check"])
+app.include_router(
+    auto_correct_rules_router.router, prefix="/api", tags=["spell-check"]
+)
 app.include_router(dictionary_router.router, prefix="/api", tags=["dictionary"])
 app.include_router(share_router.router, prefix="/api/share", tags=["share"])
 app.include_router(cache_router.router, prefix="/api/cache", tags=["cache"])
@@ -408,6 +455,7 @@ async def health():
 async def ready():
     from app.db.session import get_engine
     from sqlalchemy import text
+
     try:
         engine = get_engine()
         async with engine.connect() as conn:

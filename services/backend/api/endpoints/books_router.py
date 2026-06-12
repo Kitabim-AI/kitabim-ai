@@ -10,7 +10,16 @@ import warnings
 from datetime import datetime, timezone
 from typing import Optional, List
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Response, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+)
 from sqlalchemy import text, and_, or_, case, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 import random
@@ -45,7 +54,11 @@ import logging
 from app.utils.text import generate_uyghur_regex, normalize_uyghur_chars
 from app.core.i18n import t
 from app.utils.observability import log_json
-from app.services.pdf_service import read_pdf_page_count, extract_pdf_cover, create_page_stubs
+from app.services.pdf_service import (
+    read_pdf_page_count,
+    extract_pdf_cover,
+    create_page_stubs,
+)
 from app.services.docx_service import extract_docx_pages, extract_docx_cover
 from app.services.cache_service import cache_service
 from app.core import cache_config
@@ -60,8 +73,8 @@ STAFF_BOOK_CACHE_SCOPE = "staff"
 def camel_to_snake(name: str) -> str:
     """Convert camelCase to snake_case"""
     # Insert underscore before uppercase letters and convert to lowercase
-    name = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
-    return re.sub('([a-z0-9])([A-Z])', r'\1_\2', name).lower()
+    name = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
+    return re.sub("([a-z0-9])([A-Z])", r"\1_\2", name).lower()
 
 
 def convert_dict_keys_to_snake(d: dict) -> dict:
@@ -80,13 +93,14 @@ def convert_dict_keys_to_snake(d: dict) -> dict:
             result[snake_key] = value
     return result
 
+
 def _normalize_categories(categories: Optional[List[str]]) -> List[str]:
     """Strip quotes and whitespace from category strings."""
     if not categories:
         return []
     return [
-        c.strip().strip('"').strip() 
-        for c in categories 
+        c.strip().strip('"').strip()
+        for c in categories
         if isinstance(c, str) and c.strip()
     ]
 
@@ -98,6 +112,7 @@ async def _increment_read_count(book_id: str) -> None:
     """Background task: atomically increment read_count with its own DB session."""
     from app.db.session import async_session_factory
     from app.db.models import Book as BookDB
+
     if async_session_factory is None:
         return
     async with async_session_factory() as session:
@@ -138,11 +153,17 @@ async def ensure_book_access(book: dict, user: Optional[User]) -> None:
 
 
 def get_book_cache_scope(user: Optional[User]) -> str:
-    return STAFF_BOOK_CACHE_SCOPE if _can_staff_access_book(user) else PUBLIC_BOOK_CACHE_SCOPE
+    return (
+        STAFF_BOOK_CACHE_SCOPE
+        if _can_staff_access_book(user)
+        else PUBLIC_BOOK_CACHE_SCOPE
+    )
 
 
 def get_book_cache_key(book_id: str, user: Optional[User]) -> str:
-    return f"{cache_config.KEY_BOOK.format(book_id=book_id)}:{get_book_cache_scope(user)}"
+    return (
+        f"{cache_config.KEY_BOOK.format(book_id=book_id)}:{get_book_cache_scope(user)}"
+    )
 
 
 async def read_limited_upload_bytes(file: UploadFile, max_bytes: int) -> bytes:
@@ -172,7 +193,11 @@ def load_safe_cover_image(image_data: bytes):
             warnings.simplefilter("error", Image.DecompressionBombWarning)
             img = Image.open(io.BytesIO(image_data))
             img.load()
-    except (UnidentifiedImageError, Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
+    except (
+        UnidentifiedImageError,
+        Image.DecompressionBombError,
+        Image.DecompressionBombWarning,
+    ) as exc:
         raise HTTPException(status_code=400, detail="Invalid image file") from exc
 
     if img.width * img.height > settings.max_cover_image_pixels:
@@ -192,7 +217,9 @@ async def process_cover_upload(file: UploadFile, book_id: str) -> str:
     if file.content_type not in allowed_types:
         raise HTTPException(
             status_code=400,
-            detail=t("errors.invalid_file_type", allowed=", ".join(sorted(allowed_types))),
+            detail=t(
+                "errors.invalid_file_type", allowed=", ".join(sorted(allowed_types))
+            ),
         )
 
     image_data = await read_limited_upload_bytes(file, settings.max_cover_upload_bytes)
@@ -208,15 +235,15 @@ async def process_cover_upload(file: UploadFile, book_id: str) -> str:
         temp_cover_path.unlink(missing_ok=True)
 
 
-
-
 @router.get("/", response_model=PaginatedBooks)
 async def get_books(
     page: int = Query(1, ge=1),
     pageSize: int = Query(10, ge=1, le=50),
     q: Optional[str] = Query(None, max_length=500),
     category: Optional[str] = Query(None, max_length=100),
-    sortBy: str = Query("title", pattern="^(title|author|date|uploadDate|created_at|updated_at)$"),
+    sortBy: str = Query(
+        "title", pattern="^(title|author|date|uploadDate|created_at|updated_at)$"
+    ),
     order: int = Query(1),
     groupByWork: bool = False,
     includeStats: bool = False,
@@ -230,7 +257,7 @@ async def get_books(
 
     # Cap pageSize to prevent extreme batch operations and connection pool exhaustion
     pageSize = min(max(1, pageSize), 50)
-    
+
     skip = (page - 1) * pageSize
     repo = BooksRepository(session)
     # --- PART 0: Cache Lookup ---
@@ -244,7 +271,7 @@ async def get_books(
         "sortBy": sortBy,
         "order": order,
         "groupByWork": groupByWork,
-        "user_role": current_user.role if current_user else "guest"
+        "user_role": current_user.role if current_user else "guest",
     }
 
     # Create separate cache keys for requests with/without stats
@@ -253,22 +280,34 @@ async def get_books(
     cache_params_no_stats = {**cache_params_base, "includeStats": False}
 
     version = await cache_service.get_namespace_version("books:list")
-    param_hash = hashlib.md5(json.dumps(cache_params_with_stats if includeStats else cache_params_no_stats, sort_keys=True).encode()).hexdigest()
+    param_hash = hashlib.md5(
+        json.dumps(
+            cache_params_with_stats if includeStats else cache_params_no_stats,
+            sort_keys=True,
+        ).encode()
+    ).hexdigest()
     cache_key = cache_config.KEY_BOOKS_LIST.format(hash=f"{version}:{param_hash}")
 
     skip_cache = (
-        settings.cache_skip_for_admins and
-        current_user and
-        current_user.role == "admin"
+        settings.cache_skip_for_admins and current_user and current_user.role == "admin"
     )
 
     # For admin page with stats, try to load cached metadata (without stats)
     # Then append fresh stats afterwards to avoid stale pipeline progress
     cached_metadata = None
-    if not skip_cache and includeStats and current_user and current_user.role in ['admin', 'editor']:
+    if (
+        not skip_cache
+        and includeStats
+        and current_user
+        and current_user.role in ["admin", "editor"]
+    ):
         # Try loading from metadata-only cache (excludeStats version)
-        metadata_hash = hashlib.md5(json.dumps(cache_params_no_stats, sort_keys=True).encode()).hexdigest()
-        metadata_cache_key = cache_config.KEY_BOOKS_LIST.format(hash=f"{version}:{metadata_hash}")
+        metadata_hash = hashlib.md5(
+            json.dumps(cache_params_no_stats, sort_keys=True).encode()
+        ).hexdigest()
+        metadata_cache_key = cache_config.KEY_BOOKS_LIST.format(
+            hash=f"{version}:{metadata_hash}"
+        )
         cached_metadata = await cache_service.get(metadata_cache_key)
 
     if not skip_cache and not includeStats:
@@ -277,11 +316,12 @@ async def get_books(
         if cached_result:
             return PaginatedBooks.model_validate(cached_result)
 
-
     # If we have cached metadata for admin stats request, use it and only fetch fresh stats
     if cached_metadata and includeStats:
         # Reuse cached book list, counts, etc.
-        cached_books = [Book.model_validate(b) for b in cached_metadata.get("books", [])]
+        cached_books = [
+            Book.model_validate(b) for b in cached_metadata.get("books", [])
+        ]
 
         # Fetch ONLY fresh stats for the cached books
         if cached_books:
@@ -294,13 +334,15 @@ async def get_books(
                 book.has_graph = stats.get("has_graph", False)
 
         # Return immediately with cached metadata + fresh stats
-        return PaginatedBooks.model_validate({
-            "books": cached_books,
-            "total": cached_metadata.get("total", 0),
-            "total_ready": cached_metadata.get("total_ready", 0),
-            "page": page,
-            "page_size": pageSize,
-        })
+        return PaginatedBooks.model_validate(
+            {
+                "books": cached_books,
+                "total": cached_metadata.get("total", 0),
+                "total_ready": cached_metadata.get("total_ready", 0),
+                "page": page,
+                "page_size": pageSize,
+            }
+        )
 
     # --- PART 1: Define Filters ---
     # conditions: for the main list (total)
@@ -309,21 +351,29 @@ async def get_books(
     if current_user is None:
         conditions.append(BookDB.status == "ready")
         conditions.append(or_(BookDB.visibility == "public", BookDB.visibility is None))
-    
+
     if category:
         conditions.append(category == any_(BookDB.categories))
 
     if q:
         # Detect trailing volume number e.g. "ئانا يۇرت 3"
-        volume_match = re.search(r'\s+(\d+)\s*$', q)
+        volume_match = re.search(r"\s+(\d+)\s*$", q)
         if volume_match:
-            title_q = q[:volume_match.start()].strip()
+            title_q = q[: volume_match.start()].strip()
             volume_num = int(volume_match.group(1))
             if title_q:
                 words = [w for w in title_q.split() if w.strip()]
                 word_conditions = []
                 for w in words:
-                    w_alt = w.replace('\u0626', '\u064A\u0654') if '\u0626' in w else (w.replace('\u064A\u0654', '\u0626') if '\u064A\u0654' in w else w)
+                    w_alt = (
+                        w.replace("\u0626", "\u064a\u0654")
+                        if "\u0626" in w
+                        else (
+                            w.replace("\u064a\u0654", "\u0626")
+                            if "\u064a\u0654" in w
+                            else w
+                        )
+                    )
                     search_filter = or_(
                         BookDB.title.ilike(f"%{w}%"),
                         BookDB.author.ilike(f"%{w}%"),
@@ -338,14 +388,22 @@ async def get_books(
             words = [w for w in q.split() if w.strip()]
             word_conditions = []
             for w in words:
-                w_alt = w.replace('\u0626', '\u064A\u0654') if '\u0626' in w else (w.replace('\u064A\u0654', '\u0626') if '\u064A\u0654' in w else w)
+                w_alt = (
+                    w.replace("\u0626", "\u064a\u0654")
+                    if "\u0626" in w
+                    else (
+                        w.replace("\u064a\u0654", "\u0626")
+                        if "\u064a\u0654" in w
+                        else w
+                    )
+                )
                 search_filter = or_(
                     BookDB.title.ilike(f"%{w}%"),
                     BookDB.author.ilike(f"%{w}%"),
                     BookDB.title.ilike(f"%{w_alt}%"),
                     BookDB.author.ilike(f"%{w_alt}%"),
-                    func.array_to_string(BookDB.categories, ',').ilike(f"%{w}%"),
-                    func.array_to_string(BookDB.categories, ',').ilike(f"%{w_alt}%")
+                    func.array_to_string(BookDB.categories, ",").ilike(f"%{w}%"),
+                    func.array_to_string(BookDB.categories, ",").ilike(f"%{w_alt}%"),
                 )
                 word_conditions.append(search_filter)
             if word_conditions:
@@ -353,18 +411,26 @@ async def get_books(
 
     # --- PART 2: Optimized Counting ---
     # Merge total and total_ready counts into a single query for better performance
-    can_see_all = current_user and current_user.role in ['admin', 'editor']
-    
+    can_see_all = current_user and current_user.role in ["admin", "editor"]
+
     if groupByWork:
         # Count unique works (title, author)
         count_stmt = select(
             func.count().label("total"),
-            func.count(case((
-                and_(
-                    BookDB.status == "ready", 
-                    or_(BookDB.visibility == "public", BookDB.visibility.is_(None))
-                ), 1
-            ))).label("total_ready")
+            func.count(
+                case(
+                    (
+                        and_(
+                            BookDB.status == "ready",
+                            or_(
+                                BookDB.visibility == "public",
+                                BookDB.visibility.is_(None),
+                            ),
+                        ),
+                        1,
+                    )
+                )
+            ).label("total_ready"),
         ).select_from(
             select(BookDB.title, BookDB.author, BookDB.status, BookDB.visibility)
             .where(and_(*conditions))
@@ -375,19 +441,27 @@ async def get_books(
         # Standard flat count
         count_stmt = select(
             func.count(BookDB.id).label("total"),
-            func.count(case((
-                and_(
-                    BookDB.status == "ready", 
-                    or_(BookDB.visibility == "public", BookDB.visibility.is_(None))
-                ), 1
-            ))).label("total_ready")
+            func.count(
+                case(
+                    (
+                        and_(
+                            BookDB.status == "ready",
+                            or_(
+                                BookDB.visibility == "public",
+                                BookDB.visibility.is_(None),
+                            ),
+                        ),
+                        1,
+                    )
+                )
+            ).label("total_ready"),
         ).where(and_(*conditions))
-    
+
     count_res = await session.execute(count_stmt)
     row = count_res.fetchone()
     total = row.total if row else 0
     total_ready = row.total_ready if row else 0
-    
+
     if not can_see_all:
         total_ready = total
 
@@ -396,40 +470,60 @@ async def get_books(
         # Optimized grouping: Pick the LATEST volume per (title, author)
         # and attach the series arrival date for sorting.
         from sqlalchemy.orm import aliased
-        
+
         inner_stmt = (
             select(
                 BookDB,
-                func.max(BookDB.upload_date).over(partition_by=[BookDB.title, BookDB.author]).label("series_latest")
+                func.max(BookDB.upload_date)
+                .over(partition_by=[BookDB.title, BookDB.author])
+                .label("series_latest"),
             )
             .where(and_(*conditions))
-            .distinct(BookDB.title, BookDB.author) # Truly group works
+            .distinct(BookDB.title, BookDB.author)  # Truly group works
             .order_by(BookDB.title, BookDB.author, BookDB.upload_date.desc())
         ).subquery()
-        
+
         book_alias = aliased(BookDB, inner_stmt)
         main_stmt = select(book_alias)
-        
+
         if order == -1:
-            main_stmt = main_stmt.order_by(inner_stmt.c.series_latest.desc(), inner_stmt.c.title.asc())
+            main_stmt = main_stmt.order_by(
+                inner_stmt.c.series_latest.desc(), inner_stmt.c.title.asc()
+            )
         else:
-            main_stmt = main_stmt.order_by(inner_stmt.c.series_latest.asc(), inner_stmt.c.title.asc())
-        
+            main_stmt = main_stmt.order_by(
+                inner_stmt.c.series_latest.asc(), inner_stmt.c.title.asc()
+            )
+
         main_stmt = main_stmt.offset(skip).limit(pageSize)
         result = await session.execute(main_stmt)
         books_objs = result.scalars().all()
     else:
         # Standard flat list fetch
         stmt = select(BookDB).where(and_(*conditions))
-        
+
         if sortBy == "uploadDate":
-            series_latest = func.max(BookDB.upload_date).over(partition_by=[BookDB.title, BookDB.author])
+            series_latest = func.max(BookDB.upload_date).over(
+                partition_by=[BookDB.title, BookDB.author]
+            )
             if order == -1:
-                stmt = stmt.order_by(series_latest.desc(), BookDB.title.asc(), BookDB.volume.asc().nulls_first())
+                stmt = stmt.order_by(
+                    series_latest.desc(),
+                    BookDB.title.asc(),
+                    BookDB.volume.asc().nulls_first(),
+                )
             else:
-                stmt = stmt.order_by(series_latest.asc(), BookDB.title.asc(), BookDB.volume.asc().nulls_first())
+                stmt = stmt.order_by(
+                    series_latest.asc(),
+                    BookDB.title.asc(),
+                    BookDB.volume.asc().nulls_first(),
+                )
         else:
-            sort_map = {"title": BookDB.title, "author": BookDB.author, "lastUpdated": BookDB.last_updated}
+            sort_map = {
+                "title": BookDB.title,
+                "author": BookDB.author,
+                "lastUpdated": BookDB.last_updated,
+            }
             sort_col = sort_map.get(sortBy, BookDB.upload_date)
             stmt = stmt.order_by(sort_col.desc() if order == -1 else sort_col.asc())
 
@@ -444,9 +538,7 @@ async def get_books(
     # This is needed only on the admin book management page, not on library/home views
     # Huge performance gain: Avoids expensive JOIN + GROUP BY on pages table for every book
     should_include_stats = (
-        includeStats and
-        current_user and
-        current_user.role in ['admin', 'editor']
+        includeStats and current_user and current_user.role in ["admin", "editor"]
     )
 
     for b in books_objs:
@@ -461,20 +553,37 @@ async def get_books(
                 last_error_obj = b.last_error
 
         b_dict = {
-            "id": b.id, "content_hash": b.content_hash, "title": b.title, "author": b.author or "",
-            "volume": b.volume, "total_pages": b.total_pages or 0, "pages": [], "status": b.status,
-            "pipeline_step": b.pipeline_step, "upload_date": b.upload_date, "last_updated": b.last_updated,
-            "updated_by": b.updated_by, "created_by": b.created_by,
-            "cover_url": f"{storage.get_public_url(b.cover_url)}?v={int(b.last_updated.timestamp())}" if b.cover_url and b.last_updated else (storage.get_public_url(b.cover_url) if b.cover_url else None),
-            "visibility": b.visibility, "categories": _normalize_categories(b.categories),
-            "last_error": last_error_obj, "read_count": b.read_count or 0, "file_name": b.file_name,
-            "file_type": b.file_type, "source": b.source, "pipeline_stats": {}, "has_summary": False,
+            "id": b.id,
+            "content_hash": b.content_hash,
+            "title": b.title,
+            "author": b.author or "",
+            "volume": b.volume,
+            "total_pages": b.total_pages or 0,
+            "pages": [],
+            "status": b.status,
+            "pipeline_step": b.pipeline_step,
+            "upload_date": b.upload_date,
+            "last_updated": b.last_updated,
+            "updated_by": b.updated_by,
+            "created_by": b.created_by,
+            "cover_url": f"{storage.get_public_url(b.cover_url)}?v={int(b.last_updated.timestamp())}"
+            if b.cover_url and b.last_updated
+            else (storage.get_public_url(b.cover_url) if b.cover_url else None),
+            "visibility": b.visibility,
+            "categories": _normalize_categories(b.categories),
+            "last_error": last_error_obj,
+            "read_count": b.read_count or 0,
+            "file_name": b.file_name,
+            "file_type": b.file_type,
+            "source": b.source,
+            "pipeline_stats": {},
+            "has_summary": False,
             "has_graph": False,
             # Book-level milestones for accurate icon colors
             "ocr_milestone": b.ocr_milestone,
             "chunking_milestone": b.chunking_milestone,
             "embedding_milestone": b.embedding_milestone,
-            "spell_check_milestone": b.spell_check_milestone
+            "spell_check_milestone": b.spell_check_milestone,
         }
         books_data.append(BookSchema.model_validate(b_dict))
 
@@ -485,8 +594,10 @@ async def get_books(
         s_stmt = select(BookSummary.book_id).where(BookSummary.book_id.in_(bid_list))
         s_res = await session.execute(s_stmt)
         summary_ids = {str(row[0]) for row in s_res.fetchall()}
-        
-        g_stmt = select(BookDB.id).where(BookDB.id.in_(bid_list), BookDB.graph_milestone == "complete")
+
+        g_stmt = select(BookDB.id).where(
+            BookDB.id.in_(bid_list), BookDB.graph_milestone == "complete"
+        )
         g_res = await session.execute(g_stmt)
         graph_ids = {str(row[0]) for row in g_res.fetchall()}
 
@@ -525,11 +636,16 @@ async def get_books(
 
         cache_ttl = 1800 if current_user is None else 600
 
-        if includeStats and current_user and current_user.role in ['admin', 'editor']:
+        if includeStats and current_user and current_user.role in ["admin", "editor"]:
             # Create metadata-only version (strip out stats)
             metadata_result = {
                 "books": [
-                    {**book.model_dump(), "pipeline_stats": {}, "has_summary": False, "has_graph": False}
+                    {
+                        **book.model_dump(),
+                        "pipeline_stats": {},
+                        "has_summary": False,
+                        "has_graph": False,
+                    }
                     for book in books_data
                 ],
                 "total": total,
@@ -539,9 +655,15 @@ async def get_books(
             }
 
             # Cache metadata version (longer TTL since metadata is stable)
-            metadata_hash = hashlib.md5(json.dumps(cache_params_no_stats, sort_keys=True).encode()).hexdigest()
-            metadata_cache_key = cache_config.KEY_BOOKS_LIST.format(hash=f"{version}:{metadata_hash}")
-            await cache_service.set(metadata_cache_key, metadata_result, ttl=cache_ttl * 2)  # 20 min for metadata
+            metadata_hash = hashlib.md5(
+                json.dumps(cache_params_no_stats, sort_keys=True).encode()
+            ).hexdigest()
+            metadata_cache_key = cache_config.KEY_BOOKS_LIST.format(
+                hash=f"{version}:{metadata_hash}"
+            )
+            await cache_service.set(
+                metadata_cache_key, metadata_result, ttl=cache_ttl * 2
+            )  # 20 min for metadata
 
             # Note: We do NOT cache the full stats result to ensure stats are always fresh
         else:
@@ -549,8 +671,6 @@ async def get_books(
             await cache_service.set(cache_key, result, ttl=cache_ttl)
 
     return result
-
-
 
 
 @router.get("/random-proverb")
@@ -570,9 +690,9 @@ async def get_random_proverb(
     # Cache Lookup for the LIST of proverbs for this keyword
     keyword_hash = hashlib.md5((keyword or "default").encode()).hexdigest()[:8]
     list_cache_key = f"proverbs:list:{keyword_hash}"
-    
+
     proverbs_list = await cache_service.get(list_cache_key)
-    
+
     if proverbs_list is None:
         if keyword:
             keywords = [k.strip() for k in keyword.split(",") if k.strip()]
@@ -588,25 +708,24 @@ async def get_random_proverb(
 
         # Fetch matching proverbs (list)
         results = await proverbs_repo.find_by_text_pattern(combined_pattern)
-        
+
         if results:
             proverbs_list = [
                 {"text": p.text, "volume": p.volume, "pageNumber": p.page_number}
                 for p in results
             ]
         else:
-            proverbs_list = [{
-                "text": "كىتاب — بىلىم بۇلىقى.",
-                "volume": 1,
-                "pageNumber": 1
-            }]
-            
+            proverbs_list = [
+                {"text": "كىتاب — بىلىم بۇلىقى.", "volume": 1, "pageNumber": 1}
+            ]
+
         # Cache the list (longer TTL as proverbs change infrequently)
-        await cache_service.set(list_cache_key, proverbs_list, ttl=settings.cache_ttl_proverbs)
+        await cache_service.set(
+            list_cache_key, proverbs_list, ttl=settings.cache_ttl_proverbs
+        )
 
     # Randomly select one from the cached list (Dynamic on every refresh)
     return random.choice(proverbs_list)
-
 
 
 @router.get("/top-categories")
@@ -623,17 +742,19 @@ async def get_top_categories(
     # public = cacheable by browsers and CDNs (categories change infrequently)
     # max-age = browser caches for 15 minutes
     # stale-while-revalidate = browser can use stale cache for 120s while fetching new data in background
-    response.headers["Cache-Control"] = f"public, max-age={settings.cache_ttl_categories}, stale-while-revalidate=120"
+    response.headers["Cache-Control"] = (
+        f"public, max-age={settings.cache_ttl_categories}, stale-while-revalidate=120"
+    )
 
     # Cache Lookup
-    cache_params = {
-        "limit": limit,
-        "sort": sort,
-        "is_guest": current_user is None
-    }
+    cache_params = {"limit": limit, "sort": sort, "is_guest": current_user is None}
     version = await cache_service.get_namespace_version("category")
-    param_hash = hashlib.md5(json.dumps(cache_params, sort_keys=True).encode()).hexdigest()[:8]
-    cache_key = cache_config.KEY_CATEGORY.format(type="top", params=f"{version}:{param_hash}")
+    param_hash = hashlib.md5(
+        json.dumps(cache_params, sort_keys=True).encode()
+    ).hexdigest()[:8]
+    cache_key = cache_config.KEY_CATEGORY.format(
+        type="top", params=f"{version}:{param_hash}"
+    )
 
     cached_result = await cache_service.get(cache_key)
     if cached_result:
@@ -667,14 +788,13 @@ async def get_top_categories(
     result = await session.execute(sql, params)
     rows = result.fetchall()
     categories = [row.clean_category for row in rows]
-    
+
     result = {"categories": categories}
 
     # Store in cache
     await cache_service.set(cache_key, result, ttl=settings.cache_ttl_categories)
 
     return result
-
 
 
 @router.get("/suggest")
@@ -691,7 +811,7 @@ async def suggest_books(
         return {"suggestions": []}
 
     # Cache Lookup
-    # Limit to first 10 chars to increase hit rate, hash to prevent key injection 
+    # Limit to first 10 chars to increase hit rate, hash to prevent key injection
     q_prefix = hashlib.md5(q[:10].encode()).hexdigest()[:8]
     user_role = current_user.role if current_user else "guest"
     cache_key = f"suggestions:{q_prefix}:{user_role}"
@@ -705,13 +825,15 @@ async def suggest_books(
     conditions = []
     if current_user is None:
         # Guests can only see public ready books
-        conditions.extend([
-            Book.status == "ready",
-            or_(
-                Book.visibility == "public",
-                Book.visibility.is_(None)  # Legacy books default to public
-            )
-        ])
+        conditions.extend(
+            [
+                Book.status == "ready",
+                or_(
+                    Book.visibility == "public",
+                    Book.visibility.is_(None),  # Legacy books default to public
+                ),
+            ]
+        )
 
     # Define search filter using ILIKE for case-insensitive search
     normalized_q = generate_uyghur_regex(q)
@@ -720,7 +842,7 @@ async def suggest_books(
         Book.title.op("~*")(normalized_q),  # PostgreSQL regex, case-insensitive
         Book.author.op("~*")(normalized_q),
         # For array search, we need to use raw SQL or array_to_string
-        func.array_to_string(Book.categories, ',').op("~*")(normalized_q)
+        func.array_to_string(Book.categories, ",").op("~*")(normalized_q),
     )
     conditions.append(search_conditions)
 
@@ -767,7 +889,6 @@ async def suggest_books(
     return result
 
 
-
 @router.get("/{book_id}", response_model=Book)
 async def get_book(
     book_id: str,
@@ -780,9 +901,7 @@ async def get_book(
 
     # --- PART 0: Cache Lookup ---
     skip_cache = (
-        settings.cache_skip_for_admins and 
-        current_user and 
-        current_user.role == "admin"
+        settings.cache_skip_for_admins and current_user and current_user.role == "admin"
     )
 
     if not skip_cache:
@@ -805,7 +924,7 @@ async def get_book(
 
     if not stats:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
-    
+
     book_model = stats["book"]
 
     # Convert to dict for access check (legacy function expects dict)
@@ -854,7 +973,13 @@ async def get_book(
         "last_updated": book_model.last_updated,
         "updated_by": book_model.updated_by,
         "created_by": book_model.created_by,
-        "cover_url": f"{storage.get_public_url(book_model.cover_url)}?v={int(book_model.last_updated.timestamp())}" if book_model.cover_url and book_model.last_updated else (storage.get_public_url(book_model.cover_url) if book_model.cover_url else None),
+        "cover_url": f"{storage.get_public_url(book_model.cover_url)}?v={int(book_model.last_updated.timestamp())}"
+        if book_model.cover_url and book_model.last_updated
+        else (
+            storage.get_public_url(book_model.cover_url)
+            if book_model.cover_url
+            else None
+        ),
         "visibility": book_model.visibility,
         "categories": _normalize_categories(book_model.categories),
         "last_error": last_error_obj,
@@ -864,22 +989,24 @@ async def get_book(
         "source": book_model.source,
         "pipeline_stats": pipeline_stats,
         "has_summary": has_summary,
-        "has_graph": has_graph
+        "has_graph": has_graph,
     }
 
     # Convert SQLAlchemy models to Pydantic (automatic camelCase conversion)
     book_response = Book.model_validate(book_dict)
 
-    # We intentionally return empty pages here. The frontend should fetch content 
+    # We intentionally return empty pages here. The frontend should fetch content
     # via the /content endpoint or paginated API.
     book_response.pages = []
 
     # Cache with visibility-aware scope.
-    if not skip_cache and (_can_staff_access_book(current_user) or _is_public_book(book_dict)):
+    if not skip_cache and (
+        _can_staff_access_book(current_user) or _is_public_book(book_dict)
+    ):
         await cache_service.set(
             get_book_cache_key(book_id, current_user),
-            book_dict, 
-            ttl=settings.cache_ttl_books
+            book_dict,
+            ttl=settings.cache_ttl_books,
         )
 
     return book_response
@@ -888,7 +1015,9 @@ async def get_book(
 @router.get("/{book_id}/pipeline-stats")
 async def get_book_pipeline_stats(
     book_id: str,
-    step: Optional[str] = None,  # Optional: ocr, chunking, embedding, spell_check, summary
+    step: Optional[
+        str
+    ] = None,  # Optional: ocr, chunking, embedding, spell_check, summary
     current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
@@ -906,9 +1035,8 @@ async def get_book_pipeline_stats(
         "pipeline_stats": stats.get("pipeline_stats", {}),
         "has_summary": stats.get("has_summary", False),
         "has_graph": stats.get("has_graph", False),
-        "total_pages": stats["book"].total_pages
+        "total_pages": stats["book"].total_pages,
     }
-
 
 
 @router.get("/stats")
@@ -918,22 +1046,22 @@ async def get_book_stats(
 ):
     """Get book statistics for admin dashboard"""
     repo = BooksRepository(session)
-    
+
     # Count by status
     pending = await repo.count_by_status("pending")
     processing = await repo.count_by_status("ocr_processing")
     completed = await repo.count_by_status("ready")
     error = await repo.count_by_status("error")
-    
+
     # Count total
     total = pending + processing + completed + error
-    
+
     return {
-      "total": total,
-      "pending": pending,
-      "processing": processing,
-      "completed": completed,
-      "error": error
+        "total": total,
+        "pending": pending,
+        "processing": processing,
+        "completed": completed,
+        "error": error,
     }
 
 
@@ -968,7 +1096,9 @@ async def get_book_content(
         content_blocks.append(f"[[PAGE {p.page_number}]]\n{p.text or ''}")
 
     full_text = "\n\n".join(content_blocks)
-    logger.info(f"DEBUG: Returning full content for book {book_id}, length={len(full_text)}")
+    logger.info(
+        f"DEBUG: Returning full content for book {book_id}, length={len(full_text)}"
+    )
 
     return {"content": full_text.strip()}
 
@@ -1040,7 +1170,6 @@ async def get_book_pages(
     return [ExtractionResult.model_validate(p) for p in pages]
 
 
-
 @router.get("/hash/{content_hash}", response_model=Book)
 async def get_book_by_hash(
     content_hash: str,
@@ -1083,7 +1212,9 @@ async def upload_pdf(
     elif fname_lower.endswith(".docx"):
         file_type = "docx"
     else:
-        raise HTTPException(status_code=400, detail=t("errors.invalid_file_type", allowed=".pdf, .docx"))
+        raise HTTPException(
+            status_code=400, detail=t("errors.invalid_file_type", allowed=".pdf, .docx")
+        )
 
     ext = "." + file_type
     temp_path = settings.uploads_dir / f".upload_{uuid.uuid4().hex}{ext}"
@@ -1173,21 +1304,23 @@ async def upload_pdf(
         create_page_stubs(session, book_id, page_count)
     else:
         # Pre-populate page text; start pipeline at chunking (skip OCR)
-        session.add_all([
-            Page(
-                book_id=book_id,
-                page_number=i + 1,
-                text=text,
-                pipeline_step=PIPELINE_STEP_CHUNKING,
-                milestone=PAGE_MILESTONE_IDLE,
-                status="ocr_done",
-                ocr_milestone=PAGE_MILESTONE_SUCCEEDED,
-                chunking_milestone=PAGE_MILESTONE_IDLE,
-                embedding_milestone=PAGE_MILESTONE_IDLE,
-                spell_check_milestone=PAGE_MILESTONE_IDLE,
-            )
-            for i, text in enumerate(docx_pages)
-        ])
+        session.add_all(
+            [
+                Page(
+                    book_id=book_id,
+                    page_number=i + 1,
+                    text=text,
+                    pipeline_step=PIPELINE_STEP_CHUNKING,
+                    milestone=PAGE_MILESTONE_IDLE,
+                    status="ocr_done",
+                    ocr_milestone=PAGE_MILESTONE_SUCCEEDED,
+                    chunking_milestone=PAGE_MILESTONE_IDLE,
+                    embedding_milestone=PAGE_MILESTONE_IDLE,
+                    spell_check_milestone=PAGE_MILESTONE_IDLE,
+                )
+                for i, text in enumerate(docx_pages)
+            ]
+        )
 
     await session.commit()
 
@@ -1196,7 +1329,6 @@ async def upload_pdf(
     await cache_service.bump_namespace_version("category")
 
     return {"bookId": book_id, "status": "uploaded"}
-
 
 
 @router.post("/{book_id}/reprocess/ocr")
@@ -1253,8 +1385,10 @@ async def reprocess_ocr(
     await cache_service.delete_pattern(f"rag:search:{book_id}:*")
     await cache_service.delete_pattern("rag:summary_search:*")
 
-    return {"status": "ocr_reprocess_started", "message": "OCR milestones reset. Scanner will reprocess pages."}
-
+    return {
+        "status": "ocr_reprocess_started",
+        "message": "OCR milestones reset. Scanner will reprocess pages.",
+    }
 
 
 @router.post("/{book_id}/reprocess/chunking")
@@ -1309,8 +1443,10 @@ async def reprocess_chunking(
     await cache_service.delete_pattern(f"rag:search:{book_id}:*")
     await cache_service.delete_pattern("rag:summary_search:*")
 
-    return {"status": "chunking_reprocess_started", "message": "Chunking milestones reset. Scanner will recreate chunks."}
-
+    return {
+        "status": "chunking_reprocess_started",
+        "message": "Chunking milestones reset. Scanner will recreate chunks.",
+    }
 
 
 @router.post("/{book_id}/reprocess/embedding")
@@ -1367,10 +1503,10 @@ async def reprocess_embedding(
     await cache_service.delete_pattern(f"rag:search:{book_id}:*")
     await cache_service.delete_pattern("rag:summary_search:*")
 
-    return {"status": "embedding_reprocess_started", "message": "Embedding milestones reset. Scanner will regenerate vectors."}
-
-
-
+    return {
+        "status": "embedding_reprocess_started",
+        "message": "Embedding milestones reset. Scanner will regenerate vectors.",
+    }
 
 
 @router.post("/{book_id}/reprocess/spell-check")
@@ -1413,7 +1549,10 @@ async def reprocess_spell_check(
     )
     await session.commit()
 
-    return {"status": "spell_check_reprocess_started", "message": "Spell check milestone reset. Scanner will reprocess."}
+    return {
+        "status": "spell_check_reprocess_started",
+        "message": "Spell check milestone reset. Scanner will reprocess.",
+    }
 
 
 @router.post("/{book_id}/reprocess/graph")
@@ -1434,7 +1573,9 @@ async def reprocess_graph(
     configs_repo = SystemConfigsRepository(session)
     kg_enabled = await configs_repo.get_value("knowledge_graph_enabled", "false")
     if kg_enabled != "true":
-        raise HTTPException(status_code=400, detail="Knowledge Graph generation is currently disabled.")
+        raise HTTPException(
+            status_code=400, detail="Knowledge Graph generation is currently disabled."
+        )
 
     # Set milestone to in_progress atomically before enqueuing
     await books_repo.update_one(
@@ -1447,12 +1588,27 @@ async def reprocess_graph(
 
     try:
         import arq
-        redis_pool = await arq.create_pool(arq.connections.RedisSettings.from_dsn(settings.redis_url))
+
+        redis_pool = await arq.create_pool(
+            arq.connections.RedisSettings.from_dsn(settings.redis_url)
+        )
         await redis_pool.enqueue_job("knowledge_graph_job", book_id)
         await redis_pool.aclose()
-        log_json(logger, logging.INFO, "manually enqueued knowledge_graph_job", book_id=book_id, user=current_user.email)
+        log_json(
+            logger,
+            logging.INFO,
+            "manually enqueued knowledge_graph_job",
+            book_id=book_id,
+            user=current_user.email,
+        )
     except Exception as exc:
-        log_json(logger, logging.ERROR, "failed to enqueue knowledge_graph_job", book_id=book_id, error=str(exc))
+        log_json(
+            logger,
+            logging.ERROR,
+            "failed to enqueue knowledge_graph_job",
+            book_id=book_id,
+            error=str(exc),
+        )
         # Rollback graph milestone to idle if enqueueing failed
         await books_repo.update_one(
             book_id,
@@ -1463,7 +1619,10 @@ async def reprocess_graph(
         await session.commit()
         raise HTTPException(status_code=500, detail=t("errors.graph_enqueue_failed"))
 
-    return {"status": "graph_reprocess_started", "message": "Knowledge Graph extraction queued."}
+    return {
+        "status": "graph_reprocess_started",
+        "message": "Knowledge Graph extraction queued.",
+    }
 
 
 @router.post("/{book_id}/retry-failed")
@@ -1489,22 +1648,38 @@ async def retry_failed_pages(
                 Page.chunking_milestone.in_(FAILED_PAGE_MILESTONES),
                 Page.embedding_milestone.in_(FAILED_PAGE_MILESTONES),
                 Page.spell_check_milestone.in_(FAILED_PAGE_MILESTONES),
-            )
+            ),
         )
         .values(
             ocr_milestone=case(
-                (Page.ocr_milestone.in_(FAILED_PAGE_MILESTONES), text(f"'{PAGE_MILESTONE_IDLE}'")), else_=Page.ocr_milestone
+                (
+                    Page.ocr_milestone.in_(FAILED_PAGE_MILESTONES),
+                    text(f"'{PAGE_MILESTONE_IDLE}'"),
+                ),
+                else_=Page.ocr_milestone,
             ),
             chunking_milestone=case(
-                (Page.chunking_milestone.in_(FAILED_PAGE_MILESTONES), text(f"'{PAGE_MILESTONE_IDLE}'")), else_=Page.chunking_milestone
+                (
+                    Page.chunking_milestone.in_(FAILED_PAGE_MILESTONES),
+                    text(f"'{PAGE_MILESTONE_IDLE}'"),
+                ),
+                else_=Page.chunking_milestone,
             ),
             embedding_milestone=case(
-                (Page.embedding_milestone.in_(FAILED_PAGE_MILESTONES), text(f"'{PAGE_MILESTONE_IDLE}'")), else_=Page.embedding_milestone
+                (
+                    Page.embedding_milestone.in_(FAILED_PAGE_MILESTONES),
+                    text(f"'{PAGE_MILESTONE_IDLE}'"),
+                ),
+                else_=Page.embedding_milestone,
             ),
             spell_check_milestone=case(
-                (Page.spell_check_milestone.in_(FAILED_PAGE_MILESTONES), text(f"'{PAGE_MILESTONE_IDLE}'")), else_=Page.spell_check_milestone
+                (
+                    Page.spell_check_milestone.in_(FAILED_PAGE_MILESTONES),
+                    text(f"'{PAGE_MILESTONE_IDLE}'"),
+                ),
+                else_=Page.spell_check_milestone,
             ),
-            retry_count=0, # Reset retries for manual intervention
+            retry_count=0,  # Reset retries for manual intervention
             last_updated=datetime.now(timezone.utc),
             updated_by=current_user.email,
         )
@@ -1577,7 +1752,9 @@ async def update_page_text(
     # Fetch embedding model from system_configs (no fallback — must be configured in DB)
     gemini_embedding_model = await configs_repo.get_value("gemini_embedding_model")
     if not gemini_embedding_model:
-        raise HTTPException(status_code=500, detail="system_config 'gemini_embedding_model' is not set")
+        raise HTTPException(
+            status_code=500, detail="system_config 'gemini_embedding_model' is not set"
+        )
 
     new_text = normalize_markdown(payload.get("text", ""))
     new_text = normalize_uyghur_chars(new_text)
@@ -1586,24 +1763,25 @@ async def update_page_text(
     page = await pages_repo.find_one(book_id, page_num)
     if not page:
         raise HTTPException(status_code=404, detail=t("errors.page_not_found"))
-    
+
     # Check if text actually changed
     text_changed = page.text != new_text
 
     page.text = new_text
-    page.status = 'ocr_done'
+    page.status = "ocr_done"
     page.is_indexed = (not text_changed) and page.is_indexed
     page.last_updated = datetime.now(timezone.utc)
     page.updated_by = current_user.email
-    
+
     # If text changed, invalidate stale spell check issues (offsets are now invalid)
     if text_changed:
         from app.db.models import PageSpellIssue
+
         await session.execute(
             delete(PageSpellIssue).where(PageSpellIssue.page_id == page.id)
         )
         page.spell_check_milestone = PAGE_MILESTONE_IDLE
-    
+
     await session.flush()
 
     # 2. Synchronous Re-chunking (Instant Feedback)
@@ -1611,14 +1789,18 @@ async def update_page_text(
     if text_content:
         # Delete old chunks
         await session.execute(
-            delete(Chunk).where(and_(Chunk.book_id == book_id, Chunk.page_number == page_num))
+            delete(Chunk).where(
+                and_(Chunk.book_id == book_id, Chunk.page_number == page_num)
+            )
         )
-        
+
         # Split into chunks
-        chunks_text = [c for c in chunking_service.split_text(text_content) if c.strip()]
+        chunks_text = [
+            c for c in chunking_service.split_text(text_content) if c.strip()
+        ]
         if not chunks_text:
             chunks_text = [text_content]
-            
+
         chunk_records = []
         for idx, txt in enumerate(chunks_text):
             chunk = Chunk(
@@ -1627,69 +1809,79 @@ async def update_page_text(
                 chunk_index=idx,
                 text=txt,
                 embedding=None,
-                created_at=datetime.now(timezone.utc)
+                created_at=datetime.now(timezone.utc),
             )
             session.add(chunk)
             chunk_records.append(chunk)
-        
-        page.status = 'chunked'
+
+        page.status = "chunked"
         page.pipeline_step = PIPELINE_STEP_CHUNKING
-        page.chunking_milestone = PAGE_MILESTONE_SUCCEEDED # Use decoupled milestone name
-        page.embedding_milestone = PAGE_MILESTONE_IDLE      # Reset to trigger re-embedding via worker if needed
+        page.chunking_milestone = (
+            PAGE_MILESTONE_SUCCEEDED  # Use decoupled milestone name
+        )
+        page.embedding_milestone = (
+            PAGE_MILESTONE_IDLE  # Reset to trigger re-embedding via worker if needed
+        )
 
         await books_repo.update_one(
             book_id,
             last_updated=datetime.now(timezone.utc),
-            updated_by=current_user.email
+            updated_by=current_user.email,
         )
         await session.commit()
-        
+
         # 3. Synchronous Embedding (Instant Feedback) - RELEASED TRANSACTION
         try:
             embedder = GeminiEmbeddings(gemini_embedding_model)
             vectors = await embedder.aembed_documents([c.text for c in chunk_records])
-            
+
             # Start a new transaction for vectors
             for chunk, vector in zip(chunk_records, vectors):
                 # We need to re-query or use a fresh statement because old session.commit() might have detached objects
                 await session.execute(
                     update(Chunk).where(Chunk.id == chunk.id).values(embedding=vector)
                 )
-            
+
             await session.execute(
-                update(Page).where(Page.id == page.id).values(
-                    status='indexed',
+                update(Page)
+                .where(Page.id == page.id)
+                .values(
+                    status="indexed",
                     is_indexed=True,
                     pipeline_step=PIPELINE_STEP_EMBEDDING,
-                    embedding_milestone=PAGE_MILESTONE_SUCCEEDED
+                    embedding_milestone=PAGE_MILESTONE_SUCCEEDED,
                 )
             )
             await session.commit()
-            final_status = 'indexed'
+            final_status = "indexed"
         except Exception as e:
-            logger.error(f"Failed to embed page {page_num} for book {book_id} during update: {e}")
+            logger.error(
+                f"Failed to embed page {page_num} for book {book_id} during update: {e}"
+            )
             # Page remains 'chunked'; batch cron will embed it on next cycle
             await session.execute(
-                update(BookDB).where(BookDB.id == book_id).values(
+                update(BookDB)
+                .where(BookDB.id == book_id)
+                .values(
                     last_error=f"Page {page_num} embedding failed during manual update: {e}",
-                    last_updated=datetime.now(timezone.utc)
+                    last_updated=datetime.now(timezone.utc),
                 )
             )
             await session.commit()
-            final_status = 'chunked'
+            final_status = "chunked"
     else:
         # If text is empty, just mark as indexed
-        page.status = 'indexed'
+        page.status = "indexed"
         page.is_indexed = True
         page.pipeline_step = PIPELINE_STEP_EMBEDDING
         page.embedding_milestone = PAGE_MILESTONE_SUCCEEDED
         await books_repo.update_one(
             book_id,
             last_updated=datetime.now(timezone.utc),
-            updated_by=current_user.email
+            updated_by=current_user.email,
         )
         await session.commit()
-        final_status = 'indexed'
+        final_status = "indexed"
 
     # Invalidate book and RAG cache
     await cache_service.delete(f"book:{book_id}")
@@ -1697,15 +1889,22 @@ async def update_page_text(
 
     # Update book milestones to reflect manual change
     from app.services.book_milestone_service import BookMilestoneService
+
     await BookMilestoneService.update_book_milestones(session, book_id)
     await session.commit()
 
-    return {"status": "page_updated", "requires_rag": True, "synchronous": final_status == 'indexed'}
+    return {
+        "status": "page_updated",
+        "requires_rag": True,
+        "synchronous": final_status == "indexed",
+    }
 
 
 @router.post("/admin/bulk-reset-incomplete-ocr")
 async def bulk_reset_incomplete_ocr(
-    include_error: bool = Query(False, description="Also reset books with status='error'"),
+    include_error: bool = Query(
+        False, description="Also reset books with status='error'"
+    ),
     current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
@@ -1721,9 +1920,7 @@ async def bulk_reset_incomplete_ocr(
     if not include_error:
         status_filter.append(BookDB.status.notin_(["ready", "error"]))
 
-    book_ids_result = await session.execute(
-        select(BookDB.id).where(*status_filter)
-    )
+    book_ids_result = await session.execute(select(BookDB.id).where(*status_filter))
     book_ids = [row[0] for row in book_ids_result.fetchall()]
 
     if not book_ids:
@@ -1774,7 +1971,6 @@ async def bulk_reset_incomplete_ocr(
         "pages_reset": pages_reset,
         "message": f"OCR milestones reset for {len(book_ids)} books ({pages_reset} pages). Scanner will reprocess.",
     }
-
 
 
 @router.post("/")
@@ -1852,7 +2048,6 @@ async def create_book(
     return {"status": "success"}
 
 
-
 @router.put("/{book_id}")
 async def update_book_details(
     book_id: str,
@@ -1919,11 +2114,13 @@ async def update_book_details(
                     {
                         "book_id": book_id,
                         "page_number": page_number,
-                        "text": normalize_uyghur_chars(new_text) if new_text is not None else None,
+                        "text": normalize_uyghur_chars(new_text)
+                        if new_text is not None
+                        else None,
                         "status": result.get("status"),
                         "last_updated": datetime.now(timezone.utc),
                         "updated_by": current_user.email,
-                    }
+                    },
                 )
 
     # Remove pages from book_update (already processed above)
@@ -1934,8 +2131,14 @@ async def update_book_details(
 
     # Remove computed/read-only fields (already in snake_case after conversion)
     read_only_fields = [
-        "upload_date", "created_by", "completed_count", "last_error",
-        "pipeline_stats", "page_stats", "has_summary", "has_graph"
+        "upload_date",
+        "created_by",
+        "completed_count",
+        "last_error",
+        "pipeline_stats",
+        "page_stats",
+        "has_summary",
+        "has_graph",
     ]
     for field in read_only_fields:
         book_update.pop(field, None)
@@ -1947,6 +2150,7 @@ async def update_book_details(
     # Normalize cover_url to relative path if it contains covers/
     if "cover_url" in book_update and book_update["cover_url"]:
         import re
+
         match = re.search(r"covers/([^/?#]+)", book_update["cover_url"])
         if match:
             book_update["cover_url"] = f"covers/{match.group(1)}"
@@ -1954,8 +2158,8 @@ async def update_book_details(
     # Normalize categories: strip quotes and filter empties
     if "categories" in book_update and isinstance(book_update["categories"], list):
         book_update["categories"] = [
-            c.strip().strip('"').strip() 
-            for c in book_update["categories"] 
+            c.strip().strip('"').strip()
+            for c in book_update["categories"]
             if isinstance(c, str) and c.strip()
         ]
 
@@ -1969,7 +2173,6 @@ async def update_book_details(
         await cache_service.bump_namespace_version("category")
 
     return {"status": "updated", "modified": True}
-
 
 
 @router.get("/{book_id}/summary")
@@ -1994,10 +2197,12 @@ async def get_book_summary(
     # Check access permission for guests (directly access book attributes)
     if not current_user:
         # Guest access: only allow if book is public and ready
-        book_status = getattr(book_obj, 'status', None)
-        book_visibility = getattr(book_obj, 'visibility', 'public')
-        if book_status != 'ready' or book_visibility != 'public':
-            raise HTTPException(status_code=401, detail=t("errors.authentication_required"))
+        book_status = getattr(book_obj, "status", None)
+        book_visibility = getattr(book_obj, "visibility", "public")
+        if book_status != "ready" or book_visibility != "public":
+            raise HTTPException(
+                status_code=401, detail=t("errors.authentication_required")
+            )
 
     summaries_repo = BookSummariesRepository(session)
     summary = await summaries_repo.get_by_book_id(book_id)
@@ -2063,7 +2268,6 @@ async def delete_book(
     raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
 
-
 @router.post("/{book_id}/cover")
 async def update_book_cover(
     book_id: str,
@@ -2083,13 +2287,15 @@ async def update_book_cover(
         raise
     except Exception as exc:
         logger.error(f"Failed to process cover for book {book_id}: {exc}")
-        raise HTTPException(status_code=500, detail=t("errors.image_process_failed", error=str(exc)))
+        raise HTTPException(
+            status_code=500, detail=t("errors.image_process_failed", error=str(exc))
+        )
 
     await books_repo.update_one(
         book_id,
         cover_url=cover_url,
         last_updated=datetime.now(timezone.utc),
-        updated_by=current_user.email
+        updated_by=current_user.email,
     )
     await session.commit()
 
@@ -2117,21 +2323,28 @@ async def download_book(
     # Determine remote path (standardized or original)
     ext = f".{book.file_type}"
     remote_path = f"uploads/{book_id}{ext}"
-    
+
     # Check if standardized path exists, fallback to original file_name
     if not storage.exists(remote_path) and book.file_name:
         remote_path = f"uploads/{book.file_name}"
 
     if not storage.exists(remote_path):
-        raise HTTPException(status_code=404, detail=t("errors.file_not_found_in_storage"))
+        raise HTTPException(
+            status_code=404, detail=t("errors.file_not_found_in_storage")
+        )
 
     try:
         # Get a readable stream directly from storage (doesn't load entire file into memory)
         stream = storage.get_stream(remote_path)
-        media_type = "application/pdf" if book.file_type == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        
+        media_type = (
+            "application/pdf"
+            if book.file_type == "pdf"
+            else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+
         # Use a safe filename for the download, handling non-ASCII characters for RFC 5987
         from urllib.parse import quote
+
         download_name = book.file_name or f"{book.title or book_id}{ext}"
         if not download_name.lower().endswith(ext):
             download_name += ext
@@ -2148,7 +2361,9 @@ async def download_book(
         return StreamingResponse(
             iter_file(),
             media_type=media_type,
-            headers={"Content-Disposition": f"attachment; filename=\"{safe_fallback}\"; filename*=UTF-8''{encoded_filename}"}
+            headers={
+                "Content-Disposition": f"attachment; filename=\"{safe_fallback}\"; filename*=UTF-8''{encoded_filename}"
+            },
         )
     except Exception as exc:
         logger.error(f"Failed to download book {book_id}: {exc}")

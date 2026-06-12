@@ -3,6 +3,7 @@ Test SQLAlchemy setup and basic functionality.
 
 Run with: pytest packages/backend-core/tests/test_sqlalchemy_setup.py -v
 """
+
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
@@ -20,7 +21,7 @@ async def test_engine():
 
     engine = create_async_engine(
         database_url,
-        echo=True  # Show SQL queries
+        echo=True,  # Show SQL queries
     )
 
     try:
@@ -39,9 +40,7 @@ async def test_engine():
 async def test_session(test_engine):
     """Create test database session"""
     async_session_factory = async_sessionmaker(
-        test_engine,
-        class_=AsyncSession,
-        expire_on_commit=False
+        test_engine, class_=AsyncSession, expire_on_commit=False
     )
 
     async with async_session_factory() as session:
@@ -70,11 +69,13 @@ async def test_database_version(test_engine):
 async def test_pgvector_extension(test_engine):
     """Test pgvector extension is installed"""
     async with test_engine.begin() as conn:
-        result = await conn.execute(text("""
+        result = await conn.execute(
+            text("""
             SELECT EXISTS (
                 SELECT 1 FROM pg_extension WHERE extname = 'vector'
             )
-        """))
+        """)
+        )
         assert result.scalar() is True
 
 

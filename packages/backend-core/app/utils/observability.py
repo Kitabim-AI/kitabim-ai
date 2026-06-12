@@ -8,13 +8,16 @@ import logging
 from datetime import datetime, UTC
 from typing import Any, Dict
 
-request_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar("request_id", default=None)
+request_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "request_id", default=None
+)
 
 
 def track_request_id(func):
     """Decorator to wrap a worker job or function, extracting the request_id from keyword arguments
     and setting the request_id_var context variable during its execution.
     """
+
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
         request_id = kwargs.pop("request_id", None)
@@ -29,6 +32,7 @@ def track_request_id(func):
         finally:
             if token:
                 request_id_var.reset(token)
+
     return wrapper
 
 
@@ -54,7 +58,7 @@ def patch_arq_enqueue_job() -> None:
         _defer_by=None,
         _expires=None,
         _job_try=None,
-        **kwargs
+        **kwargs,
     ):
         req_id = request_id_var.get()
         if req_id and "request_id" not in kwargs:
@@ -69,7 +73,7 @@ def patch_arq_enqueue_job() -> None:
             _defer_by=_defer_by,
             _expires=_expires,
             _job_try=_job_try,
-            **kwargs
+            **kwargs,
         )
 
     ArqRedis.enqueue_job = custom_enqueue_job
@@ -105,7 +109,14 @@ def configure_logging(level: int = logging.INFO) -> None:
     root.handlers = [handler]
 
     # Silence noisy loggers - keep only warnings and errors
-    for name in ("uvicorn", "uvicorn.error", "uvicorn.access", "google_genai", "arq.worker", "arq.jobs"):
+    for name in (
+        "uvicorn",
+        "uvicorn.error",
+        "uvicorn.access",
+        "google_genai",
+        "arq.worker",
+        "arq.jobs",
+    ):
         logging.getLogger(name).handlers = [handler]
         logging.getLogger(name).propagate = False
         logging.getLogger(name).setLevel(logging.WARNING)
@@ -118,7 +129,9 @@ def log_json(logger: logging.Logger, level: int, message: str, **fields: Any) ->
     logger.log(level, message, extra={"fields": fields})
 
 
-def make_pipeline_event_payload(duration_ms: int | None = None, extra_fields: Dict[str, Any] | None = None) -> str:
+def make_pipeline_event_payload(
+    duration_ms: int | None = None, extra_fields: Dict[str, Any] | None = None
+) -> str:
     """Helper to construct a standardized JSON string payload for PipelineEvents,
     injecting request_id and duration_ms when available.
     """
@@ -131,5 +144,3 @@ def make_pipeline_event_payload(duration_ms: int | None = None, extra_fields: Di
     if extra_fields:
         payload.update(extra_fields)
     return json.dumps(payload, ensure_ascii=False)
-
-

@@ -2,6 +2,7 @@
 
 All I/O-backed retrieval helpers live here — no LLM calls, no prompt logic.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -27,6 +28,7 @@ logger = logging.getLogger("app.rag.retrieval")
 # Level-1 cache: query embedding
 # ---------------------------------------------------------------------------
 
+
 async def embed_query(query: str, ctx: "QueryContext") -> List[float]:
     """Embed *query* with Level-1 cache (shared across all RAG handlers).
 
@@ -40,7 +42,9 @@ async def embed_query(query: str, ctx: "QueryContext") -> List[float]:
         if not vector:
             vector = await ctx.embeddings.aembed_query(query)
             if vector:
-                await cache_service.set(emb_cache_key, vector, ttl=settings.cache_ttl_rag_query)
+                await cache_service.set(
+                    emb_cache_key, vector, ttl=settings.cache_ttl_rag_query
+                )
         return vector or []
     except Exception as exc:
         log_json(logger, logging.WARNING, "Embedding failed", error=str(exc))
@@ -50,6 +54,7 @@ async def embed_query(query: str, ctx: "QueryContext") -> List[float]:
 # ---------------------------------------------------------------------------
 # Level-2 cache: pgvector similarity search
 # ---------------------------------------------------------------------------
+
 
 async def vector_search(
     ctx: "QueryContext",
@@ -70,6 +75,7 @@ async def vector_search(
         return []
 
     from app.core.providers import get_vector_store
+
     chunks_repo = get_vector_store(ctx.session)
 
     emb_hash = hashlib.md5(str(effective_vector).encode()).hexdigest()
@@ -79,9 +85,11 @@ async def vector_search(
         if sorted_book_ids
         else "all"
     )
-    
+
     if ctx.character_categories:
-        cat_hash = hashlib.md5(",".join(sorted(ctx.character_categories)).encode()).hexdigest()
+        cat_hash = hashlib.md5(
+            ",".join(sorted(ctx.character_categories)).encode()
+        ).hexdigest()
         book_ids_hash += f"_cat_{cat_hash}"
 
     if not ctx.is_global and len(sorted_book_ids) == 1 and not ctx.character_categories:
@@ -121,8 +129,13 @@ async def vector_search(
                 )
         return top_results or []
     except Exception as exc:
-        log_json(logger, logging.WARNING, "Vector search failed",
-                 exc_type=type(exc).__name__, error=str(exc) or repr(exc))
+        log_json(
+            logger,
+            logging.WARNING,
+            "Vector search failed",
+            exc_type=type(exc).__name__,
+            error=str(exc) or repr(exc),
+        )
         try:
             await ctx.session.rollback()
         except Exception:
@@ -133,6 +146,7 @@ async def vector_search(
 # ---------------------------------------------------------------------------
 # Title lookup
 # ---------------------------------------------------------------------------
+
 
 async def find_books_by_title_in_question(
     question: str, session, categories: Optional[List[str]] = None
@@ -147,12 +161,17 @@ async def find_books_by_title_in_question(
     from app.services.rag.utils import entity_matches_question, normalize_uyghur
 
     q = question.strip()
-    
-    stmt = select(Book.id, Book.title, Book.author, Book.volume).where(Book.status != "error")
+
+    stmt = select(Book.id, Book.title, Book.author, Book.volume).where(
+        Book.status != "error"
+    )
     if categories:
         from sqlalchemy import text as sa_text
-        stmt = stmt.where(sa_text("categories && CAST(:cats AS text[])").bindparams(cats=categories))
-        
+
+        stmt = stmt.where(
+            sa_text("categories && CAST(:cats AS text[])").bindparams(cats=categories)
+        )
+
     title_result = await session.execute(stmt)
     rows = title_result.fetchall()
 
@@ -160,15 +179,17 @@ async def find_books_by_title_in_question(
     for row in rows:
         book_id, title, author, volume = str(row[0]), row[1], row[2], row[3]
         if title:
-            title_to_books.setdefault(title, []).append({
-                "id": book_id,
-                "title": title,
-                "author": author,
-                "volume": volume,
-            })
+            title_to_books.setdefault(title, []).append(
+                {
+                    "id": book_id,
+                    "title": title,
+                    "author": author,
+                    "volume": volume,
+                }
+            )
 
     # --- Exact match for «quoted» titles ---
-    quoted = re.findall(r'«([^»]+)»', q)
+    quoted = re.findall(r"«([^»]+)»", q)
     if quoted:
         for candidate in quoted:
             candidate_norm = normalize_uyghur(candidate.strip())

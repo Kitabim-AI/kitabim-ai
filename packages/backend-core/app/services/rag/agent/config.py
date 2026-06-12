@@ -1,13 +1,13 @@
 """Agent configuration constants — single source of truth for numeric limits."""
 
 # ── ReAct loop ────────────────────────────────────────────────────────────────
-AGENT_MAX_STEPS = 6            # maximum ReAct iterations per round
-AGENT_ENOUGH_CHUNKS = 8        # early-exit: stop once this many chunks are collected
+AGENT_MAX_STEPS = 6  # maximum ReAct iterations per round
+AGENT_ENOUGH_CHUNKS = 8  # early-exit: stop once this many chunks are collected
 AGENT_MAX_CONTEXT_CHUNKS = 25  # hard cap on chunks passed to the answer LLM
 
 # ── Context grading (grade_context node) ─────────────────────────────────────
-GRADE_RELATIVE_THRESHOLD = 0.85   # keep chunks scoring >= top_score × this value
-MIN_CHUNKS_AFTER_GRADING = 3      # never filter below this many chunks
+GRADE_RELATIVE_THRESHOLD = 0.85  # keep chunks scoring >= top_score × this value
+MIN_CHUNKS_AFTER_GRADING = 3  # never filter below this many chunks
 
 # ── Context-switch detection ──────────────────────────────────────────────────
 # When the LLM reuses context_book_ids from the previous answer and the top

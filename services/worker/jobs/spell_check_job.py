@@ -4,6 +4,7 @@ Spell Check Job — batch spell check runner for the background worker.
 Receives a list of page_ids (already set to in_progress by the scanner)
 and runs spell check on each via the shared spell_check_service.
 """
+
 from __future__ import annotations
 
 import time
@@ -16,7 +17,10 @@ from sqlalchemy import select, update, func
 
 from app.db import session as db_session
 from app.db.models import Page, PipelineEvent, Book
-from app.services.spell_check_service import run_spell_check_for_page, ThreadSafeSpellCheckCache
+from app.services.spell_check_service import (
+    run_spell_check_for_page,
+    ThreadSafeSpellCheckCache,
+)
 from app.services.book_milestone_service import BookMilestoneService
 from app.core.config import settings
 from app.utils.observability import log_json, make_pipeline_event_payload
@@ -24,6 +28,7 @@ from app.utils.observability import log_json, make_pipeline_event_payload
 logger = logging.getLogger("app.worker.spell_check_job")
 
 # Limit concurrency to stay safely within DB connection limits.
+
 
 async def spell_check_job(ctx, page_ids: List[int]) -> None:
     log_json(logger, logging.INFO, "spell check job started", page_count=len(page_ids))
@@ -48,13 +53,15 @@ async def spell_check_job(ctx, page_ids: List[int]) -> None:
                 .values(
                     worker_id=ctx.get("worker_id", "unknown"),
                     claimed_at=func.now(),
-                    last_updated=func.now()
+                    last_updated=func.now(),
                 )
             )
             await session.commit()
 
         async with db_session.async_session_factory() as session:
-            result = await session.execute(select(Page).where(Page.id.in_(locked_page_ids)))
+            result = await session.execute(
+                select(Page).where(Page.id.in_(locked_page_ids))
+            )
             pages = list(result.scalars().all())
 
         cache = ThreadSafeSpellCheckCache()
@@ -67,7 +74,9 @@ async def spell_check_job(ctx, page_ids: List[int]) -> None:
                 start_time = time.perf_counter()
                 try:
                     async with db_session.async_session_factory() as session:
-                        issue_count = await run_spell_check_for_page(session, page, cache=cache)
+                        issue_count = await run_spell_check_for_page(
+                            session, page, cache=cache
+                        )
                         duration_ms = int((time.perf_counter() - start_time) * 1000)
                         await session.execute(
                             update(Page)
@@ -77,19 +86,27 @@ async def spell_check_job(ctx, page_ids: List[int]) -> None:
                                 last_updated=func.now(),
                             )
                         )
-                        session.add(PipelineEvent(
-                            page_id=page.id,
-                            event_type="spell_check_succeeded",
-                            payload=make_pipeline_event_payload(
-                                duration_ms=duration_ms,
-                                extra_fields={"issues": issue_count}
+                        session.add(
+                            PipelineEvent(
+                                page_id=page.id,
+                                event_type="spell_check_succeeded",
+                                payload=make_pipeline_event_payload(
+                                    duration_ms=duration_ms,
+                                    extra_fields={"issues": issue_count},
+                                ),
                             )
-                        ))
+                        )
                         await session.commit()
 
                     results["succeeded"] += 1
-                    log_json(logger, logging.DEBUG, "spell check page succeeded",
-                             book_id=page.book_id, page=page.page_number, ocr_issues=issue_count)
+                    log_json(
+                        logger,
+                        logging.DEBUG,
+                        "spell check page succeeded",
+                        book_id=page.book_id,
+                        page=page.page_number,
+                        ocr_issues=issue_count,
+                    )
 
                 except Exception as exc:
                     duration_ms = int((time.perf_counter() - start_time) * 1000)
@@ -101,22 +118,30 @@ async def spell_check_job(ctx, page_ids: List[int]) -> None:
                             .values(
                                 spell_check_milestone="failed",
                                 retry_count=Page.retry_count + 1,
-                                last_updated=func.now()
+                                last_updated=func.now(),
                             )
                         )
-                        session.add(PipelineEvent(
-                            page_id=page.id,
-                            event_type="spell_check_failed",
-                            payload=make_pipeline_event_payload(
-                                duration_ms=duration_ms,
-                                extra_fields={"error": error_msg}
+                        session.add(
+                            PipelineEvent(
+                                page_id=page.id,
+                                event_type="spell_check_failed",
+                                payload=make_pipeline_event_payload(
+                                    duration_ms=duration_ms,
+                                    extra_fields={"error": error_msg},
+                                ),
                             )
-                        ))
+                        )
                         await session.commit()
                     results["failed"] += 1
-                    log_json(logger, logging.WARNING, "spell check page failed",
-                             book_id=page.book_id, page=page.page_number,
-                             error=repr(exc), traceback=traceback.format_exc())
+                    log_json(
+                        logger,
+                        logging.WARNING,
+                        "spell check page failed",
+                        book_id=page.book_id,
+                        page=page.page_number,
+                        error=repr(exc),
+                        traceback=traceback.format_exc(),
+                    )
 
         # Run all pages in parallel (respecting the semaphore)
         await asyncio.gather(*(process_page(p) for p in pages))
@@ -129,7 +154,7 @@ async def spell_check_job(ctx, page_ids: List[int]) -> None:
                 for bid in book_ids:
                     remain_stmt = select(func.count(Page.id)).where(
                         Page.book_id == bid,
-                        Page.spell_check_milestone.in_(["idle", "in_progress"])
+                        Page.spell_check_milestone.in_(["idle", "in_progress"]),
                     )
                     res = await session.execute(remain_stmt)
                     if (res.scalar() or 0) == 0:
@@ -146,18 +171,24 @@ async def spell_check_job(ctx, page_ids: List[int]) -> None:
             book_ids = {page.book_id for page in pages}
             for book_id in book_ids:
                 async with db_session.async_session_factory() as session:
-                    await BookMilestoneService.update_book_milestone_for_step(session, book_id, 'spell_check')
+                    await BookMilestoneService.update_book_milestone_for_step(
+                        session, book_id, "spell_check"
+                    )
                     await session.commit()
 
         # Get cache statistics for performance monitoring
         cache_stats = cache.get_stats()
 
-        log_json(logger, logging.INFO, "spell check job completed",
-                 succeeded=results["succeeded"],
-                 failed=results["failed"],
-                 cache_overall_hit_rate=cache_stats["overall_hit_rate"],
-                 cache_total_lookups=cache_stats["total_lookups"],
-                 cache_unknown_hit_rate=cache_stats["unknown_words"]["hit_rate"],
-                 cache_ocr_hit_rate=cache_stats["ocr_corrections"]["hit_rate"])
+        log_json(
+            logger,
+            logging.INFO,
+            "spell check job completed",
+            succeeded=results["succeeded"],
+            failed=results["failed"],
+            cache_overall_hit_rate=cache_stats["overall_hit_rate"],
+            cache_total_lookups=cache_stats["total_lookups"],
+            cache_unknown_hit_rate=cache_stats["unknown_words"]["hit_rate"],
+            cache_ocr_hit_rate=cache_stats["ocr_corrections"]["hit_rate"],
+        )
     finally:
         await lock_manager.__aexit__(None, None, None)
