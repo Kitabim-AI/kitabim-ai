@@ -1,9 +1,10 @@
 import pytest
+import pytest_asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 from app.db.repositories.graph_repository import GraphRepository
 
 
-@pytest.fixture(autouse=True)
+@pytest_asyncio.fixture(autouse=True)
 async def cleanup_graph_driver():
     """Ensure class-level graph driver is clean before and after each test."""
     GraphRepository._driver = None
@@ -52,7 +53,36 @@ async def test_graph_repository_query_subgraph():
         call_args = mock_session.run.call_args[0]
         call_kwargs = mock_session.run.call_args[1]
         assert "(e.name IN $entity_names OR n.name IN $entity_names)" in call_args[0]
+        assert "r.book_id IN $book_ids" in call_args[0]
         assert call_kwargs["entity_names"] == ["A", "B"]
+        assert call_kwargs["book_ids"] is None
+        assert records == [{"source": "A", "rel": "KNOWS", "target": "B"}]
+
+
+@pytest.mark.asyncio
+async def test_graph_repository_query_subgraph_with_book_ids():
+    mock_result = AsyncMock()
+    mock_result.data.return_value = [{"source": "A", "rel": "KNOWS", "target": "B"}]
+    mock_session = AsyncMock()
+    mock_session.__aenter__.return_value = mock_session
+    mock_session.run.return_value = mock_result
+    mock_driver = MagicMock()
+    mock_driver.session.return_value = mock_session
+
+    with patch(
+        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
+        return_value=mock_driver,
+    ):
+        repo = GraphRepository()
+        records = await repo.query_subgraph(["A", "B"], book_ids=["bid-1", "bid-2"])
+
+        assert mock_session.run.called
+        call_args = mock_session.run.call_args[0]
+        call_kwargs = mock_session.run.call_args[1]
+        assert "(e.name IN $entity_names OR n.name IN $entity_names)" in call_args[0]
+        assert "r.book_id IN $book_ids" in call_args[0]
+        assert call_kwargs["entity_names"] == ["A", "B"]
+        assert call_kwargs["book_ids"] == ["bid-1", "bid-2"]
         assert records == [{"source": "A", "rel": "KNOWS", "target": "B"}]
 
 

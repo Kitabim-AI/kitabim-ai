@@ -48,8 +48,7 @@ flowchart TD
     S_KG[Graph Scanner] -.->|Claim missing| J_KG
 
     J_SUM -->|Save summary| PG[(PostgreSQL)]
-    J_SUM -->|Save summary| MG[(Memgraph)]
-    J_KG -->|Index entities & relations| MG
+    J_KG -->|Index entities & relations| N4J[(Neo4j)]
 
     %% Independent quality layer — runs in parallel, does NOT block readiness
     subgraph SpellCheck [Independent Quality Layer]
@@ -71,7 +70,7 @@ flowchart TD
     class J_OCR,J_CH,J_EM,J_SC,J_SUM,J_KG job
     class OB,ED event
     class PD driver
-    class PG,MG db
+    class PG db
 ```
 
 ---

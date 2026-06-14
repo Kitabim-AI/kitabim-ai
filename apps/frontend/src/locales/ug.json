@@ -204,7 +204,10 @@
       "foundRecord": "{{count}} رېكورد تاپتىم",
       "noRecordFound": "رېكورد تېپىلمىدى",
       "keptContent": "{{kept}}/{{total}} پارچە مەزمۇن تاللاندى",
-      "keptBooks": "{{kept}}/{{total}} پارچە كىتاب تاللاندى"
+      "keptBooks": "{{kept}}/{{total}} پارچە كىتاب تاللاندى",
+      "queryingGraph": "بىلىم گىرافىكىنى تەكشۈرۋاتىمەن",
+      "foundRelations": "{{count}} مۇناسىۋەت تاپتىم",
+      "noRelationsFound": "مۇناسىۋەت تېپىلمىدى"
     }
   },
   "reader": {

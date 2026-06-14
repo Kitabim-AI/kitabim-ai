@@ -1,7 +1,7 @@
 # System Design — Kitabim.AI (Google ADK Version)
 
 ## 1) Overview
-Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered reading of Uyghur books. The system uses the **Gemini 2.0 Flash** model for high-throughput OCR, embeddings, and chat. It features a FastAPI backend with an asynchronous processing pipeline, a React/Vite frontend, and a Memgraph database for GraphRAG. 
+Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered reading of Uyghur books. The system uses the **Gemini 2.0 Flash** model for high-throughput OCR, embeddings, and chat. It features a FastAPI backend with an asynchronous processing pipeline, a React/Vite frontend, and a Neo4j database for GraphRAG. 
 
 The core AI layers are built using the first-party **google-genai SDK** (for direct generation/embedding calls) and **Google ADK** (for agentic retrieval loops). Background orchestration is handled through a Redis-backed queue with a dedicated worker service. The backend API and worker share a common Python package (`packages/backend-core`).
 
@@ -28,7 +28,7 @@ The core AI layers are built using the first-party **google-genai SDK** (for dir
    - Uses PostgreSQL for metadata + embeddings (pgvector).
    - **Redis Caching Layer**: High-performance caching for books, categories, and query rewrites (L0-L3 caching).
    - **Circuit Breaker**: Resilient protection for Redis and external Gemini API services.
-   - **Memgraph Database**: Graph database (Bolt protocol, port 37687/7687) storing book semantic entities and relationships to support GraphRAG.
+   - **Neo4j Database**: Graph database (Bolt protocol, port 37687/7687) storing book semantic entities and relationships to support GraphRAG.
 
 - **Worker (`services/worker`)**
    - ARQ worker process for background orchestration.
@@ -63,8 +63,8 @@ flowchart LR
   BE <-->|PDF/Covers| GCS[(Google Cloud Storage)]
   WK <-->|PDF/Covers| GCS
   BE <--Cache--> CACHE[(Redis Cache)]
-  BE --> MG[(Memgraph Graph DB)]
-  WK --> MG
+  BE --> N4J[(Neo4j Graph DB)]
+  WK --> N4J
 ```
 
 ## 4) Monorepo Structure
@@ -99,18 +99,16 @@ flowchart LR
 **Chunks**
 - Semantic units with `pgvector(3072)` embeddings (Gemini Embedding v2 / `text-embedding-004`).
 
-### Memgraph (Knowledge Graph)
-Memgraph stores entities and their semantic relationships extracted from book chunks.
+### Neo4j (Knowledge Graph)
+Neo4j stores entities and their semantic relationships extracted from book chunks.
 
 **Nodes**
-- `Book`: Represents a book in the library. Properties: `id`, `title`, `author`, `summary`.
 - `Entity`: Represents a conceptual or concrete entity extracted from the text.
-   - Subtypes/Labels: `Person`, `Location`, `Organization`, `Work`, `Event`.
-   - Properties: `name`, `type`, `description`.
+  - Properties: `name` (unique canonical name, NFC normalized), `type` (e.g., Person, Location, Event, Organization, HistoricalEra, Concept), `subtype` (optional detail string).
 
 **Relationships**
-- `MENTIONS`: From `Book` to an `Entity`. Properties: `chunk_ids` (array of chunk UUIDs where the entity is mentioned), `count`.
-- `LIVES_IN` / `WRITTEN_BY` / `PARTICIPATED_IN` / `RELATED_TO` / etc.: Semantic relationships between `Entity` nodes. Properties: `description`, `source_chunk_ids`.
+- `RELATED_TO`: Directed relationship between two `Entity` nodes.
+  - Properties: `book_id` (PostgreSQL Book UUID), `type` (the semantic relationship type, e.g., LIVED_IN, BORN_IN, FRIEND_OF).
 
 ## 6) Key Flows
 
@@ -122,7 +120,7 @@ Memgraph stores entities and their semantic relationships extracted from book ch
 5. **Embedding**: Worker generates and stores vectors for chunks. Sets `embedding_milestone` to `succeeded`.
 6. **AI Polish**: Worker performs spell-check identification.
 7. **Finalization**: Book marked `ready` when all pages reach their terminal milestones.
-8. **Summary & Graph Ingestion**: Once marked ready, the worker triggers `summary_job` (generating book summary embeddings) and `knowledge_graph_job` (extracting entity relationships using the `google-genai` structured client and indexing them in Memgraph) concurrently.
+8. **Summary & Graph Ingestion**: Once marked ready, the worker triggers `summary_job` (generating book summary embeddings) and `knowledge_graph_job` (extracting entity relationships using the `google-genai` structured client and indexing them in Neo4j) concurrently.
 
 ### B) RAG Chat
 
@@ -165,7 +163,7 @@ All questions go directly to `AgentRAGHandler` (priority=998), which runs a Goog
 - **Concurrency**: ARQ worker processes handles page-level tasks in parallel, providing high throughput.
 - **Cloud Storage**: GCS handles the heavy lifting for binary artifacts.
 - **Vector Search**: pgvector in PostgreSQL allows scaling retrieval without a separate vector database (using HNSW indexes).
-- **In-Memory Graph**: Memgraph handles fast Cypher queries for relational GraphRAG subgraphs.
+- **Graph Database**: Neo4j handles fast Cypher queries for relational GraphRAG subgraphs.
 
 ## 10) Security
 - All AI keys and GCS credentials are kept server-side.

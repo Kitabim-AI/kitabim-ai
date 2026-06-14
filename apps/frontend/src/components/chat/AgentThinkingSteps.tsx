@@ -1,4 +1,4 @@
-import { BookOpen, Check, FileSearch, FileText, Filter, Layers, Library, Loader2, RefreshCw, Search, SplitSquareHorizontal, User, Users } from 'lucide-react';
+import { BookOpen, Check, FileSearch, FileText, Filter, Layers, Library, Loader2, Network, RefreshCw, Search, SplitSquareHorizontal, User, Users } from 'lucide-react';
 import React from 'react';
 import { AgentStep } from '../../hooks/useChat';
 import { useI18n } from '../../i18n/I18nContext';
@@ -22,6 +22,7 @@ function stepIcon(step: AgentStep): React.ReactNode {
       case 'get_book_summary': return <FileText size={s} strokeWidth={w} />;
       case 'get_sister_volumes': return <Layers size={s} strokeWidth={w} />;
       case 'get_current_page': return <FileText size={s} strokeWidth={w} />;
+      case 'query_knowledge_graph': return <Network size={s} strokeWidth={w} />;
       default: return <Search size={s} strokeWidth={w} />;
     }
   }
@@ -47,6 +48,7 @@ function getStepLabel(step: AgentStep, t: (key: string, params?: Record<string, 
         case 'get_book_summary': return t('chat.agent.readingSummary');
         case 'get_sister_volumes': return t('chat.agent.findingVolumes');
         case 'get_current_page': return t('chat.agent.readingPage');
+        case 'query_knowledge_graph': return t('chat.agent.queryingGraph');
         default: return t('chat.agent.searchingContent');
       }
     default: return '';
@@ -59,6 +61,12 @@ function getStepSublabel(
   allSteps: AgentStep[]
 ): string | null {
   if (step.type === 'tool' && step.status === 'done' && step.found !== undefined) {
+    if (step.tool === 'query_knowledge_graph') {
+      return step.found === 0
+        ? t('chat.agent.noRelationsFound')
+        : t('chat.agent.foundRelations', { count: step.found });
+    }
+
     const isUtilityTool = [
       'rewrite_query',
       'get_current_page',
@@ -155,7 +163,7 @@ export const AgentThinkingSteps: React.FC<AgentThinkingStepsProps> = ({ steps, f
               {stepIcon(step)}
             </span>
             <span className="text-[#0369a1] font-normal" style={{ fontSize: `${textSize}px` }}>
-              {label}
+              {label}{isActive ? '...' : ''}
               {sublabel && <span className="opacity-60 mx-1">— {sublabel}</span>}
             </span>
           </div>

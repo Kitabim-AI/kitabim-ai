@@ -732,18 +732,20 @@ async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
             "relations": [],
         }
 
-    log_json(
-        logger,
-        logging.INFO,
-        "Agent tool query_knowledge_graph",
-        query=query[:60],
-        entities=entities,
-    )
+    book_ids = None
+    if not ctx.is_global and ctx.book_id:
+        from app.db.repositories.books_repository import BooksRepository
 
-    book_id = str(ctx.book_id) if not ctx.is_global and ctx.book_id else None
+        books_repo = BooksRepository(ctx.session)
+        sister_volumes = await books_repo.find_sister_volumes(ctx.book_id)
+        if sister_volumes:
+            book_ids = [str(b.id) for b in sister_volumes]
+        else:
+            book_ids = [str(ctx.book_id)]
+
     graph_repo = GraphRepository()
     try:
-        records = await graph_repo.query_subgraph(entities, book_id=book_id)
+        records = await graph_repo.query_subgraph(entities, book_ids=book_ids)
     except Exception as kg_exc:
         log_json(
             logger,
@@ -776,4 +778,12 @@ async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
         )
 
     context_text = "\n".join(lines)
+    log_json(
+        logger,
+        logging.INFO,
+        "Agent tool query_knowledge_graph",
+        query=query[:60],
+        entities=entities,
+        relations=len(records),
+    )
     return {"context": context_text, "relations": records}

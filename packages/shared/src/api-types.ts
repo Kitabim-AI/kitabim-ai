@@ -633,7 +633,7 @@ export interface paths {
          * Reprocess Graph
          * @description Manually trigger/reprocess Knowledge Graph extraction for a book.
          *
-         *     This queues the `knowledge_graph_job` to extract entities and relations in Memgraph.
+         *     This queues the `knowledge_graph_job` to extract entities and relations in Neo4j.
          */
         post: operations["reprocess_graph_api_books__book_id__reprocess_graph_post"];
         delete?: never;

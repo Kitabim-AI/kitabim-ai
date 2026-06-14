@@ -90,7 +90,7 @@ class Settings:
 
     # Queue / Workers
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-    memgraph_url: str = os.getenv("MEMGRAPH_URL", "bolt://localhost:37687")
+    neo4j_url: str = os.getenv("NEO4J_URL", "bolt://localhost:37687")
     queue_max_jobs: int = int(os.getenv("QUEUE_MAX_JOBS", "2"))
     queue_job_timeout: int = int(os.getenv("QUEUE_JOB_TIMEOUT", "7200"))
     maintenance_retention_days: int = int(os.getenv("MAINTENANCE_RETENTION_DAYS", "7"))

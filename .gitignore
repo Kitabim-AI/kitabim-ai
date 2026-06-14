@@ -45,6 +45,9 @@ infra/k8s/docker-desktop/secret.yaml
 # Production deployment — kept local only, not for GitHub
 deploy/gcp/
 
+# Production connection guides — contain server details
+docs/main/NEO4J_CONNECTION.md
+
 # Logs
 npm-debug.log*
 yarn-debug.log*

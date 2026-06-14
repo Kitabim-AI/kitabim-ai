@@ -51,7 +51,7 @@ graph TD
 
 3. **Google ADK Agentic ReAct Loop** — the stateless agent executes a reasoning loop using an `InMemoryRunner`, choosing from 11 specialized retrieval and metadata tools:
    - `search_chunks` — pgvector similarity search over indexed passages in PostgreSQL (L1 + L2 cache).
-   - `query_knowledge_graph` — **GraphRAG Tool**: extracts entity terms from the query, then queries **Memgraph** for a 1-hop subgraph of entity connections.
+   - `query_knowledge_graph` — **GraphRAG Tool**: extracts entity terms from the query, then queries **Neo4j** for a 1-hop subgraph of entity connections.
    - `search_books_by_summary` — embedding search over AI-generated book summaries, used to locate books covering a topic (L3 cache).
    - `find_books_by_title` — resolve a book title to internal IDs, titles, authors, and volumes.
    - `get_book_summary` — fetch the full semantic summary for specific books (used to identify characters/persons).
@@ -73,9 +73,9 @@ The platform is built on specialized database, AI, and backend technologies:
 
 - **Google ADK (`google-adk`)**: Serves as the agentic reasoning engine, coordinating the ReAct loop and automated tool dispatching for the RAG assistant.
 - **google-genai SDK (`google-genai`)**: Used for all direct LLM generation and embedding calls across the application (OCR pipeline, summarization, entity extraction, text/structured chains).
-- **Memgraph**: An in-memory graph database storing semantic networks of entities (Persons, Locations, Organizations, Works, Events) extracted from books, queried using Cypher for GraphRAG.
+- **Neo4j**: A graph database storing semantic networks of entities (Persons, Locations, Organizations, Works, Events) extracted from books, queried using Cypher for GraphRAG.
 - **pgvector (PostgreSQL)**: PostgreSQL with `pgvector` stores page-chunk embeddings (Gemini Embedding v2) and performs similarity searches.
-- **ARQ (Redis)**: Asynchronous task queue running background processing pipelines (OCR, chunking, embedding, summary extraction, and Memgraph ingestion).
+- **ARQ (Redis)**: Asynchronous task queue running background processing pipelines (OCR, chunking, embedding, summary extraction, and Neo4j ingestion).
 - **FastAPI**: Asynchronous Python web framework providing API routes, user auth, rate limits, and streaming responses.
 
 ---
@@ -88,7 +88,7 @@ The platform is built on specialized database, AI, and backend technologies:
 - Text cleaning tailored for Uyghur script (removes OCR noise, header/footer markers).
 - Semantic chunking with overlapping windows; upsert strategy so re-chunking is idempotent.
 - AI-generated book summaries stored with embeddings for topic-based book discovery.
-- **Knowledge Graph Ingestion (GraphRAG)**: Extracts Person, Location, Organization, Work, and Event entities and their semantic relationships from book chunks, building a knowledge network in Memgraph.
+- **Knowledge Graph Ingestion (GraphRAG)**: Extracts Person, Location, Organization, Work, and Event entities and their semantic relationships from book chunks, building a knowledge network in Neo4j.
 
 ### Curation Workspace
 - Per-page spell-check against a Uyghur dictionary with one-click corrections.
@@ -120,13 +120,8 @@ cp .env.template .env
 | Web UI | http://localhost:30080 |
 | API + Swagger | http://localhost:30800/docs |
 | Health check | http://localhost:30800/health |
-| Memgraph Bolt | localhost:37687 |
-| Memgraph Lab (UI) | http://localhost:33000 |
-
-*Note: In production deployments, Memgraph port `7687` is bound only to `127.0.0.1` for security. To connect from your local machine, open an SSH tunnel using:*
-```bash
-gcloud compute ssh kitabim-prod --zone=us-south1-c -- -L 37687:127.0.0.1:7687 -N
-```
+| Neo4j Bolt | localhost:37687 |
+| Neo4j Browser (UI) | http://localhost:37474 |
 
 ```bash
 # Rebuild a single service after code changes
@@ -137,7 +132,6 @@ docker compose logs -f backend
 docker compose logs -f worker
 ```
 
----
 
 ## Documentation
 
@@ -146,7 +140,6 @@ All architectural and design documents are located under the `docs/` directory.
 | Document | Contents |
 |----------|----------|
 | [docs/main/SYSTEM_DESIGN.md](docs/main/SYSTEM_DESIGN.md) | Architecture overview, data model, key flows, technology stack |
-| [docs/feature/create-knowledge-graph/memgraph-knowledge-graph.md](docs/feature/create-knowledge-graph/memgraph-knowledge-graph.md) | Memgraph Knowledge Graph schema, high-performance batch ingestion, and GraphRAG setup |
 | [docs/main/AGENTIC_RAG_DESIGN.md](docs/main/AGENTIC_RAG_DESIGN.md) | Handler registry, agent tools, loop logic, caching, latency budget |
 | [docs/main/QUESTION_ANSWERING_DIAGRAM.md](docs/main/QUESTION_ANSWERING_DIAGRAM.md) | Visual pipeline and handler routing diagrams |
 | [docs/main/WORKER_DESIGN.md](docs/main/WORKER_DESIGN.md) | Event-driven pipeline, scanners, jobs, state machine |
