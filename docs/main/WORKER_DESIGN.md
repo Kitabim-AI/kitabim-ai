@@ -73,7 +73,7 @@ worker/
     spell_check_job.py       ← identifies unknown words and suggests corrections
     auto_correct_job.py      ← applies auto-correction rules to spell issues
     summary_job.py           ← generates semantic book summaries for RAG routing (google-genai)
-    knowledge_graph_job.py   ← extracts semantic entities and relationships to index in Memgraph (google-genai)
+    knowledge_graph_job.py   ← extracts semantic entities and relationships to index in Neo4j (google-genai)
   worker.py                  ← ARQ WorkerSettings
 ```
 
@@ -242,15 +242,19 @@ Jobs are pure executors — they process pages and report success or failure. Th
 
 ```
 1. Verify book exists and chunks are present in PostgreSQL.
-2. Load all chunks for the book.
-3. For each chunk (async, semaphore-limited concurrency of 5):
-     a. Call Gemini with the page chunk content to extract entities (Person, Location, Organization, Work, Event) and relationships.
-     b. Parse structured JSON containing names, types, descriptions, target connections.
-4. Establish a Bolt session with Memgraph.
-5. Upsert the Book node (id, title, author, summary).
-6. Upsert Entity nodes (standardizing names, trimming whitespace).
-7. Create MENTIONS relationship from Book node to Entity nodes, recording the chunk UUID list and mention count.
-8. Create semantic relationships (LIVES_IN, WRITTEN_BY, PARTICIPATED_IN, RELATED_TO, etc.) between Entity nodes, storing source chunk UUIDs as metadata.
+2. Load all chunks for the book ordered by page + chunk index.
+3. Group chunks into batches (kg_chunk_batch_size from system_configs, default 5).
+4. For each batch (async, semaphore-limited concurrency; kg_max_parallel_chunks, default 5):
+     a. Call Gemini with combined batch text to extract entities and relationships.
+     b. Parse structured JSON (KnowledgeExtraction schema): entity names, types, subtypes,
+        and directed relation triples (source → rel_type → target).
+5. Accumulate entities and relations across all batches, deduplicating entity names.
+   Person entities in fictional books are namespaced: "Name (Book Title)".
+6. Single bulk write to Neo4j — exactly 2 round-trips for the entire book:
+     a. Upsert Entity nodes (MERGE on name; SET type, subtype).
+     b. Create RELATED_TO edges between Entity nodes
+        (MERGE on source + target + book_id; SET rel_type).
+7. Set graph_milestone = 'complete' (or 'partial' if any batch save failed).
 ```
 
 ---

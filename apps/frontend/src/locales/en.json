@@ -202,7 +202,10 @@
       "foundRecord": "Found {{count}} record",
       "noRecordFound": "No record found",
       "keptContent": "{{kept}} of {{total}} content kept",
-      "keptBooks": "{{kept}} of {{total}} books kept"
+      "keptBooks": "{{kept}} of {{total}} books kept",
+      "queryingGraph": "Querying knowledge graph",
+      "foundRelations": "Found {{count}} relations",
+      "noRelationsFound": "No relations found"
     }
   },
   "reader": {

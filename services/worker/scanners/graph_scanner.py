@@ -1,9 +1,9 @@
 """
-Graph Scanner — backfill and retry for book knowledge graphs in Memgraph.
+Graph Scanner — backfill and retry for book knowledge graphs in Neo4j.
 
 Catches three cases:
   1. Books that were already 'ready' before this feature was deployed
-  2. Books whose knowledge_graph_job failed (no node in Memgraph)
+  2. Books whose knowledge_graph_job failed (no node in Neo4j)
   3. Books whose graph needs backfilling
 
 Runs every 5 minutes. Batch size controlled by system_config 'graph_scanner_batch_size'

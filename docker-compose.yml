@@ -46,14 +46,14 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      memgraph:
+      neo4j:
         condition: service_healthy
     env_file:
       - .env
     environment:
       - DATABASE_URL=postgresql://kitabim:kitabim@postgres:5432/kitabim-ai
       - REDIS_URL=redis://redis:6379/0
-      - MEMGRAPH_URL=bolt://memgraph:7687
+      - NEO4J_URL=bolt://neo4j:7687
       - DATA_DIR=/app/data
       - GOOGLE_APPLICATION_CREDENTIALS=/etc/gcs/key.json
       # Connection pool settings (loaded from .env but explicitly listed for visibility)
@@ -86,14 +86,14 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      memgraph:
+      neo4j:
         condition: service_healthy
     env_file:
       - .env
     environment:
       - DATABASE_URL=postgresql://kitabim:kitabim@postgres:5432/kitabim-ai
       - REDIS_URL=redis://redis:6379/0
-      - MEMGRAPH_URL=bolt://memgraph:7687
+      - NEO4J_URL=bolt://neo4j:7687
       - DATA_DIR=/app/data
       - GOOGLE_APPLICATION_CREDENTIALS=/etc/gcs/key.json
       # Connection pool settings (loaded from .env but explicitly listed for visibility)
@@ -121,18 +121,21 @@ services:
         limits:
           memory: 256M
 
-  # ─── Memgraph (Graph DB) ──────────────────────────────────────────────────
-  memgraph:
-    # NOTE: bind-mounting /var/lib/memgraph causes a segfault (mmap/AppArmor
-    # interaction on bind-mounted paths). The knowledge graph is rebuilt from
-    # PostgreSQL on demand, so ephemeral storage is acceptable here.
-    image: memgraph/memgraph:3.10.1
+  # ─── Neo4j (Graph DB) ─────────────────────────────────────────────────────
+  neo4j:
+    image: neo4j:5.26.0
     restart: always
     ports:
       - "37687:7687"
+      - "37474:7474" # HTTP Neo4j Browser UI
+    environment:
+      - NEO4J_AUTH=none
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
     healthcheck:
-      # Use bash /dev/tcp to verify the Bolt port is accepting connections
-      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/7687' 2>/dev/null"]
+      # Verify the Neo4j HTTP port is accepting connections via wget spider
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 15
@@ -142,23 +145,8 @@ services:
         limits:
           memory: 1G
 
-  # ─── Memgraph Lab (Visualization UI) ──────────────────────────────────────
-  memgraph-lab:
-    image: memgraph/lab:latest
-    restart: always
-    ports:
-      - "33000:3000"
-    environment:
-      - QUICK_CONNECT_MG_HOST=memgraph
-      - QUICK_CONNECT_MG_PORT=7687
-    depends_on:
-      memgraph:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-
 
 volumes:
   postgres_data:
+  neo4j_data:
+  neo4j_logs:

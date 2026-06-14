@@ -145,24 +145,32 @@ _STREAM_FIRST_CHUNK_TIMEOUT = (
     60.0  # seconds to wait for the first chunk before treating as failure
 )
 _INVOKE_TIMEOUT = 30.0  # seconds to wait for a non-streaming ainvoke to complete
+_OCR_INVOKE_TIMEOUT = (
+    120.0  # seconds for OCR vision calls (image + prompt, much slower)
+)
 
 
-async def _call_with_breaker(breaker: CircuitBreaker, fn, *args, **kwargs):
+async def _call_with_breaker(
+    breaker: CircuitBreaker, fn, *args, timeout: float | None = None, **kwargs
+):
     # Apply global rate limiting before attempting the call
     await _GEMINI_LIMITER.wait()
+    effective_timeout = timeout or _INVOKE_TIMEOUT
 
     async def _fn_with_timeout():
         try:
-            return await asyncio.wait_for(fn(*args, **kwargs), timeout=_INVOKE_TIMEOUT)
+            return await asyncio.wait_for(
+                fn(*args, **kwargs), timeout=effective_timeout
+            )
         except asyncio.TimeoutError:
             log_json(
                 _logger,
                 logging.ERROR,
                 "LLM invoke timed out",
-                timeout=_INVOKE_TIMEOUT,
+                timeout=effective_timeout,
                 breaker=breaker.name,
             )
-            raise TimeoutError(f"LLM did not respond within {_INVOKE_TIMEOUT}s")
+            raise TimeoutError(f"LLM did not respond within {effective_timeout}s")
 
     try:
         return await breaker.call(_fn_with_timeout)
@@ -283,7 +291,7 @@ async def generate_text_with_image(
         )
         return response.text or ""
 
-    text = await _call_with_breaker(_OCR_BREAKER, _call)
+    text = await _call_with_breaker(_OCR_BREAKER, _call, timeout=_OCR_INVOKE_TIMEOUT)
     log_json(
         _logger,
         logging.INFO,

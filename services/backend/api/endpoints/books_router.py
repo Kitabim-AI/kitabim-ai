@@ -1563,7 +1563,7 @@ async def reprocess_graph(
 ):
     """Manually trigger/reprocess Knowledge Graph extraction for a book.
 
-    This queues the `knowledge_graph_job` to extract entities and relations in Memgraph.
+    This queues the `knowledge_graph_job` to extract entities and relations in Neo4j.
     """
     books_repo = BooksRepository(session)
     book = await books_repo.get(book_id)
@@ -1592,8 +1592,14 @@ async def reprocess_graph(
         redis_pool = await arq.create_pool(
             arq.connections.RedisSettings.from_dsn(settings.redis_url)
         )
-        await redis_pool.enqueue_job("knowledge_graph_job", book_id)
-        await redis_pool.aclose()
+        try:
+            await redis_pool.enqueue_job(
+                "knowledge_graph_job",
+                book_id=book_id,
+                _job_id=f"knowledge_graph:{book_id}",
+            )
+        finally:
+            await redis_pool.aclose()
         log_json(
             logger,
             logging.INFO,

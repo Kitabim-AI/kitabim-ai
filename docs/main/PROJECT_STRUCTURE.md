@@ -23,7 +23,7 @@
 
 - **OCR Ingestion Pipeline**: Extracts text page-by-page from PDFs using Gemini Vision.
 - **Curation Workspace**: Offers spell-checking, dictionaries, and editorial curation tools.
-- **ADK-Backed Agentic RAG**: Converses with users about books, performing pgvector searches and Memgraph graph lookups.
+- **ADK-Backed Agentic RAG**: Converses with users about books, performing pgvector searches and Neo4j graph lookups.
 - **User Identity**: Manages JWT authentication and social logins.
 
 ---
@@ -103,7 +103,7 @@ packages/backend-core/
 ### Backend
 - **Framework**: FastAPI (Python 3.13)
 - **Database**: PostgreSQL 17 + pgvector (embedding similarity)
-- **Graph DB**: Memgraph (Bolt protocol, Cypher queries)
+- **Graph DB**: Neo4j (Bolt protocol, Cypher queries)
 - **Cache/Queue**: Redis 7 + ARQ (task execution)
 - **AI Stack**:
   - **Google ADK (`google-adk`)**: Manages the agentic ReAct loop and tool-calling execution.
@@ -135,7 +135,7 @@ packages/backend-core/
   - `embedding_job`: Creates vector embeddings.
   - `spell_check_job`: Detects misspelling corrections.
   - `summary_job`: Generates book summaries.
-  - `knowledge_graph_job`: Populates Memgraph relationships.
+  - `knowledge_graph_job`: Populates Neo4j relationships.
 - *Background Ragas evaluation jobs are deleted.*
 
 ---
@@ -148,4 +148,4 @@ packages/backend-core/
 | `packages/backend-core/app/llm/chains.py` | Implements `TextChain` formatting templates and `.ainvoke()`/`.astream()` wrappers to maintain compatibility with downstream answer builders. |
 | `packages/backend-core/app/services/rag/agent/adk_agent.py` | Agent factory creating the ADK `Agent` with tools list and system instructions. |
 | `packages/backend-core/app/services/rag/agent/handler.py` | Runs `AgentRAGHandler`. Orchestrates the planning/decompose pre-steps, calls ADK `InMemoryRunner`, parses tool calls and responses, and runs grading/synthesis post-steps. |
-| `packages/backend-core/app/services/rag/agent/tools.py` | Standardized Python function definitions decorated as ADK-callable tools, wrapping repo lookups, pgvector, and Memgraph Bolt connections. |
+| `packages/backend-core/app/services/rag/agent/tools.py` | Standardized Python function definitions decorated as ADK-callable tools, wrapping repo lookups, pgvector, and Neo4j Bolt connections. |

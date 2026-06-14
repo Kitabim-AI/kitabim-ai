@@ -1645,7 +1645,7 @@
           "books"
         ],
         "summary": "Reprocess Graph",
-        "description": "Manually trigger/reprocess Knowledge Graph extraction for a book.\n\nThis queues the `knowledge_graph_job` to extract entities and relations in Memgraph.",
+        "description": "Manually trigger/reprocess Knowledge Graph extraction for a book.\n\nThis queues the `knowledge_graph_job` to extract entities and relations in Neo4j.",
         "operationId": "reprocess_graph_api_books__book_id__reprocess_graph_post",
         "security": [
           {

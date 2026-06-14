@@ -1,11 +1,11 @@
 """
-Knowledge Graph Job — extracts entities/relations from book chunks and indexes them in Memgraph.
+Knowledge Graph Job — extracts entities/relations from book chunks and indexes them in Neo4j.
 
 Chunks are grouped into batches before being sent to the LLM. This reduces the number of API
 calls (one per batch instead of one per chunk) and gives the model cross-chunk context so it
 can resolve coreferences (e.g. 'the Khan' → 'Genghis Khan') across nearby text.
 
-Only Entity nodes and Entity→Entity RELATED_TO edges are stored in Memgraph.
+Only Entity nodes and Entity→Entity RELATED_TO edges are stored in Neo4j.
 Chunk nodes are not stored — chunk text lives in Postgres and is retrieved via vector search.
 
 Batch size and concurrency are both configurable via system_configs:
@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 
 from sqlalchemy import select, update
 
@@ -36,6 +37,11 @@ from google import genai
 from google.genai import types
 
 logger = logging.getLogger("app.worker.knowledge_graph_job")
+
+
+def hijri_to_gregorian(year_hijri: int) -> int:
+    """Convert a Hijri year to an approximate Gregorian year (±1 year accuracy)."""
+    return round(year_hijri - (year_hijri / 33.7) + 622)
 
 
 async def knowledge_graph_job(ctx, book_id: str) -> None:
@@ -64,7 +70,7 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                 return
 
             chat_model = await config_repo.get_value(
-                "gemini_chat_model", "gemini-2.0-flash-lite"
+                "gemini_kg_extraction_model", "gemini-3.1-flash-lite"
             )
             max_parallel = int(
                 await config_repo.get_value("kg_max_parallel_chunks", "5")
@@ -84,6 +90,30 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                 )
                 return
 
+            # Load fictional categories and determine if this book is fictional
+            fictional_categories_val = await config_repo.get_value(
+                "fictional_categories",
+                "رومان, تارىخىي رومان, بالىلار رومانى, ساتىرىك رومان, پەلسەپىۋىي رومان, پوۋېست, پوۋېستلار, تارىخىي پوۋېست, ھېكايىلەر, تارىخىي ھېكايىلەر, بالىلار ھېكايىلېرى, چۆچەكلەر, قىسسە, تارىخىي قىسسە, داستان, داستانلار, تارىخىي داستان, رىۋايەتلەر, مەسەللەر, لەتىپىلەر, يۇمۇرلار, شېئىرلار, سەھنە ئەسەرلېرى, كىنو سېنارىيىلىرى, fiction, novel, story, drama, poetry, fairytale, fable, play",
+            )
+            fictional_cats = [
+                c.strip().lower()
+                for c in fictional_categories_val.split(",")
+                if c.strip()
+            ]
+            book_cats = [
+                c.strip().lower() for c in (book.categories or []) if c.strip()
+            ]
+            is_fictional = any(c in fictional_cats for c in book_cats)
+            log_json(
+                logger,
+                logging.INFO,
+                "book classification determined",
+                book_id=book_id,
+                title=book.title,
+                categories=book.categories,
+                is_fictional=is_fictional,
+            )
+
             # Fetch all chunks ordered so batches are contiguous pages of text
             result = await session.execute(
                 select(Chunk)
@@ -96,9 +126,16 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
             log_json(
                 logger,
                 logging.WARNING,
-                "knowledge_graph_job: no chunks found for book",
+                "knowledge_graph_job: no chunks found for book — resetting milestone to idle",
                 book_id=book_id,
             )
+            async with db_session.async_session_factory() as session:
+                await session.execute(
+                    update(Book)
+                    .where(Book.id == book_id)
+                    .values(graph_milestone="idle")
+                )
+                await session.commit()
             return
 
         # 2. Check API key
@@ -106,9 +143,16 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
         if not api_key:
             raise RuntimeError("GEMINI_API_KEY settings configuration is not set")
 
-        # 3. Connect to Memgraph & initialise
+        # 3. Connect to Neo4j, clear stale data, then initialise
         graph_repo = GraphRepository()
         try:
+            await graph_repo.delete_book_graph(book_id)
+            log_json(
+                logger,
+                logging.INFO,
+                "cleared existing graph data for book",
+                book_id=book_id,
+            )
             await graph_repo.init_constraints()
 
             # 4. Initialize GenAI client
@@ -146,11 +190,23 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                         "Language Guideline:\n"
                         "- Extract all entity names (persons, locations, events, etc.) strictly in their original "
                         "Uyghur Perso-Arabic script as they appear in the text. Do NOT translate or transliterate "
-                        "names to English or Latin characters (e.g., use 'نۇھ' instead of 'Nuh', and 'ياپەس' instead of 'Yafes').\n\n"
+                        "names to English or Latin characters (e.g., use 'نۇھ' instead of 'Nuh', and 'ياپەس' instead of 'Yafes').\n"
+                        "- Relation types must be in English, ALL_CAPS, underscore-separated "
+                        "(e.g. SON_OF, CONQUERED, ALLIED_WITH, FOUGHT_IN). Never use Uyghur or other languages for relation types.\n\n"
                         "Important Kinship/Relationship Guideline:\n"
                         "- In Uyghur historical texts, terms of endearment or lineage like 'قوزىچىسى' or 'نەۋرىسى' "
                         "refer to a grandchild (e.g., GRANDSON_OF or GRANDCHILD_OF), NOT a direct child (e.g., SON_OF).\n"
-                        "Verify and extract the exact kinship relationship using this rule.\n\n"
+                        "- Verify and extract the exact kinship relationship using this rule.\n\n"
+                        "Military/Political Guideline:\n"
+                        "- Extract explicit military and political actions as directed relationship edges, not just as event nodes.\n"
+                        "- Examples: CONQUERED, DEFEATED, FOUGHT_IN, ALLIED_WITH, LED_ARMY, FLED_FROM, FLED_TO, RULED, CAPTURED, SERVED, PLEDGED_ALLEGIANCE_TO.\n"
+                        "- When a person performs a military action against a location or another person, "
+                        "create a relationship edge — do NOT only record it as an event node.\n\n"
+                        "Year/Date Guideline:\n"
+                        "- If the text mentions a specific Hijri year (ھىجرىيە، ھ) for an event or relationship, extract it as an integer in the year_hijri field.\n"
+                        "- If the text mentions a Gregorian century (e.g. '15th century', '15-ئەسىر CE') without a specific Hijri year, extract it as an integer in the century_gregorian field (e.g. 15 for 15th century).\n"
+                        "- Do NOT set both year_hijri and century_gregorian on the same entity/relation.\n"
+                        "- Do NOT embed years or centuries inside entity names — store the name cleanly (e.g. 'ئىسان بۇغاخاننىڭ ۋاپاتى', not 'ئىسان بۇغاخاننىڭ ۋاپاتى (ھىجرىيە 866-يىلى)').\n\n"
                         f"Text Chunks:\n{combined_text}"
                     )
 
@@ -199,12 +255,28 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
             results = await asyncio.gather(*tasks)
 
             # 6. Accumulate all entities and relations across all batches, then write
-            #    to Memgraph in exactly 2 round-trips (upsert + connect) instead of 2×N.
+            #    to Neo4j in exactly 2 round-trips (upsert + connect) instead of 2×N.
             #    Entity names are deduplicated — the same historical figure appears in
-            #    many batches and Memgraph MERGE handles it, but sending 1 entry is cheaper.
+            #    many batches and Neo4j MERGE handles it, but sending 1 entry is cheaper.
             seen_entity_names: set[str] = set()
             all_entities: list[dict] = []
             all_relations: list[dict] = []
+
+            base_title = re.sub(r"[\s-]+\d+\s*$", "", book.title or "").strip()
+
+            # Helper to namespace Person entity names for fictional books
+            def get_display_name(name: str, etype: EntityType | str | None) -> str:
+                if not name:
+                    return ""
+                is_person = False
+                if isinstance(etype, EntityType) and etype == EntityType.PERSON:
+                    is_person = True
+                elif isinstance(etype, str) and etype.strip().lower() == "person":
+                    is_person = True
+
+                if is_fictional and is_person:
+                    return f"{name} ({base_title})"
+                return name
 
             for batch, extraction in results:
                 if not extraction:
@@ -214,57 +286,84 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                 if not chunks_with_text:
                     continue
 
-                # Collect entity names defined in this extraction
-                defined_entity_names = {
-                    e.name.strip()
+                # Map entity name -> type in this extraction batch
+                entity_types = {
+                    e.name.strip(): e.type
                     for e in extraction.entities
-                    if e.name and e.name.strip()
+                    if e.name and e.type
                 }
 
                 for entity in extraction.entities:
                     name = entity.name.strip() if entity.name else ""
-                    if not name or name in seen_entity_names:
+                    if not name:
                         continue
-                    seen_entity_names.add(name)
-                    all_entities.append(
-                        {
-                            "name": name,
-                            "type": entity.type.value
-                            if entity.type
-                            else EntityType.OTHER.value,
-                            "subtype": entity.subtype,
-                        }
-                    )
+                    etype = entity.type
+                    display_name = get_display_name(name, etype)
+                    if display_name in seen_entity_names:
+                        continue
+                    seen_entity_names.add(display_name)
+                    entity_data: dict = {
+                        "name": display_name,
+                        "type": etype.value
+                        if isinstance(etype, EntityType)
+                        else (etype if etype else EntityType.OTHER.value),
+                        "subtype": entity.subtype,
+                    }
+                    if entity.year_hijri:
+                        entity_data["year_hijri"] = entity.year_hijri
+                        entity_data["year_gregorian"] = hijri_to_gregorian(
+                            entity.year_hijri
+                        )
+                    elif entity.century_gregorian:
+                        entity_data["century_gregorian"] = entity.century_gregorian
+                    all_entities.append(entity_data)
 
                 # Ensure relation endpoints exist as entities (fallback to Concept type)
                 for rel in extraction.relations:
                     src = rel.source_entity.strip() if rel.source_entity else ""
                     tgt = rel.target_entity.strip() if rel.target_entity else ""
-                    for name in (src, tgt):
-                        if name and name not in seen_entity_names:
-                            seen_entity_names.add(name)
-                            defined_entity_names.add(name)
+
+                    src_type = entity_types.get(src)
+                    tgt_type = entity_types.get(tgt)
+
+                    src_display = get_display_name(src, src_type)
+                    tgt_display = get_display_name(tgt, tgt_type)
+
+                    for raw_name, display_name, etype in [
+                        (src, src_display, src_type),
+                        (tgt, tgt_display, tgt_type),
+                    ]:
+                        if display_name and display_name not in seen_entity_names:
+                            seen_entity_names.add(display_name)
                             all_entities.append(
                                 {
-                                    "name": name,
-                                    "type": "Concept",
+                                    "name": display_name,
+                                    "type": etype.value
+                                    if isinstance(etype, EntityType)
+                                    else (etype if etype else "Concept"),
                                     "subtype": "Auto-extracted from relation",
                                 }
                             )
 
                     rtype = rel.relation_type.strip() if rel.relation_type else ""
-                    if not src or not tgt or not rtype:
+                    if not src_display or not tgt_display or not rtype:
                         continue
-                    all_relations.append(
-                        {
-                            "source_name": src,
-                            "rel_type": rtype,
-                            "target_name": tgt,
-                            "book_id": str(book_id),
-                        }
-                    )
+                    relation_data: dict = {
+                        "source_name": src_display,
+                        "rel_type": rtype,
+                        "target_name": tgt_display,
+                        "book_id": str(book_id),
+                    }
+                    if rel.year_hijri:
+                        relation_data["year_hijri"] = rel.year_hijri
+                        relation_data["year_gregorian"] = hijri_to_gregorian(
+                            rel.year_hijri
+                        )
+                    elif rel.century_gregorian:
+                        relation_data["century_gregorian"] = rel.century_gregorian
+                    all_relations.append(relation_data)
 
-            # Single bulk write: 2 Memgraph round-trips for the entire book
+            # Single bulk write: 2 Neo4j round-trips for the entire book
             save_errors = 0
             try:
                 if all_entities:
@@ -274,7 +373,7 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                 log_json(
                     logger,
                     logging.INFO,
-                    "Memgraph bulk write complete",
+                    "Neo4j bulk write complete",
                     book_id=book_id,
                     entities=len(all_entities),
                     relations=len(all_relations),
@@ -284,7 +383,7 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                 log_json(
                     logger,
                     logging.ERROR,
-                    "failed to save entities/relations to Memgraph",
+                    "failed to save entities/relations to Neo4j",
                     book_id=book_id,
                     error=str(save_exc),
                 )

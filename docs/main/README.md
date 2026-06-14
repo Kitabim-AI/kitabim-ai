@@ -44,7 +44,7 @@ Welcome to the Kitabim.ai documentation. Kitabim.ai is the definitive intelligen
 | Document | Description | Status |
 |----------|-------------|--------|
 | Hierarchical RAG with book summaries | `book_summaries` table + `summary_scanner` + `summary_job` | ✅ Implemented |
-| Knowledge Graph with Memgraph | Memgraph + `graph_scanner` + `knowledge_graph_job` | ✅ Implemented |
+| Knowledge Graph with Neo4j | Neo4j + `graph_scanner` + `knowledge_graph_job` | ✅ Implemented |
 | [UI_CSS_STANDARD.md](UI_CSS_STANDARD.md) | Frontend CSS conventions and Tailwind standards | ✅ Current |
 
 ### **📋 Requirements & Specifications**
@@ -128,7 +128,7 @@ All docs should include:
 ## 🏗️ Current System State (May 2026)
 
 ### Technology Stack
-- **Database:** PostgreSQL 17 with pgvector + Memgraph graph database
+- **Database:** PostgreSQL 17 with pgvector + Neo4j graph database
 - **Cache/Queue:** Redis 7
 - **Backend:** Python 3.13 + FastAPI + SQLAlchemy
 - **Frontend:** React 19 + Vite 6 + TypeScript 5.8
@@ -139,7 +139,7 @@ All docs should include:
 
 ### Recent Major Changes
 - ✅ **2026-06-11:** Google ADK & google-genai Migration — migrated to Google ADK (for agent loops) and first-party google-genai SDK (for direct LLM tasks). Removed background evaluation jobs and simplified stats to focus on user feedback.
-- ✅ **2026-05-21:** GraphRAG with Memgraph Integration — added `query_knowledge_graph` tool (11 tools total), registered `knowledge_graph_job` running concurrently on book readiness to extract and index semantic entities and relationship networks in Memgraph database.
+- ✅ **2026-05-21:** GraphRAG with Neo4j Integration — added `query_knowledge_graph` tool (11 tools total), registered `knowledge_graph_job` running concurrently on book readiness to extract and index semantic entities and relationship networks in Neo4j database.
 - ✅ **2026-05-15:** Fast-path handlers permanently removed — `AgentRAGHandler` is now the sole handler; `get_sister_volumes` added (10 tools total); streaming UX overhauled (isRetrying pattern, unified bubble, w-full AgentThinkingSteps)
 - ✅ **2026-05-10:** RAG pipeline refactoring — extracted shared retrieval module, centralized ReAct configurations, simplified handler boilerplate
 - ✅ **2026-05-09:** Agentic RAG fully promoted — always-on, context injection, "چۇ" follow-up detection
