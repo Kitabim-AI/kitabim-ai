@@ -176,3 +176,55 @@ def test_grade_context_local_grading():
     assert "Book B" in graded_context
     assert "Content A1" in graded_context
     assert "Content B1" in graded_context
+
+
+def test_build_instructions_dynamic_numbering():
+    from app.services.rag.answer_builder import build_instructions
+
+    # 1. Test Permissive Mode with all extra flags
+    instr_permissive = build_instructions(
+        strict_no_answer=False,
+        suppress_page_notice=True,
+        is_global=True,
+        has_categories=True,
+    )
+
+    # Verify numbering sequence contains up to 11
+    lines = [line.strip() for line in instr_permissive.split("\n") if line.strip()]
+    numbered_lines = [line for line in lines if line[0].isdigit() and "." in line[:3]]
+
+    # Extract just the numbers
+    numbers = [int(line.split(".")[0]) for line in numbered_lines]
+
+    # They should be strictly sequential starting at 1
+    assert numbers == list(range(1, len(numbers) + 1))
+    assert len(numbers) == 11
+
+    # Check key contents
+    assert "Markdown structural characters" in instr_permissive
+    assert "omit the 'ref:' link and cite inline as" in instr_permissive
+    assert "Librarian (زېرەكچاق)" in instr_permissive
+
+    # 2. Test Strict Mode with all extra flags
+    instr_strict = build_instructions(
+        strict_no_answer=True,
+        suppress_page_notice=True,
+        is_global=True,
+        has_categories=True,
+    )
+
+    lines_strict = [line.strip() for line in instr_strict.split("\n") if line.strip()]
+    numbered_lines_strict = [
+        line for line in lines_strict if line[0].isdigit() and "." in line[:3]
+    ]
+    numbers_strict = [int(line.split(".")[0]) for line in numbered_lines_strict]
+
+    # They should be strictly sequential starting at 1 (7 rules in strict mode)
+    assert numbers_strict == list(range(1, len(numbers_strict) + 1))
+    assert len(numbers_strict) == 7
+
+    assert "Markdown structural characters" in instr_strict
+    assert (
+        "format citations in Uyghur as a markdown link using the EXACT author"
+        in instr_strict
+    )

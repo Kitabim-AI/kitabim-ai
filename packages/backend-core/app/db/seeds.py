@@ -20,12 +20,12 @@ async def seed_system_configs(session: AsyncSession):
         },
         {
             "key": "gemini_chat_model",
-            "value": "gemini-3.1-flash-lite-preview",
+            "value": "gemini-3-flash-preview",
             "description": "Gemini model used for chat responses (reader chat and global chat).",
         },
         {
             "key": "gemini_ocr_model",
-            "value": "gemini-3.1-flash-lite-preview",
+            "value": "gemini-3-flash-preview",
             "description": "Gemini model used for OCR page processing.",
         },
         {
@@ -59,6 +59,11 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Number of books the graph scanner enqueues per run. Increase temporarily to speed up bulk backfill, then reset to 5.",
         },
         {
+            "key": "gemini_kg_extraction_model",
+            "value": "gemini-3.1-flash-lite",
+            "description": "Gemini model used for entity/relation extraction during knowledge graph indexing.",
+        },
+        {
             "key": "kg_chunk_batch_size",
             "value": "5",
             "description": "Number of chunks combined into a single LLM call during knowledge graph extraction. Higher values reduce API calls and improve coreference resolution at the cost of larger prompts. Default tuned for 1500-char chunks (~7 500 chars per call).",
@@ -77,6 +82,16 @@ async def seed_system_configs(session: AsyncSession):
             "key": "agent_enough_chunks",
             "value": "8",
             "description": "Early-exit threshold: stop agent loop once this many chunks are collected.",
+        },
+        {
+            "key": "knowledge_graph_enabled",
+            "value": "false",
+            "description": "Globally enable/disable knowledge graph extraction and the graph scanner. Set to 'true' to activate.",
+        },
+        {
+            "key": "fictional_categories",
+            "value": "رومان, تارىخىي رومان, بالىلار رومانى, ساتىرىك رومان, پەلسەپىۋىي رومان, پوۋېست, پوۋېستلار, تارىخىي پوۋېست, ھېكايىلەر, تارىخىي ھېكايىلەر, بالىلار ھېكايىلېرى, چۆچەكلەر, قىسسە, تارىخىي قىسسە, داستان, داستانلار, تارىخىي داستان, رىۋايەتلەر, مەسەللەر, لەتىپىلەر, يۇمۇرلار, شېئىرلار, سەھنە ئەسەرلېرى, كىنو سېنارىيىلىرى",
+            "description": "Comma-separated list of categories that indicate a book is fictional. If a book's categories match any in this list, its Person entities will be namespaced to prevent cross-book duplication. Otherwise, it defaults to non-fictional.",
         },
     ]
 

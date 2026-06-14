@@ -75,7 +75,7 @@ class EntityType(str, Enum):
 class ExtractedEntity(BaseModel):
     name: Optional[str] = Field(
         None,
-        description="The standard name of the person, place, event, era or concept",
+        description="The standard name of the person, place, event, era or concept — do NOT embed years in the name",
     )
     type: Optional[EntityType] = Field(
         None, description="The primary category of the entity"
@@ -83,6 +83,14 @@ class ExtractedEntity(BaseModel):
     subtype: Optional[str] = Field(
         None,
         description="Optional subtype (e.g. 'City' for Location, 'Sultan' for Person)",
+    )
+    year_hijri: Optional[int] = Field(
+        None,
+        description="Hijri year associated with this entity (e.g. birth, death, founding). Only for Event or Era entities. Use only when a specific Hijri year is stated.",
+    )
+    century_gregorian: Optional[int] = Field(
+        None,
+        description="Gregorian century associated with this entity (e.g. 15 for 15th century CE). Use only when a Gregorian century is stated but no specific Hijri year.",
     )
 
 
@@ -96,6 +104,14 @@ class ExtractedRelation(BaseModel):
         description="The type of relationship (e.g., LIVED_IN, PART_OF, INFLUENCED, BORN_IN, SON_OF)",
     )
     target_entity: Optional[str] = Field(None, description="Name of the target entity")
+    year_hijri: Optional[int] = Field(
+        None,
+        description="Hijri year when this relationship occurred. Use only when a specific Hijri year is stated.",
+    )
+    century_gregorian: Optional[int] = Field(
+        None,
+        description="Gregorian century when this relationship occurred (e.g. 15 for 15th century CE). Use only when a Gregorian century is stated but no specific Hijri year.",
+    )
 
 
 class KnowledgeExtraction(BaseModel):

@@ -33,31 +33,34 @@ def build_instructions(
         prefix = f"Persona: {persona_prompt}\n\n"
 
     if strict_no_answer:
-        return (
-            prefix + "Instructions:\n"
-            "1. Primary Goal: Answer the user's question ONLY based on the provided context.\n"
-            "2. Chat History: Review the chat history to understand follow-up questions, references to previous topics, and conversational context. If the user asks 'what about...', 'tell me more', or uses pronouns like 'it', 'that', or 'this', refer to the chat history to understand what they're asking about.\n"
-            "3. If the answer is NOT in the context, respond with exactly: "
-            + t("errors.chat_no_answer")
-            + "\n"
-            "4. Format your response in markdown:\n"
-            "   - Use double newlines (\\n\\n) to separate paragraphs for better readability\n"
-            "   - Use **bold** for emphasis on key terms\n"
-            "   - Use bullet points (- ) for lists when appropriate\n"
-            "5. Respond ONLY in professional Uyghur (Arabic script).\n"
-            "6. STRICT RULE: Output ONLY Uyghur text. Do not include English words, translations, or explanations in other languages."
-        )
+        instructions = [
+            "Primary Goal: Answer the user's question ONLY based on the provided context.",
+            (
+                "Chat History: Review the chat history to understand follow-up questions, references to previous topics, and conversational context. "
+                "If the user asks 'what about...', 'tell me more', or uses pronouns like 'it', 'that', or 'this', refer to the chat history to understand what they're asking about."
+            ),
+            f"If the answer is NOT in the context, respond with exactly: {t('errors.chat_no_answer')}",
+            (
+                "Format your response in markdown:\n"
+                "   - Use double newlines (\\n\\n) to separate paragraphs for better readability\n"
+                "   - Use **bold** for emphasis on key terms\n"
+                "   - Use bullet points (- ) for lists when appropriate"
+            ),
+            (
+                "If you cite a passage, format citations in Uyghur as a markdown link using the EXACT author and book title from the context header "
+                "(e.g., **مەنبە:** [ئانا يۇرت (زوردۇن سابىر)، Page: N](ref:book_id:page_number)). Keep the book ID ONLY in the URL parenthesis, not the text label."
+            ),
+            "Respond ONLY in professional Uyghur (Arabic script).",
+            (
+                "STRICT RULE: Output ONLY Uyghur text. Do not include English words, translations, or explanations in other languages. "
+                "Markdown structural characters (e.g., **, -, >, #) are permitted as formatting; only content words and text must be in Uyghur."
+            ),
+        ]
 
-    extra_rules = ""
-    if suppress_page_notice:
-        extra_rules = "\n9. If you can answer, do NOT mention whether the current page contained the answer."
-    if is_global:
-        extra_rules += (
-            "\n10. Skip any greetings, introductions, or pleasantries (e.g., 'Hello', "
-            "'As-salamu alaykum', 'How can I help you?'). Start your response directly "
-            "with the answer or the most relevant information."
-        )
+        body = "\n".join(f"{i + 1}. {inst}" for i, inst in enumerate(instructions))
+        return prefix + "Instructions:\n" + body
 
+    # Permissive Mode
     librarian_fallback = ""
     if is_global and has_categories:
         librarian_fallback = (
@@ -65,36 +68,69 @@ def build_instructions(
             "with books or authors outside your specific expertise.\n"
         )
 
-    return (
-        prefix + "Instructions:\n"
-        "1. Primary Goal: Answer the user's question based on the provided context.\n"
-        "2. Chat History: Review the chat history to understand follow-up questions, references to previous topics, and conversational context. If the user asks 'what about...', 'tell me more', or uses pronouns like 'it', 'that', or 'this', refer to the chat history to understand what they're asking about.\n"
-        "3. Format your response in markdown:\n"
-        "   - Use double newlines (\\n\\n) to separate paragraphs for better readability\n"
-        "   - Use **bold** for emphasis on key terms or important information\n"
-        "   - Use bullet points (- ) for lists when presenting multiple items\n"
-        "   - Use > for direct quotations from the source text\n"
-        "4. If the context contains the information, ALWAYS cite the source clearly.\n"
-        "   Each document in the context starts with a header like: [BookID: abc123, Book: title, Author: name, Volume: N, Page: N]\n"
-        "   Book summaries use the marker SUMMARY instead of Page: [BookID: abc123, Book: title, Author: name, SUMMARY]\n"
-        "   You MUST use the EXACT author name from the 'Author:' field in that header. If there is no 'Author:' field in the header, omit the author from the citation entirely — do NOT write any 'unknown' or placeholder text for the author.\n"
-        "5. Format citations in Uyghur as a markdown link.\n"
-        "   For page-based sources, the link URL MUST be in the format 'ref:book_id:page_number'.\n"
-        "   If multiple pages are referenced, separate the page numbers with commas in the URL (e.g. 'ref:book_id:9,10').\n"
-        "   For SUMMARY-marked sources (no Page field), use 'ref:book_id:summary' as the URL.\n"
-        "   STRICT RULE: Do NOT include the 'BookID: abc123' part in the visible text label of the link! Keep the book ID ONLY in the URL parenthesis.\n"
-        "   Example (page): **مەنبە:** [ئانا يۇرت (زوردۇن سابىر)، 1-توم، 25-بەت](ref:abc123:25)\n"
-        "   Example (summary): **مەنبە:** [ئانا يۇرت (زوردۇن سابىر) — قىسقىچە مەزمۇنى](ref:abc123:summary)\n"
-        "6. Replace 'abc123' with the actual BookID in the URL, and use the exact values from the context header for the author/title. **Citations must be placed immediately after the relevant sentence or paragraph they support. NEVER group all citations at the end of your response.**\n"
-        "7. If the context is marked as 'NO RELEVANT DOCUMENTS FOUND' or does not contain the answer:\n"
+    inst_7 = (
+        "If the context is marked as 'NO RELEVANT DOCUMENTS FOUND' or does not contain the answer:\n"
         "   - Politely explain that you couldn't find a specific match in the indexed books.\n"
         "   - Skip any greeting and directly state that no match was found.\n"
         + librarian_fallback
-        + "   - If it's a general question or greeting, respond naturally but maintain your persona as a librarian advisor.\n"
-        "8. Respond ONLY in professional Uyghur (Arabic script).\n"
-        "9. STRICT RULE: Output ONLY Uyghur text. Do not include English words, translations, or mixed-language sentences. Maintain purely Uyghur syntax and vocabulary."
-        + extra_rules
+        + "   - If it's a general question or greeting, respond naturally but maintain your persona as a librarian advisor."
     )
+
+    instructions = [
+        "Primary Goal: Answer the user's question based on the provided context.",
+        (
+            "Chat History: Review the chat history to understand follow-up questions, references to previous topics, and conversational context. "
+            "If the user asks 'what about...', 'tell me more', or uses pronouns like 'it', 'that', or 'this', refer to the chat history to understand what they're asking about."
+        ),
+        (
+            "Format your response in markdown:\n"
+            "   - Use double newlines (\\n\\n) to separate paragraphs for better readability\n"
+            "   - Use **bold** for emphasis on key terms or important information\n"
+            "   - Use bullet points (- ) for lists when presenting multiple items\n"
+            "   - Use > for direct quotations from the source text"
+        ),
+        (
+            "If the context contains the information, ALWAYS cite the source clearly.\n"
+            "   Each document in the context starts with a header like: [BookID: abc123, Book: title, Author: name, Volume: N, Page: N]\n"
+            "   Book summaries use the marker SUMMARY instead of Page: [BookID: abc123, Book: title, Author: name, SUMMARY]\n"
+            "   You MUST use the EXACT author name from the 'Author:' field in that header. If there is no 'Author:' field in the header, omit the author from the citation entirely — do NOT write any 'unknown' or placeholder text for the author."
+        ),
+        (
+            "Format citations in Uyghur as a markdown link.\n"
+            "   For page-based sources, the link URL MUST be in the format 'ref:book_id:page_number'.\n"
+            "   If multiple pages are referenced, separate the page numbers with commas in the URL (e.g. 'ref:book_id:9,10').\n"
+            "   For SUMMARY-marked sources (no Page field), use 'ref:book_id:summary' as the URL.\n"
+            "   STRICT RULE: Do NOT include the 'BookID: abc123' part in the visible text label of the link! Keep the book ID ONLY in the URL parenthesis.\n"
+            "   Example (page): **مەنبە:** [ئانا يۇرت (زوردۇن سابىر)، 1-توم، 25-بەت](ref:abc123:25)\n"
+            "   Example (summary): **مەنبە:** [ئانا يۇرت (زوردۇن سابىر) — قىسقىچە مەزمۇنى](ref:abc123:summary)\n"
+            "   For catalog/author/metadata results that do not have a page number or summary (e.g., from get_book_author, get_books_by_author, or search_catalog), omit the 'ref:' link and cite inline as: **مەنبە:** book_title (author_name)."
+        ),
+        (
+            "Replace 'abc123' with the actual BookID in the URL, and use the exact values from the context header for the author/title. "
+            "**Citations must be placed immediately after the relevant sentence or paragraph they support. NEVER group all citations at the end of your response.**"
+        ),
+        inst_7,
+        "Respond ONLY in professional Uyghur (Arabic script).",
+        (
+            "STRICT RULE: Output ONLY Uyghur text. Do not include English words, translations, or mixed-language sentences. Maintain purely Uyghur syntax and vocabulary. "
+            "Markdown structural characters (e.g., **, -, >, #) are permitted as formatting; only content words and text must be in Uyghur."
+        ),
+    ]
+
+    if suppress_page_notice:
+        instructions.append(
+            "If you can answer, do NOT mention whether the current page contained the answer."
+        )
+
+    if is_global:
+        instructions.append(
+            "Skip any greetings, introductions, or pleasantries (e.g., 'Hello', "
+            "'As-salamu alaykum', 'How can I help you?'). Start your response directly "
+            "with the answer or the most relevant information."
+        )
+
+    body = "\n".join(f"{i + 1}. {inst}" for i, inst in enumerate(instructions))
+    return prefix + "Instructions:\n" + body
 
 
 def format_document(doc: Document) -> str:

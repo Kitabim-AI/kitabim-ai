@@ -104,31 +104,46 @@ class ChunksRepository(BaseRepository[Chunk]):
             "AND b.categories && CAST(:categories AS text[])" if categories else ""
         )
 
-        # Build query with or without book_ids filter
-        # Use CAST() instead of :: to avoid conflicts with SQLAlchemy parameter binding
-        # JOIN with books table to get title and volume
+        # Over-fetch to compensate for TOC rows filtered out in the outer query.
+        inner_limit = limit * 3
+
+        # Build query using CTE approach: the inner CTE does pure vector search
+        # (allowing the HNSW index to be used), then the outer query filters
+        # TOC pages and joins book metadata.  This avoids the expensive
+        # chunks×pages join that was preventing index usage and causing timeouts.
         if book_ids is not None:
             if not book_ids:
                 return []
             query = text(f"""
+                WITH vector_matches AS (
+                    SELECT
+                        c.book_id,
+                        c.page_number,
+                        c.chunk_index,
+                        c.text,
+                        1 - (c.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) AS similarity
+                    FROM chunks c
+                    WHERE c.book_id = ANY(:book_ids)
+                      AND c.embedding IS NOT NULL
+                    ORDER BY c.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))
+                    LIMIT :inner_limit
+                )
                 SELECT
-                    c.book_id,
-                    c.page_number,
-                    c.chunk_index,
-                    c.text,
+                    vm.book_id,
+                    vm.page_number,
+                    vm.chunk_index,
+                    vm.text,
                     b.title,
                     b.volume,
                     b.author,
-                    1 - (c.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) AS similarity
-                FROM chunks c
-                JOIN books b ON c.book_id = b.id
-                JOIN pages p ON c.book_id = p.book_id AND c.page_number = p.page_number
-                WHERE c.book_id = ANY(:book_ids)
+                    vm.similarity
+                FROM vector_matches vm
+                JOIN books b ON vm.book_id = b.id
+                LEFT JOIN pages p ON vm.book_id = p.book_id AND vm.page_number = p.page_number
+                WHERE vm.similarity > :threshold
+                  AND (p.is_toc IS NOT TRUE OR p.id IS NULL)
                   {cat_filter}
-                  AND c.embedding IS NOT NULL
-                  AND p.is_toc IS FALSE
-                  AND 1 - (c.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) > :threshold
-                ORDER BY similarity DESC
+                ORDER BY vm.similarity DESC
                 LIMIT :limit
             """)
             params = {
@@ -136,34 +151,47 @@ class ChunksRepository(BaseRepository[Chunk]):
                 "book_ids": [str(bid) for bid in book_ids],
                 "threshold": threshold,
                 "limit": limit,
+                "inner_limit": inner_limit,
             }
             if categories:
                 params["categories"] = categories
         else:
             query = text(f"""
+                WITH vector_matches AS (
+                    SELECT
+                        c.book_id,
+                        c.page_number,
+                        c.chunk_index,
+                        c.text,
+                        1 - (c.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) AS similarity
+                    FROM chunks c
+                    WHERE c.embedding IS NOT NULL
+                    ORDER BY c.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))
+                    LIMIT :inner_limit
+                )
                 SELECT
-                    c.book_id,
-                    c.page_number,
-                    c.chunk_index,
-                    c.text,
+                    vm.book_id,
+                    vm.page_number,
+                    vm.chunk_index,
+                    vm.text,
                     b.title,
                     b.volume,
                     b.author,
-                    1 - (c.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) AS similarity
-                FROM chunks c
-                JOIN books b ON c.book_id = b.id
-                JOIN pages p ON c.book_id = p.book_id AND c.page_number = p.page_number
-                WHERE c.embedding IS NOT NULL
+                    vm.similarity
+                FROM vector_matches vm
+                JOIN books b ON vm.book_id = b.id
+                LEFT JOIN pages p ON vm.book_id = p.book_id AND vm.page_number = p.page_number
+                WHERE vm.similarity > :threshold
+                  AND (p.is_toc IS NOT TRUE OR p.id IS NULL)
                   {cat_filter}
-                  AND p.is_toc IS FALSE
-                  AND 1 - (c.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) > :threshold
-                ORDER BY similarity DESC
+                ORDER BY vm.similarity DESC
                 LIMIT :limit
             """)
             params = {
                 "embedding": embedding_str,
                 "threshold": threshold,
                 "limit": limit,
+                "inner_limit": inner_limit,
             }
             if categories:
                 params["categories"] = categories

@@ -8,6 +8,7 @@ Runs every 1 minute.
 from __future__ import annotations
 
 import logging
+import time
 
 from sqlalchemy import select, update, func
 
@@ -82,7 +83,7 @@ async def run_ocr_scanner(ctx) -> None:
             "ocr_job",
             book_id=book_id,
             page_ids=page_ids,
-            _job_id=f"v2_ocr:{book_id}",
+            _job_id=f"v2_ocr:{book_id}:{int(time.time())}",
         )
         log_json(
             logger,

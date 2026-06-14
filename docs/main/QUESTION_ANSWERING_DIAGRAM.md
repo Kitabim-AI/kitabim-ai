@@ -165,7 +165,7 @@ flowchart TD
 | `get_current_page` | Content | `PagesRepository.find_one` | Raw text of the page the user is currently reading (in-reader mode). |
 | `get_sister_volumes` | Content | `BooksRepository` | All volumes of the same series as a given book_id. |
 | `search_catalog` | Metadata | `CatalogHandler` | Library browsing and general listing queries. |
-| `query_knowledge_graph` | Content | `GraphRepository` | Queries Memgraph to retrieve connections between entities. |
+| `query_knowledge_graph` | Content | `GraphRepository` | Queries Neo4j to retrieve connections between entities. |
 
 ---
 

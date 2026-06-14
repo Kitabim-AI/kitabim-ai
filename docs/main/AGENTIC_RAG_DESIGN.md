@@ -36,7 +36,7 @@ Instead of embedding the entire pipeline inside a complex state graph, the workf
 | `get_current_page` | `PagesRepository.find_one` | — | Raw text of the page currently open in the reader (callable only in single-book reader mode). |
 | `get_sister_volumes` | `BooksRepository.find_sister_volumes` | — | Retrieves other volumes of the same series as a given `book_id`. |
 | `rewrite_query` | `QueryRewriter.rewrite` | L0 | Resolves co-references and pronouns using conversation history. |
-| `query_knowledge_graph` | `GraphRepository.query_subgraph` | — | GraphRAG tool: queries Memgraph to retrieve a 1-hop subgraph of entities and their relationships. |
+| `query_knowledge_graph` | `GraphRepository.query_subgraph` | — | GraphRAG tool: queries Neo4j to retrieve a 1-hop subgraph of entities and their relationships. |
 
 ### Catalog & Metadata
 
