@@ -82,6 +82,8 @@ def is_current_volume_query(question: str) -> bool:
     q = question.strip()
     keywords = [
         "ئۇشبۇ تومدا",
+        "مۇشۇ تومدا",
+        "مۇشۇ قىسىمدا",
         "ئۇشبۇ قىسىمدا",
         "مەزكور تومدا",
         "مەزكور قىسىمدا",
@@ -95,7 +97,7 @@ def is_current_page_query(question: str) -> bool:
     if not question:
         return False
     q = question.strip()
-    keywords = ["ئۇشبۇ بەتتە", "مەزكور بەتتە", "بۇ بەتتە"]
+    keywords = ["ئۇشبۇ بەتتە", "مەزكور بەتتە", "بۇ بەتتە", "مۇشۇ بەتتە"]
     return any(k in q for k in keywords)
 
 
