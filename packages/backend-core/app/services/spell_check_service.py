@@ -15,8 +15,11 @@ from sqlalchemy import delete, func, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Page, PageSpellIssue, AutoCorrectRule
+from app.services.cache_service import cache_service
 from app.utils.text import normalize_uyghur_chars
 from sqlalchemy import select
+
+_DICT_CACHE_TTL = 86400  # 24 hours — dictionary words change rarely
 
 
 class SpellCheckCache(TypedDict, total=False):
@@ -247,26 +250,61 @@ async def find_unknown_words(
     else:
         to_query = words
 
-    if to_query:
+    if not to_query:
+        return unknown
+
+    # Check Redis before hitting the DB
+    redis_results = await asyncio.gather(
+        *[cache_service.get(f"dict:exists:{w}") for w in to_query]
+    )
+    db_needed: list[str] = []
+    redis_hits: dict[str, bool] = {}
+    for w, cached in zip(to_query, redis_results):
+        if cached is not None:
+            redis_hits[w] = cached
+            if cached:
+                unknown.add(w)
+        else:
+            db_needed.append(w)
+
+    if redis_hits and cache is not None:
+        if is_thread_safe:
+            async with cache._locks["unknown"]:
+                cache.unknown_words.update(redis_hits)
+        else:
+            cache["unknown_words"].update(redis_hits)
+
+    if db_needed:
         # Safe: words is bound as a parameter, not interpolated into SQL string
         result = await session.execute(
             text(
-                "SELECT unnest(CAST(:words AS text[])) AS w "
-                "EXCEPT "
-                "SELECT word FROM dictionary"
+                "SELECT w "
+                "FROM unnest(CAST(:words AS text[])) AS w "
+                "WHERE NOT EXISTS ("
+                "    SELECT 1 FROM dictionary WHERE word = w"
+                ")"
             ),
-            {"words": to_query},
+            {"words": db_needed},
         )
         queried_unknown = {row[0] for row in result.fetchall()}
         unknown.update(queried_unknown)
 
+        await asyncio.gather(
+            *[
+                cache_service.set(
+                    f"dict:exists:{w}", w in queried_unknown, ttl=_DICT_CACHE_TTL
+                )
+                for w in db_needed
+            ]
+        )
+
         if cache is not None:
             if is_thread_safe:
                 async with cache._locks["unknown"]:
-                    for w in to_query:
+                    for w in db_needed:
                         cache.unknown_words[w] = w in queried_unknown
             else:
-                for w in to_query:
+                for w in db_needed:
                     cache["unknown_words"][w] = w in queried_unknown
 
     return unknown
@@ -314,22 +352,51 @@ async def get_ocr_corrections_batch(
     if not to_lookup_unknowns:
         return corrections
 
+    # Check Redis before generating variants and hitting the DB
+    redis_results = await asyncio.gather(
+        *[cache_service.get(f"dict:ocr:{w}") for w in to_lookup_unknowns]
+    )
+    db_needed: set[str] = set()
+    redis_hits: dict[str, list[str]] = {}
+    for w, cached in zip(to_lookup_unknowns, redis_results):
+        if cached is not None:
+            redis_hits[w] = cached
+            if cached:
+                corrections[w] = cached
+        else:
+            db_needed.add(w)
+
+    if redis_hits and cache is not None:
+        if is_thread_safe:
+            async with cache._locks["ocr"]:
+                cache.ocr_corrections.update(redis_hits)
+        else:
+            cache["ocr_corrections"].update(redis_hits)
+
+    if not db_needed:
+        return corrections
+
     variant_to_originals: dict[str, list[str]] = {}
-    for word in to_lookup_unknowns:
+    for word in db_needed:
         for variant in ocr_variants(word):
             variant_to_originals.setdefault(variant, []).append(word)
         for variant in insertion_variants(word):
             variant_to_originals.setdefault(variant, []).append(word)
 
     if not variant_to_originals:
-        # Mark all as having no corrections in cache
+        await asyncio.gather(
+            *[
+                cache_service.set(f"dict:ocr:{w}", [], ttl=_DICT_CACHE_TTL)
+                for w in db_needed
+            ]
+        )
         if cache is not None:
             if is_thread_safe:
                 async with cache._locks["ocr"]:
-                    for w in to_lookup_unknowns:
+                    for w in db_needed:
                         cache.ocr_corrections[w] = []
             else:
-                for w in to_lookup_unknowns:
+                for w in db_needed:
                     cache["ocr_corrections"][w] = []
         return corrections
 
@@ -345,13 +412,22 @@ async def get_ocr_corrections_batch(
                 if variant not in corrections.setdefault(orig, []):
                     corrections[orig].append(variant)
 
+    await asyncio.gather(
+        *[
+            cache_service.set(
+                f"dict:ocr:{w}", corrections.get(w, []), ttl=_DICT_CACHE_TTL
+            )
+            for w in db_needed
+        ]
+    )
+
     if cache is not None:
         if is_thread_safe:
             async with cache._locks["ocr"]:
-                for w in to_lookup_unknowns:
+                for w in db_needed:
                     cache.ocr_corrections[w] = corrections.get(w, [])
         else:
-            for w in to_lookup_unknowns:
+            for w in db_needed:
                 cache["ocr_corrections"][w] = corrections.get(w, [])
 
     return corrections

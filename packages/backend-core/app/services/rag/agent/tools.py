@@ -248,6 +248,7 @@ async def get_current_page(
 
 async def query_knowledge_graph(
     query: str,
+    book_ids: Optional[List[str]] = None,
     tool_context: ToolContext = None,
 ) -> dict:
     """Query the book knowledge graph to retrieve connections and relationships between entities.
@@ -257,8 +258,11 @@ async def query_knowledge_graph(
 
     Args:
         query: The search query or question containing entities to query.
+        book_ids: Optional list of book IDs to restrict the knowledge graph query scope.
     """
     args = {"query": query}
+    if book_ids is not None:
+        args["book_ids"] = book_ids
     return await _execute_and_record_tool(tool_context, "query_knowledge_graph", args)
 
 
@@ -733,7 +737,10 @@ async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
         }
 
     book_ids = None
-    if not ctx.is_global and ctx.book_id:
+    book_ids_arg = args.get("book_ids")
+    if book_ids_arg:
+        book_ids = [str(bid) for bid in book_ids_arg]
+    elif not ctx.is_global and ctx.book_id:
         from app.db.repositories.books_repository import BooksRepository
 
         books_repo = BooksRepository(ctx.session)

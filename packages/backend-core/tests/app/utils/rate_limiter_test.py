@@ -19,10 +19,10 @@ async def test_rate_limiter_wait_success():
 async def test_rate_limiter_overflow():
     limiter = RedisRateLimiter("test", limit=1, window=10)
     mock_redis = AsyncMock()
-    # First call within limit, second call over limit
-    mock_redis.incr.side_effect = [2]
 
-    with patch("app.utils.rate_limiter.get_redis", return_value=mock_redis):
+    with patch("app.utils.rate_limiter.get_redis", return_value=mock_redis), patch(
+        "app.utils.rate_limiter.time.time", side_effect=[1000, 1011]
+    ):
         with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             # We need to make it return a success eventually or it will loop forever
             mock_redis.incr.side_effect = [2, 1]

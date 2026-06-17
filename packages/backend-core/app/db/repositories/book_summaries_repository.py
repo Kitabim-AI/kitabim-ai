@@ -45,12 +45,12 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
             query = text(f"""
                 SELECT
                     s.book_id,
-                    1 - (s.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) AS similarity
+                    1 - (s.embedding <=> CAST(:embedding AS vector(3072))) AS similarity
                 FROM book_summaries s
                 {join_clause}
                 WHERE s.book_id = ANY(:book_ids)
                   {cat_filter}
-                  AND 1 - (s.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) > :threshold
+                  AND 1 - (s.embedding <=> CAST(:embedding AS vector(3072))) > :threshold
                 ORDER BY similarity DESC
                 {limit_clause}
             """)

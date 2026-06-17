@@ -75,6 +75,8 @@ class StructuredChain:
             temperature=0.0,
         )
 
+        timeout = kwargs.pop("timeout", None)
+
         from app.llm.models import _TEXT_BREAKER, _call_with_breaker
 
         async def _call():
@@ -83,7 +85,7 @@ class StructuredChain:
             )
             return response.text or ""
 
-        raw_response = await _call_with_breaker(_TEXT_BREAKER, _call)
+        raw_response = await _call_with_breaker(_TEXT_BREAKER, _call, timeout=timeout)
         if not raw_response:
             raise ValueError(
                 f"Empty LLM response for schema {self.response_schema.__name__}"

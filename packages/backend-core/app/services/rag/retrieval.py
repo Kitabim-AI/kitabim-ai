@@ -30,12 +30,24 @@ logger = logging.getLogger("app.rag.retrieval")
 
 
 async def embed_query(query: str, ctx: "QueryContext") -> List[float]:
-    """Embed *query* with Level-1 cache (shared across all RAG handlers).
+    """Embed *query* with Level-1 cache (shared across all RAG handlers) and request-local cache.
 
     Returns an empty list on any failure — callers must handle the empty-vector
     case (usually by returning no results rather than crashing).
     """
-    q_hash = hashlib.md5(query.strip().encode()).hexdigest()
+    query_stripped = query.strip()
+
+    # 1. Request-local memory cache check
+    local_cache = getattr(ctx, "_query_embeddings", None)
+    if local_cache is None:
+        local_cache = {}
+        ctx._query_embeddings = local_cache
+
+    if query_stripped in local_cache:
+        return local_cache[query_stripped]
+
+    # 2. Redis/External API check
+    q_hash = hashlib.md5(query_stripped.encode()).hexdigest()
     emb_cache_key = cache_config.KEY_RAG_EMBEDDING.format(hash=q_hash)
     try:
         vector = await cache_service.get(emb_cache_key)
@@ -45,6 +57,8 @@ async def embed_query(query: str, ctx: "QueryContext") -> List[float]:
                 await cache_service.set(
                     emb_cache_key, vector, ttl=settings.cache_ttl_rag_query
                 )
+        if vector:
+            local_cache[query_stripped] = vector
         return vector or []
     except Exception as exc:
         log_json(logger, logging.WARNING, "Embedding failed", error=str(exc))

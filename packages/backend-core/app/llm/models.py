@@ -128,7 +128,10 @@ _client: genai.Client | None = None
 def _get_genai_client() -> genai.Client:
     global _client
     if _client is None:
-        _client = genai.Client(api_key=settings.gemini_api_key)
+        _client = genai.Client(
+            api_key=settings.gemini_api_key,
+            http_options=types.HttpOptions(timeout=int(_OCR_INVOKE_TIMEOUT * 1000)),
+        )
     return _client
 
 
@@ -148,6 +151,26 @@ _INVOKE_TIMEOUT = 30.0  # seconds to wait for a non-streaming ainvoke to complet
 _OCR_INVOKE_TIMEOUT = (
     120.0  # seconds for OCR vision calls (image + prompt, much slower)
 )
+
+
+def is_transient_error(exc: Exception) -> bool:
+    """Check if the exception represents a transient API error (429, 503, 504, overloaded, timeouts)."""
+    if isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
+        return True
+    err_msg = str(exc)
+    return any(
+        x in err_msg or x in err_msg.lower()
+        for x in [
+            "429",
+            "503",
+            "504",
+            "overloaded",
+            "resource_exhausted",
+            "deadline_exceeded",
+            "timeout",
+            "timed out",
+        ]
+    )
 
 
 async def _call_with_breaker(
@@ -173,7 +196,9 @@ async def _call_with_breaker(
             raise TimeoutError(f"LLM did not respond within {effective_timeout}s")
 
     try:
-        return await breaker.call(_fn_with_timeout)
+        return await breaker.call(
+            _fn_with_timeout, ignore_on_failure=is_transient_error
+        )
     except CircuitBreakerOpen as exc:
         log_json(_logger, logging.ERROR, "LLM circuit open", error=str(exc))
         raise
@@ -235,7 +260,8 @@ async def _stream_with_breaker(breaker: CircuitBreaker, fn, *args, **kwargs):
     except (TimeoutError, asyncio.TimeoutError):
         raise
     except Exception as exc:
-        await breaker._on_failure()
+        if not is_transient_error(exc):
+            await breaker._on_failure()
         log_json(
             _logger,
             logging.ERROR,
@@ -272,7 +298,7 @@ async def generate_text(prompt: str, model_name: str) -> str:
 
 
 async def generate_text_with_image(
-    prompt: str, image_bytes: bytes, model_name: str
+    prompt: str, image_bytes: bytes, model_name: str, timeout: float | None = None
 ) -> str:
     client = _get_genai_client()
     model = (
@@ -291,7 +317,8 @@ async def generate_text_with_image(
         )
         return response.text or ""
 
-    text = await _call_with_breaker(_OCR_BREAKER, _call, timeout=_OCR_INVOKE_TIMEOUT)
+    effective_timeout = timeout or _OCR_INVOKE_TIMEOUT
+    text = await _call_with_breaker(_OCR_BREAKER, _call, timeout=effective_timeout)
     log_json(
         _logger,
         logging.INFO,
@@ -322,13 +349,15 @@ class ProtectedLLM:
             else self.model_name
         )
 
+        timeout = kwargs.pop("timeout", None)
+
         async def _call():
             response = await client.aio.models.generate_content(
                 model=model, contents=prompt, **kwargs
             )
             return response.text or ""
 
-        text = await _call_with_breaker(self.breaker, _call)
+        text = await _call_with_breaker(self.breaker, _call, timeout=timeout)
         log_json(
             _logger,
             logging.INFO,
@@ -405,7 +434,9 @@ class GeminiEmbeddings:
                     req["outputDimensionality"] = dimensions
                 requests.append(req)
 
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=15.0)
+            ) as session:
                 async with session.post(url, json={"requests": requests}) as resp:
                     resp.raise_for_status()
                     data = await resp.json()
@@ -434,7 +465,9 @@ class GeminiEmbeddings:
             if dimensions:
                 req["outputDimensionality"] = dimensions
 
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=15.0)
+            ) as session:
                 async with session.post(url, json=req) as resp:
                     resp.raise_for_status()
                     data = await resp.json()

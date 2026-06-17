@@ -76,6 +76,14 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
             max_parallel_pages = int(
                 await config_repo.get_value("ocr_max_parallel_pages", "4")
             )
+            gemini_ocr_timeout_str = await config_repo.get_value("gemini_ocr_timeout")
+            gemini_ocr_timeout = (
+                float(gemini_ocr_timeout_str) if gemini_ocr_timeout_str else None
+            )
+            ocr_max_retry_count_str = await config_repo.get_value(
+                "ocr_max_retry_count", "3"
+            )
+            ocr_max_retry_count = int(ocr_max_retry_count_str)
 
         # Mark book's active step
         async with db_session.async_session_factory() as session:
@@ -169,7 +177,9 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
                 start_time = time.perf_counter()
                 try:
                     fitz_page = doc.load_page(page.page_number - 1)  # fitz is 0-indexed
-                    text = await ocr_page_with_gemini(fitz_page, gemini_ocr_model)
+                    text = await ocr_page_with_gemini(
+                        fitz_page, gemini_ocr_model, timeout=gemini_ocr_timeout
+                    )
                     is_toc = is_toc_page(text)
                     duration_ms = int((time.perf_counter() - start_time) * 1000)
 
@@ -208,36 +218,71 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
                     duration_ms = int((time.perf_counter() - start_time) * 1000)
                     async with db_session.async_session_factory() as session:
                         error_msg = str(exc)[:500]
-                        await session.execute(
-                            update(Page)
-                            .where(Page.id == page.id)
-                            .values(
-                                ocr_milestone="failed",
-                                retry_count=Page.retry_count + 1,
-                                error=error_msg,
-                                last_updated=func.now(),
+                        next_retry_count = page.retry_count + 1
+                        if next_retry_count >= ocr_max_retry_count:
+                            await session.execute(
+                                update(Page)
+                                .where(Page.id == page.id)
+                                .values(
+                                    text="",
+                                    is_toc=False,
+                                    ocr_milestone="succeeded",
+                                    retry_count=next_retry_count,
+                                    error=f"OCR failed after {ocr_max_retry_count} retries: {error_msg}. Page skipped.",
+                                    last_updated=func.now(),
+                                )
                             )
-                        )
-                        session.add(
-                            PipelineEvent(
-                                page_id=page.id,
-                                event_type="ocr_failed",
-                                payload=make_pipeline_event_payload(
-                                    duration_ms=duration_ms,
-                                    extra_fields={"error": error_msg},
-                                ),
+                            session.add(
+                                PipelineEvent(
+                                    page_id=page.id,
+                                    event_type="ocr_succeeded",
+                                    payload=make_pipeline_event_payload(
+                                        duration_ms=duration_ms,
+                                        extra_fields={
+                                            "skipped": True,
+                                            "error": error_msg,
+                                        },
+                                    ),
+                                )
                             )
-                        )
+                            log_json(
+                                logger,
+                                logging.WARNING,
+                                "OCR page failed after retry, skipping page",
+                                book_id=book_id,
+                                page=page.page_number,
+                                error=str(exc),
+                            )
+                        else:
+                            await session.execute(
+                                update(Page)
+                                .where(Page.id == page.id)
+                                .values(
+                                    ocr_milestone="failed",
+                                    retry_count=next_retry_count,
+                                    error=error_msg,
+                                    last_updated=func.now(),
+                                )
+                            )
+                            session.add(
+                                PipelineEvent(
+                                    page_id=page.id,
+                                    event_type="ocr_failed",
+                                    payload=make_pipeline_event_payload(
+                                        duration_ms=duration_ms,
+                                        extra_fields={"error": error_msg},
+                                    ),
+                                )
+                            )
+                            log_json(
+                                logger,
+                                logging.WARNING,
+                                "OCR page failed",
+                                book_id=book_id,
+                                page=page.page_number,
+                                error=str(exc),
+                            )
                         await session.commit()
-
-                    log_json(
-                        logger,
-                        logging.WARNING,
-                        "OCR page failed",
-                        book_id=book_id,
-                        page=page.page_number,
-                        error=str(exc),
-                    )
 
         try:
             await asyncio.gather(*[process_page(p) for p in pages])

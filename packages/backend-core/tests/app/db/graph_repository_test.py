@@ -106,7 +106,17 @@ async def test_graph_repository_bulk_ops():
         call_args = mock_session.run.call_args[0]
         call_kwargs = mock_session.run.call_args[1]
         assert "UNWIND $entities_data" in call_args[0]
-        assert call_kwargs["entities_data"] == entities
+        expected_entities = [
+            {
+                "name": "E1",
+                "type": "Person",
+                "subtype": None,
+                "year_hijri": None,
+                "year_gregorian": None,
+                "century_gregorian": None,
+            }
+        ]
+        assert call_kwargs["entities_data"] == expected_entities
 
         # 2. Test connect_entities_bulk
         relations = [{"source_name": "E1", "rel_type": "KNOWS", "target_name": "E2"}]
@@ -115,4 +125,15 @@ async def test_graph_repository_bulk_ops():
         call_args = mock_session.run.call_args[0]
         call_kwargs = mock_session.run.call_args[1]
         assert "UNWIND $relations_data" in call_args[0]
-        assert call_kwargs["relations_data"] == relations
+        expected_relations = [
+            {
+                "source_name": "E1",
+                "rel_type": "KNOWS",
+                "target_name": "E2",
+                "book_id": None,
+                "year_hijri": None,
+                "year_gregorian": None,
+                "century_gregorian": None,
+            }
+        ]
+        assert call_kwargs["relations_data"] == expected_relations

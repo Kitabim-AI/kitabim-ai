@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_session
 from app.db.models import Dictionary, PageSpellIssue
 from app.models.user import User
+from app.services.cache_service import cache_service
 from auth.dependencies import require_editor
 
 router = APIRouter()
@@ -69,6 +70,12 @@ async def add_to_dictionary(
     )
 
     await session.commit()
+
+    # Invalidate dict:exists for this word; wipe all OCR correction cache since
+    # the new word may now be a valid correction for previously cached unknowns.
+    await cache_service.delete(f"dict:exists:{word}")
+    await cache_service.delete_pattern("dict:ocr:*")
+
     return {"added": 1}
 
 
@@ -139,5 +146,8 @@ async def delete_from_dictionary(
 
     await session.delete(entry)
     await session.commit()
+
+    await cache_service.delete(f"dict:exists:{word}")
+    await cache_service.delete_pattern("dict:ocr:*")
 
     return {"deleted": True, "word": word}

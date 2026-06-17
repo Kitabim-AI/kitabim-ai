@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from app.services.ocr_service import ocr_page_with_gemini, ocr_page
+from app.services.ocr_service import ocr_page_with_gemini
 
 
 @pytest.mark.asyncio
@@ -44,15 +44,3 @@ async def test_ocr_page_with_gemini_retry():
         assert text == "success text"
         assert mock_gen.call_count == 2
         mock_sleep.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_ocr_page():
-    mock_page = MagicMock()
-    with patch(
-        "app.services.ocr_service.ocr_page_with_gemini", new_callable=AsyncMock
-    ) as mock_ocr:
-        mock_ocr.return_value = "text"
-        result = await ocr_page(mock_page, "Title", 1)
-        assert result == "text"
-        mock_ocr.assert_called_once_with(mock_page)

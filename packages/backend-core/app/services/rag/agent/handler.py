@@ -85,13 +85,9 @@ async def _llm_split(question: str, model_name: str) -> list[str]:
 
 
 def _detect_intent(question: str, ctx: QueryContext) -> str:
-    from app.services.rag.utils import is_author_or_catalog_query
-
     q = question.lower()
     if ctx.current_page is not None and any(p in q for p in _PAGE_PATTERNS):
         return "current_page"
-    if is_author_or_catalog_query(question) or any(p in q for p in _CATALOG_PATTERNS):
-        return "catalog"
     return "content_search"
 
 

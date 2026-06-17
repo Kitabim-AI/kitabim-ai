@@ -20,7 +20,7 @@ def test_gemini_embeddings_init():
 @patch("app.llm.models._EMBED_BREAKER.call")
 async def test_gemini_embeddings_aembed_query(mock_breaker_call):
     # Mock circuit breaker to just run the function
-    async def side_effect(fn, *args, **kwargs):
+    async def side_effect(fn, *args, ignore_on_failure=None, **kwargs):
         return await fn(*args, **kwargs)
 
     mock_breaker_call.side_effect = side_effect
@@ -64,7 +64,7 @@ async def test_gemini_embeddings_aembed_query(mock_breaker_call):
 @pytest.mark.asyncio
 @patch("app.llm.models._EMBED_BREAKER.call")
 async def test_gemini_embeddings_aembed_documents(mock_breaker_call):
-    async def side_effect(fn, *args, **kwargs):
+    async def side_effect(fn, *args, ignore_on_failure=None, **kwargs):
         return await fn(*args, **kwargs)
 
     mock_breaker_call.side_effect = side_effect
