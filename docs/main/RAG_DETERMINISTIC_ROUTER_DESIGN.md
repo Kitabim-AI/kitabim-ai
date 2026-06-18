@@ -41,12 +41,13 @@ Replace the ADK agent loop with a three-stage pipeline:
 ```
 [Question + QueryContext]
         │
+        ├──► DB Check (fuzzy title/author)
         ▼
-┌─────────────────────┐
-│  1. Signal Extractor │  (pure Python, no LLM)
-└─────────────────────┘
-        │ signals: has_title, has_author, is_volume_shift,
-        │          needs_rewrite, graph_available, in_reader, ...
+┌───────────────────────────┐
+│  1. Unified Query Analyzer│  (structured JSON LLM call — extracts intent & signals)
+└───────────────────────────┘  (resilient Python keyword fallback on error)
+        │ signals: is_current_page_query, is_volume_shift, target_volume,
+        │          needs_rewrite, catalog_subtype, intent
         ▼
 ┌───────────────────────────┐
 │  2. Coreference Resolver  │  (conditional LLM — only when needs_rewrite=True)
@@ -54,12 +55,7 @@ Replace the ADK agent loop with a three-stage pipeline:
         │ possibly updates enriched_question
         ▼
 ┌───────────────────────────┐
-│  3. Intent Classifier     │  (conditional LLM — only for content questions
-└───────────────────────────┘    when signals alone are insufficient)
-        │ intent: identity | summary | passage | relationship
-        ▼
-┌───────────────────────────┐
-│  4. Execution Router      │  (pure Python — picks and runs a fixed path)
+│  3. Execution Router      │  (pure Python — picks and runs a fixed path A-H)
 └───────────────────────────┘
         │ observations list (same format as today)
         ▼
@@ -72,33 +68,40 @@ Replace the ADK agent loop with a three-stage pipeline:
 flowchart TD
     Q(["Question + QueryContext"])
 
-    Q --> S1["**Stage 1 · Signal Extractor** — pure Python, no LLM
-    top_intent · has_title · has_author · is_volume_shift
-    target_volume · needs_rewrite · in_reader · is_global
-    has_current_book · has_context_books · graph_available"]
+    Q --> S1_DB["**Stage 1a · DB Metadata Check** — fuzzy/exact DB lookup
+    has_title · has_author"]
 
-    S1 --> NR{needs_rewrite?}
+    S1_DB --> S1_LLM["**Stage 1b · Unified Query Analyzer** — structured LLM call
+    extracts intent, volume shifts, page queries, & pronouns
+    (resilient Python keyword fallback on exception)"]
+
+    S1_LLM --> NR{needs_rewrite?}
     NR -- Yes --> S2["**Stage 2 · Coreference Resolver**
-    gemini-3.1-flash-lite
+    gemini-3.5-flash
     updates enriched_question"]
     NR -- No --> MQ
     S2 --> MQ
 
     MQ{"multi-question?"}
-    MQ -- Yes --> SPLIT["_llm_split · gemini-3.1-flash-lite
+    MQ -- Yes --> SPLIT["_llm_split · gemini-3.5-flash
     splits into ≤ 4 sub-questions"]
     MQ -- No --> PI
     SPLIT --> PI
 
     PI(["for each sub-question"])
 
-    PI --> TI{top_intent}
-    TI -- current_page --> PA["**Path A · Current Page**
-    get_current_page()"]
-    TI -- content_search --> SIG
+    PI --> REUSE{"Reuse parent signals?<br/>(single sub-question &<br/>no rewrite)"}
+    REUSE -- Yes --> SIG
+    REUSE -- No --> S1_SUB["Sub-question LLM Signal Call"]
+    S1_SUB --> SIG
 
-    SIG{"signals
-    determine path?"}
+    SIG{"signals & intent"}
+    SIG -- "intent == catalog" --> PB["**Path B · Catalog**
+    get_book_author /
+    get_books_by_author /
+    search_catalog"]
+    SIG -- "top_intent == current_page" --> PA["**Path A · Current Page**
+    get_current_page()"]
     SIG -- "has_author
     (no title)" --> PD["**Path D · Named Author**
     get_books_by_author → search_chunks"]
@@ -107,26 +110,15 @@ flowchart TD
     SIG -- "in_reader
     (no title / author)" --> PF["**Path F · In-Reader**
     search_chunks(current_book)"]
-    SIG -- "needs classifier" --> S3
-
-    S3["**Stage 3 · Intent Classifier**
-    gemini-3.1-flash-lite
-    → catalog / identity / summary / passage / relationship"]
-
-    S3 -- "intent == catalog" --> PB["**Path B · Catalog**
-    get_book_author /
-    get_books_by_author /
-    search_catalog"]
-    
-    S3 -- "content intents
+    SIG -- "content intents
     (has_title)" --> PC["**Path C · Named Title**
     find_books_by_title →
     summary / passage / relationship
     (intent-specific)"]
-    S3 -- "content intents
+    SIG -- "content intents
     (has_context_books)" --> PG["**Path G · Prior Context**
     intent-specific tool sequence"]
-    S3 -- "content intents
+    SIG -- "content intents
     (is_global)" --> PH["**Path H · Open Search**
     intent-specific tool sequence"]
 
@@ -145,92 +137,50 @@ flowchart TD
     GC["_grade_context
     de-dup · score-filter · cap at 25 chunks"]
     GC --> ANS["**generate_answer_stream**
-    gemini-3-flash-preview"]
+    gemini-3.5-flash / preview"]
     ANS --> OUT(["Answer stream"])
 ```
 
 ---
 
-## Stage 1: Signal Extractor
+## Stage 1: Unified Query Signal Analyzer
 
-Pure Python, no LLM. Extracts all the signals needed for routing from `QueryContext` and the question text. The input question is first normalized using `normalize_uyghur()` to ensure matching is robust against visual variants.
+A hybrid stage combining deterministic database-level metadata check with a single structured LLM call to extract semantic intent and navigation properties.
 
-| Signal | Source | How |
-|--------|--------|-----|
-| `top_intent` | `_detect_intent()` | Already exists: `current_page / content_search` |
-| `catalog_subtype` | Pattern matching | `"كىم يازغان"` → `author_of` \| `"نىمە يازغان"` → `books_by` \| default → `general` |
-| `has_title` | `find_books_by_title_in_question()` | Already done server-side |
-| `has_author` | Author name patterns | Reuse existing `BooksRepository.find_books_by_author_in_question` |
-| `is_volume_shift` | Keyword patterns | `توم`, `كەيىنكى توم`, `ئالدىنقى توم`, `2-توم`, `next volume`, etc. |
-| `target_volume` | Keyword + regex in question | `"2-توم"` / `"volume 2"` → 2 (regex `\d+`); `"كەيىنكى توم"` / `"next volume"` → `current_volume + 1` (default to `1` if `current_volume` is `None`); `"ئالدىنقى توم"` / `"prev volume"` → `current_volume - 1` (default to `1` if `current_volume` is `None`). Guard against `NoneType` math errors. |
-| `needs_rewrite` | Pronoun patterns + history | Uyghur pronouns (ئۇ، بۇ، شۇ، ئۇنىڭ، بۇنىڭ, etc.) stripped of boundary punctuation, with no in-question antecedent AND `ctx.history` non-empty |
-| `in_reader` | `ctx.current_page is not None` | Already in `QueryContext` |
-| `has_current_book` | `ctx.book_id and not ctx.is_global` | Already in `QueryContext` |
-| `has_context_books` | `ctx.context_book_ids` | Already in `QueryContext` |
-| `is_global` | `ctx.is_global` | Already in `QueryContext` |
-| `graph_available` | `ctx.book.graph_milestone == "complete"` | Already computed in `_build_human_message` |
+### 1a. DB Metadata Check (Deterministic)
+- Checks the database for fuzzy or exact matches of titles (`has_title`) and authors (`has_author`) mentioned in the query text.
+
+### 1b. LLM Query Analysis (Semantic)
+- Employs a structured LLM call (`_llm_analyze_query`) using `GenerateContentConfig(response_mime_type="application/json")` to extract:
+  - `is_current_page_query` (boolean)
+  - `is_volume_shift` (boolean)
+  - `target_volume` (int | null)
+  - `needs_rewrite` (boolean)
+  - `catalog_subtype` ("author_of" | "books_by" | "general" | null)
+  - `intent` ("catalog" | "identity" | "summary" | "relationship" | "passage")
+- **Resilient Fallback:** If the LLM call fails, the signal analyzer automatically falls back to local Python keyword matching and defaults `intent` to `"passage"` to ensure 100% service uptime.
 
 ---
 
 ## Stage 2: Coreference Resolver
 
-Called only when `needs_rewrite=True`. Identical to the current `rewrite_query` tool call — no change to the underlying `QueryRewriter`. Updates `ctx.enriched_question`.
+Coreference resolution is merged directly into **Stage 1b**'s unified query analyzer call. The LLM analyzes the chat history and resolves pronouns/coreferences in-place, returning the standalone question as `rewritten_question` in the structured JSON output (saving a separate LLM round-trip).
 
-**When triggered:**
-- Question contains Uyghur pronouns (ئۇ، بۇ، شۇ، ئۇنىڭ، بۇنىڭ، ئۇنى، بۇنى) OR topic-shift particle (چۇ)
-- AND the pronoun's antecedent is NOT already named within the same question
-- AND `ctx.history` is non-empty
-
-**Model:** `gemini-3.1-flash-lite` (same model used for intent classification and `_llm_split`)  
-**Cost:** 1 LLM call (same as today, but now explicit rather than agent-discretionary)
+**Resilient Fallback:**
+If the Stage 1b unified query analyzer fails, Stage 2 coreference resolution falls back to:
+1. Running local Python keyword checks for Uyghur pronoun tokens.
+2. Invoking the standalone `rewrite_query` LLM tool to resolve coreferences against conversation history.
 
 ---
 
 ## Stage 3: Intent Classifier
 
-A single small LLM call with **structured output** (JSON). Only triggered for `content_search` questions when signal extraction alone cannot determine the execution path.
+Because intent is pre-extracted during **Stage 1b**'s structured query analysis, the `classify_intent` step simply reads the intent from the signals dictionary directly (bypassing any extra LLM calls).
 
-**When skipped — not a `content_search` question:**
-- `top_intent == current_page` → always Path A, no classification needed
-
-**When skipped — `content_search` but signals already determine the path:**
-- `has_author` and no title → always Path D
-- `is_volume_shift` → always Path E
-- `in_reader` and no title/author → always Path F
-
-**When triggered (signals insufficient to pick a path):**
-- `has_title` → need to distinguish catalog vs summary vs passage vs relationship
-- No title, `has_context_books` → need to distinguish catalog vs identity vs passage vs off-topic
-- No title, no context, global mode → need to distinguish catalog vs identity vs passage vs relationship
-
-**Classifier prompt (condensed):**
-
-```
-Classify this Uyghur/English question into ONE intent.
-
-Intents:
-- catalog     : asking about book metadata, authors of books, book listings, or what books exist in the library (e.g. who wrote X, do you have book Y)
-- identity    : asking who/what a person or character IS (biography, role, background)
-- summary     : asking about the plot, themes, or main characters of a book
-- relationship: asking about connections, lineages, family trees, or how X and Y relate
-- passage     : asking for specific events, facts, quotes, or details — including "tell me about X's actions"
-
-Examples:
-- "زوردۇن سابىر كىم؟" -> {"intent": "identity"}
-- "سادات بوۋاي كىمنىڭ ئوغلى؟" -> {"intent": "relationship"}
-- "ئانا يۇرت رومانىنىڭ باش تېمىسى نېمە؟" -> {"intent": "summary"}
-- "ئانا يۇرت رومانى قاچان يېزىلغان؟" -> {"intent": "passage"}
-- "يۇلتۇزلۇق تۈنلەر رومانى كىمنىڭ؟" -> {"intent": "catalog"}
-- "سەندە قانداق كىتابلار بار؟" -> {"intent": "catalog"}
-
-Question: {question}
-Context signals: {signals_summary}
-
-Return JSON: {"intent": "<one of the above>"}
-```
-
-**Model:** `gemini-3.1-flash-lite` (strong Uyghur support, fast classification — same model used for coreference resolution and `_llm_split`)  
-**Cost:** 0 or 1 LLM call per turn
+**Resilient Fallback:**
+If the Stage 1b LLM query analysis fails, intent classification falls back to:
+1. **Python Skip Heuristics:** Automatically routing queries with simple author, volume shift, or active reader signals to their respective default intents (e.g. `passage`).
+2. **Intent Classification LLM Call:** Executing a fallback LLM prompt to classify the question's intent (only if the skip heuristics are not met).
 
 ---
 
@@ -387,14 +337,14 @@ graded_context = _grade_context(all_observations)  # unchanged
 
 | Role | Model | Reason |
 |------|-------|--------|
-| Coreference resolution (Stage 2) | `gemini-3.1-flash-lite` | Simple rewrite, needs Uyghur support |
-| Intent classification (Stage 3) | `gemini-3.1-flash-lite` | Fast JSON classification, needs Uyghur support |
-| Multi-question split (`_llm_split`) | `gemini-3.1-flash-lite` | Simple extraction, needs Uyghur support |
+| Coreference resolution (Stage 2) | `gemini-3.5-flash` | Simple rewrite, needs Uyghur support |
+| Signal extraction / Intent classification | `gemini-3.5-flash` | Fast JSON classification, needs Uyghur support |
+| Multi-question split (`_llm_split`) | `gemini-3.5-flash` | Simple extraction, needs Uyghur support |
 | Answer generation (`generate_answer_stream`) | `gemini-3-flash-preview` | Best Uyghur output quality for final answer |
 
-All three simple-call roles use the same model, so a single `SIMPLE_LLM_MODEL` env var (defaulting to `gemini-3.1-flash-lite`) covers them all. The answer generation model is already governed by `ctx.rag_chain`, which is built upstream from a separate env var.
+All three simple-call roles use the same model, so a single `SIMPLE_LLM_MODEL` env var (defaulting to `gemini-3.5-flash`) covers them all. The answer generation model is already governed by `ctx.rag_chain`, which is built upstream from a separate env var.
 
-**Note on the existing `AGENT_MODEL` env var:** This currently defaults to `gemini-2.5-flash` and drives the ADK agent. In `DeterministicRAGHandler`, `ctx.agent_model` is reused for `_llm_split` — it should be updated to `gemini-3.1-flash-lite` (or remapped to `SIMPLE_LLM_MODEL`).
+**Note on the existing `AGENT_MODEL` env var:** This currently defaults to `gemini-2.5-flash` and drives the ADK agent. In `DeterministicRAGHandler`, `ctx.agent_model` is reused for `_llm_split` — it should be updated to `gemini-3.5-flash` (or remapped to `SIMPLE_LLM_MODEL`).
 
 ---
 
@@ -432,16 +382,16 @@ Google ADK becomes an optional dependency — can be removed or kept for future 
 
 ## LLM Call Budget Comparison
 
-Current agent calls use `gemini-2.5-flash`. Proposed simple calls use `gemini-3.1-flash-lite`.
+Proposed simple calls use `gemini-3.5-flash`.
 
-| Scenario | Current (`gemini-2.5-flash`) | Proposed (`gemini-3.1-flash-lite`) |
-|----------|---------|----------|
-| Catalog question ("who wrote X") | 1–2 agent calls | 0 LLM calls |
-| Current page question | 1–2 agent calls | 0 LLM calls |
-| Named title, clear passage | 2–3 agent calls | 1 classify call |
-| Follow-up with pronoun + content | 3–5 agent calls | 1 rewrite + 1 classify |
-| Multi-question (3 sub-questions) | 4–6 agent calls (shared budget) | 1 split + 1 classify × 3 = 4 calls |
-| Complex relationship + title | 3–4 agent calls | 1 classify call |
+| Scenario | Current ADK Agent Loop | Unified Query Analyzer Router |
+|----------|------------------------|-------------------------------|
+| Catalog question ("who wrote X") | 1–2 agent calls | 1 analyze call |
+| Current page question | 1–2 agent calls | 1 analyze call |
+| Named title, clear passage | 2–3 agent calls | 1 analyze call |
+| Follow-up with pronoun + content | 3–5 agent calls | 1 analyze call |
+| Multi-question (3 sub-questions) | 4–6 agent calls | 1 analyze + 1 split + 1 analyze per sub-q = 5 calls |
+| Complex relationship + title | 3–4 agent calls | 1 analyze call |
 
 ---
 

@@ -43,6 +43,24 @@ async def test_extract_signals_pronouns(mock_ctx):
     handler = DeterministicRAGHandler()
     mock_ctx.history = [{"role": "user", "text": "Who is Yunus?"}]
 
+    async def mock_analyze(question, ctx):
+        needs_rewrite = False
+        rewritten_question = None
+        if len(ctx.history) > 0 and ("ئۇ" in question or "ئۇچۇ" in question):
+            needs_rewrite = True
+            rewritten_question = "Mock standalone question"
+        return {
+            "is_current_page_query": False,
+            "is_volume_shift": False,
+            "target_volume": None,
+            "needs_rewrite": needs_rewrite,
+            "rewritten_question": rewritten_question,
+            "catalog_subtype": None,
+            "intent": "passage",
+        }
+
+    handler._llm_analyze_query = mock_analyze
+
     # 1. Exact pronoun
     with patch(
         "app.services.rag.agent.deterministic_handler.find_books_by_title_in_db",
@@ -69,6 +87,33 @@ async def test_extract_signals_pronouns(mock_ctx):
 async def test_extract_signals_volume_shift(mock_ctx):
     handler = DeterministicRAGHandler()
     mock_ctx.book.volume = 2
+
+    async def mock_analyze(question, ctx):
+        is_volume_shift = False
+        target_volume = None
+        if "توم" in question:
+            is_volume_shift = True
+            if "3" in question:
+                target_volume = 3
+            elif "كەيىنكى" in question:
+                target_volume = (
+                    (ctx.book.volume + 1) if ctx.book.volume is not None else 1
+                )
+            elif "ئالدىنقى" in question:
+                target_volume = (
+                    (ctx.book.volume - 1) if ctx.book.volume is not None else 1
+                )
+        return {
+            "is_current_page_query": False,
+            "is_volume_shift": is_volume_shift,
+            "target_volume": target_volume,
+            "needs_rewrite": False,
+            "rewritten_question": None,
+            "catalog_subtype": None,
+            "intent": "passage",
+        }
+
+    handler._llm_analyze_query = mock_analyze
 
     # 1. Regex shift: 3-توم
     with patch(
@@ -97,8 +142,29 @@ async def test_extract_signals_volume_shift(mock_ctx):
 
 
 @pytest.mark.asyncio
+async def test_extract_signals_fallback_to_keywords(mock_ctx):
+    handler = DeterministicRAGHandler()
+    mock_ctx.history = [{"role": "user", "text": "Who is Yunus?"}]
+
+    # Mock _llm_analyze_query to raise an error to trigger keyword fallback path
+    handler._llm_analyze_query = AsyncMock(side_effect=Exception("API Timeout"))
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler.find_books_by_title_in_db",
+        return_value=[],
+    ):
+        sig = await handler.extract_signals("ئۇ كىم؟", mock_ctx)
+        assert sig["needs_rewrite"] is True
+
+
+@pytest.mark.asyncio
 async def test_classify_intent_skips(mock_ctx):
     handler = DeterministicRAGHandler()
+
+    # Pre-extracted intent in signals -> returns directly
+    signals = {"intent": "summary"}
+    intent = await handler.classify_intent(signals, "test query", mock_ctx)
+    assert intent == "summary"
 
     # Current page skips classification -> returns passage
     signals = {"top_intent": "current_page", "in_reader": True}

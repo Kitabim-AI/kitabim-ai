@@ -23,10 +23,9 @@ flowchart TD
 
     %% Deterministic Router Flow
     subgraph DetRouter ["Deterministic RAG Flow"]
-        H_DET --> S1["Stage 1: Signal Extractor<br/>(Python/DB signals)<br/>emits: planning"]
-        S1 --> S2["[LLM] Stage 2: Coreference Resolver<br/>(Conditional pronoun rewrite)<br/>emits: rewrite_query"]
-        S2 --> S3["[LLM] Stage 3: Intent Classifier<br/>(Conditional JSON class)<br/>gemini-3.1-flash-lite"]
-        S3 --> S4["Stage 4: Execution Router<br/>(Run path A-H directly)"]
+        H_DET --> S1_DB["DB Metadata Check<br/>(Fuzzy Title & Author)"]
+        S1_DB --> S1_LLM["[LLM] Unified Query Analyzer<br/>(Extract intent, signals, & rewrite)<br/>emits: planning / rewrite_query"]
+        S1_LLM --> S4["Stage 2: Execution Router<br/>(Run path A-H directly)"]
         S4 --> T_DET["Execute Path Tool<br/>emits: tool_call<br/>tool_result"]
         T_DET -->|Return observations| S4
         S4 --> DET_MERGE["Universal Fallback Check<br/>(Widen if < 4 chunks)"]
@@ -63,8 +62,8 @@ flowchart TD
 
     class H_AG,H_DET handler
     class TOOL,T_DET tool
-    class INTENT,CTX_INJ,DEDUP,GRADE,S1,S4,DET_MERGE process
-    class DECOMP,ADK,SYNTHESIS,S2,S3 llm
+    class INTENT,CTX_INJ,DEDUP,GRADE,S1_DB,S4,DET_MERGE process
+    class DECOMP,ADK,SYNTHESIS,S1_LLM llm
 ```
 
 ---

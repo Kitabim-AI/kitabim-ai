@@ -27,7 +27,6 @@ from app.services.rag.agent.handler import (
     _is_multi_entity_question,
     _question_mark_count,
     _llm_split,
-    _detect_intent,
 )
 
 logger = logging.getLogger("app.rag.agent.deterministic_handler")
@@ -35,65 +34,13 @@ logger = logging.getLogger("app.rag.agent.deterministic_handler")
 # Punctuation boundaries for pronouns
 _PUNCT = '«»،؟!()[]{}"' "''"
 
-# Extended pronoun token set including base pronouns, inflected forms, and topic-shift clitics
-UYGHUR_PRONOUN_TOKENS = {
-    # Singular
-    "ئۇ",
-    "بۇ",
-    "شۇ",
-    "ئۇنىڭ",
-    "بۇنىڭ",
-    "شۇنىڭ",
-    "ئۇنى",
-    "بۇنى",
-    "شۇنى",
-    "ئۇنىڭغا",
-    "بۇنىڭغا",
-    "شۇنىڭغا",
-    "ئۇنىڭدا",
-    "بۇنىڭدا",
-    "شۇنىڭدا",
-    "ئۇنىڭدىن",
-    "بۇنىڭدىن",
-    "شۇنىڭدىن",
-    # Plural
-    "ئۇلار",
-    "بۇلار",
-    "شۇلار",
-    "ئۇلارنىڭ",
-    "بۇلارنىڭ",
-    "شۇلارنىڭ",
-    "ئۇلارنى",
-    "بۇلارنى",
-    "شۇلارنى",
-    "ئۇلارغا",
-    "بۇلارغا",
-    "شۇلارغا",
-    "ئۇلاردا",
-    "بۇلاردا",
-    "شۇلاردا",
-    "ئۇلاردىن",
-    "بۇلاردىن",
-    "شۇلاردىن",
-    # Topic-shift clitics ("what about...")
-    "ئۇچۇ",
-    "بۇچۇ",
-    "شۇچۇ",
-    "ئۇلارچۇ",
-    "بۇلارچۇ",
-    "شۇلارچۇ",
-}
-
-_VOLUME_SHIFT_KEYWORDS = {
-    "توم",
-    "كەيىنكى توم",
-    "ئالدىنقى توم",
-    "كېيىنكى قىسىم",
-    "ئالدىنقى قىسىم",
-    "next volume",
-    "prev volume",
-    "previous volume",
-}
+from app.services.rag.keywords import (
+    UYGHUR_PRONOUN_TOKENS,
+    VOLUME_SHIFT_KEYWORDS,
+    CATALOG_AUTHOR_QUERIES,
+    CATALOG_BOOKS_QUERIES,
+    PAGE_QUERY_PATTERNS,
+)
 
 
 class DeterministicRAGHandler(QueryHandler):
@@ -108,31 +55,63 @@ class DeterministicRAGHandler(QueryHandler):
     def can_handle(self, ctx: QueryContext) -> bool:
         return ctx.use_deterministic_router
 
+    async def _llm_analyze_query(self, question: str, ctx: QueryContext) -> dict:
+        """Stage 1.5: Query Signal & Intent Extractor LLM Call.
+
+        Uses a single structured JSON response to classify query properties.
+        """
+        in_reader = ctx.current_page is not None
+        current_page = ctx.current_page
+        has_history = len(ctx.history) > 0
+        history_str = ctx.chat_history_str if has_history else "None"
+
+        prompt = f"""Analyze this Uyghur/English query in the context of a RAG book reading assistant.
+
+Context:
+- In Reader (Active Book Context): {in_reader} (Page: {current_page})
+- Has Chat History: {has_history}
+
+Chat History:
+{history_str}
+
+Query: {question}
+
+Return ONLY valid JSON matching this schema:
+{{
+  "is_current_page_query": boolean, // True if the user asks about the page/text they are currently looking at (e.g. "what is on this page", "read this page", "بۇ بەتتە نېمە بار")
+  "is_volume_shift": boolean,       // True if the user wants to go to another volume (e.g. "next volume", "previous volume", "ئالدىنقى توم", "2-توم")
+  "target_volume": integer | null,  // The volume number to shift to if specified (e.g. 2, 3), else null
+  "needs_rewrite": boolean,         // True if the query has unresolved pronouns/coreferences referring to history (e.g. "who wrote it?", "what is his age?", "ئۇ كىم؟")
+  "rewritten_question": string | null, // If needs_rewrite is true, rewrite the question to resolve all pronouns/references using chat history to make it self-contained in Uyghur/English. If needs_rewrite is false, return null.
+  "catalog_subtype": "author_of" | "books_by" | "general" | null, // Use "author_of" if asking who wrote a book, "books_by" if asking what books an author wrote, "general" for other catalog/library-wide queries (like "what books do you have"), or null if this is NOT a catalog query.
+  "intent": "catalog" | "identity" | "summary" | "relationship" | "passage"
+}}
+
+Intents:
+- catalog     : asking about book metadata, authors of books, book listings, or what books exist in the library
+- identity    : asking who/what a person or character IS (biography, role, background)
+- summary     : asking about the plot, themes, or main characters of a book
+- relationship: asking about connections, lineages, family trees, or how X and Y relate
+- passage     : asking for specific events, facts, quotes, or details — including "tell me about X's actions"
+"""
+        llm = build_text_llm(ctx.agent_model)
+        res_text = await llm.ainvoke(
+            prompt,
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        )
+        m = re.search(r"\{.*?\}", res_text, re.DOTALL)
+        if m:
+            return json.loads(m.group())
+        raise ValueError("LLM response did not contain a JSON block")
+
     async def extract_signals(self, question: str, ctx: QueryContext) -> dict:
-        """Stage 1: Signal Extractor — pure Python, database metadata lookups."""
-        q_norm = normalize_uyghur(question.lower())
-
-        # 1. detect intent
-        top_intent = _detect_intent(question, ctx)
-
-        # 2. catalog subtype
-        catalog_subtype = "general"
-        author_queries = [
-            normalize_uyghur(x) for x in ["كىم يازغان", "ئاپتورى كىم", "ئاپتور كىم"]
-        ]
-        books_queries = [normalize_uyghur(x) for x in ["نىمە يازغان", "قانداق كىتاب"]]
-        if any(x in q_norm for x in author_queries):
-            catalog_subtype = "author_of"
-        elif any(x in q_norm for x in books_queries):
-            catalog_subtype = "books_by"
-
-        # 3. has_title
+        """Stage 1: Signal Extractor — database metadata lookups combined with structured LLM query analysis."""
+        # 1. DB-based metadata checks (fast & deterministic)
         has_title = False
         matched_books = await find_books_by_title_in_db(question, ctx)
         if matched_books:
             has_title = True
 
-        # 4. has_author
         has_author = False
         books_repo = BooksRepository(ctx.session)
         matched_author_books = await books_repo.find_books_by_author_in_question(
@@ -141,51 +120,6 @@ class DeterministicRAGHandler(QueryHandler):
         if matched_author_books:
             has_author = True
 
-        # 5. is_volume_shift
-        volume_keywords = [normalize_uyghur(k) for k in _VOLUME_SHIFT_KEYWORDS]
-        is_volume_shift = any(k in q_norm for k in volume_keywords)
-
-        # 6. target_volume
-        target_volume = None
-        if is_volume_shift:
-            # Regex search for numbers: e.g. "2-توم" -> 2
-            m = re.search(r"(\d+)\s*-?\s*توم|volume\s*(\d+)", q_norm)
-            if m:
-                target_volume = int(m.group(1) or m.group(2))
-            else:
-                current_volume = (
-                    ctx.book.volume
-                    if (ctx.book and ctx.book.volume is not None)
-                    else None
-                )
-                next_keywords = [
-                    normalize_uyghur(x) for x in ["كەيىنكى", "كېيىنكى", "next"]
-                ]
-                prev_keywords = [
-                    normalize_uyghur(x) for x in ["ئالدىنقى", "prev", "previous"]
-                ]
-                if any(x in q_norm for x in next_keywords):
-                    target_volume = (
-                        (current_volume + 1) if current_volume is not None else 1
-                    )
-                elif any(x in q_norm for x in prev_keywords):
-                    target_volume = (
-                        (current_volume - 1) if current_volume is not None else 1
-                    )
-            if target_volume is not None:
-                target_volume = max(1, target_volume)
-
-        # 7. needs_rewrite
-        needs_rewrite = False
-        if ctx.history:
-            words = [w.strip(_PUNCT) for w in q_norm.split()]
-            if any(w in UYGHUR_PRONOUN_TOKENS for w in words):
-                # Heuristic: only rewrite if question does not already have a clear book context,
-                # or if it is extremely short (unresolved pronouns in short follow-ups).
-                if not (has_title or has_author) or len(words) < 8:
-                    needs_rewrite = True
-
-        # 8. context details
         in_reader = ctx.current_page is not None
         has_current_book = ctx.book_id is not None and not ctx.is_global
         has_context_books = len(ctx.context_book_ids) > 0
@@ -196,8 +130,84 @@ class DeterministicRAGHandler(QueryHandler):
             else False
         )
 
+        # 2. LLM query analysis (intent & signals) with keyword fallback fallback
+        try:
+            llm_res = await self._llm_analyze_query(question, ctx)
+            is_current_page_query = llm_res.get("is_current_page_query", False)
+            is_volume_shift = llm_res.get("is_volume_shift", False)
+            target_volume = llm_res.get("target_volume")
+            needs_rewrite = llm_res.get("needs_rewrite", False)
+            rewritten_question = llm_res.get("rewritten_question")
+            catalog_subtype = llm_res.get("catalog_subtype") or "general"
+            intent = llm_res.get("intent", "passage")
+        except Exception as exc:
+            rewritten_question = None
+            log_json(
+                logger,
+                logging.WARNING,
+                "Unified LLM signal extraction failed, falling back to keywords",
+                error=str(exc),
+            )
+            # FALLBACK to original local python/keyword heuristics
+            q_norm = normalize_uyghur(question.lower())
+
+            # top intent
+            is_current_page_query = ctx.current_page is not None and any(
+                p in q_norm for p in PAGE_QUERY_PATTERNS
+            )
+
+            # catalog subtype
+            catalog_subtype = "general"
+            author_queries = [normalize_uyghur(x) for x in CATALOG_AUTHOR_QUERIES]
+            books_queries = [normalize_uyghur(x) for x in CATALOG_BOOKS_QUERIES]
+            if any(x in q_norm for x in author_queries):
+                catalog_subtype = "author_of"
+            elif any(x in q_norm for x in books_queries):
+                catalog_subtype = "books_by"
+
+            # volume shift
+            volume_keywords = [normalize_uyghur(k) for k in VOLUME_SHIFT_KEYWORDS]
+            is_volume_shift = any(k in q_norm for k in volume_keywords)
+            target_volume = None
+            if is_volume_shift:
+                m = re.search(r"(\d+)\s*-?\s*توم|volume\s*(\d+)", q_norm)
+                if m:
+                    target_volume = int(m.group(1) or m.group(2))
+                else:
+                    current_volume = (
+                        ctx.book.volume
+                        if (ctx.book and ctx.book.volume is not None)
+                        else None
+                    )
+                    next_keywords = [
+                        normalize_uyghur(x) for x in ["كەيىنكى", "كېيىنكى", "next"]
+                    ]
+                    prev_keywords = [
+                        normalize_uyghur(x) for x in ["ئالدىنقى", "prev", "previous"]
+                    ]
+                    if any(x in q_norm for x in next_keywords):
+                        target_volume = (
+                            (current_volume + 1) if current_volume is not None else 1
+                        )
+                    elif any(x in q_norm for x in prev_keywords):
+                        target_volume = (
+                            (current_volume - 1) if current_volume is not None else 1
+                        )
+                if target_volume is not None:
+                    target_volume = max(1, target_volume)
+
+            # needs rewrite
+            needs_rewrite = False
+            if ctx.history:
+                words = [w.strip(_PUNCT) for w in q_norm.split()]
+                if any(w in UYGHUR_PRONOUN_TOKENS for w in words):
+                    if not (has_title or has_author) or len(words) < 8:
+                        needs_rewrite = True
+
+            intent = "passage"
+
         return {
-            "top_intent": top_intent,
+            "top_intent": "current_page" if is_current_page_query else "content_search",
             "catalog_subtype": catalog_subtype,
             "has_title": has_title,
             "has_author": has_author,
@@ -209,12 +219,17 @@ class DeterministicRAGHandler(QueryHandler):
             "has_context_books": has_context_books,
             "is_global": is_global,
             "graph_available": graph_available,
+            "intent": intent,
+            "rewritten_question": rewritten_question if needs_rewrite else None,
         }
 
     async def classify_intent(
         self, signals: dict, question: str, ctx: QueryContext
     ) -> str:
-        """Stage 3: Intent Classifier — conditional LLM call."""
+        """Stage 3: Intent Classifier — returns pre-extracted intent, or falls back to classification LLM."""
+        if "intent" in signals:
+            return signals["intent"]
+
         top_intent = signals.get("top_intent")
         if top_intent == "current_page":
             return "passage"
@@ -810,17 +825,45 @@ Return ONLY valid JSON matching this schema:
         # 2. Stage 2: Coreference Resolution
         needs_rewrite = signals_orig.get("needs_rewrite", False)
         llm_calls = 0
-        if needs_rewrite:
-            result_holder = {}
-            async for ev in self._run_tool_and_yield(
-                "rewrite_query",
-                {"question": question},
-                ctx,
-                observations,
-                result_holder,
-            ):
-                yield ev
+        if "intent" in signals_orig:
             llm_calls += 1
+
+        if needs_rewrite:
+            rewritten_question = signals_orig.get("rewritten_question")
+            if rewritten_question:
+                ctx.enriched_question = rewritten_question
+                # Record to observations for tracing
+                res = {
+                    "ok": True,
+                    "rewritten_question": rewritten_question,
+                    "found_count": 0,
+                }
+                observations.append(
+                    {
+                        "tool": "rewrite_query",
+                        "args": {"question": question},
+                        "result": res,
+                    }
+                )
+                # Yield frontend events to preserve UI rewrite animations
+                yield {
+                    "type": "tool_call",
+                    "tool": "rewrite_query",
+                    "name": "rewrite_query",
+                }
+                yield {"type": "tool_result", "tool": "rewrite_query", "found": 0}
+            else:
+                # Fallback to separate LLM tool execution on fallback path
+                result_holder = {}
+                async for ev in self._run_tool_and_yield(
+                    "rewrite_query",
+                    {"question": question},
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
+                llm_calls += 1
 
         # Update processed question
         question_to_process = ctx.enriched_question or ctx.question
@@ -837,22 +880,26 @@ Return ONLY valid JSON matching this schema:
 
         # 4. Stage 3 & 4: Intent Classifier and Execution Router per sub-question
         for sub_q in sub_questions:
-            # Extract sub-question signals (needs_rewrite is False here)
-            sub_signals = await self.extract_signals(sub_q, ctx)
-            sub_signals["needs_rewrite"] = False
+            if len(sub_questions) == 1 and sub_q == question:
+                sub_signals = signals_orig.copy()
+            else:
+                # Extract sub-question signals (needs_rewrite is False here)
+                sub_signals = await self.extract_signals(sub_q, ctx)
+                sub_signals["needs_rewrite"] = False
+                if "intent" in sub_signals:
+                    llm_calls += 1
 
             # Classify sub-question intent
             sub_intent = await self.classify_intent(sub_signals, sub_q, ctx)
-            if (
-                sub_intent != "passage"
-                or sub_signals.get("has_title")
-                or sub_signals.get("has_context_books")
-                or sub_signals.get("is_global")
-            ):
-                # Intent classification LLM was run for non-skipped flows
-                # Skip classified intent tracking if skipped by signals
-                # Let's count classifying calls:
-                llm_calls += 1
+            if "intent" not in sub_signals:
+                if (
+                    sub_intent != "passage"
+                    or sub_signals.get("has_title")
+                    or sub_signals.get("has_context_books")
+                    or sub_signals.get("is_global")
+                ):
+                    # Intent classification LLM was run for non-skipped flows
+                    llm_calls += 1
 
             # Run execution path
             async for ev in self.execute_path(
