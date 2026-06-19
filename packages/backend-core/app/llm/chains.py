@@ -5,7 +5,7 @@ from typing import Any, AsyncIterator
 from pydantic import BaseModel
 
 from app.core.providers import get_llm_provider
-from app.llm.models import _get_genai_client
+from app.llm.models import _get_text_client
 
 _logger = logging.getLogger("app.llm.chains")
 
@@ -56,7 +56,7 @@ class StructuredChain:
         self.run_name = run_name
 
     async def ainvoke(self, input: dict[str, Any], **kwargs: Any) -> BaseModel:
-        client = _get_genai_client()
+        client = _get_text_client()
         model = (
             self.model_name.replace("models/", "", 1)
             if self.model_name.startswith("models/")

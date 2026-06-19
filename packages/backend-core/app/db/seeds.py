@@ -105,7 +105,7 @@ async def seed_system_configs(session: AsyncSession):
         },
         {
             "key": "gemini_ocr_timeout",
-            "value": "120",
+            "value": "300",
             "description": "Timeout in seconds for Gemini OCR vision API calls.",
         },
     ]

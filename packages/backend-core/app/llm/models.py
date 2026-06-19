@@ -18,9 +18,14 @@ from app.utils.rate_limiter import RedisRateLimiter
 
 _logger = logging.getLogger("app.llm")
 
-# Rate limit for Gemini API (Total across all workers)
-# The user's quota is 25 RPM; we use 20 to be safe.
-_GEMINI_LIMITER = RedisRateLimiter("gemini_api", limit=20, window=60)
+# Dedicated rate limiters for different purposes to prevent OCR from starving Chat/Text requests
+_TEXT_LIMITER = RedisRateLimiter(
+    "gemini_text", limit=settings.gemini_text_rpm, window=60
+)
+_OCR_LIMITER = RedisRateLimiter("gemini_ocr", limit=settings.gemini_ocr_rpm, window=60)
+_EMBED_LIMITER = RedisRateLimiter(
+    "gemini_embed", limit=settings.gemini_embed_rpm, window=60
+)
 
 _TEXT_BREAKER = CircuitBreaker(
     "llm_generate",
@@ -122,17 +127,28 @@ async def get_circuit_breaker_status() -> dict:
     }
 
 
-_client: genai.Client | None = None
+_text_client: genai.Client | None = None
+_ocr_client: genai.Client | None = None
 
 
-def _get_genai_client() -> genai.Client:
-    global _client
-    if _client is None:
-        _client = genai.Client(
+def _get_text_client() -> genai.Client:
+    global _text_client
+    if _text_client is None:
+        _text_client = genai.Client(
+            api_key=settings.gemini_api_key,
+            http_options=types.HttpOptions(timeout=int(_INVOKE_TIMEOUT * 1000)),
+        )
+    return _text_client
+
+
+def _get_ocr_client() -> genai.Client:
+    global _ocr_client
+    if _ocr_client is None:
+        _ocr_client = genai.Client(
             api_key=settings.gemini_api_key,
             http_options=types.HttpOptions(timeout=int(_OCR_INVOKE_TIMEOUT * 1000)),
         )
-    return _client
+    return _ocr_client
 
 
 def _normalize_prompt_value(value: Any) -> str:
@@ -149,7 +165,7 @@ _STREAM_FIRST_CHUNK_TIMEOUT = (
 )
 _INVOKE_TIMEOUT = 30.0  # seconds to wait for a non-streaming ainvoke to complete
 _OCR_INVOKE_TIMEOUT = (
-    120.0  # seconds for OCR vision calls (image + prompt, much slower)
+    300.0  # seconds for OCR vision calls (image + prompt, much slower)
 )
 
 
@@ -176,8 +192,13 @@ def is_transient_error(exc: Exception) -> bool:
 async def _call_with_breaker(
     breaker: CircuitBreaker, fn, *args, timeout: float | None = None, **kwargs
 ):
-    # Apply global rate limiting before attempting the call
-    await _GEMINI_LIMITER.wait()
+    # Apply rate limiting based on the breaker before attempting the call
+    if breaker.name == "llm_ocr":
+        await _OCR_LIMITER.wait()
+    elif breaker.name == "llm_embed":
+        await _EMBED_LIMITER.wait()
+    else:
+        await _TEXT_LIMITER.wait()
     effective_timeout = timeout or _INVOKE_TIMEOUT
 
     async def _fn_with_timeout():
@@ -188,7 +209,7 @@ async def _call_with_breaker(
         except asyncio.TimeoutError:
             log_json(
                 _logger,
-                logging.ERROR,
+                logging.WARNING,
                 "LLM invoke timed out",
                 timeout=effective_timeout,
                 breaker=breaker.name,
@@ -203,9 +224,10 @@ async def _call_with_breaker(
         log_json(_logger, logging.ERROR, "LLM circuit open", error=str(exc))
         raise
     except Exception as exc:
+        log_level = logging.WARNING if is_transient_error(exc) else logging.ERROR
         log_json(
             _logger,
-            logging.ERROR,
+            log_level,
             "LLM call failed",
             error=str(exc),
             breaker=breaker.name,
@@ -262,9 +284,10 @@ async def _stream_with_breaker(breaker: CircuitBreaker, fn, *args, **kwargs):
     except Exception as exc:
         if not is_transient_error(exc):
             await breaker._on_failure()
+        log_level = logging.WARNING if is_transient_error(exc) else logging.ERROR
         log_json(
             _logger,
-            logging.ERROR,
+            log_level,
             "LLM stream failed",
             error=str(exc),
             breaker=breaker.name,
@@ -273,7 +296,7 @@ async def _stream_with_breaker(breaker: CircuitBreaker, fn, *args, **kwargs):
 
 
 async def generate_text(prompt: str, model_name: str) -> str:
-    client = _get_genai_client()
+    client = _get_text_client()
     model = (
         model_name.replace("models/", "", 1)
         if model_name.startswith("models/")
@@ -300,7 +323,7 @@ async def generate_text(prompt: str, model_name: str) -> str:
 async def generate_text_with_image(
     prompt: str, image_bytes: bytes, model_name: str, timeout: float | None = None
 ) -> str:
-    client = _get_genai_client()
+    client = _get_ocr_client()
     model = (
         model_name.replace("models/", "", 1)
         if model_name.startswith("models/")
@@ -341,7 +364,7 @@ class ProtectedLLM:
     async def ainvoke(
         self, input: Any, config: Any | None = None, **kwargs: Any
     ) -> str:
-        client = _get_genai_client()
+        client = _get_text_client()
         prompt = _normalize_prompt_value(input)
         model = (
             self.model_name.replace("models/", "", 1)
@@ -369,7 +392,7 @@ class ProtectedLLM:
     async def astream(
         self, input: Any, config: Any | None = None, **kwargs: Any
     ) -> AsyncIterator[str]:
-        client = _get_genai_client()
+        client = _get_text_client()
         prompt = _normalize_prompt_value(input)
         model = (
             self.model_name.replace("models/", "", 1)

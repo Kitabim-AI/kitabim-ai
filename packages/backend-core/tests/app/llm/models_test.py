@@ -108,3 +108,46 @@ async def test_gemini_embeddings_aembed_documents(mock_breaker_call):
         assert requests[0]["content"]["parts"][0]["text"] == "hello"
         assert requests[1]["model"] == "models/gemini-embedding-2"
         assert requests[1]["content"]["parts"][0]["text"] == "world"
+
+
+@pytest.mark.asyncio
+async def test_call_with_breaker_transient_vs_non_transient_logging(caplog):
+    import logging
+    from app.llm.models import _call_with_breaker, _TEXT_BREAKER
+
+    # Mock rate limiters to avoid redis dependency in this test
+    with patch("app.llm.models._TEXT_LIMITER.wait", new_callable=AsyncMock), patch(
+        "app.llm.models._TEXT_BREAKER.call"
+    ) as mock_breaker_call:
+        # Mock the breaker call to just run the function and raise the error
+        async def side_effect(fn, *args, ignore_on_failure=None, **kwargs):
+            return await fn(*args, **kwargs)
+
+        mock_breaker_call.side_effect = side_effect
+
+        # 1. Test transient error (504 DEADLINE_EXCEEDED) logs as WARNING
+        async def raise_504():
+            raise ValueError("504 DEADLINE_EXCEEDED")
+
+        caplog.clear()
+        with pytest.raises(ValueError, match="504"):
+            await _call_with_breaker(_TEXT_BREAKER, raise_504)
+
+        # Check logs
+        transient_logs = [r for r in caplog.records if r.message == "LLM call failed"]
+        assert len(transient_logs) == 1
+        assert transient_logs[0].levelno == logging.WARNING
+
+        # 2. Test non-transient error logs as ERROR
+        async def raise_generic():
+            raise ValueError("Generic DB or code error")
+
+        caplog.clear()
+        with pytest.raises(ValueError, match="Generic"):
+            await _call_with_breaker(_TEXT_BREAKER, raise_generic)
+
+        non_transient_logs = [
+            r for r in caplog.records if r.message == "LLM call failed"
+        ]
+        assert len(non_transient_logs) == 1
+        assert non_transient_logs[0].levelno == logging.ERROR
