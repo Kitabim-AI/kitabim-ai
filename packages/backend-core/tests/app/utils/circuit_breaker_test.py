@@ -44,7 +44,7 @@ async def test_circuit_breaker_transient_error_ignored():
     assert info["failure_count"] == 0
     assert info["state"] == "closed"
 
-    # 2. Test transient timeout error is ignored
+    # 2. Test timeout error is NOT ignored (counts as failure)
     async def raise_timeout():
         raise TimeoutError("LLM did not respond within 120.0s")
 
@@ -52,21 +52,13 @@ async def test_circuit_breaker_transient_error_ignored():
         await breaker.call(raise_timeout, ignore_on_failure=is_transient_error)
 
     info = await breaker.get_info()
-    assert info["failure_count"] == 0
-    assert info["state"] == "closed"
-
-    # 3. Test non-transient error is NOT ignored
-    async def raise_non_transient():
-        raise ValueError("Generic API error")
-
-    with pytest.raises(ValueError, match="Generic API error"):
-        await breaker.call(raise_non_transient, ignore_on_failure=is_transient_error)
-
-    info = await breaker.get_info()
     assert info["failure_count"] == 1
     assert info["state"] == "closed"
 
-    # Trip the breaker with another non-transient failure
+    # 3. Test non-transient error is NOT ignored (and trips the breaker when threshold is met)
+    async def raise_non_transient():
+        raise ValueError("Generic API error")
+
     with pytest.raises(ValueError, match="Generic API error"):
         await breaker.call(raise_non_transient, ignore_on_failure=is_transient_error)
 

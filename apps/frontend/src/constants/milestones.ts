@@ -40,9 +40,9 @@ export const REPROCESS_STEP = {
   OCR: 'ocr',
   CHUNKING: 'chunking',
   EMBEDDING: 'embedding',
-  WORD_INDEX: 'word-index',
   SPELL_CHECK: 'spell-check',
   GRAPH: 'graph',
+  SUMMARY: 'summary',
 } as const;
 
 export type ReprocessStep = typeof REPROCESS_STEP[keyof typeof REPROCESS_STEP];

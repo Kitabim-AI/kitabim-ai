@@ -1631,6 +1631,70 @@ async def reprocess_graph(
     }
 
 
+@router.post("/{book_id}/reprocess/summary")
+async def reprocess_summary(
+    book_id: str,
+    current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    """Manually trigger/reprocess AI summary generation for a book.
+
+    Deletes any existing summary row so the summary_job generates a fresh one.
+    """
+    from app.db.repositories.book_summaries_repository import BookSummariesRepository
+
+    books_repo = BooksRepository(session)
+    book = await books_repo.get(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+
+    # Delete existing summary so the job writes a clean one
+    summaries_repo = BookSummariesRepository(session)
+    existing = await summaries_repo.get_by_book_id(book_id)
+    if existing:
+        await summaries_repo.delete_one(book_id)
+    await session.commit()
+
+    # Invalidate summary search cache
+    await cache_service.delete_pattern("rag:summary_search:*")
+
+    try:
+        import arq
+
+        redis_pool = await arq.create_pool(
+            arq.connections.RedisSettings.from_dsn(settings.redis_url)
+        )
+        try:
+            await redis_pool.enqueue_job(
+                "summary_job",
+                book_id=book_id,
+                _job_id=f"summary:{book_id}",
+            )
+        finally:
+            await redis_pool.aclose()
+        log_json(
+            logger,
+            logging.INFO,
+            "manually enqueued summary_job",
+            book_id=book_id,
+            user=current_user.email,
+        )
+    except Exception as exc:
+        log_json(
+            logger,
+            logging.ERROR,
+            "failed to enqueue summary_job",
+            book_id=book_id,
+            error=str(exc),
+        )
+        raise HTTPException(status_code=500, detail=t("errors.summary_enqueue_failed"))
+
+    return {
+        "status": "summary_reprocess_started",
+        "message": "Summary generation queued.",
+    }
+
+
 @router.post("/{book_id}/retry-failed")
 async def retry_failed_pages(
     book_id: str,
@@ -1713,25 +1777,35 @@ async def reset_page(
     current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
-    """Reset a single page to ocr/idle so the v2 OCR scanner re-processes it."""
+    """Reset a single page so the OCR scanner re-processes it from scratch."""
+    from app.services.book_milestone_service import BookMilestoneService
+
     books_repo = BooksRepository(session)
+    book = await books_repo.get(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
     await session.execute(
-        text("""
-            UPDATE pages
-            SET status = 'pending',
-                text = NULL,
-                is_indexed = FALSE,
-                pipeline_step = 'ocr',
-                milestone = 'idle',
-                retry_count = 0,
-                last_updated = NOW(),
-                updated_by = :updated_by
-            WHERE book_id = :book_id AND page_number = :page_number
-        """),
-        {"book_id": book_id, "page_number": page_num, "updated_by": current_user.email},
+        update(Page)
+        .where(Page.book_id == book_id, Page.page_number == page_num)
+        .values(
+            status="pending",
+            text=None,
+            is_indexed=False,
+            pipeline_step=PIPELINE_STEP_OCR,
+            ocr_milestone=PAGE_MILESTONE_IDLE,
+            chunking_milestone=PAGE_MILESTONE_IDLE,
+            embedding_milestone=PAGE_MILESTONE_IDLE,
+            spell_check_milestone=PAGE_MILESTONE_IDLE,
+            retry_count=0,
+            last_updated=datetime.now(timezone.utc),
+            updated_by=current_user.email,
+        )
     )
 
+    # Recompute book-level milestones from page state so the OCR scanner
+    # sees this book's ocr_milestone as non-complete and picks it up.
+    await BookMilestoneService.update_book_milestones(session, book_id)
     await books_repo.update_one(
         book_id,
         status="pending",

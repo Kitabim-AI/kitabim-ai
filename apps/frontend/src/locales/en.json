@@ -129,8 +129,7 @@
       "ocr": "OCR",
       "chunking": "Chunking",
       "embedding": "Embedding",
-      "word_index": "Word index",
-      "spell_check": "Spell check",
+"spell_check": "Spell check",
       "ready": "Ready",
       "idle": "Waiting",
       "running": "Running",
@@ -298,8 +297,7 @@
       "chunking": "Chunking",
       "embedding": "Vector Indices",
       "summary": "AI Summary",
-      "wordIndex": "Word Index",
-      "spellCheck": "Spell check",
+"spellCheck": "Spell check",
       "graph": "Knowledge Graph"
     },
     "table": {
@@ -323,9 +321,9 @@
         "ocr": "Full OCR Reprocess",
         "chunking": "Reprocess Chunking",
         "embedding": "Reprocess Embedding",
-        "word_index": "Reprocess Word Index",
-        "spell_check": "Reprocess Spell Check",
-        "graph": "Reprocess Knowledge Graph"
+"spell_check": "Reprocess Spell Check",
+        "graph": "Reprocess Knowledge Graph",
+        "summary": "Rebuild AI Summary"
       },
       "redoOcr": "Redo OCR",
       "email": "Email",
@@ -606,14 +604,14 @@
     "reprocessEmbedding": {
       "title": "Reprocess Embedding"
     },
-    "reprocessWordIndex": {
-      "title": "Reprocess Word Index"
-    },
-    "reprocessSpellCheck": {
+"reprocessSpellCheck": {
       "title": "Reprocess Spell Check"
     },
     "reprocessGraph": {
       "title": "Reprocess Knowledge Graph"
+    },
+    "reprocessSummary": {
+      "title": "Rebuild AI Summary"
     },
     "reprocess": {
       "ocr": {
@@ -625,14 +623,14 @@
       "embedding": {
         "message": "Are you sure you want to reprocess all pages and chunks from the Embedding step?"
       },
-      "word-index": {
-        "message": "Are you sure you want to regenerate the Word Index?"
-      },
-      "spell-check": {
+"spell-check": {
         "message": "Are you sure you want to re-run Spell Check?"
       },
       "graph": {
         "message": "Are you sure you want to regenerate the Knowledge Graph?"
+      },
+      "summary": {
+        "message": "Are you sure you want to rebuild the AI summary? The existing summary will be deleted and regenerated."
       }
     },
     "redoOcrError": {

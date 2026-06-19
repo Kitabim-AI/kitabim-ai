@@ -75,14 +75,6 @@ async def summary_job(ctx, book_id: str) -> None:
             )
             if not gemini_embedding_model:
                 raise RuntimeError("system_config 'gemini_embedding_model' is not set")
-            gemini_summary_timeout_str = await config_repo.get_value(
-                "gemini_summary_timeout"
-            )
-            gemini_summary_timeout = (
-                float(gemini_summary_timeout_str)
-                if gemini_summary_timeout_str
-                else 300.0
-            )
 
             # Load book metadata
             result = await session.execute(select(Book).where(Book.id == book_id))
@@ -153,7 +145,7 @@ async def summary_job(ctx, book_id: str) -> None:
                 "author": book.author or "Unknown",
                 "text": sampled_text,
             },
-            timeout=gemini_summary_timeout,
+            timeout_config_key="gemini_summary_timeout",
         )
         summary = (summary or "").strip()
         if not summary:

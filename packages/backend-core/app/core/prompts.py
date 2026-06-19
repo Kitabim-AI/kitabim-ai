@@ -3,6 +3,7 @@ OCR_PROMPT = """You are an expert OCR transcriptionist for the Uyghur language. 
 <critical_rules>
 1. Output ONLY the recognized Uyghur text. Do NOT translate, do NOT add commentary, and do NOT add any non-Uyghur words.
 2. If the page contains no readable Uyghur text, output absolutely nothing (no placeholders, no explanations).
+3. Do NOT think out loud, analyze, or write down your self-correction or reasoning process in the output (e.g. do not output things like "Wait, let's look at the letters...", "Or is it X?", "In the image there is..."). Transcribe directly and output only the final result.
 </critical_rules>
 
 <formatting_guidelines>

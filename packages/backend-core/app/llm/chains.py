@@ -76,6 +76,22 @@ class StructuredChain:
         )
 
         timeout = kwargs.pop("timeout", None)
+        timeout_config_key = kwargs.pop("timeout_config_key", None)
+        if timeout is None:
+            if timeout_config_key:
+                from app.llm.models import get_system_config_timeout
+
+                default_val = (
+                    300.0
+                    if "summary" in timeout_config_key or "ocr" in timeout_config_key
+                    else 30.0
+                )
+                timeout = await get_system_config_timeout(
+                    timeout_config_key, default_val
+                )
+
+        if timeout is not None:
+            config.http_options = types.HttpOptions(timeout=int(timeout * 1000))
 
         from app.llm.models import _TEXT_BREAKER, _call_with_breaker
 

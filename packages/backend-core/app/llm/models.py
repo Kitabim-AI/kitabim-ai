@@ -170,21 +170,15 @@ _OCR_INVOKE_TIMEOUT = (
 
 
 def is_transient_error(exc: Exception) -> bool:
-    """Check if the exception represents a transient API error (429, 503, 504, overloaded, timeouts)."""
-    if isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
-        return True
+    """Check if the exception represents a transient API error (429, 503, overloaded)."""
     err_msg = str(exc)
     return any(
         x in err_msg or x in err_msg.lower()
         for x in [
             "429",
             "503",
-            "504",
             "overloaded",
             "resource_exhausted",
-            "deadline_exceeded",
-            "timeout",
-            "timed out",
         ]
     )
 
@@ -320,6 +314,30 @@ async def generate_text(prompt: str, model_name: str) -> str:
     return text
 
 
+_BREAKER_TIMEOUT_CONFIGS = {
+    "llm_ocr": ("gemini_ocr_timeout", 300.0),
+    "llm_generate": ("gemini_chat_timeout", 30.0),
+    "llm_embed": ("gemini_embed_timeout", 15.0),
+}
+
+
+async def get_system_config_timeout(key: str, default_val: float) -> float:
+    try:
+        from app.db import session as db_session
+        from app.db.repositories.system_configs_repository import (
+            SystemConfigsRepository,
+        )
+
+        async with db_session.async_session_factory() as session:
+            repo = SystemConfigsRepository(session)
+            val_str = await repo.get_value(key)
+            if val_str:
+                return float(val_str)
+    except Exception as e:
+        _logger.warning("Failed to fetch system config for %s: %s", key, e)
+    return default_val
+
+
 async def generate_text_with_image(
     prompt: str, image_bytes: bytes, model_name: str, timeout: float | None = None
 ) -> str:
@@ -330,17 +348,24 @@ async def generate_text_with_image(
         else model_name
     )
     image_part = types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
-    config = types.GenerateContentConfig(temperature=0.0)
+    config = types.GenerateContentConfig(
+        temperature=0.0,
+        system_instruction=prompt,
+    )
+    effective_timeout = timeout or await get_system_config_timeout(
+        "gemini_ocr_timeout", _OCR_INVOKE_TIMEOUT
+    )
+    if effective_timeout is not None:
+        config.http_options = types.HttpOptions(timeout=int(effective_timeout * 1000))
 
     async def _call():
         response = await client.aio.models.generate_content(
             model=model,
-            contents=[prompt, image_part],
+            contents=[image_part],
             config=config,
         )
         return response.text or ""
 
-    effective_timeout = timeout or _OCR_INVOKE_TIMEOUT
     text = await _call_with_breaker(_OCR_BREAKER, _call, timeout=effective_timeout)
     log_json(
         _logger,
@@ -373,10 +398,40 @@ class ProtectedLLM:
         )
 
         timeout = kwargs.pop("timeout", None)
+        timeout_config_key = kwargs.pop("timeout_config_key", None)
+        if timeout is None:
+            if timeout_config_key:
+                default_val = (
+                    300.0
+                    if "summary" in timeout_config_key or "ocr" in timeout_config_key
+                    else 30.0
+                )
+                timeout = await get_system_config_timeout(
+                    timeout_config_key, default_val
+                )
+            else:
+                config_key, default_val = _BREAKER_TIMEOUT_CONFIGS.get(
+                    self.breaker.name, (None, _INVOKE_TIMEOUT)
+                )
+                if config_key:
+                    timeout = await get_system_config_timeout(config_key, default_val)
+                else:
+                    timeout = default_val
+
+        if timeout is not None:
+            if config is None:
+                config = types.GenerateContentConfig(
+                    http_options=types.HttpOptions(timeout=int(timeout * 1000))
+                )
+            elif isinstance(config, dict):
+                config = config.copy()
+                config["http_options"] = types.HttpOptions(timeout=int(timeout * 1000))
+            elif isinstance(config, types.GenerateContentConfig):
+                config.http_options = types.HttpOptions(timeout=int(timeout * 1000))
 
         async def _call():
             response = await client.aio.models.generate_content(
-                model=model, contents=prompt, **kwargs
+                model=model, contents=prompt, config=config, **kwargs
             )
             return response.text or ""
 
@@ -401,9 +456,41 @@ class ProtectedLLM:
         )
         log_json(_logger, logging.INFO, "ProtectedLLM stream started", model=model)
 
+        timeout = kwargs.pop("timeout", None)
+        timeout_config_key = kwargs.pop("timeout_config_key", None)
+        if timeout is None:
+            if timeout_config_key:
+                default_val = (
+                    300.0
+                    if "summary" in timeout_config_key or "ocr" in timeout_config_key
+                    else 30.0
+                )
+                timeout = await get_system_config_timeout(
+                    timeout_config_key, default_val
+                )
+            else:
+                config_key, default_val = _BREAKER_TIMEOUT_CONFIGS.get(
+                    self.breaker.name, (None, _INVOKE_TIMEOUT)
+                )
+                if config_key:
+                    timeout = await get_system_config_timeout(config_key, default_val)
+                else:
+                    timeout = default_val
+
+        if timeout is not None:
+            if config is None:
+                config = types.GenerateContentConfig(
+                    http_options=types.HttpOptions(timeout=int(timeout * 1000))
+                )
+            elif isinstance(config, dict):
+                config = config.copy()
+                config["http_options"] = types.HttpOptions(timeout=int(timeout * 1000))
+            elif isinstance(config, types.GenerateContentConfig):
+                config.http_options = types.HttpOptions(timeout=int(timeout * 1000))
+
         async def _get_stream():
             return await client.aio.models.generate_content_stream(
-                model=model, contents=prompt, **kwargs
+                model=model, contents=prompt, config=config, **kwargs
             )
 
         chunk_count = 0

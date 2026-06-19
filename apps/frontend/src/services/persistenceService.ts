@@ -235,17 +235,6 @@ export const PersistenceService = {
     }
   },
 
-  async reprocessWordIndex(bookId: string): Promise<void> {
-    const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/word-index`, {
-      method: 'POST',
-    });
-    if (!response.ok) {
-      if (response.status === 403) {
-        throw new Error("Permission denied: Editor access required");
-      }
-      throw new Error("Failed to start re-indexing");
-    }
-  },
 
   async reprocessSpellCheck(bookId: string): Promise<void> {
     const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/spell-check`, {
@@ -268,6 +257,18 @@ export const PersistenceService = {
         throw new Error("Permission denied: Editor access required");
       }
       throw new Error("Failed to start reprocessing graph");
+    }
+  },
+
+  async reprocessSummary(bookId: string): Promise<void> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/summary`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Admin access required");
+      }
+      throw new Error("Failed to start reprocessing summary");
     }
   },
 

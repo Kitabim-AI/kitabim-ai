@@ -125,13 +125,13 @@ async def test_call_with_breaker_transient_vs_non_transient_logging(caplog):
 
         mock_breaker_call.side_effect = side_effect
 
-        # 1. Test transient error (504 DEADLINE_EXCEEDED) logs as WARNING
-        async def raise_504():
-            raise ValueError("504 DEADLINE_EXCEEDED")
+        # 1. Test transient error (429 TOO_MANY_REQUESTS) logs as WARNING
+        async def raise_429():
+            raise ValueError("429 TOO_MANY_REQUESTS")
 
         caplog.clear()
-        with pytest.raises(ValueError, match="504"):
-            await _call_with_breaker(_TEXT_BREAKER, raise_504)
+        with pytest.raises(ValueError, match="429"):
+            await _call_with_breaker(_TEXT_BREAKER, raise_429)
 
         # Check logs
         transient_logs = [r for r in caplog.records if r.message == "LLM call failed"]
@@ -151,3 +151,195 @@ async def test_call_with_breaker_transient_vs_non_transient_logging(caplog):
         ]
         assert len(non_transient_logs) == 1
         assert non_transient_logs[0].levelno == logging.ERROR
+
+
+@pytest.mark.asyncio
+@patch("app.llm.models._get_text_client")
+@patch("app.llm.models._TEXT_BREAKER.call")
+@patch("app.llm.models._TEXT_LIMITER.wait", new_callable=AsyncMock)
+async def test_protected_llm_timeout_propagation(
+    mock_limiter_wait, mock_breaker_call, mock_get_client
+):
+    # Mock breaker call to just run the function
+    async def side_effect(fn, *args, ignore_on_failure=None, **kwargs):
+        return await fn(*args, **kwargs)
+
+    mock_breaker_call.side_effect = side_effect
+
+    # Mock client and its async methods
+    mock_client = MagicMock()
+    mock_generate_content = AsyncMock()
+    mock_resp = MagicMock()
+    mock_resp.text = "mocked response"
+    mock_generate_content.return_value = mock_resp
+    mock_client.aio.models.generate_content = mock_generate_content
+    mock_get_client.return_value = mock_client
+
+    from app.llm.models import ProtectedLLM, _TEXT_BREAKER
+
+    # Call ainvoke with a timeout
+    llm = ProtectedLLM("gemini-2.0-flash", _TEXT_BREAKER)
+    result = await llm.ainvoke("hello", timeout=45.0)
+
+    assert result == "mocked response"
+    mock_generate_content.assert_called_once()
+    kwargs = mock_generate_content.call_args.kwargs
+    assert "config" in kwargs
+    config = kwargs["config"]
+    assert config is not None
+    assert config.http_options is not None
+    assert config.http_options.timeout == 45000
+
+
+@pytest.mark.asyncio
+@patch("app.llm.models._get_text_client")
+@patch("app.llm.models._stream_with_breaker")
+async def test_protected_llm_astream_timeout_propagation(
+    mock_stream_breaker, mock_get_client
+):
+    mock_chunk = MagicMock()
+    mock_chunk.text = "stream chunk"
+
+    # Mock client and generate_content_stream
+    mock_client = MagicMock()
+    mock_generate_stream = AsyncMock()
+
+    async def mock_stream_func(*args, **kwargs):
+        yield mock_chunk
+
+    mock_generate_stream.return_value = mock_stream_func()
+    mock_client.aio.models.generate_content_stream = mock_generate_stream
+    mock_get_client.return_value = mock_client
+
+    # Mock _stream_with_breaker to actually call the passed fn (which is _get_stream)
+    async def mock_stream_breaker_side_effect(breaker, fn, *args, **kwargs):
+        stream = await fn(*args, **kwargs)
+        async for chunk in stream:
+            yield chunk
+
+    mock_stream_breaker.side_effect = mock_stream_breaker_side_effect
+
+    from app.llm.models import ProtectedLLM, _TEXT_BREAKER
+
+    llm = ProtectedLLM("gemini-2.0-flash", _TEXT_BREAKER)
+    chunks = []
+    async for chunk in llm.astream("hello", timeout=12.5):
+        chunks.append(chunk)
+
+    assert chunks == ["stream chunk"]
+    mock_generate_stream.assert_called_once()
+    kwargs = mock_generate_stream.call_args.kwargs
+    assert "config" in kwargs
+    config = kwargs["config"]
+    assert config.http_options.timeout == 12500
+
+
+@pytest.mark.asyncio
+@patch("app.llm.models._get_ocr_client")
+@patch("app.llm.models._OCR_BREAKER.call")
+@patch("app.llm.models._OCR_LIMITER.wait", new_callable=AsyncMock)
+async def test_generate_text_with_image_timeout_propagation(
+    mock_limiter_wait, mock_breaker_call, mock_get_client
+):
+    async def side_effect(fn, *args, ignore_on_failure=None, **kwargs):
+        return await fn(*args, **kwargs)
+
+    mock_breaker_call.side_effect = side_effect
+
+    mock_client = MagicMock()
+    mock_generate_content = AsyncMock()
+    mock_resp = MagicMock()
+    mock_resp.text = "ocr response"
+    mock_generate_content.return_value = mock_resp
+    mock_client.aio.models.generate_content = mock_generate_content
+    mock_get_client.return_value = mock_client
+
+    from app.llm.models import generate_text_with_image
+
+    result = await generate_text_with_image(
+        "prompt", b"image", "gemini-2.0-flash", timeout=150.0
+    )
+
+    assert result == "ocr response"
+    mock_generate_content.assert_called_once()
+    kwargs = mock_generate_content.call_args.kwargs
+    assert "config" in kwargs
+    config = kwargs["config"]
+    assert config.http_options.timeout == 150000
+    assert config.system_instruction == "prompt"
+    assert "prompt" not in kwargs["contents"]
+
+
+@pytest.mark.asyncio
+@patch("app.llm.models._get_ocr_client")
+@patch("app.llm.models._OCR_BREAKER.call")
+@patch("app.llm.models._OCR_LIMITER.wait", new_callable=AsyncMock)
+@patch("app.llm.models.get_system_config_timeout")
+async def test_generate_text_with_image_timeout_fallback(
+    mock_get_db_timeout, mock_limiter_wait, mock_breaker_call, mock_get_client
+):
+    async def side_effect(fn, *args, ignore_on_failure=None, **kwargs):
+        return await fn(*args, **kwargs)
+
+    mock_breaker_call.side_effect = side_effect
+
+    mock_get_db_timeout.return_value = 180.0
+
+    mock_client = MagicMock()
+    mock_generate_content = AsyncMock()
+    mock_resp = MagicMock()
+    mock_resp.text = "ocr response"
+    mock_generate_content.return_value = mock_resp
+    mock_client.aio.models.generate_content = mock_generate_content
+    mock_get_client.return_value = mock_client
+
+    from app.llm.models import generate_text_with_image
+
+    result = await generate_text_with_image("prompt", b"image", "gemini-2.0-flash")
+
+    assert result == "ocr response"
+    mock_get_db_timeout.assert_called_once_with("gemini_ocr_timeout", 300.0)
+    mock_generate_content.assert_called_once()
+    kwargs = mock_generate_content.call_args.kwargs
+    assert "config" in kwargs
+    config = kwargs["config"]
+    assert config.http_options.timeout == 180000
+    assert config.system_instruction == "prompt"
+    assert "prompt" not in kwargs["contents"]
+
+
+@pytest.mark.asyncio
+@patch("app.llm.models._get_text_client")
+@patch("app.llm.models._TEXT_BREAKER.call")
+@patch("app.llm.models._TEXT_LIMITER.wait", new_callable=AsyncMock)
+@patch("app.llm.models.get_system_config_timeout")
+async def test_protected_llm_timeout_fallback(
+    mock_get_db_timeout, mock_limiter_wait, mock_breaker_call, mock_get_client
+):
+    async def side_effect(fn, *args, ignore_on_failure=None, **kwargs):
+        return await fn(*args, **kwargs)
+
+    mock_breaker_call.side_effect = side_effect
+
+    mock_get_db_timeout.return_value = 45.0
+
+    mock_client = MagicMock()
+    mock_generate_content = AsyncMock()
+    mock_resp = MagicMock()
+    mock_resp.text = "mocked response"
+    mock_generate_content.return_value = mock_resp
+    mock_client.aio.models.generate_content = mock_generate_content
+    mock_get_client.return_value = mock_client
+
+    from app.llm.models import ProtectedLLM, _TEXT_BREAKER
+
+    llm = ProtectedLLM("gemini-2.0-flash", _TEXT_BREAKER)
+    result = await llm.ainvoke("hello")
+
+    assert result == "mocked response"
+    mock_get_db_timeout.assert_called_once_with("gemini_chat_timeout", 30.0)
+    mock_generate_content.assert_called_once()
+    kwargs = mock_generate_content.call_args.kwargs
+    assert "config" in kwargs
+    config = kwargs["config"]
+    assert config.http_options.timeout == 45000

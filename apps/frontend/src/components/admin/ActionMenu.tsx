@@ -1,5 +1,5 @@
 import { Book } from '@shared/types';
-import { BookOpen, BookOpenCheck, Cuboid, Image, Loader2, Network, RotateCcw, ScanText, Scissors, Trash2 } from 'lucide-react';
+import { BookOpen, BookOpenCheck, Cuboid, FileText, Image, Loader2, Network, RotateCcw, ScanText, Scissors, Trash2 } from 'lucide-react';
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { REPROCESS_STEP } from '../../constants/milestones';
@@ -138,6 +138,17 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
           >
             {reprocessingStep === REPROCESS_STEP.GRAPH ? <Loader2 size={16} className="animate-spin" /> : <Network size={16} />}
             <span className="flex-1 text-right">{t('admin.table.reprocess.graph') || 'قايتا گىراف تۈزۈش'}</span>
+          </button>
+        )}
+
+        {isAdmin && (
+          <button
+            onClick={() => { bookActions.handleReprocessStep(book.id, REPROCESS_STEP.SUMMARY); close(); }}
+            disabled={book.pipelineStep === null || reprocessingStep === REPROCESS_STEP.SUMMARY}
+            className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-sky-600 hover:bg-sky-50 disabled:opacity-30 disabled:cursor-not-allowed rounded-xl transition-all active:scale-[0.98]"
+          >
+            {reprocessingStep === REPROCESS_STEP.SUMMARY ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
+            <span className="flex-1 text-right">{t('admin.table.reprocess.summary') || 'قىسقىچە مەزمۇنىنى قايتا ھاسىللاش'}</span>
           </button>
         )}
 
