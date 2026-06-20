@@ -57,6 +57,8 @@ async def test_extract_signals_pronouns(mock_ctx):
             "rewritten_question": rewritten_question,
             "catalog_subtype": None,
             "intent": "passage",
+            "is_composite": False,
+            "sub_questions": None,
         }
 
     handler._llm_analyze_query = mock_analyze
@@ -111,6 +113,8 @@ async def test_extract_signals_volume_shift(mock_ctx):
             "rewritten_question": None,
             "catalog_subtype": None,
             "intent": "passage",
+            "is_composite": False,
+            "sub_questions": None,
         }
 
     handler._llm_analyze_query = mock_analyze
@@ -243,10 +247,16 @@ async def test_execute_path_c_summary_fallback(mock_ctx):
         assert "find_books_by_title" in tools_called
         assert "search_books_by_summary" in tools_called
         assert "get_book_summary" in tools_called
+        assert "search_chunks" in tools_called
 
         # Fallback target book ID is retrieved
         summary_call = next(o for o in observations if o["tool"] == "get_book_summary")
         assert summary_call["args"]["book_ids"] == ["book-456"]
+
+        search_chunks_call = next(
+            o for o in observations if o["tool"] == "search_chunks"
+        )
+        assert search_chunks_call["args"]["book_ids"] == ["book-456"]
 
 
 @pytest.mark.asyncio
@@ -308,3 +318,71 @@ async def test_universal_fallback_trigger(mock_ctx):
 
         # Last search chunk matches fallback book id
         assert observations[-1]["args"]["book_ids"] == ["book-789"]
+
+
+def test_repair_json_unescaped_quotes():
+    from app.services.rag.agent.deterministic_handler import (
+        repair_json_unescaped_quotes,
+    )
+    import json
+
+    input_json = """{
+      "rewritten_question": "لېيىغان بۇلاقتىكى "مۇرات" قانداق پېرسوناژ؟",
+      "intent": "identity",
+      "sub_questions": [
+        {
+          "question": "مۇرات "لېيىغان بۇلاق" رومانىدا كىم؟",
+          "intent": "identity"
+        }
+      ]
+    }"""
+
+    repaired = repair_json_unescaped_quotes(input_json)
+
+    # Assert successfully parsed by json.loads
+    data = json.loads(repaired)
+    assert data["rewritten_question"] == 'لېيىغان بۇلاقتىكى "مۇرات" قانداق پېرسوناژ؟'
+    assert data["sub_questions"][0]["question"] == 'مۇرات "لېيىغان بۇلاق" رومانىدا كىم؟'
+
+
+@pytest.mark.asyncio
+async def test_llm_analyze_query_nested_json(mock_ctx):
+    handler = DeterministicRAGHandler()
+
+    mock_llm = MagicMock()
+    nested_json_res = """```json
+{
+  "is_current_page_query": false,
+  "is_volume_shift": false,
+  "target_volume": null,
+  "needs_rewrite": false,
+  "rewritten_question": null,
+  "catalog_subtype": null,
+  "intent": "identity",
+  "is_composite": true,
+  "sub_questions": [
+    {
+      "question": "لېيىغان بۇلاقتىكى \\"مۇرات\\" قانداق پېرسوناژ؟",
+      "intent": "identity"
+    },
+    {
+      "question": "ئۇ كىم بىلەن توي قىلىدۇ؟",
+      "intent": "relationship"
+    }
+  ]
+}
+```"""
+    mock_llm.ainvoke = AsyncMock(return_value=nested_json_res)
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler.build_text_llm",
+        return_value=mock_llm,
+    ):
+        result = await handler._llm_analyze_query("test query", mock_ctx)
+        assert result["is_composite"] is True
+        assert len(result["sub_questions"]) == 2
+        assert (
+            result["sub_questions"][0]["question"]
+            == 'لېيىغان بۇلاقتىكى "مۇرات" قانداق پېرسوناژ؟'
+        )
+        assert result["sub_questions"][1]["intent"] == "relationship"

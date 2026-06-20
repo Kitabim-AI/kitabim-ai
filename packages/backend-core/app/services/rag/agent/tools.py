@@ -566,10 +566,24 @@ async def _run_get_current_page(ctx: QueryContext) -> dict:
 
 async def _run_find_books_by_title(args: dict, ctx: QueryContext) -> List[dict]:
     question = args.get("question", "")
+    if not hasattr(ctx, "_title_cache"):
+        ctx._title_cache = {}
+    if question in ctx._title_cache:
+        result = ctx._title_cache[question]
+        log_json(
+            logger,
+            logging.INFO,
+            "Agent tool find_books_by_title (cached)",
+            question=question[:120],
+            books=len(result),
+        )
+        return result
+
     books = await find_books_by_title_in_question(
         question, ctx.session, categories=ctx.character_categories or None
     )
     result = books or []
+    ctx._title_cache[question] = result
     log_json(
         logger,
         logging.INFO,

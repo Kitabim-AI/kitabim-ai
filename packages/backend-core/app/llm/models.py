@@ -316,7 +316,7 @@ async def generate_text(prompt: str, model_name: str) -> str:
 
 _BREAKER_TIMEOUT_CONFIGS = {
     "llm_ocr": ("gemini_ocr_timeout", 300.0),
-    "llm_generate": ("gemini_chat_timeout", 30.0),
+    "llm_generate": ("gemini_chat_timeout", 60.0),
     "llm_embed": ("gemini_embed_timeout", 15.0),
 }
 

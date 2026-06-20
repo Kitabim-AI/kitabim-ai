@@ -186,8 +186,23 @@ async def find_books_by_title_in_question(
             sa_text("categories && CAST(:cats AS text[])").bindparams(cats=categories)
         )
 
-    title_result = await session.execute(stmt)
-    rows = title_result.fetchall()
+    # Use request-level cache if session has info dict to prevent duplicate DB queries
+    cache_key = None
+    if hasattr(session, "info") and isinstance(session.info, dict):
+        cat_hash = (
+            hashlib.md5(",".join(sorted(categories)).encode()).hexdigest()
+            if categories
+            else "all"
+        )
+        cache_key = f"find_books_by_title_rows_{cat_hash}"
+
+    if cache_key and cache_key in session.info:
+        rows = session.info[cache_key]
+    else:
+        title_result = await session.execute(stmt)
+        rows = title_result.fetchall()
+        if cache_key is not None:
+            session.info[cache_key] = rows
 
     title_to_books: dict = {}
     for row in rows:

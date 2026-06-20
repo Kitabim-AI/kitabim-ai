@@ -24,9 +24,6 @@ from app.services.rag.agent.handler import (
     _grade_context,
     _extract_used_book_ids,
     _populate_ctx_from_observations,
-    _is_multi_entity_question,
-    _question_mark_count,
-    _llm_split,
 )
 
 logger = logging.getLogger("app.rag.agent.deterministic_handler")
@@ -41,6 +38,23 @@ from app.services.rag.keywords import (
     CATALOG_BOOKS_QUERIES,
     PAGE_QUERY_PATTERNS,
 )
+
+
+def repair_json_unescaped_quotes(json_str: str) -> str:
+    """Repair JSON string values with unescaped internal double quotes."""
+    pattern = (
+        r'"(rewritten_question|question|intent|catalog_subtype)":\s*"(.*)"\s*(,?)\s*$'
+    )
+
+    def escape_internal_quotes(match):
+        key = match.group(1)
+        val = match.group(2)
+        suffix = match.group(3)
+        normalized = val.replace('\\"', '"')
+        escaped = normalized.replace('"', '\\"')
+        return f'"{key}": "{escaped}"{suffix}'
+
+    return re.sub(pattern, escape_internal_quotes, json_str, flags=re.MULTILINE)
 
 
 class DeterministicRAGHandler(QueryHandler):
@@ -84,7 +98,16 @@ Return ONLY valid JSON matching this schema:
   "needs_rewrite": boolean,         // True if the query has unresolved pronouns/coreferences referring to history (e.g. "who wrote it?", "what is his age?", "ئۇ كىم؟")
   "rewritten_question": string | null, // If needs_rewrite is true, rewrite the question to resolve all pronouns/references using chat history to make it self-contained in Uyghur/English. If needs_rewrite is false, return null.
   "catalog_subtype": "author_of" | "books_by" | "general" | null, // Use "author_of" if asking who wrote a book, "books_by" if asking what books an author wrote, "general" for other catalog/library-wide queries (like "what books do you have"), or null if this is NOT a catalog query.
-  "intent": "catalog" | "identity" | "summary" | "relationship" | "passage"
+  "intent": "catalog" | "identity" | "summary" | "relationship" | "passage",
+  "is_composite": boolean,          // True if the query contains multiple distinct questions or requests that should be handled separately (e.g. "Who wrote X and what is it about?").
+  "sub_questions": Array<{{         // If is_composite is true, return each sub-question with its own signals. If is_composite is false, return null.
+    "question": string,             // Self-contained sub-question text (pronouns resolved using history)
+    "intent": "catalog" | "identity" | "summary" | "relationship" | "passage",
+    "is_current_page_query": boolean,
+    "is_volume_shift": boolean,
+    "target_volume": integer | null,
+    "catalog_subtype": "author_of" | "books_by" | "general" | null
+  }}> | null
 }}
 
 Intents:
@@ -99,9 +122,17 @@ Intents:
             prompt,
             config=types.GenerateContentConfig(response_mime_type="application/json"),
         )
-        m = re.search(r"\{.*?\}", res_text, re.DOTALL)
+        m = re.search(r"\{.*\}", res_text, re.DOTALL)
         if m:
-            return json.loads(m.group())
+            repaired_json = repair_json_unescaped_quotes(m.group())
+            result = json.loads(repaired_json)
+            log_json(
+                logger,
+                logging.INFO,
+                "Query analyzer result received",
+                result=result,
+            )
+            return result
         raise ValueError("LLM response did not contain a JSON block")
 
     async def extract_signals(self, question: str, ctx: QueryContext) -> dict:
@@ -140,8 +171,12 @@ Intents:
             rewritten_question = llm_res.get("rewritten_question")
             catalog_subtype = llm_res.get("catalog_subtype") or "general"
             intent = llm_res.get("intent", "passage")
+            is_composite = llm_res.get("is_composite", False)
+            sub_questions = llm_res.get("sub_questions")
         except Exception as exc:
             rewritten_question = None
+            is_composite = False
+            sub_questions = None
             log_json(
                 logger,
                 logging.WARNING,
@@ -221,6 +256,10 @@ Intents:
             "graph_available": graph_available,
             "intent": intent,
             "rewritten_question": rewritten_question if needs_rewrite else None,
+            "is_composite": is_composite,
+            "sub_questions": sub_questions,
+            "matched_books": matched_books,
+            "matched_author_books": matched_author_books,
         }
 
     async def classify_intent(
@@ -282,9 +321,10 @@ Return ONLY valid JSON matching this schema:
                     response_mime_type="application/json"
                 ),
             )
-            m = re.search(r"\{.*?\}", res_text, re.DOTALL)
+            m = re.search(r"\{.*\}", res_text, re.DOTALL)
             if m:
-                data = json.loads(m.group())
+                repaired_json = repair_json_unescaped_quotes(m.group())
+                data = json.loads(repaired_json)
                 intent = data.get("intent", "passage").strip().lower()
                 if intent in {
                     "catalog",
@@ -303,6 +343,64 @@ Return ONLY valid JSON matching this schema:
                 error=str(exc),
             )
         return "passage"
+
+    async def _build_sub_signals_from_llm(
+        self, sub_q_data: dict, ctx: QueryContext
+    ) -> dict:
+        """Build signals for a sub-question from LLM-extracted fields + DB lookups.
+
+        Avoids a redundant _llm_analyze_query call per sub-question by reusing the
+        per-item signals already returned by the composite question's first LLM call.
+        DB lookups (title/author) are still run per sub-question since they can't
+        be resolved inside the LLM.
+        """
+        sub_q = sub_q_data["question"]
+
+        matched_books = await find_books_by_title_in_db(sub_q, ctx)
+        has_title = bool(matched_books)
+
+        books_repo = BooksRepository(ctx.session)
+        matched_author_books = await books_repo.find_books_by_author_in_question(
+            sub_q, categories=ctx.character_categories or None
+        )
+        has_author = bool(matched_author_books)
+
+        in_reader = ctx.current_page is not None
+        has_current_book = ctx.book_id is not None and not ctx.is_global
+        has_context_books = len(ctx.context_book_ids) > 0
+        is_global = ctx.is_global
+        graph_available = (
+            getattr(ctx.book, "graph_milestone", None) == "complete"
+            if ctx.book
+            else False
+        )
+
+        is_current_page_query = sub_q_data.get("is_current_page_query", False)
+        is_volume_shift = sub_q_data.get("is_volume_shift", False)
+        target_volume = sub_q_data.get("target_volume")
+        catalog_subtype = sub_q_data.get("catalog_subtype") or "general"
+        intent = sub_q_data.get("intent", "passage")
+
+        return {
+            "top_intent": "current_page" if is_current_page_query else "content_search",
+            "catalog_subtype": catalog_subtype,
+            "has_title": has_title,
+            "has_author": has_author,
+            "is_volume_shift": is_volume_shift,
+            "target_volume": target_volume,
+            "needs_rewrite": False,
+            "in_reader": in_reader,
+            "has_current_book": has_current_book,
+            "has_context_books": has_context_books,
+            "is_global": is_global,
+            "graph_available": graph_available,
+            "intent": intent,
+            "rewritten_question": None,
+            "is_composite": False,
+            "sub_questions": None,
+            "matched_books": matched_books,
+            "matched_author_books": matched_author_books,
+        }
 
     async def execute_path(
         self,
@@ -358,16 +456,42 @@ Return ONLY valid JSON matching this schema:
 
         # --- Path C: Named Title ---
         if signals.get("has_title"):
-            async for ev in self._run_tool_and_yield(
-                "find_books_by_title",
-                {"question": question},
-                ctx,
-                observations,
-                result_holder,
-            ):
-                yield ev
-            title_res = result_holder["result"]
-            book_ids = title_res.get("book_ids", [])
+            matched_books = signals.get("matched_books", [])
+            matched_book_ids = (
+                [str(b["id"]) for b in matched_books]
+                if isinstance(matched_books, list)
+                else []
+            )
+
+            # Check if we already ran find_books_by_title and got the same book IDs in this request
+            prev_title_call = next(
+                (
+                    obs
+                    for obs in observations
+                    if obs.get("tool") == "find_books_by_title"
+                    and set(
+                        str(bid) for bid in obs.get("result", {}).get("book_ids", [])
+                    )
+                    == set(matched_book_ids)
+                ),
+                None,
+            )
+
+            if prev_title_call:
+                title_res = prev_title_call["result"]
+                result_holder["result"] = title_res
+                book_ids = title_res.get("book_ids", [])
+            else:
+                async for ev in self._run_tool_and_yield(
+                    "find_books_by_title",
+                    {"question": question},
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
+                title_res = result_holder["result"]
+                book_ids = title_res.get("book_ids", [])
 
             # Fallback for summary lookups
             if (intent == "summary" or intent == "identity") and not book_ids:
@@ -386,6 +510,14 @@ Return ONLY valid JSON matching this schema:
                 async for ev in self._run_tool_and_yield(
                     "get_book_summary",
                     {"book_ids": book_ids[:5]},
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
+                async for ev in self._run_tool_and_yield(
+                    "search_chunks",
+                    {"query": question, "book_ids": book_ids},
                     ctx,
                     observations,
                     result_holder,
@@ -442,17 +574,44 @@ Return ONLY valid JSON matching this schema:
 
         # --- Path D: Named Author (no title) ---
         if signals.get("has_author") and not signals.get("has_title"):
-            async for ev in self._run_tool_and_yield(
-                "get_books_by_author",
-                {"question": question},
-                ctx,
-                observations,
-                result_holder,
-            ):
-                yield ev
-            author_res = result_holder["result"]
-            books_list = author_res.get("books", [])
-            author_book_ids = [b["id"] for b in books_list]
+            matched_author_books = signals.get("matched_author_books", [])
+            matched_author_book_ids = (
+                [str(b.id) for b in matched_author_books]
+                if isinstance(matched_author_books, list)
+                else []
+            )
+
+            # Check if we already ran get_books_by_author and got the same book IDs in this request
+            prev_author_call = next(
+                (
+                    obs
+                    for obs in observations
+                    if obs.get("tool") == "get_books_by_author"
+                    and set(
+                        str(b["id"]) for b in obs.get("result", {}).get("books", [])
+                    )
+                    == set(matched_author_book_ids)
+                ),
+                None,
+            )
+
+            if prev_author_call:
+                author_res = prev_author_call["result"]
+                result_holder["result"] = author_res
+                books_list = author_res.get("books", [])
+                author_book_ids = [b["id"] for b in books_list]
+            else:
+                async for ev in self._run_tool_and_yield(
+                    "get_books_by_author",
+                    {"question": question},
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
+                author_res = result_holder["result"]
+                books_list = author_res.get("books", [])
+                author_book_ids = [b["id"] for b in books_list]
             async for ev in self._run_tool_and_yield(
                 "search_chunks",
                 {"query": question, "book_ids": author_book_ids},
@@ -582,6 +741,14 @@ Return ONLY valid JSON matching this schema:
                     result_holder,
                 ):
                     yield ev
+                async for ev in self._run_tool_and_yield(
+                    "search_chunks",
+                    {"query": question, "book_ids": context_book_ids},
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
             elif intent == "relationship":
                 if signals.get("graph_available"):
                     async for ev in self._run_tool_and_yield(
@@ -657,6 +824,14 @@ Return ONLY valid JSON matching this schema:
             async for ev in self._run_tool_and_yield(
                 "get_book_summary",
                 {"book_ids": top_ids[:5]},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
+            async for ev in self._run_tool_and_yield(
+                "search_chunks",
+                {"query": question, "book_ids": top_ids},
                 ctx,
                 observations,
                 result_holder,
@@ -824,6 +999,9 @@ Return ONLY valid JSON matching this schema:
 
         # 2. Stage 2: Coreference Resolution
         needs_rewrite = signals_orig.get("needs_rewrite", False)
+        is_composite = signals_orig.get("is_composite", False)
+        sub_questions = signals_orig.get("sub_questions")
+
         llm_calls = 0
         if "intent" in signals_orig:
             llm_calls += 1
@@ -865,29 +1043,33 @@ Return ONLY valid JSON matching this schema:
                     yield ev
                 llm_calls += 1
 
-        # Update processed question
-        question_to_process = ctx.enriched_question or ctx.question
-
         # 3. Query Decomposition (splitting multi-questions)
-        sub_questions = [question_to_process]
-        if _question_mark_count(question_to_process) > 1 or _is_multi_entity_question(
-            question_to_process
-        ):
-            sub_questions = await _llm_split(question_to_process, ctx.agent_model)
-            llm_calls += 1
-            if len(sub_questions) > 1:
-                yield {"type": "decompose", "count": len(sub_questions)}
+        if is_composite and isinstance(sub_questions, list) and len(sub_questions) > 1:
+            yield {"type": "decompose", "count": len(sub_questions)}
+        else:
+            # Not composite or no sub_questions returned, use single question path
+            question_to_process = ctx.enriched_question or ctx.question
+            sub_questions = [question_to_process]
 
         # 4. Stage 3 & 4: Intent Classifier and Execution Router per sub-question
-        for sub_q in sub_questions:
-            if len(sub_questions) == 1 and sub_q == question:
-                sub_signals = signals_orig.copy()
+        sub_question_texts: list[str] = []
+        for sub_q_item in sub_questions:
+            if isinstance(sub_q_item, dict):
+                # Optimized path: signals already extracted by the first LLM call.
+                # Only DB lookups (title/author) are re-run per sub-question.
+                sub_q = sub_q_item["question"]
+                sub_signals = await self._build_sub_signals_from_llm(sub_q_item, ctx)
             else:
-                # Extract sub-question signals (needs_rewrite is False here)
-                sub_signals = await self.extract_signals(sub_q, ctx)
-                sub_signals["needs_rewrite"] = False
-                if "intent" in sub_signals:
-                    llm_calls += 1
+                sub_q = sub_q_item
+                if len(sub_questions) == 1 and sub_q == question:
+                    sub_signals = signals_orig.copy()
+                else:
+                    sub_signals = await self.extract_signals(sub_q, ctx)
+                    sub_signals["needs_rewrite"] = False
+                    if "intent" in sub_signals:
+                        llm_calls += 1
+
+            sub_question_texts.append(sub_q)
 
             # Classify sub-question intent
             sub_intent = await self.classify_intent(sub_signals, sub_q, ctx)
@@ -917,7 +1099,7 @@ Return ONLY valid JSON matching this schema:
 
         yield {
             "type": "result",
-            "sub_questions": sub_questions,
+            "sub_questions": sub_question_texts,
             "observations": observations,
             "llm_calls": llm_calls,
             "graded_context": graded_context,
@@ -1038,11 +1220,18 @@ async def find_books_by_title_in_db(question: str, ctx: QueryContext) -> list[di
     """Helper to synchronously trigger title checks by invoking find_books_by_title_in_question."""
     from app.services.rag.retrieval import find_books_by_title_in_question
 
+    if not hasattr(ctx, "_title_cache"):
+        ctx._title_cache = {}
+    if question in ctx._title_cache:
+        return ctx._title_cache[question]
+
     try:
         books = await find_books_by_title_in_question(
             question, ctx.session, categories=ctx.character_categories or None
         )
-        return books or []
+        result = books or []
+        ctx._title_cache[question] = result
+        return result
     except Exception as exc:
         log_json(
             logger,

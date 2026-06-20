@@ -162,9 +162,9 @@ export const AgentThinkingSteps: React.FC<AgentThinkingStepsProps> = ({ steps, f
             >
               {stepIcon(step)}
             </span>
-            <span className="text-[#0369a1] font-normal" style={{ fontSize: `${textSize}px` }}>
+            <span className="text-[#0369a1] font-normal uyghur-text" style={{ fontSize: `${textSize}px` }}>
               {label}{isActive ? '...' : ''}
-              {sublabel && <span className="opacity-60 mx-1">— {sublabel}</span>}
+              {sublabel && <span className="opacity-60 mx-1 uyghur-text">— {sublabel}</span>}
             </span>
           </div>
         );

@@ -337,7 +337,7 @@ async def test_protected_llm_timeout_fallback(
     result = await llm.ainvoke("hello")
 
     assert result == "mocked response"
-    mock_get_db_timeout.assert_called_once_with("gemini_chat_timeout", 30.0)
+    mock_get_db_timeout.assert_called_once_with("gemini_chat_timeout", 60.0)
     mock_generate_content.assert_called_once()
     kwargs = mock_generate_content.call_args.kwargs
     assert "config" in kwargs
