@@ -301,6 +301,7 @@
     "questions": {
       "title": "Questions",
       "subtitle": "All questions asked through the chat, newest first",
+      "searchPlaceholder": "Search questions...",
       "total": "{{count}} questions total",
       "colQuestion": "Question",
       "colScope": "Scope",

@@ -171,7 +171,7 @@ export function AdminQuestions() {
             type="text"
             value={localSearch}
             onChange={(e) => setLocalSearch(e.target.value)}
-            placeholder={t('library.searchPlaceholder')}
+            placeholder={t('admin.questions.searchPlaceholder')}
             className="w-full pr-12 pl-12 py-2.5 md:py-3 bg-white border-2 border-[#0369a1]/10 rounded-2xl outline-none focus:border-[#0369a1] transition-all uyghur-text shadow-sm text-base"
           />
           {localSearch && (
@@ -213,11 +213,11 @@ export function AdminQuestions() {
             <table className="w-full text-right lg:min-w-[900px]" dir="rtl">
               <thead>
                 <tr className="bg-[#0369a1]/5 border-b border-[#0369a1]/10 text-[12px] md:text-[14px] lg:text-[16px] font-normal text-[#0369a1] uppercase">
-                  <th className="px-3 md:px-6 py-3 md:py-5 text-right font-normal w-[45%] md:w-[50%]">{t('admin.questions.colQuestion')}</th>
-                  <th className="px-3 md:px-6 py-3 md:py-5 text-center font-normal w-[15%]">{t('admin.questions.colScope')}</th>
-                  <th className="px-3 md:px-6 py-3 md:py-5 text-center font-normal w-[12%]">{t('admin.questions.colFeedback')}</th>
-                  <th className="px-3 md:px-6 py-3 md:py-5 text-center font-normal w-[18%]">{t('admin.questions.colDate')}</th>
-                  <th className="px-3 md:px-6 py-3 md:py-5 text-left font-normal w-[10%]">{t('admin.questions.colShowOnHome')}</th>
+                  <th className="px-3 md:px-6 py-3 md:py-5 text-right font-normal w-[80%] lg:w-[50%]">{t('admin.questions.colQuestion')}</th>
+                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal w-[15%]">{t('admin.questions.colScope')}</th>
+                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal w-[12%]">{t('admin.questions.colFeedback')}</th>
+                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal w-[18%]">{t('admin.questions.colDate')}</th>
+                  <th className="px-3 md:px-6 py-3 md:py-5 text-left font-normal w-[20%] lg:w-[10%]">{t('admin.questions.colShowOnHome')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#75C5F0]/5">
@@ -241,7 +241,7 @@ export function AdminQuestions() {
                     </td>
 
                     {/* Scope: global vs book */}
-                    <td className="px-3 md:px-6 py-4 md:py-6 text-center">
+                    <td className="hidden lg:table-cell px-3 md:px-6 py-4 md:py-6 text-center">
                       <span
                         className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] md:text-[12px] font-medium border shadow-sm ${
                           q.isGlobal
@@ -256,7 +256,7 @@ export function AdminQuestions() {
                     </td>
 
                     {/* User feedback */}
-                    <td className="px-3 md:px-6 py-4 md:py-6 text-center text-[15px] md:text-[16px]">
+                    <td className="hidden lg:table-cell px-3 md:px-6 py-4 md:py-6 text-center text-[15px] md:text-[16px]">
                       {q.userFeedback === 'positive' ? (
                         <span title="Positive" className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 shadow-sm">👍</span>
                       ) : q.userFeedback === 'negative' ? (
@@ -267,7 +267,7 @@ export function AdminQuestions() {
                     </td>
 
                     {/* Date */}
-                    <td className="px-3 md:px-6 py-4 md:py-6 text-center text-xs md:text-sm text-slate-500 font-normal whitespace-nowrap">
+                    <td className="hidden lg:table-cell px-3 md:px-6 py-4 md:py-6 text-center text-xs md:text-sm text-slate-500 font-normal whitespace-nowrap">
                       {formatDate(q.ts)}
                     </td>
 

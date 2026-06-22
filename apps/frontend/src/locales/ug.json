@@ -303,6 +303,7 @@
     "questions": {
       "title": "سوئاللار",
       "subtitle": "سورالغان سوئاللار",
+      "searchPlaceholder": "سوئال ئىزدەش...",
       "total": "جەمئىي {{count}} سوئال",
       "colQuestion": "سوئال",
       "colScope": "دائىرىسى",

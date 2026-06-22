@@ -19,11 +19,20 @@ export const QuestionRotator: React.FC<QuestionRotatorProps> = ({
   const [visible, setVisible] = useState(true);
 
   useEffect(() => {
+    const shuffleArray = (arr: string[]) => {
+      const shuffled = [...arr];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      return shuffled;
+    };
+
     PersistenceService.getFeaturedQuestions(20).then((featured) => {
       if (featured.length > 0) {
-        setQuestions(featured);
+        setQuestions(shuffleArray(featured));
       } else {
-        PersistenceService.getRecentQuestions(10).then(setQuestions);
+        PersistenceService.getRecentQuestions(10).then((recent) => setQuestions(shuffleArray(recent)));
       }
     });
   }, []);
