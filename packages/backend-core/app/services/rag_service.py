@@ -214,6 +214,7 @@ class RAGService:
                 eval_status="skipped",
                 answer=answer,
                 retrieved_context=ctx.graded_context,
+                is_first_turn=not bool(ctx.history),
             )
             await ctx.session.commit()
 

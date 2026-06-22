@@ -10,9 +10,12 @@ async def test_ocr_page_with_gemini_success():
     mock_pix.tobytes.return_value = b"image_data"
     mock_page.get_pixmap.return_value = mock_pix
 
-    with patch(
-        "app.services.ocr_service.generate_text_with_image", new_callable=AsyncMock
-    ) as mock_gen, patch("app.services.ocr_service.clean_uyghur_text") as mock_clean:
+    with (
+        patch(
+            "app.services.ocr_service.generate_text_with_image", new_callable=AsyncMock
+        ) as mock_gen,
+        patch("app.services.ocr_service.clean_uyghur_text") as mock_clean,
+    ):
         mock_gen.return_value = "raw text"
         mock_clean.return_value = "clean text"
 
@@ -30,11 +33,15 @@ async def test_ocr_page_with_gemini_retry():
     mock_pix.tobytes.return_value = b"image_data"
     mock_page.get_pixmap.return_value = mock_pix
 
-    with patch(
-        "app.services.ocr_service.generate_text_with_image", new_callable=AsyncMock
-    ) as mock_gen, patch("app.services.ocr_service.settings") as mock_settings, patch(
-        "app.services.ocr_service.asyncio.sleep", new_callable=AsyncMock
-    ) as mock_sleep:
+    with (
+        patch(
+            "app.services.ocr_service.generate_text_with_image", new_callable=AsyncMock
+        ) as mock_gen,
+        patch("app.services.ocr_service.settings") as mock_settings,
+        patch(
+            "app.services.ocr_service.asyncio.sleep", new_callable=AsyncMock
+        ) as mock_sleep,
+    ):
         mock_settings.ocr_max_retries = 2
         # First call fails with 429, second succeeds
         mock_gen.side_effect = [Exception("429 Resource Exhausted"), "success text"]

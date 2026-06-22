@@ -44,22 +44,23 @@ async def test_ocr_job_success():
 
     mock_session.execute.side_effect = mock_execute
 
-    with patch("app.db.session.async_session_factory") as mock_session_factory, patch(
-        "services.worker.jobs.ocr_job.SystemConfigsRepository.get_value",
-        new_callable=AsyncMock,
-    ) as mock_get_value, patch(
-        "app.utils.redis_lock.MultiPageLock"
-    ) as mock_lock_cls, patch(
-        "services.worker.jobs.ocr_job.fitz.open"
-    ) as mock_fitz_open, patch(
-        "services.worker.jobs.ocr_job.settings"
-    ) as mock_settings, patch(
-        "services.worker.jobs.ocr_job.storage"
-    ) as mock_storage, patch(
-        "services.worker.jobs.ocr_job.ocr_page_with_gemini", new_callable=AsyncMock
-    ) as mock_ocr_gemini, patch(
-        "services.worker.jobs.ocr_job.BookMilestoneService.update_book_milestone_for_step",
-        new_callable=AsyncMock,
+    with (
+        patch("app.db.session.async_session_factory") as mock_session_factory,
+        patch(
+            "services.worker.jobs.ocr_job.SystemConfigsRepository.get_value",
+            new_callable=AsyncMock,
+        ) as mock_get_value,
+        patch("app.utils.redis_lock.MultiPageLock") as mock_lock_cls,
+        patch("services.worker.jobs.ocr_job.fitz.open") as mock_fitz_open,
+        patch("services.worker.jobs.ocr_job.settings") as mock_settings,
+        patch("services.worker.jobs.ocr_job.storage") as mock_storage,
+        patch(
+            "services.worker.jobs.ocr_job.ocr_page_with_gemini", new_callable=AsyncMock
+        ) as mock_ocr_gemini,
+        patch(
+            "services.worker.jobs.ocr_job.BookMilestoneService.update_book_milestone_for_step",
+            new_callable=AsyncMock,
+        ),
     ):
         mock_session_factory.return_value.__aenter__.return_value = mock_session
 
@@ -148,22 +149,23 @@ async def test_ocr_job_failure_retry():
 
     mock_session.execute.side_effect = mock_execute
 
-    with patch("app.db.session.async_session_factory") as mock_session_factory, patch(
-        "services.worker.jobs.ocr_job.SystemConfigsRepository.get_value",
-        new_callable=AsyncMock,
-    ) as mock_get_value, patch(
-        "app.utils.redis_lock.MultiPageLock"
-    ) as mock_lock_cls, patch(
-        "services.worker.jobs.ocr_job.fitz.open"
-    ) as mock_fitz_open, patch(
-        "services.worker.jobs.ocr_job.settings"
-    ) as mock_settings, patch(
-        "services.worker.jobs.ocr_job.storage"
-    ) as mock_storage, patch(
-        "services.worker.jobs.ocr_job.ocr_page_with_gemini", new_callable=AsyncMock
-    ) as mock_ocr_gemini, patch(
-        "services.worker.jobs.ocr_job.BookMilestoneService.update_book_milestone_for_step",
-        new_callable=AsyncMock,
+    with (
+        patch("app.db.session.async_session_factory") as mock_session_factory,
+        patch(
+            "services.worker.jobs.ocr_job.SystemConfigsRepository.get_value",
+            new_callable=AsyncMock,
+        ) as mock_get_value,
+        patch("app.utils.redis_lock.MultiPageLock") as mock_lock_cls,
+        patch("services.worker.jobs.ocr_job.fitz.open") as mock_fitz_open,
+        patch("services.worker.jobs.ocr_job.settings") as mock_settings,
+        patch("services.worker.jobs.ocr_job.storage") as mock_storage,
+        patch(
+            "services.worker.jobs.ocr_job.ocr_page_with_gemini", new_callable=AsyncMock
+        ) as mock_ocr_gemini,
+        patch(
+            "services.worker.jobs.ocr_job.BookMilestoneService.update_book_milestone_for_step",
+            new_callable=AsyncMock,
+        ),
     ):
         mock_session_factory.return_value.__aenter__.return_value = mock_session
 
@@ -247,22 +249,23 @@ async def test_ocr_job_failure_exhausted_skip():
 
     mock_session.execute.side_effect = mock_execute
 
-    with patch("app.db.session.async_session_factory") as mock_session_factory, patch(
-        "services.worker.jobs.ocr_job.SystemConfigsRepository.get_value",
-        new_callable=AsyncMock,
-    ) as mock_get_value, patch(
-        "app.utils.redis_lock.MultiPageLock"
-    ) as mock_lock_cls, patch(
-        "services.worker.jobs.ocr_job.fitz.open"
-    ) as mock_fitz_open, patch(
-        "services.worker.jobs.ocr_job.settings"
-    ) as mock_settings, patch(
-        "services.worker.jobs.ocr_job.storage"
-    ) as mock_storage, patch(
-        "services.worker.jobs.ocr_job.ocr_page_with_gemini", new_callable=AsyncMock
-    ) as mock_ocr_gemini, patch(
-        "services.worker.jobs.ocr_job.BookMilestoneService.update_book_milestone_for_step",
-        new_callable=AsyncMock,
+    with (
+        patch("app.db.session.async_session_factory") as mock_session_factory,
+        patch(
+            "services.worker.jobs.ocr_job.SystemConfigsRepository.get_value",
+            new_callable=AsyncMock,
+        ) as mock_get_value,
+        patch("app.utils.redis_lock.MultiPageLock") as mock_lock_cls,
+        patch("services.worker.jobs.ocr_job.fitz.open") as mock_fitz_open,
+        patch("services.worker.jobs.ocr_job.settings") as mock_settings,
+        patch("services.worker.jobs.ocr_job.storage") as mock_storage,
+        patch(
+            "services.worker.jobs.ocr_job.ocr_page_with_gemini", new_callable=AsyncMock
+        ) as mock_ocr_gemini,
+        patch(
+            "services.worker.jobs.ocr_job.BookMilestoneService.update_book_milestone_for_step",
+            new_callable=AsyncMock,
+        ),
     ):
         mock_session_factory.return_value.__aenter__.return_value = mock_session
 

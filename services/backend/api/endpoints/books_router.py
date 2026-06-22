@@ -781,7 +781,7 @@ async def get_top_categories(
         UNNEST(categories) AS category
         WHERE {where_clause}
         GROUP BY clean_category
-        ORDER BY {order_by.replace('category', 'clean_category')}
+        ORDER BY {order_by.replace("category", "clean_category")}
         LIMIT :limit
     """)
 

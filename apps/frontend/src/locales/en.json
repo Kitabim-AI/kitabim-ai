@@ -81,7 +81,9 @@
     "footer": {
       "text": "Uyghur Electronic Library - Combining Knowledge and Culture with Artificial Intelligence",
       "copyright": "All Rights Reserved",
-      "contactUs": "Contact Us"
+      "contactUs": "Contact Us",
+      "donate": "Donate",
+      "sponsors": "Sponsors:"
     }
   },
   "nav": {
@@ -103,7 +105,8 @@
     "totalBooks": "books",
     "pressEnterToChat": "No books found — press Enter to ask the assistant",
     "pressReturnToChat": "No books found — press Return to ask the assistant",
-    "tapToChat": "No books found — tap the search icon to ask the assistant"
+    "tapToChat": "No books found — tap the search icon to ask the assistant",
+    "recentQuestions": "Recently answered questions"
   },
   "library": {
     "title": "Public Library",
@@ -129,7 +132,7 @@
       "ocr": "OCR",
       "chunking": "Chunking",
       "embedding": "Embedding",
-"spell_check": "Spell check",
+      "spell_check": "Spell check",
       "ready": "Ready",
       "idle": "Waiting",
       "running": "Running",
@@ -166,6 +169,8 @@
     "inputPlaceholderBook": "Type your question...",
     "inputPlaceholderWithLimit": "Type your question... ({{usage}}/{{limit}} used)",
     "limitReached": "Daily chat limit reached. Please try again tomorrow.",
+    "invalidLanguage": "Please write your question in Uyghur.",
+    "textTooLong": "Your question is too long. The maximum length is 500 characters.",
     "usageInfo": "Messages used: {{usage}} of {{limit}}",
     "referenceTitle": "Reference Content",
     "bookSummary": "Book Summary",
@@ -242,6 +247,7 @@
     "statsLabel": "Statistics",
     "configLabel": "Settings",
     "contactsLabel": "Contacts",
+    "questionsLabel": "Questions",
     "rulesLabel": "Auto-Correction",
     "dictionaryLabel": "Dictionary",
     "systemConfigLabel": "System Config",
@@ -292,12 +298,28 @@
       "noSubmissions": "No contact submissions yet",
       "error": "Failed to load submissions"
     },
+    "questions": {
+      "title": "Questions",
+      "subtitle": "All questions asked through the chat, newest first",
+      "total": "{{count}} questions total",
+      "colQuestion": "Question",
+      "colScope": "Scope",
+      "colFeedback": "Feedback",
+      "colDate": "Date",
+      "colShowOnHome": "Show on Home",
+      "scopeGlobal": "Global",
+      "scopeBook": "Book",
+      "showOnHome": "Show on home page",
+      "hideFromHome": "Hide from home page",
+      "empty": "No questions yet",
+      "error": "Failed to load questions"
+    },
     "pipeline": {
       "ocr": "OCR",
       "chunking": "Chunking",
       "embedding": "Vector Indices",
       "summary": "AI Summary",
-"spellCheck": "Spell check",
+      "spellCheck": "Spell check",
       "graph": "Knowledge Graph"
     },
     "table": {
@@ -321,7 +343,7 @@
         "ocr": "Full OCR Reprocess",
         "chunking": "Reprocess Chunking",
         "embedding": "Reprocess Embedding",
-"spell_check": "Reprocess Spell Check",
+        "spell_check": "Reprocess Spell Check",
         "graph": "Reprocess Knowledge Graph",
         "summary": "Rebuild AI Summary"
       },
@@ -604,7 +626,7 @@
     "reprocessEmbedding": {
       "title": "Reprocess Embedding"
     },
-"reprocessSpellCheck": {
+    "reprocessSpellCheck": {
       "title": "Reprocess Spell Check"
     },
     "reprocessGraph": {
@@ -623,7 +645,7 @@
       "embedding": {
         "message": "Are you sure you want to reprocess all pages and chunks from the Embedding step?"
       },
-"spell-check": {
+      "spell-check": {
         "message": "Are you sure you want to re-run Spell Check?"
       },
       "graph": {

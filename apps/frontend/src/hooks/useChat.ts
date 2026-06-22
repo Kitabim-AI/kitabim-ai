@@ -1,6 +1,7 @@
 import { Book, Message } from '@shared/types';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DEFAULT_CHARACTER_ID } from '../constants/characters';
+import { useI18n } from '../i18n/I18nContext';
 import { chatWithBookStream, getChatUsage, submitChatFeedback } from '../services/geminiService';
 import { useAuth } from './useAuth';
 
@@ -17,6 +18,7 @@ export interface AgentStep {
 
 export const useChat = (view: string, selectedBook: Book | null, currentPage: number | null) => {
   const { isAuthenticated } = useAuth();
+  const { t } = useI18n();
   const [selectedCharacterId, setSelectedCharacterId] = useState<string>(DEFAULT_CHARACTER_ID);
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [chatInput, setChatInput] = useState('');
@@ -144,6 +146,28 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     if (!chatInput.trim()) return;
     if (view !== 'global-chat' && !selectedBook) return;
     if (usageStatus?.hasReachedLimit) return;
+
+    const trimmedInput = chatInput.trim();
+    if (trimmedInput.length > 500) {
+      setChatMessages(prev => [
+        ...prev,
+        { role: 'user', text: chatInput },
+        { role: 'model', text: t('chat.textTooLong'), characterId: selectedCharacterId }
+      ]);
+      setChatInput('');
+      return;
+    }
+
+    const hasArabicScript = /[\u0600-\u06FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(trimmedInput);
+    if (!hasArabicScript) {
+      setChatMessages(prev => [
+        ...prev,
+        { role: 'user', text: chatInput },
+        { role: 'model', text: t('chat.invalidLanguage'), characterId: selectedCharacterId }
+      ]);
+      setChatInput('');
+      return;
+    }
 
     const userMsg: Message = { role: 'user', text: chatInput };
     setChatMessages(prev => [...prev, userMsg]);

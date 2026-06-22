@@ -14,6 +14,7 @@ from . import (
     dictionary_router,
     share_router,
     cache_router,
+    questions_router,
 )
 
 __all__ = [
@@ -30,4 +31,5 @@ __all__ = [
     "dictionary_router",
     "share_router",
     "cache_router",
+    "questions_router",
 ]

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import List, Literal, Optional, Dict
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 def to_camel(string: str) -> str:
@@ -117,6 +117,21 @@ class ChatRequest(BaseModel):
         str
     ] = []  # API: contextBookIds — book IDs from the previous response, sent by frontend
 
+    @field_validator("question")
+    @classmethod
+    def validate_question(cls, v: str) -> str:
+        # 1. Enforce length limit
+        if len(v) > 500:
+            raise ValueError("Question is too long (maximum 500 characters)")
+
+        # 2. Enforce Uyghur/Arabic script check
+        import re
+
+        if not re.search(r"[\u0600-\u06FF\uFB50-\uFDFF\uFE70-\uFEFF]", v):
+            raise ValueError("Question must be in Uyghur (Arabic script)")
+
+        return v
+
 
 class ChatResponse(BaseModel):
     answer: str
@@ -167,3 +182,47 @@ class ContactSubmissionAdmin(BaseModel):
     reviewed_by: Optional[str] = None  # DB: reviewed_by, API: reviewedBy
     reviewed_at: Optional[datetime] = None  # DB: reviewed_at, API: reviewedAt
     created_at: datetime  # DB: created_at, API: createdAt
+
+
+class RagQuestionAdmin(BaseModel):
+    """Admin view of a single RAG evaluation question row."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
+    )
+
+    id: int
+    question: str
+    is_global: bool
+    book_id: Optional[str] = None
+    user_id: Optional[str] = None
+    is_first_turn: bool
+    show_on_homepage: bool
+    user_feedback: Optional[str] = None
+    ts: datetime
+
+
+class RagQuestionsPage(BaseModel):
+    """Paginated response for admin questions list."""
+
+    items: List[RagQuestionAdmin]
+    total: int
+    offset: int
+    limit: int
+
+
+class RagQuestionToggle(BaseModel):
+    """Request body for toggling show_on_homepage."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    show_on_homepage: bool
+
+
+class RagQuestionToggleResponse(BaseModel):
+    """Response after toggling show_on_homepage."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    id: int
+    show_on_homepage: bool

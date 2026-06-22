@@ -40,10 +40,13 @@ async def test_stale_watchdog_reset_dead_worker():
     mock_redis.scan.return_value = (0, [])  # No active workers
     ctx = {"redis": mock_redis}
 
-    with patch("app.db.session.async_session_factory") as mock_session_factory, patch(
-        "services.worker.scanners.stale_watchdog_scanner.BookMilestoneService.update_book_milestones",
-        new_callable=AsyncMock,
-    ) as mock_update_milestones:
+    with (
+        patch("app.db.session.async_session_factory") as mock_session_factory,
+        patch(
+            "services.worker.scanners.stale_watchdog_scanner.BookMilestoneService.update_book_milestones",
+            new_callable=AsyncMock,
+        ) as mock_update_milestones,
+    ):
         mock_session = AsyncMock()
         mock_session_factory.return_value.__aenter__.return_value = mock_session
 
@@ -111,10 +114,13 @@ async def test_stale_watchdog_reset_hung_active_worker():
     mock_redis.scan.return_value = (0, [b"worker:heartbeat:active-worker"])
     ctx = {"redis": mock_redis}
 
-    with patch("app.db.session.async_session_factory") as mock_session_factory, patch(
-        "services.worker.scanners.stale_watchdog_scanner.BookMilestoneService.update_book_milestones",
-        new_callable=AsyncMock,
-    ) as mock_update_milestones:
+    with (
+        patch("app.db.session.async_session_factory") as mock_session_factory,
+        patch(
+            "services.worker.scanners.stale_watchdog_scanner.BookMilestoneService.update_book_milestones",
+            new_callable=AsyncMock,
+        ) as mock_update_milestones,
+    ):
         mock_session = AsyncMock()
         mock_session_factory.return_value.__aenter__.return_value = mock_session
 

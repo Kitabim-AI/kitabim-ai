@@ -396,5 +396,28 @@ export const PersistenceService = {
       console.error("Failed to fetch categories", error);
       return [];
     }
+  },
+
+  async getRecentQuestions(limit: number = 10): Promise<string[]> {
+    try {
+      const response = await authFetch(`${API_BASE}/chat/recent-questions?limit=${limit}`);
+      if (!response.ok) throw new Error("Failed to fetch recent questions");
+      const data = await response.json();
+      return data.questions || [];
+    } catch (error) {
+      console.error("Failed to fetch recent questions", error);
+      return [];
+    }
+  },
+
+  async getFeaturedQuestions(limit: number = 20): Promise<string[]> {
+    try {
+      const response = await authFetch(`${API_BASE}/questions/featured?limit=${limit}`);
+      if (!response.ok) throw new Error("Failed to fetch featured questions");
+      return await response.json();
+    } catch (error) {
+      console.error("Failed to fetch featured questions", error);
+      return [];
+    }
   }
 };

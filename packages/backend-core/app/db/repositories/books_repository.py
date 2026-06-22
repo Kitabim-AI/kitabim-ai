@@ -825,7 +825,7 @@ def _normalize_uyghur(text: str) -> str:
     )
 
 
-_PUNCT = '«»،؟!()[]{}"' "''"
+_PUNCT = "«»،؟!()[]{}\"''"
 
 
 def _entity_matches_question(entity: str, question: str) -> bool:

@@ -42,11 +42,12 @@ async def test_reprocess_graph_disabled():
     mock_configs_repo = MagicMock()
     mock_configs_repo.get_value = AsyncMock(return_value="false")
 
-    with patch(
-        "api.endpoints.books_router.BooksRepository", return_value=mock_repo
-    ), patch(
-        "api.endpoints.books_router.SystemConfigsRepository",
-        return_value=mock_configs_repo,
+    with (
+        patch("api.endpoints.books_router.BooksRepository", return_value=mock_repo),
+        patch(
+            "api.endpoints.books_router.SystemConfigsRepository",
+            return_value=mock_configs_repo,
+        ),
     ):
         with pytest.raises(HTTPException) as excinfo:
             await reprocess_graph(

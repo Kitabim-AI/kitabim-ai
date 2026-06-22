@@ -4,6 +4,7 @@ import { useAppContext } from '../../context/AppContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { PersistenceService } from '../../services/persistenceService';
 import { ProverbDisplay } from '../common/ProverbDisplay';
+import { QuestionRotator } from '../common/QuestionRotator';
 import { BookCard } from './BookCard';
 
 export const HomeView: React.FC = () => {
@@ -202,6 +203,17 @@ export const HomeView: React.FC = () => {
               </button>
             )}
           </div>
+        )}
+
+        {/* Recent questions rotator */}
+        {!hasSearch && (
+          <QuestionRotator
+            className="mt-8 sm:mt-10"
+            onQuestionClick={(q) => {
+              chat.setChatInput(q);
+              setView('global-chat');
+            }}
+          />
         )}
       </div>
 

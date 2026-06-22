@@ -429,6 +429,14 @@ class RAGEvaluation(Base):
     # User feedback ('positive' = 👍, 'negative' = 👎, None = no feedback yet)
     user_feedback: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
 
+    # True when this question opened a new conversation (history was empty)
+    is_first_turn: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Admin-curated flag: show this question in the home-page rotator
+    show_on_homepage: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+
     # Timestamp
     ts: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

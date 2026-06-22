@@ -93,13 +93,14 @@ async def test_knowledge_graph_job_success():
     ctx = {}
     book_id = "book-123"
 
-    with patch("app.db.session.async_session_factory") as mock_session_factory, patch(
-        "services.worker.jobs.knowledge_graph_job.settings"
-    ) as mock_settings, patch(
-        "services.worker.jobs.knowledge_graph_job.GraphRepository"
-    ) as mock_graph_repo_class, patch(
-        "services.worker.jobs.knowledge_graph_job.genai"
-    ) as mock_genai_module:
+    with (
+        patch("app.db.session.async_session_factory") as mock_session_factory,
+        patch("services.worker.jobs.knowledge_graph_job.settings") as mock_settings,
+        patch(
+            "services.worker.jobs.knowledge_graph_job.GraphRepository"
+        ) as mock_graph_repo_class,
+        patch("services.worker.jobs.knowledge_graph_job.genai") as mock_genai_module,
+    ):
         mock_session = AsyncMock()
         mock_session_factory.return_value.__aenter__.return_value = mock_session
 
@@ -183,13 +184,14 @@ async def test_knowledge_graph_job_fictional_namespaced():
     ctx = {}
     book_id = "book-123"
 
-    with patch("app.db.session.async_session_factory") as mock_session_factory, patch(
-        "services.worker.jobs.knowledge_graph_job.settings"
-    ) as mock_settings, patch(
-        "services.worker.jobs.knowledge_graph_job.GraphRepository"
-    ) as mock_graph_repo_class, patch(
-        "services.worker.jobs.knowledge_graph_job.genai"
-    ) as mock_genai_module:
+    with (
+        patch("app.db.session.async_session_factory") as mock_session_factory,
+        patch("services.worker.jobs.knowledge_graph_job.settings") as mock_settings,
+        patch(
+            "services.worker.jobs.knowledge_graph_job.GraphRepository"
+        ) as mock_graph_repo_class,
+        patch("services.worker.jobs.knowledge_graph_job.genai") as mock_genai_module,
+    ):
         mock_session = AsyncMock()
         mock_session_factory.return_value.__aenter__.return_value = mock_session
 
@@ -274,11 +276,13 @@ async def test_knowledge_graph_job_failure():
     ctx = {}
     book_id = "book-123"
 
-    with patch("app.db.session.async_session_factory") as mock_session_factory, patch(
-        "services.worker.jobs.knowledge_graph_job.settings"
-    ) as mock_settings, patch(
-        "services.worker.jobs.knowledge_graph_job.GraphRepository"
-    ) as mock_graph_repo_class:
+    with (
+        patch("app.db.session.async_session_factory") as mock_session_factory,
+        patch("services.worker.jobs.knowledge_graph_job.settings") as mock_settings,
+        patch(
+            "services.worker.jobs.knowledge_graph_job.GraphRepository"
+        ) as mock_graph_repo_class,
+    ):
         mock_session = AsyncMock()
         mock_session_factory.return_value.__aenter__.return_value = mock_session
 

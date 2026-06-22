@@ -25,6 +25,7 @@ from api.endpoints import (
     dictionary_router,
     share_router,
     cache_router,
+    questions_router,
 )
 from app.core.config import settings
 from app.db.session import init_db, close_db  # SQLAlchemy session management
@@ -433,6 +434,7 @@ app.include_router(
 app.include_router(dictionary_router.router, prefix="/api", tags=["dictionary"])
 app.include_router(share_router.router, prefix="/api/share", tags=["share"])
 app.include_router(cache_router.router, prefix="/api/cache", tags=["cache"])
+app.include_router(questions_router.router, prefix="/api/questions", tags=["questions"])
 
 
 @app.get("/api/config")

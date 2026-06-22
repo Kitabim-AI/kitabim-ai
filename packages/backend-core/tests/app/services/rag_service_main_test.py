@@ -15,10 +15,13 @@ async def test_answer_question_catalog_query(rag_service):
     req = ChatRequest(book_id="global", question="قايسى كىتابلار بار؟", history=[])
 
     # Mock system configs and dependencies called in _build_context
-    with patch(
-        "app.db.repositories.system_configs_repository.SystemConfigsRepository.get_value",
-        side_effect=["chat-model", "emb-model", "agent-model", "6", "8", "false"],
-    ), patch("app.services.rag_service.llm_resources") as mock_resources:
+    with (
+        patch(
+            "app.db.repositories.system_configs_repository.SystemConfigsRepository.get_value",
+            side_effect=["chat-model", "emb-model", "agent-model", "6", "8", "false"],
+        ),
+        patch("app.services.rag_service.llm_resources") as mock_resources,
+    ):
         mock_resources.get_rag_chain.return_value = MagicMock()
         mock_resources.get_rewrite_chain.return_value = MagicMock()
         mock_resources.get_embeddings.return_value = MagicMock()
@@ -48,13 +51,17 @@ async def test_answer_question_current_page_only(rag_service):
     mock_book.title = "Book"
     mock_book.author = "A"
 
-    with patch(
-        "app.db.repositories.system_configs_repository.SystemConfigsRepository.get_value",
-        side_effect=["chat-model", "emb-model", "agent-model", "6", "8", "false"],
-    ), patch(
-        "app.db.repositories.books_repository.BooksRepository.get",
-        return_value=mock_book,
-    ), patch("app.services.rag_service.llm_resources") as mock_resources:
+    with (
+        patch(
+            "app.db.repositories.system_configs_repository.SystemConfigsRepository.get_value",
+            side_effect=["chat-model", "emb-model", "agent-model", "6", "8", "false"],
+        ),
+        patch(
+            "app.db.repositories.books_repository.BooksRepository.get",
+            return_value=mock_book,
+        ),
+        patch("app.services.rag_service.llm_resources") as mock_resources,
+    ):
         mock_resources.get_rag_chain.return_value = MagicMock()
         mock_resources.get_rewrite_chain.return_value = MagicMock()
         mock_resources.get_embeddings.return_value = MagicMock()
@@ -78,10 +85,13 @@ async def test_answer_question_stream(rag_service):
         yield "Hello"
         yield " world"
 
-    with patch(
-        "app.db.repositories.system_configs_repository.SystemConfigsRepository.get_value",
-        side_effect=["chat-model", "emb-model", "agent-model", "6", "8", "false"],
-    ), patch("app.services.rag_service.llm_resources") as mock_resources:
+    with (
+        patch(
+            "app.db.repositories.system_configs_repository.SystemConfigsRepository.get_value",
+            side_effect=["chat-model", "emb-model", "agent-model", "6", "8", "false"],
+        ),
+        patch("app.services.rag_service.llm_resources") as mock_resources,
+    ):
         mock_resources.get_rag_chain.return_value = MagicMock()
         mock_resources.get_rewrite_chain.return_value = MagicMock()
         mock_resources.get_embeddings.return_value = MagicMock()

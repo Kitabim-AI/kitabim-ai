@@ -44,18 +44,24 @@ async def test_summary_job_success():
 
     mock_session.execute.side_effect = mock_execute
 
-    with patch("app.db.session.async_session_factory") as mock_session_factory, patch(
-        "services.worker.jobs.summary_job.SystemConfigsRepository.get_value",
-        new_callable=AsyncMock,
-    ) as mock_get_value, patch(
-        "services.worker.jobs.summary_job.build_text_chain"
-    ) as mock_build_text_chain, patch(
-        "services.worker.jobs.summary_job.GeminiEmbeddings",
-        spec=True,
-    ) as mock_embeddings_cls, patch(
-        "services.worker.jobs.summary_job.BookSummariesRepository",
-        spec=True,
-    ) as mock_repo_cls:
+    with (
+        patch("app.db.session.async_session_factory") as mock_session_factory,
+        patch(
+            "services.worker.jobs.summary_job.SystemConfigsRepository.get_value",
+            new_callable=AsyncMock,
+        ) as mock_get_value,
+        patch(
+            "services.worker.jobs.summary_job.build_text_chain"
+        ) as mock_build_text_chain,
+        patch(
+            "services.worker.jobs.summary_job.GeminiEmbeddings",
+            spec=True,
+        ) as mock_embeddings_cls,
+        patch(
+            "services.worker.jobs.summary_job.BookSummariesRepository",
+            spec=True,
+        ) as mock_repo_cls,
+    ):
         mock_session_factory.return_value.__aenter__.return_value = mock_session
 
         # Mock system configs

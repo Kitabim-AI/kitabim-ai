@@ -2,11 +2,12 @@
  * Admin Tabs - Tabbed interface for admin panels
  */
 
-import { BarChart3, BookA, Mail, Settings, Sparkles, TableOfContents, Users } from 'lucide-react';
+import { BarChart3, BookA, Mail, MessageSquare, Settings, Sparkles, TableOfContents, Users } from 'lucide-react';
 import React from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth, useIsAdmin, useIsEditor } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
+import { AdminQuestions } from './AdminQuestions';
 import { SystemConfigPanel } from './config/SystemConfigPanel';
 import { ContactSubmissionsPanel } from './ContactSubmissionsPanel';
 import { DictionaryManagementPanel } from './dictionary/DictionaryManagementPanel';
@@ -18,7 +19,7 @@ interface AdminTabsProps {
   bookManagementPanel: React.ReactNode;
 }
 
-type TabId = 'books' | 'stats' | 'users' | 'contacts' | 'config' | 'rules' | 'dictionary';
+type TabId = 'books' | 'stats' | 'users' | 'contacts' | 'config' | 'rules' | 'dictionary' | 'questions';
 
 interface Tab {
   id: TabId;
@@ -54,6 +55,7 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
     { id: 'dictionary', label: t('admin.dictionaryLabel') || 'Dictionary', icon: <BookA size={18} />, adminOnly: false },
     { id: 'stats', label: t('admin.statsLabel') || 'Statistics', icon: <BarChart3 size={18} />, adminOnly: true },
     { id: 'config', label: t('admin.configLabel'), icon: <Settings size={18} />, adminOnly: true },
+    { id: 'questions', label: t('admin.questionsLabel'), icon: <MessageSquare size={18} />, adminOnly: true },
     { id: 'contacts', label: t('admin.contactsLabel'), icon: <Mail size={18} />, adminOnly: true },
   ];
 
@@ -94,6 +96,7 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
         {activeTab === 'books' && bookManagementPanel}
         {activeTab === 'users' && isAdmin && <UserManagementPanel />}
         {activeTab === 'rules' && <AutoCorrectRulesPanel />}
+        {activeTab === 'questions' && isAdmin && <AdminQuestions />}
         {activeTab === 'contacts' && isAdmin && <ContactSubmissionsPanel />}
         {activeTab === 'stats' && isAdmin && <StatsPanel />}
         {activeTab === 'config' && isAdmin && <SystemConfigPanel />}

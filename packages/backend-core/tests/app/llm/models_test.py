@@ -116,9 +116,10 @@ async def test_call_with_breaker_transient_vs_non_transient_logging(caplog):
     from app.llm.models import _call_with_breaker, _TEXT_BREAKER
 
     # Mock rate limiters to avoid redis dependency in this test
-    with patch("app.llm.models._TEXT_LIMITER.wait", new_callable=AsyncMock), patch(
-        "app.llm.models._TEXT_BREAKER.call"
-    ) as mock_breaker_call:
+    with (
+        patch("app.llm.models._TEXT_LIMITER.wait", new_callable=AsyncMock),
+        patch("app.llm.models._TEXT_BREAKER.call") as mock_breaker_call,
+    ):
         # Mock the breaker call to just run the function and raise the error
         async def side_effect(fn, *args, ignore_on_failure=None, **kwargs):
             return await fn(*args, **kwargs)

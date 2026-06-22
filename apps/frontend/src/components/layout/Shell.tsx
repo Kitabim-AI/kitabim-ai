@@ -1,4 +1,5 @@
 import React from 'react';
+import { Heart } from 'lucide-react';
 import { useAppContext } from '../../context/AppContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { Modal } from '../common/Modal';
@@ -32,17 +33,56 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
           {children}
         </div>
 
-        {view !== 'reader' && (
-          <footer className={`border-t border-[#0369a1]/10 pt-4 ${['global-chat', 'spell-check'].includes(view) ? 'hidden sm:flex' : 'flex'} flex-col sm:flex-row items-center justify-between gap-2 w-full px-4 sm:px-2 ${['global-chat', 'spell-check'].includes(view) ? 'mb-2 mt-4 lg:max-w-5xl lg:mx-auto' : 'mb-6 mt-8'} ${view === 'join-us' ? 'max-w-6xl mx-auto' : ''}`} dir="rtl">
-            <p className="text-xs text-slate-400 font-normal uyghur-text">
-              © {new Date().getFullYear()} Kitabim.AI — {t('app.footer.copyright')}
-            </p>
-            <a
-              href="mailto:contact@kitabim.ai"
-              className="text-xs text-slate-400 font-normal uyghur-text hover:text-[#0369a1] transition-colors"
-            >
-              {t('app.footer.contactUs')}: contact@kitabim.ai
-            </a>
+        {view !== 'reader' && view !== 'admin' && (
+          <footer className={`border-t border-[#0369a1]/10 pt-4 ${['global-chat', 'spell-check'].includes(view) ? 'hidden sm:grid' : 'grid'} grid-cols-1 sm:grid-cols-3 items-center gap-4 w-full px-4 sm:px-2 ${['global-chat', 'spell-check'].includes(view) ? 'mb-2 mt-4 lg:max-w-5xl lg:mx-auto' : 'mb-6 mt-8'} ${view === 'join-us' ? 'max-w-6xl mx-auto' : ''}`} dir="rtl">
+            {/* Right Column (Copyright) */}
+            <div className="w-full text-center sm:text-right">
+              <p className="text-xs text-slate-400 font-normal uyghur-text">
+                © {new Date().getFullYear()} Kitabim.AI — {t('app.footer.copyright')}
+              </p>
+            </div>
+
+            {/* Middle Column (Sponsors & Donate) - Perfectly Centered */}
+            <div className="flex items-center justify-center gap-4 select-none w-full">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] sm:text-xs text-slate-400 font-medium tracking-wider uyghur-text">
+                  {t('app.footer.sponsors')}
+                </span>
+                <a
+                  href="https://www.dallasuyghurcommunity.org"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Dallas Uyghur Community"
+                  className="flex items-center justify-center transition-transform hover:scale-105 active:scale-95"
+                >
+                  <img
+                    src="https://dallasuyghurcommunity.org/wp-content/uploads/2025/01/DUC_Logo_3ai_Artboard-2-photoaidcom-cropped-1.png"
+                    alt="Dallas Uyghur Community"
+                    className="h-10 sm:h-12 w-auto object-contain"
+                  />
+                </a>
+              </div>
+              <div className="w-[1px] h-6 bg-slate-200" />
+              <a
+                href="https://www.paypal.com/donate/?hosted_button_id=TKHXS8HCDUEJA"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 hover:shadow-lg hover:shadow-rose-500/20 active:scale-95 transition-all duration-300 rounded-full"
+              >
+                <Heart size={14} className="fill-current" />
+                <span>{t('app.footer.donate')}</span>
+              </a>
+            </div>
+
+            {/* Left Column (Contact Us) */}
+            <div className="w-full text-center sm:text-left">
+              <a
+                href="mailto:contact@kitabim.ai"
+                className="text-xs text-slate-400 font-normal uyghur-text hover:text-[#0369a1] transition-colors"
+              >
+                {t('app.footer.contactUs')}: contact@kitabim.ai
+              </a>
+            </div>
           </footer>
         )}
       </main>

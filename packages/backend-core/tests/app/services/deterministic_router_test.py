@@ -193,10 +193,13 @@ async def test_classify_intent_llm_call(mock_ctx):
     mock_llm.ainvoke = AsyncMock(return_value='{"intent": "identity"}')
 
     # Try patching the import in deterministic_handler as well as models module
-    with patch(
-        "app.services.rag.agent.deterministic_handler.build_text_llm",
-        return_value=mock_llm,
-    ), patch("app.llm.models.build_text_llm", return_value=mock_llm):
+    with (
+        patch(
+            "app.services.rag.agent.deterministic_handler.build_text_llm",
+            return_value=mock_llm,
+        ),
+        patch("app.llm.models.build_text_llm", return_value=mock_llm),
+    ):
         try:
             intent = await handler.classify_intent(
                 signals, "زوردۇن سابىر كىم؟", mock_ctx

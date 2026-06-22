@@ -46,7 +46,7 @@ def entity_matches_question(entity: str, question: str) -> bool:
         return False
     if len(entity_words) == 1 and len(entity_words[0]) < 4:
         return False
-    _PUNCT = '«»،؟!()[]{}"' "''"
+    _PUNCT = "«»،؟!()[]{}\"''"
     q_words = [normalize_uyghur(w).strip(_PUNCT) for w in question.strip().split()]
 
     def _word_matches(e_word: str) -> bool:

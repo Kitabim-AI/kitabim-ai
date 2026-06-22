@@ -29,7 +29,7 @@ from app.services.rag.agent.handler import (
 logger = logging.getLogger("app.rag.agent.deterministic_handler")
 
 # Punctuation boundaries for pronouns
-_PUNCT = '«»،؟!()[]{}"' "''"
+_PUNCT = "«»،؟!()[]{}\"''"
 
 from app.services.rag.keywords import (
     UYGHUR_PRONOUN_TOKENS,
@@ -783,6 +783,11 @@ Return ONLY valid JSON matching this schema:
 
         # --- Path H: Open / No Context ---
         # intent routing for global searches
+        # search_books_by_summary returns up to 20 books; passing all 20 to search_chunks
+        # spreads RAG_TOP_K=25 slots across too many books (~1-2 per book), diluting the
+        # specific passage that may only appear in 1 book. Focus on top 5 to concentrate
+        # chunk slots. The universal fallback widens to global scope if results are thin.
+        _TOP_BOOKS_FOR_CHUNK_SEARCH = 5
         if intent == "identity":
             async for ev in self._run_tool_and_yield(
                 "search_books_by_summary",
@@ -804,7 +809,7 @@ Return ONLY valid JSON matching this schema:
                 yield ev
             async for ev in self._run_tool_and_yield(
                 "search_chunks",
-                {"query": question, "book_ids": top_ids},
+                {"query": question, "book_ids": top_ids[:_TOP_BOOKS_FOR_CHUNK_SEARCH]},
                 ctx,
                 observations,
                 result_holder,
@@ -831,7 +836,7 @@ Return ONLY valid JSON matching this schema:
                 yield ev
             async for ev in self._run_tool_and_yield(
                 "search_chunks",
-                {"query": question, "book_ids": top_ids},
+                {"query": question, "book_ids": top_ids[:_TOP_BOOKS_FOR_CHUNK_SEARCH]},
                 ctx,
                 observations,
                 result_holder,
@@ -858,7 +863,7 @@ Return ONLY valid JSON matching this schema:
             top_ids = summary_res.get("book_ids", [])
             async for ev in self._run_tool_and_yield(
                 "search_chunks",
-                {"query": question, "book_ids": top_ids},
+                {"query": question, "book_ids": top_ids[:_TOP_BOOKS_FOR_CHUNK_SEARCH]},
                 ctx,
                 observations,
                 result_holder,
@@ -877,7 +882,7 @@ Return ONLY valid JSON matching this schema:
             top_ids = summary_res.get("book_ids", [])
             async for ev in self._run_tool_and_yield(
                 "search_chunks",
-                {"query": question, "book_ids": top_ids},
+                {"query": question, "book_ids": top_ids[:_TOP_BOOKS_FOR_CHUNK_SEARCH]},
                 ctx,
                 observations,
                 result_holder,
@@ -934,6 +939,8 @@ Return ONLY valid JSON matching this schema:
         self, question: str, ctx: QueryContext, observations: list
     ) -> AsyncIterator[dict]:
         """Universal Fallback — checks last chunk search results and expands scope if needed."""
+        from app.services.rag.agent.config import CONTEXT_SWITCH_SCORE_THRESHOLD
+
         if not observations:
             return
         last_obs = observations[-1]
@@ -944,7 +951,8 @@ Return ONLY valid JSON matching this schema:
             return
 
         chunks = res.get("chunks", [])
-        if len(chunks) >= 4:
+        top_score = max((c.get("score", 0.0) for c in chunks), default=0.0)
+        if len(chunks) >= 4 and top_score >= CONTEXT_SWITCH_SCORE_THRESHOLD:
             return
 
         # 1. Check if search_books_by_summary was already run
