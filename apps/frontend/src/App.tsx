@@ -12,6 +12,7 @@ import { AppProvider, useAppContext } from './context/AppContext';
 import { useAuth, useIsEditor } from './hooks/useAuth';
 import { useUyghurInput } from './hooks/useUyghurInput';
 import { PersistenceService } from './services/persistenceService';
+import { GraphView } from './components/graph/GraphView';
 
 const AppContent: React.FC = () => {
   const {
@@ -93,6 +94,7 @@ const AppContent: React.FC = () => {
     <Shell>
       {view === 'home' && <HomeView />}
       {view === 'library' && <LibraryView />}
+      {view === 'graph' && <GraphView />}
       
       {/* Protected Views - Strictly Conditional */}
       {view === 'admin' && isAuthorizedToView && (

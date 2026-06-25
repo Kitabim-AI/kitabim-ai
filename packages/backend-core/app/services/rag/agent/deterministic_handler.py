@@ -524,6 +524,15 @@ Return ONLY valid JSON matching this schema:
                 ):
                     yield ev
             elif intent == "identity":
+                if signals.get("graph_available"):
+                    async for ev in self._run_tool_and_yield(
+                        "query_knowledge_graph",
+                        {"query": question, "book_ids": book_ids},
+                        ctx,
+                        observations,
+                        result_holder,
+                    ):
+                        yield ev
                 async for ev in self._run_tool_and_yield(
                     "get_book_summary",
                     {"book_ids": book_ids[:5]},
@@ -696,6 +705,15 @@ Return ONLY valid JSON matching this schema:
         if signals.get("has_context_books"):
             context_book_ids = ctx.context_book_ids
             if intent == "identity":
+                if signals.get("graph_available"):
+                    async for ev in self._run_tool_and_yield(
+                        "query_knowledge_graph",
+                        {"query": question, "book_ids": context_book_ids},
+                        ctx,
+                        observations,
+                        result_holder,
+                    ):
+                        yield ev
                 async for ev in self._run_tool_and_yield(
                     "search_books_by_summary",
                     {"query": question, "book_ids": context_book_ids},
@@ -790,6 +808,14 @@ Return ONLY valid JSON matching this schema:
         _TOP_BOOKS_FOR_CHUNK_SEARCH = 5
         if intent == "identity":
             async for ev in self._run_tool_and_yield(
+                "query_knowledge_graph",
+                {"query": question},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
+            async for ev in self._run_tool_and_yield(
                 "search_books_by_summary",
                 {"query": question},
                 ctx,
@@ -871,18 +897,8 @@ Return ONLY valid JSON matching this schema:
                 yield ev
         else:  # intent == passage
             async for ev in self._run_tool_and_yield(
-                "search_books_by_summary",
-                {"query": question},
-                ctx,
-                observations,
-                result_holder,
-            ):
-                yield ev
-            summary_res = result_holder["result"]
-            top_ids = summary_res.get("book_ids", [])
-            async for ev in self._run_tool_and_yield(
                 "search_chunks",
-                {"query": question, "book_ids": top_ids[:_TOP_BOOKS_FOR_CHUNK_SEARCH]},
+                {"query": question, "book_ids": None},
                 ctx,
                 observations,
                 result_holder,
@@ -986,8 +1002,9 @@ Return ONLY valid JSON matching this schema:
             chunks_res = result_holder["result"]
             chunks = chunks_res.get("chunks", [])
 
-        # 2. Still < 4 results: widen to global scope
-        if len(chunks) < 4:
+        # 2. Still < 4 results or weak match: widen to global scope
+        top_score = max((c.get("score", 0.0) for c in chunks), default=0.0)
+        if len(chunks) < 4 or top_score < CONTEXT_SWITCH_SCORE_THRESHOLD:
             async for ev in self._run_tool_and_yield(
                 "search_chunks",
                 {"query": question, "book_ids": None},

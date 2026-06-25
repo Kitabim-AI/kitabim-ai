@@ -715,7 +715,9 @@ async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
     # Extract entities from the query using the LLM
     prompt = (
         "Extract any names of key entities (persons, locations, events, organizations, historical eras, or concepts) "
-        "mentioned in the following user query. Return them ONLY as a comma-separated list, with no other text, explanation, or formatting. "
+        "mentioned in the following user query. "
+        "CRITICAL: Keep the names in their original script and spelling (e.g., Uyghur Arabic script). Do NOT translate or transliterate names to English or Latin characters. "
+        "Return them ONLY as a comma-separated list, with no other text, explanation, or formatting. "
         "If no specific entities are mentioned, return an empty string.\n\n"
         f"Query: {query}"
     )
@@ -764,9 +766,53 @@ async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
         else:
             book_ids = [str(ctx.book_id)]
 
+    search_entities = list(entities)
+    if book_ids:
+        try:
+            from sqlalchemy import select
+            from app.db.models import Book
+            from app.db.repositories.system_configs_repository import (
+                SystemConfigsRepository,
+            )
+
+            config_repo = SystemConfigsRepository(ctx.session)
+
+            fictional_categories_val = await config_repo.get_value(
+                "fictional_categories",
+                "رومان, تارىخىي رومان, بالىلار رومانى, ساتىرىك رومان, پەلسەپىۋىي رومان, پوۋېست, پوۋېستلار, تارىخىي پوۋېست, ھېكايىلەر, تارىخىي ھېكايىلەر, بالىلار ھېكايىلېرى, چۆچەكلەر, قىسسە, تارىخىي قىسسە, داستان, داستانلار, تارىخىي داستان, رىۋايەتلەر, مەسەللەر, لەتىپىلەر, يۇمۇرلار, شېئىرلار, سەھنە ئەسەرلېرى, كىنو سېنارىيىلىرى, fiction, novel, story, drama, poetry, fairytale, fable, play",
+            )
+            fictional_cats = [
+                c.strip().lower()
+                for c in fictional_categories_val.split(",")
+                if c.strip()
+            ]
+
+            stmt = select(Book).where(Book.id.in_(book_ids))
+            res = await ctx.session.execute(stmt)
+            books = res.scalars().all()
+            for book in books:
+                book_cats = [
+                    c.strip().lower() for c in (book.categories or []) if c.strip()
+                ]
+                is_fictional = any(c in fictional_cats for c in book_cats)
+                if is_fictional:
+                    base_title = re.sub(r"[\s-]+\d+\s*$", "", book.title or "").strip()
+                    if base_title:
+                        for ent in entities:
+                            namespaced = f"{ent} ({base_title})"
+                            if namespaced not in search_entities:
+                                search_entities.append(namespaced)
+        except Exception as ns_exc:
+            log_json(
+                logger,
+                logging.WARNING,
+                "Failed to namespace entities for query",
+                error=str(ns_exc),
+            )
+
     graph_repo = GraphRepository()
     try:
-        records = await graph_repo.query_subgraph(entities, book_ids=book_ids)
+        records = await graph_repo.query_subgraph(search_entities, book_ids=book_ids)
     except Exception as kg_exc:
         log_json(
             logger,

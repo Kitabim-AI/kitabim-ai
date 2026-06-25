@@ -288,7 +288,7 @@ async def test_universal_fallback_trigger(mock_ctx):
             if tool_args.get("book_ids") == ["book-789"]:
                 return {
                     "ok": True,
-                    "chunks": [{"text": "x"} for _ in range(5)],
+                    "chunks": [{"text": "x", "score": 0.8} for _ in range(5)],
                     "found_count": 5,
                 }
         return {"ok": True}
@@ -323,69 +323,147 @@ async def test_universal_fallback_trigger(mock_ctx):
         assert observations[-1]["args"]["book_ids"] == ["book-789"]
 
 
-def test_repair_json_unescaped_quotes():
-    from app.services.rag.agent.deterministic_handler import (
-        repair_json_unescaped_quotes,
-    )
-    import json
+@pytest.mark.asyncio
+async def test_universal_fallback_trigger_weak_score(mock_ctx):
+    handler = DeterministicRAGHandler()
+    observations = []
 
-    input_json = """{
-      "rewritten_question": "لېيىغان بۇلاقتىكى "مۇرات" قانداق پېرسوناژ؟",
-      "intent": "identity",
-      "sub_questions": [
-        {
-          "question": "مۇرات "لېيىغان بۇلاق" رومانىدا كىم؟",
-          "intent": "identity"
-        }
-      ]
-    }"""
+    # Initial search returns 2 chunks (< 4)
+    # search_books_by_summary returns book-789
+    # second search_chunks returns 5 chunks but with weak score (0.5)
+    # third search_chunks is a global fallback call (book_ids=None)
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        if tool_name == "search_books_by_summary":
+            return {"ok": True, "book_ids": ["book-789"], "found_count": 1}
+        if tool_name == "search_chunks":
+            if tool_args.get("book_ids") == ["book-123"]:
+                return {
+                    "ok": True,
+                    "chunks": [
+                        {"text": "a", "score": 0.9},
+                        {"text": "b", "score": 0.8},
+                    ],
+                    "found_count": 2,
+                }
+            if tool_args.get("book_ids") == ["book-789"]:
+                return {
+                    "ok": True,
+                    "chunks": [{"text": "x", "score": 0.5} for _ in range(5)],
+                    "found_count": 5,
+                }
+            if tool_args.get("book_ids") is None:
+                return {
+                    "ok": True,
+                    "chunks": [{"text": "global", "score": 0.85}],
+                    "found_count": 1,
+                }
+        return {"ok": True}
 
-    repaired = repair_json_unescaped_quotes(input_json)
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        # Initial search execution
+        async for _ in handler._execute_tool(
+            "search_chunks",
+            {"query": "hello", "book_ids": ["book-123"]},
+            mock_ctx,
+            observations,
+        ):
+            pass
 
-    # Assert successfully parsed by json.loads
-    data = json.loads(repaired)
-    assert data["rewritten_question"] == 'لېيىغان بۇلاقتىكى "مۇرات" قانداق پېرسوناژ؟'
-    assert data["sub_questions"][0]["question"] == 'مۇرات "لېيىغان بۇلاق" رومانىدا كىم؟'
+        # Trigger fallback
+        async for _ in handler._run_universal_fallback("hello", mock_ctx, observations):
+            pass
+
+        # Fallback should have run summary search, scoped search, and then global search due to weak score
+        tools_called = [o["tool"] for o in observations]
+        assert tools_called == [
+            "search_chunks",
+            "search_books_by_summary",
+            "search_chunks",
+            "search_chunks",
+        ]
+
+        # Last search chunk is global
+        assert observations[-1]["args"]["book_ids"] is None
+        assert observations[-1]["result"]["chunks"][0]["text"] == "global"
 
 
 @pytest.mark.asyncio
-async def test_llm_analyze_query_nested_json(mock_ctx):
+async def test_execute_path_h_passage_global_search(mock_ctx):
     handler = DeterministicRAGHandler()
+    observations = []
 
-    mock_llm = MagicMock()
-    nested_json_res = """```json
-{
-  "is_current_page_query": false,
-  "is_volume_shift": false,
-  "target_volume": null,
-  "needs_rewrite": false,
-  "rewritten_question": null,
-  "catalog_subtype": null,
-  "intent": "identity",
-  "is_composite": true,
-  "sub_questions": [
-    {
-      "question": "لېيىغان بۇلاقتىكى \\"مۇرات\\" قانداق پېرسوناژ؟",
-      "intent": "identity"
-    },
-    {
-      "question": "ئۇ كىم بىلەن توي قىلىدۇ؟",
-      "intent": "relationship"
+    # Path H, intent=passage: no context, no title/author, should query chunks globally directly
+    signals = {
+        "top_intent": "content_search",
+        "has_title": False,
+        "has_author": False,
+        "is_volume_shift": False,
+        "in_reader": False,
+        "has_context_books": False,
     }
-  ]
-}
-```"""
-    mock_llm.ainvoke = AsyncMock(return_value=nested_json_res)
+
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        if tool_name == "search_books_by_summary":
+            return {"ok": True, "book_ids": ["book-999"], "found_count": 1}
+        if tool_name == "search_chunks":
+            if tool_args.get("book_ids") is None:
+                # First call: global search
+                return {
+                    "ok": True,
+                    "chunks": [{"text": "x", "score": 0.9}],
+                    "found_count": 1,
+                }
+            elif tool_args.get("book_ids") == ["book-999"]:
+                # Second call: fallback search within discovered books
+                return {
+                    "ok": True,
+                    "chunks": [{"text": "y", "score": 0.9} for _ in range(4)],
+                    "found_count": 4,
+                }
+        return {"ok": True}
 
     with patch(
-        "app.services.rag.agent.deterministic_handler.build_text_llm",
-        return_value=mock_llm,
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
     ):
-        result = await handler._llm_analyze_query("test query", mock_ctx)
-        assert result["is_composite"] is True
-        assert len(result["sub_questions"]) == 2
-        assert (
-            result["sub_questions"][0]["question"]
-            == 'لېيىغان بۇلاقتىكى "مۇرات" قانداق پېرسوناژ؟'
-        )
-        assert result["sub_questions"][1]["intent"] == "relationship"
+        async for _ in handler.execute_path(
+            "passage", signals, "ئېگىز تاغ سىرتىدا نېمە بار؟", mock_ctx, observations
+        ):
+            pass
+
+        tools_called = [o["tool"] for o in observations]
+        assert tools_called == [
+            "search_chunks",
+            "search_books_by_summary",
+            "search_chunks",
+        ]
+        # First search chunks was global
+        assert observations[0]["args"]["book_ids"] is None
+        # Second search chunks was targeted
+        assert observations[2]["args"]["book_ids"] == ["book-999"]
+
+
+@pytest.mark.asyncio
+async def test_execute_path_identity_query_knowledge_graph(mock_ctx):
+    handler = DeterministicRAGHandler()
+    observations = []
+
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        return {"ok": True, "book_ids": ["book-123"], "found_count": 1}
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        mock_ctx.context_book_ids = ["book-123"]
+        mock_ctx.book_id = "book-123"
+        async for _ in handler.execute_path(
+            "identity", {}, "جانىبەك سۇلتان كىم؟", mock_ctx, observations
+        ):
+            pass
+
+        tools_called = [o["tool"] for o in observations]
+        assert "query_knowledge_graph" in tools_called

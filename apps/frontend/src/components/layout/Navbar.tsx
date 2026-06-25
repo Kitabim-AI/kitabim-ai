@@ -1,4 +1,4 @@
-import { BookOpen, BookOpenCheck, Bot, HeartHandshake, Home, LibraryBig, Menu, RefreshCw, Search, Settings, Upload, X } from 'lucide-react';
+import { BookOpen, BookOpenCheck, Bot, HeartHandshake, Home, LibraryBig, Menu, Network, RefreshCw, Search, Settings, Upload, X } from 'lucide-react';
 import React, { useRef, useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth, useIsEditor } from '../../hooks/useAuth';
@@ -79,6 +79,12 @@ export const Navbar: React.FC = () => {
               onClick={() => { setSearchQuery(''); setView('global-chat'); chat.clearChat(); }}
               icon={<Bot size={24} strokeWidth={2.5} />}
               label={t('nav.globalChat')}
+            />
+            <NavButton
+              active={view === 'graph'}
+              onClick={() => { setSearchQuery(''); setView('graph'); }}
+              icon={<Network size={20} strokeWidth={2.5} />}
+              label={t('nav.graph')}
             />
             {isEditor && (
               <NavButton
@@ -189,6 +195,12 @@ export const Navbar: React.FC = () => {
                 onClick={() => handleNavClick(() => { setView('global-chat'); chat.clearChat(); })}
                 icon={<Bot size={24} strokeWidth={2.5} />}
                 label={t('nav.globalChat')}
+              />
+              <MobileNavButton
+                active={view === 'graph'}
+                onClick={() => handleNavClick(() => setView('graph'))}
+                icon={<Network size={20} strokeWidth={2.5} />}
+                label={t('nav.graph')}
               />
               {isEditor && (
                 <MobileNavButton

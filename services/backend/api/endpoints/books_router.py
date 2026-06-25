@@ -889,6 +889,106 @@ async def suggest_books(
     return result
 
 
+@router.get("/graph")
+async def get_global_graph(
+    q: Optional[str] = Query(None, max_length=100),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    session: AsyncSession = Depends(get_session),
+):
+    """Retrieve global knowledge graph data for public visualization."""
+    from app.db.repositories.graph_repository import GraphRepository
+
+    graph_repo = GraphRepository()
+
+    # We query relationships from Neo4j
+    if q and q.strip():
+        # Case insensitive filter by entity name
+        query = """
+        MATCH (s:Entity)-[r:RELATED_TO]->(t:Entity)
+        WHERE toLower(s.name) CONTAINS toLower($q) OR toLower(t.name) CONTAINS toLower($q)
+        RETURN s.name AS source_name, s.type AS source_type, 
+               r.type AS rel_type, 
+               t.name AS target_name, t.type AS target_type
+        LIMIT 150
+        """
+        params = {"q": q.strip()}
+    else:
+        query = """
+        MATCH (s:Entity)-[r:RELATED_TO]->(t:Entity)
+        RETURN s.name AS source_name, s.type AS source_type, 
+               r.type AS rel_type, 
+               t.name AS target_name, t.type AS target_type
+        LIMIT 150
+        """
+        params = {}
+
+    try:
+        async with graph_repo._driver.session() as neo4j_session:
+            result = await neo4j_session.run(query, **params)
+            records = await result.data()
+    except Exception as exc:
+        # Fallback to empty if Neo4j is not configured or not running
+        logger.error(f"Error querying Neo4j graph: {exc}")
+        return {"nodes": [], "links": []}
+
+    nodes_seen = set()
+    nodes = []
+    links = []
+
+    for rec in records:
+        src = rec["source_name"]
+        tgt = rec["target_name"]
+
+        # Add source node if new
+        if src not in nodes_seen:
+            nodes_seen.add(src)
+            nodes.append({"id": src, "label": src, "type": rec["source_type"]})
+
+        # Add target node if new
+        if tgt not in nodes_seen:
+            nodes_seen.add(tgt)
+            nodes.append({"id": tgt, "label": tgt, "type": rec["target_type"]})
+
+        # Add relationship
+        links.append({"source": src, "target": tgt, "label": rec["rel_type"]})
+
+    return {"nodes": nodes, "links": links}
+
+
+from pydantic import BaseModel
+
+
+class MergeEntitiesRequest(BaseModel):
+    keep_name: str
+    remove_name: str
+
+
+@router.post("/graph/merge")
+async def merge_graph_entities(
+    request: MergeEntitiesRequest,
+    current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    """Merge two knowledge graph entities (admin only)."""
+    from app.db.repositories.graph_repository import GraphRepository
+
+    graph_repo = GraphRepository()
+    try:
+        await graph_repo.merge_entities(request.keep_name, request.remove_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.error(f"Failed to merge entities: {exc}")
+        raise HTTPException(
+            status_code=500, detail="Internal server error during entity merge."
+        )
+
+    return {
+        "status": "success",
+        "message": f"Merged entity '{request.remove_name}' into '{request.keep_name}'",
+    }
+
+
 @router.get("/{book_id}", response_model=Book)
 async def get_book(
     book_id: str,

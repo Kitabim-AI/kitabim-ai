@@ -94,6 +94,7 @@
     "joinUs": "Join Us",
     "admin": "Admin",
     "addBook": "Add Book",
+    "graph": "Knowledge Graph",
     "switchLanguage": "Switch Language"
   },
   "home": {
@@ -798,5 +799,26 @@
     "answerLabel": "Answer",
     "textCopied": "Text Copied!",
     "pasteHint": "Text copied — paste it into your Facebook post"
+  },
+  "graph": {
+    "title": "Knowledge Graph",
+    "subtitle": "Interactive visualization of entities and relations extracted from digitized books",
+    "searchPlaceholder": "Search entities (e.g. names, places)...",
+    "loading": "Loading knowledge graph...",
+    "noData": "No nodes found matching your search.",
+    "enterFullscreen": "Fullscreen Mode",
+    "exitFullscreen": "Exit Fullscreen",
+    "filterNodeTypes": "Entity Types",
+    "filterEdgeTypes": "Relationship Types",
+    "all": "All",
+    "tabDetails": "Details",
+    "tabFilters": "Filters",
+    "nodePanel": {
+      "title": "Entity Details",
+      "name": "Name",
+      "type": "Type",
+      "subtype": "Subtype",
+      "connections": "Connections"
+    }
   }
 }

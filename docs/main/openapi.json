@@ -48,7 +48,7 @@
           "auth"
         ],
         "summary": "Get Current User Profile",
-        "description": "Get the current authenticated user's profile.\n\nReturns:\n    UserPublic: The authenticated user's public profile.\n    \nRaises:\n    HTTPException 401: If not authenticated.",
+        "description": "Get the current authenticated user's profile.\n\nReturns:\n    UserPublic: The authenticated user's public profile.\n\nRaises:\n    HTTPException 401: If not authenticated.",
         "operationId": "get_current_user_profile_api_auth_me_get",
         "responses": {
           "200": {
@@ -952,6 +952,105 @@
         }
       }
     },
+    "/api/books/graph": {
+      "get": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Get Global Graph",
+        "description": "Retrieve global knowledge graph data for public visualization.",
+        "operationId": "get_global_graph_api_books_graph_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/graph/merge": {
+      "post": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Merge Graph Entities",
+        "description": "Merge two knowledge graph entities (admin only).",
+        "operationId": "merge_graph_entities_api_books_graph_merge_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeEntitiesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/books/{book_id}": {
       "get": {
         "tags": [
@@ -1685,6 +1784,52 @@
         }
       }
     },
+    "/api/books/{book_id}/reprocess/summary": {
+      "post": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Reprocess Summary",
+        "description": "Manually trigger/reprocess AI summary generation for a book.\n\nDeletes any existing summary row so the summary_job generates a fresh one.",
+        "operationId": "reprocess_summary_api_books__book_id__reprocess_summary_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/books/{book_id}/retry-failed": {
       "post": {
         "tags": [
@@ -1737,7 +1882,7 @@
           "books"
         ],
         "summary": "Reset Page",
-        "description": "Reset a single page to ocr/idle so the v2 OCR scanner re-processes it.",
+        "description": "Reset a single page so the OCR scanner re-processes it from scratch.",
         "operationId": "reset_page_api_books__book_id__pages__page_num__reset_post",
         "security": [
           {
@@ -2212,6 +2357,48 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/chat/recent-questions": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Get Recent Questions",
+        "description": "Return recent distinct first-turn questions for the home page rotator.\n\nNo auth required \u2014 these are public showcase questions.",
+        "operationId": "get_recent_questions_api_chat_recent_questions_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/ai/ocr": {
@@ -3837,6 +4024,187 @@
         }
       }
     },
+    "/api/questions/admin/questions": {
+      "get": {
+        "tags": [
+          "questions"
+        ],
+        "summary": "Get Admin Questions",
+        "description": "Return all RAG evaluation questions, newest first, paginated.\n\nAdmin-only endpoint.",
+        "operationId": "get_admin_questions_api_questions_admin_questions_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagQuestionsPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/questions/admin/questions/{eval_id}/featured": {
+      "patch": {
+        "tags": [
+          "questions"
+        ],
+        "summary": "Toggle Featured Question",
+        "description": "Set or clear the show_on_homepage flag for a question.\n\nAdmin-only endpoint.",
+        "operationId": "toggle_featured_question_api_questions_admin_questions__eval_id__featured_patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "eval_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Eval Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RagQuestionToggle"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagQuestionToggleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/questions/featured": {
+      "get": {
+        "tags": [
+          "questions"
+        ],
+        "summary": "Get Featured Questions",
+        "description": "Return questions flagged for home-page display (show_on_homepage=True).\n\nPublic endpoint \u2014 no auth required.",
+        "operationId": "get_featured_questions_api_questions_featured_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response Get Featured Questions Api Questions Featured Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/config": {
       "get": {
         "summary": "Get Public Config",
@@ -4883,6 +5251,24 @@
         ],
         "title": "IgnoreIssuesRequest"
       },
+      "MergeEntitiesRequest": {
+        "properties": {
+          "keep_name": {
+            "type": "string",
+            "title": "Keep Name"
+          },
+          "remove_name": {
+            "type": "string",
+            "title": "Remove Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "keep_name",
+          "remove_name"
+        ],
+        "title": "MergeEntitiesRequest"
+      },
       "OcrRequest": {
         "properties": {
           "imageBase64": {
@@ -5211,6 +5597,144 @@
           "thumbs_down_count"
         ],
         "title": "RAGQualityStats"
+      },
+      "RagQuestionAdmin": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "question": {
+            "type": "string",
+            "title": "Question"
+          },
+          "isGlobal": {
+            "type": "boolean",
+            "title": "Isglobal"
+          },
+          "bookId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bookid"
+          },
+          "userId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Userid"
+          },
+          "isFirstTurn": {
+            "type": "boolean",
+            "title": "Isfirstturn"
+          },
+          "showOnHomepage": {
+            "type": "boolean",
+            "title": "Showonhomepage"
+          },
+          "userFeedback": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Userfeedback"
+          },
+          "ts": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "question",
+          "isGlobal",
+          "isFirstTurn",
+          "showOnHomepage",
+          "ts"
+        ],
+        "title": "RagQuestionAdmin",
+        "description": "Admin view of a single RAG evaluation question row."
+      },
+      "RagQuestionToggle": {
+        "properties": {
+          "showOnHomepage": {
+            "type": "boolean",
+            "title": "Showonhomepage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "showOnHomepage"
+        ],
+        "title": "RagQuestionToggle",
+        "description": "Request body for toggling show_on_homepage."
+      },
+      "RagQuestionToggleResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "showOnHomepage": {
+            "type": "boolean",
+            "title": "Showonhomepage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "showOnHomepage"
+        ],
+        "title": "RagQuestionToggleResponse",
+        "description": "Response after toggling show_on_homepage."
+      },
+      "RagQuestionsPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RagQuestionAdmin"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "RagQuestionsPage",
+        "description": "Paginated response for admin questions list."
       },
       "RandomBookOut": {
         "properties": {

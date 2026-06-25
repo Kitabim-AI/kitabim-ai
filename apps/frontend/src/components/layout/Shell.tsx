@@ -33,8 +33,8 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
           {children}
         </div>
 
-        {view !== 'reader' && view !== 'admin' && (
-          <footer className={`border-t border-[#0369a1]/10 pt-4 ${['global-chat', 'spell-check'].includes(view) ? 'hidden sm:grid' : 'grid'} grid-cols-1 sm:grid-cols-3 items-center gap-4 w-full px-4 sm:px-2 ${['global-chat', 'spell-check'].includes(view) ? 'mb-2 mt-4 lg:max-w-5xl lg:mx-auto' : 'mb-6 mt-8'} ${view === 'join-us' ? 'max-w-6xl mx-auto' : ''}`} dir="rtl">
+        {view !== 'reader' && view !== 'admin' && view !== 'join-us' && (
+          <footer className={`border-t border-[#0369a1]/10 pt-4 ${['global-chat', 'spell-check'].includes(view) ? 'hidden sm:grid' : 'grid'} grid-cols-1 sm:grid-cols-3 items-center gap-4 w-full px-4 sm:px-2 ${['global-chat', 'spell-check'].includes(view) ? 'mb-2 mt-4 lg:max-w-5xl lg:mx-auto' : 'mb-6 mt-8'}`} dir="rtl">
             {/* Right Column (Copyright) */}
             <div className="w-full text-center sm:text-right">
               <p className="text-xs text-slate-400 font-normal uyghur-text">
