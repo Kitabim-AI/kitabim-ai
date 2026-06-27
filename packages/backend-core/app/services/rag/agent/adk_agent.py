@@ -19,6 +19,7 @@ from app.services.rag.agent.tools import (
     translate_english_to_uyghur,
     check_word_spelling,
     search_language_sources,
+    lookup_proverbs,
 )
 from app.services.rag.agent.prompts import AGENT_SYSTEM_PROMPT
 
@@ -54,5 +55,6 @@ def build_rag_agent(model_name: str) -> Agent:
             translate_english_to_uyghur,
             check_word_spelling,
             search_language_sources,
+            lookup_proverbs,
         ],
     )

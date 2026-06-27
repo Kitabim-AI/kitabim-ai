@@ -214,6 +214,25 @@ class DictionaryRepository:
         res = await self.session.execute(stmt)
         return [dict(r._mapping) for r in res.all()]
 
+    async def lookup_proverbs(self, query: str, limit: int = 3) -> list[dict[str, Any]]:
+        from app.db.models import Proverb
+
+        query = query.strip()
+        if not query:
+            return []
+        stmt = (
+            select(
+                Proverb.id,
+                Proverb.text,
+                Proverb.volume,
+                Proverb.page_number,
+            )
+            .where(Proverb.text.op("~*")(query))
+            .limit(limit)
+        )
+        res = await self.session.execute(stmt)
+        return [dict(r._mapping) for r in res.all()]
+
     async def search_language_sources(
         self, query: str, limit_per_source: int = 3
     ) -> dict[str, list[dict[str, Any]]]:
@@ -227,4 +246,5 @@ class DictionaryRepository:
                 query, limit_per_source
             ),
             "names_dictionary": await self.lookup_name(query, limit_per_source),
+            "proverbs": await self.lookup_proverbs(query, limit_per_source),
         }

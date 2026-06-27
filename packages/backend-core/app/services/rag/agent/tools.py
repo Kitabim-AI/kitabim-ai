@@ -363,6 +363,22 @@ async def search_language_sources(
     return await _execute_and_record_tool(tool_context, "search_language_sources", args)
 
 
+async def lookup_proverbs(
+    term: str,
+    tool_context: ToolContext = None,
+) -> dict:
+    """Look up a Uyghur proverb or find proverbs matching a search term/keyword.
+
+    Call this when the user asks about proverbs, wants to look up a proverb,
+    or asks for proverbs matching a specific word or theme.
+
+    Args:
+        term: The search term or keyword to look up (e.g., "بىلىم", "knowledge").
+    """
+    args = {"term": term}
+    return await _execute_and_record_tool(tool_context, "lookup_proverbs", args)
+
+
 AGENT_TOOLS = [
     search_chunks,
     search_books_by_summary,
@@ -381,6 +397,7 @@ AGENT_TOOLS = [
     check_word_spelling,
     lookup_uyghur_name,
     search_language_sources,
+    lookup_proverbs,
 ]
 
 
@@ -475,6 +492,9 @@ async def _dispatch_tool_with_retry(
     if tool_name == "search_language_sources":
         result = await _run_search_language_sources(tool_args, ctx)
         return {"ok": True, **result, "found_count": result.get("found_count", 0)}
+    if tool_name == "lookup_proverbs":
+        result = await _run_lookup_proverbs(tool_args, ctx)
+        return {"ok": True, **result, "found_count": len(result.get("entries", []))}
     raise ValueError(f"Unknown tool: {tool_name}")
 
 
@@ -1011,6 +1031,21 @@ def _format_dictionary_context(source_label: str, entries: list[dict]) -> str:
                 f"Name: {entry.get('name', '')}]\n"
                 "This name exists in the names dictionary."
             )
+        elif source_label == "proverbs":
+            vol = entry.get("volume")
+            page = entry.get("page_number")
+            ref_info = ""
+            if vol and page:
+                ref_info = f" (Found in Volume: {vol}, Page: {page})"
+            elif page:
+                ref_info = f" (Found on Page: {page})"
+            elif vol:
+                ref_info = f" (Found in Volume: {vol})"
+            blocks.append(
+                "[Dictionary/Culture Source: Uyghur Proverbs, "
+                f"Text: {entry.get('text', '')}]\n"
+                f"This is a Uyghur proverb: \"{entry.get('text', '')}\"{ref_info}"
+            )
     return "\n\n---\n\n".join(blocks)
 
 
@@ -1227,3 +1262,64 @@ async def _run_lookup_uyghur_name(args: dict, ctx: QueryContext) -> dict:
         count=len(entries),
     )
     return {"context": context, "entries": entries, "found_count": len(entries)}
+
+
+async def _run_lookup_proverbs(args: dict, ctx: QueryContext) -> dict:
+    from app.db.repositories.proverbs_repository import ProverbsRepository
+    from app.db.models import Proverb
+    from sqlalchemy import select
+
+    term = args.get("term", "").strip()
+    repo = ProverbsRepository(ctx.session)
+
+    if not term:
+        proverb = await repo.get_random_proverb()
+        entries = [proverb] if proverb else []
+    else:
+        stmt = select(Proverb).where(Proverb.text.op("~*")(term)).limit(10)
+        res = await ctx.session.execute(stmt)
+        entries = list(res.scalars().all())
+
+    entries_dict = []
+    for entry in entries:
+        entries_dict.append(
+            {
+                "id": entry.id,
+                "text": entry.text,
+                "volume": entry.volume,
+                "page_number": entry.page_number,
+            }
+        )
+
+    if entries_dict:
+        context_parts = []
+        for entry in entries_dict:
+            source_info = (
+                f"[Dictionary/Culture Source: Uyghur Proverbs, Text: {entry['text']}]"
+            )
+            ref_info = ""
+            if entry.get("volume") or entry.get("page_number"):
+                vol = entry.get("volume")
+                page = entry.get("page_number")
+                ref_info = (
+                    f" (Found in Volume: {vol}, Page: {page})"
+                    if vol and page
+                    else f" (Found on Page: {page})"
+                    if page
+                    else f" (Found in Volume: {vol})"
+                )
+            context_parts.append(
+                f"{source_info}\nThis is a Uyghur proverb: \"{entry['text']}\"{ref_info}"
+            )
+        context = "\n\n---\n\n".join(context_parts)
+    else:
+        context = f"No proverbs found matching '{term}'."
+
+    log_json(
+        logger,
+        logging.INFO,
+        "Agent tool lookup_proverbs",
+        term=term[:60],
+        count=len(entries_dict),
+    )
+    return {"context": context, "entries": entries_dict}

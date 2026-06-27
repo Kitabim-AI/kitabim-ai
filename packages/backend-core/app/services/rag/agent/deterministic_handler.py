@@ -98,7 +98,7 @@ Return ONLY valid JSON matching this schema:
   "needs_rewrite": boolean,         // True if the query has unresolved pronouns/coreferences referring to history (e.g. "who wrote it?", "what is his age?", "ئۇ كىم؟")
   "rewritten_question": string | null, // If needs_rewrite is true, rewrite the question to resolve all pronouns/references using chat history to make it self-contained in Uyghur/English. If needs_rewrite is false, return null.
   "catalog_subtype": "author_of" | "books_by" | "general" | null, // Use "author_of" if asking who wrote a book, "books_by" if asking what books an author wrote, "general" for other catalog/library-wide queries (like "what books do you have"), or null if this is NOT a catalog query.
-  "dictionary_subtype": "uyghur_definition" | "history_term" | "english_uyghur" | "spelling" | "names" | "general" | null, // Use only when intent is "dictionary".
+  "dictionary_subtype": "uyghur_definition" | "history_term" | "english_uyghur" | "spelling" | "names" | "proverbs" | "general" | null, // Use only when intent is "dictionary".
   "dictionary_term": string | null, // The exact word/term/name/English phrase to look up when intent is "dictionary".
   "intent": "catalog" | "dictionary" | "identity" | "summary" | "relationship" | "passage",
   "is_composite": boolean,          // True if the query contains multiple distinct questions or requests that should be handled separately (e.g. "Who wrote X and what is it about?").
@@ -109,7 +109,7 @@ Return ONLY valid JSON matching this schema:
     "is_volume_shift": boolean,
     "target_volume": integer | null,
     "catalog_subtype": "author_of" | "books_by" | "general" | null,
-    "dictionary_subtype": "uyghur_definition" | "history_term" | "english_uyghur" | "spelling" | "names" | "general" | null,
+    "dictionary_subtype": "uyghur_definition" | "history_term" | "english_uyghur" | "spelling" | "names" | "proverbs" | "general" | null,
     "dictionary_term": string | null
   }}> | null
 }}
@@ -128,6 +128,7 @@ Dictionary subtype rules:
 - "english_uyghur": user asks for the Uyghur translation/equivalent of an English word or phrase
 - "spelling": user asks whether a Uyghur spelling is correct or valid
 - "names": Uyghur person name lookup, or listing/asking about names starting with a specific letter/alphabet (e.g. "ب ھەرىپىدىن باشلانغان كىشى ئىسىملىرى", "ئالىم دېگەن ئىسىم"). For requests listing names starting with a letter, extract the target letter (e.g., "ب") as the dictionary_term.
+- "proverbs": user asks for proverbs, Uyghur proverbs/sayings, or searches for proverbs containing a word (e.g. "ماقال-تەمسىللەر", "بىلىم ھەققىدە ماقال-تەمسىل", "proverb about knowledge")
 - "general": dictionary-style query where the exact source is unclear
 """
         llm = build_text_llm(ctx.agent_model)
@@ -510,6 +511,15 @@ Return ONLY valid JSON matching this schema:
             elif subtype == "names":
                 async for ev in self._run_tool_and_yield(
                     "lookup_uyghur_name",
+                    {"term": term},
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
+            elif subtype == "proverbs":
+                async for ev in self._run_tool_and_yield(
+                    "lookup_proverbs",
                     {"term": term},
                     ctx,
                     observations,
@@ -1367,6 +1377,10 @@ def _looks_like_dictionary_question(q_norm: str) -> bool:
         "ئىسىملىرى",
         "ئىسىملەر",
         "ئىسىم",
+        "ماقال",
+        "تەمسىل",
+        "proverb",
+        "saying",
     ]
     return any(normalize_uyghur(marker) in q_norm for marker in dictionary_markers)
 
@@ -1393,6 +1407,11 @@ def _guess_dictionary_subtype(q_norm: str) -> str:
         for marker in ["كىشى ئىسىملىرى", "ئىسىملىرى", "ئىسىملەر", "ئىسىم"]
     ):
         return "names"
+    if any(
+        normalize_uyghur(marker) in q_norm
+        for marker in ["ماقال", "تەمسىل", "proverb", "saying"]
+    ):
+        return "proverbs"
     if re.search(r"[A-Za-z]", q_norm):
         return "english_uyghur"
     return "general"
@@ -1428,6 +1447,12 @@ def _extract_dictionary_term(question: str) -> str:
         r"\btranslate\b",
         r"\btranslation\b",
         r"\bspell(?:ing)?\b.*$",
+        r"ماقال\s*-?\s*تەمسىل(?:لەر)?",
+        r"ماقاللار",
+        r"تەمسىللەر",
+        r"\bproverbs?\b",
+        r"\bsayings?\b",
+        r"بارمۇ.*$",
         r"[؟?!.]+$",
     ]
     term = text

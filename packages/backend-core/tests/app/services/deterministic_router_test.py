@@ -627,3 +627,68 @@ async def test_fallback_names_signals(mock_ctx):
         assert sig["intent"] == "dictionary"
         assert sig["dictionary_subtype"] == "names"
         assert sig["dictionary_term"] == "ب"
+
+
+@pytest.mark.asyncio
+async def test_execute_path_dictionary_proverbs(mock_ctx):
+    handler = DeterministicRAGHandler()
+    observations = []
+    signals = {
+        "dictionary_subtype": "proverbs",
+        "dictionary_term": "بىلىم",
+    }
+
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        assert tool_name == "lookup_proverbs"
+        assert tool_args == {"term": "بىلىم"}
+        return {
+            "ok": True,
+            "context": '[Dictionary/Culture Source: Uyghur Proverbs, Text: بىلىم يوق سەت]\nThis is a Uyghur proverb: "بىلىم يوق سەت"',
+            "entries": [
+                {"id": 1, "text": "بىلىم يوق سەت", "volume": 1, "page_number": 12},
+            ],
+            "found_count": 1,
+        }
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        async for _ in handler.execute_path(
+            "dictionary",
+            signals,
+            "بىلىم ھەققىدە ماقال-تەمسىللەر بارمۇ؟",
+            mock_ctx,
+            observations,
+        ):
+            pass
+
+    assert [o["tool"] for o in observations] == ["lookup_proverbs"]
+
+
+@pytest.mark.asyncio
+async def test_fallback_proverbs_signals(mock_ctx):
+    handler = DeterministicRAGHandler()
+
+    # Mock LLM query analysis to raise an error so that keyword fallback is triggered
+    async def mock_llm_analyze(question, ctx):
+        raise ValueError("Simulate LLM error to trigger fallback")
+
+    handler._llm_analyze_query = mock_llm_analyze
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler.find_books_by_title_in_db",
+        return_value=[],
+    ):
+        sig = await handler.extract_signals(
+            "بىلىم ھەققىدە ماقال-تەمسىللەر بارمۇ؟", mock_ctx
+        )
+        assert sig["intent"] == "dictionary"
+        assert sig["dictionary_subtype"] == "proverbs"
+        assert sig["dictionary_term"] == "بىلىم ھەققىدە"
+
+
+def test_extract_dictionary_term_proverbs():
+    assert _extract_dictionary_term("بىلىم ھەققىدە ماقال-تەمسىللەر") == "بىلىم ھەققىدە"
+    assert _extract_dictionary_term("ئىلىم ھەققىدە ماقاللار") == "ئىلىم ھەققىدە"
+    assert _extract_dictionary_term("proverb about truth") == "about truth"
