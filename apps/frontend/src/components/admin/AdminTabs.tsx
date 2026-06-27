@@ -2,7 +2,7 @@
  * Admin Tabs - Tabbed interface for admin panels
  */
 
-import { BarChart3, BookA, Mail, MessageSquare, Settings, Sparkles, TableOfContents, Users } from 'lucide-react';
+import { BarChart3, Mail, MessageSquare, Settings, Sparkles, TableOfContents, Users } from 'lucide-react';
 import React from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth, useIsAdmin, useIsEditor } from '../../hooks/useAuth';
@@ -10,7 +10,6 @@ import { useI18n } from '../../i18n/I18nContext';
 import { AdminQuestions } from './AdminQuestions';
 import { SystemConfigPanel } from './config/SystemConfigPanel';
 import { ContactSubmissionsPanel } from './ContactSubmissionsPanel';
-import { DictionaryManagementPanel } from './dictionary/DictionaryManagementPanel';
 import { AutoCorrectRulesPanel } from './rules/AutoCorrectRulesPanel';
 import { StatsPanel } from './StatsPanel';
 import { UserManagementPanel } from './users/UserManagementPanel';
@@ -19,7 +18,7 @@ interface AdminTabsProps {
   bookManagementPanel: React.ReactNode;
 }
 
-type TabId = 'books' | 'stats' | 'users' | 'contacts' | 'config' | 'rules' | 'dictionary' | 'questions';
+type TabId = 'books' | 'stats' | 'users' | 'contacts' | 'config' | 'rules' | 'questions';
 
 interface Tab {
   id: TabId;
@@ -52,7 +51,6 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
     { id: 'books', label: t('admin.booksLabel'), icon: <TableOfContents size={18} /> },
     { id: 'users', label: t('admin.usersLabel'), icon: <Users size={18} />, adminOnly: true },
     { id: 'rules', label: t('admin.rulesLabel') || 'Auto-Correction', icon: <Sparkles size={18} />, adminOnly: false },
-    { id: 'dictionary', label: t('admin.dictionaryLabel') || 'Dictionary', icon: <BookA size={18} />, adminOnly: false },
     { id: 'stats', label: t('admin.statsLabel') || 'Statistics', icon: <BarChart3 size={18} />, adminOnly: true },
     { id: 'config', label: t('admin.configLabel'), icon: <Settings size={18} />, adminOnly: true },
     { id: 'questions', label: t('admin.questionsLabel'), icon: <MessageSquare size={18} />, adminOnly: true },
@@ -100,7 +98,6 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
         {activeTab === 'contacts' && isAdmin && <ContactSubmissionsPanel />}
         {activeTab === 'stats' && isAdmin && <StatsPanel />}
         {activeTab === 'config' && isAdmin && <SystemConfigPanel />}
-        {activeTab === 'dictionary' && <DictionaryManagementPanel />}
       </div>
     </div>
   );

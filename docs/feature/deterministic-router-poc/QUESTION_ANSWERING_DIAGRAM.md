@@ -27,7 +27,7 @@ flowchart TD
         S1_DB --> S1_LLM["[LLM] Unified Query Analyzer<br/>(Extract intent, signals, rewrite, & sub-questions)<br/>emits: planning / rewrite_query / decompose"]
         S1_LLM --> SUB_LOOP{"For each sub-question"}
         SUB_LOOP -->|"Multi-question<br/>(signals inline from LLM)"| SUB_DB["DB Lookups Only<br/>_build_sub_signals_from_llm()<br/>(title/author check — no LLM)"]
-        SUB_LOOP -->|Single question / Reuse| S4["Stage 3: Execution Router<br/>(Run path A-H directly)"]
+        SUB_LOOP -->|Single question / Reuse| S4["Stage 3: Execution Router<br/>(Run path A-I directly)"]
         SUB_DB --> S4
         S4 --> T_DET["Execute Path Tool<br/>emits: tool_call<br/>tool_result"]
         T_DET -->|Return observations| S4
@@ -179,7 +179,7 @@ flowchart TD
 
 ## Agent Tools Reference
 
-| Tool | Type | Wraps | When agent calls it |
+| Tool | Type | Wraps | When agent/router calls it |
 |------|------|-------|---------------------|
 | `rewrite_query` | Utility | `QueryRewriter` | Question has pronouns or follow-up markers ("چۇ" clitic) and chat history exists. |
 | `find_books_by_title` | Content | `BooksRepository` title match | Question explicitly names a book title; returns book IDs, title, author, and volume metadata. |
@@ -192,6 +192,12 @@ flowchart TD
 | `get_sister_volumes` | Content | `BooksRepository` | All volumes of the same series as a given book_id. |
 | `search_catalog` | Metadata | `CatalogHandler` | Library browsing and general listing queries. |
 | `query_knowledge_graph` | Content | `GraphRepository` | Queries Neo4j to retrieve connections between entities. |
+| `lookup_uyghur_word` | Dictionary | `DictionaryRepository.lookup_uyghur_definition` | Lookup definitions for Uyghur words. |
+| `lookup_history_term` | Dictionary | `DictionaryRepository.lookup_history_term` | Lookup definition for a historical term, person, event, or concept. |
+| `translate_english_to_uyghur` | Dictionary | `DictionaryRepository.translate_english_to_uyghur` | Translate English word/phrase to Uyghur. |
+| `check_word_spelling` | Dictionary | `DictionaryRepository.check_word_spelling` | Validate word spelling and suggest corrections. |
+| `lookup_uyghur_name` | Dictionary | `DictionaryRepository.lookup_name` | Lookup a Uyghur person name or list names starting with a specific letter. |
+| `search_language_sources` | Dictionary | `DictionaryRepository.search_language_sources` | Fallback search across all language/dictionary sources. |
 
 ---
 

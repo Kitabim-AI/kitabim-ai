@@ -95,6 +95,7 @@
     "admin": "Admin",
     "addBook": "Add Book",
     "graph": "Knowledge Graph",
+    "dictionary": "Dictionary",
     "switchLanguage": "Switch Language"
   },
   "home": {
@@ -470,22 +471,50 @@
         "pending": "Pending Issues"
       }
     },
+    "words": {
+      "title": "Spell-Check Words",
+      "searchPlaceholder": "Search word...",
+      "totalWords": "Total {{count}} words",
+      "wordExists": "Word exists in words list.",
+      "wordNotFound": "Word not found in words list."
+    },
     "dictionary": {
       "title": "Dictionary Management",
-      "subtitle": "Search, add or remove dictionary words.",
-      "searchPlaceholder": "Search word...",
-      "searchPlaceholderWithCount": "Search within {{count}} words...",
-      "totalWords": "Total {{count}} words",
-      "addWord": "Add to Dictionary",
-      "removeWord": "Remove from Dictionary",
-      "confirmDeleteTitle": "Remove from Dictionary",
-      "confirmDelete": "Are you sure you want to remove \"{{word}}\" from the dictionary?",
-      "wordExists": "Word exists in dictionary.",
-      "wordNotFound": "Word not found in dictionary.",
-      "stats": {
-        "total": "Total Words"
-      },
-      "emptyStateTitle": "Search Dictionary"
+      "searchPlaceholder": "Search dictionary...",
+      "totalWords": "Total {{count}} entries",
+      "wordNotFound": "Word not found in dictionary."
+    },
+    "synonyms": {
+      "title": "Synonym Dictionary",
+      "searchPlaceholder": "Search synonyms...",
+      "totalWords": "Total {{count}} entries",
+      "wordNotFound": "Word not found in synonym dictionary."
+    },
+    "historyDictionary": {
+      "title": "History Dictionary",
+      "searchPlaceholder": "Search history dictionary...",
+      "totalEntries": "Total {{count}} entries",
+      "entryNotFound": "No matching entries found.",
+      "transliteration": "Romanization"
+    },
+    "namesDictionary": {
+      "title": "Person Names",
+      "searchPlaceholder": "Search person names...",
+      "totalEntries": "Total {{count}} names",
+      "entryNotFound": "No matching names found."
+    },
+    "englishUyghurDictionary": {
+      "title": "English-Uyghur",
+      "searchPlaceholder": "Search English words...",
+      "totalEntries": "Total {{count}} entries",
+      "entryNotFound": "No matching entries found."
+    },
+    "proverbs": {
+      "title": "Proverbs",
+      "searchPlaceholder": "Search proverbs...",
+      "totalEntries": "Total {{count}} proverbs",
+      "entryNotFound": "No matching proverbs found.",
+      "volumeAndPage": "Vol. {{volume}}, Page {{page}}"
     }
   },
   "spellCheck": {

@@ -58,6 +58,9 @@ if [ "$COMPONENT" = "all" ]; then
   # Apply all migrations (IF NOT EXISTS guards make these idempotent)
   echo "🗄️  Applying migrations..."
   for f in packages/backend-core/migrations/*.sql; do
+    if [[ "$f" == *"rollback"* ]]; then
+      continue
+    fi
     echo "  → $(basename "$f")"
     docker compose exec -T postgres psql -U kitabim -d kitabim-ai < "$f"
   done

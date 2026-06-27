@@ -281,7 +281,7 @@ async def find_unknown_words(
                 "SELECT w "
                 "FROM unnest(CAST(:words AS text[])) AS w "
                 "WHERE NOT EXISTS ("
-                "    SELECT 1 FROM dictionary WHERE word = w"
+                "    SELECT 1 FROM words WHERE word = w"
                 ")"
             ),
             {"words": db_needed},
@@ -401,7 +401,7 @@ async def get_ocr_corrections_batch(
         return corrections
 
     result = await session.execute(
-        text("SELECT word FROM dictionary WHERE word = ANY(CAST(:variants AS text[]))"),
+        text("SELECT word FROM words WHERE word = ANY(CAST(:variants AS text[]))"),
         {"variants": list(variant_to_originals.keys())},
     )
     found = {row[0] for row in result.fetchall()}

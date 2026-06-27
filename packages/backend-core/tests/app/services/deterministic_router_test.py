@@ -2,7 +2,10 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.rag.context import QueryContext
-from app.services.rag.agent.deterministic_handler import DeterministicRAGHandler
+from app.services.rag.agent.deterministic_handler import (
+    DeterministicRAGHandler,
+    _extract_dictionary_term,
+)
 
 
 @pytest.fixture
@@ -159,6 +162,28 @@ async def test_extract_signals_fallback_to_keywords(mock_ctx):
     ):
         sig = await handler.extract_signals("ئۇ كىم؟", mock_ctx)
         assert sig["needs_rewrite"] is True
+
+
+@pytest.mark.asyncio
+async def test_extract_signals_fallback_dictionary_question(mock_ctx):
+    handler = DeterministicRAGHandler()
+    handler._llm_analyze_query = AsyncMock(side_effect=Exception("API Timeout"))
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler.find_books_by_title_in_db",
+        return_value=[],
+    ):
+        sig = await handler.extract_signals("democracy نىڭ ئۇيغۇرچىسى نېمە؟", mock_ctx)
+
+    assert sig["intent"] == "dictionary"
+    assert sig["dictionary_subtype"] == "english_uyghur"
+    assert sig["dictionary_term"] == "democracy"
+
+
+def test_extract_dictionary_term():
+    assert _extract_dictionary_term("ئىنقىلاب دېگەن نېمە؟") == "ئىنقىلاب"
+    assert _extract_dictionary_term("democracy نىڭ ئۇيغۇرچىسى نېمە؟") == "democracy"
+    assert _extract_dictionary_term("«ئەركىنلىك» مەنىسى نېمە؟") == "ئەركىنلىك"
 
 
 @pytest.mark.asyncio
@@ -467,3 +492,138 @@ async def test_execute_path_identity_query_knowledge_graph(mock_ctx):
 
         tools_called = [o["tool"] for o in observations]
         assert "query_knowledge_graph" in tools_called
+
+
+@pytest.mark.asyncio
+async def test_execute_path_dictionary_translation(mock_ctx):
+    handler = DeterministicRAGHandler()
+    observations = []
+    signals = {
+        "dictionary_subtype": "english_uyghur",
+        "dictionary_term": "democracy",
+    }
+
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        assert tool_name == "translate_english_to_uyghur"
+        assert tool_args == {"term": "democracy"}
+        return {
+            "ok": True,
+            "context": "[Dictionary Source: English-Uyghur Dictionary, English: democracy]\nدېموكراتىيە",
+            "entries": [{"english": "democracy", "uyghur": "دېموكراتىيە"}],
+            "found_count": 1,
+        }
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        async for _ in handler.execute_path(
+            "dictionary",
+            signals,
+            "democracy نىڭ ئۇيغۇرچىسى نېمە؟",
+            mock_ctx,
+            observations,
+        ):
+            pass
+
+    assert [o["tool"] for o in observations] == ["translate_english_to_uyghur"]
+
+
+@pytest.mark.asyncio
+async def test_execute_path_dictionary_history_fallback(mock_ctx):
+    handler = DeterministicRAGHandler()
+    observations = []
+    signals = {
+        "dictionary_subtype": "history_term",
+        "dictionary_term": "زىيائۇر راخمان",
+    }
+
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        if tool_name == "lookup_history_term":
+            return {"ok": True, "context": "", "entries": [], "found_count": 0}
+        if tool_name == "search_language_sources":
+            return {
+                "ok": True,
+                "context": "[Dictionary Source: Names Dictionary, Name: زىيائۇر راخمان]\nThis name exists in the names dictionary.",
+                "results": {},
+                "found_count": 1,
+            }
+        return {"ok": True, "found_count": 0}
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        async for _ in handler.execute_path(
+            "dictionary",
+            signals,
+            "زىيائۇر راخمان كىم؟",
+            mock_ctx,
+            observations,
+        ):
+            pass
+
+    assert [o["tool"] for o in observations] == [
+        "lookup_history_term",
+        "search_language_sources",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_execute_path_dictionary_names(mock_ctx):
+    handler = DeterministicRAGHandler()
+    observations = []
+    signals = {
+        "dictionary_subtype": "names",
+        "dictionary_term": "ب",
+    }
+
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        assert tool_name == "lookup_uyghur_name"
+        assert tool_args == {"term": "ب"}
+        return {
+            "ok": True,
+            "context": "[Dictionary Source: Names Dictionary, Letter Group: ب]\nHere are Uyghur person names starting with the letter 'ب':\nباباجان, باباخان",
+            "entries": [
+                {"name": "باباجان", "letter_group": "ب"},
+                {"name": "باباخان", "letter_group": "ب"},
+            ],
+            "found_count": 2,
+        }
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        async for _ in handler.execute_path(
+            "dictionary",
+            signals,
+            "ئۇيغۇرلاردا ب ھەرىپىدىن باشلانغان قانداق كىشى ئىسىملىرى بار؟",
+            mock_ctx,
+            observations,
+        ):
+            pass
+
+    assert [o["tool"] for o in observations] == ["lookup_uyghur_name"]
+
+
+@pytest.mark.asyncio
+async def test_fallback_names_signals(mock_ctx):
+    handler = DeterministicRAGHandler()
+
+    # Mock LLM query analysis to raise an error so that keyword fallback is triggered
+    async def mock_llm_analyze(question, ctx):
+        raise ValueError("Simulate LLM error to trigger fallback")
+
+    handler._llm_analyze_query = mock_llm_analyze
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler.find_books_by_title_in_db",
+        return_value=[],
+    ):
+        sig = await handler.extract_signals(
+            "ب ھەرىپىدىن باشلانغان كىشى ئىسىملىرى بارمۇ؟", mock_ctx
+        )
+        assert sig["intent"] == "dictionary"
+        assert sig["dictionary_subtype"] == "names"
+        assert sig["dictionary_term"] == "ب"

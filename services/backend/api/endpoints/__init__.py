@@ -12,9 +12,15 @@ from . import (
     spell_check_router,
     auto_correct_rules_router,
     dictionary_router,
+    words_router,
+    synonyms_router,
+    history_dictionary_router,
+    names_dictionary_router,
+    english_uyghur_router,
     share_router,
     cache_router,
     questions_router,
+    proverbs_router,
 )
 
 __all__ = [
@@ -29,7 +35,13 @@ __all__ = [
     "spell_check_router",
     "auto_correct_rules_router",
     "dictionary_router",
+    "words_router",
+    "synonyms_router",
+    "history_dictionary_router",
+    "names_dictionary_router",
+    "english_uyghur_router",
     "share_router",
     "cache_router",
     "questions_router",
+    "proverbs_router",
 ]

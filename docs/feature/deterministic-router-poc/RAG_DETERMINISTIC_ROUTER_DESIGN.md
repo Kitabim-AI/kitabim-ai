@@ -66,7 +66,7 @@ flowchart TD
 
     S1_DB --> S1_LLM["**Stage 1b · Unified Query Analyzer** — structured LLM call
     extracts intent, volume shifts, page queries, coreferences,
-    and composite sub-questions (is_composite & sub_questions)
+    dictionary terms, and composite sub-questions
     (resilient Python keyword fallback on exception)"]
 
     S1_LLM --> COMP{is_composite?}
@@ -86,33 +86,40 @@ flowchart TD
     S1_SUB --> SIG
 
     SIG{"signals & intent"}
-    SIG -- "intent == catalog" --> PB["**Path B · Catalog**
+    SIG -- "intent == dictionary" --> PDICT["**Path B · Dictionary / Language**
+    lookup_uyghur_word /
+    lookup_history_term /
+    translate_english_to_uyghur /
+    check_word_spelling /
+    lookup_uyghur_name /
+    search_language_sources"]
+    SIG -- "intent == catalog" --> PCAT["**Path C · Catalog**
     get_book_author /
     get_books_by_author /
     search_catalog"]
     SIG -- "top_intent == current_page" --> PA["**Path A · Current Page**
     get_current_page()"]
     SIG -- "has_author
-    (no title)" --> PD["**Path D · Named Author**
+    (no title)" --> PD["**Path E · Named Author**
     get_books_by_author → search_chunks"]
-    SIG -- is_volume_shift --> PE["**Path E · Volume Shift**
+    SIG -- is_volume_shift --> PE["**Path F · Volume Shift**
     get_sister_volumes → search_chunks"]
     SIG -- "in_reader
-    (no title / author)" --> PF["**Path F · In-Reader**
+    (no title / author)" --> PF["**Path G · In-Reader**
     search_chunks(current_book)"]
     SIG -- "content intents
-    (has_title)" --> PC["**Path C · Named Title**
+    (has_title)" --> PC["**Path D · Named Title**
     find_books_by_title →
     summary / passage / relationship
     (intent-specific)"]
     SIG -- "content intents
-    (has_context_books)" --> PG["**Path G · Prior Context**
+    (has_context_books)" --> PG["**Path H · Prior Context**
     intent-specific tool sequence"]
     SIG -- "content intents
-    (is_global)" --> PH["**Path H · Open Search**
+    (is_global)" --> PH["**Path I · Open Search**
     intent-specific tool sequence"]
 
-    PA & PB & PD & PE & PF & PC & PG & PH --> MERGE
+    PA & PDICT & PCAT & PD & PE & PF & PC & PG & PH --> MERGE
 
     MERGE["merge observations
     from all sub-questions"]
@@ -148,10 +155,16 @@ A hybrid stage combining deterministic database-level metadata check with a sing
   - `needs_rewrite` (boolean)
   - `rewritten_question` (string | null)
   - `catalog_subtype` ("author_of" | "books_by" | "general" | null)
-  - `intent` ("catalog" | "identity" | "summary" | "relationship" | "passage")
+  - `intent` ("catalog" | "dictionary" | "identity" | "summary" | "relationship" | "passage")
+  - `dictionary_subtype` ("uyghur_definition" | "history_term" | "english_uyghur" | "spelling" | "names" | "general" | null)
+  - `dictionary_term` (string | null) — the exact word/phrase to lookup
   - `is_composite` (boolean)
-  - `sub_questions` (`Array<{question, intent, is_current_page_query, is_volume_shift, target_volume, catalog_subtype}> | null`) — each sub-question carries its own signals inline, eliminating a per-sub-question LLM call
-- **Resilient Fallback:** If the LLM call fails, the signal analyzer automatically falls back to local Python keyword matching, defaults `intent` to `"passage"`, disables decomposition, and sets `sub_questions = [question]`.
+  - `sub_questions` (`Array<{question, intent, is_current_page_query, is_volume_shift, target_volume, catalog_subtype, dictionary_subtype, dictionary_term}> | null`) — each sub-question carries its own signals inline, eliminating a per-sub-question LLM call
+- **Resilient Fallback:** If the LLM call fails, the signal analyzer automatically falls back to:
+  - Local Python keyword checks: checks if the normalized question contains any of 20+ dictionary query markers (like "دېگەن نېمە", "تەرجىمە", "ئىملاسى", "ئىسىمى") using `_looks_like_dictionary_question()`.
+  - Subtype guessing: uses `_guess_dictionary_subtype()` to map keywords to subtypes (e.g. spelling keywords map to "spelling", translation keywords to "english_uyghur", name keywords to "names").
+  - Term extraction: uses `_extract_dictionary_term()` to strip query wrappers and get the raw target word for lookup.
+  - If no dictionary markers are found, it falls back to checking other local keywords (for authors, volume shifts, pronouns, etc.), sets `intent` to `"passage"`, disables decomposition, and sets `sub_questions = [question]`.
 
 ---
 
@@ -178,7 +191,7 @@ Because intent is pre-extracted during **Stage 1b**'s structured query analysis,
 
 **Resilient Fallback:**
 If the Stage 1b LLM query analysis fails, intent classification falls back to:
-1. **Python Skip Heuristics:** Automatically routing queries with simple author, volume shift, or active reader signals to their respective default intents (e.g. `passage`).
+1. **Python Skip Heuristics:** Automatically routing queries with simple author, volume shift, active reader, or dictionary markers (intent `"dictionary"`) to their respective default intents.
 2. **Intent Classification LLM Call:** Executing a fallback LLM prompt to classify the question's intent (only if the skip heuristics are not met).
 
 ---
@@ -209,7 +222,21 @@ get_current_page()
 
 ---
 
-### Path B — Catalog
+### Path B — Dictionary / Language Sources
+**Triggers:** `intent == "dictionary"`
+
+| Subtype | Tool sequence |
+|---------|--------------|
+| `uyghur_definition` | `lookup_uyghur_word(term)` |
+| `history_term` | `lookup_history_term(term)` (falls back to `search_language_sources` if no result) |
+| `english_uyghur` | `translate_english_to_uyghur(term)` |
+| `spelling` | `check_word_spelling(word)` |
+| `names` | `lookup_uyghur_name(term)` |
+| `general` / fallback | `search_language_sources(query)` |
+
+---
+
+### Path C — Catalog
 **Triggers:** `intent == "catalog"`
 
 | Subtype | Tool sequence |
@@ -220,7 +247,7 @@ get_current_page()
 
 ---
 
-### Path C — Named Title
+### Path D — Named Title
 **Triggers:** `has_title == True`
 
 | Intent | Tool sequence |
@@ -236,7 +263,7 @@ get_current_page()
 
 ---
 
-### Path D — Named Author (no explicit title)
+### Path E — Named Author (no explicit title)
 **Triggers:** `has_author == True` AND NOT `has_title`
 ```
 get_books_by_author(question) → search_chunks(returned_book_ids)
@@ -245,7 +272,7 @@ Fallback if <4 results: widen to `search_chunks(book_ids=None)`.
 
 ---
 
-### Path E — Volume Shift
+### Path F — Volume Shift
 **Triggers:** `is_volume_shift == True` AND (`in_reader` OR `has_context_books`)
 ```
 get_sister_volumes(current_book_id or context_book_ids[0])
@@ -254,7 +281,7 @@ get_sister_volumes(current_book_id or context_book_ids[0])
 
 ---
 
-### Path F — In-Reader, No Title/Author
+### Path G — In-Reader, No Title/Author
 **Triggers:** `in_reader == True` AND NOT `has_title` AND NOT `has_author` AND NOT `is_volume_shift`
 ```
 search_chunks(current_book_id)
@@ -262,19 +289,19 @@ search_chunks(current_book_id)
 
 ---
 
-### Path G — Prior Context, No Title/Author
+### Path H — Prior Context, No Title/Author
 **Triggers:** `has_context_books == True` AND NOT `in_reader` AND NOT `has_title` AND NOT `has_author`
 
 | Intent | Tool sequence |
 |--------|--------------|
-| `identity` | `search_books_by_summary(question, book_ids=context_book_ids)` → if results: `get_book_summary(verified_ids, max=5)` else: fall to G-passage |
+| `identity` | `search_books_by_summary(question, book_ids=context_book_ids)` → if results: `get_book_summary(verified_ids, max=5)` else: fall to H-passage |
 | `passage` | `search_chunks(context_book_ids)` |
 | `relationship` AND `graph_available` | `query_knowledge_graph → search_chunks(context_book_ids)` |
 | `summary` | `get_book_summary(context_book_ids, max=5)` |
 
 ---
 
-### Path H — Open / No Context
+### Path I — Open / No Context
 **Triggers:** `is_global == True` AND NOT `has_title` AND NOT `has_author` AND NOT `has_context_books`
 
 | Intent | Tool sequence |

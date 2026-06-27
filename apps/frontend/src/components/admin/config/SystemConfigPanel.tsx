@@ -416,6 +416,8 @@ export function SystemConfigPanel() {
                   onChange={(e) => setNewKey(e.target.value)}
                   placeholder="e.g., llm_cb_failure_threshold"
                   className="w-full px-5 py-4 border-2 border-slate-100 rounded-2xl bg-slate-50/50 outline-none focus:ring-4 focus:ring-[#0369a1]/10 focus:border-[#0369a1] transition-all text-left font-mono"
+                  dir="ltr"
+                  data-latin="true"
                 />
               </div>
 
@@ -429,6 +431,8 @@ export function SystemConfigPanel() {
                   onChange={(e) => setNewValue(e.target.value)}
                   placeholder="e.g., 5"
                   className="w-full px-5 py-4 border-2 border-slate-100 rounded-2xl bg-slate-50/50 outline-none focus:ring-4 focus:ring-[#0369a1]/10 focus:border-[#0369a1] transition-all text-left"
+                  dir="ltr"
+                  data-latin="true"
                 />
               </div>
 
@@ -442,6 +446,8 @@ export function SystemConfigPanel() {
                   onChange={(e) => setNewDescription(e.target.value)}
                   placeholder="Describe the purpose of this configuration..."
                   className="w-full px-5 py-4 border-2 border-slate-100 rounded-2xl bg-slate-50/50 outline-none focus:ring-4 focus:ring-[#0369a1]/10 focus:border-[#0369a1] transition-all text-left"
+                  dir="ltr"
+                  data-latin="true"
                 />
               </div>
             </div>
@@ -487,7 +493,9 @@ export function SystemConfigPanel() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={t('common.search')}
-              className="w-full pr-12 pl-6 py-2.5 md:py-3 bg-white border-2 border-[#0369a1]/10 rounded-2xl outline-none focus:border-[#0369a1] transition-all uyghur-text shadow-sm text-base"
+              className="w-full pr-12 pl-6 py-2.5 md:py-3 bg-white border-2 border-[#0369a1]/10 rounded-2xl outline-none focus:border-[#0369a1] transition-all shadow-sm text-base"
+              dir="ltr"
+              data-latin="true"
             />
             {searchQuery && (
               <button
@@ -546,6 +554,8 @@ export function SystemConfigPanel() {
                           value={editValue}
                           onChange={(e) => setEditValue(e.target.value)}
                           className="w-full px-2 md:px-3 py-1.5 md:py-2 border-2 border-[#0369a1] rounded-xl bg-white outline-none text-left text-base"
+                          dir="ltr"
+                          data-latin="true"
                         />
                       ) : (
                         <span className="font-normal text-[#1a1a1a] text-sm md:text-base break-all">
@@ -560,6 +570,8 @@ export function SystemConfigPanel() {
                           value={editDescription}
                           onChange={(e) => setEditDescription(e.target.value)}
                           className="w-full px-2 md:px-3 py-1.5 md:py-2 border-2 border-[#0369a1] rounded-xl bg-white outline-none text-left text-base"
+                          dir="ltr"
+                          data-latin="true"
                         />
                       ) : (
                         <span className="text-xs md:text-sm text-[#94a3b8]">

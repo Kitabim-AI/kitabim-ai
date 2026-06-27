@@ -140,6 +140,9 @@ function handleKeyDown(e: KeyboardEvent) {
   if (!target || (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA')) return;
   if (target.tagName === 'INPUT' && (target as HTMLInputElement).type !== 'text' && (target as HTMLInputElement).type !== 'search') return;
 
+  // Skip Uyghur remapping for inputs that are explicitly marked as Latin/English
+  if (target.getAttribute('data-latin') === 'true' || target.getAttribute('lang') === 'en') return;
+
   // Ctrl+K to toggle Uyghur/English mode
   if (e.ctrlKey && e.key.toLowerCase() === 'k') {
     e.preventDefault();

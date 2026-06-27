@@ -96,6 +96,7 @@
     "admin": "باشقۇرۇش",
     "addBook": "كىتاب قوشۇش",
     "graph": "بىلىم گىرافى",
+    "dictionary": "لۇغەت",
     "switchLanguage": "تىل ئالماشتۇرۇش"
   },
   "home": {
@@ -473,19 +474,50 @@
         "pending": "كۈتۈۋاتىدۇ"
       }
     },
-    "dictionary": {
-      "title": "لۇغەت باشقۇرۇش",
-      "subtitle": "لۇغەت سۆزلىرىنى ئىزدەش، قوشۇش ياكى ئۆچۈرۈش.",
+    "words": {
+      "title": "ئىملا لۇغىتى",
       "searchPlaceholder": "سۆز ئىزدەش...",
-      "searchPlaceholderWithCount": "{{count}} سۆز ئىچىدىن ئىزدەش...",
       "totalWords": "جەمئىي {{count}} سۆز",
-      "addWord": "لۇغەتكە قوشۇش",
-      "removeWord": "لۇغەتتىن ئۆچۈرۈش",
-      "confirmDeleteTitle": "لۇغەتتىن ئۆچۈرۈش",
-      "confirmDelete": "«{{word}}» سۆزىنى لۇغەتتىن راستىنلا ئۆچۈرەمسىز؟ ",
-      "wordExists": "بۇ سۆز لۇغەتتە بار.",
-      "wordNotFound": "بۇ سۆز لۇغەتتە يوق.",
-      "emptyStateTitle": "كىتابىم ئىملا لۇغىتىدىن سۆز ئىزدەڭ"
+      "wordExists": "بۇ سۆز سۆزلۈكتە بار.",
+      "wordNotFound": "بۇ سۆز سۆزلۈكتە يوق."
+    },
+    "dictionary": {
+      "title": "ئىزاھلىق لۇغەت",
+      "searchPlaceholder": "ئىزاھلىق لۇغەتتىن ئىزدەڭ...",
+      "totalWords": "جەمئىي {{count}} سۆز",
+      "wordNotFound": "بۇ سۆز لۇغەتتە يوق."
+    },
+    "synonyms": {
+      "title": "مەنىداش سۆزلەر",
+      "searchPlaceholder": "مەنىداش سۆز ئىزدەڭ...",
+      "totalWords": "جەمئىي {{count}} سۆز",
+      "wordNotFound": "بۇ سۆز مەنىداش سۆزلەر لۇغىتىدە يوق."
+    },
+    "historyDictionary": {
+      "title": "تارىخ لۇغىتى",
+      "searchPlaceholder": "تارىخ لۇغىتىدىن ئىزدەڭ...",
+      "totalEntries": "جەمئىي {{count}} ئاتالغۇ",
+      "entryNotFound": "ماس كېلىدىغان ئاتالغۇ تېپىلمىدى.",
+      "transliteration": "يەشمىسى"
+    },
+    "namesDictionary": {
+      "title": "كىشى ئىسىملىرى",
+      "searchPlaceholder": "كىشى ئىسىملىرىنى ئىزدەڭ...",
+      "totalEntries": "جەمئىي {{count}} ئىسىم",
+      "entryNotFound": "ماس كېلىدىغان ئىسىم تېپىلمىدى."
+    },
+    "englishUyghurDictionary": {
+      "title": "ئىنگلىزچە-ئۇيغۇرچە",
+      "searchPlaceholder": "ئىنگلىزچە سۆز ئىزدەڭ...",
+      "totalEntries": "جەمئىي {{count}} ئاتالغۇ",
+      "entryNotFound": "ماس كېلىدىغان ئاتالغۇ تېپىلمىدى."
+    },
+    "proverbs": {
+      "title": "ماقال-تەمسىللەر",
+      "searchPlaceholder": "ماقال-تەمسىللەردىن ئىزدەڭ...",
+      "totalEntries": "جەمئىي {{count}} ماقال-تەمسىل",
+      "entryNotFound": "ماس كېلىدىغان ماقال-تەمسىل تېپىلمىدى.",
+      "volumeAndPage": "{{volume}}-توم، {{page}}-بەت"
     }
   },
   "spellCheck": {
@@ -820,7 +852,7 @@
   "graph": {
     "title": "بىلىم گىرافى",
     "subtitle": "كىتابلاردىن ئايرىپ ئېلىنغان سۆزلۈك ۋە ئۇلارنىڭ ئۆز-ئارا مۇناسىۋەتلىرىنىڭ كۆرۈنۈشلۈك گىرافى",
-    "searchPlaceholder": "سۆزلۈك ئىزدەش...",
+    "searchPlaceholder": "سۆزلۈك ئىزدەڭ...",
     "loading": "بىلىم گىرافىنى تەكشۈرۋاتىدۇ...",
     "noData": "ئىزدەشكە ماس كېلىدىغان سۆزلۈك تېپىلمىدى.",
     "enterFullscreen": "تولۇق ئېكران شەكلى",

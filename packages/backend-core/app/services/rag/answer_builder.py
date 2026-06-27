@@ -93,7 +93,8 @@ def build_instructions(
             "If the context contains the information, ALWAYS cite the source clearly.\n"
             "   Each document in the context starts with a header like: [BookID: abc123, Book: title, Author: name, Volume: N, Page: N]\n"
             "   Book summaries use the marker SUMMARY instead of Page: [BookID: abc123, Book: title, Author: name, SUMMARY]\n"
-            "   You MUST use the EXACT author name from the 'Author:' field in that header. If there is no 'Author:' field in the header, omit the author from the citation entirely — do NOT write any 'unknown' or placeholder text for the author."
+            "   Dictionary sources use headers like: [Dictionary Source: Uyghur Dictionary, Term: X], [Dictionary Source: History Dictionary, Term: X], [Dictionary Source: English-Uyghur Dictionary, English: X], or [Dictionary Source: Spelling Word List, Word: X]\n"
+            "   You MUST use the EXACT author name from the 'Author:' field in book headers. If there is no 'Author:' field in the header, omit the author from the citation entirely — do NOT write any 'unknown' or placeholder text for the author."
         ),
         (
             "Format citations in Uyghur as a markdown link.\n"
@@ -103,7 +104,8 @@ def build_instructions(
             "   STRICT RULE: Do NOT include the 'BookID: abc123' part in the visible text label of the link! Keep the book ID ONLY in the URL parenthesis.\n"
             "   Example (page): **مەنبە:** [ئانا يۇرت (زوردۇن سابىر)، 1-توم، 25-بەت](ref:abc123:25)\n"
             "   Example (summary): **مەنبە:** [ئانا يۇرت (زوردۇن سابىر) — قىسقىچە مەزمۇنى](ref:abc123:summary)\n"
-            "   For catalog/author/metadata results that do not have a page number or summary (e.g., from get_book_author, get_books_by_author, or search_catalog), omit the 'ref:' link and cite inline as: **مەنبە:** book_title (author_name)."
+            "   For catalog/author/metadata results that do not have a page number or summary (e.g., from get_book_author, get_books_by_author, or search_catalog), omit the 'ref:' link and cite inline as: **مەنبە:** book_title (author_name).\n"
+            "   For dictionary results, omit the 'ref:' link and cite inline in Uyghur as: **مەنبە:** ئۇيغۇرچە لۇغەت، **مەنبە:** تارىخ لۇغىتى، **مەنبە:** ئىنگلىزچە-ئۇيغۇرچە لۇغەت، ياكى **مەنبە:** ئىملا سۆز تىزىملىكى."
         ),
         (
             "Replace 'abc123' with the actual BookID in the URL, and use the exact values from the context header for the author/title. "
@@ -112,7 +114,8 @@ def build_instructions(
         inst_7,
         "Respond ONLY in professional Uyghur (Arabic script).",
         (
-            "STRICT RULE: Output ONLY Uyghur text. Do not include English words, translations, or mixed-language sentences. Maintain purely Uyghur syntax and vocabulary. "
+            "STRICT RULE: Output ONLY Uyghur text. Do not include English explanations or mixed-language sentences. Maintain purely Uyghur syntax and vocabulary. "
+            "Exception: when answering an English-Uyghur dictionary question, you may repeat the user's English source word or phrase exactly as a term label. "
             "Markdown structural characters (e.g., **, -, >, #) are permitted as formatting; only content words and text must be in Uyghur."
         ),
     ]

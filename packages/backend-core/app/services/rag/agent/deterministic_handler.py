@@ -98,24 +98,37 @@ Return ONLY valid JSON matching this schema:
   "needs_rewrite": boolean,         // True if the query has unresolved pronouns/coreferences referring to history (e.g. "who wrote it?", "what is his age?", "ئۇ كىم؟")
   "rewritten_question": string | null, // If needs_rewrite is true, rewrite the question to resolve all pronouns/references using chat history to make it self-contained in Uyghur/English. If needs_rewrite is false, return null.
   "catalog_subtype": "author_of" | "books_by" | "general" | null, // Use "author_of" if asking who wrote a book, "books_by" if asking what books an author wrote, "general" for other catalog/library-wide queries (like "what books do you have"), or null if this is NOT a catalog query.
-  "intent": "catalog" | "identity" | "summary" | "relationship" | "passage",
+  "dictionary_subtype": "uyghur_definition" | "history_term" | "english_uyghur" | "spelling" | "names" | "general" | null, // Use only when intent is "dictionary".
+  "dictionary_term": string | null, // The exact word/term/name/English phrase to look up when intent is "dictionary".
+  "intent": "catalog" | "dictionary" | "identity" | "summary" | "relationship" | "passage",
   "is_composite": boolean,          // True if the query contains multiple distinct questions or requests that should be handled separately (e.g. "Who wrote X and what is it about?").
   "sub_questions": Array<{{         // If is_composite is true, return each sub-question with its own signals. If is_composite is false, return null.
     "question": string,             // Self-contained sub-question text (pronouns resolved using history)
-    "intent": "catalog" | "identity" | "summary" | "relationship" | "passage",
+    "intent": "catalog" | "dictionary" | "identity" | "summary" | "relationship" | "passage",
     "is_current_page_query": boolean,
     "is_volume_shift": boolean,
     "target_volume": integer | null,
-    "catalog_subtype": "author_of" | "books_by" | "general" | null
+    "catalog_subtype": "author_of" | "books_by" | "general" | null,
+    "dictionary_subtype": "uyghur_definition" | "history_term" | "english_uyghur" | "spelling" | "names" | "general" | null,
+    "dictionary_term": string | null
   }}> | null
 }}
 
 Intents:
 - catalog     : asking about book metadata, authors of books, book listings, or what books exist in the library
+- dictionary  : asking for word meanings, dictionary definitions, spelling validity, names, historical vocabulary explanations, or English-to-Uyghur translation
 - identity    : asking who/what a person or character IS (biography, role, background)
 - summary     : asking about the plot, themes, or main characters of a book
 - relationship: asking about connections, lineages, family trees, or how X and Y relate
 - passage     : asking for specific events, facts, quotes, or details — including "tell me about X's actions"
+
+Dictionary subtype rules:
+- "uyghur_definition": Uyghur word meaning or definition ("X دېگەن نېمە؟", "X مەنىسى نېمە؟")
+- "history_term": historical person, event, place, or concept lookup, especially when no book title is named
+- "english_uyghur": user asks for the Uyghur translation/equivalent of an English word or phrase
+- "spelling": user asks whether a Uyghur spelling is correct or valid
+- "names": Uyghur person name lookup, or listing/asking about names starting with a specific letter/alphabet (e.g. "ب ھەرىپىدىن باشلانغان كىشى ئىسىملىرى", "ئالىم دېگەن ئىسىم"). For requests listing names starting with a letter, extract the target letter (e.g., "ب") as the dictionary_term.
+- "general": dictionary-style query where the exact source is unclear
 """
         llm = build_text_llm(ctx.agent_model)
         res_text = await llm.ainvoke(
@@ -170,6 +183,8 @@ Intents:
             needs_rewrite = llm_res.get("needs_rewrite", False)
             rewritten_question = llm_res.get("rewritten_question")
             catalog_subtype = llm_res.get("catalog_subtype") or "general"
+            dictionary_subtype = llm_res.get("dictionary_subtype") or "general"
+            dictionary_term = llm_res.get("dictionary_term")
             intent = llm_res.get("intent", "passage")
             is_composite = llm_res.get("is_composite", False)
             sub_questions = llm_res.get("sub_questions")
@@ -177,6 +192,8 @@ Intents:
             rewritten_question = None
             is_composite = False
             sub_questions = None
+            dictionary_subtype = "general"
+            dictionary_term = None
             log_json(
                 logger,
                 logging.WARNING,
@@ -240,6 +257,10 @@ Intents:
                         needs_rewrite = True
 
             intent = "passage"
+            if _looks_like_dictionary_question(q_norm):
+                intent = "dictionary"
+                dictionary_subtype = _guess_dictionary_subtype(q_norm)
+                dictionary_term = _extract_dictionary_term(question)
 
         return {
             "top_intent": "current_page" if is_current_page_query else "content_search",
@@ -255,6 +276,8 @@ Intents:
             "is_global": is_global,
             "graph_available": graph_available,
             "intent": intent,
+            "dictionary_subtype": dictionary_subtype,
+            "dictionary_term": dictionary_term,
             "rewritten_question": rewritten_question if needs_rewrite else None,
             "is_composite": is_composite,
             "sub_questions": sub_questions,
@@ -294,6 +317,7 @@ Intents:
 
 Intents:
 - catalog     : asking about book metadata, authors of books, book listings, or what books exist in the library (e.g., who wrote X, list X's books, do you have book Y)
+- dictionary  : asking for word meanings, definitions, spelling validity, historical vocabulary lookup, names dictionary lookup, or English-to-Uyghur translation
 - identity    : asking who/what a person or character IS (biography, role, background)
 - summary     : asking about the plot, themes, or main characters of a book
 - relationship: asking about connections, lineages, family trees, or how X and Y relate
@@ -306,12 +330,14 @@ Examples:
 - "ئانا يۇرت رومانى قاچان يېزىلغان؟" -> {{"intent": "passage"}}
 - "يۇلتۇزلۇق تۈنلەر رومانى كىمنىڭ؟" -> {{"intent": "catalog"}}
 - "سەندە قانداق كىتابلار بار؟" -> {{"intent": "catalog"}}
+- "democracy نىڭ ئۇيغۇرچىسى نېمە؟" -> {{"intent": "dictionary"}}
+- "ئىنقىلاب دېگەن نېمە؟" -> {{"intent": "dictionary"}}
 
 Question: {question}
 Context signals: {signals_summary}
 
 Return ONLY valid JSON matching this schema:
-{{"intent": "catalog" | "identity" | "summary" | "relationship" | "passage"}}
+{{"intent": "catalog" | "dictionary" | "identity" | "summary" | "relationship" | "passage"}}
 """
         try:
             llm = build_text_llm(ctx.agent_model)
@@ -328,6 +354,7 @@ Return ONLY valid JSON matching this schema:
                 intent = data.get("intent", "passage").strip().lower()
                 if intent in {
                     "catalog",
+                    "dictionary",
                     "identity",
                     "summary",
                     "relationship",
@@ -379,6 +406,8 @@ Return ONLY valid JSON matching this schema:
         is_volume_shift = sub_q_data.get("is_volume_shift", False)
         target_volume = sub_q_data.get("target_volume")
         catalog_subtype = sub_q_data.get("catalog_subtype") or "general"
+        dictionary_subtype = sub_q_data.get("dictionary_subtype") or "general"
+        dictionary_term = sub_q_data.get("dictionary_term")
         intent = sub_q_data.get("intent", "passage")
 
         return {
@@ -395,6 +424,8 @@ Return ONLY valid JSON matching this schema:
             "is_global": is_global,
             "graph_available": graph_available,
             "intent": intent,
+            "dictionary_subtype": dictionary_subtype,
+            "dictionary_term": dictionary_term,
             "rewritten_question": None,
             "is_composite": False,
             "sub_questions": None,
@@ -420,6 +451,80 @@ Return ONLY valid JSON matching this schema:
                 "get_current_page", {}, ctx, observations, result_holder
             ):
                 yield ev
+            return
+
+        # --- Path B: Dictionary / Language Sources ---
+        if intent == "dictionary":
+            subtype = signals.get("dictionary_subtype") or "general"
+            term = (
+                signals.get("dictionary_term") or _extract_dictionary_term(question)
+            ).strip()
+            if not term:
+                term = question.strip()
+
+            if subtype == "uyghur_definition":
+                async for ev in self._run_tool_and_yield(
+                    "lookup_uyghur_word",
+                    {"term": term},
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
+            elif subtype == "history_term":
+                async for ev in self._run_tool_and_yield(
+                    "lookup_history_term",
+                    {"term": term},
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
+                if result_holder.get("result", {}).get("found_count", 0) == 0:
+                    async for ev in self._run_tool_and_yield(
+                        "search_language_sources",
+                        {"query": term},
+                        ctx,
+                        observations,
+                        result_holder,
+                    ):
+                        yield ev
+            elif subtype == "english_uyghur":
+                async for ev in self._run_tool_and_yield(
+                    "translate_english_to_uyghur",
+                    {"term": term},
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
+            elif subtype == "spelling":
+                async for ev in self._run_tool_and_yield(
+                    "check_word_spelling",
+                    {"word": term},
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
+            elif subtype == "names":
+                async for ev in self._run_tool_and_yield(
+                    "lookup_uyghur_name",
+                    {"term": term},
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
+            else:
+                async for ev in self._run_tool_and_yield(
+                    "search_language_sources",
+                    {"query": term},
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
             return
 
         # --- Path B: Catalog ---
@@ -1239,6 +1344,103 @@ Return ONLY valid JSON matching this schema:
         ):
             yield {"type": "chunk", "text": token}
         yield {"type": "answer_end"}
+
+
+def _looks_like_dictionary_question(q_norm: str) -> bool:
+    dictionary_markers = [
+        "دېگەن نېمە",
+        "دېگەن نىمە",
+        "مەنىسى",
+        "ما معنى",
+        "definition",
+        "meaning",
+        "translate",
+        "translation",
+        "ئۇيغۇرچىسى",
+        "ئۇيغۇرچە",
+        "قانداق يېزىلىدۇ",
+        "توغرا يېزىلىشى",
+        "ئىملا",
+        "spelling",
+        "spell",
+        "كىشى ئىسىملىرى",
+        "ئىسىملىرى",
+        "ئىسىملەر",
+        "ئىسىم",
+    ]
+    return any(normalize_uyghur(marker) in q_norm for marker in dictionary_markers)
+
+
+def _guess_dictionary_subtype(q_norm: str) -> str:
+    if any(
+        normalize_uyghur(marker) in q_norm
+        for marker in ["translate", "translation", "ئۇيغۇرچىسى"]
+    ):
+        return "english_uyghur"
+    if any(
+        normalize_uyghur(marker) in q_norm
+        for marker in [
+            "قانداق يېزىلىدۇ",
+            "توغرا يېزىلىشى",
+            "ئىملا",
+            "spelling",
+            "spell",
+        ]
+    ):
+        return "spelling"
+    if any(
+        normalize_uyghur(marker) in q_norm
+        for marker in ["كىشى ئىسىملىرى", "ئىسىملىرى", "ئىسىملەر", "ئىسىم"]
+    ):
+        return "names"
+    if re.search(r"[A-Za-z]", q_norm):
+        return "english_uyghur"
+    return "general"
+
+
+def _extract_dictionary_term(question: str) -> str:
+    """Best-effort term extraction for deterministic dictionary fallback."""
+    text = question.strip()
+    quoted = re.search(r"[\"'«‹](.+?)[\"'»›]", text)
+    if quoted:
+        return quoted.group(1).strip()
+
+    # Check for name starting letter group (e.g. "ب ھەرىپىدىن باشلانغان")
+    letter_match = re.search(r"([\u0621-\u06ff]{1,2})\s+ھەر[پى]", text)
+    if letter_match and any(
+        normalize_uyghur(m) in normalize_uyghur(text)
+        for m in ["كىشى ئىسىملىرى", "ئىسىملىرى", "ئىسىملەر", "ئىسىم"]
+    ):
+        return letter_match.group(1).strip()
+
+    cleanup_patterns = [
+        r"دېگەن\s+نېمە.*$",
+        r"دېگەن\s+نىمە.*$",
+        r"مەنىسى\s+نېمە.*$",
+        r"مەنىسى\s+نىمە.*$",
+        r"نىڭ\s+ئۇيغۇرچىسى\s+نېمە.*$",
+        r"نىڭ\s+ئۇيغۇرچە\s+مەنىسى\s+نېمە.*$",
+        r"ئۇيغۇرچىسى\s+نېمە.*$",
+        r"توغرىمۇ.*$",
+        r"قانداق\s+يېزىلىدۇ.*$",
+        r"\bmeaning\b.*$",
+        r"\bdefinition\b.*$",
+        r"\btranslate\b",
+        r"\btranslation\b",
+        r"\bspell(?:ing)?\b.*$",
+        r"[؟?!.]+$",
+    ]
+    term = text
+    for pattern in cleanup_patterns:
+        term = re.sub(pattern, "", term, flags=re.IGNORECASE).strip()
+
+    # For English prompts like "what is the Uyghur for democracy", keep the final
+    # Latin phrase instead of the whole question.
+    latin_words = re.findall(r"[A-Za-z][A-Za-z -]*[A-Za-z]", term)
+    if latin_words:
+        return latin_words[-1].strip()
+
+    return term.strip(" :：،,؛;")
 
 
 async def find_books_by_title_in_db(question: str, ctx: QueryContext) -> list[dict]:

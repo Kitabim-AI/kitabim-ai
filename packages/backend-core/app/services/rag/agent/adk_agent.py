@@ -14,6 +14,11 @@ from app.services.rag.agent.tools import (
     get_sister_volumes,
     get_current_page,
     query_knowledge_graph,
+    lookup_uyghur_word,
+    lookup_history_term,
+    translate_english_to_uyghur,
+    check_word_spelling,
+    search_language_sources,
 )
 from app.services.rag.agent.prompts import AGENT_SYSTEM_PROMPT
 
@@ -44,5 +49,10 @@ def build_rag_agent(model_name: str) -> Agent:
             get_sister_volumes,
             get_current_page,
             query_knowledge_graph,
+            lookup_uyghur_word,
+            lookup_history_term,
+            translate_english_to_uyghur,
+            check_word_spelling,
+            search_language_sources,
         ],
     )

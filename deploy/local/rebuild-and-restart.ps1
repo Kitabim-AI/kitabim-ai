@@ -36,7 +36,7 @@ if ($Component -eq "all") {
 
     # Apply all migrations (IF NOT EXISTS guards make these idempotent)
     Write-Host "Applying migrations..." -ForegroundColor Blue
-    Get-ChildItem "packages\backend-core\migrations\*.sql" | Sort-Object Name | ForEach-Object {
+    Get-ChildItem "packages\backend-core\migrations\*.sql" | Where-Object { $_.Name -notlike "*rollback*" } | Sort-Object Name | ForEach-Object {
         Write-Host "  -> $($_.Name)"
         Get-Content $_.FullName | docker compose exec -T postgres psql -U kitabim -d kitabim-ai
     }
