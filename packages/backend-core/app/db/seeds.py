@@ -108,6 +108,16 @@ async def seed_system_configs(session: AsyncSession):
             "value": "300",
             "description": "Timeout in seconds for Gemini OCR vision API calls.",
         },
+        {
+            "key": "gemini_chat_timeout",
+            "value": "60",
+            "description": "Timeout in seconds for Gemini chat/text generation API calls.",
+        },
+        {
+            "key": "gemini_embed_timeout",
+            "value": "15",
+            "description": "Timeout in seconds for Gemini vector embedding API calls.",
+        },
     ]
 
     for item in defaults:

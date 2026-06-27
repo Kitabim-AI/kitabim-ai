@@ -163,7 +163,7 @@ def _normalize_prompt_value(value: Any) -> str:
 _STREAM_FIRST_CHUNK_TIMEOUT = (
     60.0  # seconds to wait for the first chunk before treating as failure
 )
-_INVOKE_TIMEOUT = 30.0  # seconds to wait for a non-streaming ainvoke to complete
+_INVOKE_TIMEOUT = 60.0  # seconds to wait for a non-streaming ainvoke to complete
 _OCR_INVOKE_TIMEOUT = (
     300.0  # seconds for OCR vision calls (image + prompt, much slower)
 )

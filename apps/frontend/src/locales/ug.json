@@ -835,7 +835,10 @@
       "name": "نامى",
       "type": "تۈرى",
       "subtype": "تارماق تۈرى",
-      "connections": "ئالاقىسى بار سۆزلۈكلەر"
+      "connections": "ئالاقىسى بار سۆزلۈكلەر",
+      "yearHijri": "ھىجرىيە يىلى",
+      "yearGregorian": "مىلادىيە يىلى",
+      "centuryGregorian": "مىلادىيە ئەسىرى"
     }
   }
 }

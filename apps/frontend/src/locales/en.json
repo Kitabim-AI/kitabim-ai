@@ -818,7 +818,10 @@
       "name": "Name",
       "type": "Type",
       "subtype": "Subtype",
-      "connections": "Connections"
+      "connections": "Connections",
+      "yearHijri": "Hijri Year",
+      "yearGregorian": "Gregorian Year",
+      "centuryGregorian": "Gregorian Century"
     }
   }
 }

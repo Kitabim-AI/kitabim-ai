@@ -907,8 +907,11 @@ async def get_global_graph(
         MATCH (s:Entity)-[r:RELATED_TO]->(t:Entity)
         WHERE toLower(s.name) CONTAINS toLower($q) OR toLower(t.name) CONTAINS toLower($q)
         RETURN s.name AS source_name, s.type AS source_type, 
+               s.year_hijri AS source_year_hijri, s.year_gregorian AS source_year_gregorian, s.century_gregorian AS source_century_gregorian,
                r.type AS rel_type, 
-               t.name AS target_name, t.type AS target_type
+               r.year_hijri AS rel_year_hijri, r.year_gregorian AS rel_year_gregorian, r.century_gregorian AS rel_century_gregorian,
+               t.name AS target_name, t.type AS target_type,
+               t.year_hijri AS target_year_hijri, t.year_gregorian AS target_year_gregorian, t.century_gregorian AS target_century_gregorian
         LIMIT 150
         """
         params = {"q": q.strip()}
@@ -916,8 +919,11 @@ async def get_global_graph(
         query = """
         MATCH (s:Entity)-[r:RELATED_TO]->(t:Entity)
         RETURN s.name AS source_name, s.type AS source_type, 
+               s.year_hijri AS source_year_hijri, s.year_gregorian AS source_year_gregorian, s.century_gregorian AS source_century_gregorian,
                r.type AS rel_type, 
-               t.name AS target_name, t.type AS target_type
+               r.year_hijri AS rel_year_hijri, r.year_gregorian AS rel_year_gregorian, r.century_gregorian AS rel_century_gregorian,
+               t.name AS target_name, t.type AS target_type,
+               t.year_hijri AS target_year_hijri, t.year_gregorian AS target_year_gregorian, t.century_gregorian AS target_century_gregorian
         LIMIT 150
         """
         params = {}
@@ -942,15 +948,42 @@ async def get_global_graph(
         # Add source node if new
         if src not in nodes_seen:
             nodes_seen.add(src)
-            nodes.append({"id": src, "label": src, "type": rec["source_type"]})
+            nodes.append(
+                {
+                    "id": src,
+                    "label": src,
+                    "type": rec["source_type"],
+                    "year_hijri": rec.get("source_year_hijri"),
+                    "year_gregorian": rec.get("source_year_gregorian"),
+                    "century_gregorian": rec.get("source_century_gregorian"),
+                }
+            )
 
         # Add target node if new
         if tgt not in nodes_seen:
             nodes_seen.add(tgt)
-            nodes.append({"id": tgt, "label": tgt, "type": rec["target_type"]})
+            nodes.append(
+                {
+                    "id": tgt,
+                    "label": tgt,
+                    "type": rec["target_type"],
+                    "year_hijri": rec.get("target_year_hijri"),
+                    "year_gregorian": rec.get("target_year_gregorian"),
+                    "century_gregorian": rec.get("target_century_gregorian"),
+                }
+            )
 
         # Add relationship
-        links.append({"source": src, "target": tgt, "label": rec["rel_type"]})
+        links.append(
+            {
+                "source": src,
+                "target": tgt,
+                "label": rec["rel_type"],
+                "year_hijri": rec.get("rel_year_hijri"),
+                "year_gregorian": rec.get("rel_year_gregorian"),
+                "century_gregorian": rec.get("rel_century_gregorian"),
+            }
+        )
 
     return {"nodes": nodes, "links": links}
 
