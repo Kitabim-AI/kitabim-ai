@@ -34,8 +34,19 @@ _STEP_3_CURRENT_PAGE = (
     '"بۇ بەتتە نېمە دېيىلگەن") → call get_current_page immediately. Do NOT call search_chunks.'
 )
 
+_STEP_4_DICTIONARY = (
+    "4. For dictionary/language questions, use dictionary tools BEFORE book retrieval:\n"
+    "   - If the user asks what a Uyghur word means or asks for a definition (e.g. 'X دېگەن نېمە؟', 'X مەنىسى نېمە؟') → call lookup_uyghur_word.\n"
+    "   - If the user asks about a historical term, historical person, event, location, or concept (especially 'X كىم؟' or 'X نېمە؟' without naming a book) → call lookup_history_term first. If no result is found, call search_language_sources.\n"
+    "   - If the user asks for the Uyghur translation of an English word or phrase → call translate_english_to_uyghur.\n"
+    "   - If the user asks whether a spelling is correct or whether a word exists → call check_word_spelling.\n"
+    "   - If the user asks for a proverb, Uyghur proverbs/sayings, or searches for proverbs containing a word → call lookup_proverbs.\n"
+    "   - If the dictionary source is unclear → call search_language_sources.\n"
+    "   - Stop after dictionary retrieval when the user only asked for a definition, spelling check, name lookup, proverb lookup, or translation. Continue to search_chunks only if the user explicitly asks how the term is used in books or what the library says about it."
+)
+
 _STEP_4_CONTENT = (
-    "4. For content questions (what does the book say about X, explain Y, summarize Z, which book is character W in):\n"
+    "5. For content questions (what does the book say about X, explain Y, summarize Z, which book is character W in):\n"
     "   - Modifier for relationship/connection queries: If the question asks about relationships, lineages, or connections (e.g. 'how are X and Y related?', 'who is the grandchild/child of Z?', 'list the events in location W'), AND [Context] shows 'Graph available: yes' (or no Graph available line is present, meaning global mode), call query_knowledge_graph first to retrieve semantic relationship networks before calling search_chunks. Combine this with search_chunks if precise textual passages are also needed. If [Context] shows 'Graph available: no', skip query_knowledge_graph entirely.\n"
     "   - Note on Character identity vs. detail questions: If the question specifically asks who or what a character/person/entity is (e.g. 'X كىم؟', 'tell me about X') and does NOT ask for specific details, events, facts, passages, or explanations about them, call search_books_by_summary first to identify relevant book IDs, then call get_book_summary (at most 5 book IDs) rather than search_chunks. If get_book_summary completes for a character identity question about a SINGLE entity, stop immediately. However, if the question is a follow-up or asks for specific details, events, facts, or descriptions, you MUST skip get_book_summary and call search_chunks to retrieve the actual page passages.\n"
     "   a. If the question asks for the plot, themes, or main characters of a specific book → call find_books_by_title, then "
@@ -72,12 +83,12 @@ _STEP_4_CONTENT = (
 )
 
 _STEP_5_STOP = (
-    "5. Stop as soon as you have sufficient context (6–12 passages for content questions, "
+    "6. Stop as soon as you have sufficient context (6–12 passages for content questions, "
     "or a catalog/author result for metadata questions)."
 )
 
 _STEP_MULTI_QUESTION = (
-    "6. If the question contains a [Sub-questions] section listing multiple numbered questions, "
+    "7. If the question contains a [Sub-questions] section listing multiple numbered questions, "
     "you MUST retrieve evidence for ALL of them before finishing. "
     "Use separate tool calls for each sub-question if their topics differ. "
     "Do not stop after finding evidence for only the first sub-question. "
@@ -102,6 +113,7 @@ AGENT_SYSTEM_PROMPT = "\n\n".join(
         _STEP_1_COREFERENCE,
         _STEP_2_CATALOG,
         _STEP_3_CURRENT_PAGE,
+        _STEP_4_DICTIONARY,
         _STEP_4_CONTENT,
         _STEP_5_STOP,
         _STEP_MULTI_QUESTION,

@@ -26,16 +26,22 @@ class RedisRateLimiter:
         Politely blocks the coroutine using asyncio.sleep.
         """
         r = get_redis()
+        incremented_key = None
         while True:
             now = int(time.time())
             # Use fixed window slots (e.g. per minute)
             key = f"rate_limit:{self.name}:{now // self.window}"
 
             try:
-                count = await r.incr(key)
-                if count == 1:
-                    # First caller in this window sets expiry
-                    await r.expire(key, self.window + 5)  # Buffer for clock skew
+                if incremented_key == key:
+                    val_str = await r.get(key)
+                    count = int(val_str) if val_str else 0
+                else:
+                    count = await r.incr(key)
+                    if count == 1:
+                        # First caller in this window sets expiry
+                        await r.expire(key, self.window + 5)  # Buffer for clock skew
+                    incremented_key = key
 
                 if count <= self.limit:
                     # Within limit, proceed

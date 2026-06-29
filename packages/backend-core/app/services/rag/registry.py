@@ -58,10 +58,12 @@ _registry_singleton: Optional[HandlerRegistry] = None
 
 def build_default_registry() -> HandlerRegistry:
     from app.services.rag.agent.handler import AgentRAGHandler
+    from app.services.rag.agent.deterministic_handler import DeterministicRAGHandler
 
     return HandlerRegistry(
         [
-            AgentRAGHandler(),  # sole handler, catches all queries
+            DeterministicRAGHandler(),
+            AgentRAGHandler(),  # fallback handler
         ]
     )
 

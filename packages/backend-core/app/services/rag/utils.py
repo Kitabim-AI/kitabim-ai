@@ -46,7 +46,7 @@ def entity_matches_question(entity: str, question: str) -> bool:
         return False
     if len(entity_words) == 1 and len(entity_words[0]) < 4:
         return False
-    _PUNCT = '«»،؟!()[]{}"' "''"
+    _PUNCT = "«»،؟!()[]{}\"''"
     q_words = [normalize_uyghur(w).strip(_PUNCT) for w in question.strip().split()]
 
     def _word_matches(e_word: str) -> bool:
@@ -75,28 +75,26 @@ def entity_matches_question(entity: str, question: str) -> bool:
 # Intent detection
 # ---------------------------------------------------------------------------
 
+from app.services.rag.keywords import (
+    CURRENT_VOLUME_KEYWORDS,
+    CURRENT_PAGE_KEYWORDS,
+    CATALOG_QUERY_KEYWORDS,
+    CONTENT_SIGNAL_KEYWORDS,
+)
+
 
 def is_current_volume_query(question: str) -> bool:
     if not question:
         return False
     q = question.strip()
-    keywords = [
-        "ئۇشبۇ تومدا",
-        "ئۇشبۇ قىسىمدا",
-        "مەزكور تومدا",
-        "مەزكور قىسىمدا",
-        "بۇ تومدا",
-        "بۇ قىسىمدا",
-    ]
-    return any(k in q for k in keywords)
+    return any(k in q for k in CURRENT_VOLUME_KEYWORDS)
 
 
 def is_current_page_query(question: str) -> bool:
     if not question:
         return False
     q = question.strip()
-    keywords = ["ئۇشبۇ بەتتە", "مەزكور بەتتە", "بۇ بەتتە"]
-    return any(k in q for k in keywords)
+    return any(k in q for k in CURRENT_PAGE_KEYWORDS)
 
 
 def is_author_or_catalog_query(question: str) -> bool:
@@ -104,51 +102,13 @@ def is_author_or_catalog_query(question: str) -> bool:
     if not question:
         return False
     q = normalize_uyghur(question.strip())
-    keywords = [
-        # Author-related — "who wrote X" / "author of X"
-        "مۇئەللىپ",
-        "مۇئەللىپى",
-        "يازغۇچى",
-        "يازغۇچىسى",
-        "ئاپتور",
-        "ئاپتورى",
-        "كىم يازغان",
-        "يازغان كىشى",
-        "يازغان كىم",
-        "كىم تەرىپىدىن",
-        "يازغانلىقى",
-        "كىمنىڭ",
-        "كىمنىكى",
-        # Author-related — "X's books / works"
-        "ئەسەر يازغان",
-        "ئەسەرلىرى",
-        "كىتابلىرى",
-        # Catalog / book-list related
-        "كىتابلىرىڭىز",
-        "كىتاب بارمۇ",
-        "كىتابخانىڭىز",
-        "كىتاب تىزىملىكى",
-        "قانچە كىتاب",
-        "نەچچە كىتاب",
-        "قايسى كىتابلار",
-        "قايسى ئەسەر",
-    ]
-    normalized_keywords = [normalize_uyghur(k) for k in keywords]
+    normalized_keywords = [normalize_uyghur(k) for k in CATALOG_QUERY_KEYWORDS]
     if not any(k in q for k in normalized_keywords):
         return False
 
     # "قايسى ئەسەردىكى X" / "قايسى كىتابتا X" are content queries ("X is in which work"),
     # not catalog queries — even though they contain "قايسى ئەسەر".
-    content_signals = [
-        "پېرسوناژ",
-        "ئوبراز",
-        "قەھرىمان",  # character references
-        "قايسى ئەسەردىكى",
-        "قايسى كىتابتا",  # "in which work/book" patterns
-        "قايسى ئەسەردە",
-        "قايسى كىتابدا",
-    ]
-    normalized_signals = [normalize_uyghur(k) for k in content_signals]
+    normalized_signals = [normalize_uyghur(k) for k in CONTENT_SIGNAL_KEYWORDS]
     if any(k in q for k in normalized_signals):
         return False
 

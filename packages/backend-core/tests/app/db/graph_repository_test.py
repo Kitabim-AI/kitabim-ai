@@ -52,7 +52,11 @@ async def test_graph_repository_query_subgraph():
         assert mock_session.run.called
         call_args = mock_session.run.call_args[0]
         call_kwargs = mock_session.run.call_args[1]
-        assert "(e.name IN $entity_names OR n.name IN $entity_names)" in call_args[0]
+        assert "e.name IN $entity_names" in call_args[0]
+        assert (
+            "any(alt IN COALESCE(e.aliases, []) WHERE alt IN $entity_names)"
+            in call_args[0]
+        )
         assert "r.book_id IN $book_ids" in call_args[0]
         assert call_kwargs["entity_names"] == ["A", "B"]
         assert call_kwargs["book_ids"] is None
@@ -79,7 +83,11 @@ async def test_graph_repository_query_subgraph_with_book_ids():
         assert mock_session.run.called
         call_args = mock_session.run.call_args[0]
         call_kwargs = mock_session.run.call_args[1]
-        assert "(e.name IN $entity_names OR n.name IN $entity_names)" in call_args[0]
+        assert "e.name IN $entity_names" in call_args[0]
+        assert (
+            "any(alt IN COALESCE(e.aliases, []) WHERE alt IN $entity_names)"
+            in call_args[0]
+        )
         assert "r.book_id IN $book_ids" in call_args[0]
         assert call_kwargs["entity_names"] == ["A", "B"]
         assert call_kwargs["book_ids"] == ["bid-1", "bid-2"]
@@ -106,7 +114,17 @@ async def test_graph_repository_bulk_ops():
         call_args = mock_session.run.call_args[0]
         call_kwargs = mock_session.run.call_args[1]
         assert "UNWIND $entities_data" in call_args[0]
-        assert call_kwargs["entities_data"] == entities
+        expected_entities = [
+            {
+                "name": "E1",
+                "type": "Person",
+                "subtype": None,
+                "year_hijri": None,
+                "year_gregorian": None,
+                "century_gregorian": None,
+            }
+        ]
+        assert call_kwargs["entities_data"] == expected_entities
 
         # 2. Test connect_entities_bulk
         relations = [{"source_name": "E1", "rel_type": "KNOWS", "target_name": "E2"}]
@@ -115,4 +133,76 @@ async def test_graph_repository_bulk_ops():
         call_args = mock_session.run.call_args[0]
         call_kwargs = mock_session.run.call_args[1]
         assert "UNWIND $relations_data" in call_args[0]
-        assert call_kwargs["relations_data"] == relations
+        expected_relations = [
+            {
+                "source_name": "E1",
+                "rel_type": "KNOWS",
+                "target_name": "E2",
+                "book_id": None,
+                "year_hijri": None,
+                "year_gregorian": None,
+                "century_gregorian": None,
+            }
+        ]
+        assert call_kwargs["relations_data"] == expected_relations
+
+
+@pytest.mark.asyncio
+async def test_graph_repository_merge_entities_success():
+    mock_result_check = AsyncMock()
+    mock_result_check.data.return_value = [
+        {"name": "KeepName", "aliases": ["AltKeep"]},
+        {"name": "RemoveName", "aliases": ["AltRemove"]},
+    ]
+
+    mock_session = AsyncMock()
+    mock_session.__aenter__.return_value = mock_session
+    mock_session.run.side_effect = [
+        mock_result_check,
+        AsyncMock(),
+    ]  # First checks, second merges
+
+    mock_driver = MagicMock()
+    mock_driver.session.return_value = mock_session
+
+    with patch(
+        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
+        return_value=mock_driver,
+    ):
+        repo = GraphRepository()
+        success = await repo.merge_entities("KeepName", "RemoveName")
+        assert success is True
+        assert mock_session.run.call_count == 2
+
+        # Verify the second call received the combined, deduplicated aliases
+        second_call_kwargs = mock_session.run.call_args_list[1][1]
+        assert "combined_aliases" in second_call_kwargs
+        assert second_call_kwargs["combined_aliases"] == [
+            "AltKeep",
+            "RemoveName",
+            "AltRemove",
+        ]
+
+
+@pytest.mark.asyncio
+async def test_graph_repository_merge_entities_missing():
+    mock_result_check = AsyncMock()
+    mock_result_check.data.return_value = [{"name": "KeepName"}]  # Missing RemoveName
+
+    mock_session = AsyncMock()
+    mock_session.__aenter__.return_value = mock_session
+    mock_session.run.return_value = mock_result_check
+
+    mock_driver = MagicMock()
+    mock_driver.session.return_value = mock_session
+
+    with patch(
+        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
+        return_value=mock_driver,
+    ):
+        repo = GraphRepository()
+        with pytest.raises(ValueError) as excinfo:
+            await repo.merge_entities("KeepName", "RemoveName")
+        assert "Duplicate entity to remove 'RemoveName' does not exist." in str(
+            excinfo.value
+        )

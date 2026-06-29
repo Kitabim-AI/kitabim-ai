@@ -100,9 +100,10 @@ async def test_update_user_login():
 @pytest.mark.asyncio
 async def test_update_user_role(mock_user_db):
     session = AsyncMock()
-    with patch("app.services.user_service.UsersRepository") as mock_repo_cls, patch(
-        "app.services.user_service.cache_service"
-    ) as mock_cache:
+    with (
+        patch("app.services.user_service.UsersRepository") as mock_repo_cls,
+        patch("app.services.user_service.cache_service") as mock_cache,
+    ):
         mock_repo = mock_repo_cls.return_value
         mock_repo.update_one = AsyncMock(return_value=True)
         mock_repo.get = AsyncMock(return_value=mock_user_db)
@@ -116,9 +117,10 @@ async def test_update_user_role(mock_user_db):
 @pytest.mark.asyncio
 async def test_update_user_status(mock_user_db):
     session = AsyncMock()
-    with patch("app.services.user_service.UsersRepository") as mock_repo_cls, patch(
-        "app.services.user_service.cache_service"
-    ) as mock_cache:
+    with (
+        patch("app.services.user_service.UsersRepository") as mock_repo_cls,
+        patch("app.services.user_service.cache_service") as mock_cache,
+    ):
         mock_repo = mock_repo_cls.return_value
         mock_repo.update_one = AsyncMock(return_value=True)
         mock_repo.get = AsyncMock(return_value=mock_user_db)

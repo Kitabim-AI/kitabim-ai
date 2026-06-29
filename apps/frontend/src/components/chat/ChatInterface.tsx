@@ -324,6 +324,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                       style={{ fontSize: `${fontSize}px` }}
                       dir="rtl"
                       disabled={usageStatus?.hasReachedLimit}
+                      maxLength={500}
                     />
                     {/* Send button — absolute left */}
                     <button
@@ -545,6 +546,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   style={{ fontSize: `${chatFontSize}px` }}
                   dir="rtl"
                   disabled={usageStatus?.hasReachedLimit}
+                  maxLength={500}
                 />
                 <button
                   onClick={onSendMessage}

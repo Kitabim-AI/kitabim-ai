@@ -1,9 +1,9 @@
-# System Design — Kitabim.AI (Google ADK Version)
+# System Design — Kitabim.AI
 
 ## 1) Overview
 Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered reading of Uyghur books. The system uses the **Gemini 2.0 Flash** model for high-throughput OCR, embeddings, and chat. It features a FastAPI backend with an asynchronous processing pipeline, a React/Vite frontend, and a Neo4j database for GraphRAG. 
 
-The core AI layers are built using the first-party **google-genai SDK** (for direct generation/embedding calls) and **Google ADK** (for agentic retrieval loops). Background orchestration is handled through a Redis-backed queue with a dedicated worker service. The backend API and worker share a common Python package (`packages/backend-core`).
+The core AI layers are built using the first-party **google-genai SDK** (for direct generation/embedding calls, deterministic routing, and semantic classification) and **Google ADK** (as a fallback agentic retrieval loop). Background orchestration is handled through a Redis-backed queue with a dedicated worker service. The backend API and worker share a common Python package (`packages/backend-core`).
 
 ## 2) Goals & Non‑Goals
 **Goals**
@@ -124,31 +124,31 @@ Neo4j stores entities and their semantic relationships extracted from book chunk
 
 ### B) RAG Chat
 
-All questions go directly to `AgentRAGHandler` (priority=998), which runs a Google ADK-based ReAct loop.
+All questions go to `HandlerRegistry`, which routes based on the `use_deterministic_router` config:
+1. **Deterministic RAG Handler (`DeterministicRAGHandler`)** (enabled when `use_deterministic_router = True`):
+   - **Stage 1: Signal Extractor** (pure Python, database metadata lookups): Extracts title matches, author names, volume shifts, Uyghur pronoun presence, and context signals from the question.
+   - **Stage 2: Coreference Resolver** (conditional LLM, `gemini-3.1-flash-lite`): Rewrites questions containing Uyghur pronouns using conversation history.
+   - **Stage 3: Intent Classifier** (conditional LLM, `gemini-3.1-flash-lite`): Structurally classifies question intent to `catalog`, `identity`, `summary`, `relationship`, or `passage` if python-based signals are insufficient.
+   - **Stage 4: Execution Router** (pure Python): Directly selects and runs an optimized, fixed tool execution path (Paths A to H) to populate observations.
+   - **Universal Fallback**: Automatically retries book discovery via summaries or expands search scope globally if a path's primary retrieval returns thin results.
 
-**Agentic retrieval loop:**
-1. **Intent Detection & Query Decomposition** (Pre-processing):
-   - Detects question scope (current page, catalog browse, content search).
-   - If a multi-question query is identified, an LLM call splits it into up to 4 self-contained sub-questions.
-2. **Context Injection**:
-   - Pre-injects current book ID, context book IDs from conversation history, and category filters into a `[Context]` block to accelerate retrieval.
-3. **ADK Agent Loop**:
-   - Wires registered tools (11 tools total) and system instruction.
-   - Runs a stateless `InMemoryRunner` to process tool calls dynamically (e.g. `search_chunks`, `query_knowledge_graph`, etc.) up to 4 steps.
-4. **Deduplication and Grading** (Post-processing):
-   - Collects tool observations.
-   - Filters retrieved chunks using a relative-score threshold against the highest score.
-5. **Answer Generation**:
-   - Generates the final streaming answer (with inline citations) based on the graded context.
-6. **Telemetry Logging**:
-   - Inserts basic query metadata, agent execution steps, and tool lists into the `rag_evaluations` table for analytics and user feedback monitoring.
+2. **Agentic RAG Handler (`AgentRAGHandler`)** (fallback when `use_deterministic_router = False`):
+   - **Intent Detection & Query Decomposition**: Detects question scope and decomposes multi-question inputs.
+   - **Context Injection**: Pre-injects book metadata, context history, and category filters into a prompt block.
+   - **ADK Agent Loop**: Uses an LLM reasoning loop (`gemini-2.5-flash` with Google ADK `InMemoryRunner`) to dynamically sequence tool calls.
+
+**Post-processing & Generation (Shared by both handlers):**
+- **Deduplication and Grading**: Filters and grades retrieved chunks using relative scoring against the highest score.
+- **Answer Generation**: Synthesizes the final response stream (using `gemini-3-flash-preview` for high-quality Uyghur answer generation) with inline markdown citations.
+- **Telemetry Logging**: Writes request metrics, execution steps, and tool execution traces to the `rag_evaluations` table for performance auditing.
 
 ## 7) Gemini Integration Strategy
 - **google-genai SDK**: Used for direct, non-agentic AI operations:
    - File API for uploading images during OCR.
    - Summarization, text generation, and entity extraction tasks (structured output with Pydantic schemas).
    - Vector embedding generation.
-- **Google ADK**: Used for orchestration of the agentic RAG chat loop. Wires custom Python tools and executes the ReAct reasoning flow.
+   - Coreference resolution, intent classification, and multi-question splitting within the `DeterministicRAGHandler`.
+- **Google ADK**: Used for orchestration of the fallback agentic RAG chat loop in `AgentRAGHandler`. Wires custom Python tools and executes the ReAct reasoning flow.
 
 
 ## 8) Reliability & Observability

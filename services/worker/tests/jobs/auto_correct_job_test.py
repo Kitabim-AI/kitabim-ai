@@ -31,16 +31,21 @@ async def test_auto_correct_job_success():
     page_ids = [page_id]
 
     # Mocking dependencies
-    with patch("app.db.session.async_session_factory") as mock_session_factory, patch(
-        "services.worker.jobs.auto_correct_job.get_correction_rules",
-        new_callable=AsyncMock,
-    ) as mock_get_rules, patch(
-        "services.worker.jobs.auto_correct_job.apply_auto_corrections_to_page",
-        new_callable=AsyncMock,
-    ) as mock_apply, patch(
-        "app.services.book_milestone_service.BookMilestoneService.update_book_milestones",
-        new_callable=AsyncMock,
-    ) as mock_update_milestones:
+    with (
+        patch("app.db.session.async_session_factory") as mock_session_factory,
+        patch(
+            "services.worker.jobs.auto_correct_job.get_correction_rules",
+            new_callable=AsyncMock,
+        ) as mock_get_rules,
+        patch(
+            "services.worker.jobs.auto_correct_job.apply_auto_corrections_to_page",
+            new_callable=AsyncMock,
+        ) as mock_apply,
+        patch(
+            "app.services.book_milestone_service.BookMilestoneService.update_book_milestones",
+            new_callable=AsyncMock,
+        ) as mock_update_milestones,
+    ):
         mock_session = AsyncMock()
         mock_session.add = MagicMock()
         mock_session_factory.return_value.__aenter__.return_value = mock_session

@@ -9,6 +9,14 @@ from app.services.spell_check_service import (
 from app.db.models import Page
 
 
+@pytest.fixture(autouse=True)
+def mock_cache_service():
+    with patch("app.services.spell_check_service.cache_service") as mock:
+        mock.get = AsyncMock(return_value=None)
+        mock.set = AsyncMock()
+        yield mock
+
+
 @pytest.mark.asyncio
 async def test_cache_stats():
     cache = ThreadSafeSpellCheckCache()

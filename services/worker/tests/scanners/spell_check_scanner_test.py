@@ -7,10 +7,13 @@ from services.worker.scanners.spell_check_scanner import run_spell_check_scanner
 async def test_spell_check_scanner_no_work():
     ctx = {"redis": AsyncMock()}
 
-    with patch("app.db.session.async_session_factory") as mock_session_factory, patch(
-        "app.db.repositories.system_configs_repository.SystemConfigsRepository.get_value",
-        new_callable=AsyncMock,
-    ) as mock_config:
+    with (
+        patch("app.db.session.async_session_factory") as mock_session_factory,
+        patch(
+            "app.db.repositories.system_configs_repository.SystemConfigsRepository.get_value",
+            new_callable=AsyncMock,
+        ) as mock_config,
+    ):
         mock_session = AsyncMock()
         mock_session_factory.return_value.__aenter__.return_value = mock_session
 
@@ -45,13 +48,17 @@ async def test_spell_check_scanner_dispatches_job():
     book_id = "book-1"
     page_id = 1
 
-    with patch("app.db.session.async_session_factory") as mock_session_factory, patch(
-        "app.db.repositories.system_configs_repository.SystemConfigsRepository.get_value",
-        new_callable=AsyncMock,
-    ) as mock_config, patch(
-        "app.services.book_milestone_service.BookMilestoneService.update_book_milestone_for_step",
-        new_callable=AsyncMock,
-    ) as mock_update_milestone:
+    with (
+        patch("app.db.session.async_session_factory") as mock_session_factory,
+        patch(
+            "app.db.repositories.system_configs_repository.SystemConfigsRepository.get_value",
+            new_callable=AsyncMock,
+        ) as mock_config,
+        patch(
+            "app.services.book_milestone_service.BookMilestoneService.update_book_milestone_for_step",
+            new_callable=AsyncMock,
+        ) as mock_update_milestone,
+    ):
         mock_session = AsyncMock()
         mock_session_factory.return_value.__aenter__.return_value = mock_session
 

@@ -28,6 +28,9 @@ async def run_ocr_scanner(ctx) -> None:
     async with db_session.async_session_factory() as session:
         config_repo = SystemConfigsRepository(session)
         max_books = int(await config_repo.get_value("scanner_book_limit", "10"))
+        ocr_batch_size = int(
+            await config_repo.get_value("ocr_scanner_batch_size", "10")
+        )
 
         # Find books that have idle OCR work.
         # We use the denormalized ocr_milestone on Book to avoid a massive join with Pages.
@@ -56,6 +59,7 @@ async def run_ocr_scanner(ctx) -> None:
                     Page.ocr_milestone == "idle",
                 )
                 .with_for_update(skip_locked=True)
+                .limit(ocr_batch_size)
             )
             result = await session.execute(id_stmt)
             page_ids = [row[0] for row in result.fetchall()]

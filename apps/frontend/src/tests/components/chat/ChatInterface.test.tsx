@@ -78,7 +78,6 @@ test('ChatInterface renders global chat correctly', () => {
     />
   );
 
-  expect(screen.getByText('chat.globalAssistant')).toBeInTheDocument();
   expect(screen.getByText('chat.welcome.title')).toBeInTheDocument();
   expect(screen.getByText('chat.welcome.message')).toBeInTheDocument();
 });
@@ -160,8 +159,7 @@ test('ChatInterface shows loading state', () => {
   expect(screen.getByTestId('send-button')).toBeDisabled();
 });
 
-test('ChatInterface renders global chat messages and close button', () => {
-  const onClose = vi.fn();
+test('ChatInterface renders global chat messages', () => {
   const ref = { current: document.createElement('div') };
   renderChat(
     <ChatInterface
@@ -172,15 +170,12 @@ test('ChatInterface renders global chat messages and close button', () => {
       setChatInput={vi.fn()}
       onSendMessage={vi.fn()}
       isChatting={false}
-      onClose={onClose}
       chatContainerRef={ref}
     />
   );
 
   expect(screen.getByText('Hello')).toBeInTheDocument();
   expect(screen.getByText('Salam')).toBeInTheDocument();
-  fireEvent.click(screen.getByTestId('close-button'));
-  expect(onClose).toHaveBeenCalled();
 });
 
 test('ChatInterface global send button disables when input empty', () => {

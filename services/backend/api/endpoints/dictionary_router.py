@@ -1,20 +1,18 @@
 """
-Dictionary Management API — search, add, and remove words from the global dictionary.
+Dictionary Management API — search and list entries from the new definition dictionary.
 """
 
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import select, func, update
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
-from app.db.models import Dictionary, PageSpellIssue
-from app.models.user import User
-from auth.dependencies import require_editor
+from app.db.models import Dictionary
 
 router = APIRouter()
 
@@ -22,17 +20,15 @@ router = APIRouter()
 # ── Response/Request schemas ──────────────────────────────────────────────────
 
 
-class AddToDictionaryRequest(BaseModel):
-    word: str
-
-
 class DictionaryStatsOut(BaseModel):
     total_words: int
 
 
-class DictionaryWordOut(BaseModel):
+class DictionaryEntryOut(BaseModel):
     id: int
     word: str
+    definition: Optional[str] = None
+    audio: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -40,46 +36,13 @@ class DictionaryWordOut(BaseModel):
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 
-@router.post("/spell-check/dictionary")
-async def add_to_dictionary(
-    body: AddToDictionaryRequest,
-    current_user: User = Depends(require_editor),
-    session: AsyncSession = Depends(get_session),
-):
-    """Add a word to the global spell check dictionary. Editor and Admin allowed."""
-    word = body.word.strip()
-    if not word:
-        raise HTTPException(status_code=400, detail="Word cannot be empty")
-
-    # Check if already exists
-    stmt = select(Dictionary).where(Dictionary.word == word)
-    res = await session.execute(stmt)
-    if res.scalar_one_or_none():
-        return {"added": 0, "message": "Word already in dictionary"}
-
-    new_word = Dictionary(word=word)
-    session.add(new_word)
-
-    # Also mark all matching OPEN issues across the entire system as 'ignored'
-    # since the word is now valid.
-    await session.execute(
-        update(PageSpellIssue)
-        .where(PageSpellIssue.word == word, PageSpellIssue.status == "open")
-        .values(status="ignored")
-    )
-
-    await session.commit()
-    return {"added": 1}
-
-
-@router.get("/spell-check/dictionary/search", response_model=List[DictionaryWordOut])
+@router.get("/dictionary/search", response_model=List[DictionaryEntryOut])
 async def search_dictionary(
     q: str,
     limit: int = 10,
-    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
-    """Search for words in the dictionary (autocomplete)."""
+    """Search for entries in the dictionary (autocomplete)."""
     q = q.strip()
     if len(q) < 1:
         return []
@@ -94,50 +57,45 @@ async def search_dictionary(
     return res.scalars().all()
 
 
-@router.get("/spell-check/dictionary/stats", response_model=DictionaryStatsOut)
+@router.get("/dictionary/stats", response_model=DictionaryStatsOut)
 async def get_dictionary_stats(
-    current_user: User = Depends(require_editor),
+    letter_group: Optional[str] = None,
     session: AsyncSession = Depends(get_session),
 ):
-    """Get total word count in the dictionary."""
+    """Get total entry count in the dictionary."""
     stmt = select(func.count()).select_from(Dictionary)
+    if letter_group:
+        stmt = stmt.where(
+            func.substr(Dictionary.word, 1, len(letter_group)) == letter_group
+        )
     res = await session.execute(stmt)
     return {"total_words": res.scalar() or 0}
 
 
-@router.get("/spell-check/dictionary", response_model=List[DictionaryWordOut])
-async def list_dictionary_words(
+@router.get("/dictionary/letter-groups", response_model=List[str])
+async def list_letter_groups(
+    session: AsyncSession = Depends(get_session),
+):
+    """Return all distinct first letters present in the dictionary."""
+    col = func.substr(Dictionary.word, 1, 1)
+    stmt = select(col).group_by(col).order_by(col)
+    res = await session.execute(stmt)
+    return [row for (row,) in res.all() if row]
+
+
+@router.get("/dictionary", response_model=List[DictionaryEntryOut])
+async def list_dictionary_entries(
     skip: int = 0,
     limit: int = 20,
-    current_user: User = Depends(require_editor),
+    letter_group: Optional[str] = None,
     session: AsyncSession = Depends(get_session),
 ):
-    """List words in the dictionary with pagination, sorted by latest added (ID DESC)."""
-    stmt = select(Dictionary).order_by(Dictionary.id.desc()).offset(skip).limit(limit)
+    """List dictionary entries with pagination, sorted alphabetically."""
+    stmt = select(Dictionary).order_by(Dictionary.id.asc())
+    if letter_group:
+        stmt = stmt.where(
+            func.substr(Dictionary.word, 1, len(letter_group)) == letter_group
+        )
+    stmt = stmt.offset(skip).limit(limit)
     res = await session.execute(stmt)
     return res.scalars().all()
-
-
-@router.delete("/spell-check/dictionary/{word}")
-async def delete_from_dictionary(
-    word: str,
-    current_user: User = Depends(require_editor),
-    session: AsyncSession = Depends(get_session),
-):
-    """Remove a word from the dictionary. Only allowed for editors/admins."""
-    word = word.strip()
-    if not word:
-        raise HTTPException(status_code=400, detail="Word cannot be empty")
-
-    # Find the word
-    stmt = select(Dictionary).where(Dictionary.word == word)
-    res = await session.execute(stmt)
-    entry = res.scalar_one_or_none()
-
-    if not entry:
-        raise HTTPException(status_code=404, detail="Word not found in dictionary")
-
-    await session.delete(entry)
-    await session.commit()
-
-    return {"deleted": True, "word": word}

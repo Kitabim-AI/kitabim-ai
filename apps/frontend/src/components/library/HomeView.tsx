@@ -4,6 +4,7 @@ import { useAppContext } from '../../context/AppContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { PersistenceService } from '../../services/persistenceService';
 import { ProverbDisplay } from '../common/ProverbDisplay';
+import { QuestionRotator } from '../common/QuestionRotator';
 import { BookCard } from './BookCard';
 
 export const HomeView: React.FC = () => {
@@ -26,8 +27,6 @@ export const HomeView: React.FC = () => {
   } = useAppContext();
 
   const { t } = useI18n();
-  const [categories, setCategories] = useState<string[]>([]);
-  const [visibleCount, setVisibleCount] = useState(5);
   const [localSearch, setLocalSearch] = useState(searchQuery);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const localSearchRef = useRef(localSearch);
@@ -70,17 +69,7 @@ export const HomeView: React.FC = () => {
     }
   }, [searchQuery]);
 
-  useEffect(() => {
-    const fetchCategories = async () => {
-      try {
-        const categoriesData = await PersistenceService.getTopCategories(100, 'count');
-        setCategories(categoriesData);
-      } catch (e) {
-        console.error('Error fetching categories:', e);
-      }
-    };
-    fetchCategories();
-  }, []);
+
 
   useEffect(() => {
     if (!hasSearch) return;
@@ -106,11 +95,7 @@ export const HomeView: React.FC = () => {
     }
   };
 
-  const handleCategoryClick = (category: string) => {
-    setSelectedCategory(category);
-    setLocalSearch('');
-    setSearchQuery('');
-  };
+
 
   return (
     <div className={`flex flex-col items-center transition-all duration-1000 ${hasSearch ? 'pt-4 sm:pt-6' : 'pt-8 sm:pt-12 md:pt-20'}`} dir="rtl" lang="ug">
@@ -180,28 +165,17 @@ export const HomeView: React.FC = () => {
           </p>
         )}
 
-        {/* Categories helper */}
-        {!hasSearch && categories.length > 0 && (
-          <div className="mt-8 sm:mt-10 md:mt-12 flex flex-wrap justify-center gap-2 sm:gap-3 px-4">
-            <span className="w-full text-center text-xs sm:text-sm font-normal text-[#94a3b8] uppercase mb-2 sm:mb-4">{t('home.topCategories')}</span>
-            {categories.slice(0, visibleCount).map(cat => (
-              <button
-                key={cat}
-                onClick={() => handleCategoryClick(cat)}
-                className="px-4 sm:px-6 py-2.5 min-h-[48px] sm:min-h-0 bg-white/40 backdrop-blur-md border border-[#75C5F0]/10 rounded-2xl text-sm font-normal text-[#1a1a1a] hover:bg-[#75C5F0] hover:text-white transition-all active:scale-95 shadow-sm hover:shadow-lg hover:shadow-[#75C5F0]/20"
-              >
-                {cat}
-              </button>
-            ))}
-            {categories.length > visibleCount && (
-              <button
-                onClick={() => setVisibleCount(prev => prev + 5)}
-                className="px-4 sm:px-6 py-2.5 min-h-[48px] sm:min-h-0 bg-white/20 backdrop-blur-md border border-[#75C5F0]/10 rounded-2xl text-sm font-bold text-[#0369a1] hover:bg-[#0369a1] hover:text-white transition-all active:scale-95 shadow-sm hover:shadow-lg"
-              >
-                ...
-              </button>
-            )}
-          </div>
+
+
+        {/* Recent questions rotator */}
+        {!hasSearch && (
+          <QuestionRotator
+            className="mt-8 sm:mt-10"
+            onQuestionClick={(q) => {
+              chat.setChatInput(q);
+              setView('global-chat');
+            }}
+          />
         )}
       </div>
 

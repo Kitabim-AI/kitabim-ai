@@ -82,7 +82,9 @@
     "footer": {
       "text": "كىتابىم تورى - ئۇيغۇر ئىلىم ۋە مەدەنىيىتى بىلەن سۈنئىي ئېدىراك تېخنىكىسىنىڭ بىرلەشمىسى",
       "copyright": "بارلىق ھوقۇقلار كىتابىم تورىغا تەۋە",
-      "contactUs": "ئالاقىلىشىڭ"
+      "contactUs": "ئالاقىلىشىڭ",
+      "donate": "ئىئانە قىلىڭ",
+      "sponsors": "قوللىغۇچىلار:"
     }
   },
   "nav": {
@@ -93,6 +95,8 @@
     "joinUs": "ئالاقىلىشىڭ",
     "admin": "باشقۇرۇش",
     "addBook": "كىتاب قوشۇش",
+    "graph": "بىلىم گىرافى",
+    "dictionary": "لۇغەت",
     "switchLanguage": "تىل ئالماشتۇرۇش"
   },
   "home": {
@@ -104,7 +108,8 @@
     "totalBooks": "كىتاب",
     "pressEnterToChat": "Enter كونۇپكىسىنى بېسىپ زېرەكچاق بىلەن سۆھبىتىڭىزنى باشلاڭ ",
     "pressReturnToChat": "Return كونۇپكىسىنى بېسىپ زېرەكچاق بىلەن سۆھبىتىڭىزنى باشلاڭ",
-    "tapToChat": "زېرەكچاق سىنبەلگىسىنى چېكىپ سۆھبىتىڭىزنى باشلاڭ"
+    "tapToChat": "زېرەكچاق سىنبەلگىسىنى چېكىپ سۆھبىتىڭىزنى باشلاڭ",
+    "recentQuestions": "يېقىنقى سوئاللار"
   },
   "library": {
     "title": "كىتابىم كۇتۇپخانىسى",
@@ -129,7 +134,6 @@
       "ocr": "OCR",
       "chunking": "پارچىلاۋاتىدۇ",
       "embedding": "ۋېكتورلاۋاتىدۇ",
-      "word_index": "سۆز تىزىملىكى تۇرغۇزۇۋاتىدۇ",
       "spell_check": "ئىملا تەكشۈرۋاتىدۇ",
       "ready": "پۈتتى",
       "idle": "ساقلاۋاتىدۇ",
@@ -167,6 +171,8 @@
     "inputPlaceholderBook": "سوئالىڭىزنى كىرگۈزۈڭ...",
     "inputPlaceholderWithLimit": "سوئالىڭىزنى كىرگۈزۈڭ... ھازىرچە {{usage}}/{{limit}} سوئال سورىدىڭىز",
     "limitReached": "كۈندىلىك پاراڭلىشىش چەكلىمىڭىز توشتى. ئەتە قايتا سىناپ بېقىڭ.",
+    "invalidLanguage": "سوئالىڭىزنى چوقۇم ئۇيغۇر يېزىقىدا كىرگۈزۈڭ.",
+    "textTooLong": "سوئالڭىز 500 ھەرپتىن ئېشىپ كەتمەسلىكى كېرەك.",
     "usageInfo": "ئىشلىتىلگەن سوئال سانى: {{usage}} / {{limit}}",
     "referenceTitle": "مەنبە مەزمۇنى",
     "bookSummary": "قىسقىچە مەزمۇنى",
@@ -245,6 +251,7 @@
     "statsLabel": "ستاتىستىكا",
     "usersLabel": "ئابونتلار",
     "contactsLabel": "ئالاقىلەر",
+    "questionsLabel": "سوئاللار",
     "rulesLabel": "ئاپتوماتىك تۈزىتىش",
     "dictionaryLabel": "لۇغەت",
     "stats": {
@@ -295,12 +302,28 @@
       "noSubmissions": "تېخى ئالاقە يوق",
       "error": "يۈكلەشتە خاتالىق كۆرۈلدى"
     },
+    "questions": {
+      "title": "سوئاللار",
+      "subtitle": "سورالغان سوئاللار",
+      "searchPlaceholder": "سوئال ئىزدەش...",
+      "total": "جەمئىي {{count}} سوئال",
+      "colQuestion": "سوئال",
+      "colScope": "دائىرىسى",
+      "colFeedback": "ئىنكاس",
+      "colDate": "ۋاقتى",
+      "colShowOnHome": "ئاشكارلاش",
+      "scopeGlobal": "ئومۇمى",
+      "scopeBook": "كىتاب",
+      "showOnHome": "ئاشكارلاش",
+      "hideFromHome": "يوشۇرۇش",
+      "empty": "تېخى سوئال يوق",
+      "error": "سوئاللارنى ئىزدەشتە خاتالىق كۆرۈلدى"
+    },
     "pipeline": {
       "ocr": "OCR",
       "chunking": "پارچىلاش",
       "embedding": "ۋېكتورلاش",
       "summary": "قىسقىچە مەزمۇن",
-      "wordIndex": "سۆز سىتاتىسكىسى",
       "spellCheck": "ئىملا تەكشۈرۈش",
       "graph": "بىلىم گىرافىكى"
     },
@@ -324,9 +347,9 @@
         "ocr": "قايتا OCR",
         "chunking": "قايتا پارچىلاش",
         "embedding": "قايتا ۋېكتورلاش",
-        "word_index": "قايتا سۆز تىزىملىكى ھاسىللاش",
         "spell_check": "قايتا ئىملا تەكشۈرۈش",
-        "graph": "قايتا گىرافىك قۇرۇش"
+        "graph": "قايتا گىرافىك قۇرۇش",
+        "summary": "قايتا قىسقىچە مەزمۇن ھاسىللاش"
       },
       "redoOcr": "OCR نى قايتىلاش",
       "email": "ئېلخەت",
@@ -451,19 +474,50 @@
         "pending": "كۈتۈۋاتىدۇ"
       }
     },
-    "dictionary": {
-      "title": "لۇغەت باشقۇرۇش",
-      "subtitle": "لۇغەت سۆزلىرىنى ئىزدەش، قوشۇش ياكى ئۆچۈرۈش.",
+    "words": {
+      "title": "ئىملا لۇغىتى",
       "searchPlaceholder": "سۆز ئىزدەش...",
-      "searchPlaceholderWithCount": "{{count}} سۆز ئىچىدىن ئىزدەش...",
       "totalWords": "جەمئىي {{count}} سۆز",
-      "addWord": "لۇغەتكە قوشۇش",
-      "removeWord": "لۇغەتتىن ئۆچۈرۈش",
-      "confirmDeleteTitle": "لۇغەتتىن ئۆچۈرۈش",
-      "confirmDelete": "«{{word}}» سۆزىنى لۇغەتتىن راستىنلا ئۆچۈرەمسىز؟ ",
-      "wordExists": "بۇ سۆز لۇغەتتە بار.",
-      "wordNotFound": "بۇ سۆز لۇغەتتە يوق.",
-      "emptyStateTitle": "كىتابىم ئىملا لۇغىتىدىن سۆز ئىزدەڭ"
+      "wordExists": "بۇ سۆز سۆزلۈكتە بار.",
+      "wordNotFound": "بۇ سۆز سۆزلۈكتە يوق."
+    },
+    "dictionary": {
+      "title": "ئىزاھلىق لۇغەت",
+      "searchPlaceholder": "ئىزاھلىق لۇغەتتىن ئىزدەڭ...",
+      "totalWords": "جەمئىي {{count}} سۆز",
+      "wordNotFound": "بۇ سۆز لۇغەتتە يوق."
+    },
+    "synonyms": {
+      "title": "مەنىداش سۆزلەر",
+      "searchPlaceholder": "مەنىداش سۆز ئىزدەڭ...",
+      "totalWords": "جەمئىي {{count}} سۆز",
+      "wordNotFound": "بۇ سۆز مەنىداش سۆزلەر لۇغىتىدە يوق."
+    },
+    "historyDictionary": {
+      "title": "تارىخ لۇغىتى",
+      "searchPlaceholder": "تارىخ لۇغىتىدىن ئىزدەڭ...",
+      "totalEntries": "جەمئىي {{count}} ئاتالغۇ",
+      "entryNotFound": "ماس كېلىدىغان ئاتالغۇ تېپىلمىدى.",
+      "transliteration": "يەشمىسى"
+    },
+    "namesDictionary": {
+      "title": "كىشى ئىسىملىرى",
+      "searchPlaceholder": "كىشى ئىسىملىرىنى ئىزدەڭ...",
+      "totalEntries": "جەمئىي {{count}} ئىسىم",
+      "entryNotFound": "ماس كېلىدىغان ئىسىم تېپىلمىدى."
+    },
+    "englishUyghurDictionary": {
+      "title": "ئىنگلىزچە-ئۇيغۇرچە",
+      "searchPlaceholder": "ئىنگلىزچە سۆز ئىزدەڭ...",
+      "totalEntries": "جەمئىي {{count}} ئاتالغۇ",
+      "entryNotFound": "ماس كېلىدىغان ئاتالغۇ تېپىلمىدى."
+    },
+    "proverbs": {
+      "title": "ماقال-تەمسىللەر",
+      "searchPlaceholder": "ماقال-تەمسىللەردىن ئىزدەڭ...",
+      "totalEntries": "جەمئىي {{count}} ماقال-تەمسىل",
+      "entryNotFound": "ماس كېلىدىغان ماقال-تەمسىل تېپىلمىدى.",
+      "volumeAndPage": "{{volume}}-توم، {{page}}-بەت"
     }
   },
   "spellCheck": {
@@ -622,14 +676,14 @@
     "reprocessEmbedding": {
       "title": "ۋېكتورلاشتۇرۇشنى قايتىلاش"
     },
-    "reprocessWordIndex": {
-      "title": "سۆز تىزىملىكىنى قايتىلاش"
-    },
     "reprocessSpellCheck": {
       "title": "ئىملا تەكشۈرۈشنى قايتىلاش"
     },
     "reprocessGraph": {
       "title": "بىلىم گىرافىكىنى قايتا قۇرۇش"
+    },
+    "reprocessSummary": {
+      "title": "قىسقىچە مەزمۇننى قايتا ھاسىللاش"
     },
     "reprocess": {
       "ocr": {
@@ -641,14 +695,14 @@
       "embedding": {
         "message": "بارلىق بەتلەرنى ۋە بۆلەكلەرنى ۋېكتورلاشتۇرۇش (Embedding) باسقۇچىدىن باشلاپ قايتا بىر تەرەپ قىلامسىز؟"
       },
-      "word-index": {
-        "message": "سۆز تىزىملىكى (Index) نى قايتا ھاسىل قىلامسىز؟"
-      },
       "spell-check": {
         "message": "ئىملا تەكشۈرۈشنى قايتا بىر تەرەپ قىلامسىز؟"
       },
       "graph": {
         "message": "بۇ كىتابنىڭ بىلىم گىرافىكىنى (Knowledge Graph) قايتا قۇرامسىز؟"
+      },
+      "summary": {
+        "message": "بۇ كىتابنىڭ قىسقىچە مەزمۇنىنى قايتا ھاسىللامسىز؟."
       }
     },
     "redoOcrError": {
@@ -794,5 +848,29 @@
     "answerLabel": "جاۋاب",
     "textCopied": "مەزمۇن كۆچۈرۈلدى!",
     "pasteHint": "مەزمۇن كۆچۈرۈلدى — Facebook خاتىرىڭىزغا چاپلاڭ"
+  },
+  "graph": {
+    "title": "بىلىم گىرافى",
+    "subtitle": "كىتابلاردىن ئايرىپ ئېلىنغان سۆزلۈك ۋە ئۇلارنىڭ ئۆز-ئارا مۇناسىۋەتلىرىنىڭ كۆرۈنۈشلۈك گىرافى",
+    "searchPlaceholder": "سۆزلۈك ئىزدەڭ...",
+    "loading": "بىلىم گىرافىنى تەكشۈرۋاتىدۇ...",
+    "noData": "ئىزدەشكە ماس كېلىدىغان سۆزلۈك تېپىلمىدى.",
+    "enterFullscreen": "تولۇق ئېكران شەكلى",
+    "exitFullscreen": "تولۇق ئېكراندىن چىقىش",
+    "filterNodeTypes": "سۆزلۈك تۈرلىرى",
+    "filterEdgeTypes": "مۇناسىۋەت تۈرلىرى",
+    "all": "ھەممىسى",
+    "tabDetails": "تەپسىلاتى",
+    "tabFilters": "سۈزگۈچلەر",
+    "nodePanel": {
+      "title": "سۆزلۈك تەپسىلاتى",
+      "name": "نامى",
+      "type": "تۈرى",
+      "subtype": "تارماق تۈرى",
+      "connections": "ئالاقىسى بار سۆزلۈكلەر",
+      "yearHijri": "ھىجرىيە يىلى",
+      "yearGregorian": "مىلادىيە يىلى",
+      "centuryGregorian": "مىلادىيە ئەسىرى"
+    }
   }
 }

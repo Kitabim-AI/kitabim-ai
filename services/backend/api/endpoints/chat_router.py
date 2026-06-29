@@ -126,7 +126,7 @@ async def chat_with_book_stream(
         )
 
         async def error_stream():
-            yield f'data: {json.dumps({"error": t("errors.daily_limit_reached")})}\n\n'
+            yield f"data: {json.dumps({'error': t('errors.daily_limit_reached')})}\n\n"
 
         return StreamingResponse(error_stream(), media_type="text/event-stream")
 
@@ -143,12 +143,12 @@ async def chat_with_book_stream(
             ):
                 if isinstance(event, str):
                     accumulated_response += event
-                    yield f'data: {json.dumps({"chunk": event})}\n\n'
+                    yield f"data: {json.dumps({'chunk': event})}\n\n"
                 elif isinstance(event, dict):
                     if event.get("type") == "chunk":
                         accumulated_response += event.get("text", "")
                         # Keep frontend-compatible {"chunk": text} format for answer tokens
-                        yield f'data: {json.dumps({"chunk": event["text"]})}\n\n'
+                        yield f"data: {json.dumps({'chunk': event['text']})}\n\n"
                     elif event.get("type") == "answer_start":
                         # A new answer generation cycle is starting.
                         # Reset the accumulator so the citation fixer only sees the final answer.
@@ -167,7 +167,7 @@ async def chat_with_book_stream(
                     "Citations were fixed in stream",
                     user_id=current_user.id,
                 )
-                yield f'data: {json.dumps({"correction": fixed_response})}\n\n'
+                yield f"data: {json.dumps({'correction': fixed_response})}\n\n"
 
             # Increment usage on successful stream completion
             await chat_limit_service.increment_usage(current_user, session)
@@ -175,12 +175,12 @@ async def chat_with_book_stream(
                 current_user, session
             )
 
-            yield f'data: {json.dumps({"done": True, "usage": updated_usage, "contextBookIds": stream_meta.get("used_book_ids", []), "evalId": stream_meta.get("eval_id")})}\n\n'
+            yield f"data: {json.dumps({'done': True, 'usage': updated_usage, 'contextBookIds': stream_meta.get('used_book_ids', []), 'evalId': stream_meta.get('eval_id')})}\n\n"
 
         except ValueError as exc:
             # Book not found or validation error
             log_json(logger, logging.WARNING, "Stream validation error", error=str(exc))
-            yield f'data: {json.dumps({"error": str(exc)})}\n\n'
+            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
         except Exception as exc:
             error_str = str(exc)
             log_json(
@@ -194,7 +194,7 @@ async def chat_with_book_stream(
             # Check for rate limit errors from Gemini
             error_msg = t("errors.system_busy_generic")
 
-            yield f'data: {json.dumps({"error": error_msg})}\n\n'
+            yield f"data: {json.dumps({'error': error_msg})}\n\n"
             try:
                 await record_book_error(session, req.book_id, "chat_stream", error_str)
             except Exception as record_exc:
@@ -267,3 +267,19 @@ async def submit_chat_feedback(
     )
 
     return {"ok": True, "eval_id": req.eval_id, "feedback": req.feedback}
+
+
+@router.get("/recent-questions")
+async def get_recent_questions(
+    limit: int = 10,
+    session: AsyncSession = Depends(get_session),
+):
+    """Return recent distinct first-turn questions for the home page rotator.
+
+    No auth required — these are public showcase questions.
+    """
+    from app.db.repositories.rag_evaluations_repository import RAGEvaluationsRepository
+
+    repo = RAGEvaluationsRepository(session)
+    questions = await repo.get_recent_standalone_questions(limit=limit)
+    return {"questions": questions}

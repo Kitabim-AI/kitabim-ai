@@ -43,7 +43,7 @@ External services:
 
 **PostgreSQL** is external (managed) in production — not a Docker service.
 
-**Local dev** uses host Postgres (`host.docker.internal:5532`) and a shared `./data` bind mount.
+**Local dev** uses a standalone host Postgres (`host.docker.internal:5432`, not a Docker container) and a shared `./data` bind mount.
 
 **Production** uses a named Docker volume (`app_data`) mounted to `/mnt/kitabim-data` on the VM.
 
@@ -246,7 +246,7 @@ Checklist for adding a step (e.g. `my_step`) to the OCR → Chunking → Embeddi
 
 | Aspect | Local dev | Production (GCP) |
 |--------|-----------|-----------------|
-| PostgreSQL | Host machine port 5532 | External managed instance |
+| PostgreSQL | Standalone on host port 5432 (not Docker) | External managed instance |
 | Redis persistence | None (ephemeral) | `appendonly yes`, `appendfsync everysec` |
 | Redis memory | 256 MB | 512 MB |
 | File storage | `./data` bind mount | `/mnt/kitabim-data` named volume |

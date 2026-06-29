@@ -105,5 +105,5 @@ async def test_chat_stream_endpoint_uses_injected_rag_service():
 
     assert len(chunks) > 0
     # The first event is the first yielded chunk formatted as SSE
-    assert f'data: {json.dumps({"chunk": "بىرىنچى"})}\n\n' in chunks
-    assert f'data: {json.dumps({"chunk": "ئىككىنچى"})}\n\n' in chunks
+    assert f"data: {json.dumps({'chunk': 'بىرىنچى'})}\n\n" in chunks
+    assert f"data: {json.dumps({'chunk': 'ئىككىنچى'})}\n\n" in chunks

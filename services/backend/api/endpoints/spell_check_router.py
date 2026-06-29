@@ -20,7 +20,7 @@ from app.core.pipeline import (
     PIPELINE_STEP_EMBEDDING,
 )
 from app.db.session import get_session
-from app.db.models import Page, PageSpellIssue, Dictionary
+from app.db.models import Page, PageSpellIssue, Word
 from app.models.user import User
 from app.services.spell_check_service import run_spell_check_for_page
 from auth.dependencies import require_editor
@@ -364,10 +364,10 @@ async def apply_spell_corrections(
             processed_dict_additions.add(word_to_save)
 
             # Check if already in dictionary
-            dict_stmt = select(Dictionary).where(Dictionary.word == word_to_save)
+            dict_stmt = select(Word).where(Word.word == word_to_save)
             dict_res = await session.execute(dict_stmt)
             if not dict_res.scalar_one_or_none():
-                session.add(Dictionary(word=word_to_save))
+                session.add(Word(word=word_to_save))
 
                 # Proactively mark all matching OPEN issues everywhere as 'ignored'
                 await session.execute(

@@ -245,3 +245,23 @@ def test_get_books_repository():
     session = AsyncMock()
     repo = get_books_repository(session)
     assert isinstance(repo, BooksRepository)
+
+
+def test_entity_matches_question_variations():
+    from app.db.repositories.books_repository import _entity_matches_question
+
+    # 1. Test double-consonant variations in Uyghur names
+    assert _entity_matches_question(
+        "جالالىدىن بەھرام", "جالالىددىن بەھرامنىڭ ئەسەرلىرى بار؟"
+    )
+    assert _entity_matches_question(
+        "جالالىددىن بەھرام", "جالالىدىن بەھرامنىڭ ئەسەرلىرى بار؟"
+    )
+
+    # 2. Test Uyghur agglutinative suffix handling alongside normalization/duplicates
+    assert _entity_matches_question("بابۇرنامە", "بابۇرنامىنىڭ بىرىنچى بابى")
+
+    # 3. Test Uyghur letter "ى" variations (encodings like U+0649 and U+06d1)
+    assert _entity_matches_question(
+        "جالالىد\u06d1ن بەھرام", "جالالىد\u0649ن بەھرامنىڭ ئەسەرلىرى بار؟"
+    )

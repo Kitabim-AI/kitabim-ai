@@ -235,17 +235,6 @@ export const PersistenceService = {
     }
   },
 
-  async reprocessWordIndex(bookId: string): Promise<void> {
-    const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/word-index`, {
-      method: 'POST',
-    });
-    if (!response.ok) {
-      if (response.status === 403) {
-        throw new Error("Permission denied: Editor access required");
-      }
-      throw new Error("Failed to start re-indexing");
-    }
-  },
 
   async reprocessSpellCheck(bookId: string): Promise<void> {
     const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/spell-check`, {
@@ -268,6 +257,18 @@ export const PersistenceService = {
         throw new Error("Permission denied: Editor access required");
       }
       throw new Error("Failed to start reprocessing graph");
+    }
+  },
+
+  async reprocessSummary(bookId: string): Promise<void> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/summary`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Admin access required");
+      }
+      throw new Error("Failed to start reprocessing summary");
     }
   },
 
@@ -393,6 +394,29 @@ export const PersistenceService = {
       return data.categories || [];
     } catch (error) {
       console.error("Failed to fetch categories", error);
+      return [];
+    }
+  },
+
+  async getRecentQuestions(limit: number = 10): Promise<string[]> {
+    try {
+      const response = await authFetch(`${API_BASE}/chat/recent-questions?limit=${limit}`);
+      if (!response.ok) throw new Error("Failed to fetch recent questions");
+      const data = await response.json();
+      return data.questions || [];
+    } catch (error) {
+      console.error("Failed to fetch recent questions", error);
+      return [];
+    }
+  },
+
+  async getFeaturedQuestions(limit: number = 20): Promise<string[]> {
+    try {
+      const response = await authFetch(`${API_BASE}/questions/featured?limit=${limit}`);
+      if (!response.ok) throw new Error("Failed to fetch featured questions");
+      return await response.json();
+    } catch (error) {
+      console.error("Failed to fetch featured questions", error);
       return [];
     }
   }

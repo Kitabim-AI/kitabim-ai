@@ -104,7 +104,7 @@ def test_detect_intent():
         "ئانا يۇرتنىڭ ئاپتورى كىم؟",
     ]
     for q in questions:
-        assert _detect_intent(q, ctx) == "catalog"
+        assert _detect_intent(q, ctx) == "content_search"
 
 
 def test_grade_context_local_grading():

@@ -1,5 +1,5 @@
-import { BookOpen, Clock, HardDrive, Loader2, X } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
+import { BookOpen, ChevronLeft, ChevronRight, Clock, HardDrive, Loader2, X } from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useI18n } from '../../i18n/I18nContext';
 import { PersistenceService } from '../../services/persistenceService';
@@ -20,10 +20,12 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
 }) => {
   const { t } = useI18n();
   const isSummaryMode = pageNumbers.length === 0;
-  const [pagesData, setPagesData] = useState<any[]>([]);
+  const [currentPageNum, setCurrentPageNum] = useState<number>(pageNumbers[0] ?? 1);
+  const [currentPageData, setCurrentPageData] = useState<any | null>(null);
   const [summaryData, setSummaryData] = useState<{ summary: string; generatedAt: string | null } | null>(null);
   const [bookData, setBookData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pageLoading, setPageLoading] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -35,6 +37,7 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
   useEffect(() => {
     if (!isOpen || !bookId) return;
     setLoading(true);
+    setCurrentPageData(null);
     if (isSummaryMode) {
       Promise.all([
         PersistenceService.getBookSummary(bookId),
@@ -48,14 +51,14 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
         setLoading(false);
       });
     } else {
+      const initialPage = pageNumbers[0] ?? 1;
+      setCurrentPageNum(initialPage);
       Promise.all([
-        ...pageNumbers.map(pageNum => PersistenceService.getPage(bookId, pageNum)),
         PersistenceService.getBookById(bookId),
-      ]).then(results => {
-        const pages = results.slice(0, -1);
-        const book = results[results.length - 1];
-        setPagesData(pages);
+        PersistenceService.getPage(bookId, initialPage),
+      ]).then(([book, page]) => {
         setBookData(book);
+        setCurrentPageData(page);
         setLoading(false);
       }).catch(err => {
         console.error("Failed to fetch reference data:", err);
@@ -64,7 +67,27 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
     }
   }, [isOpen, bookId, pageNumbers, isSummaryMode]);
 
+  const totalPages: number = bookData?.totalPages ?? 0;
+const navigateToPage = useCallback((newPage: number) => {
+    setCurrentPageNum(newPage);
+    setPageLoading(true);
+    PersistenceService.getPage(bookId, newPage)
+      .then(page => { setCurrentPageData(page); setPageLoading(false); })
+      .catch(err => { console.error("Failed to fetch page:", err); setPageLoading(false); });
+  }, [bookId]);
+
+  const goToPrevPage = useCallback(() => {
+    if (currentPageNum > 1) navigateToPage(currentPageNum - 1);
+  }, [currentPageNum, navigateToPage]);
+
+  const goToNextPage = useCallback(() => {
+    const next = currentPageNum + 1;
+    if (totalPages === 0 || next <= totalPages) navigateToPage(next);
+  }, [currentPageNum, totalPages, navigateToPage]);
+
   if (!isOpen) return null;
+
+  const isContentLoading = loading || pageLoading;
 
   const modalContent = (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-4 md:p-8" dir="rtl" lang="ug">
@@ -98,11 +121,11 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
                 )}
               </h3>
               <div className="flex items-center gap-4 text-[#94a3b8] text-sm font-normal uppercase tracking-wider">
-                <span className="flex items-center gap-1.5 px-3 py-1 bg-[#0369a1]/10 text-[#0369a1] rounded-full">
-                  {isSummaryMode
-                    ? t('chat.bookSummary')
-                    : pageNumbers?.map(p => t('chat.pageNumber', { page: p })).join('، ')}
-                </span>
+                {isSummaryMode && (
+                  <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#0369a1]/10 text-[#0369a1]">
+                    {t('chat.bookSummary')}
+                  </span>
+                )}
                 {bookData?.volume && (
                   <span className="flex items-center gap-1.5 px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-xs">
                     {t('book.volume', { volume: bookData.volume })}
@@ -122,7 +145,7 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
 
         {/* Content Area */}
         <div className="flex-grow overflow-y-auto p-4 sm:p-6 md:p-10 custom-scrollbar bg-[#f8fafc]/30">
-          {loading ? (
+          {isContentLoading ? (
             <div className="h-64 flex flex-col items-center justify-center gap-6 opacity-40">
               <Loader2 size={48} className="animate-spin text-[#0369a1]" />
               <p className="text-sm text-slate-400 font-normal uppercase tracking-widest">{t('common.loading')}</p>
@@ -144,26 +167,18 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
                 <p className="text-sm sm:text-base text-slate-400 font-normal">{t('chat.noContentFound')}</p>
               </div>
             )
-          ) : pagesData.length > 0 && pagesData.some(p => p?.text) ? (
-            <div className="max-w-3xl mx-auto space-y-6">
-              {pagesData.map((pageData, index) => {
-                const pageNum = pageNumbers[index];
-                if (!pageData?.text) return null;
-                return (
-                  <div key={`page-${pageNum}`} className="bg-white/80 p-4 pt-8 sm:p-6 sm:pt-10 md:p-10 md:pt-12 rounded-[20px] sm:rounded-[24px] md:rounded-[32px] shadow-sm border border-white relative overflow-hidden group">
-                    {pageNumbers.length > 1 && (
-                      <div className="absolute top-0 right-0 bg-[#0369a1] text-white px-4 py-1.5 rounded-bl-[24px] text-sm font-normal shadow-sm z-20 opacity-80 backdrop-blur-md">
-                        {t('chat.pageNumber', { page: pageNum })}
-                      </div>
-                    )}
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-[#0369a1]/5 rounded-bl-[100px] -mr-10 -mt-10 transition-transform group-hover:scale-110 duration-700" />
-                    <MarkdownContent
-                      content={pageData.text}
-                      className="text-base sm:text-lg leading-[2] text-[#1e293b] relative z-10"
-                    />
-                  </div>
-                );
-              })}
+          ) : currentPageData?.text ? (
+            <div className="max-w-3xl mx-auto">
+              <div className="bg-white/80 p-4 pt-8 sm:p-6 sm:pt-10 md:p-10 md:pt-12 rounded-[20px] sm:rounded-[24px] md:rounded-[32px] shadow-sm border border-white relative overflow-hidden group">
+                <div className="absolute top-0 right-0 bg-[#0369a1] text-white px-4 py-1.5 rounded-bl-[24px] text-sm font-normal shadow-sm z-20 opacity-80 backdrop-blur-md">
+                  {t('chat.pageNumber', { page: currentPageNum })}
+                </div>
+                <div className="absolute top-0 right-0 w-32 h-32 bg-[#0369a1]/5 rounded-bl-[100px] -mr-10 -mt-10 transition-transform group-hover:scale-110 duration-700" />
+                <MarkdownContent
+                  content={currentPageData.text}
+                  className="text-base sm:text-lg leading-[2] text-[#1e293b] relative z-10"
+                />
+              </div>
             </div>
           ) : (
             <div className="h-64 flex flex-col items-center justify-center text-center gap-4 opacity-40">
@@ -183,12 +198,34 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
                 : (bookData?.lastUpdated ? new Date(bookData.lastUpdated).toLocaleDateString() : '-')}
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 sm:px-6 sm:py-2.5 md:px-8 md:py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl text-sm font-normal transition-all active:scale-95 shadow-lg shadow-black/10 uppercase tracking-widest"
-          >
-            {t('common.close')}
-          </button>
+          <div className="flex items-center gap-2 sm:gap-3">
+            {!isSummaryMode && (
+              <>
+                <button
+                  onClick={goToPrevPage}
+                  disabled={currentPageNum <= 1}
+                  title={t('common.previous')}
+                  className="p-2 sm:p-2.5 bg-slate-100 hover:bg-[#0369a1]/10 text-slate-500 hover:text-[#0369a1] rounded-xl transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight size={18} />
+                </button>
+                <button
+                  onClick={goToNextPage}
+                  disabled={totalPages > 0 && currentPageNum >= totalPages}
+                  title={t('common.next')}
+                  className="p-2 sm:p-2.5 bg-slate-100 hover:bg-[#0369a1]/10 text-slate-500 hover:text-[#0369a1] rounded-xl transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+              </>
+            )}
+            <button
+              onClick={onClose}
+              className="px-4 py-2 sm:px-6 sm:py-2.5 md:px-8 md:py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl text-sm font-normal transition-all active:scale-95 shadow-lg shadow-black/10 uppercase tracking-widest"
+            >
+              {t('common.close')}
+            </button>
+          </div>
         </div>
       </div>
     </div>

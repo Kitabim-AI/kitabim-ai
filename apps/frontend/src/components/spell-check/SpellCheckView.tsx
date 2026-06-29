@@ -430,7 +430,7 @@ export const SpellCheckView: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 glass-panel border border-white/60 rounded-[24px] sm:rounded-[40px] flex flex-col p-4 sm:p-6 lg:p-8">
+      <div className="flex-1 min-h-0 glass-panel border border-white/60 rounded-[24px] sm:rounded-[40px] flex flex-col p-4 sm:p-6 lg:p-8">
         {(isLoadingBook || !bookMeta || (spellCheck.isLoading && !spellCheck.hasLoaded)) && !bookError && (
           <div className="flex-1 flex flex-col items-center justify-center gap-6 animate-fade-in">
             <div className="relative">
