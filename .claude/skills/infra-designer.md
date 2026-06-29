@@ -207,7 +207,7 @@ When designing a CI/CD workflow, follow this structure:
 
 | Aspect | Local dev | Production (GCP) |
 |--------|-----------|-----------------|
-| Postgres | `host.docker.internal:5532` | Cloud SQL `10.158.0.5:5432` |
+| Postgres | `host.docker.internal:5432` (standalone on host) | Cloud SQL `10.158.0.5:5432` |
 | Redis persistence | None (ephemeral) | `appendonly yes`, `appendfsync everysec` |
 | Redis memory | 256 MB | 512 MB |
 | File storage | `./data` bind mount | `/mnt/kitabim-data` named volume |
