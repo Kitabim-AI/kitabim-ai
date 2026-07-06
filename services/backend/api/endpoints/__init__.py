@@ -21,6 +21,7 @@ from . import (
     cache_router,
     questions_router,
     proverbs_router,
+    quran_router,
 )
 
 __all__ = [
@@ -44,4 +45,5 @@ __all__ = [
     "cache_router",
     "questions_router",
     "proverbs_router",
+    "quran_router",
 ]
