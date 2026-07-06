@@ -253,7 +253,7 @@ export const QuranView: React.FC = () => {
 
           {/* Surah List Dropdown Panel */}
           {isFocused && surahs.length > 0 && (
-            <div className="absolute right-0 left-0 mt-2 max-h-[300px] overflow-y-auto bg-white/95 backdrop-blur-md border border-[#0369a1]/15 rounded-2xl shadow-xl z-40 divide-y divide-slate-50 scrollbar-thin animate-fade-in">
+            <div className="absolute right-0 left-0 mt-2 max-h-[300px] overflow-y-auto bg-white/95 backdrop-blur-md border border-[#0369a1]/15 rounded-2xl shadow-xl z-40 divide-y divide-slate-50 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden animate-fade-in">
               <div className="px-4 py-2 text-xs font-bold text-[#0369a1] bg-[#0369a1]/5 text-right uyghur-text">
                 سۈرىلەر
               </div>
