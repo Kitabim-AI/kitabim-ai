@@ -4,6 +4,15 @@ import { useIsEditor } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
 import { MarkdownContent } from '../common/MarkdownContent';
 
+const normalizeArabic = (text: string): string => {
+  if (!text) return '';
+  return text
+    .replace(/\u06E1/g, '\u0652') // Uthmanic Sukun -> Standard Sukun
+    .replace(/\u0671/g, '\u0627') // Alif Wasla -> Standard Alif
+    .replace(/[\u06D6-\u06DC\u06DF-\u06E0\u06E2-\u06ED]/g, '') // Remove Uthmanic signs that disrupt cursive connections
+    ;
+};
+
 interface PageItemProps {
   page: any;
   isActive: boolean;
@@ -50,7 +59,13 @@ export const PageItem: React.FC<PageItemProps> = ({
       {isEditing ? (
         <div className="flex-1 flex flex-col gap-4 min-h-0">
           <div className="relative flex-1 flex flex-col min-h-0">
-            <textarea value={tempText} onChange={(e) => onTempTextChange(e.target.value)} className={`flex-1 w-full p-4 uyghur-text border-2 border-[#0369a1] rounded-xl outline-none resize-none bg-white relative z-10 min-h-0 custom-scrollbar ${contentFontClassName || ''}`} style={{ fontSize: `${fontSize}px`, fontFamily: contentFontFamily }} dir="rtl" />
+            <textarea 
+              value={contentFontClassName === 'reader-font-adobe' ? normalizeArabic(tempText) : tempText} 
+              onChange={(e) => onTempTextChange(contentFontClassName === 'reader-font-adobe' ? normalizeArabic(e.target.value) : e.target.value)} 
+              className={`flex-1 w-full p-4 uyghur-text border-2 border-[#0369a1] rounded-xl outline-none resize-none bg-white relative z-10 min-h-0 custom-scrollbar ${contentFontClassName || ''}`} 
+              style={{ fontSize: `${fontSize}px`, fontFamily: contentFontFamily }} 
+              dir="rtl" 
+            />
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -74,7 +89,11 @@ export const PageItem: React.FC<PageItemProps> = ({
         isLoading ? (
           <div className="flex flex-col items-center justify-center py-10 opacity-50"><Loader2 className="animate-spin text-[#0369a1] mb-2" /><span className="text-xs uppercase">{t('admin.table.recognizing')}</span></div>
         ) : (
-          <MarkdownContent content={page.text || "..."} className={`uyghur-text text-[#1a1a1a] ${contentFontClassName || ''}`} style={{ fontSize: `${fontSize}px`, fontFamily: contentFontFamily }} />
+          <MarkdownContent 
+            content={contentFontClassName === 'reader-font-adobe' ? normalizeArabic(page.text || '') : (page.text || "...")} 
+            className={`uyghur-text text-[#1a1a1a] ${contentFontClassName || ''}`} 
+            style={{ fontSize: `${fontSize}px`, fontFamily: contentFontFamily }} 
+          />
         )
       )}
     </div>
