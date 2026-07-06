@@ -856,6 +856,7 @@
   },
   "quran": {
     "title": "Holy Quran",
+    "subtitle": "Quran translation in Uyghur, Arabic and English",
     "searchPlaceholder": "Search in Quran (Arabic, Uyghur, or English)...",
     "ayahNotFound": "No verses found matching your search.",
     "totalVerses": "{{count}} Verses",

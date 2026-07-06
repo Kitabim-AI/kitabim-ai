@@ -209,8 +209,8 @@ export const QuranView: React.FC = () => {
           <h1 className="text-xl md:text-2xl font-bold text-slate-800 uyghur-text">
             {t('quran.title') || 'قۇرئان كەرىم'}
           </h1>
-          <p className="text-xs text-slate-400 font-normal">
-            Quran translation in Uyghur, Arabic and English
+          <p className="text-xs text-slate-400 font-normal uyghur-text">
+            {t('quran.subtitle')}
           </p>
         </div>
       </div>
