@@ -79,7 +79,7 @@ async def test_answer_question_current_page_only(rag_service):
 @pytest.mark.asyncio
 async def test_answer_question_stream(rag_service):
     session = AsyncMock()
-    req = ChatRequest(book_id="global", question="Hello", history=[])
+    req = ChatRequest(book_id="global", question="ياخشىمۇسىز", history=[])
 
     async def mock_stream(ctx):
         yield "Hello"

@@ -692,3 +692,72 @@ def test_extract_dictionary_term_proverbs():
     assert _extract_dictionary_term("بىلىم ھەققىدە ماقال-تەمسىللەر") == "بىلىم ھەققىدە"
     assert _extract_dictionary_term("ئىلىم ھەققىدە ماقاللار") == "ئىلىم ھەققىدە"
     assert _extract_dictionary_term("proverb about truth") == "about truth"
+
+
+@pytest.mark.asyncio
+async def test_fallback_quran_signals(mock_ctx):
+    handler = DeterministicRAGHandler()
+
+    # Mock LLM query analysis to raise an error to trigger keyword fallback
+    async def mock_llm_analyze(question, ctx):
+        raise ValueError("Simulate LLM error to trigger fallback")
+
+    handler._llm_analyze_query = mock_llm_analyze
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler.find_books_by_title_in_db",
+        return_value=[],
+    ):
+        sig = await handler.extract_signals(
+            "قۇرئان كەرىمدىكى 2-سۈرە 255-ئايەتنىڭ ئۇيغۇرچە مەنىسى نېمە؟", mock_ctx
+        )
+        assert sig["intent"] == "quran"
+        assert sig["quran_surah"] == 2
+        assert sig["quran_ayah"] == 255
+
+        sig_keyword = await handler.extract_signals(
+            "قۇرئاندىكى تەقۋادارلىق ھەققىدىكى ئايەتلەر قايسىلار؟", mock_ctx
+        )
+        assert sig_keyword["intent"] == "quran"
+        assert sig_keyword["quran_surah"] is None
+        assert sig_keyword["quran_ayah"] is None
+        assert (
+            sig_keyword["quran_query"]
+            == "قۇرئاندىكى تەقۋادارلىق ھەققىدىكى ئايەتلەر قايسىلار؟"
+        )
+
+
+@pytest.mark.asyncio
+async def test_execute_path_quran(mock_ctx):
+    handler = DeterministicRAGHandler()
+    observations = []
+    signals = {
+        "quran_surah": 1,
+        "quran_ayah": 1,
+        "quran_query": None,
+    }
+
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        assert tool_name == "search_quran"
+        assert tool_args == {"surah": 1, "ayah": 1, "q": "سۈرە 1-ئايەت 1"}
+        return {
+            "ok": True,
+            "context": "Holy Quran Verse Context",
+            "entries": [{"surah": 1, "ayah": 1}],
+            "found_count": 1,
+        }
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        async for _ in handler.execute_path(
+            "quran",
+            signals,
+            "سۈرە 1-ئايەت 1",
+            mock_ctx,
+            observations,
+        ):
+            pass
+
+    assert [o["tool"] for o in observations] == ["search_quran"]

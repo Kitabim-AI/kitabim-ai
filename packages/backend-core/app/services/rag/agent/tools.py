@@ -379,6 +379,23 @@ async def lookup_proverbs(
     return await _execute_and_record_tool(tool_context, "lookup_proverbs", args)
 
 
+async def search_quran(
+    surah: Optional[int] = None,
+    ayah: Optional[int] = None,
+    q: Optional[str] = None,
+    tool_context: ToolContext = None,
+) -> dict:
+    """Retrieve or search Quran surahs and verses (ayahs) using surah number, ayah number, or text keywords.
+
+    Args:
+        surah: Optional Surah number (1-114).
+        ayah: Optional Ayah/verse number in the specified Surah.
+        q: Optional search query/text to search across Quranic verses.
+    """
+    args = {"surah": surah, "ayah": ayah, "q": q}
+    return await _execute_and_record_tool(tool_context, "search_quran", args)
+
+
 AGENT_TOOLS = [
     search_chunks,
     search_books_by_summary,
@@ -398,6 +415,7 @@ AGENT_TOOLS = [
     lookup_uyghur_name,
     search_language_sources,
     lookup_proverbs,
+    search_quran,
 ]
 
 
@@ -494,6 +512,9 @@ async def _dispatch_tool_with_retry(
         return {"ok": True, **result, "found_count": result.get("found_count", 0)}
     if tool_name == "lookup_proverbs":
         result = await _run_lookup_proverbs(tool_args, ctx)
+        return {"ok": True, **result, "found_count": len(result.get("entries", []))}
+    if tool_name == "search_quran":
+        result = await _run_search_quran(tool_args, ctx)
         return {"ok": True, **result, "found_count": len(result.get("entries", []))}
     raise ValueError(f"Unknown tool: {tool_name}")
 
@@ -1323,3 +1344,83 @@ async def _run_lookup_proverbs(args: dict, ctx: QueryContext) -> dict:
         count=len(entries_dict),
     )
     return {"context": context, "entries": entries_dict}
+
+
+async def _run_search_quran(args: dict, ctx: QueryContext) -> dict:
+    from app.db import session as db_session
+    from app.db.models import Quran
+    from sqlalchemy import select, or_
+
+    surah = args.get("surah")
+    ayah = args.get("ayah")
+    q = args.get("q")
+
+    async with db_session.async_session_factory() as session:
+        if surah is not None:
+            stmt = select(Quran).where(Quran.surah == surah)
+            if ayah is not None:
+                stmt = stmt.where(Quran.ayah == ayah)
+            stmt = stmt.order_by(Quran.ayah.asc()).limit(30)
+            res = await session.execute(stmt)
+            entries = list(res.scalars().all())
+        elif q:
+            # Clean/normalize query just in case
+            search_pattern = f"%{q}%"
+            stmt = (
+                select(Quran)
+                .where(
+                    or_(
+                        Quran.text_ug.ilike(search_pattern),
+                        Quran.text_ar.ilike(search_pattern),
+                        Quran.text_en.ilike(search_pattern),
+                        Quran.surah_name_ug.ilike(search_pattern),
+                        Quran.surah_name_en.ilike(search_pattern),
+                    )
+                )
+                .order_by(Quran.surah.asc(), Quran.ayah.asc())
+                .limit(10)
+            )
+            res = await session.execute(stmt)
+            entries = list(res.scalars().all())
+        else:
+            entries = []
+
+    formatted_entries = []
+    context_parts = []
+    for entry in entries:
+        formatted = {
+            "surah": entry.surah,
+            "surah_name_ug": entry.surah_name_ug,
+            "surah_name_en": entry.surah_name_en,
+            "surah_name_ar": entry.surah_name_ar,
+            "ayah": entry.ayah,
+            "text_ar": entry.text_ar,
+            "text_ug": entry.text_ug,
+            "text_en": entry.text_en,
+        }
+        formatted_entries.append(formatted)
+
+        # Build clean markup citation context for RAG
+        context_parts.append(
+            f"[Source: Holy Quran, Surah: {entry.surah_name_ug} ({entry.surah_name_en}), Ayah: {entry.ayah}]\n"
+            f"Arabic: {entry.text_ar}\n"
+            f"Uyghur Translation: {entry.text_ug}\n"
+            f"English Translation: {entry.text_en}"
+        )
+
+    context = (
+        "\n\n---\n\n".join(context_parts)
+        if context_parts
+        else "No Quranic verses found matching criteria."
+    )
+
+    log_json(
+        logger,
+        logging.INFO,
+        "Agent tool search_quran",
+        surah=surah,
+        ayah=ayah,
+        q=q[:60] if q else None,
+        count=len(formatted_entries),
+    )
+    return {"context": context, "entries": formatted_entries}

@@ -20,6 +20,7 @@ from app.services.rag.agent.tools import (
     check_word_spelling,
     search_language_sources,
     lookup_proverbs,
+    search_quran,
 )
 from app.services.rag.agent.prompts import AGENT_SYSTEM_PROMPT
 
@@ -56,5 +57,6 @@ def build_rag_agent(model_name: str) -> Agent:
             check_word_spelling,
             search_language_sources,
             lookup_proverbs,
+            search_quran,
         ],
     )

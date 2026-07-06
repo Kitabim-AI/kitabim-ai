@@ -100,17 +100,23 @@ Return ONLY valid JSON matching this schema:
   "catalog_subtype": "author_of" | "books_by" | "general" | null, // Use "author_of" if asking who wrote a book, "books_by" if asking what books an author wrote, "general" for other catalog/library-wide queries (like "what books do you have"), or null if this is NOT a catalog query.
   "dictionary_subtype": "uyghur_definition" | "history_term" | "english_uyghur" | "spelling" | "names" | "proverbs" | "general" | null, // Use only when intent is "dictionary".
   "dictionary_term": string | null, // The exact word/term/name/English phrase to look up when intent is "dictionary".
-  "intent": "catalog" | "dictionary" | "identity" | "summary" | "relationship" | "passage",
+  "quran_surah": integer | null,    // The surah number (1-114) if specified (e.g. 1 for Fatihah, 2 for Baqarah), or null.
+  "quran_ayah": integer | null,     // The ayah/verse number if specified, or null.
+  "quran_query": string | null,     // The text query or keyword to search inside Quranic verses, or null.
+  "intent": "catalog" | "dictionary" | "identity" | "summary" | "relationship" | "passage" | "quran",
   "is_composite": boolean,          // True if the query contains multiple distinct questions or requests that should be handled separately (e.g. "Who wrote X and what is it about?").
   "sub_questions": Array<{{         // If is_composite is true, return each sub-question with its own signals. If is_composite is false, return null.
     "question": string,             // Self-contained sub-question text (pronouns resolved using history)
-    "intent": "catalog" | "dictionary" | "identity" | "summary" | "relationship" | "passage",
+    "intent": "catalog" | "dictionary" | "identity" | "summary" | "relationship" | "passage" | "quran",
     "is_current_page_query": boolean,
     "is_volume_shift": boolean,
     "target_volume": integer | null,
     "catalog_subtype": "author_of" | "books_by" | "general" | null,
     "dictionary_subtype": "uyghur_definition" | "history_term" | "english_uyghur" | "spelling" | "names" | "proverbs" | "general" | null,
-    "dictionary_term": string | null
+    "dictionary_term": string | null,
+    "quran_surah": integer | null,
+    "quran_ayah": integer | null,
+    "quran_query": string | null
   }}> | null
 }}
 
@@ -121,6 +127,7 @@ Intents:
 - summary     : asking about the plot, themes, or main characters of a book
 - relationship: asking about connections, lineages, family trees, or how X and Y relate
 - passage     : asking for specific events, facts, quotes, or details — including "tell me about X's actions"
+- quran       : asking about Quran surahs, verses (ayahs), translations, or searching for specific verses/phrases in the Quran (e.g., "what is surah 1?", "read ayah 1:2", "ئالفاتىھە سۈرىسى", "ئاللاھنىڭ ئىسمى بىلەن باشلايمەن قايسى سۈرىدە بار؟")
 
 Dictionary subtype rules:
 - "uyghur_definition": Uyghur word meaning or definition ("X دېگەن نېمە؟", "X مەنىسى نېمە؟")
@@ -186,6 +193,9 @@ Dictionary subtype rules:
             catalog_subtype = llm_res.get("catalog_subtype") or "general"
             dictionary_subtype = llm_res.get("dictionary_subtype") or "general"
             dictionary_term = llm_res.get("dictionary_term")
+            quran_surah = llm_res.get("quran_surah")
+            quran_ayah = llm_res.get("quran_ayah")
+            quran_query = llm_res.get("quran_query")
             intent = llm_res.get("intent", "passage")
             is_composite = llm_res.get("is_composite", False)
             sub_questions = llm_res.get("sub_questions")
@@ -195,6 +205,9 @@ Dictionary subtype rules:
             sub_questions = None
             dictionary_subtype = "general"
             dictionary_term = None
+            quran_surah = None
+            quran_ayah = None
+            quran_query = None
             log_json(
                 logger,
                 logging.WARNING,
@@ -258,7 +271,47 @@ Dictionary subtype rules:
                         needs_rewrite = True
 
             intent = "passage"
-            if _looks_like_dictionary_question(q_norm):
+            quran_surah = None
+            quran_ayah = None
+            quran_query = None
+            quran_keywords = [
+                "قۇرئان",
+                "سۈرە",
+                "ئايەت",
+                "سۈرىسى",
+                "quran",
+                "surah",
+                "ayah",
+                "verse",
+            ]
+            is_quran_query = any(
+                normalize_uyghur(k.lower()) in q_norm for k in quran_keywords
+            )
+            if is_quran_query:
+                intent = "quran"
+
+                p_surah = normalize_uyghur("(?:سۈرە|surah|سۈرىسى)")
+                p_ayah = normalize_uyghur(
+                    "(?:ئايەت|ئايىتى|ئايەتنىڭ|ئايەتتە|ئايەتتىن|ئايىت|ayah|verse)"
+                )
+                surah_match = re.search(rf"{p_surah}\s*(\d+)|(\d+)-{p_surah}", q_norm)
+                ayah_match = re.search(rf"{p_ayah}\s*(\d+)|(\d+)-{p_ayah}", q_norm)
+                surah_val = (
+                    next((g for g in surah_match.groups() if g is not None), None)
+                    if surah_match
+                    else None
+                )
+                ayah_val = (
+                    next((g for g in ayah_match.groups() if g is not None), None)
+                    if ayah_match
+                    else None
+                )
+                quran_surah = int(surah_val) if surah_val else None
+                quran_ayah = int(ayah_val) if ayah_val else None
+                quran_query = None
+                if not quran_surah:
+                    quran_query = question
+            elif _looks_like_dictionary_question(q_norm):
                 intent = "dictionary"
                 dictionary_subtype = _guess_dictionary_subtype(q_norm)
                 dictionary_term = _extract_dictionary_term(question)
@@ -279,6 +332,9 @@ Dictionary subtype rules:
             "intent": intent,
             "dictionary_subtype": dictionary_subtype,
             "dictionary_term": dictionary_term,
+            "quran_surah": quran_surah,
+            "quran_ayah": quran_ayah,
+            "quran_query": quran_query,
             "rewritten_question": rewritten_question if needs_rewrite else None,
             "is_composite": is_composite,
             "sub_questions": sub_questions,
@@ -338,7 +394,7 @@ Question: {question}
 Context signals: {signals_summary}
 
 Return ONLY valid JSON matching this schema:
-{{"intent": "catalog" | "dictionary" | "identity" | "summary" | "relationship" | "passage"}}
+{{"intent": "catalog" | "dictionary" | "identity" | "summary" | "relationship" | "passage" | "quran"}}
 """
         try:
             llm = build_text_llm(ctx.agent_model)
@@ -360,6 +416,7 @@ Return ONLY valid JSON matching this schema:
                     "summary",
                     "relationship",
                     "passage",
+                    "quran",
                 }:
                     log_json(logger, logging.INFO, "Intent classified", intent=intent)
                     return intent
@@ -450,6 +507,21 @@ Return ONLY valid JSON matching this schema:
         if top_intent == "current_page" and signals.get("in_reader"):
             async for ev in self._run_tool_and_yield(
                 "get_current_page", {}, ctx, observations, result_holder
+            ):
+                yield ev
+            return
+
+        # --- Path: Quran ---
+        if intent == "quran":
+            surah = signals.get("quran_surah")
+            ayah = signals.get("quran_ayah")
+            q = signals.get("quran_query") or question
+            async for ev in self._run_tool_and_yield(
+                "search_quran",
+                {"surah": surah, "ayah": ayah, "q": q},
+                ctx,
+                observations,
+                result_holder,
             ):
                 yield ev
             return
