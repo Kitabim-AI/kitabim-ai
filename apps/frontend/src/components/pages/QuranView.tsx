@@ -272,7 +272,7 @@ export const QuranView: React.FC = () => {
                     }`}
                   >
                     <span>{surah.surah}. {surah.surah_name_ug}</span>
-                    <span className="text-xs text-slate-400 font-semibold" dir="rtl" style={{ fontFamily: '"Adobe Arabic", "Traditional Arabic", "Scheherazade New", serif' }}>{surah.surah_name_ar}</span>
+                    <span className="text-xs text-slate-400 font-semibold arabic-text" dir="rtl">{surah.surah_name_ar}</span>
                   </button>
                 ))
               ) : (
@@ -320,8 +320,7 @@ export const QuranView: React.FC = () => {
                   >
                     {/* Arabic Text (Centered, large, Adobe Arabic Font) */}
                     <div 
-                      className="text-right text-3xl md:text-4xl text-slate-900 leading-[2] md:leading-[2.2] font-semibold text-right w-full"
-                      style={{ fontFamily: '"Adobe Arabic", "Traditional Arabic", "Scheherazade New", serif' }}
+                      className="text-right text-3xl md:text-4xl text-slate-900 leading-[2] md:leading-[2.2] font-semibold text-right w-full arabic-text"
                       dir="rtl"
                       lang="ar"
                     >
