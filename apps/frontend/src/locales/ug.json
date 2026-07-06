@@ -880,6 +880,7 @@
     "searchPlaceholder": "قۇرئاندىن ئىزدەش (ئەرەبچە، ئۇيغۇرچە ياكى ئىنگلىزچە)...",
     "ayahNotFound": "ئىزدەشكە ماس كېلىدىغان ئايەت تېپىلمىدى.",
     "totalVerses": "{{count}} ئايەت",
-    "ayahSuffix": "-ئايەت"
+    "ayahSuffix": "-ئايەت",
+    "badgeTemplate": "{{surah}}-سۈرە: {{surahName}} — {{ayah}}-ئايەت"
   }
 }

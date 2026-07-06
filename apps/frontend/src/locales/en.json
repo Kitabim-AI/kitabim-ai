@@ -860,6 +860,7 @@
     "searchPlaceholder": "Search in Quran (Arabic, Uyghur, or English)...",
     "ayahNotFound": "No verses found matching your search.",
     "totalVerses": "{{count}} Verses",
-    "ayahSuffix": "-ayah"
+    "ayahSuffix": "-ayah",
+    "badgeTemplate": "Surah {{surah}}: {{surahName}} — Ayah {{ayah}}"
   }
 }

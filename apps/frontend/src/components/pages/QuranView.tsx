@@ -40,7 +40,7 @@ const normalizeArabic = (text: string): string => {
 };
 
 export const QuranView: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState<QuranAyahEntry[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -354,8 +354,12 @@ export const QuranView: React.FC = () => {
 
                     {/* Verse Badge / Info */}
                     <div className="flex justify-between items-center mt-2 pt-3 border-t border-slate-50">
-                      <span className="text-[11px] md:text-xs text-[#0369a1] font-semibold bg-[#0369a1]/10 px-3 py-1 rounded-full border border-[#0369a1]/20 shadow-sm whitespace-nowrap self-end">
-                        {entry.surah_name_ug} — {entry.ayah}{t('quran.ayahSuffix') || '-ئايەت'} ({entry.surah_name_en} {entry.surah}:{entry.ayah})
+                      <span className="text-[11px] md:text-xs text-[#0369a1] font-semibold bg-[#0369a1]/10 px-3 py-1 rounded-full border border-[#0369a1]/20 shadow-sm whitespace-nowrap self-end uyghur-text">
+                        {t('quran.badgeTemplate', { 
+                          surah: entry.surah, 
+                          surahName: language === 'ug' ? entry.surah_name_ug : entry.surah_name_en, 
+                          ayah: entry.ayah 
+                        })}
                       </span>
                     </div>
                   </div>
