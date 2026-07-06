@@ -41,6 +41,11 @@ export const QuranView: React.FC = () => {
   const [isLoadingVerses, setIsLoadingVerses] = useState(false);
   const [stats, setStats] = useState<{ total_entries: number } | null>(null);
 
+  // Combobox/Dropdown states
+  const [isOpen, setIsOpen] = useState(false);
+  const [dropdownSearch, setDropdownSearch] = useState('');
+  const [inputValue, setInputValue] = useState('');
+
   // Fetch all surahs
   const fetchSurahs = async () => {
     try {
@@ -117,6 +122,14 @@ export const QuranView: React.FC = () => {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
+  const activeSurahObj = surahs.find(s => s.surah === activeSurah);
+
+  useEffect(() => {
+    if (activeSurahObj) {
+      setInputValue(`${activeSurahObj.surah}. ${activeSurahObj.surah_name_ug} / ${activeSurahObj.surah_name_ar}`);
+    }
+  }, [activeSurah, surahs]);
+
   const handleSurahSelect = (surahNum: number) => {
     setActiveSurah(surahNum);
     setSearchQuery('');
@@ -125,10 +138,47 @@ export const QuranView: React.FC = () => {
     fetchVerses(surahNum);
   };
 
+  const handleInputFocus = () => {
+    setInputValue('');
+    setDropdownSearch('');
+    setIsOpen(true);
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setInputValue(val);
+    setDropdownSearch(val);
+    setIsOpen(true);
+  };
+
+  const handleSelect = (surahNum: number) => {
+    handleSurahSelect(surahNum);
+    setIsOpen(false);
+  };
+
+  const filteredSurahs = surahs.filter(s => 
+    s.surah_name_ug.toLowerCase().includes(dropdownSearch.toLowerCase()) ||
+    s.surah_name_en.toLowerCase().includes(dropdownSearch.toLowerCase()) ||
+    s.surah.toString().includes(dropdownSearch)
+  );
+
   const activeEntries = searchQuery.trim() ? suggestions : verses;
 
   return (
-    <div className="space-y-6 md:space-y-8 animate-fade-in pb-20" dir="rtl" lang="ug">
+    <div className="space-y-6 md:space-y-8 animate-fade-in pb-20 relative" dir="rtl" lang="ug">
+      {/* Backdrop overlay for dropdown click-away */}
+      {isOpen && (
+        <div 
+          className="fixed inset-0 z-20 cursor-default" 
+          onClick={() => {
+            setIsOpen(false);
+            if (activeSurahObj) {
+              setInputValue(`${activeSurahObj.surah}. ${activeSurahObj.surah_name_ug} / ${activeSurahObj.surah_name_ar}`);
+            }
+          }}
+        />
+      )}
+
       {/* Page Title Header */}
       <div className="flex items-center gap-3 md:gap-4 border-b border-[#0369a1]/10 pb-4">
         <div className="p-3 bg-[#0369a1]/10 rounded-2xl text-[#0369a1]">
@@ -145,7 +195,7 @@ export const QuranView: React.FC = () => {
       </div>
 
       {/* Main Search & Tool Section */}
-      <div className="flex flex-col-reverse md:flex-row items-center justify-between w-full gap-3 md:gap-4">
+      <div className="flex flex-col-reverse md:flex-row items-center justify-between w-full gap-3 md:gap-4 z-10 relative">
         <div className="relative flex-1 lg:flex-none lg:w-[45%] group w-full">
           <div className="absolute inset-y-0 right-4 md:right-5 flex items-center pointer-events-none text-[#0369a1] transition-colors z-10 font-bold">
             {isSearching ? (
@@ -186,23 +236,52 @@ export const QuranView: React.FC = () => {
         )}
       </div>
 
-      {/* Surah Selector Pills */}
+      {/* Typable Surah Selector Dropdown */}
       {!searchQuery.trim() && surahs.length > 0 && (
-        <div className="flex flex-wrap gap-2 max-h-[140px] overflow-y-auto p-2 bg-slate-50/50 rounded-2xl border border-slate-100 scrollbar-thin">
-          {surahs.map((surah) => (
-            <button
-              key={surah.surah}
-              onClick={() => handleSurahSelect(surah.surah)}
-              className={`px-3 py-1.5 rounded-xl text-[13px] md:text-[14px] uyghur-text transition-all border ${
-                activeSurah === surah.surah
-                  ? 'bg-[#0369a1] text-white border-[#0369a1] shadow-md shadow-[#0369a1]/10'
-                  : 'bg-white text-slate-600 border-slate-200 hover:border-[#0369a1]/40 hover:text-[#0369a1]'
-              }`}
-            >
-              <span className="opacity-60 text-xs ml-1 ml-left">{surah.surah}.</span>
-              {surah.surah_name_ug}
-            </button>
-          ))}
+        <div className="relative w-full md:w-[350px] z-30">
+          <label className="block text-xs font-bold text-[#0369a1] mb-2 uppercase tracking-wider uyghur-text">
+            سۈرە تاللاڭ
+          </label>
+          <div className="relative">
+            <input
+              type="text"
+              value={inputValue}
+              onFocus={handleInputFocus}
+              onChange={handleInputChange}
+              className="w-full pr-4 pl-10 py-2.5 bg-white border-2 border-[#0369a1]/10 rounded-2xl uyghur-text outline-none focus:border-[#0369a1] transition-all shadow-sm text-sm"
+              placeholder="سۈرە ئىزدەش..."
+              dir="rtl"
+            />
+            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-slate-400">
+              <BookOpen size={16} />
+            </div>
+          </div>
+
+          {/* Dropdown Panel */}
+          {isOpen && (
+            <div className="absolute right-0 left-0 mt-2 max-h-[300px] overflow-y-auto bg-white/95 backdrop-blur-md border border-[#0369a1]/15 rounded-2xl shadow-xl z-40 divide-y divide-slate-50 scrollbar-thin animate-fade-in">
+              {filteredSurahs.length > 0 ? (
+                filteredSurahs.map((surah) => (
+                  <button
+                    key={surah.surah}
+                    onClick={() => handleSelect(surah.surah)}
+                    className={`w-full text-right px-4 py-3 text-sm uyghur-text transition-all flex items-center justify-between hover:bg-[#0369a1]/5 ${
+                      activeSurah === surah.surah 
+                        ? 'bg-[#0369a1]/10 text-[#0369a1] font-semibold' 
+                        : 'text-slate-700'
+                    }`}
+                  >
+                    <span>{surah.surah}. {surah.surah_name_ug}</span>
+                    <span className="text-xs text-slate-400 font-serif" dir="rtl">{surah.surah_name_ar}</span>
+                  </button>
+                ))
+              ) : (
+                <div className="px-4 py-3 text-sm text-slate-400 text-center uyghur-text">
+                  ماس كېلىدىغان سۈرە تېپىلمىدى
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -269,7 +348,7 @@ export const QuranView: React.FC = () => {
 
                     {/* Verse Badge / Info */}
                     <div className="flex justify-between items-center mt-2 pt-3 border-t border-slate-50">
-                      <span className="text-[11px] md:text-xs text-slate-400 font-bold uyghur-text bg-slate-50 px-3 py-1 rounded-full border border-slate-100">
+                      <span className="text-[11px] md:text-xs text-[#0369a1] font-semibold bg-[#0369a1]/10 px-3 py-1 rounded-full border border-[#0369a1]/20 shadow-sm whitespace-nowrap self-end">
                         {entry.surah_name_ug} — {entry.ayah}{t('quran.ayahSuffix') || '-ئايەت'} ({entry.surah_name_en} {entry.surah}:{entry.ayah})
                       </span>
                     </div>

@@ -878,7 +878,7 @@
     "title": "قۇرئان كەرىم",
     "searchPlaceholder": "قۇرئاندىن ئىزدەش (ئەرەبچە، ئۇيغۇرچە ياكى ئىنگلىزچە)...",
     "ayahNotFound": "ئىزدەشكە ماس كېلىدىغان ئايەت تېپىلمىدى.",
-    "totalVerses": "{count} ئايەت",
+    "totalVerses": "{{count}} ئايەت",
     "ayahSuffix": "-ئايەت"
   }
 }

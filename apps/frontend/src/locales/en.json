@@ -858,7 +858,7 @@
     "title": "Holy Quran",
     "searchPlaceholder": "Search in Quran (Arabic, Uyghur, or English)...",
     "ayahNotFound": "No verses found matching your search.",
-    "totalVerses": "{count} Verses",
+    "totalVerses": "{{count}} Verses",
     "ayahSuffix": "-ayah"
   }
 }
