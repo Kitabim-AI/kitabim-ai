@@ -30,6 +30,15 @@ interface SurahEntry {
   surah_name_ug: string;
 }
 
+const normalizeArabic = (text: string): string => {
+  if (!text) return '';
+  return text
+    .replace(/\u06E1/g, '\u0652') // Uthmanic Sukun -> Standard Sukun
+    .replace(/\u0671/g, '\u0627') // Alif Wasla -> Standard Alif
+    .replace(/[\u06D6-\u06DC\u06DF-\u06E0\u06E2-\u06ED]/g, '') // Remove Uthmanic signs that disrupt cursive connections
+    ;
+};
+
 export const QuranView: React.FC = () => {
   const { t } = useI18n();
   const [searchQuery, setSearchQuery] = useState('');
@@ -126,7 +135,7 @@ export const QuranView: React.FC = () => {
 
   useEffect(() => {
     if (activeSurahObj) {
-      setInputValue(`${activeSurahObj.surah}. ${activeSurahObj.surah_name_ug} / ${activeSurahObj.surah_name_ar}`);
+      setInputValue(`${activeSurahObj.surah}. ${activeSurahObj.surah_name_ug} / ${normalizeArabic(activeSurahObj.surah_name_ar)}`);
     }
   }, [activeSurah, surahs]);
 
@@ -272,7 +281,7 @@ export const QuranView: React.FC = () => {
                     }`}
                   >
                     <span>{surah.surah}. {surah.surah_name_ug}</span>
-                    <span className="text-xs text-slate-400 font-semibold arabic-text" dir="rtl">{surah.surah_name_ar}</span>
+                    <span className="text-xs text-slate-400 font-semibold arabic-text" dir="rtl">{normalizeArabic(surah.surah_name_ar)}</span>
                   </button>
                 ))
               ) : (
@@ -324,7 +333,7 @@ export const QuranView: React.FC = () => {
                       dir="rtl"
                       lang="ar"
                     >
-                      {entry.text_ar}
+                      {normalizeArabic(entry.text_ar)}
                     </div>
 
                     {/* Uyghur Text */}
