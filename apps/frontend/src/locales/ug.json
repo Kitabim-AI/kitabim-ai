@@ -97,6 +97,7 @@
     "addBook": "كىتاب قوشۇش",
     "graph": "بىلىم گىرافى",
     "dictionary": "لۇغەت",
+    "quran": "قۇرئان كەرىم",
     "switchLanguage": "تىل ئالماشتۇرۇش"
   },
   "home": {
@@ -872,5 +873,12 @@
       "yearGregorian": "مىلادىيە يىلى",
       "centuryGregorian": "مىلادىيە ئەسىرى"
     }
+  },
+  "quran": {
+    "title": "قۇرئان كەرىم",
+    "searchPlaceholder": "قۇرئاندىن ئىزدەش (ئەرەبچە، ئۇيغۇرچە ياكى ئىنگلىزچە)...",
+    "ayahNotFound": "ئىزدەشكە ماس كېلىدىغان ئايەت تېپىلمىدى.",
+    "totalVerses": "{count} ئايەت",
+    "ayahSuffix": "-ئايەت"
   }
 }

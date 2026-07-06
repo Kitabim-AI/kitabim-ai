@@ -96,6 +96,7 @@
     "addBook": "Add Book",
     "graph": "Knowledge Graph",
     "dictionary": "Dictionary",
+    "quran": "Quran",
     "switchLanguage": "Switch Language"
   },
   "home": {
@@ -852,5 +853,12 @@
       "yearGregorian": "Gregorian Year",
       "centuryGregorian": "Gregorian Century"
     }
+  },
+  "quran": {
+    "title": "Holy Quran",
+    "searchPlaceholder": "Search in Quran (Arabic, Uyghur, or English)...",
+    "ayahNotFound": "No verses found matching your search.",
+    "totalVerses": "{count} Verses",
+    "ayahSuffix": "-ayah"
   }
 }

@@ -92,6 +92,12 @@ export const Navbar: React.FC = () => {
               icon={<BookA size={20} strokeWidth={2.5} />}
               label={t('nav.dictionary')}
             />
+            <NavButton
+              active={view === 'quran'}
+              onClick={() => { setSearchQuery(''); setView('quran'); }}
+              icon={<BookOpen size={20} strokeWidth={2.5} />}
+              label={t('nav.quran')}
+            />
             {isEditor && (
               <NavButton
                 active={view === 'spell-check'}
@@ -213,6 +219,12 @@ export const Navbar: React.FC = () => {
                 onClick={() => handleNavClick(() => setView('dictionary'))}
                 icon={<BookA size={20} strokeWidth={2.5} />}
                 label={t('nav.dictionary')}
+              />
+              <MobileNavButton
+                active={view === 'quran'}
+                onClick={() => handleNavClick(() => setView('quran'))}
+                icon={<BookOpen size={20} strokeWidth={2.5} />}
+                label={t('nav.quran')}
               />
               {isEditor && (
                 <MobileNavButton

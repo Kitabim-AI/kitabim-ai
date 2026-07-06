@@ -14,6 +14,7 @@ import { useUyghurInput } from './hooks/useUyghurInput';
 import { PersistenceService } from './services/persistenceService';
 import { GraphView } from './components/graph/GraphView';
 import DictionaryView from './components/pages/DictionaryView';
+import QuranView from './components/pages/QuranView';
 
 const AppContent: React.FC = () => {
   const {
@@ -128,6 +129,7 @@ const AppContent: React.FC = () => {
       )}
       {view === 'join-us' && <JoinUsView />}
       {view === 'dictionary' && <DictionaryView />}
+      {view === 'quran' && <QuranView />}
     </Shell>
   );
 };
