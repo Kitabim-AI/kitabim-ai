@@ -92,12 +92,6 @@ export const Navbar: React.FC = () => {
               icon={<BookA size={20} strokeWidth={2.5} />}
               label={t('nav.dictionary')}
             />
-            <NavButton
-              active={view === 'quran'}
-              onClick={() => { setSearchQuery(''); setView('quran'); }}
-              icon={<BookOpen size={20} strokeWidth={2.5} />}
-              label={t('nav.quran')}
-            />
             {isEditor && (
               <NavButton
                 active={view === 'spell-check'}
@@ -106,6 +100,12 @@ export const Navbar: React.FC = () => {
                 label={t('nav.spellCheck')}
               />
             )}
+            <NavButton
+              active={view === 'quran'}
+              onClick={() => { setSearchQuery(''); setView('quran'); }}
+              icon={<BookOpen size={20} strokeWidth={2.5} />}
+              label={t('nav.quran')}
+            />
             {isEditor && (
               <NavButton
                 active={view === 'admin' || (view === 'reader' && previousView === 'admin')}
@@ -220,12 +220,6 @@ export const Navbar: React.FC = () => {
                 icon={<BookA size={20} strokeWidth={2.5} />}
                 label={t('nav.dictionary')}
               />
-              <MobileNavButton
-                active={view === 'quran'}
-                onClick={() => handleNavClick(() => setView('quran'))}
-                icon={<BookOpen size={20} strokeWidth={2.5} />}
-                label={t('nav.quran')}
-              />
               {isEditor && (
                 <MobileNavButton
                   active={view === 'spell-check'}
@@ -234,6 +228,12 @@ export const Navbar: React.FC = () => {
                   label={t('nav.spellCheck')}
                 />
               )}
+              <MobileNavButton
+                active={view === 'quran'}
+                onClick={() => handleNavClick(() => setView('quran'))}
+                icon={<BookOpen size={20} strokeWidth={2.5} />}
+                label={t('nav.quran')}
+              />
               {isEditor && (
                 <MobileNavButton
                   active={view === 'admin' || (view === 'reader' && previousView === 'admin')}
