@@ -320,7 +320,7 @@ export const QuranView: React.FC = () => {
                   >
                     {/* Arabic Text (Centered, large, Adobe Arabic Font) */}
                     <div 
-                      className="text-right text-3xl md:text-4xl text-slate-900 leading-[2] md:leading-[2.2] font-semibold text-right w-full arabic-text"
+                      className="text-right text-3xl md:text-4xl text-slate-900 leading-[2] md:leading-[2.2] font-normal text-right w-full arabic-text"
                       dir="rtl"
                       lang="ar"
                     >
