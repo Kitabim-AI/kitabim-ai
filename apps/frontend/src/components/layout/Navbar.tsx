@@ -34,7 +34,7 @@ export const Navbar: React.FC = () => {
 
   return (
     <>
-      <nav className="fixed top-0 left-0 right-0 px-4 sm:px-6 md:px-10 lg:px-12 py-1.5 sm:py-2 flex items-center justify-between z-[100] transition-all duration-300" dir="rtl">
+      <nav className="fixed top-0 left-0 right-0 px-4 sm:px-6 md:px-8 lg:px-8 xl:px-10 py-1.5 sm:py-2 flex items-center justify-between z-[100] transition-all duration-300" dir="rtl">
         {/* Glass Backdrop - Matching Prototype */}
         <div className="absolute inset-0 bg-white/75 backdrop-blur-[20px] border-b border-[rgba(255,193,7,0.2)] shadow-[0_4px_30px_rgba(117,197,240,0.1),0_1px_0_rgba(255,255,255,0.8)_inset]"
           style={{ backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)' }} />
@@ -43,7 +43,7 @@ export const Navbar: React.FC = () => {
         <div className="absolute -bottom-px left-0 right-0 h-px bg-gradient-to-l from-transparent via-[rgba(255,193,7,0.5)] to-transparent"
           style={{ background: 'linear-gradient(270deg, transparent, rgba(255, 193, 7, 0.5), rgba(156, 39, 176, 0.3), transparent)' }} />
 
-        <div className="relative flex items-center gap-3 sm:gap-4 md:gap-3 lg:gap-8">
+        <div className="relative flex items-center gap-3 sm:gap-4 md:gap-3 lg:gap-4 xl:gap-5">
           <div className="flex items-center h-[48px] gap-2 sm:gap-3 cursor-pointer group transition-transform duration-300 hover:-translate-y-0.5" onClick={() => setView('home')}>
             <div className="flex-shrink-0 w-9 h-9 md:w-11 md:h-11 flex items-center justify-center rounded-xl md:rounded-2xl shadow-[0_4px_20px_rgba(255,193,7,0.4),0_8px_40px_rgba(156,39_176,0.2),inset_0_1px_0_rgba(255,255,255,0.4)] transition-all duration-300 relative overflow-hidden group-hover:shadow-[0_6px_20px_rgba(3,105,161,0.5)] icon-shake"
               style={{
@@ -55,7 +55,7 @@ export const Navbar: React.FC = () => {
                 }} />
               <BookOpen size={24} className="md:w-7 md:h-7 text-white relative z-10" strokeWidth={2} />
             </div>
-            <span dir="ltr" className="flex items-center font-semibold text-[#1a1a1a] text-[24px] mt-[12px] md:text-[32px] md:mt-[16px] tracking-tight">
+            <span dir="ltr" className="flex items-center font-semibold text-[#1a1a1a] text-[24px] mt-[12px] md:text-[28px] md:mt-[14px] lg:text-[30px] lg:mt-[15px] xl:text-[32px] xl:mt-[16px] tracking-tight">
               Kitabim<span className="text-[#0369a1]">.AI</span>
             </span>
           </div>
@@ -123,7 +123,7 @@ export const Navbar: React.FC = () => {
           </div>
         </div>
 
-        <div className="relative flex items-center gap-2 md:gap-2 lg:gap-4">
+        <div className="relative flex items-center gap-2 lg:gap-3">
           {/* Search Toggle Button */}
           <button
             onClick={() => setIsGlobalSearchOpen(true)}
@@ -139,7 +139,7 @@ export const Navbar: React.FC = () => {
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={bookActions.isCheckingGlobal}
-                className="group relative px-[0.7rem] md:px-5 lg:px-6 h-9 md:h-11 rounded-xl md:rounded-2xl font-normal flex items-center justify-center gap-2 transition-all duration-300 text-white shadow-[0_8px_20px_rgba(3,105,161,0.2)] hover:shadow-[0_12px_28px_rgba(3,105,161,0.3)] hover:-translate-y-0.5 active:translate-y-0 overflow-hidden text-sm lg:text-base"
+                className="group relative px-[0.7rem] md:px-4 lg:px-4 xl:px-5 h-9 md:h-11 rounded-xl md:rounded-2xl font-normal flex items-center justify-center gap-2 transition-all duration-300 text-white shadow-[0_8px_20px_rgba(3,105,161,0.2)] hover:shadow-[0_12px_28px_rgba(3,105,161,0.3)] hover:-translate-y-0.5 active:translate-y-0 overflow-hidden text-sm lg:text-base"
                 aria-busy={bookActions.isCheckingGlobal}
                 style={{
                   background: 'linear-gradient(135deg, #0369a1 0%, #0284c7 100%)'
@@ -271,7 +271,7 @@ const NavButton: React.FC<{
   <button
     onClick={onClick}
     title={label}
-    className={`relative px-3 md:px-3 lg:px-4 xl:px-6 h-[36px] md:h-[42px] rounded-xl text-sm lg:text-base font-normal flex items-center gap-2 transition-all duration-300 group ${active
+    className={`relative px-2.5 lg:px-3 xl:px-3 2xl:px-4 h-[36px] md:h-[42px] rounded-xl text-sm lg:text-base font-normal flex items-center gap-2 transition-all duration-300 group ${active
       ? 'text-[#0369a1] bg-[#0369a1]/10 shadow-[inset_0_0_0_1px_rgba(3,105,161,0.2)]'
       : 'text-[#64748b] hover:bg-[#0369a1]/5 hover:text-[#0369a1]'
       }`}
