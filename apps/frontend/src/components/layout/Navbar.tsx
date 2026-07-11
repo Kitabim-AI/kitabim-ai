@@ -61,7 +61,7 @@ export const Navbar: React.FC = () => {
           </div>
 
           {/* Desktop/Tablet Navigation - hide icons on md, show on lg+ */}
-          <div className="hidden md:flex items-center gap-1">
+          <div className="hidden lg:flex items-center gap-1">
             <NavButton
               active={view === 'home'}
               onClick={() => setView('home')}
@@ -139,21 +139,16 @@ export const Navbar: React.FC = () => {
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={bookActions.isCheckingGlobal}
-                className="group relative px-[0.7rem] md:px-4 lg:px-4 xl:px-5 h-9 md:h-11 rounded-xl md:rounded-2xl font-normal flex items-center justify-center gap-2 transition-all duration-300 text-white shadow-[0_8px_20px_rgba(3,105,161,0.2)] hover:shadow-[0_12px_28px_rgba(3,105,161,0.3)] hover:-translate-y-0.5 active:translate-y-0 overflow-hidden text-sm lg:text-base"
+                title={t('nav.addBook')}
+                className="group relative flex items-center justify-center w-9 h-9 md:w-11 md:h-11 bg-white/50 backdrop-blur-md border border-[#0369a1]/10 rounded-xl md:rounded-2xl hover:border-[#0369a1] hover:bg-[#0369a1]/5 transition-all shadow-sm overflow-hidden active:scale-90"
                 aria-busy={bookActions.isCheckingGlobal}
-                style={{
-                  background: 'linear-gradient(135deg, #0369a1 0%, #0284c7 100%)'
-                }}
               >
-                <div className="absolute inset-0 bg-gradient-to-l from-white/0 via-white/20 to-white/0 translate-x-[100%] group-hover:animate-shimmer-fast" />
                 {bookActions.isCheckingGlobal ? (
-                  <RefreshCw size={14} strokeWidth={3} className="relative z-10 lg:w-[16px] lg:h-[16px] animate-spin" />
+                  <RefreshCw size={22} strokeWidth={2.5} className="text-[#0369a1] relative z-10 animate-spin" />
                 ) : (
-                  <Upload size={14} strokeWidth={3} className="relative z-10 lg:w-[16px] lg:h-[16px]" />
+                  <Upload size={22} strokeWidth={2.5} className="text-[#0369a1] relative z-10 group-hover:scale-110 transition-transform" />
                 )}
-                <span className="relative z-10 hidden lg:inline whitespace-nowrap">
-                  {bookActions.isCheckingGlobal ? t('common.loading') : t('nav.addBook')}
-                </span>
+                <div className="absolute inset-0 bg-gradient-to-tr from-[#0369a1]/0 to-[#0369a1]/10 opacity-0 group-hover:opacity-100 transition-opacity" />
               </button>
               <input
                 type="file"
@@ -171,7 +166,7 @@ export const Navbar: React.FC = () => {
           {/* Mobile Menu Button */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden flex items-center justify-center w-9 h-9 rounded-xl hover:bg-[#0369a1]/10 text-[#0369a1] border border-[#0369a1]/10 transition-all relative z-10"
+            className="lg:hidden flex items-center justify-center w-9 h-9 rounded-xl hover:bg-[#0369a1]/10 text-[#0369a1] border border-[#0369a1]/10 transition-all relative z-10"
           >
             {mobileMenuOpen ? <X size={24} strokeWidth={2.5} /> : <Menu size={24} strokeWidth={2.5} />}
           </button>
@@ -183,12 +178,12 @@ export const Navbar: React.FC = () => {
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 bg-black/20 backdrop-blur-sm z-[90] md:hidden"
+            className="fixed inset-0 bg-black/20 backdrop-blur-sm z-[90] lg:hidden"
             onClick={() => setMobileMenuOpen(false)}
           />
 
           {/* Menu Panel */}
-          <div className="fixed top-[72px] left-0 right-0 bg-white/95 backdrop-blur-2xl border-b border-[#0369a1]/10 shadow-2xl z-[95] md:hidden animate-fade-in" dir="rtl">
+          <div className="fixed top-[72px] left-0 right-0 bg-white/95 backdrop-blur-2xl border-b border-[#0369a1]/10 shadow-2xl z-[95] lg:hidden animate-fade-in" dir="rtl">
             <div className="px-4 py-6 space-y-2">
               <MobileNavButton
                 active={view === 'home'}
@@ -282,7 +277,7 @@ const NavButton: React.FC<{
       </span>
       <span className={`transition-all duration-300 whitespace-nowrap mt-[3px] overflow-hidden ${
         // Hide labels on md/lg to save space, show only on xl or larger screens
-        'hidden xl:inline-flex'
+        'hidden 2xl:inline-flex'
       }`}>
         {label}
       </span>

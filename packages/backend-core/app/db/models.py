@@ -386,6 +386,10 @@ class Quran(Base):
     text_ar: Mapped[str] = mapped_column(Text, nullable=False)
     text_en: Mapped[str] = mapped_column(Text, nullable=False)
     text_ug: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding: Mapped[Optional[List[float]]] = mapped_column(
+        Vector(3072),  # pgvector type
+        nullable=True,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

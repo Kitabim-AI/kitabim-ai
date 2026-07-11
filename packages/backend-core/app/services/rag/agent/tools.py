@@ -1364,24 +1364,53 @@ async def _run_search_quran(args: dict, ctx: QueryContext) -> dict:
             res = await session.execute(stmt)
             entries = list(res.scalars().all())
         elif q:
-            # Clean/normalize query just in case
-            search_pattern = f"%{q}%"
-            stmt = (
-                select(Quran)
-                .where(
-                    or_(
-                        Quran.text_ug.ilike(search_pattern),
-                        Quran.text_ar.ilike(search_pattern),
-                        Quran.text_en.ilike(search_pattern),
-                        Quran.surah_name_ug.ilike(search_pattern),
-                        Quran.surah_name_en.ilike(search_pattern),
-                    )
+            # Try semantic vector search first
+            query_vector = None
+            try:
+                from app.services.rag.retrieval import embed_query
+
+                query_vector = await embed_query(q, ctx)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to embed query in search_quran, falling back to keyword search: {e}"
                 )
-                .order_by(Quran.surah.asc(), Quran.ayah.asc())
-                .limit(10)
-            )
-            res = await session.execute(stmt)
-            entries = list(res.scalars().all())
+
+            if query_vector:
+                from sqlalchemy import text
+
+                embedding_str = str(query_vector)
+                stmt = text("""
+                    SELECT 
+                        id, surah, surah_name_en, surah_name_ar, surah_name_ug,
+                        ayah, text_ar, text_en, text_ug, created_at
+                    FROM quran
+                    WHERE embedding IS NOT NULL
+                    ORDER BY embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))
+                    LIMIT :limit
+                """)
+                res = await session.execute(
+                    stmt, {"embedding": embedding_str, "limit": 15}
+                )
+                entries = res.fetchall()
+            else:
+                # Fallback to standard keyword search
+                search_pattern = f"%{q}%"
+                stmt = (
+                    select(Quran)
+                    .where(
+                        or_(
+                            Quran.text_ug.ilike(search_pattern),
+                            Quran.text_ar.ilike(search_pattern),
+                            Quran.text_en.ilike(search_pattern),
+                            Quran.surah_name_ug.ilike(search_pattern),
+                            Quran.surah_name_en.ilike(search_pattern),
+                        )
+                    )
+                    .order_by(Quran.surah.asc(), Quran.ayah.asc())
+                    .limit(10)
+                )
+                res = await session.execute(stmt)
+                entries = list(res.scalars().all())
         else:
             entries = []
 
