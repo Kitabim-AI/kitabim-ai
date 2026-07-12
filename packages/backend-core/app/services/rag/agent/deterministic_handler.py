@@ -607,11 +607,37 @@ Return ONLY valid JSON matching this schema:
                     result_holder,
                 ):
                     yield ev
+
+            # Fallback to book chunk search if no dictionary results were found
+            total_found = 0
+            for obs in observations:
+                if obs.get("tool") in {
+                    "lookup_uyghur_word",
+                    "lookup_history_term",
+                    "translate_english_to_uyghur",
+                    "check_word_spelling",
+                    "lookup_uyghur_name",
+                    "lookup_proverbs",
+                    "search_language_sources",
+                }:
+                    total_found += obs.get("result", {}).get("found_count", 0)
+
+            if total_found == 0:
+                search_query = ctx.enriched_question or question
+                async for ev in self._run_tool_and_yield(
+                    "search_chunks",
+                    {"query": search_query, "book_ids": None},
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
             return
 
         # --- Path B: Catalog ---
         if intent == "catalog":
             subtype = signals.get("catalog_subtype", "general")
+            catalog_found = True
             if subtype == "author_of":
                 async for ev in self._run_tool_and_yield(
                     "get_book_author",
@@ -621,6 +647,7 @@ Return ONLY valid JSON matching this schema:
                     result_holder,
                 ):
                     yield ev
+                catalog_found = bool(result_holder.get("result", {}).get("title"))
             elif subtype == "books_by":
                 async for ev in self._run_tool_and_yield(
                     "get_books_by_author",
@@ -630,6 +657,7 @@ Return ONLY valid JSON matching this schema:
                     result_holder,
                 ):
                     yield ev
+                catalog_found = bool(result_holder.get("result", {}).get("books"))
             else:
                 async for ev in self._run_tool_and_yield(
                     "search_catalog",
@@ -637,6 +665,34 @@ Return ONLY valid JSON matching this schema:
                     ctx,
                     observations,
                     result_holder,
+                ):
+                    yield ev
+                catalog_found = result_holder.get("result", {}).get("book_count", 0) > 0
+
+            # The strict title/author string match found nothing (e.g. the book or
+            # author was described rather than named exactly) — fall back to
+            # semantic book discovery + chunk search instead of returning empty.
+            if not catalog_found:
+                async for ev in self._run_tool_and_yield(
+                    "search_books_by_summary",
+                    {"query": question},
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
+                summary_res = result_holder["result"]
+                book_ids = summary_res.get("book_ids", [])
+                async for ev in self._run_tool_and_yield(
+                    "search_chunks",
+                    {"query": question, "book_ids": book_ids},
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
+                async for ev in self._run_universal_fallback(
+                    question, ctx, observations
                 ):
                     yield ev
             return

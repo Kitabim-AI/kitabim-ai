@@ -396,29 +396,6 @@ async def search_quran(
     return await _execute_and_record_tool(tool_context, "search_quran", args)
 
 
-AGENT_TOOLS = [
-    search_chunks,
-    search_books_by_summary,
-    find_books_by_title,
-    rewrite_query,
-    get_book_author,
-    get_books_by_author,
-    search_catalog,
-    get_book_summary,
-    get_sister_volumes,
-    get_current_page,
-    query_knowledge_graph,
-    lookup_uyghur_word,
-    lookup_history_term,
-    translate_english_to_uyghur,
-    check_word_spelling,
-    lookup_uyghur_name,
-    search_language_sources,
-    lookup_proverbs,
-    search_quran,
-]
-
-
 # ---------------------------------------------------------------------------
 # Dispatch — routes tool call name+args to the real async implementation
 # ---------------------------------------------------------------------------

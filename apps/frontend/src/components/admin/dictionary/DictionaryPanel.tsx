@@ -150,7 +150,9 @@ export const DictionaryPanel: React.FC = () => {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pr-11 md:pr-14 pl-20 md:pl-28 py-2.5 md:py-3 bg-white border-2 border-[#0369a1]/10 rounded-2xl uyghur-text outline-none focus:border-[#0369a1] transition-all shadow-sm placeholder:text-slate-300 text-base"
+            className={`w-full pr-11 md:pr-14 py-2.5 md:py-3 bg-white border-2 border-[#0369a1]/10 rounded-2xl uyghur-text outline-none focus:border-[#0369a1] transition-all shadow-sm placeholder:text-slate-300 text-base md:pl-14 ${
+              searchQuery ? 'pl-11' : 'pl-4'
+            }`}
             placeholder={t('admin.dictionary.searchPlaceholder')}
             dir="rtl"
           />

@@ -141,10 +141,18 @@ export const HomeView: React.FC = () => {
     
     setLocalSearch(newValue);
     
-    // Position cursor after inserted character
+    // Position cursor after inserted character and scroll to caret
     setTimeout(() => {
       input.focus();
       input.setSelectionRange(start + char.length, start + char.length);
+      if (input.dir === 'rtl') {
+        input.scrollLeft = -input.scrollWidth;
+        if (input.scrollLeft === 0) {
+          input.scrollLeft = input.scrollWidth;
+        }
+      } else {
+        input.scrollLeft = input.scrollWidth;
+      }
     }, 0);
   };
 
@@ -178,6 +186,14 @@ export const HomeView: React.FC = () => {
     setTimeout(() => {
       input.focus();
       input.setSelectionRange(newCursorPos, newCursorPos);
+      if (input.dir === 'rtl') {
+        input.scrollLeft = -input.scrollWidth;
+        if (input.scrollLeft === 0) {
+          input.scrollLeft = input.scrollWidth;
+        }
+      } else {
+        input.scrollLeft = input.scrollWidth;
+      }
     }, 0);
   };
 
@@ -185,6 +201,24 @@ export const HomeView: React.FC = () => {
   useEffect(() => {
     searchInputRef.current?.focus();
   }, []);
+
+  // Keep the input scrolled to the caret (end of text) when the query is long
+  useEffect(() => {
+    const input = searchInputRef.current;
+    if (!input || document.activeElement !== input) return;
+    
+    const timer = setTimeout(() => {
+      if (input.dir === 'rtl') {
+        input.scrollLeft = -input.scrollWidth;
+        if (input.scrollLeft === 0) {
+          input.scrollLeft = input.scrollWidth;
+        }
+      } else {
+        input.scrollLeft = input.scrollWidth;
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [localSearch]);
 
   // Search is active if we have a category OR at least 3 characters
   const hasSearch = (searchQuery.length >= 3) || selectedCategory.length > 0;
@@ -287,7 +321,9 @@ export const HomeView: React.FC = () => {
           <input
             ref={searchInputRef}
             type="text"
-            className="w-full pl-20 pr-12 md:pl-28 md:pr-16 py-4 sm:py-5 bg-white/60 backdrop-blur-2xl border-2 border-[#0369a1]/10 rounded-[32px] text-base sm:text-lg font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none focus:border-[#0369a1] focus:ring-[12px] focus:ring-[#0369a1]/5 transition-all shadow-xl uyghur-text"
+            className={`w-full pr-12 md:pr-16 py-4 sm:py-5 bg-white/60 backdrop-blur-2xl border-2 border-[#0369a1]/10 rounded-[32px] text-base sm:text-lg font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none focus:border-[#0369a1] focus:ring-[12px] focus:ring-[#0369a1]/5 transition-all shadow-xl uyghur-text md:pl-28 ${
+              localSearch ? 'pl-14' : 'pl-6'
+            }`}
             placeholder={t('home.searchOrChatPlaceholder')}
             value={localSearch}
             onChange={(e) => setLocalSearch(e.target.value)}

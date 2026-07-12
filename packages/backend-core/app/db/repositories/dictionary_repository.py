@@ -14,6 +14,17 @@ from app.db.models import (
     NamesDictionary,
     Word,
 )
+from app.services.rag.utils import normalize_uyghur_spelling
+
+
+def _sql_normalize_uyghur(column):
+    # Standard replacement: ې (\u06d0) -> ى (\u06cc), ى arabic (\u0649) -> ى (\u06cc), ي (\u064a) -> ى (\u06cc)
+    normalized = func.replace(column, "\u06d0", "\u06cc")
+    normalized = func.replace(normalized, "\u0649", "\u06cc")
+    normalized = func.replace(normalized, "\u064a", "\u06cc")
+    # Collapse double-y: ىى -> ى
+    normalized = func.replace(normalized, "\u06cc\u06cc", "\u06cc")
+    return normalized
 
 
 class DictionaryRepository:
@@ -45,20 +56,28 @@ class DictionaryRepository:
         if rows:
             return rows
 
+        norm_term = normalize_uyghur_spelling(term)
         stmt = (
             select(
                 Dictionary.id,
                 Dictionary.word,
                 Dictionary.definition,
                 Dictionary.audio,
-                func.similarity(Dictionary.word, term).label("score"),
+                func.similarity(
+                    _sql_normalize_uyghur(Dictionary.word), norm_term
+                ).label("score"),
             )
             .where(
-                Dictionary.word.ilike(f"%{term}%")
-                | (func.similarity(Dictionary.word, term) > 0.2)
+                _sql_normalize_uyghur(Dictionary.word).ilike(f"%{norm_term}%")
+                | (
+                    func.similarity(_sql_normalize_uyghur(Dictionary.word), norm_term)
+                    > 0.3
+                )
             )
             .order_by(
-                func.similarity(Dictionary.word, term).desc(),
+                func.similarity(
+                    _sql_normalize_uyghur(Dictionary.word), norm_term
+                ).desc(),
                 func.length(Dictionary.word),
             )
             .limit(limit)
@@ -90,6 +109,7 @@ class DictionaryRepository:
         if rows:
             return rows
 
+        norm_term = normalize_uyghur_spelling(term)
         stmt = (
             select(
                 HistoryDictionary.id,
@@ -97,14 +117,23 @@ class DictionaryRepository:
                 HistoryDictionary.transliteration,
                 HistoryDictionary.definition,
                 HistoryDictionary.letter_group,
-                func.similarity(HistoryDictionary.term, term).label("score"),
+                func.similarity(
+                    _sql_normalize_uyghur(HistoryDictionary.term), norm_term
+                ).label("score"),
             )
             .where(
-                HistoryDictionary.term.ilike(f"%{term}%")
-                | (func.similarity(HistoryDictionary.term, term) > 0.2)
+                _sql_normalize_uyghur(HistoryDictionary.term).ilike(f"%{norm_term}%")
+                | (
+                    func.similarity(
+                        _sql_normalize_uyghur(HistoryDictionary.term), norm_term
+                    )
+                    > 0.3
+                )
             )
             .order_by(
-                func.similarity(HistoryDictionary.term, term).desc(),
+                func.similarity(
+                    _sql_normalize_uyghur(HistoryDictionary.term), norm_term
+                ).desc(),
                 func.length(HistoryDictionary.term),
             )
             .limit(limit)
@@ -148,7 +177,7 @@ class DictionaryRepository:
             )
             .where(
                 EnglishUyghurDictionary.english.ilike(f"%{english}%")
-                | (func.similarity(EnglishUyghurDictionary.english, english) > 0.2)
+                | (func.similarity(EnglishUyghurDictionary.english, english) > 0.4)
             )
             .order_by(
                 func.similarity(EnglishUyghurDictionary.english, english).desc(),
@@ -174,12 +203,23 @@ class DictionaryRepository:
                 "suggestions": [],
             }
 
+        norm_word = normalize_uyghur_spelling(word)
         suggestions_stmt = (
-            select(Word.id, Word.word, func.similarity(Word.word, word).label("score"))
-            .where(
-                Word.word.ilike(f"%{word}%") | (func.similarity(Word.word, word) > 0.2)
+            select(
+                Word.id,
+                Word.word,
+                func.similarity(_sql_normalize_uyghur(Word.word), norm_word).label(
+                    "score"
+                ),
             )
-            .order_by(func.similarity(Word.word, word).desc(), func.length(Word.word))
+            .where(
+                _sql_normalize_uyghur(Word.word).ilike(f"%{norm_word}%")
+                | (func.similarity(_sql_normalize_uyghur(Word.word), norm_word) > 0.3)
+            )
+            .order_by(
+                func.similarity(_sql_normalize_uyghur(Word.word), norm_word).desc(),
+                func.length(Word.word),
+            )
             .limit(limit)
         )
         suggestions = await self.session.execute(suggestions_stmt)
@@ -194,19 +234,29 @@ class DictionaryRepository:
         if not name:
             return []
 
+        norm_name = normalize_uyghur_spelling(name)
         stmt = (
             select(
                 NamesDictionary.id,
                 NamesDictionary.name,
                 NamesDictionary.letter_group,
-                func.similarity(NamesDictionary.name, name).label("score"),
+                func.similarity(
+                    _sql_normalize_uyghur(NamesDictionary.name), norm_name
+                ).label("score"),
             )
             .where(
-                NamesDictionary.name.ilike(f"%{name}%")
-                | (func.similarity(NamesDictionary.name, name) > 0.2)
+                _sql_normalize_uyghur(NamesDictionary.name).ilike(f"%{norm_name}%")
+                | (
+                    func.similarity(
+                        _sql_normalize_uyghur(NamesDictionary.name), norm_name
+                    )
+                    > 0.3
+                )
             )
             .order_by(
-                func.similarity(NamesDictionary.name, name).desc(),
+                func.similarity(
+                    _sql_normalize_uyghur(NamesDictionary.name), norm_name
+                ).desc(),
                 func.length(NamesDictionary.name),
             )
             .limit(limit)

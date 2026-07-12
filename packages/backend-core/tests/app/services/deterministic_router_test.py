@@ -570,6 +570,48 @@ async def test_execute_path_dictionary_history_fallback(mock_ctx):
 
 
 @pytest.mark.asyncio
+async def test_execute_path_dictionary_history_to_chunks_fallback(mock_ctx):
+    handler = DeterministicRAGHandler()
+    observations = []
+    signals = {
+        "dictionary_subtype": "history_term",
+        "dictionary_term": "كەربەلا ۋەقەسى",
+    }
+
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        if tool_name == "lookup_history_term":
+            return {"ok": True, "context": "", "entries": [], "found_count": 0}
+        if tool_name == "search_language_sources":
+            return {"ok": True, "context": "", "results": {}, "found_count": 0}
+        if tool_name == "search_chunks":
+            return {
+                "ok": True,
+                "chunks": [{"text": "كەربەلا ۋەقەسى"}],
+                "found_count": 1,
+            }
+        return {"ok": True, "found_count": 0}
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        async for _ in handler.execute_path(
+            "dictionary",
+            signals,
+            "كەربەلا ۋەقەسى قانداق ۋەقە؟",
+            mock_ctx,
+            observations,
+        ):
+            pass
+
+    assert [o["tool"] for o in observations] == [
+        "lookup_history_term",
+        "search_language_sources",
+        "search_chunks",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_execute_path_dictionary_names(mock_ctx):
     handler = DeterministicRAGHandler()
     observations = []
@@ -760,4 +802,114 @@ async def test_execute_path_quran(mock_ctx):
         ):
             pass
 
-    assert [o["tool"] for o in observations] == ["search_quran"]
+
+@pytest.mark.asyncio
+async def test_execute_path_catalog_author_of_no_fallback(mock_ctx):
+    handler = DeterministicRAGHandler()
+    observations = []
+    signals = {"catalog_subtype": "author_of"}
+
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        if tool_name == "get_book_author":
+            return {
+                "ok": True,
+                "context": "The book 'ئانا يۇرت' was written by زوردۇن سابىر.",
+                "title": "ئانا يۇرت",
+                "author": "زوردۇن سابىر",
+            }
+        raise AssertionError(f"Unexpected tool call: {tool_name}")
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        async for _ in handler.execute_path(
+            "catalog", signals, "ئانا يۇرتنى كىم يازغان؟", mock_ctx, observations
+        ):
+            pass
+
+    # A direct match should not trigger the semantic-discovery fallback.
+    assert [o["tool"] for o in observations] == ["get_book_author"]
+
+
+@pytest.mark.asyncio
+async def test_execute_path_catalog_author_of_fallback(mock_ctx):
+    handler = DeterministicRAGHandler()
+    observations = []
+    signals = {"catalog_subtype": "author_of"}
+
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        if tool_name == "get_book_author":
+            return {"ok": True, "context": "", "title": None, "author": None}
+        if tool_name == "search_books_by_summary":
+            return {"ok": True, "book_ids": ["book-999"], "found_count": 1}
+        if tool_name == "search_chunks":
+            return {
+                "ok": True,
+                "chunks": [{"text": f"chunk {i}", "score": 0.9} for i in range(4)],
+                "found_count": 4,
+            }
+        return {"ok": True, "found_count": 0}
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        async for _ in handler.execute_path(
+            "catalog",
+            signals,
+            "بۆرە توپىدىن ئۆتكەن ئوغۇلنى كىم يازغان؟",
+            mock_ctx,
+            observations,
+        ):
+            pass
+
+    tools_called = [o["tool"] for o in observations]
+    assert tools_called == [
+        "get_book_author",
+        "search_books_by_summary",
+        "search_chunks",
+    ]
+
+    search_chunks_call = next(o for o in observations if o["tool"] == "search_chunks")
+    assert search_chunks_call["args"]["book_ids"] == ["book-999"]
+
+
+@pytest.mark.asyncio
+async def test_execute_path_catalog_books_by_fallback(mock_ctx):
+    handler = DeterministicRAGHandler()
+    observations = []
+    signals = {"catalog_subtype": "books_by"}
+
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        if tool_name == "get_books_by_author":
+            return {"ok": True, "context": "", "books": []}
+        if tool_name == "search_books_by_summary":
+            return {"ok": True, "book_ids": ["book-111"], "found_count": 1}
+        if tool_name == "search_chunks":
+            return {
+                "ok": True,
+                "chunks": [{"text": f"chunk {i}", "score": 0.9} for i in range(4)],
+                "found_count": 4,
+            }
+        return {"ok": True, "found_count": 0}
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        async for _ in handler.execute_path(
+            "catalog",
+            signals,
+            "بۆرە توپىسى ھەققىدە يازغۇچى قانداق كىتابلار يازغان؟",
+            mock_ctx,
+            observations,
+        ):
+            pass
+
+    tools_called = [o["tool"] for o in observations]
+    assert tools_called == [
+        "get_books_by_author",
+        "search_books_by_summary",
+        "search_chunks",
+    ]

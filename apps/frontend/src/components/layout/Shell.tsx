@@ -29,21 +29,21 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
 
       <main className={`flex-grow overscroll-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden pt-[72px] sm:pt-[88px] lg:pt-[96px] px-0 sm:px-2 md:px-4 lg:px-8 max-w-[1600px] mx-auto w-full relative z-10 flex flex-col min-h-0 ${view === 'spell-check' ? 'overflow-y-auto lg:overflow-hidden' : ['global-chat', 'reader'].includes(view) ? 'overflow-hidden' : 'overflow-y-auto'}`}>
 
-        <div className="flex-grow flex flex-col min-h-0">
+        <div className={`flex-grow flex flex-col ${['global-chat', 'reader', 'spell-check'].includes(view) ? 'min-h-0' : ''}`}>
           {children}
         </div>
 
         {view !== 'reader' && view !== 'admin' && view !== 'join-us' && view !== 'graph' && view !== 'dictionary' && view !== 'quran' && (
-          <footer className={`border-t border-[#0369a1]/10 pt-4 ${['global-chat', 'spell-check'].includes(view) ? 'hidden sm:grid' : 'grid'} grid-cols-1 sm:grid-cols-3 items-center gap-4 w-full px-4 sm:px-2 ${['global-chat', 'spell-check'].includes(view) ? 'mb-2 mt-4 lg:max-w-5xl lg:mx-auto' : 'mb-6 mt-8'}`} dir="rtl">
+          <footer className={`border-t border-[#0369a1]/10 pt-4 ${['global-chat', 'spell-check'].includes(view) ? 'hidden sm:flex' : 'flex'} flex-col sm:flex-row sm:flex-wrap lg:grid lg:grid-cols-3 items-center justify-center sm:justify-around lg:justify-items-stretch gap-4 w-full px-4 sm:px-2 ${['global-chat', 'spell-check'].includes(view) ? 'mb-2 mt-4 lg:max-w-5xl lg:mx-auto' : 'mb-6 mt-8'}`} dir="rtl">
             {/* Right Column (Copyright) */}
-            <div className="w-full text-center sm:text-right">
+            <div className="w-full sm:w-auto text-center lg:text-right whitespace-nowrap">
               <p className="text-xs text-slate-400 font-normal uyghur-text">
                 © {new Date().getFullYear()} Kitabim.AI — {t('app.footer.copyright')}
               </p>
             </div>
 
             {/* Middle Column (Sponsors & Donate) - Perfectly Centered */}
-            <div className="flex items-center justify-center gap-4 select-none w-full">
+            <div className="flex items-center justify-center gap-4 select-none w-full sm:w-auto whitespace-nowrap">
               <div className="flex items-center gap-2">
                 <span className="text-[10px] sm:text-xs text-slate-400 font-medium tracking-wider uyghur-text">
                   {t('app.footer.sponsors')}
@@ -75,7 +75,7 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
             </div>
 
             {/* Left Column (Contact Us) */}
-            <div className="w-full text-center sm:text-left">
+            <div className="w-full sm:w-auto text-center lg:text-left whitespace-nowrap">
               <a
                 href="mailto:contact@kitabim.ai"
                 className="text-xs text-slate-400 font-normal uyghur-text hover:text-[#0369a1] transition-colors"

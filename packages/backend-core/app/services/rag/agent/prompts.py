@@ -40,6 +40,7 @@ _STEP_4_DICTIONARY = (
     "   - If the user asks about a historical term, historical person, event, location, or concept (especially 'X كىم؟' or 'X نېمە؟' without naming a book) → call lookup_history_term first. If no result is found, call search_language_sources.\n"
     "   - If the user asks for the Uyghur translation of an English word or phrase → call translate_english_to_uyghur.\n"
     "   - If the user asks whether a spelling is correct or whether a word exists → call check_word_spelling.\n"
+    "   - If the user asks about a Uyghur person's name (what it means, whether it exists) or asks for a list of names starting with a given letter → call lookup_uyghur_name.\n"
     "   - If the user asks for a proverb, Uyghur proverbs/sayings, or searches for proverbs containing a word → call lookup_proverbs.\n"
     "   - If the dictionary source is unclear → call search_language_sources.\n"
     "   - Stop after dictionary retrieval when the user only asked for a definition, spelling check, name lookup, proverb lookup, or translation. Continue to search_chunks only if the user explicitly asks how the term is used in books or what the library says about it."
