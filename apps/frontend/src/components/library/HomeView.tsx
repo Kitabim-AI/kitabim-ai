@@ -1,4 +1,4 @@
-import { Book as BookIcon, Bot, RefreshCw, Search, X } from 'lucide-react';
+import { Book as BookIcon, Bot, Keyboard, RefreshCw, Search, X, Delete } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { useI18n } from '../../i18n/I18nContext';
@@ -6,6 +6,50 @@ import { PersistenceService } from '../../services/persistenceService';
 import { ProverbDisplay } from '../common/ProverbDisplay';
 import { QuestionRotator } from '../common/QuestionRotator';
 import { BookCard } from './BookCard';
+
+interface KeyDef {
+  latin: string;
+  uyghur: string;
+  shift: string;
+}
+
+const KEYBOARD_ROWS: KeyDef[][] = [
+  [
+    { latin: 'q', uyghur: 'چ', shift: 'چ' },
+    { latin: 'w', uyghur: 'ۋ', shift: 'ۋ' },
+    { latin: 'e', uyghur: 'ې', shift: 'ې' },
+    { latin: 'r', uyghur: 'ر', shift: 'ر' },
+    { latin: 't', uyghur: 'ت', shift: 'ـ' },
+    { latin: 'y', uyghur: 'ي', shift: 'ي' },
+    { latin: 'u', uyghur: 'ۇ', shift: 'ۇ' },
+    { latin: 'i', uyghur: 'ڭ', shift: 'ڭ' },
+    { latin: 'o', uyghur: 'و', shift: 'و' },
+    { latin: 'p', uyghur: 'پ', shift: 'پ' }
+  ],
+  [
+    { latin: 'a', uyghur: 'ھ', shift: 'ھ' },
+    { latin: 's', uyghur: 'س', shift: 'س' },
+    { latin: 'd', uyghur: 'د', shift: 'ژ' },
+    { latin: 'f', uyghur: 'ا', shift: 'ف' },
+    { latin: 'g', uyghur: 'ە', shift: 'گ' },
+    { latin: 'h', uyghur: 'ى', shift: 'خ' },
+    { latin: 'j', uyghur: 'ق', shift: 'ج' },
+    { latin: 'k', uyghur: 'ك', shift: 'ۆ' },
+    { latin: 'l', uyghur: 'ل', shift: 'ل' },
+    { latin: ';', uyghur: '؛', shift: '؛' }
+  ],
+  [
+    { latin: 'z', uyghur: 'ز', shift: 'ز' },
+    { latin: 'x', uyghur: 'ش', shift: 'ش' },
+    { latin: 'c', uyghur: 'غ', shift: 'غ' },
+    { latin: 'v', uyghur: 'ۈ', shift: 'ۈ' },
+    { latin: 'b', uyghur: 'ب', shift: 'ب' },
+    { latin: 'n', uyghur: 'ن', shift: 'ن' },
+    { latin: 'm', uyghur: 'م', shift: 'م' },
+    { latin: ',', uyghur: '،', shift: ',' },
+    { latin: '/', uyghur: 'ئ', shift: '؟' }
+  ]
+];
 
 export const HomeView: React.FC = () => {
   const {
@@ -30,10 +74,112 @@ export const HomeView: React.FC = () => {
   const [localSearch, setLocalSearch] = useState(searchQuery);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const localSearchRef = useRef(localSearch);
+  const keyboardRef = useRef<HTMLDivElement>(null);
+
+  const [showKeyboardMap, setShowKeyboardMap] = useState(false);
+  const [isShiftPressed, setIsShiftPressed] = useState(false);
 
   useEffect(() => {
     localSearchRef.current = localSearch;
   }, [localSearch]);
+
+  // Listen to physical Shift and Escape keys
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        setIsShiftPressed(true);
+      }
+      if (e.key === 'Escape') {
+        setShowKeyboardMap(false);
+      }
+    };
+    
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        setIsShiftPressed(false);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  // Close keyboard on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        showKeyboardMap &&
+        keyboardRef.current &&
+        !keyboardRef.current.contains(e.target as Node) &&
+        !(e.target as HTMLElement).closest('.keyboard-toggle-btn')
+      ) {
+        setShowKeyboardMap(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showKeyboardMap]);
+
+  const handleKeyClick = (char: string) => {
+    const input = searchInputRef.current;
+    if (!input) return;
+    
+    if (document.activeElement !== input) {
+      input.focus();
+    }
+    
+    const start = input.selectionStart || 0;
+    const end = input.selectionEnd || 0;
+    const value = input.value;
+    const newValue = value.substring(0, start) + char + value.substring(end);
+    
+    setLocalSearch(newValue);
+    
+    // Position cursor after inserted character
+    setTimeout(() => {
+      input.focus();
+      input.setSelectionRange(start + char.length, start + char.length);
+    }, 0);
+  };
+
+  const handleBackspaceClick = () => {
+    const input = searchInputRef.current;
+    if (!input) return;
+    
+    if (document.activeElement !== input) {
+      input.focus();
+    }
+    
+    const start = input.selectionStart || 0;
+    const end = input.selectionEnd || 0;
+    const value = input.value;
+    
+    let newValue = value;
+    let newCursorPos = start;
+    
+    if (start !== end) {
+      // Delete selection
+      newValue = value.substring(0, start) + value.substring(end);
+      newCursorPos = start;
+    } else if (start > 0) {
+      // Delete single char before cursor
+      newValue = value.substring(0, start - 1) + value.substring(start);
+      newCursorPos = start - 1;
+    }
+    
+    setLocalSearch(newValue);
+    
+    setTimeout(() => {
+      input.focus();
+      input.setSelectionRange(newCursorPos, newCursorPos);
+    }, 0);
+  };
 
   // Focus the search input by default on mount
   useEffect(() => {
@@ -141,22 +287,155 @@ export const HomeView: React.FC = () => {
           <input
             ref={searchInputRef}
             type="text"
-            className="w-full px-12 sm:px-16 py-4 sm:py-5 bg-white/60 backdrop-blur-2xl border-2 border-[#0369a1]/10 rounded-[32px] text-base sm:text-lg font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none focus:border-[#0369a1] focus:ring-[12px] focus:ring-[#0369a1]/5 transition-all shadow-xl uyghur-text"
+            className="w-full pl-20 pr-12 md:pl-28 md:pr-16 py-4 sm:py-5 bg-white/60 backdrop-blur-2xl border-2 border-[#0369a1]/10 rounded-[32px] text-base sm:text-lg font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none focus:border-[#0369a1] focus:ring-[12px] focus:ring-[#0369a1]/5 transition-all shadow-xl uyghur-text"
             placeholder={t('home.searchOrChatPlaceholder')}
             value={localSearch}
             onChange={(e) => setLocalSearch(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') handleSearchSubmit(); }}
             dir="rtl"
           />
-          {localSearch && (
+          <div className="absolute inset-y-0 left-0 pl-4 sm:pl-6 flex items-center gap-0.5 z-10" dir="ltr">
+            {localSearch && (
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => { setLocalSearch(''); setSearchQuery(''); }}
+                className="w-9 h-9 rounded-full flex items-center justify-center text-[#94a3b8] hover:text-[#0369a1] hover:bg-slate-100/50 transition-colors"
+                title="Clear"
+              >
+                <X size={20} className="sm:w-[22px] sm:h-[22px]" strokeWidth={3} />
+              </button>
+            )}
+
+            {/* Keyboard layout toggle icon, hidden on mobile */}
             <button
-              onClick={() => { setLocalSearch(''); setSearchQuery(''); }}
-              className="absolute inset-y-0 left-0 pl-4 sm:pl-6 flex items-center text-[#94a3b8] hover:text-[#0369a1] transition-colors z-10 min-w-[44px] min-h-[44px]"
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setShowKeyboardMap(!showKeyboardMap)}
+              className={`hidden md:flex items-center justify-center text-[#94a3b8] hover:text-[#0369a1] transition-colors w-9 h-9 rounded-full hover:bg-slate-100/50 keyboard-toggle-btn ${
+                showKeyboardMap ? 'text-[#0369a1] bg-[#0369a1]/10 hover:bg-[#0369a1]/15' : ''
+              }`}
+              title={t('home.keyboardMapTooltip')}
             >
-              <X size={22} className="sm:w-[24px] sm:h-[24px]" strokeWidth={3} />
+              <Keyboard size={20} className="sm:w-[22px] sm:h-[22px]" strokeWidth={2.5} />
             </button>
-          )}
+          </div>
         </div>
+
+        {/* Keyboard Map Panel */}
+        {showKeyboardMap && (
+          <div
+            ref={keyboardRef}
+            className="absolute left-4 right-4 mt-3 bg-white/95 backdrop-blur-2xl border border-slate-200/60 rounded-3xl p-5 shadow-2xl z-20 hidden md:block animate-in fade-in slide-in-from-top-4 duration-200"
+            dir="ltr"
+          >
+            {/* Keyboard Header */}
+            <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100" dir="rtl">
+              <div className="flex flex-col gap-0.5">
+                <h4 className="text-sm font-semibold text-slate-800 uyghur-text">
+                  {t('home.keyboardMapTitle')}
+                </h4>
+                <p className="text-[11px] text-slate-400 uyghur-text">
+                  {t('home.keyboardMapSubtitle')}
+                </p>
+              </div>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setShowKeyboardMap(false)}
+                className="p-1.5 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            
+            {/* Keys Layout */}
+            <div className="flex flex-col gap-2 items-center w-full">
+              {/* Row 1 */}
+              <div className="flex gap-1.5 w-full justify-center">
+                {KEYBOARD_ROWS[0].map(key => (
+                  <button
+                    key={key.latin}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => handleKeyClick(isShiftPressed ? key.shift : key.uyghur)}
+                    className="h-12 flex-1 max-w-[54px] min-w-[36px] bg-white hover:bg-slate-50 border border-slate-200 rounded-lg flex flex-col justify-between p-1.5 shadow-sm text-slate-800 transition-all active:scale-95 cursor-pointer hover:border-slate-300 select-none"
+                  >
+                    <span className="text-[9px] text-slate-400 font-medium uppercase self-start">{key.latin}</span>
+                    <span className="text-base sm:text-lg font-bold self-center leading-none mt-0.5">{isShiftPressed ? key.shift : key.uyghur}</span>
+                  </button>
+                ))}
+              </div>
+              
+              {/* Row 2 */}
+              <div className="flex gap-1.5 w-full justify-center pl-4">
+                {KEYBOARD_ROWS[1].map(key => (
+                  <button
+                    key={key.latin}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => handleKeyClick(isShiftPressed ? key.shift : key.uyghur)}
+                    className="h-12 flex-1 max-w-[54px] min-w-[36px] bg-white hover:bg-slate-50 border border-slate-200 rounded-lg flex flex-col justify-between p-1.5 shadow-sm text-slate-800 transition-all active:scale-95 cursor-pointer hover:border-slate-300 select-none"
+                  >
+                    <span className="text-[9px] text-slate-400 font-medium uppercase self-start">{key.latin}</span>
+                    <span className="text-base sm:text-lg font-bold self-center leading-none mt-0.5">{isShiftPressed ? key.shift : key.uyghur}</span>
+                  </button>
+                ))}
+              </div>
+              
+              {/* Row 3 */}
+              <div className="flex gap-1.5 w-full justify-center pl-8">
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => setIsShiftPressed(!isShiftPressed)}
+                  className={`h-12 px-3 border rounded-lg flex items-center justify-center font-semibold text-xs transition-all active:scale-95 cursor-pointer select-none ${
+                    isShiftPressed
+                      ? 'bg-[#0369a1] text-white border-[#0369a1]'
+                      : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  Shift
+                </button>
+                
+                {KEYBOARD_ROWS[2].map(key => (
+                  <button
+                    key={key.latin}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => handleKeyClick(isShiftPressed ? key.shift : key.uyghur)}
+                    className="h-12 flex-1 max-w-[54px] min-w-[36px] bg-white hover:bg-slate-50 border border-slate-200 rounded-lg flex flex-col justify-between p-1.5 shadow-sm text-slate-800 transition-all active:scale-95 cursor-pointer hover:border-slate-300 select-none"
+                  >
+                    <span className="text-[9px] text-slate-400 font-medium uppercase self-start">{key.latin}</span>
+                    <span className="text-base sm:text-lg font-bold self-center leading-none mt-0.5">{isShiftPressed ? key.shift : key.uyghur}</span>
+                  </button>
+                ))}
+                
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={handleBackspaceClick}
+                  className="h-12 px-3 bg-slate-100 hover:bg-slate-200 border border-slate-200 hover:border-slate-300 rounded-lg flex items-center justify-center text-slate-700 transition-all active:scale-95 cursor-pointer select-none"
+                  title="Backspace"
+                >
+                  <Delete size={16} />
+                </button>
+              </div>
+              
+              {/* Row 4 */}
+              <div className="flex gap-1.5 w-full justify-center mt-0.5">
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleKeyClick(' ')}
+                  className="h-12 w-48 sm:w-64 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-center shadow-sm text-slate-800 text-xs font-semibold transition-all active:scale-95 cursor-pointer select-none hover:border-slate-300"
+                >
+                  {t('home.spaceKey')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Chat hint when no books match the query */}
         {chatHint && (

@@ -109,7 +109,11 @@
     "pressEnterToChat": "No books found — press Enter to ask the assistant",
     "pressReturnToChat": "No books found — press Return to ask the assistant",
     "tapToChat": "No books found — tap the search icon to ask the assistant",
-    "recentQuestions": "Recently answered questions"
+    "recentQuestions": "Recently answered questions",
+    "keyboardMapTooltip": "Show Uyghur keyboard map",
+    "keyboardMapTitle": "Uyghur Keyboard Layout Map",
+    "keyboardMapSubtitle": "Use your physical keyboard or click virtual keys below to type. Press Ctrl+K to toggle Uyghur/English layout.",
+    "spaceKey": "Space"
   },
   "library": {
     "title": "Public Library",
