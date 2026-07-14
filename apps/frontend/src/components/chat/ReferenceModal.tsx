@@ -12,6 +12,15 @@ interface ReferenceModalProps {
   pageNumbers: number[];
 }
 
+const normalizeArabic = (text: string): string => {
+  if (!text) return '';
+  return text
+    .replace(/\u06E1/g, '\u0652') // Uthmanic Sukun -> Standard Sukun
+    .replace(/\u0671/g, '\u0627') // Alif Wasla -> Standard Alif
+    .replace(/[\u06D6-\u06DC\u06DF-\u06E0\u06E2-\u06ED]/g, '') // Remove Uthmanic signs that disrupt cursive connections
+    ;
+};
+
 export const ReferenceModal: React.FC<ReferenceModalProps> = ({
   isOpen,
   onClose,
@@ -38,7 +47,33 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
     if (!isOpen || !bookId) return;
     setLoading(true);
     setCurrentPageData(null);
-    if (isSummaryMode) {
+    if (bookId === 'quran') {
+      const initialSurah = pageNumbers[0] ?? 1;
+      setCurrentPageNum(initialSurah);
+      PersistenceService.getQuranSurah(initialSurah)
+        .then(verses => {
+          if (verses && verses.length > 0) {
+            setBookData({
+              title: `${verses[0].surah_name_ug} سۈرىسى`,
+              author: `قۇرئان كەرىم (${verses[0].surah_name_ar})`,
+              totalPages: 114,
+            });
+            setCurrentPageData({ verses });
+          } else {
+            setBookData({
+              title: t('chat.referenceTitle'),
+              author: 'قۇرئان كەرىم',
+              totalPages: 114,
+            });
+            setCurrentPageData(null);
+          }
+          setLoading(false);
+        })
+        .catch(err => {
+          console.error("Failed to fetch Quran reference data:", err);
+          setLoading(false);
+        });
+    } else if (isSummaryMode) {
       Promise.all([
         PersistenceService.getBookSummary(bookId),
         PersistenceService.getBookById(bookId),
@@ -65,15 +100,51 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
         setLoading(false);
       });
     }
-  }, [isOpen, bookId, pageNumbers, isSummaryMode]);
+  }, [isOpen, bookId, pageNumbers, isSummaryMode, t]);
+
+  useEffect(() => {
+    if (bookId === 'quran' && !loading && !pageLoading && currentPageData?.verses) {
+      const targetAyah = pageNumbers.slice(1)[0];
+      if (targetAyah) {
+        const timer = setTimeout(() => {
+          const element = document.getElementById(`ayah-${targetAyah}`);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 300);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [bookId, loading, pageLoading, currentPageData, pageNumbers]);
 
   const totalPages: number = bookData?.totalPages ?? 0;
-const navigateToPage = useCallback((newPage: number) => {
+  const navigateToPage = useCallback((newPage: number) => {
     setCurrentPageNum(newPage);
     setPageLoading(true);
-    PersistenceService.getPage(bookId, newPage)
-      .then(page => { setCurrentPageData(page); setPageLoading(false); })
-      .catch(err => { console.error("Failed to fetch page:", err); setPageLoading(false); });
+    if (bookId === 'quran') {
+      PersistenceService.getQuranSurah(newPage)
+        .then(verses => {
+          if (verses && verses.length > 0) {
+            setBookData({
+              title: `${verses[0].surah_name_ug} سۈرىسى`,
+              author: `قۇرئان كەرىم (${verses[0].surah_name_ar})`,
+              totalPages: 114,
+            });
+            setCurrentPageData({ verses });
+          } else {
+            setCurrentPageData(null);
+          }
+          setPageLoading(false);
+        })
+        .catch(err => {
+          console.error("Failed to fetch Quran page:", err);
+          setPageLoading(false);
+        });
+    } else {
+      PersistenceService.getPage(bookId, newPage)
+        .then(page => { setCurrentPageData(page); setPageLoading(false); })
+        .catch(err => { console.error("Failed to fetch page:", err); setPageLoading(false); });
+    }
   }, [bookId]);
 
   const goToPrevPage = useCallback(() => {
@@ -167,6 +238,53 @@ const navigateToPage = useCallback((newPage: number) => {
                 <p className="text-sm sm:text-base text-slate-400 font-normal">{t('chat.noContentFound')}</p>
               </div>
             )
+          ) : bookId === 'quran' && currentPageData?.verses ? (
+            <div className="max-w-3xl mx-auto space-y-6">
+              {currentPageData.verses.map((v: any) => {
+                const isReferenced = pageNumbers.slice(1).includes(v.ayah);
+                return (
+                  <div
+                    key={v.id}
+                    id={`ayah-${v.ayah}`}
+                    className={`p-6 sm:p-8 rounded-[24px] transition-all duration-300 border ${
+                      isReferenced
+                        ? 'bg-[#0369a1]/5 border-[#0369a1]/20 shadow-md ring-2 ring-[#0369a1]/5'
+                        : 'bg-white/80 border-slate-100/80 shadow-sm'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-4 border-b border-slate-100/60 pb-3">
+                      <span className={`px-3 py-1 rounded-full text-xs font-normal ${
+                        isReferenced
+                          ? 'bg-[#0369a1]/10 text-[#0369a1]'
+                          : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        {v.ayah}-ئايەت
+                      </span>
+                      {isReferenced && (
+                        <span className="text-xs text-[#0369a1] font-normal">
+                          مەنبە قىلىنغان ئايەت
+                        </span>
+                      )}
+                    </div>
+                    {/* Arabic Text */}
+                    <div className="text-right mb-6" dir="rtl">
+                      <p className="arabic-text text-3xl sm:text-4xl leading-[2] sm:leading-[2.2] text-slate-900 font-normal whitespace-pre-wrap select-all">
+                        {normalizeArabic(v.text_ar)}
+                      </p>
+                    </div>
+                    {/* Uyghur & English Translations */}
+                    <div className="space-y-3 border-t border-slate-50 pt-4 text-right">
+                      <p className="uyghur-text text-base sm:text-lg leading-[1.8] text-[#1e293b] font-normal" dir="rtl">
+                        <span className="text-slate-400 font-normal ml-1">تەرجىمىسى:</span> {v.text_ug}
+                      </p>
+                      <p className="text-sm text-slate-500 font-sans leading-relaxed text-left" dir="ltr">
+                        <span className="text-slate-400 font-normal mr-1">English:</span> {v.text_en}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           ) : currentPageData?.text ? (
             <div className="max-w-3xl mx-auto">
               <div className="bg-white/80 p-4 pt-8 sm:p-6 sm:pt-10 md:p-10 md:pt-12 rounded-[20px] sm:rounded-[24px] md:rounded-[32px] shadow-sm border border-white relative overflow-hidden group">

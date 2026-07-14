@@ -28,8 +28,8 @@ async def test_list_surahs():
 
     mock_res = MagicMock()
     mock_res.all.return_value = [
-        (1, "Al-Fatihah", "الفاتحة", "ئالفاتىھە"),
-        (2, "Al-Baqarah", "البقرة", "ئالباقارە"),
+        (1, "Al-Fatihah", "الفاتحة", "فاتىھە"),
+        (2, "Al-Baqarah", "البقرة", "بەقەرە"),
     ]
     mock_session.execute.return_value = mock_res
 
@@ -37,7 +37,7 @@ async def test_list_surahs():
 
     assert len(result) == 2
     assert result[0].surah == 1
-    assert result[0].surah_name_ug == "ئالفاتىھە"
+    assert result[0].surah_name_ug == "فاتىھە"
     assert result[1].surah_name_en == "Al-Baqarah"
 
 

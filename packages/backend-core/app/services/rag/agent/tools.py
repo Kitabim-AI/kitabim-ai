@@ -208,8 +208,14 @@ async def get_book_summary(
     Returns the text of the book's summary.
 
     Args:
-        book_ids: List of book IDs to fetch summaries for. Limit to at most 5 IDs —
-                  each summary is large; passing more is wasteful and dilutes the answer.
+        book_ids: List of book IDs to fetch summaries for. If an ID belongs to a
+                  multi-volume book, ALL of that book's sister volumes are
+                  included automatically (server-side) — you do not need to
+                  enumerate every volume ID yourself, and none will be dropped
+                  even if you only pass one. This cap only applies to distinct,
+                  unrelated books: limit to at most 5 DIFFERENT books — each
+                  summary is large, and passing many unrelated ones is wasteful
+                  and dilutes the answer.
     """
     args = {"book_ids": book_ids}
     return await _execute_and_record_tool(tool_context, "get_book_summary", args)
@@ -592,13 +598,26 @@ async def _run_search_books_by_summary(args: dict, ctx: QueryContext) -> List[st
 
 async def _run_get_book_summary(args: dict, ctx: QueryContext) -> dict:
     from app.db.repositories.book_summaries_repository import BookSummariesRepository
+    from app.db.repositories.books_repository import BooksRepository
 
     book_ids = args.get("book_ids") or []
     if not book_ids:
         return {"context": "No book IDs provided.", "summaries": []}
 
+    # The LLM may under-comply with the "pass all sister volumes" guidance
+    # (observed in production: a title resolving to 6 volumes, only 5 passed
+    # here). Expand server-side rather than trusting the model's book_ids.
+    books_repo = BooksRepository(ctx.session)
+    expanded_ids = list(dict.fromkeys(str(bid) for bid in book_ids))
+    for book_id in list(expanded_ids):
+        sister_volumes = await books_repo.find_sister_volumes(book_id)
+        for sister in sister_volumes:
+            sister_id = str(sister.id)
+            if sister_id not in expanded_ids:
+                expanded_ids.append(sister_id)
+
     repo = BookSummariesRepository(ctx.session)
-    summaries = await repo.get_summaries_for_books(book_ids)
+    summaries = await repo.get_summaries_for_books(expanded_ids)
 
     if not summaries:
         log_json(logger, logging.INFO, "Agent tool get_book_summary", count=0)

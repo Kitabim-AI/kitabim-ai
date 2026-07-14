@@ -62,18 +62,32 @@ const renderInline = (text: string, onReferenceClick?: (bookId: string, pageNums
     // extract the actual ref: URL from inside it.
     let effectiveUrl = url || '';
     if (!effectiveUrl.startsWith('ref:') && effectiveUrl.includes('ref:')) {
-      const nestedRef = effectiveUrl.match(/ref:[\w]+:(?:[\d,]+|summary)/);
+      const nestedRef = effectiveUrl.match(/ref:[\w]+:(?:[\d,:]+|summary)/);
       if (nestedRef) effectiveUrl = nestedRef[0];
     }
 
     if (effectiveUrl.startsWith('ref:')) {
       const parts = effectiveUrl.split(':');
       const bookId = parts[1];
-      const pageNumsStr = parts[2] || '';
-      const isSummaryRef = pageNumsStr === 'summary';
-      const pageNums = isSummaryRef
-        ? []
-        : pageNumsStr.split(',').map(p => parseInt(p.trim(), 10)).filter(p => !isNaN(p));
+      let pageNums: number[] = [];
+      let isSummaryRef = false;
+
+      if (bookId === 'quran') {
+        const surah = parseInt(parts[2], 10);
+        if (!isNaN(surah)) {
+          pageNums.push(surah);
+          if (parts[3]) {
+            const ayahs = parts[3].split(',').map(p => parseInt(p.trim(), 10)).filter(p => !isNaN(p));
+            pageNums.push(...ayahs);
+          }
+        }
+      } else {
+        const pageNumsStr = parts[2] || '';
+        isSummaryRef = pageNumsStr === 'summary';
+        pageNums = isSummaryRef
+          ? []
+          : pageNumsStr.split(',').map(p => parseInt(p.trim(), 10)).filter(p => !isNaN(p));
+      }
 
       // Clean up the text in case the LLM included the BookID inside the link name
       const cleanText = text.replace(/\s*\(?BookID:\s*[a-zA-Z0-9-]+\)?/gi, '');

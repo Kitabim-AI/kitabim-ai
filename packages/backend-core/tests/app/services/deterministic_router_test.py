@@ -288,6 +288,56 @@ async def test_execute_path_c_summary_fallback(mock_ctx):
 
 
 @pytest.mark.asyncio
+async def test_execute_path_c_summary_includes_all_sister_volumes(mock_ctx):
+    """A named title resolving to 6 sister volumes must pass all 6 to
+    get_book_summary — the 5-ID cap exists to bound unrelated-book results,
+    not to truncate a single book's own volume series."""
+    handler = DeterministicRAGHandler()
+    signals = {"has_title": True}
+    observations = []
+
+    sister_volume_ids = [f"book-{i}" for i in range(1, 7)]
+    sister_volume_books = [
+        {
+            "id": book_id,
+            "title": "ئانا يۇرت",
+            "author": "زوردۇن سابىر",
+            "volume": i,
+        }
+        for i, book_id in enumerate(sister_volume_ids, start=1)
+    ]
+
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        if tool_name == "find_books_by_title":
+            return {
+                "ok": True,
+                "book_ids": sister_volume_ids,
+                "books": sister_volume_books,
+                "found_count": len(sister_volume_ids),
+            }
+        if tool_name == "get_book_summary":
+            return {
+                "ok": True,
+                "context": "Book Summary Info",
+                "summaries": [{"book_id": bid} for bid in tool_args["book_ids"]],
+                "found_count": len(tool_args["book_ids"]),
+            }
+        return {"ok": True}
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        async for _ in handler.execute_path(
+            "summary", signals, "ئانا يۇرت رومانىنى كۆرسەت", mock_ctx, observations
+        ):
+            pass
+
+        summary_call = next(o for o in observations if o["tool"] == "get_book_summary")
+        assert summary_call["args"]["book_ids"] == sister_volume_ids
+
+
+@pytest.mark.asyncio
 async def test_universal_fallback_trigger(mock_ctx):
     handler = DeterministicRAGHandler()
     observations = []

@@ -40,6 +40,20 @@ from app.services.rag.keywords import (
 )
 
 
+def _cap_summary_book_ids(book_ids: list, books: list, cap: int = 5) -> list[str]:
+    """Cap book IDs passed to get_book_summary at *cap*, unless every book is a
+    volume of the same title+author series — a named-title lookup can legitimately
+    resolve to more than 5 sister volumes, and none should be silently dropped."""
+    if not books:
+        return [str(bid) for bid in book_ids][:cap]
+    first_title, first_author = books[0].get("title"), books[0].get("author")
+    is_single_series = all(
+        b.get("title") == first_title and b.get("author") == first_author for b in books
+    )
+    ids = [str(b["id"]) for b in books]
+    return ids if is_single_series else ids[:cap]
+
+
 def repair_json_unescaped_quotes(json_str: str) -> str:
     """Repair JSON string values with unescaped internal double quotes."""
     pattern = (
@@ -127,7 +141,7 @@ Intents:
 - summary     : asking about the plot, themes, or main characters of a book
 - relationship: asking about connections, lineages, family trees, or how X and Y relate
 - passage     : asking for specific events, facts, quotes, or details — including "tell me about X's actions"
-- quran       : asking about Quran surahs, verses (ayahs), translations, or searching for specific verses/phrases in the Quran (e.g., "what is surah 1?", "read ayah 1:2", "ئالفاتىھە سۈرىسى", "ئاللاھنىڭ ئىسمى بىلەن باشلايمەن قايسى سۈرىدە بار؟")
+- quran       : asking about Quran surahs, verses (ayahs), translations, or searching for specific verses/phrases in the Quran (e.g., "what is surah 1?", "read ayah 1:2", "فاتىھە سۈرىسى", "ئاللاھنىڭ ئىسمى بىلەن باشلايمەن قايسى سۈرىدە بار؟")
 
 Dictionary subtype rules:
 - "uyghur_definition": Uyghur word meaning or definition ("X دېگەن نېمە؟", "X مەنىسى نېمە؟")
@@ -736,6 +750,10 @@ Return ONLY valid JSON matching this schema:
                 title_res = result_holder["result"]
                 book_ids = title_res.get("book_ids", [])
 
+            summary_book_ids = _cap_summary_book_ids(
+                book_ids, title_res.get("books", [])
+            )
+
             # Fallback for summary lookups
             if (intent == "summary" or intent == "identity") and not book_ids:
                 async for ev in self._run_tool_and_yield(
@@ -748,11 +766,12 @@ Return ONLY valid JSON matching this schema:
                     yield ev
                 summary_search_res = result_holder["result"]
                 book_ids = summary_search_res.get("book_ids", [])
+                summary_book_ids = book_ids[:5]
 
             if intent == "summary":
                 async for ev in self._run_tool_and_yield(
                     "get_book_summary",
-                    {"book_ids": book_ids[:5]},
+                    {"book_ids": summary_book_ids},
                     ctx,
                     observations,
                     result_holder,
@@ -778,7 +797,7 @@ Return ONLY valid JSON matching this schema:
                         yield ev
                 async for ev in self._run_tool_and_yield(
                     "get_book_summary",
-                    {"book_ids": book_ids[:5]},
+                    {"book_ids": summary_book_ids},
                     ctx,
                     observations,
                     result_holder,

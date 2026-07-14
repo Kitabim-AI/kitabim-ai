@@ -122,6 +122,17 @@ export const PersistenceService = {
     }
   },
 
+  async getQuranSurah(surahNum: number): Promise<any[]> {
+    try {
+      const response = await authFetch(`${API_BASE}/quran?surah=${surahNum}&limit=350`);
+      if (!response.ok) throw new Error("Failed to fetch Quran surah");
+      return await response.json();
+    } catch (error) {
+      console.error("Failed to fetch Quran surah", error);
+      return [];
+    }
+  },
+
   async deleteBook(bookId: string): Promise<void> {
     try {
       const response = await authFetch(`${API_BASE}/books/${bookId}`, {

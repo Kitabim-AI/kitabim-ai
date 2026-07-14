@@ -136,7 +136,7 @@ export const QuranView: React.FC = () => {
   useEffect(() => {
     if (!isFocused && !searchQuery) {
       if (activeSurahObj) {
-        setInputValue(`${activeSurahObj.surah}. ${activeSurahObj.surah_name_ug}`);
+        setInputValue(`${activeSurahObj.surah}. ${activeSurahObj.surah_name_ug} سۈرىسى`);
       }
     }
   }, [activeSurah, surahs, isFocused, searchQuery]);
@@ -171,7 +171,7 @@ export const QuranView: React.FC = () => {
     setIsFocused(false);
     if (!searchQuery) {
       if (activeSurahObj) {
-        setInputValue(`${activeSurahObj.surah}. ${activeSurahObj.surah_name_ug}`);
+        setInputValue(`${activeSurahObj.surah}. ${activeSurahObj.surah_name_ug} سۈرىسى`);
       }
     }
   };
@@ -270,7 +270,7 @@ export const QuranView: React.FC = () => {
                         : 'text-slate-700'
                     }`}
                   >
-                    <span>{surah.surah}. {surah.surah_name_ug}</span>
+                    <span>{surah.surah}. {surah.surah_name_ug} سۈرىسى</span>
                   </button>
                 ))
               ) : (

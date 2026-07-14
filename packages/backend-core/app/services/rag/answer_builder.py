@@ -20,6 +20,13 @@ from app.services.rag.utils import build_empty_response_message
 
 logger = logging.getLogger("app.rag.answer_builder")
 
+_MULTI_VOLUME_INSTRUCTION = (
+    "If the context contains SUMMARY-marked documents for multiple Volumes of the same book "
+    "(same Book and Author in the header) and the user did not ask about one specific volume, "
+    "synthesize a single overview that covers all the volumes provided in the context — do NOT "
+    "limit your answer to only one volume."
+)
+
 
 def build_instructions(
     strict_no_answer: bool,
@@ -50,6 +57,7 @@ def build_instructions(
                 "If you cite a passage, format citations in Uyghur as a markdown link using the EXACT author and book title from the context header "
                 "(e.g., **مەنبە:** [ئانا يۇرت (زوردۇن سابىر)، Page: N](ref:book_id:page_number)). Keep the book ID ONLY in the URL parenthesis, not the text label."
             ),
+            _MULTI_VOLUME_INSTRUCTION,
             "Respond ONLY in professional Uyghur (Arabic script).",
             (
                 "STRICT RULE: Output ONLY Uyghur text. Do not include English words, translations, or explanations in other languages. "
@@ -94,16 +102,20 @@ def build_instructions(
             "   Each document in the context starts with a header like: [BookID: abc123, Book: title, Author: name, Volume: N, Page: N]\n"
             "   Book summaries use the marker SUMMARY instead of Page: [BookID: abc123, Book: title, Author: name, SUMMARY]\n"
             "   Dictionary sources use headers like: [Dictionary Source: Uyghur Dictionary, Term: X], [Dictionary Source: History Dictionary, Term: X], [Dictionary Source: English-Uyghur Dictionary, English: X], or [Dictionary Source: Spelling Word List, Word: X]\n"
+            "   Quran sources use headers like: [Source: Holy Quran, Surah: SurahName (EnglishName), Ayah: N]\n"
             "   You MUST use the EXACT author name from the 'Author:' field in book headers. If there is no 'Author:' field in the header, omit the author from the citation entirely — do NOT write any 'unknown' or placeholder text for the author."
         ),
+        _MULTI_VOLUME_INSTRUCTION,
         (
             "Format citations in Uyghur as a markdown link.\n"
             "   For page-based sources, the link URL MUST be in the format 'ref:book_id:page_number'.\n"
             "   If multiple pages are referenced, separate the page numbers with commas in the URL (e.g. 'ref:book_id:9,10').\n"
             "   For SUMMARY-marked sources (no Page field), use 'ref:book_id:summary' as the URL.\n"
+            "   For Quran sources, the link URL MUST be in the format 'ref:quran:surah_number:ayah_number' (e.g., 'ref:quran:1:1' or 'ref:quran:2:255'). If multiple ayahs are referenced, separate them with commas in the URL (e.g., 'ref:quran:2:255,256').\n"
             "   STRICT RULE: Do NOT include the 'BookID: abc123' part in the visible text label of the link! Keep the book ID ONLY in the URL parenthesis.\n"
             "   Example (page): **مەنبە:** [ئانا يۇرت (زوردۇن سابىر)، 1-توم، 25-بەت](ref:abc123:25)\n"
             "   Example (summary): **مەنبە:** [ئانا يۇرت (زوردۇن سابىر) — قىسقىچە مەزمۇنى](ref:abc123:summary)\n"
+            "   Example (Quran): **مەنبە:** [قۇرئان كەرىم، سۈرە فاتىھە، 1-ئايەت](ref:quran:1:1)\n"
             "   For catalog/author/metadata results that do not have a page number or summary (e.g., from get_book_author, get_books_by_author, or search_catalog), omit the 'ref:' link and cite inline as: **مەنبە:** book_title (author_name).\n"
             "   For dictionary results, omit the 'ref:' link and cite inline in Uyghur as: **مەنبە:** ئۇيغۇرچە لۇغەت، **مەنبە:** تارىخ لۇغىتى، **مەنبە:** ئىنگلىزچە-ئۇيغۇرچە لۇغەت، ياكى **مەنبە:** ئىملا سۆز تىزىملىكى."
         ),
