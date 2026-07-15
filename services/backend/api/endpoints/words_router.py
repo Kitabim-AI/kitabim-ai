@@ -13,8 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
 from app.db.models import Word
-from app.models.user import User
-from auth.dependencies import require_editor
 
 router = APIRouter()
 
@@ -40,7 +38,6 @@ class WordOut(BaseModel):
 async def search_words(
     q: str,
     limit: int = 10,
-    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     """Search for words in the spell check list (autocomplete)."""
@@ -61,7 +58,6 @@ async def search_words(
 @router.get("/spell-check/words/stats", response_model=WordsStatsOut)
 async def get_words_stats(
     letter_group: Optional[str] = None,
-    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     """Get total word count in the spell check list."""
@@ -74,7 +70,6 @@ async def get_words_stats(
 
 @router.get("/spell-check/words/letter-groups", response_model=List[str])
 async def list_letter_groups(
-    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     """Return all distinct first letters present in the words list."""
@@ -89,7 +84,6 @@ async def list_words(
     skip: int = 0,
     limit: int = 20,
     letter_group: Optional[str] = None,
-    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     """List words in the spell check list with pagination, sorted alphabetically."""

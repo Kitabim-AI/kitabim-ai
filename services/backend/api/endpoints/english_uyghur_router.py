@@ -13,8 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
 from app.db.models import EnglishUyghurDictionary
-from app.models.user import User
-from auth.dependencies import require_editor
 
 router = APIRouter()
 
@@ -41,7 +39,6 @@ class EnglishUyghurStatsOut(BaseModel):
 @router.get("/english-uyghur-dictionary/stats", response_model=EnglishUyghurStatsOut)
 async def get_english_uyghur_stats(
     letter_group: Optional[str] = None,
-    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     stmt = select(func.count()).select_from(EnglishUyghurDictionary)
@@ -53,7 +50,6 @@ async def get_english_uyghur_stats(
 
 @router.get("/english-uyghur-dictionary/letter-groups", response_model=List[str])
 async def list_english_uyghur_letter_groups(
-    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     stmt = select(distinct(EnglishUyghurDictionary.letter_group)).order_by(
@@ -69,7 +65,6 @@ async def list_english_uyghur_letter_groups(
 async def search_english_uyghur_dictionary(
     q: str,
     limit: int = 10,
-    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     q = q.strip()
@@ -93,7 +88,6 @@ async def list_english_uyghur_entries(
     skip: int = 0,
     limit: int = 20,
     letter_group: Optional[str] = None,
-    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     stmt = select(EnglishUyghurDictionary).order_by(EnglishUyghurDictionary.id.asc())

@@ -272,18 +272,32 @@ const JoinUsView: React.FC = () => {
               <h2 className="text-2xl sm:text-3xl font-bold text-[#1a1a1a] mb-2">{t('joinUs.sponsors.title')}</h2>
               <p className="uyghur-text text-sm sm:text-base text-slate-500">{t('joinUs.sponsors.subtitle')}</p>
             </div>
-            <a
-              href="https://www.dallasuyghurcommunity.org"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center p-2 z-10 active:scale-95 group/logo"
-            >
-              <img
-                src="https://dallasuyghurcommunity.org/wp-content/uploads/2025/01/DUC_Logo_3ai_Artboard-2-photoaidcom-cropped-1.png"
-                alt="Dallas Uyghur Community Logo"
-                className="h-20 md:h-24 lg:h-32 w-auto object-contain group-hover/logo:scale-105 transition-transform"
-              />
-            </a>
+            <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-8 md:gap-12 z-10">
+              <a
+                href="https://www.dallasuyghurcommunity.org"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center p-2 active:scale-95 group/logo"
+              >
+                <img
+                  src="https://dallasuyghurcommunity.org/wp-content/uploads/2025/01/DUC_Logo_3ai_Artboard-2-photoaidcom-cropped-1.png"
+                  alt="Dallas Uyghur Community Logo"
+                  className="h-20 md:h-24 lg:h-32 w-auto object-contain group-hover/logo:scale-105 transition-transform"
+                />
+              </a>
+              <a
+                href="https://uyghursfoundation.org"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center p-2 active:scale-95 group/logo"
+              >
+                <img
+                  src="https://uyghursfoundation.org/en/wp-content/uploads/2021/07/upf-150x150.jpg"
+                  alt="Uyghur Projects Foundation Logo"
+                  className="h-20 md:h-24 lg:h-32 w-auto object-contain group-hover/logo:scale-105 transition-transform rounded-full"
+                />
+              </a>
+            </div>
           </div>
 
           {/* Contact Strip */}

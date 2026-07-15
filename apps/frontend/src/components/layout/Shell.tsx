@@ -44,7 +44,7 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
 
             {/* Middle Column (Sponsors & Donate) - Perfectly Centered */}
             <div className="flex items-center justify-center gap-4 select-none w-full sm:w-auto whitespace-nowrap">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 <span className="text-[10px] sm:text-xs text-slate-400 font-medium tracking-wider uyghur-text">
                   {t('app.footer.sponsors')}
                 </span>
@@ -59,6 +59,19 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
                     src="https://dallasuyghurcommunity.org/wp-content/uploads/2025/01/DUC_Logo_3ai_Artboard-2-photoaidcom-cropped-1.png"
                     alt="Dallas Uyghur Community"
                     className="h-10 sm:h-12 w-auto object-contain"
+                  />
+                </a>
+                <a
+                  href="https://uyghursfoundation.org"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Uyghur Projects Foundation"
+                  className="flex items-center justify-center transition-transform hover:scale-105 active:scale-95"
+                >
+                  <img
+                    src="https://uyghursfoundation.org/en/wp-content/uploads/2021/07/upf-150x150.jpg"
+                    alt="Uyghur Projects Foundation"
+                    className="h-10 sm:h-12 w-auto object-contain rounded-full"
                   />
                 </a>
               </div>
