@@ -3,7 +3,7 @@
  */
 
 import { AlertCircle, Loader, Mail, Search, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../i18n/I18nContext';
 import { authFetch } from '../../services/authService';
 
@@ -37,10 +37,18 @@ export function ContactSubmissionsPanel() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchSubmissions();
   }, [statusFilter]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 50);
+    return () => clearTimeout(timer);
+  }, []);
 
   const fetchSubmissions = async () => {
     setIsLoading(true);
@@ -90,6 +98,7 @@ export function ContactSubmissionsPanel() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            ref={inputRef}
             placeholder={t('common.search')}
             className="w-full pr-12 pl-6 py-2.5 md:py-3 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl text-[#1a1a1a] dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all uyghur-text shadow-sm text-base"
           />
@@ -110,7 +119,7 @@ export function ContactSubmissionsPanel() {
               onClick={() => setStatusFilter(filter)}
               className={`px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-normal uppercase transition-all ${statusFilter === filter
                 ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 shadow-sm'
-                : 'bg-white dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/80 hover:text-slate-800 dark:hover:text-slate-250'
+                : 'bg-white dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/80 hover:text-slate-800 dark:hover:text-slate-200'
                 }`}
             >
               {t(`admin.contacts.filter${filter.charAt(0).toUpperCase() + filter.slice(1)}`)}
@@ -134,7 +143,7 @@ export function ContactSubmissionsPanel() {
       ) : submissions.length === 0 ? (
         <div className="flex items-center justify-center py-20">
           <div className="text-center glass-panel dark:bg-slate-900/60 border border-[#0369a1]/10 dark:border-slate-800 p-12 rounded-[24px]">
-            <Mail className="w-12 h-12 text-slate-350 dark:text-slate-600 mx-auto mb-3" />
+            <Mail className="w-12 h-12 text-slate-400 dark:text-slate-600 mx-auto mb-3" />
             <p className="text-slate-500 dark:text-slate-400 font-normal">{t('admin.contacts.noSubmissions')}</p>
           </div>
         </div>

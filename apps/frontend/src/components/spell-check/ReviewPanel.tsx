@@ -262,7 +262,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
         </div>
         <button
           onClick={onClose}
-          className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:text-slate-500 dark:hover:text-slate-350 dark:hover:bg-slate-800 rounded-xl transition-all active:scale-95"
+          className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:text-slate-500 dark:hover:text-slate-300 dark:hover:bg-slate-800 rounded-xl transition-all active:scale-95"
         >
           <X size={16} strokeWidth={2.5} />
         </button>

@@ -102,6 +102,16 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
   const lastKnownIndexRef = useRef(0);
   const autoAdvanceTriggered = useRef(false);
   const prevPendingLengthRef = useRef(pendingIssueIds.length);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (activeIssueId !== null) {
+      const timer = setTimeout(() => {
+        inputRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [activeIssueId]);
 
   // ROOT CAUSE PROTECTION: Track ready state and busy transitions
   const isBusy = isLoading || isScanning || isApplying !== null || isIgnoring;
@@ -337,7 +347,7 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
             <div className="flex flex-col gap-2 relative z-10">
               {suggestions.length > 0 && (
                 <div className="flex flex-col gap-1.5 mb-1">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-300 uppercase tracking-wider px-1">
                     {t('spellCheck.suggestion')}
                   </span>
                   <div className="flex flex-wrap gap-2">
@@ -346,7 +356,7 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
                         key={correction}
                         onClick={() => { setCustomInput(correction); handleCustomApply(); }}
                         disabled={isBusy || isApplying !== null}
-                        className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-350 hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-xl text-xs sm:text-sm font-bold transition-all shadow-sm active:scale-95 uyghur-text relative overflow-hidden"
+                        className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-xl text-xs sm:text-sm font-bold transition-all shadow-sm active:scale-95 uyghur-text relative overflow-hidden"
                         style={{ fontSize: `${Math.max(14, fontSize - 2)}px` }}
                       >
                         {isApplying === correction ? (
@@ -367,8 +377,9 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
                   value={customInput}
                   onChange={(e) => setCustomInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleCustomApply(); }}
+                  ref={inputRef}
                   placeholder={suggestions.length > 0 ? '' : t('spellCheck.typeCorrection')}
-                  className="flex-1 px-4 py-2.5 uyghur-text text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-650 outline-none bg-transparent min-w-0"
+                  className="flex-1 px-4 py-2.5 uyghur-text text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-600 outline-none bg-transparent min-w-0"
                   style={{ fontSize: `${fontSize}px` }}
                   disabled={isBusy}
                 />
@@ -390,7 +401,7 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
                 <button
                   onClick={() => onPrevPage?.()}
                   disabled={isBusy || (globalIssueOffset + stepperIndex + 1) <= 1}
-                  className="flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-350 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-slate-100 disabled:opacity-30 rounded-xl font-bold transition-all active:scale-95 text-xs sm:text-sm uyghur-text whitespace-nowrap"
+                  className="flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-slate-100 disabled:opacity-30 rounded-xl font-bold transition-all active:scale-95 text-xs sm:text-sm uyghur-text whitespace-nowrap"
                 >
                   <ChevronRight size={16} strokeWidth={2.5} />
                   {t('common.previous')}
@@ -410,7 +421,7 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
               <button
                 onClick={() => onNextPage()}
                 disabled={isBusy || (globalIssueOffset + stepperIndex + 1) >= (totalBookIssues ?? issues.length)}
-                className="flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-350 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-slate-100 disabled:opacity-30 rounded-xl font-bold transition-all active:scale-95 text-xs sm:text-sm uyghur-text whitespace-nowrap"
+                className="flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-slate-100 disabled:opacity-30 rounded-xl font-bold transition-all active:scale-95 text-xs sm:text-sm uyghur-text whitespace-nowrap"
               >
                 {t('common.next')}
                 <ChevronLeft size={16} strokeWidth={2.5} />

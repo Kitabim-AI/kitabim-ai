@@ -56,6 +56,7 @@ export function AutoCorrectRulesPanel() {
   const [totalCount, setTotalCount] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const loaderRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -76,6 +77,13 @@ export function AutoCorrectRulesPanel() {
     }, 500);
     return () => clearTimeout(timer);
   }, [searchQuery]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 50);
+    return () => clearTimeout(timer);
+  }, []);
 
   const loadStats = useCallback(async () => {
     try {
@@ -311,6 +319,7 @@ export function AutoCorrectRulesPanel() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            ref={inputRef}
             placeholder={t('common.search')}
             className="w-full pr-12 pl-6 py-2.5 md:py-3 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl text-[#1a1a1a] dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all uyghur-text shadow-sm text-base"
           />

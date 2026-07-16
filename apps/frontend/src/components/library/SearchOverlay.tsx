@@ -157,7 +157,7 @@ export const SearchOverlay: React.FC = () => {
                   <Search size={48} strokeWidth={1} className="text-[#0369a1] dark:text-[#38bdf8] md:w-16 md:h-16" />
                 </div>
                 <div className="space-y-4">
-                  <h3 className="text-xl md:text-2xl font-normal text-slate-600 dark:text-slate-350 uyghur-text">
+                  <h3 className="text-xl md:text-2xl font-normal text-slate-600 dark:text-slate-300 uyghur-text">
                     {t('home.searchPlaceholder')}
                   </h3>
                 </div>

@@ -43,6 +43,14 @@ export const EnglishUyghurPanel: React.FC = () => {
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const loaderRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 50);
+    return () => clearTimeout(timer);
+  }, []);
 
   const fetchStats = async (group: string | null = activeGroup) => {
     try {
@@ -152,6 +160,7 @@ export const EnglishUyghurPanel: React.FC = () => {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            ref={inputRef}
             className="w-full pr-11 md:pr-14 pl-10 md:pl-11 py-2.5 md:py-3 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] text-slate-800 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-500 text-base"
             placeholder={t('admin.englishUyghurDictionary.searchPlaceholder')}
             dir="ltr"

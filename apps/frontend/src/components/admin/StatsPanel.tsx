@@ -48,18 +48,18 @@ const STATUS_STYLES: Record<string, { bg: string; border: string; text: string; 
   'ocr:idle': { bg: 'bg-blue-50 dark:bg-blue-950/20', border: 'border-blue-100 dark:border-blue-900/30', text: 'text-blue-600 dark:text-blue-400', bar: 'bg-blue-400 dark:bg-blue-500' },
   'ocr:running': { bg: 'bg-blue-50 dark:bg-blue-950/20', border: 'border-blue-200 dark:border-blue-900/30', text: 'text-blue-700 dark:text-blue-400', bar: 'bg-blue-500 dark:bg-blue-500' },
   'ocr:in_progress': { bg: 'bg-blue-50 dark:bg-blue-950/20', border: 'border-blue-200 dark:border-blue-900/30', text: 'text-blue-700 dark:text-blue-400', bar: 'bg-blue-500 dark:bg-blue-500' },
-  'ocr:succeeded': { bg: 'bg-blue-50 dark:bg-blue-950/20', border: 'border-blue-200 dark:border-blue-900/30', text: 'text-blue-850 dark:text-blue-400', bar: 'bg-blue-605 dark:bg-blue-600' },
+  'ocr:succeeded': { bg: 'bg-blue-50 dark:bg-blue-950/20', border: 'border-blue-200 dark:border-blue-900/30', text: 'text-blue-800 dark:text-blue-400', bar: 'bg-blue-600 dark:bg-blue-600' },
   'chunking:idle': { bg: 'bg-indigo-50 dark:bg-indigo-950/20', border: 'border-indigo-100 dark:border-indigo-900/30', text: 'text-indigo-600 dark:text-indigo-400', bar: 'bg-indigo-400 dark:bg-indigo-500' },
   'chunking:running': { bg: 'bg-indigo-50 dark:bg-indigo-950/20', border: 'border-indigo-200 dark:border-indigo-900/30', text: 'text-indigo-700 dark:text-indigo-400', bar: 'bg-indigo-500 dark:bg-indigo-500' },
   'chunking:in_progress': { bg: 'bg-indigo-50 dark:bg-indigo-950/20', border: 'border-indigo-200 dark:border-indigo-900/30', text: 'text-indigo-700 dark:text-indigo-400', bar: 'bg-indigo-500 dark:bg-indigo-500' },
-  'chunking:succeeded': { bg: 'bg-indigo-50 dark:bg-indigo-950/20', border: 'border-indigo-200 dark:border-indigo-900/30', text: 'text-indigo-805 dark:text-indigo-400', bar: 'bg-indigo-605 dark:bg-indigo-600' },
-  'embedding:idle': { bg: 'bg-orange-50 dark:bg-orange-950/20', border: 'border-orange-100 dark:border-orange-900/30', text: 'text-orange-600 dark:text-orange-400', bar: 'bg-orange-405 dark:bg-orange-500' },
+  'chunking:succeeded': { bg: 'bg-indigo-50 dark:bg-indigo-950/20', border: 'border-indigo-200 dark:border-indigo-900/30', text: 'text-indigo-800 dark:text-indigo-400', bar: 'bg-indigo-600 dark:bg-indigo-600' },
+  'embedding:idle': { bg: 'bg-orange-50 dark:bg-orange-950/20', border: 'border-orange-100 dark:border-orange-900/30', text: 'text-orange-600 dark:text-orange-400', bar: 'bg-orange-400 dark:bg-orange-500' },
   'embedding:running': { bg: 'bg-orange-50 dark:bg-orange-950/20', border: 'border-orange-200 dark:border-orange-900/30', text: 'text-orange-700 dark:text-orange-400', bar: 'bg-orange-505 dark:bg-orange-500' },
   'embedding:in_progress': { bg: 'bg-orange-50 dark:bg-orange-950/20', border: 'border-orange-200 dark:border-orange-900/30', text: 'text-orange-700 dark:text-orange-400', bar: 'bg-orange-505 dark:bg-orange-500' },
   'embedding:succeeded': { bg: 'bg-emerald-50 dark:bg-emerald-950/20', border: 'border-emerald-200 dark:border-emerald-900/30', text: 'text-emerald-700 dark:text-emerald-400', bar: 'bg-emerald-500 dark:bg-emerald-500' },
-  'spell_check:idle': { bg: 'bg-purple-50 dark:bg-purple-950/20', border: 'border-purple-100 dark:border-purple-900/30', text: 'text-purple-600 dark:text-purple-400', bar: 'bg-purple-405 dark:bg-purple-500' },
-  'spell_check:running': { bg: 'bg-purple-50 dark:bg-purple-950/20', border: 'border-purple-200 dark:border-purple-900/30', text: 'text-purple-700 dark:text-purple-400', bar: 'bg-purple-505 dark:bg-purple-500' },
-  'spell_check:in_progress': { bg: 'bg-purple-55 dark:bg-purple-955/20', border: 'border-purple-205 dark:border-purple-905/30', text: 'text-purple-705 dark:text-purple-405', bar: 'bg-purple-505 dark:bg-purple-500' },
+  'spell_check:idle': { bg: 'bg-purple-50 dark:bg-purple-950/20', border: 'border-purple-100 dark:border-purple-900/30', text: 'text-purple-600 dark:text-purple-400', bar: 'bg-purple-400 dark:bg-purple-500' },
+  'spell_check:running': { bg: 'bg-purple-50 dark:bg-purple-950/20', border: 'border-purple-200 dark:border-purple-900/30', text: 'text-purple-700 dark:text-purple-400', bar: 'bg-purple-500 dark:bg-purple-500' },
+  'spell_check:in_progress': { bg: 'bg-purple-50 dark:bg-purple-950/20', border: 'border-purple-200 dark:border-purple-900/30', text: 'text-purple-700 dark:text-purple-400', bar: 'bg-purple-500 dark:bg-purple-500' },
   'spell_check:succeeded': { bg: 'bg-purple-50 dark:bg-purple-950/20', border: 'border-purple-200 dark:border-purple-900/30', text: 'text-purple-800 dark:text-purple-400', bar: 'bg-purple-605 dark:bg-purple-600' },
   'spell_check:done': { bg: 'bg-purple-50 dark:bg-purple-950/20', border: 'border-purple-200 dark:border-purple-900/30', text: 'text-purple-800 dark:text-purple-400', bar: 'bg-purple-600 dark:bg-purple-600' },
   spell_check: { bg: 'bg-purple-50 dark:bg-purple-950/20', border: 'border-purple-200 dark:border-purple-900/30', text: 'text-purple-700 dark:text-purple-400', bar: 'bg-purple-500 dark:bg-purple-500' },
@@ -126,7 +126,7 @@ function StatCard({ label, count, total, status, showBar }: StatCardProps) {
       </div>
       {showBar && (
         <>
-          <div className="w-full bg-white/60 dark:bg-slate-955/20 rounded-full h-1.5 overflow-hidden">
+          <div className="w-full bg-white/60 dark:bg-slate-950/20 rounded-full h-1.5 overflow-hidden">
             <div className={`${s.bar} h-full rounded-full transition-all duration-700`} style={{ width: `${pct}%` }} />
           </div>
           <div className={`text-xs ${s.text} mt-1 text-right opacity-75`}>{pct.toFixed(1)}%</div>
@@ -200,7 +200,7 @@ export const StatsPanel: React.FC = () => {
     return (
       <div className="space-y-8 animate-fade-in" dir="rtl" lang="ug">
         <div className="glass-panel dark:bg-slate-900/60 border border-[#0369a1]/10 dark:border-slate-800 p-20 flex flex-col items-center justify-center text-center shadow-xl rounded-[24px]">
-          <div className="p-4 bg-red-50 dark:bg-red-955/20 text-red-555 rounded-3xl mb-6"><XCircle size={48} className="text-red-500" /></div>
+          <div className="p-4 bg-red-50 dark:bg-red-950/20 text-red-500 rounded-3xl mb-6"><XCircle size={48} className="text-red-500" /></div>
           <h3 className="text-xl font-normal text-[#1a1a1a] dark:text-slate-100 mb-2">{t('admin.stats.loadError') || 'Failed to load statistics'}</h3>
           <p className="text-[#94a3b8] dark:text-slate-400 font-normal mb-6">{error}</p>
           <button onClick={loadStats} className="flex items-center gap-2 px-6 py-3 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl hover:bg-[#0369a1]/90 dark:hover:bg-[#38bdf8]/90 transition-all shadow-lg">
@@ -272,7 +272,7 @@ export const StatsPanel: React.FC = () => {
             <div className="p-4 bg-slate-50 dark:bg-slate-900/40 border-2 border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{t('admin.stats.totalBooks') || 'Total Books'}</span>
-                <span className="text-2xl font-bold text-slate-800 dark:text-slate-250">{stats.total_books.toLocaleString()}</span>
+                <span className="text-2xl font-bold text-slate-800 dark:text-slate-200">{stats.total_books.toLocaleString()}</span>
               </div>
             </div>
 
@@ -304,14 +304,14 @@ export const StatsPanel: React.FC = () => {
             <div className="p-4 bg-slate-50 dark:bg-slate-900/40 border-2 border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{t('admin.stats.totalPages') || 'Total Pages'}</span>
-                <span className="text-2xl font-bold text-slate-800 dark:text-slate-250">{stats.page_stats.total.toLocaleString()}</span>
+                <span className="text-2xl font-bold text-slate-800 dark:text-slate-200">{stats.page_stats.total.toLocaleString()}</span>
               </div>
             </div>
 
             {/* Indexed */}
             <div className="p-4 bg-green-50 dark:bg-emerald-950/20 border-2 border-green-200 dark:border-emerald-900/30 rounded-xl shadow-sm">
               <div className="flex items-center justify-between mb-2">
-                <span className="flex items-center gap-1.5 text-sm font-medium text-green-700 dark:text-emerald-450">
+                <span className="flex items-center gap-1.5 text-sm font-medium text-green-700 dark:text-emerald-400">
                   <CheckCircle size={14} />
                   {t('admin.stats.indexedPages') || 'Indexed Pages'}
                 </span>
@@ -320,7 +320,7 @@ export const StatsPanel: React.FC = () => {
               <div className="w-full bg-white/60 dark:bg-slate-955/20 rounded-full h-1.5 overflow-hidden">
                 <div className="bg-green-500 dark:bg-emerald-500 h-full rounded-full transition-all duration-700" style={{ width: `${stats.page_stats.percentage_indexed}%` }} />
               </div>
-              <div className="text-xs text-green-700 dark:text-emerald-405 mt-1 text-right opacity-75">{stats.page_stats.percentage_indexed.toFixed(1)}%</div>
+              <div className="text-xs text-green-700 dark:text-emerald-400 mt-1 text-right opacity-75">{stats.page_stats.percentage_indexed.toFixed(1)}%</div>
             </div>
 
             {/* Dynamic page status breakdown (excluding ocr_done/indexed which is above) */}
@@ -353,7 +353,7 @@ export const StatsPanel: React.FC = () => {
             <div className="p-4 bg-slate-50 dark:bg-slate-900/40 border-2 border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{t('admin.stats.totalChunks') || 'Total Chunks'}</span>
-                <span className="text-2xl font-bold text-slate-800 dark:text-slate-250">{stats.chunk_stats.total.toLocaleString()}</span>
+                <span className="text-2xl font-bold text-slate-800 dark:text-slate-200">{stats.chunk_stats.total.toLocaleString()}</span>
               </div>
             </div>
 
@@ -396,7 +396,7 @@ export const StatsPanel: React.FC = () => {
             <div className="p-4 bg-slate-50 dark:bg-slate-900/40 border-2 border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{t('admin.stats.totalQueries') || 'Total Queries'}</span>
-                <span className="text-2xl font-bold text-slate-800 dark:text-slate-250">{(ragQuality?.total_evaluations ?? 0).toLocaleString()}</span>
+                <span className="text-2xl font-bold text-slate-800 dark:text-slate-200">{(ragQuality?.total_evaluations ?? 0).toLocaleString()}</span>
               </div>
             </div>
 

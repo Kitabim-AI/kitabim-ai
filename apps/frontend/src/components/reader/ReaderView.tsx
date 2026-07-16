@@ -684,24 +684,26 @@ export const ReaderView: React.FC = () => {
           )}
           {/* Panel content */}
           <div className="flex-1 min-h-0 p-3 sm:p-4 xl:p-6 overflow-hidden flex flex-col">
-            <ChatInterface
-              type="book"
-              bookId={selectedBook.id}
-              bookTitle={selectedBook.title ?? undefined}
-              bookAuthor={selectedBook.author ?? undefined}
-              chatMessages={chat.chatMessages}
-              chatInput={chat.chatInput}
-              setChatInput={chat.setChatInput}
-              onSendMessage={chat.handleSendMessage}
-              isChatting={chat.isChatting}
-              streamingMessage={chat.streamingMessage}
-              streamingPartialResult={chat.streamingPartialResult}
-              agentSteps={chat.agentSteps}
-              currentPage={currentPage}
-              usageStatus={chat.usageStatus}
-              chatContainerRef={chat.chatContainerRef}
-              submitFeedback={chat.submitFeedback}
-            />
+            {(!isFullscreen && (mobileTab === 'chat' || !isSidebarCollapsed)) && (
+              <ChatInterface
+                type="book"
+                bookId={selectedBook.id}
+                bookTitle={selectedBook.title ?? undefined}
+                bookAuthor={selectedBook.author ?? undefined}
+                chatMessages={chat.chatMessages}
+                chatInput={chat.chatInput}
+                setChatInput={chat.setChatInput}
+                onSendMessage={chat.handleSendMessage}
+                isChatting={chat.isChatting}
+                streamingMessage={chat.streamingMessage}
+                streamingPartialResult={chat.streamingPartialResult}
+                agentSteps={chat.agentSteps}
+                currentPage={currentPage}
+                usageStatus={chat.usageStatus}
+                chatContainerRef={chat.chatContainerRef}
+                submitFeedback={chat.submitFeedback}
+              />
+            )}
           </div>
         </GlassPanel>
       </div>

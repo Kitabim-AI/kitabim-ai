@@ -147,6 +147,14 @@ export const AdminView: React.FC = () => {
   const [menuAnchorRect, setMenuAnchorRect] = useState<DOMRect | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [localSearch, setLocalSearch] = useState(searchQuery);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 50);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Debounce: update global search query after 500ms
   useEffect(() => {
@@ -303,6 +311,7 @@ export const AdminView: React.FC = () => {
             type="text"
             value={localSearch}
             onChange={(e) => setLocalSearch(e.target.value)}
+            ref={inputRef}
             placeholder={t('library.searchPlaceholder')}
             className="w-full pr-12 pl-12 py-2.5 md:py-3 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all uyghur-text text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 shadow-sm text-base"
           />

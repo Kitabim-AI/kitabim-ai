@@ -112,8 +112,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const isGlobal = type === 'global';
   const chatFontSize = fontSize;
   const [selectedReference, setSelectedReference] = React.useState<{ bookId: string; pageNums: number[] } | null>(null);
-  const readerInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const readerOuterRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 50);
+    return () => clearTimeout(timer);
+  }, []);
   const globalOuterRef = useRef<HTMLDivElement>(null);
   const [isCharMenuOpen, setIsCharMenuOpen] = React.useState(false);
   const charMenuRef = useRef<HTMLDivElement>(null);
@@ -319,6 +326,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                       onChange={(e) => setChatInput(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && !isChatting && !usageStatus?.hasReachedLimit && onSendMessage()}
                       onFocus={(e) => { const el = e.target; setTimeout(() => el?.scrollIntoView({ block: 'nearest' }), 300); }}
+                      ref={inputRef}
                       placeholder={usageStatus && usageStatus.limit !== null ? t('chat.inputPlaceholderWithLimit', { usage: usageStatus.usage, limit: usageStatus.limit }) : t('chat.inputPlaceholderBook')}
                       className="w-full bg-transparent border-none py-2 sm:py-3 pl-[52px] sm:pl-[72px] pr-[72px] sm:pr-[88px] font-normal text-[#1a1a1a] dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-500 outline-none uyghur-text"
                       style={{ fontSize: `${fontSize}px` }}
@@ -541,7 +549,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   onChange={(e) => setChatInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && !isChatting && !usageStatus?.hasReachedLimit && onSendMessage()}
                   onFocus={(e) => { const el = e.target; setTimeout(() => el?.scrollIntoView({ block: 'nearest' }), 300); }}
-                  ref={readerInputRef}
+                  ref={inputRef}
                   className="w-full bg-transparent border-none py-2 sm:py-3 pl-[52px] sm:pl-[76px] pr-2 sm:pr-4 font-normal text-[#1a1a1a] dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-500 outline-none uyghur-text"
                   style={{ fontSize: `${chatFontSize}px` }}
                   dir="rtl"

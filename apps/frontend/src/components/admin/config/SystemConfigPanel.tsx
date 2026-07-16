@@ -3,7 +3,7 @@
  */
 
 import { Edit2, Plus, RefreshCw, Save, Settings, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useI18n } from '../../../i18n/I18nContext';
 import { authFetch } from '../../../services/authService';
@@ -65,6 +65,14 @@ export function SystemConfigPanel() {
   const [newKey, setNewKey] = useState('');
   const [newValue, setNewValue] = useState('');
   const [newDescription, setNewDescription] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 50);
+    return () => clearTimeout(timer);
+  }, []);
 
   const loadConfigs = async () => {
     try {
@@ -238,7 +246,7 @@ export function SystemConfigPanel() {
 
       {/* Error Message */}
       {error && (
-        <div className="glass-panel dark:bg-red-955/20 p-4 bg-red-50 border-2 border-red-200 dark:border-red-900/30 rounded-xl">
+        <div className="glass-panel dark:bg-red-950/20 p-4 bg-red-50 border-2 border-red-200 dark:border-red-900/30 rounded-xl">
           <p className="text-red-650 dark:text-red-400 font-normal">{error}</p>
         </div>
       )}
@@ -257,14 +265,14 @@ export function SystemConfigPanel() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8 mb-4 md:mb-6">
             {/* Text Model Box */}
-            <div className={`glass-panel p-6 md:p-8 rounded-[32px] border-2 transition-all hover:scale-[1.01] flex flex-col justify-between ${cbStatus.text_breaker.state === 'closed' ? 'bg-green-50/40 dark:bg-green-955/10 border-green-200 dark:border-green-900/30' : cbStatus.text_breaker.state === 'open' ? 'bg-red-50/40 dark:bg-red-955/10 border-red-200 dark:border-red-900/30' : 'bg-yellow-50/40 dark:bg-yellow-955/10 border-yellow-200 dark:border-yellow-900/30'}`}>
+            <div className={`glass-panel p-6 md:p-8 rounded-[32px] border-2 transition-all hover:scale-[1.01] flex flex-col justify-between ${cbStatus.text_breaker.state === 'closed' ? 'bg-green-50/40 dark:bg-green-950/10 border-green-200 dark:border-green-900/30' : cbStatus.text_breaker.state === 'open' ? 'bg-red-50/40 dark:bg-red-950/10 border-red-200 dark:border-red-900/30' : 'bg-yellow-50/40 dark:bg-yellow-950/10 border-yellow-200 dark:border-yellow-900/30'}`}>
               <div>
                 <div className="text-xs md:text-sm text-slate-500 dark:text-slate-400 mb-2 uppercase tracking-wider">{t('admin.systemConfig.circuitBreaker.textLlm')}</div>
                 <div className={`text-xl md:text-2xl font-normal ${cbStatus.text_breaker.state === 'closed' ? 'text-green-600 dark:text-green-400' : cbStatus.text_breaker.state === 'open' ? 'text-red-600 dark:text-red-400' : 'text-yellow-600 dark:text-yellow-400'}`}>
                   {cbStatus.text_breaker.state === 'closed' ? `✓ ${t('admin.systemConfig.circuitBreaker.states.closed')}` : cbStatus.text_breaker.state === 'open' ? `✗ ${t('admin.systemConfig.circuitBreaker.states.open')}` : `⚠ ${t('admin.systemConfig.circuitBreaker.states.half_open')}`}
                 </div>
                 <div className="text-xs md:text-sm text-slate-400 dark:text-slate-500 mt-2">
-                  {t('admin.systemConfig.circuitBreaker.failures')}: <span className="text-slate-700 dark:text-slate-350 font-normal">{cbStatus.text_breaker.failure_count}/{cbStatus.text_breaker.failure_threshold}</span>
+                  {t('admin.systemConfig.circuitBreaker.failures')}: <span className="text-slate-700 dark:text-slate-300 font-normal">{cbStatus.text_breaker.failure_count}/{cbStatus.text_breaker.failure_threshold}</span>
                 </div>
               </div>
               
@@ -273,7 +281,7 @@ export function SystemConfigPanel() {
                   <button 
                     onClick={() => resetCircuitBreaker('llm_generate')}
                     disabled={cbStatus.text_breaker.state === 'closed' || cbLoading}
-                    className="flex items-center justify-center gap-2 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all font-normal text-sm shadow-lg shadow-green-600/10 disabled:opacity-30"
+                    className="flex items-center justify-center gap-2 py-3 bg-green-600 dark:bg-green-950/40 text-white dark:text-green-400 dark:border dark:border-green-900/30 rounded-xl hover:bg-green-700 dark:hover:bg-green-900/30 transition-all font-normal text-sm shadow-lg shadow-green-600/10 dark:shadow-none disabled:opacity-30"
                   >
                     <RefreshCw size={14} />
                     {t('admin.systemConfig.circuitBreaker.reset')}
@@ -281,7 +289,7 @@ export function SystemConfigPanel() {
                   <button 
                     onClick={() => forceOpenCircuitBreaker('llm_generate')}
                     disabled={cbStatus.text_breaker.state === 'open' || cbLoading}
-                    className="flex items-center justify-center gap-2 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all font-normal text-sm shadow-lg shadow-red-600/10 disabled:opacity-30"
+                    className="flex items-center justify-center gap-2 py-3 bg-red-600 dark:bg-red-950/40 text-white dark:text-red-400 dark:border dark:border-red-900/30 rounded-xl hover:bg-red-700 dark:hover:bg-red-900/30 transition-all font-normal text-sm shadow-lg shadow-red-600/10 dark:shadow-none disabled:opacity-30"
                   >
                     <X size={14} />
                     {t('admin.systemConfig.circuitBreaker.forceOpen')} 
@@ -291,14 +299,14 @@ export function SystemConfigPanel() {
             </div>
 
             {/* Vectorizer Box */}
-            <div className={`glass-panel p-6 md:p-8 rounded-[32px] border-2 transition-all hover:scale-[1.01] flex flex-col justify-between ${cbStatus.embed_breaker.state === 'closed' ? 'bg-green-50/40 dark:bg-green-955/10 border-green-200 dark:border-green-900/30' : cbStatus.embed_breaker.state === 'open' ? 'bg-red-50/40 dark:bg-red-955/10 border-red-200 dark:border-red-900/30' : 'bg-yellow-50/40 dark:bg-yellow-955/10 border-yellow-200 dark:border-yellow-900/30'}`}>
+            <div className={`glass-panel p-6 md:p-8 rounded-[32px] border-2 transition-all hover:scale-[1.01] flex flex-col justify-between ${cbStatus.embed_breaker.state === 'closed' ? 'bg-green-50/40 dark:bg-green-950/10 border-green-200 dark:border-green-900/30' : cbStatus.embed_breaker.state === 'open' ? 'bg-red-50/40 dark:bg-red-950/10 border-red-200 dark:border-red-900/30' : 'bg-yellow-50/40 dark:bg-yellow-950/10 border-yellow-200 dark:border-yellow-900/30'}`}>
               <div>
                 <div className="text-xs md:text-sm text-slate-500 dark:text-slate-400 mb-2 uppercase tracking-wider">{t('admin.systemConfig.circuitBreaker.embeddings')}</div>
                 <div className={`text-xl md:text-2xl font-normal ${cbStatus.embed_breaker.state === 'closed' ? 'text-green-600 dark:text-green-400' : cbStatus.embed_breaker.state === 'open' ? 'text-red-600 dark:text-red-400' : 'text-yellow-600 dark:text-yellow-400'}`}>
                   {cbStatus.embed_breaker.state === 'closed' ? `✓ ${t('admin.systemConfig.circuitBreaker.states.closed')}` : cbStatus.embed_breaker.state === 'open' ? `✗ ${t('admin.systemConfig.circuitBreaker.states.open')}` : `⚠ ${t('admin.systemConfig.circuitBreaker.states.half_open')}`}
                 </div>
                 <div className="text-xs md:text-sm text-slate-400 dark:text-slate-500 mt-2">
-                  {t('admin.systemConfig.circuitBreaker.failures')}: <span className="text-slate-700 dark:text-slate-350 font-normal">{cbStatus.embed_breaker.failure_count}/{cbStatus.embed_breaker.failure_threshold}</span>
+                  {t('admin.systemConfig.circuitBreaker.failures')}: <span className="text-slate-700 dark:text-slate-300 font-normal">{cbStatus.embed_breaker.failure_count}/{cbStatus.embed_breaker.failure_threshold}</span>
                 </div>
               </div>
 
@@ -307,7 +315,7 @@ export function SystemConfigPanel() {
                   <button 
                     onClick={() => resetCircuitBreaker('llm_embed')}
                     disabled={cbStatus.embed_breaker.state === 'closed' || cbLoading}
-                    className="flex items-center justify-center gap-2 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all font-normal text-sm shadow-lg shadow-green-600/10 disabled:opacity-30"
+                    className="flex items-center justify-center gap-2 py-3 bg-green-600 dark:bg-green-950/40 text-white dark:text-green-400 dark:border dark:border-green-900/30 rounded-xl hover:bg-green-700 dark:hover:bg-green-900/30 transition-all font-normal text-sm shadow-lg shadow-green-600/10 dark:shadow-none disabled:opacity-30"
                   >
                     <RefreshCw size={14} />
                     {t('admin.systemConfig.circuitBreaker.reset')}
@@ -315,7 +323,7 @@ export function SystemConfigPanel() {
                   <button 
                     onClick={() => forceOpenCircuitBreaker('llm_embed')}
                     disabled={cbStatus.embed_breaker.state === 'open' || cbLoading}
-                    className="flex items-center justify-center gap-2 py-3 bg-red-600 text-white rounded-xl hover:bg-red-705 transition-all font-normal text-sm shadow-lg shadow-red-600/10 disabled:opacity-30"
+                    className="flex items-center justify-center gap-2 py-3 bg-red-600 dark:bg-red-950/40 text-white dark:text-red-400 dark:border dark:border-red-900/30 rounded-xl hover:bg-red-700 dark:hover:bg-red-900/30 transition-all font-normal text-sm shadow-lg shadow-red-600/10 dark:shadow-none disabled:opacity-30"
                   >
                     <X size={14} />
                     {t('admin.systemConfig.circuitBreaker.forceOpen')} 
@@ -325,14 +333,14 @@ export function SystemConfigPanel() {
             </div>
 
             {/* OCR Model Box */}
-            <div className={`glass-panel p-6 md:p-8 rounded-[32px] border-2 transition-all hover:scale-[1.01] flex flex-col justify-between ${cbStatus.ocr_breaker.state === 'closed' ? 'bg-green-50/40 dark:bg-green-955/10 border-green-200 dark:border-green-900/30' : cbStatus.ocr_breaker.state === 'open' ? 'bg-red-50/40 dark:bg-red-955/10 border-red-200 dark:border-red-900/30' : 'bg-yellow-50/40 dark:bg-yellow-955/10 border-yellow-200 dark:border-yellow-900/30'}`}>
+            <div className={`glass-panel p-6 md:p-8 rounded-[32px] border-2 transition-all hover:scale-[1.01] flex flex-col justify-between ${cbStatus.ocr_breaker.state === 'closed' ? 'bg-green-50/40 dark:bg-green-950/10 border-green-200 dark:border-green-900/30' : cbStatus.ocr_breaker.state === 'open' ? 'bg-red-50/40 dark:bg-red-950/10 border-red-200 dark:border-red-900/30' : 'bg-yellow-50/40 dark:bg-yellow-950/10 border-yellow-200 dark:border-yellow-900/30'}`}>
               <div>
                 <div className="text-xs md:text-sm text-slate-500 dark:text-slate-400 mb-2 uppercase tracking-wider">{t('admin.systemConfig.circuitBreaker.ocrLlm')}</div>
                 <div className={`text-xl md:text-2xl font-normal ${cbStatus.ocr_breaker.state === 'closed' ? 'text-green-600 dark:text-green-400' : cbStatus.ocr_breaker.state === 'open' ? 'text-red-600 dark:text-red-400' : 'text-yellow-600 dark:text-yellow-400'}`}>
                   {cbStatus.ocr_breaker.state === 'closed' ? `✓ ${t('admin.systemConfig.circuitBreaker.states.closed')}` : cbStatus.ocr_breaker.state === 'open' ? `✗ ${t('admin.systemConfig.circuitBreaker.states.open')}` : `⚠ ${t('admin.systemConfig.circuitBreaker.states.half_open')}`}
                 </div>
-                <div className="text-xs md:text-sm text-slate-400 dark:text-slate-505 mt-2">
-                  {t('admin.systemConfig.circuitBreaker.failures')}: <span className="text-slate-700 dark:text-slate-350 font-normal">{cbStatus.ocr_breaker.failure_count}/{cbStatus.ocr_breaker.failure_threshold}</span>
+                <div className="text-xs md:text-sm text-slate-400 dark:text-slate-500 mt-2">
+                  {t('admin.systemConfig.circuitBreaker.failures')}: <span className="text-slate-700 dark:text-slate-300 font-normal">{cbStatus.ocr_breaker.failure_count}/{cbStatus.ocr_breaker.failure_threshold}</span>
                 </div>
               </div>
 
@@ -341,7 +349,7 @@ export function SystemConfigPanel() {
                   <button 
                     onClick={() => resetCircuitBreaker('llm_ocr')}
                     disabled={cbStatus.ocr_breaker.state === 'closed' || cbLoading}
-                    className="flex items-center justify-center gap-2 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all font-normal text-sm shadow-lg shadow-green-600/10 disabled:opacity-30"
+                    className="flex items-center justify-center gap-2 py-3 bg-green-600 dark:bg-green-950/20 dark:disabled:bg-green-950/10 text-white dark:text-green-400 dark:border dark:border-green-900/30 rounded-xl hover:bg-green-700 dark:hover:bg-green-900/30 transition-all font-normal text-sm shadow-lg shadow-green-600/10 dark:shadow-none disabled:opacity-30"
                   >
                     <RefreshCw size={14} />
                     {t('admin.systemConfig.circuitBreaker.reset')}
@@ -349,7 +357,7 @@ export function SystemConfigPanel() {
                   <button 
                     onClick={() => forceOpenCircuitBreaker('llm_ocr')}
                     disabled={cbStatus.ocr_breaker.state === 'open' || cbLoading}
-                    className="flex items-center justify-center gap-2 py-3 bg-red-600 text-white rounded-xl hover:bg-red-755 transition-all font-normal text-sm shadow-lg shadow-red-600/10 disabled:opacity-30"
+                    className="flex items-center justify-center gap-2 py-3 bg-red-600 dark:bg-red-950/40 text-white dark:text-red-400 dark:border dark:border-red-900/30 rounded-xl hover:bg-red-700 dark:hover:bg-red-900/30 transition-all font-normal text-sm shadow-lg shadow-red-600/10 dark:shadow-none disabled:opacity-30"
                   >
                     <X size={14} />
                     {t('admin.systemConfig.circuitBreaker.forceOpen')} 
@@ -490,6 +498,7 @@ export function SystemConfigPanel() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              ref={inputRef}
               placeholder={t('common.search')}
               className="w-full pr-12 pl-6 py-2.5 md:py-3 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl text-[#1a1a1a] dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all shadow-sm text-base"
               dir="ltr"
@@ -623,7 +632,7 @@ export function SystemConfigPanel() {
           <p className="text-slate-500 dark:text-slate-400 font-normal mb-6">{t('admin.systemConfig.emptyDescription')}</p>
           <button
             onClick={() => setIsCreating(true)}
-            className="flex items-center gap-2 px-6 py-3 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-955 rounded-xl hover:bg-[#0369a1]/90 dark:hover:bg-[#38bdf8]/90 transition-all shadow-lg shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10"
+            className="flex items-center gap-2 px-6 py-3 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl hover:bg-[#0369a1]/90 dark:hover:bg-[#38bdf8]/90 transition-all shadow-lg shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10"
           >
             <Plus size={16} />
             {t('admin.systemConfig.add')}

@@ -48,7 +48,7 @@ const JoinUsView: React.FC = () => {
   const interestColors: Record<string, { bg: string; text: string }> = {
     editor: { bg: 'bg-purple-50 dark:bg-purple-950/20', text: 'text-purple-600 dark:text-purple-400' },
     developer: { bg: 'bg-sky-50 dark:bg-sky-950/20', text: 'text-[#0369a1] dark:text-[#38bdf8]' },
-    other: { bg: 'bg-slate-50 dark:bg-slate-900', text: 'text-slate-600 dark:text-slate-350' },
+    other: { bg: 'bg-slate-50 dark:bg-slate-900', text: 'text-slate-600 dark:text-slate-300' },
   };
 
   const handleCloseModal = () => {
@@ -194,7 +194,7 @@ const JoinUsView: React.FC = () => {
                 <p className="uyghur-text text-slate-600 dark:text-slate-200 leading-relaxed text-base sm:text-lg text-right w-full font-bold">
                   {t('joinUs.howToHelp.editor.benefit1')}
                 </p>
-                <ul className="uyghur-text w-full text-right space-y-2 mb-4 opacity-80 text-sm sm:text-base text-slate-600 dark:text-slate-350">
+                <ul className="uyghur-text w-full text-right space-y-2 mb-4 opacity-80 text-sm sm:text-base text-slate-600 dark:text-slate-300">
                   <li>• {t('joinUs.howToHelp.editor.benefit2')}</li>
                   <li>• {t('joinUs.howToHelp.editor.benefit3')}</li>
                 </ul>
@@ -221,7 +221,7 @@ const JoinUsView: React.FC = () => {
                 <p className="uyghur-text text-slate-600 dark:text-slate-200 leading-relaxed text-base sm:text-lg text-right w-full font-bold">
                   {t('joinUs.howToHelp.developer.benefit1')}
                 </p>
-                <ul className="uyghur-text w-full text-right space-y-2 mb-4 opacity-80 text-sm sm:text-base text-slate-600 dark:text-slate-350">
+                <ul className="uyghur-text w-full text-right space-y-2 mb-4 opacity-80 text-sm sm:text-base text-slate-600 dark:text-slate-300">
                   <li>• {t('joinUs.howToHelp.developer.benefit2')}</li>
                   <li>• {t('joinUs.howToHelp.developer.benefit3')}</li>
                 </ul>
@@ -248,7 +248,7 @@ const JoinUsView: React.FC = () => {
                 <p className="uyghur-text text-slate-600 dark:text-slate-200 leading-relaxed text-base sm:text-lg text-right w-full font-bold">
                   {t('joinUs.howToHelp.donate.benefit1')}
                 </p>
-                <ul className="uyghur-text w-full text-right space-y-2 mb-4 opacity-80 text-sm sm:text-base text-slate-600 dark:text-slate-350">
+                <ul className="uyghur-text w-full text-right space-y-2 mb-4 opacity-80 text-sm sm:text-base text-slate-600 dark:text-slate-300">
                   <li>• {t('joinUs.howToHelp.donate.benefit2')}</li>
                   <li>• {t('joinUs.howToHelp.donate.benefit3')}</li>
                 </ul>
