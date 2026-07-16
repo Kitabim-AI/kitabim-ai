@@ -386,7 +386,7 @@ export const SpellCheckView: React.FC = () => {
           <button
             onClick={() => fetchRandomBook(true)}
             disabled={isLoadingBook}
-            className="flex items-center gap-2 px-5 py-2.5 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-2xl text-sm font-normal transition-all hover:bg-[#0284c7] dark:hover:bg-[#0284c7] active:scale-95 disabled:opacity-50 shadow-lg shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10 whitespace-nowrap shrink-0"
+            className="flex items-center gap-2 px-5 py-2.5 bg-white dark:bg-slate-800 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] rounded-2xl text-sm font-normal transition-all hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 active:scale-95 disabled:opacity-50 whitespace-nowrap shrink-0"
           >
             <RefreshCw size={16} strokeWidth={2.5} className={isLoadingBook ? 'animate-spin' : ''} />
             {t('spellCheck.nextBook')}
