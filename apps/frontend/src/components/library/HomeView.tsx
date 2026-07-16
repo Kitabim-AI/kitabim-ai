@@ -286,12 +286,12 @@ export const HomeView: React.FC = () => {
             {t('app.tagline')}
           </div>
           <h1
-            className={`font-black text-[#1a1a1a] leading-none transition-all duration-1000 mt-5 ${hasSearch
+            className={`font-black text-[#1a1a1a] dark:text-slate-100 leading-none transition-all duration-1000 mt-5 ${hasSearch
               ? 'text-2xl sm:text-3xl md:text-4xl'
               : 'text-4xl sm:text-5xl md:text-6xl lg:text-7xl'
               }`}
           >
-            Kitabim<span className="text-[#0369a1]">.AI</span>
+            Kitabim<span className="text-[#0369a1] dark:text-[#38bdf8]">.AI</span>
           </h1>
         </div>
 
@@ -308,12 +308,12 @@ export const HomeView: React.FC = () => {
         <div className="relative group">
           <button
             onClick={handleSearchSubmit}
-            className="absolute inset-y-0 right-0 pr-4 sm:pr-6 flex items-center text-[#94a3b8] group-focus-within:text-[#0369a1] transition-colors z-10"
+            className="absolute inset-y-0 right-0 pr-4 sm:pr-6 flex items-center text-[#94a3b8] group-focus-within:text-[#0369a1] dark:group-focus-within:text-[#38bdf8] transition-colors z-10"
           >
             {isInitialLoading && localSearch ? (
               <RefreshCw size={20} className="sm:w-[22px] sm:h-[22px] animate-spin" strokeWidth={3} />
             ) : chatHint ? (
-              <Bot size={20} className="sm:w-[22px] sm:h-[22px] text-[#0369a1]" strokeWidth={2.5} />
+              <Bot size={20} className="sm:w-[22px] sm:h-[22px] text-[#0369a1] dark:text-[#38bdf8]" strokeWidth={2.5} />
             ) : (
               <Search size={20} className="sm:w-[22px] sm:h-[22px]" strokeWidth={3} />
             )}
@@ -321,7 +321,7 @@ export const HomeView: React.FC = () => {
           <input
             ref={searchInputRef}
             type="text"
-            className={`w-full pr-12 md:pr-16 py-4 sm:py-5 bg-white/60 backdrop-blur-2xl border-2 border-[#0369a1]/10 rounded-[32px] text-base sm:text-lg font-normal text-[#1a1a1a] placeholder:text-slate-300 outline-none focus:border-[#0369a1] focus:ring-[12px] focus:ring-[#0369a1]/5 transition-all shadow-xl uyghur-text md:pl-28 ${
+            className={`w-full pr-12 md:pr-16 py-4 sm:py-5 bg-white/60 dark:bg-slate-900/60 backdrop-blur-2xl border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-[32px] text-base sm:text-lg font-normal text-[#1a1a1a] dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-500 outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] focus:ring-[12px] focus:ring-[#0369a1]/5 dark:focus:ring-[#38bdf8]/5 transition-all shadow-xl uyghur-text md:pl-28 ${
               localSearch ? 'pl-14' : 'pl-6'
             }`}
             placeholder={t('home.searchOrChatPlaceholder')}

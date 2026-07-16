@@ -419,20 +419,20 @@ body.graph-fullscreen .navbar-wrapper {
   color-scheme: dark;
 }
 
-body.dark {
+.dark body {
   background: linear-gradient(135deg, #0b0f19 0%, #020617 50%, #0d1226 100%);
   background-size: 200% 200%;
   color: #f1f5f9;
 }
 
-body.dark::before {
+.dark body::before {
   background-image:
     radial-gradient(circle at 20% 30%, rgba(56, 189, 248, 0.12) 0%, transparent 40%),
     radial-gradient(circle at 80% 70%, rgba(156, 39, 176, 0.1) 0%, transparent 40%),
     radial-gradient(circle at 50% 50%, rgba(56, 189, 248, 0.06) 0%, transparent 50%);
 }
 
-body.dark::after {
+.dark body::after {
   background-image:
     repeating-linear-gradient(90deg, transparent, transparent 50px, rgba(56, 189, 248, 0.03) 50px, rgba(56, 189, 248, 0.03) 51px),
     repeating-linear-gradient(0deg, transparent, transparent 50px, rgba(156, 39, 176, 0.02) 50px, rgba(156, 39, 176, 0.02) 51px);
