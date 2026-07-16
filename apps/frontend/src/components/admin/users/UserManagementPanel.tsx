@@ -36,14 +36,14 @@ const UserRow: React.FC<UserRowProps> = ({
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
 
   const roleColors: Record<string, { bg: string; text: string; label: string }> = {
-    admin: { bg: 'bg-red-50', text: 'text-red-600', label: t('admin.users.admin') },
-    editor: { bg: 'bg-blue-50', text: 'text-blue-600', label: t('admin.users.editor') },
-    reader: { bg: 'bg-emerald-50', text: 'text-emerald-600', label: t('admin.users.reader') },
+    admin: { bg: 'bg-red-50 dark:bg-red-950/20', text: 'text-red-600 dark:text-red-400', label: t('admin.users.admin') },
+    editor: { bg: 'bg-blue-50 dark:bg-blue-950/20', text: 'text-blue-600 dark:text-blue-400', label: t('admin.users.editor') },
+    reader: { bg: 'bg-emerald-50 dark:bg-emerald-950/20', text: 'text-emerald-600 dark:text-emerald-400', label: t('admin.users.reader') },
   };
 
   const statusColors: Record<string, { bg: string; text: string; label: string }> = {
-    active: { bg: 'bg-emerald-50', text: 'text-emerald-600', label: t('admin.users.active') },
-    inactive: { bg: 'bg-red-50', text: 'text-red-600', label: t('admin.users.suspended') },
+    active: { bg: 'bg-emerald-50 dark:bg-emerald-950/20', text: 'text-emerald-600 dark:text-emerald-400', label: t('admin.users.active') },
+    inactive: { bg: 'bg-red-50 dark:bg-red-950/20', text: 'text-red-600 dark:text-red-400', label: t('admin.users.suspended') },
   };
 
   const formatDate = (dateString?: string, includeTime: boolean = false) => {
@@ -77,7 +77,7 @@ const UserRow: React.FC<UserRowProps> = ({
                 {isEditing ? (
                   <button
                     onClick={() => setShowRoleDropdown(!showRoleDropdown)}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 ${roleColors[currentRole]?.bg || 'bg-slate-50'} ${roleColors[currentRole]?.text || 'text-slate-500'} rounded-lg text-[10px] font-normal uppercase border-2 border-[#0369a1] transition-all active:scale-95 shadow-sm`}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 ${roleColors[currentRole]?.bg || 'bg-slate-50'} ${roleColors[currentRole]?.text || 'text-slate-500'} rounded-lg text-[10px] font-normal uppercase border-2 border-[#0369a1] dark:border-[#38bdf8] transition-all active:scale-95 shadow-sm`}
                   >
                     {roleColors[currentRole]?.label || currentRole}
                     <svg width="8" height="8" viewBox="0 0 12 12" fill="currentColor">
@@ -91,7 +91,7 @@ const UserRow: React.FC<UserRowProps> = ({
                 )}
 
                 {isEditing && showRoleDropdown && (
-                  <div className="absolute top-full right-0 mt-2 w-32 glass-panel shadow-2xl z-[100] overflow-hidden py-1.5 border border-[#0369a1]/10 rounded-xl" dir="rtl">
+                  <div className="absolute top-full right-0 mt-2 w-32 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl glass-panel shadow-2xl z-[100] overflow-hidden py-1.5 border border-[#0369a1]/10 dark:border-[#38bdf8]/15 rounded-xl" dir="rtl">
                     {(['admin', 'editor', 'reader'] as const).map((role) => (
                       <button
                         key={role}
@@ -99,7 +99,7 @@ const UserRow: React.FC<UserRowProps> = ({
                           setShowRoleDropdown(false);
                           onRoleChange(role);
                         }}
-                        className={`w-full flex items-center justify-between px-4 py-2.5 text-[12px] font-normal uppercase transition-all ${role === currentRole ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
+                        className={`w-full flex items-center justify-between px-4 py-2.5 text-[12px] font-normal uppercase transition-all ${role === currentRole ? 'bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8]' : 'text-[#1a1a1a] dark:text-slate-200 hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/10'}`}
                       >
                         {roleColors[role].label}
                       </button>
@@ -112,7 +112,7 @@ const UserRow: React.FC<UserRowProps> = ({
                 {isEditing ? (
                   <button
                     onClick={() => setShowStatusDropdown(!showStatusDropdown)}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 ${statusColors[currentStatus ? 'active' : 'inactive']?.bg || 'bg-slate-50'} ${statusColors[currentStatus ? 'active' : 'inactive']?.text || 'text-slate-500'} rounded-lg text-[10px] font-normal uppercase border-2 border-[#0369a1] transition-all active:scale-95 shadow-sm`}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 ${statusColors[currentStatus ? 'active' : 'inactive']?.bg || 'bg-slate-50'} ${statusColors[currentStatus ? 'active' : 'inactive']?.text || 'text-slate-500'} rounded-lg text-[10px] font-normal uppercase border-2 border-[#0369a1] dark:border-[#38bdf8] transition-all active:scale-95 shadow-sm`}
                   >
                     {statusColors[currentStatus ? 'active' : 'inactive']?.label}
                     <svg width="8" height="8" viewBox="0 0 12 12" fill="currentColor">
@@ -126,7 +126,7 @@ const UserRow: React.FC<UserRowProps> = ({
                 )}
 
                 {isEditing && showStatusDropdown && (
-                  <div className="absolute top-full right-0 mt-2 w-32 glass-panel shadow-2xl z-[100] overflow-hidden py-1.5 border border-[#0369a1]/10 rounded-xl" dir="rtl">
+                  <div className="absolute top-full right-0 mt-2 w-32 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl glass-panel shadow-2xl z-[100] overflow-hidden py-1.5 border border-[#0369a1]/10 dark:border-[#38bdf8]/15 rounded-xl" dir="rtl">
                     {([
                       { value: true, key: 'active' },
                       { value: false, key: 'inactive' }
@@ -137,7 +137,7 @@ const UserRow: React.FC<UserRowProps> = ({
                           setShowStatusDropdown(false);
                           onStatusChange(status.value);
                         }}
-                        className={`w-full flex items-center justify-between px-4 py-2.5 text-[12px] font-normal uppercase transition-all ${status.value === currentStatus ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
+                        className={`w-full flex items-center justify-between px-4 py-2.5 text-[12px] font-normal uppercase transition-all ${status.value === currentStatus ? 'bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8]' : 'text-[#1a1a1a] dark:text-slate-200 hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/10'}`}
                       >
                         {statusColors[status.key].label}
                       </button>
@@ -155,7 +155,7 @@ const UserRow: React.FC<UserRowProps> = ({
           <div className="relative">
             <button
               onClick={() => setShowRoleDropdown(!showRoleDropdown)}
-              className={`inline-flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 ${roleColors[currentRole]?.bg || 'bg-slate-50'} ${roleColors[currentRole]?.text || 'text-slate-500'} rounded-lg text-[11px] md:text-[14px] font-normal uppercase transition-all active:scale-95 border-2 border-[#0369a1]`}
+              className={`inline-flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 ${roleColors[currentRole]?.bg || 'bg-slate-50'} ${roleColors[currentRole]?.text || 'text-slate-500'} rounded-lg text-[11px] md:text-[14px] font-normal uppercase transition-all active:scale-95 border-2 border-[#0369a1] dark:border-[#38bdf8]`}
             >
               {roleColors[currentRole]?.label || currentRole}
               <svg width="8" height="8" viewBox="0 0 12 12" fill="currentColor" className="md:w-[10px] md:h-[10px]">
@@ -164,7 +164,7 @@ const UserRow: React.FC<UserRowProps> = ({
             </button>
 
             {showRoleDropdown && (
-              <div className="absolute top-full left-0 mt-2 w-48 glass-panel shadow-2xl z-[100] overflow-hidden py-2" style={{ borderRadius: '16px' }}>
+              <div className="absolute top-full left-0 mt-2 w-48 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl glass-panel shadow-2xl z-[100] overflow-hidden py-2 border border-[#0369a1]/10 dark:border-[#38bdf8]/15" style={{ borderRadius: '16px' }}>
                 {(['admin', 'editor', 'reader'] as const).map((role) => (
                   <button
                     key={role}
@@ -172,7 +172,7 @@ const UserRow: React.FC<UserRowProps> = ({
                       setShowRoleDropdown(false);
                       onRoleChange(role);
                     }}
-                    className={`w-full flex items-center px-5 py-3 text-[14px] font-normal uppercase transition-all ${role === currentRole ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
+                    className={`w-full flex items-center px-5 py-3 text-[14px] font-normal uppercase transition-all ${role === currentRole ? 'bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8]' : 'text-[#1a1a1a] dark:text-slate-200 hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/10'}`}
                   >
                     {roleColors[role].label}
                   </button>
@@ -192,7 +192,7 @@ const UserRow: React.FC<UserRowProps> = ({
           <div className="relative">
             <button
               onClick={() => setShowStatusDropdown(!showStatusDropdown)}
-              className={`inline-flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 ${statusColors[currentStatus ? 'active' : 'inactive']?.bg || 'bg-slate-50'} ${statusColors[currentStatus ? 'active' : 'inactive']?.text || 'text-slate-500'} rounded-lg text-[11px] md:text-[14px] font-normal uppercase transition-all active:scale-95 border-2 border-[#0369a1]`}
+              className={`inline-flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 ${statusColors[currentStatus ? 'active' : 'inactive']?.bg || 'bg-slate-50'} ${statusColors[currentStatus ? 'active' : 'inactive']?.text || 'text-slate-500'} rounded-lg text-[11px] md:text-[14px] font-normal uppercase transition-all active:scale-95 border-2 border-[#0369a1] dark:border-[#38bdf8]`}
             >
               {statusColors[currentStatus ? 'active' : 'inactive']?.label || (currentStatus ? t('admin.users.active') : t('admin.users.suspended'))}
               <svg width="8" height="8" viewBox="0 0 12 12" fill="currentColor" className="md:w-[10px] md:h-[10px]">
@@ -201,7 +201,7 @@ const UserRow: React.FC<UserRowProps> = ({
             </button>
 
             {showStatusDropdown && (
-              <div className="absolute top-full left-0 mt-2 w-48 glass-panel shadow-2xl z-[100] overflow-hidden py-2" style={{ borderRadius: '16px' }}>
+              <div className="absolute top-full left-0 mt-2 w-48 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl glass-panel shadow-2xl z-[100] overflow-hidden py-2 border border-[#0369a1]/10 dark:border-[#38bdf8]/15" style={{ borderRadius: '16px' }}>
                 {([
                   { value: true, key: 'active' },
                   { value: false, key: 'inactive' }
@@ -212,7 +212,7 @@ const UserRow: React.FC<UserRowProps> = ({
                       setShowStatusDropdown(false);
                       onStatusChange(status.value);
                     }}
-                    className={`w-full flex items-center px-5 py-3 text-[14px] font-normal uppercase transition-all ${status.value === currentStatus ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
+                    className={`w-full flex items-center px-5 py-3 text-[14px] font-normal uppercase transition-all ${status.value === currentStatus ? 'bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8]' : 'text-[#1a1a1a] dark:text-slate-200 hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/10'}`}
                   >
                     {statusColors[status.key].label}
                   </button>
@@ -250,7 +250,7 @@ const UserRow: React.FC<UserRowProps> = ({
               <button
                 onClick={onCancel}
                 disabled={isSaving}
-                className="p-1.5 md:p-2 bg-slate-100 text-slate-400 rounded-xl hover:bg-slate-200 active:scale-90 transition-all disabled:opacity-50"
+                className="p-1.5 md:p-2 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-90 transition-all disabled:opacity-50"
                 title={t('common.cancel')}
               >
                 <X size={18} className="md:w-5 md:h-5" />
@@ -261,8 +261,8 @@ const UserRow: React.FC<UserRowProps> = ({
               onClick={onEdit}
               disabled={isOwnRecord}
               className={`p-1.5 md:p-2 rounded-xl transition-all ${isOwnRecord
-                ? 'bg-slate-100 text-slate-300 cursor-not-allowed'
-                : 'bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white'
+                ? 'bg-slate-100 dark:bg-slate-800 text-slate-300 dark:text-slate-650 cursor-not-allowed'
+                : 'bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950'
                 }`}
               title={isOwnRecord ? t('admin.users.cannotEditSelf') : t('common.edit')}
             >
