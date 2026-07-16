@@ -316,7 +316,7 @@ const JoinUsView: React.FC = () => {
                   setContactForm({ ...contactForm, interest: 'other' });
                   setShowContactModal(true);
                 }}
-                className="px-6 sm:px-10 py-4 min-h-[48px] bg-white dark:bg-slate-850 text-[#1a1a1a] dark:text-slate-100 border border-[#0369a1]/10 dark:border-slate-700 rounded-2xl font-bold hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2"
+                className="px-6 sm:px-10 py-4 min-h-[48px] bg-white dark:bg-slate-800 text-[#1a1a1a] dark:text-slate-100 border border-[#0369a1]/10 dark:border-slate-700 rounded-2xl font-bold hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2"
               >
                 <Send size={18} />
                 {t('joinUs.contact.button')}
@@ -325,7 +325,7 @@ const JoinUsView: React.FC = () => {
                 href="https://github.com/omarjan/kitabim-ai"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-6 py-4 min-h-[48px] bg-slate-800 dark:bg-slate-850 text-white rounded-2xl font-bold hover:bg-black transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2"
+                className="px-6 py-4 min-h-[48px] bg-slate-800 dark:bg-slate-900 text-white rounded-2xl font-bold hover:bg-black transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2"
               >
                 <Github size={20} />
               </a>

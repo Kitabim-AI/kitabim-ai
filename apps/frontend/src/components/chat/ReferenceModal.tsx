@@ -198,7 +198,7 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
                   </span>
                 )}
                 {bookData?.volume && (
-                  <span className="flex items-center gap-1.5 px-3 py-1 bg-slate-100 dark:bg-slate-850 text-slate-600 dark:text-slate-300 rounded-full text-xs">
+                  <span className="flex items-center gap-1.5 px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-full text-xs">
                     {t('book.volume', { volume: bookData.volume })}
                   </span>
                 )}
@@ -252,7 +252,7 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
                         : 'bg-white/80 dark:bg-slate-900/60 border-slate-100/80 dark:border-slate-800/80 shadow-sm'
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-4 border-b border-slate-100/60 dark:border-slate-850/60 pb-3">
+                    <div className="flex items-center justify-between mb-4 border-b border-slate-100/60 dark:border-slate-800/60 pb-3">
                       <span className={`px-3 py-1 rounded-full text-xs font-normal ${
                         isReferenced
                           ? 'bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8]'

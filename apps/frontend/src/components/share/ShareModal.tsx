@@ -51,7 +51,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({ book, onClose }) => {
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-5 pb-4 border-b border-slate-100 dark:border-slate-850">
+        <div className="flex items-center justify-between p-5 pb-4 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-[#1877F2]/10 dark:bg-[#38bdf8]/10 text-[#1877F2] dark:text-[#38bdf8] rounded-xl">
               <FacebookIcon />
