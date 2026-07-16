@@ -73,12 +73,12 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
                 text-[13px] md:text-[14px] whitespace-nowrap rounded-t-xl font-normal
                 ${activeTab === tab.id
                   ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 shadow-sm'
-                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-350 border border-b-0 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-100'
+                  : 'bg-white dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 border border-b-0 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/80 hover:text-slate-800 dark:hover:text-slate-250'
                 }
               `}
               title={tab.label}
             >
-              <span className="transition-all duration-200">
+              <span className="transition-all duration-200 flex items-center">
                 {React.cloneElement(tab.icon as React.ReactElement<any>, { size: 16, className: 'md:w-[17px] md:h-[17px]' })}
               </span>
               <span className="hidden lg:inline mt-[3px]">
