@@ -24,10 +24,10 @@ interface ContactSubmission {
 type StatusFilter = 'all' | 'new' | 'reviewed' | 'contacted' | 'archived';
 
 const STATUS_STYLES: Record<string, { bg: string; text: string }> = {
-  new: { bg: 'bg-blue-50', text: 'text-blue-700' },
-  reviewed: { bg: 'bg-amber-50', text: 'text-amber-700' },
-  contacted: { bg: 'bg-green-50', text: 'text-green-700' },
-  archived: { bg: 'bg-slate-50', text: 'text-slate-500' },
+  new: { bg: 'bg-blue-500/5 dark:bg-blue-400/5', text: 'text-blue-500 dark:text-blue-400' },
+  reviewed: { bg: 'bg-amber-500/5 dark:bg-amber-400/5', text: 'text-amber-500 dark:text-amber-400' },
+  contacted: { bg: 'bg-emerald-500/5 dark:bg-emerald-400/5', text: 'text-emerald-500 dark:text-emerald-400' },
+  archived: { bg: 'bg-slate-500/5 dark:bg-slate-400/5', text: 'text-slate-500 dark:text-slate-400' },
 };
 
 export function ContactSubmissionsPanel() {
@@ -182,7 +182,7 @@ export function ContactSubmissionsPanel() {
                           {submission.email}
                         </div>
                         <div className="md:hidden mt-1">
-                          <span className={`inline-flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 ${statusStyle.bg} ${statusStyle.text} rounded-lg text-[11px] md:text-[14px] font-normal uppercase`}>
+                          <span className={`inline-flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 ${statusStyle.bg} ${statusStyle.text} rounded-lg text-[11px] md:text-[14px] font-normal uppercase border border-current/10`}>
                             {t(`admin.contacts.status${submission.status.charAt(0).toUpperCase() + submission.status.slice(1)}`)}
                           </span>
                         </div>
@@ -201,7 +201,7 @@ export function ContactSubmissionsPanel() {
                         </div>
                       </td>
                       <td className="hidden md:table-cell px-4 md:px-8 py-3 md:py-5">
-                        <span className={`inline-flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 ${statusStyle.bg} ${statusStyle.text} rounded-lg text-[11px] md:text-[14px] font-normal uppercase`}>
+                        <span className={`inline-flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 ${statusStyle.bg} ${statusStyle.text} rounded-lg text-[11px] md:text-[14px] font-normal uppercase border border-current/10`}>
                           {t(`admin.contacts.status${submission.status.charAt(0).toUpperCase() + submission.status.slice(1)}`)}
                         </span>
                       </td>

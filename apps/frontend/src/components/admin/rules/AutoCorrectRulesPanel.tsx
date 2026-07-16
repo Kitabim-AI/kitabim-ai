@@ -373,12 +373,12 @@ export function AutoCorrectRulesPanel() {
                 rules.map(rule => (
                   <tr key={rule.id} className="hover:bg-[#0369a1]/5 transition-colors group/row">
                     <td className="px-4 md:px-6 py-4 md:py-5">
-                      <span className="font-bold text-red-500 bg-red-50 px-2 md:px-2.5 py-1 md:py-1.5 rounded-lg border border-red-100 uyghur-text text-sm md:text-lg">
+                      <span className="font-bold text-red-500 dark:text-red-400 bg-red-500/5 dark:bg-red-400/5 px-2 md:px-2.5 py-1 md:py-1.5 rounded-lg border border-red-500/10 dark:border-red-400/10 uyghur-text text-sm md:text-lg">
                         {rule.misspelled_word}
                       </span>
                     </td>
                     <td className="px-4 md:px-6 py-4 md:py-5">
-                      <span className="font-bold text-[#0369a1] bg-[#0369a1]/5 px-2 md:px-2.5 py-1 md:py-1.5 rounded-lg border border-[#0369a1]/10 uyghur-text text-sm md:text-lg">
+                      <span className="font-bold text-[#0369a1] dark:text-[#38bdf8] bg-[#0369a1]/5 dark:bg-[#38bdf8]/5 px-2 md:px-2.5 py-1 md:py-1.5 rounded-lg border border-[#0369a1]/10 dark:border-[#38bdf8]/10 uyghur-text text-sm md:text-lg">
                         {rule.corrected_word}
                       </span>
                     </td>
@@ -390,10 +390,10 @@ export function AutoCorrectRulesPanel() {
                     <td className="hidden sm:table-cell px-4 md:px-6 py-4 md:py-5 text-center">
                       <button
                         onClick={() => toggleRuleActive(rule)}
-                        className={`inline-flex items-center px-2 md:px-3 py-1 md:py-1.5 rounded-full text-[9px] md:text-[10px] font-bold uppercase transition-all ${
+                        className={`inline-flex items-center px-2 md:px-3 py-1 md:py-1.5 rounded-lg text-[9px] md:text-[10px] font-bold uppercase transition-all ${
                           rule.is_active 
-                            ? 'bg-emerald-100 text-emerald-700' 
-                            : 'bg-slate-100 text-slate-400 opacity-60'
+                            ? 'bg-emerald-500/5 dark:bg-emerald-400/5 text-emerald-600 dark:text-emerald-400 border border-emerald-500/10 dark:border-emerald-400/10' 
+                            : 'bg-slate-500/5 dark:bg-slate-400/5 text-slate-500 dark:text-slate-400 border border-slate-500/10 dark:border-slate-400/10 opacity-60'
                         }`}
                       >
                         {rule.is_active ? t('common.active') : t('common.suspended')}
