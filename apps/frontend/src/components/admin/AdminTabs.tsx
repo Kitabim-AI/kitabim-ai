@@ -62,7 +62,7 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
   return (
     <div className="space-y-0 px-3 py-3 sm:px-6 md:px-0" dir="rtl" lang="ug">
       {/* Tab Navigation */}
-      <div className="border-b border-slate-200">
+      <div className="border-b border-slate-200 dark:border-slate-800">
         <div className="flex items-end overflow-x-auto overflow-y-hidden gap-1" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
           {visibleTabs.map((tab) => (
             <button
@@ -72,8 +72,8 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
                 flex items-center gap-2 md:gap-2.5 px-4 sm:px-5 md:px-6 py-2.5 md:py-3 transition-all duration-200
                 text-[13px] md:text-[14px] whitespace-nowrap rounded-t-xl font-normal
                 ${activeTab === tab.id
-                  ? 'bg-[#0369a1] text-white shadow-sm'
-                  : 'bg-white text-slate-600 border border-b-0 border-slate-200 hover:bg-slate-50 hover:text-slate-800'
+                  ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 shadow-sm'
+                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-350 border border-b-0 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-100'
                 }
               `}
               title={tab.label}
