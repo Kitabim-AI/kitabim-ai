@@ -83,7 +83,7 @@ export function ContactSubmissionsPanel() {
       {/* Search and Filter Row - matching other tabs layout */}
       <div className="flex flex-col-reverse md:flex-row gap-3 md:gap-4 items-center">
         <div className="relative flex-1 lg:flex-none lg:w-[30%] group w-full">
-          <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1]">
+          <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1] dark:text-[#38bdf8]">
             <Search size={18} strokeWidth={3} />
           </div>
           <input
@@ -91,12 +91,12 @@ export function ContactSubmissionsPanel() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('common.search')}
-            className="w-full pr-12 pl-6 py-2.5 md:py-3 bg-white border-2 border-[#0369a1]/10 rounded-2xl outline-none focus:border-[#0369a1] transition-all uyghur-text shadow-sm text-base"
+            className="w-full pr-12 pl-6 py-2.5 md:py-3 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl text-[#1a1a1a] dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all uyghur-text shadow-sm text-base"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute inset-y-0 left-4 flex items-center text-slate-400 hover:text-[#0369a1] transition-colors"
+              className="absolute inset-y-0 left-4 flex items-center text-slate-400 hover:text-[#0369a1] dark:hover:text-[#38bdf8] transition-colors"
             >
               <X size={18} />
             </button>
@@ -109,8 +109,8 @@ export function ContactSubmissionsPanel() {
               key={filter}
               onClick={() => setStatusFilter(filter)}
               className={`px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-normal uppercase transition-all ${statusFilter === filter
-                ? 'bg-[#0369a1] text-white shadow-sm'
-                : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+                ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 shadow-sm'
+                : 'bg-white dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/80 hover:text-slate-800 dark:hover:text-slate-250'
                 }`}
             >
               {t(`admin.contacts.filter${filter.charAt(0).toUpperCase() + filter.slice(1)}`)}
