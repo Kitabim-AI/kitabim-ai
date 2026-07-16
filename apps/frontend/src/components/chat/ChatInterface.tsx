@@ -396,18 +396,18 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           <div className="flex-grow flex flex-col justify-center py-10">
             {!isAuthenticated ? (
               <div className="flex flex-col items-center justify-center gap-5 py-8 px-4">
-                <div className="p-4 bg-[#0369a1]/10 rounded-[28px]">
-                  <LogIn className="text-[#0369a1] w-10 h-10" strokeWidth={1.5} />
+                <div className="p-4 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 rounded-[28px]">
+                  <LogIn className="text-[#0369a1] dark:text-[#38bdf8] w-10 h-10" strokeWidth={1.5} />
                 </div>
-                <p className="text-sm text-[#94a3b8] font-normal text-center leading-loose">
+                <p className="text-sm text-[#94a3b8] dark:text-slate-400 font-normal text-center leading-loose">
                   {t('auth.signInMessage')}
                 </p>
               </div>
             ) : (
-              <div className="text-center py-12 px-8 bg-white/40 border-2 border-dashed border-[#0369a1]/10 rounded-[32px] flex flex-col items-center justify-center gap-4 opacity-60">
-                <Bot size={48} className="text-[#0369a1]" strokeWidth={1} />
+              <div className="text-center py-12 px-8 bg-white/40 dark:bg-slate-900/40 border-2 border-dashed border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-[32px] flex flex-col items-center justify-center gap-4 opacity-60">
+                <Bot size={48} className="text-[#0369a1] dark:text-[#38bdf8]" strokeWidth={1} />
                 <p
-                  className="font-normal leading-loose text-[#1a1a1a]"
+                  className="font-normal leading-loose text-[#1a1a1a] dark:text-slate-100"
                   style={{ fontSize: `${chatFontSize}px` }}
                 >
                   {t('chat.bookAssistantWelcome')}

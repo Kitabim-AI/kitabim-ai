@@ -455,4 +455,8 @@ body.graph-fullscreen .navbar-wrapper {
   background: rgba(56, 189, 248, 0.15);
 }
 
+.dark .paper-background {
+  background: linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.85)), url("https://www.transparenttextures.com/patterns/paper-fibers.png");
+}
+
 

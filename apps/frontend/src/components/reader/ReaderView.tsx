@@ -398,17 +398,17 @@ export const ReaderView: React.FC = () => {
     <>
     {showShare && <ShareModal book={selectedBook} onClose={() => setShowShare(false)} />}
     <div className={isFullscreen
-      ? 'fixed inset-0 z-50 flex flex-col bg-[#f0f4f8] notranslate'
+      ? 'fixed inset-0 z-50 flex flex-col bg-[#f0f4f8] dark:bg-slate-950 notranslate'
       : `h-[calc(100dvh-72px)] sm:h-[calc(100dvh-88px)] md:h-[calc(100dvh-120px)] xl:h-[calc(100dvh-96px)] flex flex-col xl:flex-row-reverse ${mobileTab === 'chat' ? 'gap-3' : 'gap-4'} xl:gap-6 py-0 md:py-4 notranslate`
     } lang="ug" translate="no">
 
       {/* Main Content Area */}
-      <div className={`flex-grow glass-panel flex-col overflow-hidden rounded-[32px] border border-[#0369a1]/10 shadow-2xl relative ${mobileTab === 'reader' ? 'flex' : 'hidden xl:flex'}`}>
+      <div className={`flex-grow glass-panel flex-col overflow-hidden rounded-[32px] border border-[#0369a1]/10 dark:border-[#38bdf8]/10 shadow-2xl relative ${mobileTab === 'reader' ? 'flex' : 'hidden xl:flex'}`}>
         {/* Floating minimize button — fullscreen only */}
         {isFullscreen && (
           <button
             onClick={() => setIsFullscreen(false)}
-            className="absolute top-4 left-4 z-20 p-2.5 bg-white/80 backdrop-blur-sm text-[#0369a1] hover:bg-white rounded-2xl shadow-lg border border-[#0369a1]/10 transition-all"
+            className="absolute top-4 left-4 z-20 p-2.5 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm text-[#0369a1] dark:text-[#38bdf8] hover:bg-white dark:hover:bg-slate-800 rounded-2xl shadow-lg border border-[#0369a1]/10 dark:border-[#38bdf8]/10 transition-all"
             title="Exit fullscreen"
           >
             <Minimize2 size={20} />
@@ -418,21 +418,21 @@ export const ReaderView: React.FC = () => {
         {isSidebarCollapsed && !isFullscreen && (
           <button
             onClick={() => setIsSidebarCollapsed(false)}
-            className="hidden xl:flex absolute top-1/2 -translate-y-1/2 left-4 z-20 p-2.5 bg-white/80 backdrop-blur-sm text-[#0369a1] hover:bg-white rounded-2xl shadow-lg border border-[#0369a1]/10 transition-all"
+            className="hidden xl:flex absolute top-1/2 -translate-y-1/2 left-4 z-20 p-2.5 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm text-[#0369a1] dark:text-[#38bdf8] hover:bg-white dark:hover:bg-slate-800 rounded-2xl shadow-lg border border-[#0369a1]/10 dark:border-[#38bdf8]/10 transition-all"
             title={t('reader.showChat')}
           >
             <PanelLeftOpen size={20} />
           </button>
         )}
         {/* Header Ribbon */}
-        <div className={`px-3 sm:px-6 py-2 sm:py-4 border-b border-[#0369a1]/10 flex flex-row items-center justify-between gap-1 sm:gap-4 bg-white/80 backdrop-blur-sm ${isFullscreen ? 'hidden' : ''}`}>
+        <div className={`px-3 sm:px-6 py-2 sm:py-4 border-b border-[#0369a1]/10 dark:border-[#38bdf8]/10 flex flex-row items-center justify-between gap-1 sm:gap-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm ${isFullscreen ? 'hidden' : ''}`}>
           <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-shrink">
-            <div className="hidden sm:flex p-2 bg-[#0369a1] text-white rounded-xl shadow-lg shrink-0">
+            <div className="hidden sm:flex p-2 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl shadow-lg shrink-0">
               <BookOpen size={20} />
             </div>
             <div className="min-w-0 flex flex-col justify-center">
               <h2
-                className="font-bold text-[#1a1a1a] truncate"
+                className="font-bold text-[#1a1a1a] dark:text-slate-100 truncate"
                 style={{ fontSize: '18px' }}
               >
                 {selectedBook.title}
@@ -440,7 +440,7 @@ export const ReaderView: React.FC = () => {
               </h2>
               {selectedBook.author && (
                 <p
-                  className="text-[#64748b] mt-0.5 truncate hidden sm:block"
+                  className="text-[#64748b] dark:text-slate-400 mt-0.5 truncate hidden sm:block"
                   style={{ fontSize: '14px' }}
                 >
                   {selectedBook.author}

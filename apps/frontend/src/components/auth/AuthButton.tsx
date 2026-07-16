@@ -132,7 +132,7 @@ export function OAuthButtonGroup({ className = '', align = 'down', side = 'left'
       </button>
 
       {isOpen && (
-        <div className={`absolute ${align === 'up' ? 'bottom-full mb-2' : 'top-full mt-2'} ${side === 'right' ? 'right-0' : side === 'center' ? 'left-1/2 -translate-x-1/2' : 'left-0'} min-w-max bg-white/95 backdrop-blur-2xl border border-[#0369a1]/20 rounded-2xl shadow-[0_16px_64px_rgba(3,105,161,0.15)] overflow-hidden animate-fade-in z-50`}>
+        <div className={`absolute ${align === 'up' ? 'bottom-full mb-2' : 'top-full mt-2'} ${side === 'right' ? 'right-0' : side === 'center' ? 'left-1/2 -translate-x-1/2' : 'left-0'} min-w-max bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl border border-[#0369a1]/20 dark:border-slate-800 rounded-2xl shadow-[0_16px_64px_rgba(3,105,161,0.15)] dark:shadow-black/35 overflow-hidden animate-fade-in z-50`}>
           {loginOptions.map((option, index) => (
             <button
               key={option.name}
@@ -141,7 +141,7 @@ export function OAuthButtonGroup({ className = '', align = 'down', side = 'left'
                 option.onClick();
               }}
               disabled={isLoading}
-              className={`w-full flex items-center gap-3 px-4 py-3 text-[#1a1a1a] hover:bg-gradient-to-r transition-all font-normal text-sm group ${index !== loginOptions.length - 1 ? 'border-b border-[#0369a1]/10' : ''
+              className={`w-full flex items-center gap-3 px-4 py-3 text-[#1a1a1a] dark:text-slate-100 hover:bg-gradient-to-r transition-all font-normal text-sm group ${index !== loginOptions.length - 1 ? 'border-b border-[#0369a1]/10 dark:border-slate-800' : ''
                 }`}
               style={{
                 ['--tw-gradient-from' as string]: `${option.color}10`,
