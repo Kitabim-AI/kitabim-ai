@@ -458,7 +458,7 @@ export const ReaderView: React.FC = () => {
                       <button
                         onClick={handleDownload}
                         disabled={isDownloading}
-                        className="flex items-center gap-2 px-2 sm:px-4 py-2 min-h-[36px] sm:min-h-[44px] bg-white border border-[#0369a1]/20 text-[#0369a1] text-xs sm:text-sm rounded-xl sm:rounded-2xl hover:bg-[#0369a1]/10 transition-all font-bold disabled:opacity-50"
+                        className="flex items-center gap-2 px-2 sm:px-4 py-2 min-h-[36px] sm:min-h-[44px] bg-white dark:bg-slate-800 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] text-xs sm:text-sm rounded-xl sm:rounded-2xl hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 transition-all font-bold disabled:opacity-50"
                         title={t('common.download')}
                       >
                         {isDownloading ? (
