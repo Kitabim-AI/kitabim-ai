@@ -160,7 +160,7 @@ export const WordsPanel: React.FC = () => {
             {searchQuery && (
               <button 
                 onClick={() => setSearchQuery('')}
-                className="p-1.5 md:p-2 text-slate-300 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                className="p-1.5 md:p-2 text-red-400 dark:text-red-400 hover:text-red-500 dark:hover:text-red-300 transition-colors"
                 title={t('common.clear')}
               >
                 <X strokeWidth={2.5} className="w-4 h-4 md:w-5 md:h-5" />
