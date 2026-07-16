@@ -234,7 +234,7 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
       <div className="flex items-center justify-between px-1 sm:px-2 gap-3 flex-shrink-0 mb-2">
         <div className="flex items-center gap-2 sm:gap-3">
           {issues.length > 0 && (
-            <span className="px-3 py-1.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl text-[10px] sm:text-xs font-bold whitespace-nowrap">
+            <span className="px-3 py-1.5 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] rounded-2xl text-[10px] sm:text-xs font-bold whitespace-nowrap">
               {t('spellCheck.findingProgress', {
                 current: globalIssueOffset + stepperIndex + 1,
                 total: totalBookIssues ?? issues.length,
@@ -244,7 +244,7 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
           {pageText !== undefined && (
             <button
               onClick={() => setShowPageModal(true)}
-              className="text-[10px] font-bold text-slate-400 px-3 py-1.5 bg-slate-100 rounded-xl hover:bg-slate-200 transition-all uppercase flex items-center gap-1.5 whitespace-nowrap"
+              className="text-[10px] font-bold text-slate-400 dark:text-slate-400 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-all uppercase flex items-center gap-1.5 whitespace-nowrap"
             >
               <FileText size={12} />
               {t('spellCheck.viewPage')} ({t('chat.pageNumber', { page: pageNumber })})
@@ -277,9 +277,9 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
         <div className="flex items-center justify-between gap-2">
           <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">{t('chat.referenceTitle')}</span>
         </div>
-        <div className="uyghur-text leading-loose text-[#1a1a1a] whitespace-pre-wrap animate-fade-in" dir="rtl" style={{ fontSize: `${fontSize}px` }}>
+        <div className="uyghur-text leading-loose text-[#1a1a1a] dark:text-slate-100 whitespace-pre-wrap animate-fade-in" dir="rtl" style={{ fontSize: `${fontSize}px` }}>
           {ctx.before && <span>{ctx.before}</span>}
-          <span ref={wordRef} className="text-red-500 font-semibold bg-red-50 rounded px-0.5">{ctx.word}</span>
+          <span ref={wordRef} className="text-red-500 font-semibold bg-red-50 dark:bg-red-950/30 rounded px-0.5">{ctx.word}</span>
           {ctx.after && <span>{ctx.after}</span>}
         </div>
       </div>
@@ -289,18 +289,18 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
   const renderSkippedCard = () => {
     if (!activeIssue) return null;
     return (
-      <div className="bg-slate-50 border border-slate-200 rounded-3xl p-5 space-y-4 animate-fade-in">
+      <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 space-y-4 animate-fade-in">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-bold text-slate-400 uyghur-text" style={{ fontSize: `${fontSize}px` }}>
+          <span className="text-sm font-bold text-slate-400 dark:text-slate-500 uyghur-text" style={{ fontSize: `${fontSize}px` }}>
             {activeIssue.word}
           </span>
-          <span className="text-[10px] font-bold text-slate-300 uppercase px-2 py-1 bg-slate-100 rounded-lg">
+          <span className="text-[10px] font-bold text-slate-300 dark:text-slate-500 uppercase px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
             {t('spellCheck.skipLater')}
           </span>
         </div>
         <button
           onClick={() => handleUndoSkip(activeIssue.id)}
-          className="w-full flex items-center justify-center gap-2 px-5 py-2.5 bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white rounded-2xl text-sm font-bold transition-all active:scale-95"
+          className="w-full flex items-center justify-center gap-2 px-5 py-2.5 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-2xl text-sm font-bold transition-all active:scale-95"
         >
           <RotateCcw size={14} strokeWidth={2.5} />
           {t('spellCheck.undoSkip')}
@@ -319,8 +319,8 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
     // while the selection logic or auto-advance logic catches up.
     if (isPending || isSkipped) {
       return (
-        <div className="bg-white/80 backdrop-blur-md border border-[#0369a1]/10 rounded-3xl p-16 shadow-sm animate-fade-in flex flex-col items-center justify-center gap-4">
-          <Loader2 size={32} className="animate-spin text-[#0369a1]/40" strokeWidth={2} />
+        <div className="bg-white/80 dark:bg-slate-900/60 backdrop-blur-md border border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-3xl p-16 shadow-sm animate-fade-in flex flex-col items-center justify-center gap-4">
+          <Loader2 size={32} className="animate-spin text-[#0369a1]/40 dark:text-[#38bdf8]/40" strokeWidth={2} />
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
             {isPending ? t('spellCheck.applying') : t('spellCheck.skipping')}
           </p>
@@ -331,7 +331,7 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
     const suggestions = activeIssue.ocr_corrections || [];
 
     return (
-      <div className="bg-white/80 backdrop-blur-md border border-[#0369a1]/10 rounded-3xl p-4 sm:p-6 shadow-sm animate-fade-in flex flex-col gap-4">
+      <div className="bg-white/80 dark:bg-slate-900/60 backdrop-blur-md border border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-3xl p-4 sm:p-6 shadow-sm animate-fade-in flex flex-col gap-4">
         {renderContextSection()}
         <div className="flex flex-col gap-5 mt-4">
             <div className="flex flex-col gap-2 relative z-10">
@@ -346,12 +346,12 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
                         key={correction}
                         onClick={() => { setCustomInput(correction); handleCustomApply(); }}
                         disabled={isBusy || isApplying !== null}
-                        className="px-3 py-1.5 bg-slate-100 text-slate-600 hover:bg-[#0369a1] hover:text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-sm active:scale-95 uyghur-text relative overflow-hidden"
+                        className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-350 hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-xl text-xs sm:text-sm font-bold transition-all shadow-sm active:scale-95 uyghur-text relative overflow-hidden"
                         style={{ fontSize: `${Math.max(14, fontSize - 2)}px` }}
                       >
                         {isApplying === correction ? (
-                          <div className="absolute inset-0 flex items-center justify-center bg-[#0369a1]">
-                            <Loader2 size={14} className="animate-spin text-white" />
+                          <div className="absolute inset-0 flex items-center justify-center bg-[#0369a1] dark:bg-[#38bdf8]">
+                            <Loader2 size={14} className="animate-spin text-white dark:text-slate-950" />
                           </div>
                         ) : correction}
                       </button>
@@ -360,7 +360,7 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
                 </div>
               )}
 
-              <div className="flex flex-col sm:flex-row gap-2 sm:items-center bg-white border-2 border-slate-200 focus-within:border-[#0369a1] rounded-[24px] p-1.5 shadow-sm transition-all relative">
+              <div className="flex flex-col sm:flex-row gap-2 sm:items-center bg-white dark:bg-slate-950 border-2 border-slate-200 dark:border-slate-800 focus-within:border-[#0369a1] dark:focus-within:border-[#38bdf8] rounded-[24px] p-1.5 shadow-sm transition-all relative">
                 <input
                   type="text"
                   dir="rtl"
@@ -368,16 +368,16 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
                   onChange={(e) => setCustomInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleCustomApply(); }}
                   placeholder={suggestions.length > 0 ? '' : t('spellCheck.typeCorrection')}
-                  className="flex-1 px-4 py-2.5 uyghur-text outline-none bg-transparent min-w-0"
+                  className="flex-1 px-4 py-2.5 uyghur-text text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-650 outline-none bg-transparent min-w-0"
                   style={{ fontSize: `${fontSize}px` }}
                   disabled={isBusy}
                 />
                 
-                <div className="flex items-center gap-1.5 justify-end sm:justify-center border-t border-slate-100 sm:border-t-0 pt-2 sm:pt-0 pl-1">
+                <div className="flex items-center gap-1.5 justify-end sm:justify-center border-t border-slate-100 dark:border-slate-800 sm:border-t-0 pt-2 sm:pt-0 pl-1">
                   <button
                     onClick={handleCustomApply}
                     disabled={!customInput.trim() || isBusy || isApplying !== null}
-                    className="px-5 py-2.5 bg-[#0369a1] text-white rounded-[16px] text-xs sm:text-sm font-bold transition-all disabled:opacity-30 active:scale-95 hover:bg-[#0284c7] flex items-center justify-center min-w-[80px] shadow-sm whitespace-nowrap"
+                    className="px-5 py-2.5 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-[16px] text-xs sm:text-sm font-bold transition-all disabled:opacity-30 active:scale-95 hover:bg-[#0284c7] dark:hover:bg-[#0284c7] flex items-center justify-center min-w-[80px] shadow-sm whitespace-nowrap"
                   >
                     {isApplying !== null ? <Loader2 size={16} className="animate-spin" /> : t('spellCheck.apply')}
                   </button>
@@ -385,12 +385,12 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center justify-between gap-2 mt-4 pt-4 border-t border-slate-100">
+            <div className="flex items-center justify-between gap-2 mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
               {onPrevPage && (
                 <button
                   onClick={() => onPrevPage?.()}
                   disabled={isBusy || (globalIssueOffset + stepperIndex + 1) <= 1}
-                  className="flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-800 disabled:opacity-30 rounded-xl font-bold transition-all active:scale-95 text-xs sm:text-sm uyghur-text whitespace-nowrap"
+                  className="flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-350 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-slate-100 disabled:opacity-30 rounded-xl font-bold transition-all active:scale-95 text-xs sm:text-sm uyghur-text whitespace-nowrap"
                 >
                   <ChevronRight size={16} strokeWidth={2.5} />
                   {t('common.previous')}
@@ -401,7 +401,7 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
                 onClick={() => handleIgnore(activeIssue.id)}
                 disabled={isBusy || isIgnoring}
                 title={t('spellCheck.acceptOriginalTooltip')}
-                className="flex items-center justify-center gap-1.5 px-4 sm:px-6 py-2 border-2 border-slate-200 text-slate-500 hover:border-emerald-500 hover:text-emerald-600 hover:bg-emerald-50 disabled:opacity-40 rounded-xl font-bold transition-all active:scale-95 text-xs sm:text-sm tracking-wider uyghur-text whitespace-nowrap"
+                className="flex items-center justify-center gap-1.5 px-4 sm:px-6 py-2 border-2 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:border-emerald-500 dark:hover:border-emerald-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 disabled:opacity-40 rounded-xl font-bold transition-all active:scale-95 text-xs sm:text-sm tracking-wider uyghur-text whitespace-nowrap"
               >
                 {isIgnoring ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} strokeWidth={2.5} />}
                 {t('spellCheck.acceptOriginal')}
@@ -410,7 +410,7 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
               <button
                 onClick={() => onNextPage()}
                 disabled={isBusy || (globalIssueOffset + stepperIndex + 1) >= (totalBookIssues ?? issues.length)}
-                className="flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-800 disabled:opacity-30 rounded-xl font-bold transition-all active:scale-95 text-xs sm:text-sm uyghur-text whitespace-nowrap"
+                className="flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-350 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-slate-100 disabled:opacity-30 rounded-xl font-bold transition-all active:scale-95 text-xs sm:text-sm uyghur-text whitespace-nowrap"
               >
                 {t('common.next')}
                 <ChevronLeft size={16} strokeWidth={2.5} />
@@ -465,39 +465,39 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-2 sm:p-4 md:p-8" dir="rtl" lang="ug">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-xl animate-fade-in" onClick={() => setShowPageModal(false)} />
           <div
-            className="bg-white/90 backdrop-blur-2xl rounded-[24px] sm:rounded-[32px] md:rounded-[40px] shadow-[0_32px_128px_rgba(0,0,0,0.3)] w-full max-w-2xl max-h-[95vh] sm:max-h-[90vh] relative z-10 overflow-hidden animate-scale-up border border-white/40 flex flex-col"
+            className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-2xl rounded-[24px] sm:rounded-[32px] md:rounded-[40px] shadow-[0_32px_128px_rgba(0,0,0,0.3)] w-full max-w-2xl max-h-[95vh] sm:max-h-[90vh] relative z-10 overflow-hidden animate-scale-up border border-white/40 dark:border-slate-800/40 flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="p-4 pb-3 sm:p-6 sm:pb-4 md:p-8 md:pb-6 border-b border-slate-100 flex items-start justify-between bg-white/50">
+            <div className="p-4 pb-3 sm:p-6 sm:pb-4 md:p-8 md:pb-6 border-b border-slate-100 dark:border-slate-800 flex items-start justify-between bg-white/50 dark:bg-slate-900/50">
               <div className="flex items-center gap-3 sm:gap-4 md:gap-6">
                 <div className="p-2.5 sm:p-3 md:p-4 bg-[#0369a1] text-white rounded-2xl sm:rounded-[24px] shadow-xl shadow-[#0369a1]/20 shrink-0">
                   <BookOpen size={20} strokeWidth={2.5} className="sm:hidden" />
                   <BookOpen size={28} strokeWidth={2.5} className="hidden sm:block" />
                 </div>
                 <div>
-                  <h3 className="text-xl sm:text-2xl font-normal text-[#1a1a1a] mb-2 leading-tight flex items-center flex-wrap gap-2 text-right">
+                  <h3 className="text-xl sm:text-2xl font-normal text-[#1a1a1a] dark:text-slate-100 mb-2 leading-tight flex items-center flex-wrap gap-2 text-right">
                     <span>{bookTitle}</span>
-                    {bookAuthor && <span className="text-base sm:text-lg text-slate-400 font-normal">({bookAuthor})</span>}
+                    {bookAuthor && <span className="text-base sm:text-lg text-slate-400 dark:text-slate-500 font-normal">({bookAuthor})</span>}
                   </h3>
                   <div className="flex items-center gap-2">
-                    <span className="flex items-center gap-1.5 px-3 py-1 bg-[#0369a1]/10 text-[#0369a1] rounded-full text-xs">
+                    <span className="flex items-center gap-1.5 px-3 py-1 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] rounded-full text-xs">
                       {t('chat.pageNumber', { page: pageNumber })}
                     </span>
                   </div>
                 </div>
               </div>
-              <button onClick={() => setShowPageModal(false)} className="p-2 sm:p-3 hover:bg-red-50 text-slate-300 hover:text-red-500 rounded-2xl transition-all">
+              <button onClick={() => setShowPageModal(false)} className="p-2 sm:p-3 hover:bg-red-50 dark:hover:bg-red-950/20 text-slate-300 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 rounded-2xl transition-all">
                 <X size={20} strokeWidth={3} className="sm:hidden" />
                 <X size={28} strokeWidth={3} className="hidden sm:block" />
               </button>
             </div>
-            <div className="flex-grow overflow-y-auto p-4 sm:p-6 md:p-10 bg-[#f8fafc]/30 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <div className="bg-white/80 p-6 sm:p-8 md:p-10 rounded-[20px] sm:rounded-[24px] md:rounded-[32px] shadow-sm border border-white relative">
-                <MarkdownContent content={pageText || ''} className="uyghur-text text-[#1e293b] leading-[2]" style={{ fontSize: `${fontSize}px` }} />
+            <div className="flex-grow overflow-y-auto p-4 sm:p-6 md:p-10 bg-[#f8fafc]/30 dark:bg-slate-950/30 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <div className="bg-white/80 dark:bg-slate-900/80 p-6 sm:p-8 md:p-10 rounded-[20px] sm:rounded-[24px] md:rounded-[32px] shadow-sm border border-white dark:border-slate-800 relative">
+                <MarkdownContent content={pageText || ''} className="uyghur-text text-[#1e293b] dark:text-slate-200 leading-[2]" style={{ fontSize: `${fontSize}px` }} />
               </div>
             </div>
-            <div className="p-4 px-4 sm:p-4 sm:px-6 md:p-6 md:px-10 bg-white/50 border-t border-slate-100 flex items-center justify-end">
-              <button onClick={() => setShowPageModal(false)} className="px-6 py-2.5 bg-slate-900 text-white rounded-2xl font-bold uppercase tracking-widest text-sm transition-all active:scale-95 shadow-lg shadow-black/10">
+            <div className="p-4 px-4 sm:p-4 sm:px-6 md:p-6 md:px-10 bg-white/50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end">
+              <button onClick={() => setShowPageModal(false)} className="px-6 py-2.5 bg-slate-900 dark:bg-slate-800 text-white rounded-2xl font-bold uppercase tracking-widest text-sm transition-all active:scale-95 shadow-lg shadow-black/10">
                 {t('common.close')}
               </button>
             </div>
