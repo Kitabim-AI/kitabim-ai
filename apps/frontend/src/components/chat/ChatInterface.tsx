@@ -304,7 +304,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           </div>
 
           {/* Input Bar — inside card, styled like reader chat */}
-          <div className="relative p-1 sm:p-2 bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl border-t-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 shadow-[0_-8px_32px_rgba(0,0,0,0.04)] transition-all focus-within:border-[#0369a1]/30 dark:focus-within:border-[#38bdf8]/30">
+          <div className="relative p-1 sm:p-2 bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl border-t-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 shadow-[0_-8px_32px_rgba(0,0,0,0.04)] transition-all focus-within:border-t-[#0369a1] dark:focus-within:border-t-[#38bdf8]">
             {isAuthenticated ? (
               <>
                 {usageStatus?.hasReachedLimit ? (
@@ -521,7 +521,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         )}
       </div>
 
-      <div className="relative flex-shrink-0 p-1 sm:p-2 bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 shadow-[0_24px_64px_rgba(0,0,0,0.06)] transition-all focus-within:border-[#0369a1] dark:focus-within:border-[#38bdf8] focus-within:ring-[12px] focus-within:ring-[#0369a1]/5 dark:focus-within:ring-[#38bdf8]/5 rounded-[20px] md:rounded-[24px]">
+      <div className="relative flex-shrink-0 p-1 sm:p-2 bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 shadow-xl transition-all focus-within:border-[#0369a1] dark:focus-within:border-[#38bdf8] focus-within:ring focus-within:ring-[12px] focus-within:ring-[#0369a1]/5 dark:focus-within:ring-[#38bdf8]/5 rounded-[20px] md:rounded-[24px]">
         {isAuthenticated ? (
           <div className="flex flex-col gap-1">
             {usageStatus?.hasReachedLimit ? (
