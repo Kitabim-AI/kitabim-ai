@@ -50,11 +50,11 @@ const renderSummary = (text: string): React.ReactNode =>
       if (parts.length > 1) {
         return (
           <div key={i} className="mb-6 last:mb-0">
-            <h4 className="text-[#0369a1] font-bold text-base sm:text-lg mb-2 flex items-center gap-2">
-              <span className="w-6 h-6 rounded-lg bg-[#0369a1]/10 flex items-center justify-center text-xs shrink-0">{listMatch[1]}</span>
+            <h4 className="text-[#0369a1] dark:text-[#38bdf8] font-bold text-base sm:text-lg mb-2 flex items-center gap-2">
+              <span className="w-6 h-6 rounded-lg bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 flex items-center justify-center text-xs shrink-0">{listMatch[1]}</span>
               {parseBold(parts[0])}
             </h4>
-            <div className="text-slate-700 leading-relaxed pr-1 sm:pr-2">
+            <div className="text-slate-700 dark:text-slate-300 leading-relaxed pr-1 sm:pr-2">
               {parseBold(parts.slice(1).join(':').trim())}
             </div>
           </div>
@@ -62,8 +62,8 @@ const renderSummary = (text: string): React.ReactNode =>
       }
       return (
         <div key={i} className="flex gap-3 mb-4">
-          <span className="text-[#0369a1] font-bold shrink-0 mt-0.5">{listMatch[1]}.</span>
-          <span className="text-slate-700">{parseBold(listMatch[2])}</span>
+          <span className="text-[#0369a1] dark:text-[#38bdf8] font-bold shrink-0 mt-0.5">{listMatch[1]}.</span>
+          <span className="text-slate-700 dark:text-slate-300">{parseBold(listMatch[2])}</span>
         </div>
       );
     }
@@ -73,7 +73,7 @@ const renderSummary = (text: string): React.ReactNode =>
       const level = headingMatch[1].length;
       const Tag: any = `h${Math.min(6, level + 1)}`;
       return (
-        <Tag key={i} className="font-bold text-[#1a1a1a] text-lg mb-4 mt-6 first:mt-0">
+        <Tag key={i} className="font-bold text-[#1a1a1a] dark:text-slate-100 text-lg mb-4 mt-6 first:mt-0">
           {parseBold(content)}
         </Tag>
       );
@@ -84,14 +84,14 @@ const renderSummary = (text: string): React.ReactNode =>
     if (bulletMatch) {
       return (
         <div key={i} className="flex gap-3 mb-2 pr-2 sm:pr-4">
-          <span className="text-[#0369a1] font-bold shrink-0 mt-2.5 w-1.5 h-1.5 rounded-full bg-[#0369a1]/30" />
-          <span className="text-slate-600">{parseBold(bulletMatch[2])}</span>
+          <span className="text-[#0369a1] dark:text-[#38bdf8] font-bold shrink-0 mt-2.5 w-1.5 h-1.5 rounded-full bg-[#0369a1]/30 dark:bg-[#38bdf8]/30" />
+          <span className="text-slate-600 dark:text-slate-300">{parseBold(bulletMatch[2])}</span>
         </div>
       );
     }
 
     // 5. Default paragraph
-    return <p key={i} className="mb-4 last:mb-0 text-slate-700 leading-relaxed">{parseBold(trimmedLine)}</p>;
+    return <p key={i} className="mb-4 last:mb-0 text-slate-700 dark:text-slate-300 leading-relaxed">{parseBold(trimmedLine)}</p>;
   });
 
 export const BookCard: React.FC<BookCardProps> = ({ book, onClick }) => {
@@ -223,14 +223,14 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick }) => {
                   <h3 className="text-xl sm:text-2xl font-normal text-[#1a1a1a] dark:text-slate-100 mb-2 leading-tight flex items-center flex-wrap gap-2 text-right">
                     <span>{titleWithVolume}</span>
                     {displayAuthor && (
-                      <span className="text-base sm:text-lg text-slate-400 dark:text-slate-500 font-normal">({displayAuthor})</span>
+                      <span className="text-base sm:text-lg text-slate-400 dark:text-slate-400 font-normal">({displayAuthor})</span>
                     )}
                   </h3>
                   <div className="flex items-center gap-2 text-[#94a3b8] text-sm font-normal uppercase tracking-wider">
                     <span className="flex items-center gap-1.5 px-3 py-1 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] rounded-full text-xs">
                       {t('bookCard.summary.title')}
                     </span>
-                    <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 text-amber-600 rounded-full text-[10px] font-bold">
+                    <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-full text-[10px] font-bold">
                       <Sparkles size={12} strokeWidth={2.5} />
                       {t('bookCard.summary.aiBadge')}
                     </span>
@@ -275,7 +275,7 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick }) => {
               </div>
               <button
                 onClick={() => setShowSummary(false)}
-                className="px-4 py-2 sm:px-6 sm:py-2.5 md:px-8 md:py-3 bg-slate-900 dark:bg-slate-100 hover:bg-slate-800 dark:hover:bg-slate-250 text-white dark:text-slate-900 rounded-2xl text-sm font-normal transition-all active:scale-95 shadow-lg shadow-black/10 uppercase tracking-widest"
+                className="px-4 py-2 sm:px-6 sm:py-2.5 md:px-8 md:py-3 bg-slate-900 dark:bg-slate-100 hover:bg-slate-800 dark:hover:bg-slate-200 text-white dark:text-slate-900 rounded-2xl text-sm font-normal transition-all active:scale-95 shadow-lg shadow-black/10 uppercase tracking-widest"
               >
                 {t('common.close')}
               </button>

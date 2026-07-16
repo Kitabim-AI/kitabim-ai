@@ -15,11 +15,13 @@ from neo4j.exceptions import ServiceUnavailable, SessionExpired
 from google.adk.tools import ToolContext
 
 from app.services.rag.context import QueryContext
+from app.services.rag.keywords import CURRENT_BOOK_KEYWORDS
 from app.services.rag.retrieval import (
     embed_query,
     find_books_by_title_in_question,
     vector_search,
 )
+from app.services.rag.utils import normalize_uyghur
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.rag.agent.tools")
@@ -786,6 +788,28 @@ async def _run_get_book_author(args: dict, ctx: QueryContext) -> dict:
             "title": title,
             "author": author,
         }
+
+    # No title/author string matched in the question. If the user is reading a
+    # specific book and refers to it deictically ("this book") instead of
+    # naming it, answer with the current book rather than reporting no match.
+    q_norm = normalize_uyghur(question.lower())
+    refers_to_current_book = any(
+        normalize_uyghur(kw) in q_norm for kw in CURRENT_BOOK_KEYWORDS
+    )
+    if refers_to_current_book and not ctx.is_global and ctx.book and ctx.book.author:
+        log_json(
+            logger,
+            logging.INFO,
+            "Agent tool get_book_author — current book fallback",
+            title=ctx.book.title,
+            author=ctx.book.author,
+        )
+        return {
+            "context": f"The book '{ctx.book.title}' was written by {ctx.book.author}.",
+            "title": ctx.book.title,
+            "author": ctx.book.author,
+        }
+
     log_json(logger, logging.INFO, "Agent tool get_book_author", found=False)
     return {"context": "", "title": None, "author": None}
 
@@ -1061,7 +1085,7 @@ def _format_dictionary_context(source_label: str, entries: list[dict]) -> str:
             blocks.append(
                 "[Dictionary/Culture Source: Uyghur Proverbs, "
                 f"Text: {entry.get('text', '')}]\n"
-                f"This is a Uyghur proverb: \"{entry.get('text', '')}\"{ref_info}"
+                f'This is a Uyghur proverb: "{entry.get("text", "")}"{ref_info}'
             )
     return "\n\n---\n\n".join(blocks)
 
@@ -1326,7 +1350,7 @@ async def _run_lookup_proverbs(args: dict, ctx: QueryContext) -> dict:
                     else f" (Found in Volume: {vol})"
                 )
             context_parts.append(
-                f"{source_info}\nThis is a Uyghur proverb: \"{entry['text']}\"{ref_info}"
+                f'{source_info}\nThis is a Uyghur proverb: "{entry["text"]}"{ref_info}'
             )
         context = "\n\n---\n\n".join(context_parts)
     else:

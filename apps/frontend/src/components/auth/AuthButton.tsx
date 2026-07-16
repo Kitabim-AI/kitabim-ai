@@ -16,7 +16,7 @@ export function LoginButton({ className = '' }: LoginButtonProps) {
     <button
       onClick={loginWithGoogle}
       disabled={isLoading}
-      className={`flex items-center gap-3 px-6 py-2.5 bg-white hover:bg-[#0369a1]/10 text-[#1a1a1a] border-2 border-[#0369a1]/20 rounded-2xl font-normal text-sm transition-all active:scale-95 disabled:opacity-50 shadow-sm hover:shadow-lg shadow-[#0369a1]/10 ${className}`}
+      className={`flex items-center gap-3 px-6 py-2.5 bg-white dark:bg-slate-900 hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 text-[#1a1a1a] dark:text-slate-105 border-2 border-[#0369a1]/20 dark:border-slate-800 rounded-2xl font-normal text-sm transition-all active:scale-95 disabled:opacity-50 shadow-sm hover:shadow-lg shadow-[#0369a1]/10 ${className}`}
     >
       <div className="bg-[#4285F4] p-1.5 rounded-lg">
         <svg width="16" height="16" viewBox="0 0 18 18" fill="white">
@@ -39,7 +39,7 @@ export function FacebookLoginButton({ className = '' }: LoginButtonProps) {
     <button
       onClick={loginWithFacebook}
       disabled={isLoading}
-      className={`flex items-center gap-3 px-6 py-2.5 bg-white hover:bg-[#1877F2]/10 text-[#1a1a1a] border-2 border-[#1877F2]/20 rounded-2xl font-normal text-sm transition-all active:scale-95 disabled:opacity-50 shadow-sm hover:shadow-lg shadow-[#1877F2]/10 ${className}`}
+      className={`flex items-center gap-3 px-6 py-2.5 bg-white dark:bg-slate-900 hover:bg-[#1877F2]/10 dark:hover:bg-[#1877F2]/20 text-[#1a1a1a] dark:text-slate-105 border-2 border-[#1877F2]/20 dark:border-slate-800 rounded-2xl font-normal text-sm transition-all active:scale-95 disabled:opacity-50 shadow-sm hover:shadow-lg shadow-[#1877F2]/10 ${className}`}
     >
       <div className="bg-[#1877F2] p-1.5 rounded-lg">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
@@ -60,7 +60,7 @@ export function TwitterLoginButton({ className = '' }: LoginButtonProps) {
     <button
       onClick={loginWithTwitter}
       disabled={isLoading}
-      className={`flex items-center gap-3 px-6 py-2.5 bg-white hover:bg-black/10 text-[#1a1a1a] border-2 border-black/20 rounded-2xl font-normal text-sm transition-all active:scale-95 disabled:opacity-50 shadow-sm hover:shadow-lg shadow-black/10 ${className}`}
+      className={`flex items-center gap-3 px-6 py-2.5 bg-white dark:bg-slate-900 hover:bg-black/10 dark:hover:bg-slate-800 text-[#1a1a1a] dark:text-slate-105 border-2 border-black/20 dark:border-slate-800 rounded-2xl font-normal text-sm transition-all active:scale-95 disabled:opacity-50 shadow-sm hover:shadow-lg shadow-black/10 ${className}`}
     >
       <div className="bg-black p-1.5 rounded-lg">
         {/* X (formerly Twitter) logo */}
@@ -206,9 +206,9 @@ export function UserMenu({ onLogout, side = 'left', inline = false }: { onLogout
   const menuContent = (
     <>
       {/* User Header */}
-      <div className="p-4 mb-2 bg-gradient-to-br from-[#0369a1]/5 to-[#0284c7]/5 rounded-[24px] flex items-center gap-4 text-right" dir="rtl">
+      <div className="p-4 mb-2 bg-gradient-to-br from-[#0369a1]/5 to-[#0284c7]/5 dark:from-[#38bdf8]/10 dark:to-[#38bdf8]/5 rounded-[24px] flex items-center gap-4 text-right" dir="rtl">
         <div className="relative flex-shrink-0">
-          <div className="w-14 h-14 rounded-[20px] shadow-xl overflow-hidden border-4 border-white bg-white">
+          <div className="w-14 h-14 rounded-[20px] shadow-xl overflow-hidden border-4 border-white dark:border-slate-800 bg-white dark:bg-slate-800">
             <UserAvatar
               url={user.avatarUrl}
               name={user.displayName}
@@ -223,8 +223,8 @@ export function UserMenu({ onLogout, side = 'left', inline = false }: { onLogout
           </div>
         </div>
         <div className="flex-1 min-w-0">
-          <div className="font-normal text-[#1a1a1a] text-base truncate">{user.displayName}</div>
-          <div className="text-[12px] font-normal text-slate-400 mt-0.5 truncate">{user.email}</div>
+          <div className="font-normal text-[#1a1a1a] dark:text-slate-100 text-base truncate">{user.displayName}</div>
+          <div className="text-[12px] font-normal text-slate-400 dark:text-slate-400 mt-0.5 truncate">{user.email}</div>
         </div>
       </div>
 
@@ -236,16 +236,16 @@ export function UserMenu({ onLogout, side = 'left', inline = false }: { onLogout
             onLogout?.();
           }}
           disabled={isLoading}
-          className="w-full flex items-center justify-between px-4 py-3 text-[#1a1a1a] hover:bg-[#0369a1]/5 rounded-2xl transition-all font-normal text-sm active:scale-95 group"
+          className="w-full flex items-center justify-between px-4 py-3 text-[#1a1a1a] dark:text-slate-200 hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/10 rounded-2xl transition-all font-normal text-sm active:scale-95 group"
           dir="rtl"
         >
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-[#0369a1]/10 text-[#0369a1] rounded-xl group-hover:bg-[#0369a1] group-hover:text-white transition-all shadow-sm">
+            <div className="p-2 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] rounded-xl group-hover:bg-[#0369a1] dark:group-hover:bg-[#38bdf8] group-hover:text-white dark:group-hover:text-slate-950 transition-all shadow-sm">
               <LogOut size={16} strokeWidth={2.5} />
             </div>
-            <span className="group-hover:text-[#0369a1] transition-colors uppercase font-normal uyghur-text">{t('auth.logout')}</span>
+            <span className="group-hover:text-[#0369a1] dark:group-hover:text-[#38bdf8] transition-colors uppercase font-normal uyghur-text">{t('auth.logout')}</span>
           </div>
-          <ChevronDown size={14} className="opacity-0 group-hover:opacity-100 -rotate-90 transition-all text-[#0369a1]/30" strokeWidth={3} />
+          <ChevronDown size={14} className="opacity-0 group-hover:opacity-100 -rotate-90 transition-all text-[#0369a1]/30 dark:text-[#38bdf8]/50" strokeWidth={3} />
         </button>
       </div>
     </>
@@ -253,7 +253,7 @@ export function UserMenu({ onLogout, side = 'left', inline = false }: { onLogout
 
   if (inline) {
     return (
-      <div className="bg-white/95 backdrop-blur-2xl border border-[#0369a1]/20 rounded-[24px] overflow-hidden p-2">
+      <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl border border-[#0369a1]/20 dark:border-slate-800 rounded-[24px] overflow-hidden p-2">
         {menuContent}
       </div>
     );
@@ -263,16 +263,16 @@ export function UserMenu({ onLogout, side = 'left', inline = false }: { onLogout
     <div ref={menuRef} className="relative z-[1001]" dir="rtl">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`p-0.5 md:p-1 bg-white/75 backdrop-blur-md border border-[#0369a1]/10 rounded-xl md:rounded-2xl transition-all hover:bg-white hover:shadow-xl hover:shadow-[#0369a1]/10 group ${isOpen ? 'ring-4 ring-[#0369a1]/5 border-[#0369a1]/30' : ''}`}
+        className={`p-0.5 md:p-1 bg-white/75 dark:bg-slate-900/75 backdrop-blur-md border border-[#0369a1]/10 dark:border-[#38bdf8]/20 rounded-xl md:rounded-2xl transition-all hover:bg-white dark:hover:bg-slate-800 hover:shadow-xl hover:shadow-[#0369a1]/10 dark:hover:shadow-[#38bdf8]/10 group ${isOpen ? 'ring-4 ring-[#0369a1]/5 dark:ring-[#38bdf8]/5 border-[#0369a1]/30 dark:border-[#38bdf8]/40' : ''}`}
       >
         <div className="relative">
           <UserAvatar
             url={user.avatarUrl}
             name={user.displayName}
-            className="w-8 h-8 md:w-9 md:h-9 text-xs md:text-lg rounded-lg md:rounded-xl object-cover ring-2 ring-white shadow-md transition-transform group-hover:scale-110"
+            className="w-8 h-8 md:w-9 md:h-9 text-xs md:text-lg rounded-lg md:rounded-xl object-cover ring-2 ring-white dark:ring-slate-950 shadow-md transition-transform group-hover:scale-110"
           />
           <div
-            className={`absolute -bottom-1 -right-1 w-4 h-4 md:w-5 md:h-5 rounded-md md:rounded-lg border-2 border-white flex items-center justify-center text-white shadow-sm`}
+            className={`absolute -bottom-1 -right-1 w-4 h-4 md:w-5 md:h-5 rounded-md md:rounded-lg border-2 border-white dark:border-slate-950 flex items-center justify-center text-white shadow-sm`}
             style={{ background: currentRole.bg }}
           >
             <currentRole.icon size={10} className="md:w-3 md:h-3" />
@@ -281,7 +281,7 @@ export function UserMenu({ onLogout, side = 'left', inline = false }: { onLogout
       </button>
 
       {isOpen && (
-        <div className={`absolute top-full ${side === 'right' ? 'right-0' : 'left-0'} mt-4 w-72 bg-white/95 backdrop-blur-2xl border border-[#0369a1]/20 rounded-[32px] shadow-[0_32px_128px_rgba(3,105,161,0.1)] overflow-hidden animate-fade-in p-2`}>
+        <div className={`absolute top-full ${side === 'right' ? 'right-0' : 'left-0'} mt-4 w-72 bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl border border-[#0369a1]/20 dark:border-slate-800 rounded-[32px] shadow-[0_32px_128px_rgba(3,105,161,0.1)] dark:shadow-black/50 overflow-hidden animate-fade-in p-2`}>
           {menuContent}
         </div>
       )}
@@ -295,9 +295,9 @@ export function AuthButton({ onLogout, dropdownSide = 'left', inline = false }: 
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 px-6 py-2.5 bg-white/40 backdrop-blur-md rounded-2xl border border-[#0369a1]/10 animate-pulse">
-        <div className="w-4 h-4 bg-[#0369a1]/30 rounded-full animate-bounce" />
-        <span className="text-sm font-normal text-[#0369a1]/50 uppercase">{t('common.loading')}</span>
+      <div className="flex items-center gap-2 px-6 py-2.5 bg-white/40 dark:bg-slate-900/40 backdrop-blur-md rounded-2xl border border-[#0369a1]/10 dark:border-[#38bdf8]/10 animate-pulse">
+        <div className="w-4 h-4 bg-[#0369a1]/30 dark:bg-[#38bdf8]/30 rounded-full animate-bounce" />
+        <span className="text-sm font-normal text-[#0369a1]/50 dark:text-[#38bdf8]/50 uppercase">{t('common.loading')}</span>
       </div>
     );
   }

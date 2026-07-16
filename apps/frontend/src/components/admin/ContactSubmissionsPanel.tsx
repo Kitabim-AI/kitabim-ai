@@ -122,28 +122,28 @@ export function ContactSubmissionsPanel() {
       {/* Content */}
       {isLoading ? (
         <div className="flex items-center justify-center py-20">
-          <Loader className="w-8 h-8 text-[#0369a1] animate-spin" />
+          <Loader className="w-8 h-8 text-[#0369a1] dark:text-[#38bdf8] animate-spin" />
         </div>
       ) : error ? (
         <div className="flex items-center justify-center py-20">
-          <div className="text-center">
+          <div className="text-center glass-panel dark:bg-slate-900/60 border border-[#0369a1]/10 dark:border-slate-800 p-12 rounded-[24px]">
             <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-3" />
-            <p className="text-red-600">{error}</p>
+            <p className="text-red-600 dark:text-red-400 font-normal">{error}</p>
           </div>
         </div>
       ) : submissions.length === 0 ? (
         <div className="flex items-center justify-center py-20">
-          <div className="text-center">
-            <Mail className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-            <p className="text-slate-500">{t('admin.contacts.noSubmissions')}</p>
+          <div className="text-center glass-panel dark:bg-slate-900/60 border border-[#0369a1]/10 dark:border-slate-800 p-12 rounded-[24px]">
+            <Mail className="w-12 h-12 text-slate-350 dark:text-slate-600 mx-auto mb-3" />
+            <p className="text-slate-500 dark:text-slate-400 font-normal">{t('admin.contacts.noSubmissions')}</p>
           </div>
         </div>
       ) : (
-        <div className="glass-panel rounded-[16px] md:rounded-[24px]" style={{ padding: 0, overflow: 'visible' }}>
+        <div className="glass-panel dark:bg-slate-900/60 shadow-xl border border-[#0369a1]/10 dark:border-slate-800 rounded-[16px] md:rounded-[24px]" style={{ padding: 0, overflow: 'visible' }}>
           <div className="overflow-x-auto rounded-[16px] md:rounded-[24px]" style={{ overflow: 'hidden' }}>
             <table className="w-full text-right lg:min-w-[900px]" dir="rtl">
               <thead>
-                <tr className="bg-[#0369a1]/5 text-[12px] md:text-[14px] lg:text-[16px] font-normal text-[#0369a1] uppercase border-b border-[#0369a1]/10">
+                <tr className="bg-[#0369a1]/5 dark:bg-[#38bdf8]/5 text-[12px] md:text-[14px] lg:text-[16px] font-normal text-[#0369a1] dark:text-[#38bdf8] uppercase border-b border-[#0369a1]/10 dark:border-slate-800">
                   <th className="px-4 md:px-8 py-3 md:py-5 text-right font-normal">
                     {t('admin.contacts.name')}
                   </th>
@@ -174,11 +174,11 @@ export function ContactSubmissionsPanel() {
                   return (
                     <tr
                       key={submission.id}
-                      className="border-b border-[#0369a1]/5 hover:bg-[#0369a1]/5 transition-colors group/row"
+                      className="border-b border-[#0369a1]/5 dark:border-slate-800/30 hover:bg-[#e8f4f8]/20 dark:hover:bg-[#38bdf8]/5 transition-colors group/row"
                     >
                       <td className="px-4 md:px-8 py-3 md:py-5">
-                        <div className="font-normal text-[#1a1a1a] text-[14px] md:text-[16px] lg:text-[18px]">{submission.name}</div>
-                        <div className="md:hidden text-[11px] md:text-[13px] font-normal text-[#94a3b8] uppercase truncate max-w-[150px] md:max-w-none mt-1" dir="ltr">
+                        <div className="font-normal text-[#1a1a1a] dark:text-slate-100 text-[14px] md:text-[16px] lg:text-[18px]">{submission.name}</div>
+                        <div className="md:hidden text-[11px] md:text-[13px] font-normal text-[#94a3b8] dark:text-slate-400 uppercase truncate max-w-[150px] md:max-w-none mt-1" dir="ltr">
                           {submission.email}
                         </div>
                         <div className="md:hidden mt-1">
@@ -187,16 +187,16 @@ export function ContactSubmissionsPanel() {
                           </span>
                         </div>
                       </td>
-                      <td className="hidden md:table-cell px-4 md:px-8 py-3 md:py-5 text-[11px] md:text-[13px] font-normal text-[#94a3b8] uppercase" dir="ltr">
+                      <td className="hidden md:table-cell px-4 md:px-8 py-3 md:py-5 text-[11px] md:text-[13px] font-normal text-[#94a3b8] dark:text-slate-400 uppercase" dir="ltr">
                         {submission.email}
                       </td>
                       <td className="hidden lg:table-cell px-4 md:px-8 py-3 md:py-5">
-                        <span className="text-[14px] md:text-[16px] font-normal text-[#1a1a1a]">
+                        <span className="text-[14px] md:text-[16px] font-normal text-[#1a1a1a] dark:text-slate-100">
                           {t(`admin.contacts.interest${submission.interest.charAt(0).toUpperCase() + submission.interest.slice(1)}`)}
                         </span>
                       </td>
                       <td className="hidden lg:table-cell px-4 md:px-8 py-3 md:py-5">
-                        <div className="text-[14px] md:text-[16px] font-normal text-[#94a3b8] truncate max-w-xs" title={submission.message}>
+                        <div className="text-[14px] md:text-[16px] font-normal text-[#94a3b8] dark:text-slate-400 truncate max-w-xs" title={submission.message}>
                           {submission.message}
                         </div>
                       </td>
@@ -205,7 +205,7 @@ export function ContactSubmissionsPanel() {
                           {t(`admin.contacts.status${submission.status.charAt(0).toUpperCase() + submission.status.slice(1)}`)}
                         </span>
                       </td>
-                      <td className="px-4 md:px-8 py-3 md:py-5 text-[11px] md:text-[13px] font-normal text-[#94a3b8]" dir="ltr">
+                      <td className="px-4 md:px-8 py-3 md:py-5 text-[11px] md:text-[13px] font-normal text-[#94a3b8] dark:text-slate-400" dir="ltr">
                         {formatDate(submission.createdAt)}
                       </td>
                     </tr>

@@ -56,7 +56,7 @@ const formatYear = (year: number, type: 'hijri' | 'gregorian', lang: string) => 
 export const GraphView: React.FC = () => {
   const { t, language } = useI18n();
   const { theme } = useTheme();
-  const isThemeDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const isThemeDark = theme === 'dark';
   const [rawGraphData, setRawGraphData] = useState<GraphData>({ nodes: [], links: [] });
   const [selectedNodeTypes, setSelectedNodeTypes] = useState<string[]>([]);
   const [selectedEdgeTypes, setSelectedEdgeTypes] = useState<string[]>([]);

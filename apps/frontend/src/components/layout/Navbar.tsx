@@ -28,26 +28,16 @@ export const Navbar: React.FC = () => {
   } = useAppContext();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { theme, setTheme } = useTheme();
-  const [themeDropdownOpen, setThemeDropdownOpen] = useState(false);
-  const themeRef = useRef<HTMLDivElement>(null);
-
-  // Close dropdown on click outside
-  useEffect(() => {
-    const handleOutsideClick = (e: MouseEvent) => {
-      if (themeRef.current && !themeRef.current.contains(e.target as Node)) {
-        setThemeDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, []);
 
   const getThemeIcon = () => {
-    switch (theme) {
-      case 'light': return <Sun size={22} className="text-[#0369a1] dark:text-[#38bdf8]" />;
-      case 'dark': return <Moon size={22} className="text-[#0369a1] dark:text-[#38bdf8]" />;
-      case 'system': return <Monitor size={22} className="text-[#0369a1] dark:text-[#38bdf8]" />;
+    if (theme === 'light') {
+      return <Sun size={22} className="text-[#0369a1] dark:text-[#38bdf8]" />;
     }
+    return <Moon size={22} className="text-[#0369a1] dark:text-[#38bdf8]" />;
+  };
+
+  const toggleTheme = () => {
+    setTheme(theme === 'light' ? 'dark' : 'light');
   };
 
   const handleNavClick = (callback: () => void) => {
@@ -157,46 +147,15 @@ export const Navbar: React.FC = () => {
             <div className="absolute inset-0 bg-gradient-to-tr from-[#0369a1]/0 to-[#0369a1]/10 opacity-0 group-hover:opacity-100 transition-opacity" />
           </button>
 
-          {/* Theme Toggle Dropdown */}
-          <div className="relative" ref={themeRef}>
-            <button
-              onClick={() => setThemeDropdownOpen(!themeDropdownOpen)}
-              className="group relative flex items-center justify-center w-9 h-9 md:w-11 md:h-11 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md border border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-xl md:rounded-2xl hover:border-[#0369a1] dark:hover:border-[#38bdf8] hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/5 transition-all shadow-sm overflow-hidden active:scale-90"
-              title={t('theme.selector') || 'تېما'}
-            >
-              {getThemeIcon()}
-              <div className="absolute inset-0 bg-gradient-to-tr from-[#0369a1]/0 to-[#0369a1]/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-            </button>
-
-            {themeDropdownOpen && (
-              <div className="absolute left-0 mt-2 w-32 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl shadow-xl z-[110] py-1.5 animate-fade-in">
-                <button
-                  onClick={() => { setTheme('light'); setThemeDropdownOpen(false); }}
-                  className={`w-full px-3 py-2 text-sm flex items-center gap-2.5 transition-all text-right ${theme === 'light' ? 'bg-[#0369a1]/10 text-[#0369a1] dark:text-[#38bdf8] font-medium' : 'text-slate-600 dark:text-slate-300 hover:bg-[#0369a1]/5'}`}
-                  dir="rtl"
-                >
-                  <Sun size={16} />
-                  <span className="uyghur-text">{t('theme.light') || 'يورۇق'}</span>
-                </button>
-                <button
-                  onClick={() => { setTheme('dark'); setThemeDropdownOpen(false); }}
-                  className={`w-full px-3 py-2 text-sm flex items-center gap-2.5 transition-all text-right ${theme === 'dark' ? 'bg-[#0369a1]/10 text-[#0369a1] dark:text-[#38bdf8] font-medium' : 'text-slate-600 dark:text-slate-300 hover:bg-[#0369a1]/5'}`}
-                  dir="rtl"
-                >
-                  <Moon size={16} />
-                  <span className="uyghur-text">{t('theme.dark') || 'قاراڭغۇ'}</span>
-                </button>
-                <button
-                  onClick={() => { setTheme('system'); setThemeDropdownOpen(false); }}
-                  className={`w-full px-3 py-2 text-sm flex items-center gap-2.5 transition-all text-right ${theme === 'system' ? 'bg-[#0369a1]/10 text-[#0369a1] dark:text-[#38bdf8] font-medium' : 'text-slate-600 dark:text-slate-300 hover:bg-[#0369a1]/5'}`}
-                  dir="rtl"
-                >
-                  <Monitor size={16} />
-                  <span className="uyghur-text">{t('theme.system') || 'ئاپتوماتىك'}</span>
-                </button>
-              </div>
-            )}
-          </div>
+          {/* Theme Toggle Button */}
+          <button
+            onClick={toggleTheme}
+            className="group relative flex items-center justify-center w-9 h-9 md:w-11 md:h-11 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md border border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-xl md:rounded-2xl hover:border-[#0369a1] dark:hover:border-[#38bdf8] hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/5 transition-all shadow-sm overflow-hidden active:scale-90"
+            title={theme === 'light' ? t('theme.dark') || 'قاراڭغۇ' : t('theme.light') || 'يورۇق'}
+          >
+            {getThemeIcon()}
+            <div className="absolute inset-0 bg-gradient-to-tr from-[#0369a1]/0 to-[#0369a1]/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </button>
 
           {isEditor && (
             <>
@@ -204,15 +163,15 @@ export const Navbar: React.FC = () => {
                 onClick={() => fileInputRef.current?.click()}
                 disabled={bookActions.isCheckingGlobal}
                 title={t('nav.addBook')}
-                className="group relative flex items-center justify-center w-9 h-9 md:w-11 md:h-11 bg-white/50 backdrop-blur-md border border-[#0369a1]/10 rounded-xl md:rounded-2xl hover:border-[#0369a1] hover:bg-[#0369a1]/5 transition-all shadow-sm overflow-hidden active:scale-90"
+                className="group relative flex items-center justify-center w-9 h-9 md:w-11 md:h-11 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md border border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-xl md:rounded-2xl hover:border-[#0369a1] dark:hover:border-[#38bdf8] hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/5 transition-all shadow-sm overflow-hidden active:scale-90"
                 aria-busy={bookActions.isCheckingGlobal}
               >
                 {bookActions.isCheckingGlobal ? (
-                  <RefreshCw size={22} strokeWidth={2.5} className="text-[#0369a1] relative z-10 animate-spin" />
+                  <RefreshCw size={22} strokeWidth={2.5} className="text-[#0369a1] dark:text-[#38bdf8] relative z-10 animate-spin" />
                 ) : (
-                  <Upload size={22} strokeWidth={2.5} className="text-[#0369a1] relative z-10 group-hover:scale-110 transition-transform" />
+                  <Upload size={22} strokeWidth={2.5} className="text-[#0369a1] dark:text-[#38bdf8] relative z-10 group-hover:scale-110 transition-transform" />
                 )}
-                <div className="absolute inset-0 bg-gradient-to-tr from-[#0369a1]/0 to-[#0369a1]/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                <div className="absolute inset-0 bg-gradient-to-tr from-[#0369a1]/0 to-[#0369a1]/10 dark:from-[#38bdf8]/0 dark:to-[#38bdf8]/10 opacity-0 group-hover:opacity-100 transition-opacity" />
               </button>
               <input
                 type="file"
@@ -327,14 +286,6 @@ export const Navbar: React.FC = () => {
                   >
                     <Moon size={16} />
                     <span className="text-xs uyghur-text">{t('theme.dark') || 'قاراڭغۇ'}</span>
-                  </button>
-                  <button
-                    onClick={() => setTheme('system')}
-                    className={`p-2 rounded-lg transition-all flex items-center gap-1.5 ${theme === 'system' ? 'bg-[#0369a1] text-white shadow-md' : 'text-slate-500 dark:text-slate-400 hover:text-[#0369a1]'}`}
-                    title={t('theme.system') || 'System'}
-                  >
-                    <Monitor size={16} />
-                    <span className="text-xs uyghur-text">{t('theme.system') || 'ئاپتوماتىك'}</span>
                   </button>
                 </div>
               </div>

@@ -10,7 +10,6 @@ const TestComponent = () => {
       <span data-testid="theme-val">{theme}</span>
       <button onClick={() => setTheme('light')}>Set Light</button>
       <button onClick={() => setTheme('dark')}>Set Dark</button>
-      <button onClick={() => setTheme('system')}>Set System</button>
     </div>
   );
 };
@@ -35,13 +34,13 @@ describe('ThemeContext', () => {
     });
   });
 
-  it('defaults to system theme', () => {
+  it('defaults to light theme', () => {
     render(
       <ThemeProvider>
         <TestComponent />
       </ThemeProvider>
     );
-    expect(screen.getByTestId('theme-val').textContent).toBe('system');
+    expect(screen.getByTestId('theme-val').textContent).toBe('light');
   });
 
   it('sets theme to light and dark', () => {
