@@ -442,7 +442,7 @@ export function UserManagementPanel() {
       {/* Search and Filters Bar */}
       <div className="flex flex-col-reverse md:flex-row gap-3 md:gap-4">
         <div className="relative flex-1 lg:flex-none lg:w-[30%] group">
-          <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1] transition-colors">
+          <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1] dark:text-[#38bdf8] transition-colors">
             <Search size={18} strokeWidth={3} />
           </div>
           <input
@@ -450,19 +450,19 @@ export function UserManagementPanel() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('admin.users.searchPlaceholder') || "ئابونتلارنى ئىزدەش (نامى ياكى ئېلخەت)..."}
-            className="w-full pr-12 pl-12 py-2.5 md:py-3 bg-white border-2 border-[#0369a1]/10 rounded-2xl outline-none focus:border-[#0369a1] transition-all uyghur-text shadow-sm text-base"
+            className="w-full pr-12 pl-12 py-2.5 md:py-3 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl text-[#1a1a1a] dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all uyghur-text shadow-sm text-base"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute inset-y-0 left-4 flex items-center text-[#94a3b8] hover:text-[#0369a1] transition-colors active:scale-95"
+              className="absolute inset-y-0 left-4 flex items-center text-[#94a3b8] hover:text-[#0369a1] dark:hover:text-[#38bdf8] transition-colors active:scale-95"
             >
               <X size={16} strokeWidth={3} />
             </button>
           )}
         </div>
 
-        <div className="flex items-center gap-2 text-[12px] md:text-[14px] font-normal text-[#0369a1] bg-[#0369a1]/10 px-3 md:px-4 py-2 md:py-2.5 rounded-full border border-[#0369a1]/20 shadow-sm whitespace-nowrap self-end md:self-auto md:mr-auto">
+        <div className="flex items-center gap-2 text-[12px] md:text-[14px] font-normal text-[#0369a1] dark:text-[#38bdf8] bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 px-3 md:px-4 py-2 md:py-2.5 rounded-full border border-[#0369a1]/20 dark:border-[#38bdf8]/20 shadow-sm whitespace-nowrap self-end md:self-auto md:mr-auto">
           <Users size={12} className="md:w-[14px] md:h-[14px]" />
           {t('admin.users.total', { count: total })}
         </div>
