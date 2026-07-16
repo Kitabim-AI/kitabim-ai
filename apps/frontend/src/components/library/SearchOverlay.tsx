@@ -164,17 +164,17 @@ export const SearchOverlay: React.FC = () => {
                 </div>
               ) : (
                 <div className="max-w-md mx-auto space-y-8 animate-fade-in py-12 md:py-20 flex flex-col items-center">
-                   <div className="p-6 md:p-8 bg-amber-50/80 rounded-full mb-4 md:mb-6 ring-[8px] md:ring-[12px] ring-amber-50/30">
-                      <Library className="w-12 h-12 md:w-16 md:h-16 text-amber-500/60" strokeWidth={1} />
-                   </div>
-                   <div className="space-y-3">
-                      <h4 className="text-xl md:text-2xl font-black text-[#1a1a1a]">
+                    <div className="p-6 md:p-8 bg-amber-50/80 dark:bg-amber-500/10 rounded-full mb-4 md:mb-6 ring-[8px] md:ring-[12px] ring-amber-50/30 dark:ring-amber-500/10">
+                       <Library className="w-12 h-12 md:w-16 md:h-16 text-amber-500/60 dark:text-amber-400/80" strokeWidth={1} />
+                    </div>
+                    <div className="space-y-3">
+                       <h4 className="text-xl md:text-2xl font-black text-[#1a1a1a] dark:text-slate-100">
                         {t('library.noResults.title')}
                       </h4>
                       <p className="text-slate-500 font-normal md:text-lg">
                         {t('library.noResults.message')}
                       </p>
-                   </div>
+                    </div>
                 </div>
               )}
             </div>
