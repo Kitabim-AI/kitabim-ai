@@ -239,7 +239,7 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
               </div>
             )
           ) : bookId === 'quran' && currentPageData?.verses ? (
-            <div className="max-w-3xl mx-auto space-y-6">
+            <div className="quran-reference max-w-3xl mx-auto space-y-6">
               {currentPageData.verses.map((v: any) => {
                 const isReferenced = pageNumbers.slice(1).includes(v.ayah);
                 return (

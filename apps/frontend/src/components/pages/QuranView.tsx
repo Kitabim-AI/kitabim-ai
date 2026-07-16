@@ -191,7 +191,7 @@ export const QuranView: React.FC = () => {
   const activeEntries = searchQuery.trim() ? suggestions : verses;
 
   return (
-    <div className="space-y-6 md:space-y-8 px-3 py-3 sm:px-6 md:px-0 animate-fade-in pb-20 relative" dir="rtl" lang="ug">
+    <div className="quran-page space-y-6 md:space-y-8 px-3 py-3 sm:px-6 md:px-0 animate-fade-in pb-20 relative" dir="rtl" lang="ug">
       {/* Backdrop overlay for dropdown click-away */}
       {isFocused && (
         <div 

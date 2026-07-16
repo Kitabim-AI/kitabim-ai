@@ -26,6 +26,12 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: "KFGQPC Uthmanic Script HAFS";
+  src: url("/fonts/kfgqpc-uthmanic-script-hafs.woff2") format("woff2");
+  font-display: swap;
+}
+
 
 html {
   direction: rtl;
@@ -282,6 +288,17 @@ body::after {
 .uyghur-text .arabic-text,
 .uyghur-text .arabic-text * {
   font-family: "Adobe Arabic", serif !important;
+  font-variant-ligatures: common-ligatures contextual !important;
+  font-feature-settings: "kern" 1, "liga" 1, "calt" 1, "ccmp" 1 !important;
+  letter-spacing: 0 !important;
+  word-spacing: 0 !important;
+}
+
+.quran-page .arabic-text,
+.quran-page .arabic-text *,
+.quran-reference .arabic-text,
+.quran-reference .arabic-text * {
+  font-family: "KFGQPC Uthmanic Script HAFS", "Adobe Arabic", serif !important;
   font-variant-ligatures: common-ligatures contextual !important;
   font-feature-settings: "kern" 1, "liga" 1, "calt" 1, "ccmp" 1 !important;
   letter-spacing: 0 !important;
