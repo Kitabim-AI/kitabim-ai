@@ -59,7 +59,7 @@ export const Navbar: React.FC = () => {
     <>
       <nav className="fixed top-0 left-0 right-0 px-4 sm:px-6 md:px-8 lg:px-8 xl:px-10 py-1.5 sm:py-2 flex items-center justify-between z-[100] transition-all duration-300" dir="rtl">
         {/* Glass Backdrop - Matching Prototype */}
-        <div className="absolute inset-0 bg-white/75 backdrop-blur-[20px] border-b border-[rgba(255,193,7,0.2)] shadow-[0_4px_30px_rgba(117,197,240,0.1),0_1px_0_rgba(255,255,255,0.8)_inset]"
+        <div className="absolute inset-0 bg-white/75 dark:bg-slate-950/75 backdrop-blur-[20px] border-b border-[rgba(255,193,7,0.2)] shadow-[0_4px_30px_rgba(117,197,240,0.1),0_1px_0_rgba(255,255,255,0.8)_inset]"
           style={{ backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)' }} />
 
         {/* Gradient Border at Bottom - Matching Prototype */}
@@ -78,8 +78,8 @@ export const Navbar: React.FC = () => {
                 }} />
               <BookOpen size={24} className="md:w-7 md:h-7 text-white relative z-10" strokeWidth={2} />
             </div>
-            <span dir="ltr" className="flex items-center font-semibold text-[#1a1a1a] text-[24px] mt-[12px] md:text-[28px] md:mt-[14px] lg:text-[30px] lg:mt-[15px] xl:text-[32px] xl:mt-[16px] tracking-tight">
-              Kitabim<span className="text-[#0369a1]">.AI</span>
+            <span dir="ltr" className="flex items-center font-semibold text-[#1a1a1a] dark:text-[#f8fafc] text-[24px] mt-[12px] md:text-[28px] md:mt-[14px] lg:text-[30px] lg:mt-[15px] xl:text-[32px] xl:mt-[16px] tracking-tight">
+              Kitabim<span className="text-[#0369a1] dark:text-[#38bdf8]">.AI</span>
             </span>
           </div>
 
@@ -362,12 +362,12 @@ const NavButton: React.FC<{
     onClick={onClick}
     title={label}
     className={`relative px-2.5 lg:px-3 xl:px-3 2xl:px-4 h-[36px] md:h-[42px] rounded-xl text-sm lg:text-base font-normal flex items-center gap-2 transition-all duration-300 group ${active
-      ? 'text-[#0369a1] bg-[#0369a1]/10 shadow-[inset_0_0_0_1px_rgba(3,105,161,0.2)]'
-      : 'text-[#64748b] hover:bg-[#0369a1]/5 hover:text-[#0369a1]'
+      ? 'text-[#0369a1] dark:text-[#38bdf8] bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 shadow-[inset_0_0_0_1px_rgba(3,105,161,0.2)] dark:shadow-[inset_0_0_0_1px_rgba(56,189,248,0.2)]'
+      : 'text-[#64748b] dark:text-slate-400 hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/5 hover:text-[#0369a1] dark:hover:text-[#38bdf8]'
       }`}
   >
     <div className="flex items-center gap-2 relative z-10">
-      <span className={`${showIcon === 'lg' ? 'hidden lg:inline-flex' : 'inline-flex'} items-center transition-transform group-hover:scale-110 ${active ? 'text-[#0369a1]' : ''}`}>
+      <span className={`${showIcon === 'lg' ? 'hidden lg:inline-flex' : 'inline-flex'} items-center transition-transform group-hover:scale-110 ${active ? 'text-[#0369a1] dark:text-[#38bdf8]' : ''}`}>
         {icon}
       </span>
       <span className={`transition-all duration-300 whitespace-nowrap mt-[3px] overflow-hidden ${
@@ -392,8 +392,8 @@ const MobileNavButton: React.FC<{
   <button
     onClick={onClick}
     className={`w-full px-4 py-3 rounded-2xl text-base font-normal flex items-center gap-3 transition-all ${active
-      ? 'bg-[#0369a1] text-white shadow-lg'
-      : 'text-[#4a5568] hover:bg-[#0369a1]/10 hover:text-[#0369a1]'
+      ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white shadow-lg'
+      : 'text-[#4a5568] dark:text-slate-300 hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 hover:text-[#0369a1] dark:hover:text-[#38bdf8]'
       }`}
   >
     {icon}

@@ -34,7 +34,7 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
         </div>
 
         {view !== 'reader' && view !== 'admin' && view !== 'join-us' && view !== 'graph' && view !== 'dictionary' && view !== 'quran' && (
-          <footer className={`border-t border-[#0369a1]/10 pt-4 ${['global-chat', 'spell-check'].includes(view) ? 'hidden sm:flex' : 'flex'} flex-col sm:flex-row sm:flex-wrap lg:grid lg:grid-cols-3 items-center justify-center sm:justify-around lg:justify-items-stretch gap-4 w-full px-4 sm:px-2 ${['global-chat', 'spell-check'].includes(view) ? 'mb-2 mt-4 lg:max-w-5xl lg:mx-auto' : 'mb-6 mt-8'}`} dir="rtl">
+          <footer className={`border-t border-[#0369a1]/10 dark:border-[#38bdf8]/10 pt-4 ${['global-chat', 'spell-check'].includes(view) ? 'hidden sm:flex' : 'flex'} flex-col sm:flex-row sm:flex-wrap lg:grid lg:grid-cols-3 items-center justify-center sm:justify-around lg:justify-items-stretch gap-4 w-full px-4 sm:px-2 ${['global-chat', 'spell-check'].includes(view) ? 'mb-2 mt-4 lg:max-w-5xl lg:mx-auto' : 'mb-6 mt-8'}`} dir="rtl">
             {/* Right Column (Copyright) */}
             <div className="w-full sm:w-auto text-center lg:text-right whitespace-nowrap">
               <p className="text-xs text-slate-400 font-normal uyghur-text">
@@ -75,7 +75,7 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
                   />
                 </a>
               </div>
-              <div className="w-[1px] h-6 bg-slate-200" />
+              <div className="w-[1px] h-6 bg-slate-200 dark:bg-slate-800" />
               <a
                 href="https://www.paypal.com/donate/?hosted_button_id=TKHXS8HCDUEJA"
                 target="_blank"
@@ -91,7 +91,7 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
             <div className="w-full sm:w-auto text-center lg:text-left whitespace-nowrap">
               <a
                 href="mailto:contact@kitabim.ai"
-                className="text-xs text-slate-400 font-normal uyghur-text hover:text-[#0369a1] transition-colors"
+                className="text-xs text-slate-400 font-normal uyghur-text hover:text-[#0369a1] dark:hover:text-[#38bdf8] transition-colors"
               >
                 {t('app.footer.contactUs')}: contact@kitabim.ai
               </a>
@@ -117,10 +117,10 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
 
       {/* Global Book Opening Spinner */}
       {bookActions.isOpeningBook && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-white/60 backdrop-blur-sm animate-fade-in">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-white/60 dark:bg-slate-950/60 backdrop-blur-sm animate-fade-in">
           <div className="flex flex-col items-center gap-4">
-            <div className="w-12 h-12 border-4 border-[#0369a1]/10 border-t-[#0369a1] rounded-full animate-spin"></div>
-            <span className="text-sm font-bold text-[#0369a1] uppercase tracking-wider animate-pulse">{t('common.loading')}...</span>
+            <div className="w-12 h-12 border-4 border-[#0369a1]/10 border-t-[#0369a1] dark:border-t-[#38bdf8] rounded-full animate-spin"></div>
+            <span className="text-sm font-bold text-[#0369a1] dark:text-[#38bdf8] uppercase tracking-wider animate-pulse">{t('common.loading')}...</span>
           </div>
         </div>
       )}
