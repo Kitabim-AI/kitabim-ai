@@ -9,6 +9,7 @@ import JoinUsView from './components/pages/JoinUsView';
 import { ReaderView } from './components/reader/ReaderView';
 import { SpellCheckView } from './components/spell-check';
 import { AppProvider, useAppContext } from './context/AppContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { useAuth, useIsEditor } from './hooks/useAuth';
 import { useUyghurInput } from './hooks/useUyghurInput';
 import { PersistenceService } from './services/persistenceService';
@@ -136,9 +137,11 @@ const AppContent: React.FC = () => {
 
 const App: React.FC = () => {
   return (
-    <AppProvider>
-      <AppContent />
-    </AppProvider>
+    <ThemeProvider>
+      <AppProvider>
+        <AppContent />
+      </AppProvider>
+    </ThemeProvider>
   );
 };
 
