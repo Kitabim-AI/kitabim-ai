@@ -561,8 +561,14 @@ export const ReaderView: React.FC = () => {
         <div ref={mainScrollRef} dir="rtl" className={`flex-grow overflow-y-auto custom-scrollbar paper-background ${isEditing ? 'p-3 sm:p-4' : 'p-4 sm:p-6'} flex flex-col`}>
           {isEditing ? (
             <div className="h-full relative w-full max-w-4xl mx-auto">
-              {isFetchingContent && <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-20 flex items-center justify-center"><Loader2 className="w-8 h-8 text-[#0369a1] animate-spin" /></div>}
-              <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} className={`w-full h-full p-6 uyghur-text border-2 border-[#0369a1]/10 rounded-3xl outline-none resize-none bg-white shadow-inner ${readerContentFontClassName || ''}`} style={{ fontSize: `${fontSize}px`, fontFamily: readerContentFontFamily }} placeholder={t('common.enterContent')} />
+              {isFetchingContent && <div className="absolute inset-0 bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm z-20 flex items-center justify-center"><Loader2 className="w-8 h-8 text-[#0369a1] dark:text-[#38bdf8] animate-spin" /></div>}
+              <textarea 
+                value={editContent} 
+                onChange={(e) => setEditContent(e.target.value)} 
+                className={`w-full h-full p-6 uyghur-text border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-3xl outline-none resize-none bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-600 shadow-inner ${readerContentFontClassName || ''}`} 
+                style={{ fontSize: `${fontSize}px`, fontFamily: readerContentFontFamily }} 
+                placeholder={t('common.enterContent')} 
+              />
             </div>
           ) : isGuestOrReader ? (
             <VirtualScrollReader
