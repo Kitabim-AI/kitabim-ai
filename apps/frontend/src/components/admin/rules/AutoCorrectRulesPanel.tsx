@@ -302,7 +302,7 @@ export function AutoCorrectRulesPanel() {
       {/* Search Bar - now with buttons on the left in RTL, width matching user tab */}
       <div className="flex flex-col-reverse md:flex-row gap-3 md:gap-4 items-center">
         <div className="relative flex-1 lg:flex-none lg:w-[30%] group w-full">
-          <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1]">
+          <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1] dark:text-[#38bdf8] transition-colors">
             <Search size={18} strokeWidth={3} />
           </div>
           <input
@@ -310,12 +310,12 @@ export function AutoCorrectRulesPanel() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('common.search')}
-            className="w-full pr-12 pl-6 py-2.5 md:py-3 bg-white border-2 border-[#0369a1]/10 rounded-2xl outline-none focus:border-[#0369a1] transition-all uyghur-text shadow-sm text-base"
+            className="w-full pr-12 pl-6 py-2.5 md:py-3 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl text-[#1a1a1a] dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all uyghur-text shadow-sm text-base"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute inset-y-0 left-4 flex items-center text-slate-400 hover:text-[#0369a1] transition-colors"
+              className="absolute inset-y-0 left-4 flex items-center text-slate-400 hover:text-[#0369a1] dark:hover:text-[#38bdf8] transition-colors"
             >
               <X size={18} />
             </button>
@@ -325,14 +325,14 @@ export function AutoCorrectRulesPanel() {
         <div className="flex items-center gap-2 md:gap-3 shrink-0 w-full justify-end md:w-auto md:justify-start md:mr-auto">
           <button
             onClick={handleRefresh}
-            className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-2.5 bg-white text-[#0369a1] rounded-xl border border-[#0369a1]/20 hover:border-[#0369a1] transition-all shadow-sm"
+            className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-2.5 bg-white dark:bg-slate-800 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] rounded-xl hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 transition-all shadow-sm"
           >
             <RefreshCw size={14} className={(isLoading || isLoadingMore) ? 'animate-spin' : ''} />
             <span className="text-xs md:text-sm font-normal">{t('common.refresh')}</span>
           </button>
           <button
             onClick={openAddModal}
-            className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-2.5 bg-[#0369a1] text-white rounded-xl hover:bg-[#0369a1]/90 transition-all shadow-lg shadow-[#0369a1]/20"
+            className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-2.5 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl hover:bg-[#0284c7] dark:hover:bg-[#38bdf8]/90 transition-all shadow-lg shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10"
           >
             <Plus size={14} className="md:w-4 md:h-4" />
             <span className="text-xs md:text-sm font-normal">{t('admin.autoCorrectRules.add')}</span>
@@ -446,19 +446,19 @@ export function AutoCorrectRulesPanel() {
       {isModalOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" dir="rtl" lang="ug">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md animate-fade-in" onClick={() => setIsModalOpen(false)} />
-          <div className="relative w-full max-w-lg bg-white rounded-[32px] overflow-hidden shadow-2xl animate-scale-up border border-[#0369a1]/10 flex flex-col">
-            <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-[#0369a1]/5">
+          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-[32px] overflow-hidden shadow-2xl animate-scale-up border border-[#0369a1]/10 dark:border-slate-805 flex flex-col">
+            <div className="px-8 py-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-[#0369a1]/5 dark:bg-[#38bdf8]/5">
               <div className="flex items-center gap-3">
                 <div className="p-2.5 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20">
                   {editingRule ? <Edit2 size={20} /> : <Plus size={20} />}
                 </div>
-                <h3 className="text-xl font-bold text-[#1a1a1a]">
+                <h3 className="text-xl font-bold text-[#1a1a1a] dark:text-slate-100">
                   {editingRule ? t('admin.autoCorrectRules.editRule') : t('admin.autoCorrectRules.createNew')}
                 </h3>
               </div>
               <button 
                 onClick={() => setIsModalOpen(false)} 
-                className="p-2 hover:bg-slate-200 text-slate-400 hover:text-[#1a1a1a] rounded-xl transition-all"
+                className="p-2 hover:bg-slate-200 dark:hover:bg-slate-805 text-slate-400 dark:text-slate-500 hover:text-[#1a1a1a] dark:hover:text-slate-100 rounded-xl transition-all"
               >
                 <X size={20} strokeWidth={2.5} />
               </button>
@@ -466,7 +466,7 @@ export function AutoCorrectRulesPanel() {
 
             <form onSubmit={handleSubmit} className="p-8 space-y-6 overflow-y-auto max-h-[70vh]">
               <div className="space-y-2">
-                <label className="block text-sm font-bold text-slate-400 uppercase tracking-widest px-1">
+                <label className="block text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-1">
                   {t('admin.autoCorrectRules.misspelled')} <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -476,15 +476,17 @@ export function AutoCorrectRulesPanel() {
                   type="text"
                   value={misspelled}
                   onChange={(e) => setMisspelled(e.target.value)}
-                  className={`w-full px-5 py-3.5 border-2 rounded-2xl outline-none focus:border-[#0369a1] transition-all uyghur-text text-xl ${
-                    editingRule ? 'bg-slate-50 border-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white border-slate-100'
+                  className={`w-full px-5 py-3.5 border-2 rounded-2xl outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all uyghur-text text-xl ${
+                    editingRule 
+                      ? 'bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed' 
+                      : 'bg-white dark:bg-slate-950 border-slate-100 dark:border-slate-800 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500'
                   }`}
                   placeholder={t('admin.autoCorrectRules.misspelled')}
                 />
               </div>
 
               <div className="space-y-2">
-                <label className="block text-sm font-bold text-slate-400 uppercase tracking-widest px-1">
+                <label className="block text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-1">
                   {t('admin.autoCorrectRules.corrected')} <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -492,20 +494,20 @@ export function AutoCorrectRulesPanel() {
                   type="text"
                   value={corrected}
                   onChange={(e) => setCorrected(e.target.value)}
-                  className="w-full px-5 py-3.5 border-2 border-slate-100 rounded-2xl bg-white outline-none focus:border-[#0369a1] transition-all uyghur-text text-xl"
+                  className="w-full px-5 py-3.5 border-2 border-slate-100 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all uyghur-text text-xl"
                   placeholder={t('admin.autoCorrectRules.corrected')}
                 />
               </div>
 
               <div className="space-y-2">
-                <label className="block text-sm font-bold text-slate-400 uppercase tracking-widest px-1">
+                <label className="block text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-1">
                   {t('admin.autoCorrectRules.description')}
                 </label>
                 <textarea
                   rows={3}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  className="w-full px-5 py-3.5 border-2 border-slate-100 rounded-2xl bg-white outline-none focus:border-[#0369a1] transition-all uyghur-text text-base resize-none"
+                  className="w-full px-5 py-3.5 border-2 border-slate-100 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all uyghur-text text-base resize-none"
                   placeholder={t('admin.autoCorrectRules.description')}
                 />
               </div>
@@ -514,28 +516,28 @@ export function AutoCorrectRulesPanel() {
                 <button
                   type="button"
                   onClick={() => setIsActive(!isActive)}
-                  className={`w-12 h-6 rounded-full transition-all relative ${isActive ? 'bg-emerald-500' : 'bg-slate-200'}`}
+                  className={`w-12 h-6 rounded-full transition-all relative ${isActive ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-slate-800'}`}
                 >
                   <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${isActive ? 'left-1' : 'left-7'}`} />
                 </button>
-                <span className="text-sm font-bold text-slate-600 uppercase tracking-wide">
+                <span className="text-sm font-bold text-slate-655 dark:text-slate-400 uppercase tracking-wide">
                   {t('admin.autoCorrectRules.isActive')}
                 </span>
               </div>
             </form>
 
-            <div className="px-8 py-6 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+            <div className="px-8 py-6 bg-slate-50 dark:bg-slate-950/40 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="px-6 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-all font-bold uppercase tracking-widest text-xs"
+                className="px-6 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-all font-bold uppercase tracking-widest text-xs"
               >
                 {t('common.cancel')}
               </button>
               <button
                 onClick={handleSubmit}
                 disabled={isSubmitting || !misspelled.trim() || !corrected.trim()}
-                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-8 py-2.5 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 hover:bg-[#0284c7] transition-all active:scale-95 disabled:opacity-50 font-bold uppercase tracking-widest text-xs"
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-8 py-2.5 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl shadow-lg shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10 hover:bg-[#0284c7] dark:hover:bg-[#38bdf8]/90 transition-all active:scale-95 disabled:opacity-50 font-bold uppercase tracking-widest text-xs"
               >
                 {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                 {t('common.save')}
@@ -549,14 +551,14 @@ export function AutoCorrectRulesPanel() {
       {isDeleting && (
         <div className="fixed inset-0 z-[210] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-fade-in" onClick={() => setIsDeleting(null)} />
-          <div className="relative w-full max-w-sm bg-white rounded-[40px] p-8 shadow-2xl animate-scale-up border border-[#0369a1]/10 flex flex-col items-center text-center">
-            <div className="w-20 h-20 bg-red-50 text-red-500 rounded-full flex items-center justify-center mb-6 shadow-inner ring-8 ring-red-50/50">
+          <div className="relative w-full max-w-sm bg-white dark:bg-slate-900 rounded-[40px] p-8 shadow-2xl animate-scale-up border border-[#0369a1]/10 dark:border-slate-800 flex flex-col items-center text-center">
+            <div className="w-20 h-20 bg-red-50 dark:bg-red-950/20 text-red-500 rounded-full flex items-center justify-center mb-6 shadow-inner ring-8 ring-red-50/50 dark:ring-red-950/10">
               <Trash2 size={40} />
             </div>
-            <h3 className="text-2xl font-bold text-[#1a1a1a] mb-3 uyghur-text">
+            <h3 className="text-2xl font-bold text-[#1a1a1a] dark:text-slate-100 mb-3 uyghur-text">
               {t('common.delete')}
             </h3>
-            <p className="text-slate-500 mb-8 uyghur-text leading-relaxed">
+            <p className="text-slate-500 dark:text-slate-400 mb-8 uyghur-text leading-relaxed">
               {t('admin.autoCorrectRules.confirmDelete')}
               <span className="block mt-2 font-bold text-red-500 text-lg">
                 "{isDeleting.misspelled_word}" → "{isDeleting.corrected_word}"
@@ -565,14 +567,14 @@ export function AutoCorrectRulesPanel() {
             <div className="flex gap-3 w-full">
               <button
                 onClick={() => setIsDeleting(null)}
-                className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-2xl font-bold uppercase tracking-widest text-xs hover:bg-slate-200 transition-all active:scale-95"
+                className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-2xl font-bold uppercase tracking-widest text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition-all active:scale-95"
               >
                 {t('common.cancel')}
               </button>
               <button
                 onClick={handleDelete}
                 disabled={isSubmitting}
-                className="flex-1 py-3 bg-red-500 text-white rounded-2xl font-bold uppercase tracking-widest text-xs shadow-lg shadow-red-500/20 hover:bg-red-600 transition-all active:scale-95 disabled:opacity-50"
+                className="flex-1 py-3 bg-red-500 dark:bg-red-600 text-white rounded-2xl font-bold uppercase tracking-widest text-xs shadow-lg shadow-red-500/20 hover:bg-red-600 dark:hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50"
               >
                 {isSubmitting ? <Loader2 size={16} className="animate-spin mx-auto" /> : t('common.delete')}
               </button>
