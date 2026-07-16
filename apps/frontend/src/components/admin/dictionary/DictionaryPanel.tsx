@@ -220,7 +220,7 @@ export const DictionaryPanel: React.FC = () => {
                 <AlertCircle className="w-6 h-6 md:w-8 md:h-8" />
              </div>
              <div className="space-y-1">
-                <h3 className="text-lg md:text-xl font-normal text-[#1a1a1a]">{t('admin.dictionary.wordNotFound')}</h3>
+                <h3 className="text-lg md:text-xl font-normal text-[#1a1a1a] dark:text-slate-100">{t('admin.dictionary.wordNotFound')}</h3>
                 <p className="text-slate-400 font-bold text-[9px] md:text-xs uppercase tracking-widest opacity-60 line-clamp-1">{searchQuery}</p>
              </div>
           </div>
