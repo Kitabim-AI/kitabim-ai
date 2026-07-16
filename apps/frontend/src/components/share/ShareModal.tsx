@@ -47,20 +47,20 @@ export const ShareModal: React.FC<ShareModalProps> = ({ book, onClose }) => {
       />
 
       <div
-        className="relative z-10 w-full max-w-md bg-white/95 backdrop-blur-2xl rounded-[32px] shadow-[0_32px_128px_rgba(0,0,0,0.25)] overflow-hidden border border-white/40 animate-scale-up"
+        className="relative z-10 w-full max-w-md bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl rounded-[32px] shadow-[0_32px_128px_rgba(0,0,0,0.25)] dark:shadow-black/35 overflow-hidden border border-white/40 dark:border-slate-800 animate-scale-up"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-5 pb-4 border-b border-slate-100">
+        <div className="flex items-center justify-between p-5 pb-4 border-b border-slate-100 dark:border-slate-850">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-[#1877F2]/10 text-[#1877F2] rounded-xl">
+            <div className="p-2 bg-[#1877F2]/10 dark:bg-[#38bdf8]/10 text-[#1877F2] dark:text-[#38bdf8] rounded-xl">
               <FacebookIcon />
             </div>
-            <span className="font-normal text-[#1a1a1a] uyghur-text">{t('share.shareBook')}</span>
+            <span className="font-normal text-[#1a1a1a] dark:text-slate-100 uyghur-text">{t('share.shareBook')}</span>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-red-50 text-slate-300 hover:text-red-400 rounded-xl transition-all"
+            className="p-2 hover:bg-red-50 dark:hover:bg-red-950/20 text-slate-300 dark:text-slate-500 hover:text-red-400 dark:hover:text-red-400 rounded-xl transition-all"
           >
             <X size={20} strokeWidth={2.5} />
           </button>
@@ -68,10 +68,10 @@ export const ShareModal: React.FC<ShareModalProps> = ({ book, onClose }) => {
 
         {/* Facebook preview card */}
         <div className="p-5 pb-4">
-          <p className="text-xs text-slate-400 uppercase tracking-wider mb-3 font-normal text-right">
+          <p className="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3 font-normal text-right">
             {t('share.previewLabel')}
           </p>
-          <div className="rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm">
+          <div className="rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-sm">
             {/* Cover image */}
             <div className="w-full aspect-[1.91/1] bg-gradient-to-br from-[#FFD54F] via-[#FF9800] to-[#F06292] overflow-hidden">
               {book.coverUrl ? (
@@ -85,13 +85,13 @@ export const ShareModal: React.FC<ShareModalProps> = ({ book, onClose }) => {
               )}
             </div>
             {/* OG text preview */}
-            <div className="p-3 text-left bg-[#f0f2f5]">
-              <p className="text-[10px] text-slate-400 uppercase tracking-wide">kitabim.ai</p>
-              <p className="text-sm font-semibold text-[#1c1e21] leading-snug mt-0.5 line-clamp-1">
+            <div className="p-3 text-left bg-[#f0f2f5] dark:bg-slate-900/50">
+              <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wide">kitabim.ai</p>
+              <p className="text-sm font-semibold text-[#1c1e21] dark:text-slate-200 leading-snug mt-0.5 line-clamp-1">
                 {titleWithVolume}
               </p>
               {displayAuthor && (
-                <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{displayAuthor}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">{displayAuthor}</p>
               )}
             </div>
           </div>
@@ -101,7 +101,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({ book, onClose }) => {
         <div className="flex gap-2 p-5 pt-0">
           <button
             onClick={handleCopy}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-[#1a1a1a] rounded-2xl text-sm font-normal transition-all active:scale-95"
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-[#1a1a1a] dark:text-slate-200 rounded-2xl text-sm font-normal transition-all active:scale-95"
           >
             {copied ? <Check size={16} className="text-emerald-500" strokeWidth={2.5} /> : <Copy size={16} strokeWidth={2.5} />}
             <span className="uyghur-text">
@@ -111,7 +111,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({ book, onClose }) => {
 
           <button
             onClick={handleFacebook}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#1877F2] hover:bg-[#166fe5] text-white rounded-2xl text-sm font-normal transition-all active:scale-95 shadow-lg shadow-[#1877F2]/30"
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#1877F2] hover:bg-[#166fe5] text-white rounded-2xl text-sm font-normal transition-all active:scale-95 shadow-lg shadow-[#1877F2]/30 dark:shadow-[#1877F2]/10"
           >
             <ExternalLink size={16} strokeWidth={2.5} />
             <span className="uyghur-text whitespace-nowrap">{t('share.postToFacebook')}</span>
