@@ -82,15 +82,15 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
   const multiBook = new Set(sorted.map(p => p.bookId)).size > 1;
 
   const renderTableHead = (pageLabel: string) => (
-    <div className="flex items-center gap-2 px-3 py-1.5 border-b border-slate-100/50 mb-1">
-      <span className="hidden lg:flex w-40 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-start flex-shrink-0">
+    <div className="flex items-center gap-2 px-3 py-1.5 border-b border-slate-100/50 dark:border-slate-800/50 mb-1">
+      <span className="hidden lg:flex w-40 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider text-start flex-shrink-0">
         {pageLabel}
       </span>
-      <span className="flex-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-start">
+      <span className="flex-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider text-start">
         {t('spellCheck.reviewOriginal')}
       </span>
       <span className="w-8 flex-shrink-0" />
-      <span className="flex-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-start">
+      <span className="flex-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider text-start">
         {t('spellCheck.reviewReplacement')}
       </span>
       <span className="w-16 flex-shrink-0" />
@@ -105,26 +105,26 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
       <div
         key={correction.id}
         className={`flex flex-col lg:flex-row lg:items-center gap-1.5 lg:gap-2 px-3 py-2.5 lg:py-3 border rounded-2xl shadow-sm transition-all ${
-          correction.isSkip ? 'bg-slate-50 border-slate-200 opacity-80' : 
-          correction.isIgnore ? 'bg-amber-50/50 border-amber-100' :
-          correction.isDictionaryAddition ? 'bg-emerald-50/50 border-emerald-100' :
-          'bg-white border-[#0369a1]/10'
+          correction.isSkip ? 'bg-slate-50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 opacity-80' : 
+          correction.isIgnore ? 'bg-amber-50/50 dark:bg-amber-500/5 border-amber-100 dark:border-amber-500/20' :
+          correction.isDictionaryAddition ? 'bg-emerald-50/50 dark:bg-emerald-500/5 border-emerald-100 dark:border-emerald-500/20' :
+          'bg-white dark:bg-slate-950/40 border-[#0369a1]/10 dark:border-slate-800'
         }`}
       >
         {/* Page Info */}
-        <div className="flex lg:flex-col lg:w-40 flex-shrink-0 flex-row items-center lg:items-start justify-start lg:justify-center gap-2 lg:gap-1 pr-1 lg:border-l lg:border-slate-100/50 pl-2 border-b lg:border-b-0 pb-1.5 lg:pb-0 mb-1 lg:mb-0 border-slate-100/30">
+        <div className="flex lg:flex-col lg:w-40 flex-shrink-0 flex-row items-center lg:items-start justify-start lg:justify-center gap-2 lg:gap-1 pr-1 lg:border-l lg:border-slate-100/50 dark:lg:border-slate-800/50 pl-2 border-b lg:border-b-0 pb-1.5 lg:pb-0 mb-1 lg:mb-0 border-slate-100/30 dark:border-slate-800/30">
           <div className="flex items-center gap-1.5">
-            <span className="inline-block px-2 py-0.5 bg-[#0369a1]/10 text-[#0369a1] text-[10px] sm:text-xs font-bold rounded-lg whitespace-nowrap shrink-0">
+            <span className="inline-block px-2 py-0.5 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] text-[10px] sm:text-xs font-bold rounded-lg whitespace-nowrap shrink-0">
               {correction.pageNum}-بەت
             </span>
             {count && count > 1 && (
-              <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-slate-400 text-white text-[9px] font-bold rounded-full shadow-sm">
+              <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-slate-400 dark:bg-slate-700 text-white dark:text-slate-200 text-[9px] font-bold rounded-full shadow-sm">
                 {count}
               </span>
             )}
           </div>
           {correction.bookTitle && (
-            <span className="block text-[10px] text-slate-400 font-bold uyghur-text leading-tight w-full break-words lg:truncate">
+            <span className="block text-[10px] text-slate-400 dark:text-slate-500 font-bold uyghur-text leading-tight w-full break-words lg:truncate">
               {correction.bookTitle}
             </span>
           )}
@@ -135,9 +135,9 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
           {/* Original word */}
           <span
             className={`flex-1 font-semibold uyghur-text text-start break-words px-1 ${
-              correction.isSkip ? 'text-slate-400' :
-              correction.isIgnore ? 'text-amber-600' :
-              'text-red-500'
+              correction.isSkip ? 'text-slate-400 dark:text-slate-500' :
+              correction.isIgnore ? 'text-amber-600 dark:text-amber-400' :
+              'text-red-500 dark:text-red-400'
             }`}
             style={{ fontSize: `${fontSize}px` }}
           >
@@ -147,39 +147,39 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
           {/* Status indicator / Arrow */}
           <div className="w-8 flex-shrink-0 flex items-center justify-center">
             {isCorrection ? (
-              <span className="text-slate-300 text-center text-xs">←</span>
+              <span className="text-slate-300 dark:text-slate-600 text-center text-xs">←</span>
             ) : (
-              <div className="h-px w-4 bg-slate-200" />
+              <div className="h-px w-4 bg-slate-200 dark:bg-slate-800" />
             )}
           </div>
 
           {/* Replacement word or Action Category */}
           <div className="flex-1 flex items-center justify-start text-start px-1">
             {correction.isDictionaryAddition ? (
-              <div className="flex items-center gap-1.5 text-emerald-600 font-bold uyghur-text">
+              <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-bold uyghur-text">
                 <Book size={14} strokeWidth={2.5} />
                 <span className="text-xs">{t('spellCheck.reviewCategoryDictionary')}</span>
               </div>
             ) : correction.isIgnore ? (
-              <div className="flex items-center gap-1.5 text-amber-600 font-bold uyghur-text">
+              <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-bold uyghur-text">
                 <EyeOff size={14} strokeWidth={2.5} />
                 <span className="text-xs">{t('spellCheck.reviewCategoryIgnore')}</span>
               </div>
             ) : correction.isSkip ? (
-              <div className="flex items-center gap-1.5 text-slate-500 font-bold uyghur-text">
+              <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-bold uyghur-text">
                 <Clock size={14} strokeWidth={2.5} />
                 <span className="text-xs">{t('spellCheck.reviewCategorySkip')}</span>
               </div>
             ) : (
               <div className="flex flex-col items-start gap-1 w-full">
                 <span
-                  className="text-[#0369a1] font-semibold uyghur-text break-words w-full text-start"
+                  className="text-[#0369a1] dark:text-[#38bdf8] font-semibold uyghur-text break-words w-full text-start"
                   style={{ fontSize: `${fontSize}px` }}
                 >
                   {correction.correctedWord}
                 </span>
                 {correction.isAutoCorrection && (
-                  <div className="flex items-center gap-1 px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded text-[9px] font-bold uppercase shrink-0 w-fit whitespace-nowrap">
+                  <div className="flex items-center gap-1 px-1.5 py-0.5 bg-purple-50 dark:bg-purple-950/30 text-purple-600 dark:text-purple-400 rounded text-[9px] font-bold uppercase shrink-0 w-fit whitespace-nowrap">
                     <Sparkles size={10} strokeWidth={2.5} />
                     {t('spellCheck.reviewCategoryAuto')}
                   </div>
@@ -195,7 +195,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
             <button
               onClick={() => onToggleAutoCorrection(correction.id)}
               disabled={isConfirming}
-              className={`flex-1 lg:flex-none h-10 lg:w-8 lg:h-8 flex items-center justify-center gap-2 rounded-xl transition-all disabled:opacity-30 ${correction.isAutoCorrection ? 'text-purple-600 bg-purple-100' : 'text-slate-400 bg-slate-50 hover:bg-purple-50 hover:text-purple-600'}`}
+              className={`flex-1 lg:flex-none h-10 lg:w-8 lg:h-8 flex items-center justify-center gap-2 rounded-xl transition-all disabled:opacity-30 ${correction.isAutoCorrection ? 'text-purple-600 bg-purple-100 dark:text-purple-400 dark:bg-purple-950/50' : 'text-slate-400 bg-slate-50 hover:bg-purple-50 hover:text-purple-600 dark:text-slate-500 dark:bg-slate-900 dark:hover:bg-purple-950/30 dark:hover:text-purple-400'}`}
               title={t('spellCheck.saveAsAutoCorrection')}
             >
               <Sparkles className="w-5 h-5 lg:w-[14px] lg:h-[14px]" strokeWidth={2.5} />
@@ -207,7 +207,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
             <button
               onClick={() => onToggleDictionary(correction.id)}
               disabled={isConfirming}
-              className={`flex-1 lg:flex-none h-10 lg:w-8 lg:h-8 flex items-center justify-center gap-2 rounded-xl transition-all disabled:opacity-30 ${correction.isDictionaryAddition ? 'text-emerald-600 bg-emerald-100' : 'text-slate-400 bg-slate-50 hover:bg-emerald-50 hover:text-emerald-600'}`}
+              className={`flex-1 lg:flex-none h-10 lg:w-8 lg:h-8 flex items-center justify-center gap-2 rounded-xl transition-all disabled:opacity-30 ${correction.isDictionaryAddition ? 'text-emerald-600 bg-emerald-100 dark:text-emerald-400 dark:bg-emerald-950/50' : 'text-slate-400 bg-slate-50 hover:bg-emerald-50 hover:text-emerald-600 dark:text-slate-500 dark:bg-slate-900 dark:hover:bg-emerald-950/30 dark:hover:text-emerald-400'}`}
               title={t('spellCheck.addToDictionary')}
             >
               <Book className="w-5 h-5 lg:w-[14px] lg:h-[14px]" strokeWidth={2.5} />
@@ -226,7 +226,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
               }
             }}
             disabled={isConfirming}
-            className="flex-1 lg:flex-none h-10 lg:w-8 lg:h-8 flex items-center justify-center gap-2 text-slate-400 bg-slate-50 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all disabled:opacity-30"
+            className="flex-1 lg:flex-none h-10 lg:w-8 lg:h-8 flex items-center justify-center gap-2 text-slate-400 bg-slate-50 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all disabled:opacity-30 dark:text-slate-500 dark:bg-slate-900 dark:hover:text-red-400 dark:hover:bg-red-950/30"
           >
             {correction.isSkip ? (
               <>
@@ -250,8 +250,8 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
       {/* Top bar */}
       <div className="flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-2">
-          <ClipboardList size={16} className="text-[#0369a1]" strokeWidth={2.5} />
-          <span className="text-sm font-bold text-[#1a1a1a] uppercase tracking-wide">
+          <ClipboardList size={16} className="text-[#0369a1] dark:text-[#38bdf8]" strokeWidth={2.5} />
+          <span className="text-sm font-bold text-[#1a1a1a] dark:text-slate-100 uppercase tracking-wide">
             {t('spellCheck.reviewTitle')}
           </span>
           {pending.length > 0 && (
@@ -262,7 +262,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
         </div>
         <button
           onClick={onClose}
-          className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all active:scale-95"
+          className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:text-slate-500 dark:hover:text-slate-300 dark:hover:bg-slate-800 rounded-xl transition-all active:scale-95"
         >
           <X size={16} strokeWidth={2.5} />
         </button>
@@ -272,13 +272,13 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
       <div className="flex-1 overflow-y-auto custom-scrollbar">
         {sorted.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-4 py-16 text-center h-full">
-            <div className="p-5 bg-slate-50 rounded-[28px] shadow-inner text-slate-300">
+            <div className="p-5 bg-slate-50 dark:bg-slate-900 rounded-[28px] shadow-inner text-slate-300 dark:text-slate-700">
               <Check size={32} strokeWidth={2.5} />
             </div>
-            <p className="font-normal text-slate-400 uyghur-text" style={{ fontSize: `${fontSize}px` }}>
+            <p className="font-normal text-slate-400 dark:text-slate-500 uyghur-text" style={{ fontSize: `${fontSize}px` }}>
               {t('spellCheck.reviewEmpty')}
             </p>
-            <p className="text-sm text-slate-300 uyghur-text leading-relaxed" style={{ fontSize: `${fontSize - 2}px` }}>
+            <p className="text-sm text-slate-300 dark:text-slate-600 uyghur-text leading-relaxed" style={{ fontSize: `${fontSize - 2}px` }}>
               {t('spellCheck.reviewEmptyNote')}
             </p>
           </div>
@@ -286,17 +286,17 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
           <div className="space-y-6">
             {/* Global Rules Section */}
             {globalRules.length > 0 && (
-              <div className="space-y-3 p-4 bg-purple-50/40 border border-purple-100/50 rounded-[32px] animate-fade-in shadow-sm">
+              <div className="space-y-3 p-4 bg-purple-50/40 dark:bg-purple-950/10 border border-purple-100/50 dark:border-purple-900/30 rounded-[32px] animate-fade-in shadow-sm">
                 <div className="flex flex-col gap-1 px-1">
-                  <div className="flex items-center gap-2 text-purple-600">
-                    <div className="p-1.5 bg-purple-100 rounded-xl">
+                  <div className="flex items-center gap-2 text-purple-600 dark:text-purple-400">
+                    <div className="p-1.5 bg-purple-100 dark:bg-purple-950/40 rounded-xl">
                       <Sparkles size={16} strokeWidth={2.5} />
                     </div>
                     <h3 className="text-sm font-bold uppercase tracking-wider uyghur-text">
                       {t('spellCheck.reviewGlobalRules')}
                     </h3>
                   </div>
-                  <p className="text-[10px] text-purple-400 font-bold uyghur-text leading-tight mt-1 pl-1">
+                  <p className="text-[10px] text-purple-400 dark:text-purple-500 font-bold uyghur-text leading-tight mt-1 pl-1">
                     {t('spellCheck.eventualConsistencyNote')}
                   </p>
                 </div>
@@ -320,9 +320,9 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
 
             {/* Local Rules Section */}
             {localRules.length > 0 && (
-              <div className="space-y-3 p-4 bg-slate-50/40 border border-slate-100/50 rounded-[32px] animate-fade-in shadow-sm">
-                <div className="flex items-center gap-2 px-1 text-slate-500">
-                  <div className="p-1.5 bg-slate-100 rounded-xl">
+              <div className="space-y-3 p-4 bg-slate-50/40 dark:bg-slate-900/20 border border-slate-100/50 dark:border-slate-800 rounded-[32px] animate-fade-in shadow-sm">
+                <div className="flex items-center gap-2 px-1 text-slate-500 dark:text-slate-400">
+                  <div className="p-1.5 bg-slate-100 dark:bg-slate-800 rounded-xl">
                     <ClipboardList size={16} strokeWidth={2.5} />
                   </div>
                   <h3 className="text-sm font-bold uppercase tracking-wider uyghur-text">
@@ -350,9 +350,9 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
       <div className="flex-shrink-0 space-y-2">
         {/* Error banner */}
         {confirmError && (
-          <div className="flex items-center gap-2 px-4 py-3 bg-amber-50 border border-amber-200 rounded-2xl animate-fade-in">
+          <div className="flex items-center gap-2 px-4 py-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 rounded-2xl animate-fade-in">
             <AlertTriangle size={14} className="text-amber-500 flex-shrink-0" strokeWidth={2.5} />
-            <p className="font-normal uyghur-text leading-relaxed text-amber-700 flex-1" style={{ fontSize: `${fontSize - 2}px` }}>
+            <p className="font-normal uyghur-text leading-relaxed text-amber-700 dark:text-amber-400 flex-1" style={{ fontSize: `${fontSize - 2}px` }}>
               {confirmError.toLowerCase().match(/failed|error|returned|denied|unauthorized/) ? (
                 <>
                   {t('spellCheck.confirmError', { count: pending.length })}
@@ -368,7 +368,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
             <button
               onClick={onClearAll}
               disabled={isConfirming}
-              className="px-5 py-2.5 bg-slate-100 text-slate-500 hover:bg-slate-200 rounded-2xl text-sm font-normal transition-all active:scale-95 disabled:opacity-40 uppercase whitespace-nowrap shrink-0"
+              className="px-5 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-2xl text-sm font-normal transition-all active:scale-95 disabled:opacity-40 uppercase whitespace-nowrap shrink-0"
             >
               {t('spellCheck.clearAll')}
             </button>
@@ -376,7 +376,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
           <button
             onClick={onConfirmAll}
             disabled={isConfirming || pending.length === 0}
-            className="flex-1 flex items-center justify-center gap-2 px-5 py-2.5 bg-[#0369a1] text-white rounded-2xl text-sm font-normal transition-all active:scale-95 disabled:opacity-40 shadow-lg shadow-[#0369a1]/20 hover:bg-[#0284c7] uppercase whitespace-nowrap"
+            className="flex-1 flex items-center justify-center gap-2 px-5 py-2.5 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-2xl text-sm font-normal transition-all active:scale-95 disabled:opacity-40 shadow-lg shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10 hover:bg-[#0284c7] dark:hover:bg-[#0284c7] uppercase whitespace-nowrap"
           >
             {isConfirming ? (
               <Loader2 size={16} strokeWidth={2.5} className="animate-spin" />

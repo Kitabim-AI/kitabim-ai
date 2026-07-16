@@ -372,6 +372,33 @@ class Proverb(Base):
     )
 
 
+class Quran(Base):
+    """Quran model for Uyghur, English and Arabic verses (ayahs)"""
+
+    __tablename__ = "quran"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    surah: Mapped[int] = mapped_column(Integer, nullable=False)
+    surah_name_en: Mapped[str] = mapped_column(String(255), nullable=False)
+    surah_name_ar: Mapped[str] = mapped_column(String(255), nullable=False)
+    surah_name_ug: Mapped[str] = mapped_column(String(255), nullable=False)
+    ayah: Mapped[int] = mapped_column(Integer, nullable=False)
+    text_ar: Mapped[str] = mapped_column(Text, nullable=False)
+    text_en: Mapped[str] = mapped_column(Text, nullable=False)
+    text_ug: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding: Mapped[Optional[List[float]]] = mapped_column(
+        Vector(3072),  # pgvector type
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+
 class RAGEvaluation(Base):
     """RAG evaluation model for tracking RAG query performance metrics"""
 

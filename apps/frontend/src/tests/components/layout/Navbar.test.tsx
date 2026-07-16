@@ -35,6 +35,8 @@ const createContextValue = () => ({
   chat: { clearChat: vi.fn() },
   setPage: vi.fn(),
   isLoading: false,
+  isGlobalSearchOpen: false,
+  setIsGlobalSearchOpen: vi.fn(),
 });
 
 const renderNavbar = () =>
@@ -77,11 +79,10 @@ test('Navbar handles search input', () => {
 
   renderNavbar();
 
-  const input = screen.getByPlaceholderText('library.searchPlaceholder');
-  fireEvent.change(input, { target: { value: 'new query' } });
-  vi.advanceTimersByTime(300);
+  const searchButton = screen.getByTitle('library.searchPlaceholder');
+  fireEvent.click(searchButton);
 
-  expect(context.setSearchQuery).toHaveBeenCalledWith('new query');
+  expect(context.setIsGlobalSearchOpen).toHaveBeenCalledWith(true);
 });
 
 test('Navbar handles file upload trigger', () => {

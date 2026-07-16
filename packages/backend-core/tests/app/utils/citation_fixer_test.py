@@ -28,3 +28,14 @@ def test_fix_malformed_citations_standalone():
 def test_fix_malformed_citations_none():
     assert fix_malformed_citations(None) is None
     assert fix_malformed_citations("") == ""
+
+
+def test_fix_malformed_citations_quran():
+    # Quran references inside proper markdown links should be preserved
+    text_preserved = "[سۈرە فاتىھە، 1-ئايەت](ref:quran:1:1)"
+    assert fix_malformed_citations(text_preserved) == text_preserved
+
+    # Standalone Quran references should be converted to links
+    text_standalone = "بۇ ھەقتە ref:quran:2:255 نى كۆرۈڭ."
+    expected_standalone = "بۇ ھەقتە [مەنبە](ref:quran:2:255) نى كۆرۈڭ."
+    assert fix_malformed_citations(text_standalone) == expected_standalone

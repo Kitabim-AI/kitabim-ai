@@ -133,6 +133,18 @@ function insertText(target: HTMLInputElement | HTMLTextAreaElement, text: string
 
   const event = new Event('input', { bubbles: true });
   target.dispatchEvent(event);
+
+  // Scroll to caret after React processes the input event and re-renders
+  setTimeout(() => {
+    if (target.dir === 'rtl') {
+      target.scrollLeft = -target.scrollWidth;
+      if (target.scrollLeft === 0) {
+        target.scrollLeft = target.scrollWidth;
+      }
+    } else {
+      target.scrollLeft = target.scrollWidth;
+    }
+  }, 0);
 }
 
 function handleKeyDown(e: KeyboardEvent) {

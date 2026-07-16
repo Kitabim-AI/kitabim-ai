@@ -13,8 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
 from app.db.models import NamesDictionary
-from app.models.user import User
-from auth.dependencies import require_editor
 
 router = APIRouter()
 
@@ -40,7 +38,6 @@ class NamesStatsOut(BaseModel):
 @router.get("/names-dictionary/stats", response_model=NamesStatsOut)
 async def get_names_stats(
     letter_group: Optional[str] = None,
-    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     stmt = select(func.count()).select_from(NamesDictionary)
@@ -52,7 +49,6 @@ async def get_names_stats(
 
 @router.get("/names-dictionary/letter-groups", response_model=List[str])
 async def list_names_letter_groups(
-    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     stmt = select(distinct(NamesDictionary.letter_group)).order_by(
@@ -66,7 +62,6 @@ async def list_names_letter_groups(
 async def search_names_dictionary(
     q: str,
     limit: int = 10,
-    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     q = q.strip()
@@ -87,7 +82,6 @@ async def list_names_entries(
     skip: int = 0,
     limit: int = 20,
     letter_group: Optional[str] = None,
-    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     stmt = select(NamesDictionary).order_by(NamesDictionary.id.asc())

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { useI18n } from '../../i18n/I18nContext';
+import { useTheme } from '../../context/ThemeContext';
 import { Search, Loader2, ZoomIn, ZoomOut, Maximize, Minimize, Maximize2, Network, BookOpen, MapPin, User, Calendar, HelpCircle, X, SlidersHorizontal, Building, Clock, Lightbulb, ChevronDown } from 'lucide-react';
 
 interface GraphNode {
@@ -54,6 +55,8 @@ const formatYear = (year: number, type: 'hijri' | 'gregorian', lang: string) => 
 
 export const GraphView: React.FC = () => {
   const { t, language } = useI18n();
+  const { theme } = useTheme();
+  const isThemeDark = theme === 'dark';
   const [rawGraphData, setRawGraphData] = useState<GraphData>({ nodes: [], links: [] });
   const [selectedNodeTypes, setSelectedNodeTypes] = useState<string[]>([]);
   const [selectedEdgeTypes, setSelectedEdgeTypes] = useState<string[]>([]);
@@ -620,19 +623,19 @@ export const GraphView: React.FC = () => {
     <div className="flex-grow flex flex-col lg:h-full lg:overflow-hidden px-4 md:px-0" dir="rtl">
       {/* Header Panel (Hidden in full screen mode to maximize canvas space) */}
       {!isFullScreen && (
-        <div className="pb-6 sm:pb-8 border-b border-[#0369a1]/10 relative mb-6 sm:mb-8">
+        <div className="pb-6 sm:pb-8 border-b border-[#0369a1]/10 dark:border-[#38bdf8]/10 relative mb-6 sm:mb-8">
           <header className="space-y-3 sm:space-y-4">
             <div className="flex items-center gap-3 sm:gap-4 group">
-              <div className="p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 icon-shake shrink-0">
+              <div className="p-2 md:p-3 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl shadow-lg shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10 icon-shake shrink-0">
                 <Network size={20} className="md:w-6 md:h-6" strokeWidth={2.5} />
               </div>
               <div className="flex-1">
-                <h1 className="text-2xl sm:text-3xl font-black text-[#1a1a1a]">
+                <h1 className="text-2xl sm:text-3xl font-black text-[#1a1a1a] dark:text-slate-100">
                   {t('graph.title')}
                 </h1>
                 <div className="flex items-center gap-2 mt-1 sm:mt-2">
-                  <span className="w-6 sm:w-8 h-[2px] bg-[#0369a1] rounded-full shrink-0" />
-                  <p className="text-slate-500 text-xs sm:text-sm leading-normal">
+                  <span className="w-6 sm:w-8 h-[2px] bg-[#0369a1] dark:bg-[#38bdf8] rounded-full shrink-0" />
+                  <p className="text-slate-500 dark:text-slate-400 text-xs sm:text-sm leading-normal">
                     {t('graph.subtitle')}
                   </p>
                 </div>
@@ -647,7 +650,7 @@ export const GraphView: React.FC = () => {
         <div className="lg:hidden mb-4">
           <form onSubmit={handleSearchSubmit} className="flex gap-3 w-full items-center">
             <div className="relative flex-grow group">
-              <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1] transition-colors">
+              <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1] dark:text-[#38bdf8] transition-colors">
                 <Search size={18} strokeWidth={3} />
               </div>
               <input
@@ -655,13 +658,13 @@ export const GraphView: React.FC = () => {
                 placeholder={t('graph.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pr-12 pl-12 py-2.5 bg-white border-2 border-[#0369a1]/10 rounded-2xl outline-none focus:border-[#0369a1] transition-all uyghur-text shadow-sm text-base text-right font-normal"
+                className="w-full pr-12 pl-12 py-2.5 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] text-[#1a1a1a] dark:text-slate-100 transition-all uyghur-text shadow-sm text-base text-right font-normal"
               />
               {searchQuery && (
                 <button
                   type="button"
                   onClick={() => { setSearchQuery(''); fetchGraphData(''); }}
-                  className="absolute inset-y-0 left-4 flex items-center text-[#94a3b8] hover:text-[#0369a1] transition-colors active:scale-95"
+                  className="absolute inset-y-0 left-4 flex items-center text-[#94a3b8] hover:text-[#0369a1] dark:hover:text-[#38bdf8] transition-colors active:scale-95"
                 >
                   <X size={16} strokeWidth={3} />
                 </button>
@@ -674,7 +677,7 @@ export const GraphView: React.FC = () => {
               {t('common.search')}
             </button>
           </form>
-          {renderFilters(false)}
+          {renderFilters(isThemeDark)}
         </div>
       )}
 
@@ -686,7 +689,7 @@ export const GraphView: React.FC = () => {
             {/* Search filter form (Desktop view - rendered above nodePanel) */}
             <form onSubmit={handleSearchSubmit} className="flex gap-3 w-full items-center">
               <div className="relative flex-grow group">
-                <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1] transition-colors">
+                <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1] dark:text-[#38bdf8] transition-colors">
                   <Search size={18} strokeWidth={3} />
                 </div>
                 <input
@@ -694,13 +697,13 @@ export const GraphView: React.FC = () => {
                   placeholder={t('graph.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pr-12 pl-12 py-2.5 bg-white border-2 border-[#0369a1]/10 rounded-2xl outline-none focus:border-[#0369a1] transition-all uyghur-text shadow-sm text-base text-right font-normal"
+                  className="w-full pr-12 pl-12 py-2.5 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] text-[#1a1a1a] dark:text-slate-100 transition-all uyghur-text shadow-sm text-base text-right font-normal"
                 />
                 {searchQuery && (
                   <button
                     type="button"
                     onClick={() => { setSearchQuery(''); fetchGraphData(''); }}
-                    className="absolute inset-y-0 left-4 flex items-center text-[#94a3b8] hover:text-[#0369a1] transition-colors active:scale-95"
+                    className="absolute inset-y-0 left-4 flex items-center text-[#94a3b8] hover:text-[#0369a1] dark:hover:text-[#38bdf8] transition-colors active:scale-95"
                   >
                     <X size={16} strokeWidth={3} />
                   </button>
@@ -715,13 +718,13 @@ export const GraphView: React.FC = () => {
             </form>
 
             {/* Segmented Tab Control */}
-            <div className="flex bg-slate-100 p-1 rounded-xl select-none w-full border border-slate-200/50 shrink-0">
+            <div className="flex bg-slate-100 dark:bg-slate-950 p-1 rounded-xl select-none w-full border border-slate-200/50 dark:border-slate-800 shrink-0">
               <button
                 type="button"
                 onClick={() => setActiveTab('filters')}
                 className={`flex-grow flex items-center justify-center gap-1.5 py-2 text-xs font-semibold rounded-lg transition-all duration-200 active:scale-95 ${activeTab === 'filters'
-                    ? 'bg-white text-[#0369a1] shadow-sm'
-                    : 'text-slate-500 hover:text-slate-800'
+                    ? 'bg-white dark:bg-slate-800 text-[#0369a1] dark:text-[#38bdf8] shadow-sm'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
                   }`}
               >
                 {t('graph.tabFilters') || 'Filters'}
@@ -733,22 +736,22 @@ export const GraphView: React.FC = () => {
                 type="button"
                 onClick={() => setActiveTab('details')}
                 className={`flex-grow flex items-center justify-center gap-1.5 py-2 text-xs font-semibold rounded-lg transition-all duration-200 active:scale-95 ${activeTab === 'details'
-                    ? 'bg-white text-[#0369a1] shadow-sm'
-                    : 'text-slate-500 hover:text-slate-800'
+                    ? 'bg-white dark:bg-slate-800 text-[#0369a1] dark:text-[#38bdf8] shadow-sm'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
                   }`}
               >
                 {t('graph.tabDetails') || 'Details'}
                 {selectedNode && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#0369a1] shrink-0" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#0369a1] dark:bg-[#38bdf8] shrink-0" />
                 )}
               </button>
             </div>
 
             {activeTab === 'filters' ? (
-              renderFilters(false, true)
+              renderFilters(isThemeDark, true)
             ) : (
-              <div className="flex-grow border border-[#0369a1]/10 bg-white rounded-2xl p-6 shadow-md flex flex-col min-h-0">
-                {renderDetailsPanelContent(false)}
+              <div className="flex-grow border border-[#0369a1]/10 dark:border-[#38bdf8]/10 bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-md flex flex-col min-h-0">
+                {renderDetailsPanelContent(isThemeDark)}
               </div>
             )}
           </div>

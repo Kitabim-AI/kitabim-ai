@@ -1,0 +1,57 @@
+{
+  "eval_set_id": "kitabim_eval_set_discovery",
+  "name": "Kitabim RAG Agent Catalog Discovery Evaluation Set",
+  "description": "Evaluation cases for catalog listing and general book discovery queries.",
+  "eval_cases": [
+    {
+      "eval_id": "test_search_catalog_discovery",
+      "conversation": [
+        {
+          "invocation_id": "fc-2",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "قايسى كىتابلار بار؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "كۇتۇبخانىدا بىر قىسىم كىتابلار بار، مەسىلەن «لېيىغان بۇلاق»."
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "search_catalog",
+                "args": {
+                  "query": "قايسى كىتابلار بار؟"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          },
+          "observations": []
+        }
+      }
+    }
+  ]
+}

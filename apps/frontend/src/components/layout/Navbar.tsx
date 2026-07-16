@@ -1,6 +1,7 @@
-import { BookA, BookOpen, BookOpenCheck, Bot, HeartHandshake, Home, LibraryBig, Menu, Network, RefreshCw, Search, Settings, Upload, X } from 'lucide-react';
-import React, { useRef, useState } from 'react';
+import { BookA, BookOpen, BookOpenCheck, Bot, HeartHandshake, Home, LibraryBig, Menu, Monitor, Moon, Network, RefreshCw, Search, Settings, Sun, Upload, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
+import { useTheme } from '../../context/ThemeContext';
 import { useAuth, useIsEditor } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
 import { AuthButton } from '../auth';
@@ -26,6 +27,18 @@ export const Navbar: React.FC = () => {
     activeTab
   } = useAppContext();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { theme, setTheme } = useTheme();
+
+  const getThemeIcon = () => {
+    if (theme === 'light') {
+      return <Sun size={22} className="text-[#0369a1] dark:text-[#38bdf8]" />;
+    }
+    return <Moon size={22} className="text-[#0369a1] dark:text-[#38bdf8]" />;
+  };
+
+  const toggleTheme = () => {
+    setTheme(theme === 'light' ? 'dark' : 'light');
+  };
 
   const handleNavClick = (callback: () => void) => {
     callback();
@@ -34,16 +47,16 @@ export const Navbar: React.FC = () => {
 
   return (
     <>
-      <nav className="fixed top-0 left-0 right-0 px-4 sm:px-6 md:px-10 lg:px-12 py-1.5 sm:py-2 flex items-center justify-between z-[100] transition-all duration-300" dir="rtl">
+      <nav className="fixed top-0 left-0 right-0 px-4 sm:px-6 md:px-8 lg:px-8 xl:px-10 py-1.5 sm:py-2 flex items-center justify-between z-[100] transition-all duration-300" dir="rtl">
         {/* Glass Backdrop - Matching Prototype */}
-        <div className="absolute inset-0 bg-white/75 backdrop-blur-[20px] border-b border-[rgba(255,193,7,0.2)] shadow-[0_4px_30px_rgba(117,197,240,0.1),0_1px_0_rgba(255,255,255,0.8)_inset]"
+        <div className="absolute inset-0 bg-white/75 dark:bg-slate-950/75 backdrop-blur-[20px] border-b border-[rgba(255,193,7,0.2)] shadow-[0_4px_30px_rgba(117,197,240,0.1),0_1px_0_rgba(255,255,255,0.8)_inset]"
           style={{ backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)' }} />
 
         {/* Gradient Border at Bottom - Matching Prototype */}
         <div className="absolute -bottom-px left-0 right-0 h-px bg-gradient-to-l from-transparent via-[rgba(255,193,7,0.5)] to-transparent"
           style={{ background: 'linear-gradient(270deg, transparent, rgba(255, 193, 7, 0.5), rgba(156, 39, 176, 0.3), transparent)' }} />
 
-        <div className="relative flex items-center gap-3 sm:gap-4 md:gap-3 lg:gap-8">
+        <div className="relative flex items-center gap-3 sm:gap-4 md:gap-3 lg:gap-4 xl:gap-5">
           <div className="flex items-center h-[48px] gap-2 sm:gap-3 cursor-pointer group transition-transform duration-300 hover:-translate-y-0.5" onClick={() => setView('home')}>
             <div className="flex-shrink-0 w-9 h-9 md:w-11 md:h-11 flex items-center justify-center rounded-xl md:rounded-2xl shadow-[0_4px_20px_rgba(255,193,7,0.4),0_8px_40px_rgba(156,39_176,0.2),inset_0_1px_0_rgba(255,255,255,0.4)] transition-all duration-300 relative overflow-hidden group-hover:shadow-[0_6px_20px_rgba(3,105,161,0.5)] icon-shake"
               style={{
@@ -55,13 +68,13 @@ export const Navbar: React.FC = () => {
                 }} />
               <BookOpen size={24} className="md:w-7 md:h-7 text-white relative z-10" strokeWidth={2} />
             </div>
-            <span dir="ltr" className="flex items-center font-semibold text-[#1a1a1a] text-[24px] mt-[12px] md:text-[32px] md:mt-[16px] tracking-tight">
-              Kitabim<span className="text-[#0369a1]">.AI</span>
+            <span dir="ltr" className="flex items-center font-semibold text-[#1a1a1a] dark:text-[#f8fafc] text-[24px] mt-[12px] md:text-[28px] md:mt-[14px] lg:text-[30px] lg:mt-[15px] xl:text-[32px] xl:mt-[16px] tracking-tight">
+              Kitabim<span className="text-[#0369a1] dark:text-[#38bdf8]">.AI</span>
             </span>
           </div>
 
           {/* Desktop/Tablet Navigation - hide icons on md, show on lg+ */}
-          <div className="hidden md:flex items-center gap-1">
+          <div className="hidden lg:flex items-center gap-1">
             <NavButton
               active={view === 'home'}
               onClick={() => setView('home')}
@@ -100,6 +113,12 @@ export const Navbar: React.FC = () => {
                 label={t('nav.spellCheck')}
               />
             )}
+            <NavButton
+              active={view === 'quran'}
+              onClick={() => { setSearchQuery(''); setView('quran'); }}
+              icon={<BookOpen size={20} strokeWidth={2.5} />}
+              label={t('nav.quran')}
+            />
             {isEditor && (
               <NavButton
                 active={view === 'admin' || (view === 'reader' && previousView === 'admin')}
@@ -117,14 +136,24 @@ export const Navbar: React.FC = () => {
           </div>
         </div>
 
-        <div className="relative flex items-center gap-2 md:gap-2 lg:gap-4">
+        <div className="relative flex items-center gap-2 lg:gap-3">
           {/* Search Toggle Button */}
           <button
             onClick={() => setIsGlobalSearchOpen(true)}
-            className="group relative flex items-center justify-center w-9 h-9 md:w-11 md:h-11 bg-white/50 backdrop-blur-md border border-[#0369a1]/10 rounded-xl md:rounded-2xl hover:border-[#0369a1] hover:bg-[#0369a1]/5 transition-all shadow-sm overflow-hidden active:scale-90"
+            className="group relative flex items-center justify-center w-9 h-9 md:w-11 md:h-11 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md border border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-xl md:rounded-2xl hover:border-[#0369a1] dark:hover:border-[#38bdf8] hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/5 transition-all shadow-sm overflow-hidden active:scale-90"
             title={t('library.searchPlaceholder')}
           >
-            <Search size={22} className="text-[#0369a1] group-hover:scale-110 transition-transform" strokeWidth={2.5} />
+            <Search size={22} className="text-[#0369a1] dark:text-[#38bdf8] group-hover:scale-110 transition-transform" strokeWidth={2.5} />
+            <div className="absolute inset-0 bg-gradient-to-tr from-[#0369a1]/0 to-[#0369a1]/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </button>
+
+          {/* Theme Toggle Button */}
+          <button
+            onClick={toggleTheme}
+            className="group relative flex items-center justify-center w-9 h-9 md:w-11 md:h-11 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md border border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-xl md:rounded-2xl hover:border-[#0369a1] dark:hover:border-[#38bdf8] hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/5 transition-all shadow-sm overflow-hidden active:scale-90"
+            title={theme === 'light' ? t('theme.dark') || 'قاراڭغۇ' : t('theme.light') || 'يورۇق'}
+          >
+            {getThemeIcon()}
             <div className="absolute inset-0 bg-gradient-to-tr from-[#0369a1]/0 to-[#0369a1]/10 opacity-0 group-hover:opacity-100 transition-opacity" />
           </button>
 
@@ -133,21 +162,16 @@ export const Navbar: React.FC = () => {
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={bookActions.isCheckingGlobal}
-                className="group relative px-[0.7rem] md:px-5 lg:px-6 h-9 md:h-11 rounded-xl md:rounded-2xl font-normal flex items-center justify-center gap-2 transition-all duration-300 text-white shadow-[0_8px_20px_rgba(3,105,161,0.2)] hover:shadow-[0_12px_28px_rgba(3,105,161,0.3)] hover:-translate-y-0.5 active:translate-y-0 overflow-hidden text-sm lg:text-base"
+                title={t('nav.addBook')}
+                className="group relative flex items-center justify-center w-9 h-9 md:w-11 md:h-11 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md border border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-xl md:rounded-2xl hover:border-[#0369a1] dark:hover:border-[#38bdf8] hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/5 transition-all shadow-sm overflow-hidden active:scale-90"
                 aria-busy={bookActions.isCheckingGlobal}
-                style={{
-                  background: 'linear-gradient(135deg, #0369a1 0%, #0284c7 100%)'
-                }}
               >
-                <div className="absolute inset-0 bg-gradient-to-l from-white/0 via-white/20 to-white/0 translate-x-[100%] group-hover:animate-shimmer-fast" />
                 {bookActions.isCheckingGlobal ? (
-                  <RefreshCw size={14} strokeWidth={3} className="relative z-10 lg:w-[16px] lg:h-[16px] animate-spin" />
+                  <RefreshCw size={22} strokeWidth={2.5} className="text-[#0369a1] dark:text-[#38bdf8] relative z-10 animate-spin" />
                 ) : (
-                  <Upload size={14} strokeWidth={3} className="relative z-10 lg:w-[16px] lg:h-[16px]" />
+                  <Upload size={22} strokeWidth={2.5} className="text-[#0369a1] dark:text-[#38bdf8] relative z-10 group-hover:scale-110 transition-transform" />
                 )}
-                <span className="relative z-10 hidden lg:inline whitespace-nowrap">
-                  {bookActions.isCheckingGlobal ? t('common.loading') : t('nav.addBook')}
-                </span>
+                <div className="absolute inset-0 bg-gradient-to-tr from-[#0369a1]/0 to-[#0369a1]/10 dark:from-[#38bdf8]/0 dark:to-[#38bdf8]/10 opacity-0 group-hover:opacity-100 transition-opacity" />
               </button>
               <input
                 type="file"
@@ -165,7 +189,7 @@ export const Navbar: React.FC = () => {
           {/* Mobile Menu Button */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden flex items-center justify-center w-9 h-9 rounded-xl hover:bg-[#0369a1]/10 text-[#0369a1] border border-[#0369a1]/10 transition-all relative z-10"
+            className="lg:hidden flex items-center justify-center w-9 h-9 rounded-xl hover:bg-[#0369a1]/10 text-[#0369a1] border border-[#0369a1]/10 transition-all relative z-10"
           >
             {mobileMenuOpen ? <X size={24} strokeWidth={2.5} /> : <Menu size={24} strokeWidth={2.5} />}
           </button>
@@ -177,12 +201,12 @@ export const Navbar: React.FC = () => {
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 bg-black/20 backdrop-blur-sm z-[90] md:hidden"
+            className="fixed inset-0 bg-black/20 backdrop-blur-sm z-[90] lg:hidden"
             onClick={() => setMobileMenuOpen(false)}
           />
 
           {/* Menu Panel */}
-          <div className="fixed top-[72px] left-0 right-0 bg-white/95 backdrop-blur-2xl border-b border-[#0369a1]/10 shadow-2xl z-[95] md:hidden animate-fade-in" dir="rtl">
+          <div className="fixed top-[72px] left-0 right-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl border-b border-[#0369a1]/10 dark:border-[#38bdf8]/10 shadow-2xl z-[95] lg:hidden animate-fade-in" dir="rtl">
             <div className="px-4 py-6 space-y-2">
               <MobileNavButton
                 active={view === 'home'}
@@ -222,6 +246,12 @@ export const Navbar: React.FC = () => {
                   label={t('nav.spellCheck')}
                 />
               )}
+              <MobileNavButton
+                active={view === 'quran'}
+                onClick={() => handleNavClick(() => setView('quran'))}
+                icon={<BookOpen size={20} strokeWidth={2.5} />}
+                label={t('nav.quran')}
+              />
               {isEditor && (
                 <MobileNavButton
                   active={view === 'admin' || (view === 'reader' && previousView === 'admin')}
@@ -237,8 +267,31 @@ export const Navbar: React.FC = () => {
                 label={t('nav.joinUs')}
               />
 
+              {/* Mobile Theme Selector */}
+              <div className="pt-4 border-t border-[#0369a1]/10 dark:border-[#38bdf8]/10 flex items-center justify-between px-2">
+                <span className="text-sm font-medium text-slate-500 dark:text-slate-400 uyghur-text">{t('theme.title') || 'تېما'}:</span>
+                <div className="flex bg-[#0369a1]/5 dark:bg-[#38bdf8]/5 rounded-xl p-1 gap-1 border border-[#0369a1]/10 dark:border-[#38bdf8]/10">
+                  <button
+                    onClick={() => setTheme('light')}
+                    className={`p-2 rounded-lg transition-all flex items-center gap-1.5 ${theme === 'light' ? 'bg-[#0369a1] text-white shadow-md' : 'text-slate-500 dark:text-slate-400 hover:text-[#0369a1]'}`}
+                    title={t('theme.light') || 'Light'}
+                  >
+                    <Sun size={16} />
+                    <span className="text-xs uyghur-text">{t('theme.light') || 'يورۇق'}</span>
+                  </button>
+                  <button
+                    onClick={() => setTheme('dark')}
+                    className={`p-2 rounded-lg transition-all flex items-center gap-1.5 ${theme === 'dark' ? 'bg-[#0369a1] text-white shadow-md' : 'text-slate-500 dark:text-slate-400 hover:text-[#0369a1]'}`}
+                    title={t('theme.dark') || 'Dark'}
+                  >
+                    <Moon size={16} />
+                    <span className="text-xs uyghur-text">{t('theme.dark') || 'قاراڭغۇ'}</span>
+                  </button>
+                </div>
+              </div>
+
               {/* Auth section in mobile menu */}
-              <div className="pt-4 border-t border-[#0369a1]/10 sm:hidden">
+              <div className="pt-4 border-t border-[#0369a1]/10 dark:border-[#38bdf8]/10 sm:hidden">
                 <AuthButton onLogout={() => { setView('home'); setMobileMenuOpen(false); }} dropdownSide="right" inline />
               </div>
             </div>
@@ -259,18 +312,18 @@ const NavButton: React.FC<{
   <button
     onClick={onClick}
     title={label}
-    className={`relative px-3 md:px-3 lg:px-4 xl:px-6 h-[36px] md:h-[42px] rounded-xl text-sm lg:text-base font-normal flex items-center gap-2 transition-all duration-300 group ${active
-      ? 'text-[#0369a1] bg-[#0369a1]/10 shadow-[inset_0_0_0_1px_rgba(3,105,161,0.2)]'
-      : 'text-[#64748b] hover:bg-[#0369a1]/5 hover:text-[#0369a1]'
+    className={`relative px-2.5 lg:px-3 xl:px-3 2xl:px-4 h-[36px] md:h-[42px] rounded-xl text-sm lg:text-base font-normal flex items-center gap-2 transition-all duration-300 group ${active
+      ? 'text-[#0369a1] dark:text-[#38bdf8] bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 shadow-[inset_0_0_0_1px_rgba(3,105,161,0.2)] dark:shadow-[inset_0_0_0_1px_rgba(56,189,248,0.2)]'
+      : 'text-[#64748b] dark:text-slate-400 hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/5 hover:text-[#0369a1] dark:hover:text-[#38bdf8]'
       }`}
   >
     <div className="flex items-center gap-2 relative z-10">
-      <span className={`${showIcon === 'lg' ? 'hidden lg:inline-flex' : 'inline-flex'} items-center transition-transform group-hover:scale-110 ${active ? 'text-[#0369a1]' : ''}`}>
+      <span className={`${showIcon === 'lg' ? 'hidden lg:inline-flex' : 'inline-flex'} items-center transition-transform group-hover:scale-110 ${active ? 'text-[#0369a1] dark:text-[#38bdf8]' : ''}`}>
         {icon}
       </span>
       <span className={`transition-all duration-300 whitespace-nowrap mt-[3px] overflow-hidden ${
         // Hide labels on md/lg to save space, show only on xl or larger screens
-        'hidden xl:inline-flex'
+        'hidden 2xl:inline-flex'
       }`}>
         {label}
       </span>
@@ -290,8 +343,8 @@ const MobileNavButton: React.FC<{
   <button
     onClick={onClick}
     className={`w-full px-4 py-3 rounded-2xl text-base font-normal flex items-center gap-3 transition-all ${active
-      ? 'bg-[#0369a1] text-white shadow-lg'
-      : 'text-[#4a5568] hover:bg-[#0369a1]/10 hover:text-[#0369a1]'
+      ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white shadow-lg'
+      : 'text-[#4a5568] dark:text-slate-300 hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 hover:text-[#0369a1] dark:hover:text-[#38bdf8]'
       }`}
   >
     {icon}

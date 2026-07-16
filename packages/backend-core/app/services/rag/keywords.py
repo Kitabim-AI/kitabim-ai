@@ -83,6 +83,15 @@ CURRENT_PAGE_KEYWORDS = [
     "مۇشۇ بەتتە",
 ]
 
+# CURRENT_BOOK_KEYWORDS: deictic references to "this/the current book" (no title named)
+CURRENT_BOOK_KEYWORDS = [
+    "بۇ كىتاب",
+    "مۇشۇ كىتاب",
+    "ئۇشبۇ كىتاب",
+    "مەزكور كىتاب",
+    "this book",
+]
+
 # CATALOG_QUERY_KEYWORDS: for is_author_or_catalog_query
 CATALOG_QUERY_KEYWORDS = [
     # Author-related — "who wrote X" / "author of X"

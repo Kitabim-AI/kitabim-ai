@@ -89,7 +89,7 @@ def fix_malformed_citations(text: str) -> str:
     # Pattern 2: Detect standalone "ref:ID:" without proper markdown
     # Example: "text ref:26:178,179 more text" should become "text [مەنبە](ref:26:178,179) more text"
     # Also handles ref:ID:summary for book summary citations.
-    pattern2 = r"(?<!\])\bref:(\w+):(\d+(?:,\d+)*|summary)\b(?!\))"
+    pattern2 = r"(?<![\(\]])\bref:(\w+):(\d+(?:[:,\d]+)*|summary)\b(?!\))"
 
     def replace_pattern2(match):
         book_id = match.group(1)

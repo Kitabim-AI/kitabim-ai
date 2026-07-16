@@ -13,8 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
 from app.db.models import Synonym
-from app.models.user import User
-from auth.dependencies import require_editor
 
 router = APIRouter()
 
@@ -42,7 +40,6 @@ class SynonymStatsOut(BaseModel):
 async def search_synonyms(
     q: str,
     limit: int = 10,
-    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     """Search synonyms by word prefix/substring (autocomplete)."""
@@ -63,7 +60,6 @@ async def search_synonyms(
 @router.get("/synonyms/lookup", response_model=SynonymEntryOut)
 async def lookup_synonym(
     word: str,
-    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     """Exact lookup — returns the entry and its synonyms for the given word."""
@@ -78,7 +74,6 @@ async def lookup_synonym(
 
 @router.get("/synonyms/letter-groups", response_model=List[str])
 async def list_letter_groups(
-    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     """Return all distinct letter groups in alphabetical order."""
@@ -90,7 +85,6 @@ async def list_letter_groups(
 @router.get("/synonyms/stats", response_model=SynonymStatsOut)
 async def get_synonym_stats(
     letter_group: Optional[str] = None,
-    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     """Return total word count in the synonym dictionary."""
@@ -106,7 +100,6 @@ async def list_synonyms(
     letter_group: Optional[str] = None,
     skip: int = 0,
     limit: int = 20,
-    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
     """List synonym entries with optional letter-group filter and pagination."""

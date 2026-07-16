@@ -332,7 +332,7 @@ export const SpellCheckView: React.FC = () => {
       dir="rtl"
       lang="ug"
     >
-      <div className="hidden lg:flex bg-white/60 backdrop-blur-2xl px-8 py-4 items-center justify-between border border-[#0369a1]/10 shadow-sm group" style={{ borderRadius: '32px' }}>
+      <div className="hidden lg:flex bg-white/60 dark:bg-slate-900/60 backdrop-blur-2xl px-8 py-4 items-center justify-between border border-[#0369a1]/10 dark:border-slate-800 shadow-sm group" style={{ borderRadius: '32px' }}>
         <div className="flex items-center gap-5 flex-1 min-w-0">
           <div className="p-2 md:p-3 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20 icon-shake">
             <BookOpenCheck size={24} className="md:w-7 md:h-7" strokeWidth={2.5} />
@@ -342,24 +342,24 @@ export const SpellCheckView: React.FC = () => {
               <div className="flex flex-col gap-1">
                 <h1 
                   onClick={handleOpenInReader}
-                  className="font-normal text-[#1a1a1a] uyghur-text leading-tight flex items-center flex-wrap gap-2 cursor-pointer hover:text-[#0369a1] transition-colors group/title" 
+                  className="font-normal text-[#1a1a1a] dark:text-slate-100 uyghur-text leading-tight flex items-center flex-wrap gap-2 cursor-pointer hover:text-[#0369a1] dark:hover:text-[#38bdf8] transition-colors group/title" 
                   style={{ fontSize: `${fontSize + 4}px` }}
                 >
                   <span className="group-hover/title:underline underline-offset-4">{bookMeta.title}</span>
                   {bookMeta.author && (
-                    <span className="text-base text-slate-400 font-normal">({bookMeta.author})</span>
+                    <span className="text-base text-slate-400 dark:text-slate-500 font-normal">({bookMeta.author})</span>
                   )}
                 </h1>
                 {bookMeta.volume && (
                   <div className="flex items-center gap-3">
-                    <span className="text-xs text-[#0369a1] font-bold uppercase bg-[#0369a1]/10 px-2 py-0.5 rounded-lg">
+                    <span className="text-xs text-[#0369a1] dark:text-[#38bdf8] font-bold uppercase bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 px-2 py-0.5 rounded-lg">
                       {t('book.volume', { volume: bookMeta.volume })}
                     </span>
                   </div>
                 )}
               </div>
             ) : (
-              <h1 className="font-normal text-[#1a1a1a]" style={{ fontSize: `${fontSize + 4}px` }}>
+              <h1 className="font-normal text-[#1a1a1a] dark:text-slate-100" style={{ fontSize: `${fontSize + 4}px` }}>
                 {t('spellCheck.title')}
               </h1>
             )}
@@ -367,7 +367,7 @@ export const SpellCheckView: React.FC = () => {
         </div>
         <div className="flex items-center gap-3">
           {bookMeta && (
-            <div className="hidden md:flex items-center gap-3 px-6 py-2.5 bg-[#0369a1]/10 text-[#0369a1] rounded-2xl border border-[#0369a1]/10 shadow-inner whitespace-nowrap shrink-0">
+            <div className="hidden md:flex items-center gap-3 px-6 py-2.5 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] rounded-2xl border border-[#0369a1]/10 dark:border-[#38bdf8]/10 shadow-inner whitespace-nowrap shrink-0">
               <BookOpen size={18} strokeWidth={2.5} />
               <span className="text-sm font-normal uppercase">
                 {t('spellCheck.issueCount', { count: bookMeta.total_issues })}
@@ -377,7 +377,7 @@ export const SpellCheckView: React.FC = () => {
           {pendingCorrections.pending.length > 0 && (
             <button
               onClick={() => setShowReview(prev => !prev)}
-              className="flex items-center gap-2 px-5 py-2.5 bg-amber-500 text-white rounded-2xl text-sm font-normal transition-all hover:bg-amber-600 active:scale-95 shadow-lg shadow-amber-500/20 whitespace-nowrap shrink-0"
+              className="flex items-center gap-2 px-5 py-2.5 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-2xl text-sm font-normal transition-all hover:bg-[#0284c7] dark:hover:bg-[#0284c7] active:scale-95 shadow-lg shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10 whitespace-nowrap shrink-0"
             >
               <ClipboardList size={16} strokeWidth={2.5} />
               {t('spellCheck.reviewPending', { count: pendingCorrections.pending.length })}
@@ -386,7 +386,7 @@ export const SpellCheckView: React.FC = () => {
           <button
             onClick={() => fetchRandomBook(true)}
             disabled={isLoadingBook}
-            className="flex items-center gap-2 px-5 py-2.5 bg-[#0369a1] text-white rounded-2xl text-sm font-normal transition-all hover:bg-[#0284c7] active:scale-95 disabled:opacity-50 shadow-lg shadow-[#0369a1]/20 whitespace-nowrap shrink-0"
+            className="flex items-center gap-2 px-5 py-2.5 bg-white dark:bg-slate-800 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] rounded-2xl text-sm font-normal transition-all hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 active:scale-95 disabled:opacity-50 whitespace-nowrap shrink-0"
           >
             <RefreshCw size={16} strokeWidth={2.5} className={isLoadingBook ? 'animate-spin' : ''} />
             {t('spellCheck.nextBook')}
@@ -402,7 +402,7 @@ export const SpellCheckView: React.FC = () => {
           {bookMeta && (
             <span 
               onClick={handleOpenInReader}
-              className="font-normal text-[#1a1a1a] uyghur-text text-sm line-clamp-1 cursor-pointer active:text-[#0369a1]"
+              className="font-normal text-[#1a1a1a] dark:text-slate-100 uyghur-text text-sm line-clamp-1 cursor-pointer active:text-[#0369a1] dark:active:text-[#38bdf8]"
             >
               {bookMeta.title}
             </span>
@@ -412,10 +412,10 @@ export const SpellCheckView: React.FC = () => {
           {pendingCorrections.pending.length > 0 && (
             <button
               onClick={() => setShowReview(prev => !prev)}
-              className="relative p-2 bg-amber-500 text-white rounded-xl transition-all hover:bg-amber-600 active:scale-95"
+              className="relative p-2 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl transition-all hover:bg-[#0284c7] dark:hover:bg-[#0284c7] active:scale-95 shadow-lg shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10"
             >
               <ClipboardList size={16} strokeWidth={2.5} />
-              <span className="absolute -top-1 -left-1 w-4 h-4 bg-white text-amber-500 text-[9px] font-bold rounded-full flex items-center justify-center">
+              <span className="absolute -top-1 -left-1 w-4 h-4 bg-white dark:bg-slate-900 text-[#0369a1] dark:text-[#38bdf8] text-[9px] font-bold rounded-full flex items-center justify-center border border-[#0369a1]/10 dark:border-[#38bdf8]/10 shadow-sm">
                 {pendingCorrections.pending.length}
               </span>
             </button>
@@ -423,23 +423,23 @@ export const SpellCheckView: React.FC = () => {
           <button
             onClick={() => fetchRandomBook(true)}
             disabled={isLoadingBook}
-            className="p-2 bg-[#0369a1]/10 text-[#0369a1] rounded-xl transition-all hover:bg-[#0369a1] hover:text-white active:scale-95 disabled:opacity-50"
+            className="p-2 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] rounded-xl transition-all hover:bg-[#0369a1] hover:text-white dark:hover:text-slate-950 active:scale-95 disabled:opacity-50"
           >
             <RefreshCw size={16} strokeWidth={2.5} className={isLoadingBook ? 'animate-spin' : ''} />
           </button>
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 glass-panel border border-white/60 rounded-[24px] sm:rounded-[40px] flex flex-col p-4 sm:p-6 lg:p-8">
+      <div className="flex-1 min-h-0 glass-panel border border-white/60 dark:border-slate-800/60 rounded-[24px] sm:rounded-[40px] flex flex-col p-4 sm:p-6 lg:p-8">
         {(isLoadingBook || !bookMeta || (spellCheck.isLoading && !spellCheck.hasLoaded)) && !bookError && (
           <div className="flex-1 flex flex-col items-center justify-center gap-6 animate-fade-in">
             <div className="relative">
-              <div className="w-16 h-16 border-4 border-[#0369a1]/10 border-t-[#0369a1] rounded-full animate-spin" />
-              <div className="absolute inset-0 flex items-center justify-center text-[#0369a1]">
+              <div className="w-16 h-16 border-4 border-[#0369a1]/10 dark:border-[#38bdf8]/10 border-t-[#0369a1] dark:border-t-[#38bdf8] rounded-full animate-spin" />
+              <div className="absolute inset-0 flex items-center justify-center text-[#0369a1] dark:text-[#38bdf8]">
                 <BookOpenCheck size={24} className="animate-pulse" />
               </div>
             </div>
-            <p className="font-normal text-slate-400 uppercase text-sm animate-pulse text-center">
+            <p className="font-normal text-slate-400 dark:text-slate-500 uppercase text-sm animate-pulse text-center">
               {!bookMeta ? t('spellCheck.loadingBook') : t('spellCheck.checking')}
             </p>
           </div>
@@ -449,15 +449,15 @@ export const SpellCheckView: React.FC = () => {
           <div className="flex-1 flex flex-col items-center justify-center gap-6 animate-fade-in">
             {isNetworkError ? (
               <>
-                <div className="p-8 bg-amber-50 text-amber-400 rounded-[40px] shadow-lg shadow-amber-100">
+                <div className="p-8 bg-amber-50 dark:bg-amber-950/20 text-amber-400 dark:text-amber-500 rounded-[40px] shadow-lg shadow-amber-100/50 dark:shadow-none">
                   <AlertCircle size={48} strokeWidth={1.5} />
                 </div>
                 <div className="text-center">
-                  <p className="font-normal text-[#1a1a1a] text-lg mb-2">{t('spellCheck.loadError')}</p>
+                  <p className="font-normal text-[#1a1a1a] dark:text-slate-100 text-lg mb-2">{t('spellCheck.loadError')}</p>
                 </div>
                 <button
                   onClick={() => fetchRandomBook(true)}
-                  className="flex items-center gap-2 px-6 py-3 bg-[#0369a1] text-white rounded-2xl text-sm font-normal transition-all hover:bg-[#0284c7] active:scale-95 shadow-lg shadow-[#0369a1]/20"
+                  className="flex items-center gap-2 px-6 py-3 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-2xl text-sm font-normal transition-all hover:bg-[#0284c7] dark:hover:bg-[#0284c7] active:scale-95 shadow-lg shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10"
                 >
                   <RefreshCw size={16} strokeWidth={2.5} />
                   {t('common.refresh')}
@@ -465,12 +465,12 @@ export const SpellCheckView: React.FC = () => {
               </>
             ) : (
               <>
-                <div className="p-8 bg-emerald-50 text-emerald-400 rounded-[40px] shadow-lg shadow-emerald-100">
+                <div className="p-8 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-400 dark:text-emerald-550 rounded-[40px] shadow-lg shadow-emerald-100/50 dark:shadow-none">
                   <BookOpenCheck size={48} strokeWidth={1.5} />
                 </div>
                 <div className="text-center">
-                  <p className="font-normal text-[#1a1a1a] text-lg mb-2">{t('spellCheck.noBooks')}</p>
-                  <p className="text-slate-400 text-sm">{t('spellCheck.noBooksDetail')}</p>
+                  <p className="font-normal text-[#1a1a1a] dark:text-slate-100 text-lg mb-2">{t('spellCheck.noBooks')}</p>
+                  <p className="text-slate-400 dark:text-slate-500 text-sm">{t('spellCheck.noBooksDetail')}</p>
                 </div>
               </>
             )}

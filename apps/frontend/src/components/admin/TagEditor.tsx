@@ -108,7 +108,7 @@ export const TagEditor: React.FC<TagEditorProps & { hideActions?: boolean }> = (
                 }
               }}
               onFocus={() => setShowSuggestions(true)}
-              className="px-4 py-2 text-[16px] border-2 border-[#0369a1] rounded-xl bg-white w-full outline-none focus:ring-4 focus:ring-[#0369a1]/10 transition-all font-normal text-right pl-12"
+              className="px-4 py-2 text-[16px] border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 w-full outline-none focus:ring-4 focus:ring-[#0369a1]/10 dark:focus:ring-[#38bdf8]/10 transition-all font-normal text-right pl-12"
               dir="rtl"
               placeholder={placeholder}
             />
@@ -117,7 +117,7 @@ export const TagEditor: React.FC<TagEditorProps & { hideActions?: boolean }> = (
             <button
               onClick={() => handleAddTag(tempValue)}
               disabled={!tempValue.trim()}
-              className="absolute left-2 p-1.5 bg-[#0369a1]/10 text-[#0369a1] rounded-lg hover:bg-[#0369a1] hover:text-white transition-all disabled:opacity-0 disabled:pointer-events-none"
+              className="absolute left-2 p-1.5 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] rounded-lg hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 transition-all disabled:opacity-0 disabled:pointer-events-none"
               title={t('common.add') || 'Add'}
             >
               <Plus size={18} strokeWidth={2.5} />
@@ -139,7 +139,7 @@ export const TagEditor: React.FC<TagEditorProps & { hideActions?: boolean }> = (
               >
                 <Save size={16} />
               </button>
-              <button onClick={onClose} className="p-2 bg-slate-100 text-slate-400 rounded-xl"><X size={16} /></button>
+              <button onClick={onClose} className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-450 dark:text-slate-400 rounded-xl"><X size={16} /></button>
             </div>
           )}
 
@@ -147,7 +147,7 @@ export const TagEditor: React.FC<TagEditorProps & { hideActions?: boolean }> = (
           {showSuggestions && suggestions.length > 0 && (
             <div
               ref={dropdownRef}
-              className="absolute top-full left-0 right-0 mt-1 glass-panel shadow-lg z-[100] overflow-hidden max-h-[200px] overflow-y-auto"
+              className="absolute top-full left-0 right-0 mt-1 glass-panel border border-[#0369a1]/10 dark:border-[#38bdf8]/15 bg-white dark:bg-slate-900 shadow-lg z-[100] overflow-hidden max-h-[200px] overflow-y-auto"
               style={{ borderRadius: '12px' }}
             >
               <div className="py-1">
@@ -155,9 +155,9 @@ export const TagEditor: React.FC<TagEditorProps & { hideActions?: boolean }> = (
                   <button
                     key={idx}
                     onClick={() => handleAddTag(suggestion)}
-                    className="w-full text-right px-3 py-2 text-[13px] text-[#1a1a1a] hover:bg-[#0369a1]/10 transition-all flex items-center gap-2"
+                    className="w-full text-right px-3 py-2 text-[13px] text-[#1a1a1a] dark:text-slate-100 hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 transition-all flex items-center gap-2"
                   >
-                    <Tag size={12} className="text-[#0369a1]" />
+                    <Tag size={12} className="text-[#0369a1] dark:text-[#38bdf8]" />
                     {suggestion}
                   </button>
                 ))}
@@ -169,9 +169,9 @@ export const TagEditor: React.FC<TagEditorProps & { hideActions?: boolean }> = (
         {/* Current tags */}
         <div className="flex flex-wrap gap-1">
           {items.map((item: string, idx: number) => (
-            <span key={idx} className="flex items-center gap-1 px-2 py-0.5 bg-[#0369a1]/10 text-[#0369a1] text-[13px] rounded-md border border-[#0369a1]/20">
+            <span key={idx} className="flex items-center gap-1 px-2 py-0.5 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] text-[13px] rounded-md border border-[#0369a1]/20 dark:border-[#38bdf8]/20">
               {item}
-              <button onClick={() => onRemoveItem(idx)} className="hover:text-red-500"><X size={10} /></button>
+              <button onClick={() => onRemoveItem(idx)} className="hover:text-red-500 dark:hover:text-red-450"><X size={10} /></button>
             </span>
           ))}
         </div>
@@ -179,7 +179,7 @@ export const TagEditor: React.FC<TagEditorProps & { hideActions?: boolean }> = (
         {/* Quick-add existing categories (when not searching) */}
         {!tempValue && allCategories.filter(cat => !items.includes(cat)).length > 0 && (
           <div className="flex flex-col gap-1">
-            <div className="text-[11px] text-slate-400 uppercase tracking-wide">{t('admin.categories.existingCategories') || 'Existing Categories'}</div>
+            <div className="text-[11px] text-slate-400 dark:text-slate-500 uppercase tracking-wide">{t('admin.categories.existingCategories') || 'Existing Categories'}</div>
             <div className="flex flex-wrap gap-1">
               {allCategories
                 .filter(cat => !items.includes(cat))
@@ -188,7 +188,7 @@ export const TagEditor: React.FC<TagEditorProps & { hideActions?: boolean }> = (
                   <button
                     key={idx}
                     onClick={() => handleAddTag(cat)}
-                    className="px-2 py-0.5 bg-slate-50 text-slate-600 text-[12px] rounded-md border border-slate-200 hover:bg-[#0369a1]/10 hover:text-[#0369a1] hover:border-[#0369a1]/20 transition-all"
+                    className="px-2 py-0.5 bg-slate-50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 hover:text-[#0369a1] dark:hover:text-[#38bdf8] hover:border-[#0369a1]/20 dark:hover:border-[#38bdf8]/20 transition-all"
                   >
                     {cat}
                   </button>
@@ -203,9 +203,9 @@ export const TagEditor: React.FC<TagEditorProps & { hideActions?: boolean }> = (
   return (
     <div
       onClick={onOpen}
-      className={`flex flex-wrap gap-1 p-1 rounded-lg transition-all min-h-[32px] items-center ${onOpen ? 'cursor-pointer hover:bg-[#0369a1]/5' : 'cursor-default'}`}
+      className={`flex flex-wrap gap-1 p-1 rounded-lg transition-all min-h-[32px] items-center ${onOpen ? 'cursor-pointer hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/5' : 'cursor-default'}`}
     >
-      {existingItems.length > 0 ? existingItems.map((cat: string, i: number) => <span key={i} className="px-2 py-0.5 bg-[#0369a1]/5 text-[#0369a1] text-[13px] rounded-md border border-[#0369a1]/10">{cat}</span>) : <span className="text-[12px] text-slate-300 italic flex items-center gap-1"><Tag size={12} /> {placeholder}</span>}
+      {existingItems.length > 0 ? existingItems.map((cat: string, i: number) => <span key={i} className="px-2 py-0.5 bg-[#0369a1]/5 dark:bg-[#38bdf8]/5 text-[#0369a1] dark:text-[#38bdf8] text-[13px] rounded-md border border-[#0369a1]/10 dark:border-[#38bdf8]/10">{cat}</span>) : <span className="text-[12px] text-slate-400 dark:text-slate-500 italic flex items-center gap-1"><Tag size={12} /> {placeholder}</span>}
     </div>
   );
 };

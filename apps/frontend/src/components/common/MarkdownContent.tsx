@@ -62,18 +62,32 @@ const renderInline = (text: string, onReferenceClick?: (bookId: string, pageNums
     // extract the actual ref: URL from inside it.
     let effectiveUrl = url || '';
     if (!effectiveUrl.startsWith('ref:') && effectiveUrl.includes('ref:')) {
-      const nestedRef = effectiveUrl.match(/ref:[\w]+:(?:[\d,]+|summary)/);
+      const nestedRef = effectiveUrl.match(/ref:[\w]+:(?:[\d,:]+|summary)/);
       if (nestedRef) effectiveUrl = nestedRef[0];
     }
 
     if (effectiveUrl.startsWith('ref:')) {
       const parts = effectiveUrl.split(':');
       const bookId = parts[1];
-      const pageNumsStr = parts[2] || '';
-      const isSummaryRef = pageNumsStr === 'summary';
-      const pageNums = isSummaryRef
-        ? []
-        : pageNumsStr.split(',').map(p => parseInt(p.trim(), 10)).filter(p => !isNaN(p));
+      let pageNums: number[] = [];
+      let isSummaryRef = false;
+
+      if (bookId === 'quran') {
+        const surah = parseInt(parts[2], 10);
+        if (!isNaN(surah)) {
+          pageNums.push(surah);
+          if (parts[3]) {
+            const ayahs = parts[3].split(',').map(p => parseInt(p.trim(), 10)).filter(p => !isNaN(p));
+            pageNums.push(...ayahs);
+          }
+        }
+      } else {
+        const pageNumsStr = parts[2] || '';
+        isSummaryRef = pageNumsStr === 'summary';
+        pageNums = isSummaryRef
+          ? []
+          : pageNumsStr.split(',').map(p => parseInt(p.trim(), 10)).filter(p => !isNaN(p));
+      }
 
       // Clean up the text in case the LLM included the BookID inside the link name
       const cleanText = text.replace(/\s*\(?BookID:\s*[a-zA-Z0-9-]+\)?/gi, '');
@@ -238,7 +252,7 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
       const marginClass = level === 1 ? 'mb-6' : level === 2 ? 'mb-4' : level <= 4 ? 'mb-3' : 'mb-2';
 
       blocks.push(
-        <Tag key={`h-${key++}`} className={`font-bold text-[#1a1a1a] ${marginClass}`} style={{ fontSize: `${headingEmSize}em` }}>
+        <Tag key={`h-${key++}`} className={`font-bold text-[#1a1a1a] dark:text-slate-100 ${marginClass}`} style={{ fontSize: `${headingEmSize}em` }}>
           {renderInline(headingMatch[2] || '', onReferenceClick)}
         </Tag>
       );
@@ -310,11 +324,11 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
           const rows = bodyLines.map(parseRow);
           blocks.push(
             <div key={`table-${key++}`} className="overflow-x-auto my-2" dir="rtl">
-              <table className="w-full border-collapse text-sm">
+              <table className="w-full border-collapse text-sm text-slate-800 dark:text-slate-200">
                 <thead>
                   <tr>
                     {headers.map((h, idx) => (
-                      <th key={idx} className="border border-slate-200 px-3 py-2 bg-slate-50 font-bold text-right">
+                      <th key={idx} className="border border-slate-200 dark:border-slate-800 px-3 py-2 bg-slate-50 dark:bg-slate-900 font-bold text-right text-slate-900 dark:text-slate-100">
                         {renderInline(h, onReferenceClick)}
                       </th>
                     ))}
@@ -322,9 +336,9 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
                 </thead>
                 <tbody>
                   {rows.map((row, rowIdx) => (
-                    <tr key={rowIdx} className={rowIdx % 2 === 1 ? 'bg-slate-50/50' : ''}>
+                    <tr key={rowIdx} className={rowIdx % 2 === 1 ? 'bg-slate-50/50 dark:bg-slate-900/30' : ''}>
                       {row.map((cell, cellIdx) => (
-                        <td key={cellIdx} className="border border-slate-200 px-3 py-2 text-right">
+                        <td key={cellIdx} className="border border-slate-200 dark:border-slate-800 px-3 py-2 text-right">
                           {renderInline(cell, onReferenceClick)}
                         </td>
                       ))}
@@ -338,10 +352,10 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
           const rows = dataLines.map(parseRow);
           blocks.push(
             <div key={`table-${key++}`} className="overflow-x-auto my-2" dir="rtl">
-              <table className="w-full border-collapse text-sm">
+              <table className="w-full border-collapse text-sm text-slate-800 dark:text-slate-200">
                 <tbody>
                   {rows.map((row, rowIdx) => (
-                    <tr key={rowIdx} className={rowIdx % 2 === 1 ? 'bg-slate-50/50' : ''}>
+                    <tr key={rowIdx} className={rowIdx % 2 === 1 ? 'bg-slate-50/50 dark:bg-slate-900/30' : ''}>
                       {row.map((cell, cellIdx) => (
                         <td key={cellIdx} className="px-3 py-1.5 text-right">
                           {renderInline(cell, onReferenceClick)}

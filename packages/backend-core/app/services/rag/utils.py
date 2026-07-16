@@ -29,6 +29,17 @@ def normalize_uyghur(text: str) -> str:
     )
 
 
+def normalize_uyghur_spelling(text: str) -> str:
+    """Normalize Uyghur character variants and collapse duplicate letter variants.
+
+    Handles common orthographical variations like double-y (ىى/ىي/يى/يي) vs single-y.
+    """
+    if not text:
+        return ""
+    normalized = normalize_uyghur(text)
+    return re.sub(r"\u06cc{2,}", "\u06cc", normalized)
+
+
 def entity_matches_question(entity: str, question: str) -> bool:
     """Return True if an author name or book title is referenced in the question.
 

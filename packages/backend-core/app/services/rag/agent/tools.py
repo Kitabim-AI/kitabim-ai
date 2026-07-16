@@ -15,11 +15,13 @@ from neo4j.exceptions import ServiceUnavailable, SessionExpired
 from google.adk.tools import ToolContext
 
 from app.services.rag.context import QueryContext
+from app.services.rag.keywords import CURRENT_BOOK_KEYWORDS
 from app.services.rag.retrieval import (
     embed_query,
     find_books_by_title_in_question,
     vector_search,
 )
+from app.services.rag.utils import normalize_uyghur
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.rag.agent.tools")
@@ -208,8 +210,14 @@ async def get_book_summary(
     Returns the text of the book's summary.
 
     Args:
-        book_ids: List of book IDs to fetch summaries for. Limit to at most 5 IDs —
-                  each summary is large; passing more is wasteful and dilutes the answer.
+        book_ids: List of book IDs to fetch summaries for. If an ID belongs to a
+                  multi-volume book, ALL of that book's sister volumes are
+                  included automatically (server-side) — you do not need to
+                  enumerate every volume ID yourself, and none will be dropped
+                  even if you only pass one. This cap only applies to distinct,
+                  unrelated books: limit to at most 5 DIFFERENT books — each
+                  summary is large, and passing many unrelated ones is wasteful
+                  and dilutes the answer.
     """
     args = {"book_ids": book_ids}
     return await _execute_and_record_tool(tool_context, "get_book_summary", args)
@@ -379,26 +387,21 @@ async def lookup_proverbs(
     return await _execute_and_record_tool(tool_context, "lookup_proverbs", args)
 
 
-AGENT_TOOLS = [
-    search_chunks,
-    search_books_by_summary,
-    find_books_by_title,
-    rewrite_query,
-    get_book_author,
-    get_books_by_author,
-    search_catalog,
-    get_book_summary,
-    get_sister_volumes,
-    get_current_page,
-    query_knowledge_graph,
-    lookup_uyghur_word,
-    lookup_history_term,
-    translate_english_to_uyghur,
-    check_word_spelling,
-    lookup_uyghur_name,
-    search_language_sources,
-    lookup_proverbs,
-]
+async def search_quran(
+    surah: Optional[int] = None,
+    ayah: Optional[int] = None,
+    q: Optional[str] = None,
+    tool_context: ToolContext = None,
+) -> dict:
+    """Retrieve or search Quran surahs and verses (ayahs) using surah number, ayah number, or text keywords.
+
+    Args:
+        surah: Optional Surah number (1-114).
+        ayah: Optional Ayah/verse number in the specified Surah.
+        q: Optional search query/text to search across Quranic verses.
+    """
+    args = {"surah": surah, "ayah": ayah, "q": q}
+    return await _execute_and_record_tool(tool_context, "search_quran", args)
 
 
 # ---------------------------------------------------------------------------
@@ -494,6 +497,9 @@ async def _dispatch_tool_with_retry(
         return {"ok": True, **result, "found_count": result.get("found_count", 0)}
     if tool_name == "lookup_proverbs":
         result = await _run_lookup_proverbs(tool_args, ctx)
+        return {"ok": True, **result, "found_count": len(result.get("entries", []))}
+    if tool_name == "search_quran":
+        result = await _run_search_quran(tool_args, ctx)
         return {"ok": True, **result, "found_count": len(result.get("entries", []))}
     raise ValueError(f"Unknown tool: {tool_name}")
 
@@ -594,13 +600,26 @@ async def _run_search_books_by_summary(args: dict, ctx: QueryContext) -> List[st
 
 async def _run_get_book_summary(args: dict, ctx: QueryContext) -> dict:
     from app.db.repositories.book_summaries_repository import BookSummariesRepository
+    from app.db.repositories.books_repository import BooksRepository
 
     book_ids = args.get("book_ids") or []
     if not book_ids:
         return {"context": "No book IDs provided.", "summaries": []}
 
+    # The LLM may under-comply with the "pass all sister volumes" guidance
+    # (observed in production: a title resolving to 6 volumes, only 5 passed
+    # here). Expand server-side rather than trusting the model's book_ids.
+    books_repo = BooksRepository(ctx.session)
+    expanded_ids = list(dict.fromkeys(str(bid) for bid in book_ids))
+    for book_id in list(expanded_ids):
+        sister_volumes = await books_repo.find_sister_volumes(book_id)
+        for sister in sister_volumes:
+            sister_id = str(sister.id)
+            if sister_id not in expanded_ids:
+                expanded_ids.append(sister_id)
+
     repo = BookSummariesRepository(ctx.session)
-    summaries = await repo.get_summaries_for_books(book_ids)
+    summaries = await repo.get_summaries_for_books(expanded_ids)
 
     if not summaries:
         log_json(logger, logging.INFO, "Agent tool get_book_summary", count=0)
@@ -769,6 +788,28 @@ async def _run_get_book_author(args: dict, ctx: QueryContext) -> dict:
             "title": title,
             "author": author,
         }
+
+    # No title/author string matched in the question. If the user is reading a
+    # specific book and refers to it deictically ("this book") instead of
+    # naming it, answer with the current book rather than reporting no match.
+    q_norm = normalize_uyghur(question.lower())
+    refers_to_current_book = any(
+        normalize_uyghur(kw) in q_norm for kw in CURRENT_BOOK_KEYWORDS
+    )
+    if refers_to_current_book and not ctx.is_global and ctx.book and ctx.book.author:
+        log_json(
+            logger,
+            logging.INFO,
+            "Agent tool get_book_author — current book fallback",
+            title=ctx.book.title,
+            author=ctx.book.author,
+        )
+        return {
+            "context": f"The book '{ctx.book.title}' was written by {ctx.book.author}.",
+            "title": ctx.book.title,
+            "author": ctx.book.author,
+        }
+
     log_json(logger, logging.INFO, "Agent tool get_book_author", found=False)
     return {"context": "", "title": None, "author": None}
 
@@ -1044,7 +1085,7 @@ def _format_dictionary_context(source_label: str, entries: list[dict]) -> str:
             blocks.append(
                 "[Dictionary/Culture Source: Uyghur Proverbs, "
                 f"Text: {entry.get('text', '')}]\n"
-                f"This is a Uyghur proverb: \"{entry.get('text', '')}\"{ref_info}"
+                f'This is a Uyghur proverb: "{entry.get("text", "")}"{ref_info}'
             )
     return "\n\n---\n\n".join(blocks)
 
@@ -1309,7 +1350,7 @@ async def _run_lookup_proverbs(args: dict, ctx: QueryContext) -> dict:
                     else f" (Found in Volume: {vol})"
                 )
             context_parts.append(
-                f"{source_info}\nThis is a Uyghur proverb: \"{entry['text']}\"{ref_info}"
+                f'{source_info}\nThis is a Uyghur proverb: "{entry["text"]}"{ref_info}'
             )
         context = "\n\n---\n\n".join(context_parts)
     else:
@@ -1323,3 +1364,112 @@ async def _run_lookup_proverbs(args: dict, ctx: QueryContext) -> dict:
         count=len(entries_dict),
     )
     return {"context": context, "entries": entries_dict}
+
+
+async def _run_search_quran(args: dict, ctx: QueryContext) -> dict:
+    from app.db import session as db_session
+    from app.db.models import Quran
+    from sqlalchemy import select, or_
+
+    surah = args.get("surah")
+    ayah = args.get("ayah")
+    q = args.get("q")
+
+    async with db_session.async_session_factory() as session:
+        if surah is not None:
+            stmt = select(Quran).where(Quran.surah == surah)
+            if ayah is not None:
+                stmt = stmt.where(Quran.ayah == ayah)
+            stmt = stmt.order_by(Quran.ayah.asc()).limit(30)
+            res = await session.execute(stmt)
+            entries = list(res.scalars().all())
+        elif q:
+            # Try semantic vector search first
+            query_vector = None
+            try:
+                from app.services.rag.retrieval import embed_query
+
+                query_vector = await embed_query(q, ctx)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to embed query in search_quran, falling back to keyword search: {e}"
+                )
+
+            if query_vector:
+                from sqlalchemy import text
+
+                embedding_str = str(query_vector)
+                stmt = text("""
+                    SELECT 
+                        id, surah, surah_name_en, surah_name_ar, surah_name_ug,
+                        ayah, text_ar, text_en, text_ug, created_at
+                    FROM quran
+                    WHERE embedding IS NOT NULL
+                    ORDER BY embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))
+                    LIMIT :limit
+                """)
+                res = await session.execute(
+                    stmt, {"embedding": embedding_str, "limit": 15}
+                )
+                entries = res.fetchall()
+            else:
+                # Fallback to standard keyword search
+                search_pattern = f"%{q}%"
+                stmt = (
+                    select(Quran)
+                    .where(
+                        or_(
+                            Quran.text_ug.ilike(search_pattern),
+                            Quran.text_ar.ilike(search_pattern),
+                            Quran.text_en.ilike(search_pattern),
+                            Quran.surah_name_ug.ilike(search_pattern),
+                            Quran.surah_name_en.ilike(search_pattern),
+                        )
+                    )
+                    .order_by(Quran.surah.asc(), Quran.ayah.asc())
+                    .limit(10)
+                )
+                res = await session.execute(stmt)
+                entries = list(res.scalars().all())
+        else:
+            entries = []
+
+    formatted_entries = []
+    context_parts = []
+    for entry in entries:
+        formatted = {
+            "surah": entry.surah,
+            "surah_name_ug": entry.surah_name_ug,
+            "surah_name_en": entry.surah_name_en,
+            "surah_name_ar": entry.surah_name_ar,
+            "ayah": entry.ayah,
+            "text_ar": entry.text_ar,
+            "text_ug": entry.text_ug,
+            "text_en": entry.text_en,
+        }
+        formatted_entries.append(formatted)
+
+        # Build clean markup citation context for RAG
+        context_parts.append(
+            f"[Source: Holy Quran, Surah: {entry.surah_name_ug} ({entry.surah_name_en}), Ayah: {entry.ayah}]\n"
+            f"Arabic: {entry.text_ar}\n"
+            f"Uyghur Translation: {entry.text_ug}\n"
+            f"English Translation: {entry.text_en}"
+        )
+
+    context = (
+        "\n\n---\n\n".join(context_parts)
+        if context_parts
+        else "No Quranic verses found matching criteria."
+    )
+
+    log_json(
+        logger,
+        logging.INFO,
+        "Agent tool search_quran",
+        surah=surah,
+        ayah=ayah,
+        q=q[:60] if q else None,
+        count=len(formatted_entries),
+    )
+    return {"context": context, "entries": formatted_entries}

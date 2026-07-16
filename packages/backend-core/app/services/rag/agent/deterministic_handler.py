@@ -40,6 +40,20 @@ from app.services.rag.keywords import (
 )
 
 
+def _cap_summary_book_ids(book_ids: list, books: list, cap: int = 5) -> list[str]:
+    """Cap book IDs passed to get_book_summary at *cap*, unless every book is a
+    volume of the same title+author series — a named-title lookup can legitimately
+    resolve to more than 5 sister volumes, and none should be silently dropped."""
+    if not books:
+        return [str(bid) for bid in book_ids][:cap]
+    first_title, first_author = books[0].get("title"), books[0].get("author")
+    is_single_series = all(
+        b.get("title") == first_title and b.get("author") == first_author for b in books
+    )
+    ids = [str(b["id"]) for b in books]
+    return ids if is_single_series else ids[:cap]
+
+
 def repair_json_unescaped_quotes(json_str: str) -> str:
     """Repair JSON string values with unescaped internal double quotes."""
     pattern = (
@@ -100,17 +114,23 @@ Return ONLY valid JSON matching this schema:
   "catalog_subtype": "author_of" | "books_by" | "general" | null, // Use "author_of" if asking who wrote a book, "books_by" if asking what books an author wrote, "general" for other catalog/library-wide queries (like "what books do you have"), or null if this is NOT a catalog query.
   "dictionary_subtype": "uyghur_definition" | "history_term" | "english_uyghur" | "spelling" | "names" | "proverbs" | "general" | null, // Use only when intent is "dictionary".
   "dictionary_term": string | null, // The exact word/term/name/English phrase to look up when intent is "dictionary".
-  "intent": "catalog" | "dictionary" | "identity" | "summary" | "relationship" | "passage",
+  "quran_surah": integer | null,    // The surah number (1-114) if specified (e.g. 1 for Fatihah, 2 for Baqarah), or null.
+  "quran_ayah": integer | null,     // The ayah/verse number if specified, or null.
+  "quran_query": string | null,     // The text query or keyword to search inside Quranic verses, or null.
+  "intent": "catalog" | "dictionary" | "identity" | "summary" | "relationship" | "passage" | "quran",
   "is_composite": boolean,          // True if the query contains multiple distinct questions or requests that should be handled separately (e.g. "Who wrote X and what is it about?").
   "sub_questions": Array<{{         // If is_composite is true, return each sub-question with its own signals. If is_composite is false, return null.
     "question": string,             // Self-contained sub-question text (pronouns resolved using history)
-    "intent": "catalog" | "dictionary" | "identity" | "summary" | "relationship" | "passage",
+    "intent": "catalog" | "dictionary" | "identity" | "summary" | "relationship" | "passage" | "quran",
     "is_current_page_query": boolean,
     "is_volume_shift": boolean,
     "target_volume": integer | null,
     "catalog_subtype": "author_of" | "books_by" | "general" | null,
     "dictionary_subtype": "uyghur_definition" | "history_term" | "english_uyghur" | "spelling" | "names" | "proverbs" | "general" | null,
-    "dictionary_term": string | null
+    "dictionary_term": string | null,
+    "quran_surah": integer | null,
+    "quran_ayah": integer | null,
+    "quran_query": string | null
   }}> | null
 }}
 
@@ -121,6 +141,7 @@ Intents:
 - summary     : asking about the plot, themes, or main characters of a book
 - relationship: asking about connections, lineages, family trees, or how X and Y relate
 - passage     : asking for specific events, facts, quotes, or details — including "tell me about X's actions"
+- quran       : asking about Quran surahs, verses (ayahs), translations, or searching for specific verses/phrases in the Quran (e.g., "what is surah 1?", "read ayah 1:2", "فاتىھە سۈرىسى", "ئاللاھنىڭ ئىسمى بىلەن باشلايمەن قايسى سۈرىدە بار؟")
 
 Dictionary subtype rules:
 - "uyghur_definition": Uyghur word meaning or definition ("X دېگەن نېمە؟", "X مەنىسى نېمە؟")
@@ -186,6 +207,9 @@ Dictionary subtype rules:
             catalog_subtype = llm_res.get("catalog_subtype") or "general"
             dictionary_subtype = llm_res.get("dictionary_subtype") or "general"
             dictionary_term = llm_res.get("dictionary_term")
+            quran_surah = llm_res.get("quran_surah")
+            quran_ayah = llm_res.get("quran_ayah")
+            quran_query = llm_res.get("quran_query")
             intent = llm_res.get("intent", "passage")
             is_composite = llm_res.get("is_composite", False)
             sub_questions = llm_res.get("sub_questions")
@@ -195,6 +219,9 @@ Dictionary subtype rules:
             sub_questions = None
             dictionary_subtype = "general"
             dictionary_term = None
+            quran_surah = None
+            quran_ayah = None
+            quran_query = None
             log_json(
                 logger,
                 logging.WARNING,
@@ -258,7 +285,47 @@ Dictionary subtype rules:
                         needs_rewrite = True
 
             intent = "passage"
-            if _looks_like_dictionary_question(q_norm):
+            quran_surah = None
+            quran_ayah = None
+            quran_query = None
+            quran_keywords = [
+                "قۇرئان",
+                "سۈرە",
+                "ئايەت",
+                "سۈرىسى",
+                "quran",
+                "surah",
+                "ayah",
+                "verse",
+            ]
+            is_quran_query = any(
+                normalize_uyghur(k.lower()) in q_norm for k in quran_keywords
+            )
+            if is_quran_query:
+                intent = "quran"
+
+                p_surah = normalize_uyghur("(?:سۈرە|surah|سۈرىسى)")
+                p_ayah = normalize_uyghur(
+                    "(?:ئايەت|ئايىتى|ئايەتنىڭ|ئايەتتە|ئايەتتىن|ئايىت|ayah|verse)"
+                )
+                surah_match = re.search(rf"{p_surah}\s*(\d+)|(\d+)-{p_surah}", q_norm)
+                ayah_match = re.search(rf"{p_ayah}\s*(\d+)|(\d+)-{p_ayah}", q_norm)
+                surah_val = (
+                    next((g for g in surah_match.groups() if g is not None), None)
+                    if surah_match
+                    else None
+                )
+                ayah_val = (
+                    next((g for g in ayah_match.groups() if g is not None), None)
+                    if ayah_match
+                    else None
+                )
+                quran_surah = int(surah_val) if surah_val else None
+                quran_ayah = int(ayah_val) if ayah_val else None
+                quran_query = None
+                if not quran_surah:
+                    quran_query = question
+            elif _looks_like_dictionary_question(q_norm):
                 intent = "dictionary"
                 dictionary_subtype = _guess_dictionary_subtype(q_norm)
                 dictionary_term = _extract_dictionary_term(question)
@@ -279,6 +346,9 @@ Dictionary subtype rules:
             "intent": intent,
             "dictionary_subtype": dictionary_subtype,
             "dictionary_term": dictionary_term,
+            "quran_surah": quran_surah,
+            "quran_ayah": quran_ayah,
+            "quran_query": quran_query,
             "rewritten_question": rewritten_question if needs_rewrite else None,
             "is_composite": is_composite,
             "sub_questions": sub_questions,
@@ -338,7 +408,7 @@ Question: {question}
 Context signals: {signals_summary}
 
 Return ONLY valid JSON matching this schema:
-{{"intent": "catalog" | "dictionary" | "identity" | "summary" | "relationship" | "passage"}}
+{{"intent": "catalog" | "dictionary" | "identity" | "summary" | "relationship" | "passage" | "quran"}}
 """
         try:
             llm = build_text_llm(ctx.agent_model)
@@ -360,6 +430,7 @@ Return ONLY valid JSON matching this schema:
                     "summary",
                     "relationship",
                     "passage",
+                    "quran",
                 }:
                     log_json(logger, logging.INFO, "Intent classified", intent=intent)
                     return intent
@@ -454,6 +525,21 @@ Return ONLY valid JSON matching this schema:
                 yield ev
             return
 
+        # --- Path: Quran ---
+        if intent == "quran":
+            surah = signals.get("quran_surah")
+            ayah = signals.get("quran_ayah")
+            q = signals.get("quran_query") or question
+            async for ev in self._run_tool_and_yield(
+                "search_quran",
+                {"surah": surah, "ayah": ayah, "q": q},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
+            return
+
         # --- Path B: Dictionary / Language Sources ---
         if intent == "dictionary":
             subtype = signals.get("dictionary_subtype") or "general"
@@ -535,11 +621,37 @@ Return ONLY valid JSON matching this schema:
                     result_holder,
                 ):
                     yield ev
+
+            # Fallback to book chunk search if no dictionary results were found
+            total_found = 0
+            for obs in observations:
+                if obs.get("tool") in {
+                    "lookup_uyghur_word",
+                    "lookup_history_term",
+                    "translate_english_to_uyghur",
+                    "check_word_spelling",
+                    "lookup_uyghur_name",
+                    "lookup_proverbs",
+                    "search_language_sources",
+                }:
+                    total_found += obs.get("result", {}).get("found_count", 0)
+
+            if total_found == 0:
+                search_query = ctx.enriched_question or question
+                async for ev in self._run_tool_and_yield(
+                    "search_chunks",
+                    {"query": search_query, "book_ids": None},
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
             return
 
         # --- Path B: Catalog ---
         if intent == "catalog":
             subtype = signals.get("catalog_subtype", "general")
+            catalog_found = True
             if subtype == "author_of":
                 async for ev in self._run_tool_and_yield(
                     "get_book_author",
@@ -549,6 +661,7 @@ Return ONLY valid JSON matching this schema:
                     result_holder,
                 ):
                     yield ev
+                catalog_found = bool(result_holder.get("result", {}).get("title"))
             elif subtype == "books_by":
                 async for ev in self._run_tool_and_yield(
                     "get_books_by_author",
@@ -558,6 +671,7 @@ Return ONLY valid JSON matching this schema:
                     result_holder,
                 ):
                     yield ev
+                catalog_found = bool(result_holder.get("result", {}).get("books"))
             else:
                 async for ev in self._run_tool_and_yield(
                     "search_catalog",
@@ -565,6 +679,34 @@ Return ONLY valid JSON matching this schema:
                     ctx,
                     observations,
                     result_holder,
+                ):
+                    yield ev
+                catalog_found = result_holder.get("result", {}).get("book_count", 0) > 0
+
+            # The strict title/author string match found nothing (e.g. the book or
+            # author was described rather than named exactly) — fall back to
+            # semantic book discovery + chunk search instead of returning empty.
+            if not catalog_found:
+                async for ev in self._run_tool_and_yield(
+                    "search_books_by_summary",
+                    {"query": question},
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
+                summary_res = result_holder["result"]
+                book_ids = summary_res.get("book_ids", [])
+                async for ev in self._run_tool_and_yield(
+                    "search_chunks",
+                    {"query": question, "book_ids": book_ids},
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
+                async for ev in self._run_universal_fallback(
+                    question, ctx, observations
                 ):
                     yield ev
             return
@@ -608,6 +750,10 @@ Return ONLY valid JSON matching this schema:
                 title_res = result_holder["result"]
                 book_ids = title_res.get("book_ids", [])
 
+            summary_book_ids = _cap_summary_book_ids(
+                book_ids, title_res.get("books", [])
+            )
+
             # Fallback for summary lookups
             if (intent == "summary" or intent == "identity") and not book_ids:
                 async for ev in self._run_tool_and_yield(
@@ -620,11 +766,12 @@ Return ONLY valid JSON matching this schema:
                     yield ev
                 summary_search_res = result_holder["result"]
                 book_ids = summary_search_res.get("book_ids", [])
+                summary_book_ids = book_ids[:5]
 
             if intent == "summary":
                 async for ev in self._run_tool_and_yield(
                     "get_book_summary",
-                    {"book_ids": book_ids[:5]},
+                    {"book_ids": summary_book_ids},
                     ctx,
                     observations,
                     result_holder,
@@ -650,7 +797,7 @@ Return ONLY valid JSON matching this schema:
                         yield ev
                 async for ev in self._run_tool_and_yield(
                     "get_book_summary",
-                    {"book_ids": book_ids[:5]},
+                    {"book_ids": summary_book_ids},
                     ctx,
                     observations,
                     result_holder,

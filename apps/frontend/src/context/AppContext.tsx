@@ -6,10 +6,10 @@ import { useChat } from '../hooks/useChat';
 import { PersistenceService } from '../services/persistenceService';
 
 interface AppContextType {
-  view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary';
-  setView: (view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary', updateHistory?: boolean) => void;
-  previousView: 'home' | 'library' | 'admin' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary';
-  setPreviousView: (view: 'home' | 'library' | 'admin' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary') => void;
+  view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran';
+  setView: (view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran', updateHistory?: boolean) => void;
+  previousView: 'home' | 'library' | 'admin' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran';
+  setPreviousView: (view: 'home' | 'library' | 'admin' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran') => void;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
   homeSearchQuery: string;
@@ -56,11 +56,11 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const parsePath = (path: string): { view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary', tab: string, bookId?: string } => {
+  const parsePath = (path: string): { view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran', tab: string, bookId?: string } => {
     const parts = path.toLowerCase().split('/').filter(Boolean);
     const viewPortion = parts[0] || 'home';
 
-    let view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' = 'home';
+    let view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran' = 'home';
     let tab = 'books';
     let bookId: string | undefined;
 
@@ -75,6 +75,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     else if (viewPortion === 'reader') view = 'reader';
     else if (viewPortion === 'graph') view = 'graph';
     else if (viewPortion === 'dictionary') view = 'dictionary';
+    else if (viewPortion === 'quran') view = 'quran';
     else if (viewPortion === 'books' && parts[1]) {
       // Deep link from Facebook share: /books/<id>
       view = 'library';
@@ -85,10 +86,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const initialRoute = parsePath(window.location.pathname);
-  const [view, setViewInternal] = useState<'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary'>(initialRoute.view);
+  const [view, setViewInternal] = useState<'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran'>(initialRoute.view);
   const [activeTab, setActiveTabInternal] = useState<string>(initialRoute.tab);
   const initialBookId = initialRoute.bookId;
-  const [previousView, setPreviousView] = useState<'home' | 'library' | 'admin' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary'>('home');
+  const [previousView, setPreviousView] = useState<'home' | 'library' | 'admin' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran'>('home');
 
   const getPathFromView = (v: string, t?: string) => {
     if (v === 'home') return '/';
@@ -97,7 +98,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return `/${v}`;
   };
 
-  const setView = (newView: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary', updateHistory = true) => {
+  const setView = (newView: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran', updateHistory = true) => {
     if (newView !== view) {
       if (updateHistory && newView !== 'reader') {
         const path = getPathFromView(newView, newView === 'admin' ? activeTab : undefined);
