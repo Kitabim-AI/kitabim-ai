@@ -245,7 +245,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                               onClick={() => submitFeedback?.(idx, 'positive')}
                               disabled={!!msg.feedback}
                               title="👍"
-                              className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'positive' ? 'text-emerald-500 bg-emerald-50' : 'text-slate-300 hover:text-emerald-400 hover:bg-emerald-50/60'}`}
+                              className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'positive' ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10' : 'text-slate-300 dark:text-slate-400 hover:text-emerald-400 hover:bg-emerald-50/60 dark:hover:bg-emerald-500/10'}`}
                             >
                               <ThumbsUp size={20} strokeWidth={2} />
                             </button>
@@ -253,7 +253,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                               onClick={() => submitFeedback?.(idx, 'negative')}
                               disabled={!!msg.feedback}
                               title="👎"
-                              className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'negative' ? 'text-red-500 bg-red-50' : 'text-slate-300 hover:text-red-400 hover:bg-red-50/60'}`}
+                              className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'negative' ? 'text-red-500 bg-red-50 dark:bg-red-500/10' : 'text-slate-300 dark:text-slate-400 hover:text-red-400 hover:bg-red-50/60 dark:hover:bg-red-500/10'}`}
                             >
                               <ThumbsDown size={20} strokeWidth={2} />
                             </button>
@@ -461,7 +461,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                         onClick={() => submitFeedback?.(idx, 'positive')}
                         disabled={!!msg.feedback}
                         title="👍"
-                        className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'positive' ? 'text-emerald-500 bg-emerald-50' : 'text-slate-300 hover:text-emerald-400 hover:bg-emerald-50/60'}`}
+                        className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'positive' ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10' : 'text-slate-300 dark:text-slate-400 hover:text-emerald-400 hover:bg-emerald-50/60 dark:hover:bg-emerald-500/10'}`}
                       >
                         <ThumbsUp size={18} strokeWidth={2} />
                       </button>
@@ -469,7 +469,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                         onClick={() => submitFeedback?.(idx, 'negative')}
                         disabled={!!msg.feedback}
                         title="👎"
-                        className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'negative' ? 'text-red-500 bg-red-50' : 'text-slate-300 hover:text-red-400 hover:bg-red-50/60'}`}
+                        className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'negative' ? 'text-red-500 bg-red-50 dark:bg-red-500/10' : 'text-slate-300 dark:text-slate-400 hover:text-red-400 hover:bg-red-50/60 dark:hover:bg-red-500/10'}`}
                       >
                         <ThumbsDown size={18} strokeWidth={2} />
                       </button>
