@@ -377,7 +377,7 @@ export const SpellCheckView: React.FC = () => {
           {pendingCorrections.pending.length > 0 && (
             <button
               onClick={() => setShowReview(prev => !prev)}
-              className="flex items-center gap-2 px-5 py-2.5 bg-amber-500 text-white rounded-2xl text-sm font-normal transition-all hover:bg-amber-600 active:scale-95 shadow-lg shadow-amber-500/20 whitespace-nowrap shrink-0"
+              className="flex items-center gap-2 px-5 py-2.5 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-2xl text-sm font-normal transition-all hover:bg-[#0284c7] dark:hover:bg-[#0284c7] active:scale-95 shadow-lg shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10 whitespace-nowrap shrink-0"
             >
               <ClipboardList size={16} strokeWidth={2.5} />
               {t('spellCheck.reviewPending', { count: pendingCorrections.pending.length })}
@@ -412,10 +412,10 @@ export const SpellCheckView: React.FC = () => {
           {pendingCorrections.pending.length > 0 && (
             <button
               onClick={() => setShowReview(prev => !prev)}
-              className="relative p-2 bg-amber-500 text-white rounded-xl transition-all hover:bg-amber-600 active:scale-95"
+              className="relative p-2 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl transition-all hover:bg-[#0284c7] dark:hover:bg-[#0284c7] active:scale-95 shadow-lg shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10"
             >
               <ClipboardList size={16} strokeWidth={2.5} />
-              <span className="absolute -top-1 -left-1 w-4 h-4 bg-white text-amber-500 text-[9px] font-bold rounded-full flex items-center justify-center">
+              <span className="absolute -top-1 -left-1 w-4 h-4 bg-white dark:bg-slate-900 text-[#0369a1] dark:text-[#38bdf8] text-[9px] font-bold rounded-full flex items-center justify-center border border-[#0369a1]/10 dark:border-[#38bdf8]/10 shadow-sm">
                 {pendingCorrections.pending.length}
               </span>
             </button>
