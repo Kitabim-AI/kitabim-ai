@@ -135,7 +135,7 @@ export const NamesDictionaryPanel: React.FC = () => {
       {/* Search + Stats row */}
       <div className="flex flex-col-reverse md:flex-row items-center justify-between w-full gap-3 md:gap-4">
         <div className="relative flex-1 lg:flex-none lg:w-[40%] group w-full">
-          <div className="absolute inset-y-0 right-4 md:right-5 flex items-center pointer-events-none text-[#0369a1] z-10 font-bold">
+          <div className="absolute inset-y-0 right-4 md:right-5 flex items-center pointer-events-none text-[#0369a1] dark:text-[#38bdf8] transition-colors z-10 font-bold">
             {isSearching ? (
               <RefreshCw className="animate-spin" size={16} />
             ) : (
@@ -146,7 +146,7 @@ export const NamesDictionaryPanel: React.FC = () => {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className={`w-full pr-11 md:pr-14 py-2.5 md:py-3 bg-white border-2 border-[#0369a1]/10 rounded-2xl uyghur-text outline-none focus:border-[#0369a1] transition-all shadow-sm placeholder:text-slate-300 text-base md:pl-14 ${
+            className={`w-full pr-11 md:pr-14 py-2.5 md:py-3 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl uyghur-text outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] text-slate-800 dark:text-slate-100 transition-all shadow-sm placeholder:text-slate-300 dark:placeholder:text-slate-500 text-base md:pl-14 ${
               searchQuery ? 'pl-11' : 'pl-4'
             }`}
             placeholder={t('admin.namesDictionary.searchPlaceholder')}
@@ -156,7 +156,7 @@ export const NamesDictionaryPanel: React.FC = () => {
             <div className="absolute inset-y-0 left-3 md:left-4 flex items-center gap-1 md:gap-2 z-10">
               <button
                 onClick={() => setSearchQuery('')}
-                className="p-1.5 md:p-2 text-slate-300 hover:text-red-500 transition-colors"
+                className="p-1.5 md:p-2 text-slate-300 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 transition-colors"
                 title={t('common.clear')}
               >
                 <X strokeWidth={2.5} className="w-4 h-4 md:w-5 md:h-5" />
@@ -166,7 +166,7 @@ export const NamesDictionaryPanel: React.FC = () => {
         </div>
 
         {stats && (
-          <div className="flex items-center gap-2 text-[12px] md:text-[14px] font-normal text-[#0369a1] bg-[#0369a1]/10 px-3 md:px-4 py-2 md:py-2.5 rounded-full border border-[#0369a1]/20 shadow-sm whitespace-nowrap self-end md:self-auto md:mr-auto">
+          <div className="flex items-center gap-2 text-[12px] md:text-[14px] font-normal text-[#0369a1] dark:text-[#38bdf8] bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 px-3 md:px-4 py-2 md:py-2.5 rounded-full border border-[#0369a1]/20 dark:border-[#38bdf8]/20 shadow-sm whitespace-nowrap self-end md:self-auto md:mr-auto">
             <Hash size={12} className="md:w-[14px] md:h-[14px]" />
             {t('admin.namesDictionary.totalEntries', {
               count: stats.total_entries.toLocaleString(),
@@ -182,8 +182,8 @@ export const NamesDictionaryPanel: React.FC = () => {
             onClick={() => handleGroupSelect(null)}
             className={`px-3 py-1 rounded-full text-[12px] md:text-[13px] transition-all border ${
               activeGroup === null
-                ? 'bg-[#0369a1] text-white border-[#0369a1]'
-                : 'bg-white text-slate-600 border-slate-200 hover:border-[#0369a1]/40 hover:text-[#0369a1]'
+                ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 border-[#0369a1] dark:border-[#38bdf8]'
+                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:border-[#0369a1]/40 dark:hover:border-[#38bdf8]/40 hover:text-[#0369a1] dark:hover:text-[#38bdf8]'
             }`}
           >
             {t('common.all')}
@@ -194,8 +194,8 @@ export const NamesDictionaryPanel: React.FC = () => {
               onClick={() => handleGroupSelect(group)}
               className={`px-3 py-1 rounded-full text-[13px] md:text-[14px] uyghur-text transition-all border ${
                 activeGroup === group
-                  ? 'bg-[#0369a1] text-white border-[#0369a1]'
-                  : 'bg-white text-slate-600 border-slate-200 hover:border-[#0369a1]/40 hover:text-[#0369a1]'
+                  ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 border-[#0369a1] dark:border-[#38bdf8]'
+                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:border-[#0369a1]/40 dark:hover:border-[#38bdf8]/40 hover:text-[#0369a1] dark:hover:text-[#38bdf8]'
               }`}
             >
               {group}
@@ -218,7 +218,7 @@ export const NamesDictionaryPanel: React.FC = () => {
               <AlertCircle className="w-6 h-6 md:w-8 md:h-8" />
             </div>
             <div className="space-y-1">
-              <h3 className="text-lg md:text-xl font-normal text-[#1a1a1a]">
+              <h3 className="text-lg md:text-xl font-normal text-[#1a1a1a] dark:text-slate-100">
                 {t('admin.namesDictionary.entryNotFound')}
               </h3>
               <p className="text-slate-400 font-bold text-[9px] md:text-xs uppercase tracking-widest opacity-60 line-clamp-1">
@@ -230,17 +230,17 @@ export const NamesDictionaryPanel: React.FC = () => {
 
         {activeEntries.length > 0 && (
           <div className="space-y-3">
-            <div className="glass-panel rounded-[32px] p-2 overflow-hidden shadow-xl animate-fade-in border border-[#0369a1]/5">
+            <div className="glass-panel rounded-[32px] p-2 overflow-hidden shadow-xl animate-fade-in border border-[#0369a1]/5 dark:border-[#38bdf8]/10">
               <div className="grid grid-cols-1 gap-1">
                 {activeEntries.map((entry) => (
                   <div
                     key={entry.id}
-                    className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 rounded-2xl transition-all group hover:bg-slate-50/50"
+                    className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 rounded-2xl transition-all group hover:bg-slate-50/50 dark:hover:bg-slate-800/30"
                   >
-                    <span className="uyghur-text text-[16px] md:text-xl font-bold text-slate-800">
+                    <span className="uyghur-text text-[16px] md:text-xl font-bold text-slate-800 dark:text-slate-100">
                       {entry.name}
                     </span>
-                    <span className="uyghur-text text-[12px] md:text-[13px] text-[#0369a1]/60 bg-[#0369a1]/5 px-2.5 py-0.5 rounded-full border border-[#0369a1]/10">
+                    <span className="uyghur-text text-[12px] md:text-[13px] text-[#0369a1]/60 dark:text-[#38bdf8]/60 bg-[#0369a1]/5 dark:bg-[#38bdf8]/5 px-2.5 py-0.5 rounded-full border border-[#0369a1]/10 dark:border-[#38bdf8]/10">
                       {entry.letter_group}
                     </span>
                   </div>

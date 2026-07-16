@@ -44,8 +44,8 @@ const DictionaryView: React.FC = () => {
                 flex items-center gap-2 md:gap-2.5 px-4 sm:px-5 md:px-6 py-2.5 md:py-3 transition-all duration-200
                 text-[13px] md:text-[14px] whitespace-nowrap rounded-t-xl font-normal
                 ${activeTab === tab.id
-                  ? 'bg-[#0369a1] text-white shadow-sm'
-                  : 'bg-white text-slate-600 border border-b-0 border-slate-200 hover:bg-slate-50 hover:text-slate-800'
+                  ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 shadow-sm'
+                  : 'bg-white dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 border border-b-0 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/80 hover:text-slate-800 dark:hover:text-slate-250'
                 }
               `}
               title={tab.label}
