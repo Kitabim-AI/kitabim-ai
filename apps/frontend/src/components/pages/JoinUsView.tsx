@@ -46,9 +46,9 @@ const JoinUsView: React.FC = () => {
   }, []);
 
   const interestColors: Record<string, { bg: string; text: string }> = {
-    editor: { bg: 'bg-purple-50', text: 'text-purple-600' },
-    developer: { bg: 'bg-sky-50', text: 'text-[#0369a1]' },
-    other: { bg: 'bg-slate-50', text: 'text-slate-600' },
+    editor: { bg: 'bg-purple-50 dark:bg-purple-950/20', text: 'text-purple-600 dark:text-purple-400' },
+    developer: { bg: 'bg-sky-50 dark:bg-sky-950/20', text: 'text-[#0369a1] dark:text-[#38bdf8]' },
+    other: { bg: 'bg-slate-50 dark:bg-slate-900', text: 'text-slate-600 dark:text-slate-350' },
   };
 
   const handleCloseModal = () => {
@@ -110,14 +110,14 @@ const JoinUsView: React.FC = () => {
         {/* Hero Section */}
         <div className="text-center mb-12 sm:mb-14 md:mb-16 px-4">
           <div className="flex flex-col items-center gap-4 sm:gap-6">
-            <div className="px-6 sm:px-8 py-2.5 bg-[#0369a1] text-white rounded-full text-xs sm:text-sm font-bold uppercase mb-3 sm:mb-4 border border-[#0369a1]/20 shadow-[0_8px_20px_rgba(3,105,161,0.2)] flex items-center gap-2">
+            <div className="px-6 sm:px-8 py-2.5 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-full text-xs sm:text-sm font-bold uppercase mb-3 sm:mb-4 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 shadow-[0_8px_20px_rgba(3,105,161,0.2)] flex items-center gap-2">
               <HeartHandshake size={16} className="sm:w-[18px] sm:h-[18px]" />
               {t('joinUs.hero.badge')}
             </div>
-            <h1 className="font-black text-[#1a1a1a] leading-tight text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl mb-2">
+            <h1 className="font-black text-[#1a1a1a] dark:text-slate-100 leading-tight text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl mb-2">
               {t('joinUs.hero.title')}
             </h1>
-            <p className="uyghur-text text-lg sm:text-xl md:text-2xl text-slate-600 max-w-3xl leading-relaxed opacity-80">
+            <p className="uyghur-text text-lg sm:text-xl md:text-2xl text-slate-600 dark:text-slate-400 max-w-3xl leading-relaxed opacity-80">
               {t('joinUs.hero.subtitle')}
             </p>
           </div>
@@ -125,14 +125,14 @@ const JoinUsView: React.FC = () => {
 
         <div className="w-full max-w-6xl px-4 space-y-16 sm:space-y-20 md:space-y-24 pb-12 sm:pb-16 md:pb-20">
           {/* Who We Are - Now Full Width at the Top */}
-          <div className="glass-panel rounded-[32px] sm:rounded-[40px] p-6 sm:p-8 md:p-12 border border-white/40 flex flex-col gap-6 sm:gap-8 transition-transform hover:scale-[1.005] bg-white/60">
+          <div className="glass-panel rounded-[32px] sm:rounded-[40px] p-6 sm:p-8 md:p-12 border border-white/40 dark:border-slate-800/40 flex flex-col gap-6 sm:gap-8 transition-transform hover:scale-[1.005] bg-white/60 dark:bg-slate-900/60">
             <div className="flex items-center gap-4 sm:gap-6">
               <div className="p-4 sm:p-5 rounded-[20px] sm:rounded-[24px] shadow-lg shrink-0 bg-gradient-to-br from-[#FFD54F] to-[#FF9800]">
                 <BookOpen size={28} className="sm:w-[36px] sm:h-[36px] text-white" />
               </div>
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-[#1a1a1a]">{t('joinUs.whoWeAre.title')}</h2>
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-[#1a1a1a] dark:text-slate-100">{t('joinUs.whoWeAre.title')}</h2>
             </div>
-            <div className="uyghur-text text-lg sm:text-xl text-slate-700 space-y-4 sm:space-y-6 leading-relaxed max-w-5xl">
+            <div className="uyghur-text text-lg sm:text-xl text-slate-700 dark:text-slate-300 space-y-4 sm:space-y-6 leading-relaxed max-w-5xl">
               <p>{t('joinUs.whoWeAre.paragraph1')}</p>
               <p>{t('joinUs.whoWeAre.paragraph2')}</p>
             </div>
@@ -141,28 +141,28 @@ const JoinUsView: React.FC = () => {
           {/* Other Sections Side-by-Side */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8 md:gap-10">
             {/* Why Spelling Mistakes */}
-            <div className="glass-panel rounded-[32px] sm:rounded-[40px] p-6 sm:p-8 md:p-12 border border-[#FF9800]/10 bg-gradient-to-br from-white/90 to-orange-50/30 flex flex-col gap-6 sm:gap-8 transition-transform hover:scale-[1.01]">
+            <div className="glass-panel rounded-[32px] sm:rounded-[40px] p-6 sm:p-8 md:p-12 border border-[#FF9800]/10 dark:border-[#FF9800]/20 bg-gradient-to-br from-white/90 to-orange-50/30 dark:from-slate-900/90 dark:to-orange-950/10 flex flex-col gap-6 sm:gap-8 transition-transform hover:scale-[1.01]">
               <div className="flex items-center gap-4 sm:gap-5">
                 <div className="p-3 sm:p-4 rounded-[16px] sm:rounded-[20px] shadow-lg shrink-0 bg-gradient-to-br from-orange-400 to-rose-500">
                   <AlertCircle size={28} className="sm:w-[32px] sm:h-[32px] text-white" />
                 </div>
-                <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-[#1a1a1a]">{t('joinUs.spellingMistakes.title')}</h2>
+                <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-[#1a1a1a] dark:text-slate-100">{t('joinUs.spellingMistakes.title')}</h2>
               </div>
-              <div className="uyghur-text text-base sm:text-lg text-slate-700 space-y-3 sm:space-y-4">
+              <div className="uyghur-text text-base sm:text-lg text-slate-700 dark:text-slate-300 space-y-3 sm:space-y-4">
                 <p>{t('joinUs.spellingMistakes.paragraph1')}</p>
                 <p>{t('joinUs.spellingMistakes.paragraph2')}</p>
               </div>
             </div>
 
             {/* Smart Library */}
-            <div className="glass-panel rounded-[32px] sm:rounded-[40px] p-6 sm:p-8 md:p-12 border border-sky-300/20 bg-gradient-to-br from-white/90 to-sky-50/30 flex flex-col gap-6 sm:gap-8 transition-transform hover:scale-[1.01]">
+            <div className="glass-panel rounded-[32px] sm:rounded-[40px] p-6 sm:p-8 md:p-12 border border-sky-300/20 dark:border-sky-500/20 bg-gradient-to-br from-white/90 to-sky-50/30 dark:from-slate-900/90 dark:to-sky-950/10 flex flex-col gap-6 sm:gap-8 transition-transform hover:scale-[1.01]">
               <div className="flex items-center gap-4 sm:gap-5">
                 <div className="p-3 sm:p-4 rounded-[16px] sm:rounded-[20px] shadow-lg shrink-0 bg-gradient-to-br from-sky-400 to-blue-600">
                   <Bot size={28} className="sm:w-[32px] sm:h-[32px] text-white" />
                 </div>
-                <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-[#1a1a1a]">{t('joinUs.smartLibrary.title')}</h2>
+                <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-[#1a1a1a] dark:text-slate-100">{t('joinUs.smartLibrary.title')}</h2>
               </div>
-              <div className="uyghur-text text-base sm:text-lg text-slate-700 space-y-3 sm:space-y-4">
+              <div className="uyghur-text text-base sm:text-lg text-slate-700 dark:text-slate-300 space-y-3 sm:space-y-4">
                 <p>{t('joinUs.smartLibrary.paragraph1')}</p>
                 <p>{t('joinUs.smartLibrary.paragraph2')}</p>
               </div>
@@ -172,7 +172,7 @@ const JoinUsView: React.FC = () => {
           {/* Action Cards */}
           <div className="space-y-8 sm:space-y-10 md:space-y-12">
             <div className="text-center">
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-[#1a1a1a] mb-3 sm:mb-4">{t('joinUs.howToHelp.title')}</h2>
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-[#1a1a1a] dark:text-slate-100 mb-3 sm:mb-4">{t('joinUs.howToHelp.title')}</h2>
               <ProverbDisplay
                 keywords={t('proverbs.joinUs')}
                 size="base"
@@ -183,18 +183,18 @@ const JoinUsView: React.FC = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8">
               {/* Editor Card */}
-              <div className="glass-panel group rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 border border-white/60 hover:border-purple-300 transition-all flex flex-col items-center gap-5 sm:gap-6">
-                <div className="p-4 sm:p-5 rounded-2xl bg-purple-100 text-purple-600 group-hover:scale-110 group-hover:bg-purple-600 group-hover:text-white transition-all duration-300">
+              <div className="glass-panel group rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 border border-white/60 dark:border-slate-800/60 hover:border-purple-300 dark:hover:border-purple-400 bg-white/60 dark:bg-slate-900/60 transition-all flex flex-col items-center gap-5 sm:gap-6">
+                <div className="p-4 sm:p-5 rounded-2xl bg-purple-100 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 group-hover:scale-110 group-hover:bg-purple-600 group-hover:text-white transition-all duration-300">
                   <FileEdit size={28} className="sm:w-[32px] sm:h-[32px]" />
                 </div>
-                <h3 className="text-xl sm:text-2xl font-bold text-[#1a1a1a]">{t('joinUs.howToHelp.editor.title')}</h3>
-                <p className="uyghur-text text-slate-600 leading-relaxed text-base sm:text-lg text-right w-full">
+                <h3 className="text-xl sm:text-2xl font-bold text-[#1a1a1a] dark:text-slate-100">{t('joinUs.howToHelp.editor.title')}</h3>
+                <p className="uyghur-text text-slate-600 dark:text-slate-300 leading-relaxed text-base sm:text-lg text-right w-full">
                   {t('joinUs.howToHelp.editor.description')}
                 </p>
-                <p className="uyghur-text text-slate-600 leading-relaxed text-base sm:text-lg text-right w-full font-bold">
+                <p className="uyghur-text text-slate-600 dark:text-slate-200 leading-relaxed text-base sm:text-lg text-right w-full font-bold">
                   {t('joinUs.howToHelp.editor.benefit1')}
                 </p>
-                <ul className="uyghur-text w-full text-right space-y-2 mb-4 opacity-80 text-sm sm:text-base">
+                <ul className="uyghur-text w-full text-right space-y-2 mb-4 opacity-80 text-sm sm:text-base text-slate-600 dark:text-slate-350">
                   <li>• {t('joinUs.howToHelp.editor.benefit2')}</li>
                   <li>• {t('joinUs.howToHelp.editor.benefit3')}</li>
                 </ul>
@@ -203,25 +203,25 @@ const JoinUsView: React.FC = () => {
                     setContactForm({ ...contactForm, interest: 'editor' });
                     setShowContactModal(true);
                   }}
-                  className="w-full py-4 min-h-[48px] bg-purple-600 text-white rounded-2xl font-bold hover:shadow-lg hover:shadow-purple-500/30 transition-all active:scale-95"
+                  className="w-full py-4 min-h-[48px] bg-purple-600 dark:bg-purple-700 text-white rounded-2xl font-bold hover:shadow-lg hover:shadow-purple-500/30 dark:hover:shadow-purple-700/30 transition-all active:scale-95"
                 >
                   {t('joinUs.howToHelp.editor.button')}
                 </button>
               </div>
 
               {/* Developer Card */}
-              <div className="glass-panel group rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 border border-white/60 hover:border-[#0369a1]/30 transition-all flex flex-col items-center gap-5 sm:gap-6">
-                <div className="p-4 sm:p-5 rounded-2xl bg-[#0369a1]/10 text-[#0369a1] group-hover:scale-110 group-hover:bg-[#0369a1] group-hover:text-white transition-all duration-300">
+              <div className="glass-panel group rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 border border-white/60 dark:border-slate-800/60 hover:border-[#0369a1]/30 dark:hover:border-[#38bdf8]/40 bg-white/60 dark:bg-slate-900/60 transition-all flex flex-col items-center gap-5 sm:gap-6">
+                <div className="p-4 sm:p-5 rounded-2xl bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] group-hover:scale-110 group-hover:bg-[#0369a1] group-hover:text-white transition-all duration-300">
                   <Code size={28} className="sm:w-[32px] sm:h-[32px]" />
                 </div>
-                <h3 className="text-xl sm:text-2xl font-bold text-[#1a1a1a]">{t('joinUs.howToHelp.developer.title')}</h3>
-                <p className="uyghur-text text-slate-600 leading-relaxed text-base sm:text-lg text-right w-full">
+                <h3 className="text-xl sm:text-2xl font-bold text-[#1a1a1a] dark:text-slate-100">{t('joinUs.howToHelp.developer.title')}</h3>
+                <p className="uyghur-text text-slate-600 dark:text-slate-300 leading-relaxed text-base sm:text-lg text-right w-full">
                   {t('joinUs.howToHelp.developer.description')}
                 </p>
-                <p className="uyghur-text text-slate-600 leading-relaxed text-base sm:text-lg text-right w-full font-bold">
+                <p className="uyghur-text text-slate-600 dark:text-slate-200 leading-relaxed text-base sm:text-lg text-right w-full font-bold">
                   {t('joinUs.howToHelp.developer.benefit1')}
                 </p>
-                <ul className="uyghur-text w-full text-right space-y-2 mb-4 opacity-80 text-sm sm:text-base">
+                <ul className="uyghur-text w-full text-right space-y-2 mb-4 opacity-80 text-sm sm:text-base text-slate-600 dark:text-slate-350">
                   <li>• {t('joinUs.howToHelp.developer.benefit2')}</li>
                   <li>• {t('joinUs.howToHelp.developer.benefit3')}</li>
                 </ul>
@@ -230,25 +230,25 @@ const JoinUsView: React.FC = () => {
                     setContactForm({ ...contactForm, interest: 'developer' });
                     setShowContactModal(true);
                   }}
-                  className="w-full py-4 min-h-[48px] bg-[#0369a1] text-white rounded-2xl font-bold hover:shadow-lg hover:shadow-sky-500/30 transition-all active:scale-95"
+                  className="w-full py-4 min-h-[48px] bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-2xl font-bold hover:shadow-lg hover:shadow-sky-500/30 dark:hover:shadow-sky-500/10 transition-all active:scale-95"
                 >
                   {t('joinUs.howToHelp.developer.button')}
                 </button>
               </div>
 
               {/* Donate Card */}
-              <div className="glass-panel group rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 border border-white/60 hover:border-rose-300 transition-all flex flex-col items-center gap-5 sm:gap-6">
-                <div className="p-4 sm:p-5 rounded-2xl bg-rose-100 text-rose-600 group-hover:scale-110 group-hover:bg-rose-600 group-hover:text-white transition-all duration-300">
+              <div className="glass-panel group rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 border border-white/60 dark:border-slate-800/60 hover:border-rose-300 dark:hover:border-rose-400 bg-white/60 dark:bg-slate-900/60 transition-all flex flex-col items-center gap-5 sm:gap-6">
+                <div className="p-4 sm:p-5 rounded-2xl bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 group-hover:scale-110 group-hover:bg-rose-600 group-hover:text-white transition-all duration-300">
                   <Heart size={28} className="sm:w-[32px] sm:h-[32px]" />
                 </div>
-                <h3 className="text-xl sm:text-2xl font-bold text-[#1a1a1a]">{t('joinUs.howToHelp.donate.title')}</h3>
-                <p className="uyghur-text text-slate-600 leading-relaxed text-base sm:text-lg text-right w-full">
+                <h3 className="text-xl sm:text-2xl font-bold text-[#1a1a1a] dark:text-slate-100">{t('joinUs.howToHelp.donate.title')}</h3>
+                <p className="uyghur-text text-slate-600 dark:text-slate-300 leading-relaxed text-base sm:text-lg text-right w-full">
                   {t('joinUs.howToHelp.donate.description')}
                 </p>
-                <p className="uyghur-text text-slate-600 leading-relaxed text-base sm:text-lg text-right w-full font-bold">
+                <p className="uyghur-text text-slate-600 dark:text-slate-200 leading-relaxed text-base sm:text-lg text-right w-full font-bold">
                   {t('joinUs.howToHelp.donate.benefit1')}
                 </p>
-                <ul className="uyghur-text w-full text-right space-y-2 mb-4 opacity-80 text-sm sm:text-base">
+                <ul className="uyghur-text w-full text-right space-y-2 mb-4 opacity-80 text-sm sm:text-base text-slate-600 dark:text-slate-350">
                   <li>• {t('joinUs.howToHelp.donate.benefit2')}</li>
                   <li>• {t('joinUs.howToHelp.donate.benefit3')}</li>
                 </ul>
@@ -266,11 +266,11 @@ const JoinUsView: React.FC = () => {
           </div>
 
           {/* Sponsors Strip */}
-          <div className="glass-panel rounded-[32px] sm:rounded-[40px] p-6 sm:p-8 md:p-12 border border-white/60 flex flex-col md:flex-row items-center justify-between gap-6 sm:gap-8 overflow-hidden relative group">
+          <div className="glass-panel rounded-[32px] sm:rounded-[40px] p-6 sm:p-8 md:p-12 border border-white/60 dark:border-slate-800/60 bg-white/60 dark:bg-slate-900/60 flex flex-col md:flex-row items-center justify-between gap-6 sm:gap-8 overflow-hidden relative group">
             <div className="absolute top-0 right-0 w-32 h-32 bg-[#0369a1]/5 rounded-full blur-3xl -mr-16 -mt-16 group-hover:bg-[#0369a1]/10 transition-colors" />
             <div className="text-center md:text-right w-full md:w-auto z-10">
-              <h2 className="text-2xl sm:text-3xl font-bold text-[#1a1a1a] mb-2">{t('joinUs.sponsors.title')}</h2>
-              <p className="uyghur-text text-sm sm:text-base text-slate-500">{t('joinUs.sponsors.subtitle')}</p>
+              <h2 className="text-2xl sm:text-3xl font-bold text-[#1a1a1a] dark:text-slate-100 mb-2">{t('joinUs.sponsors.title')}</h2>
+              <p className="uyghur-text text-sm sm:text-base text-slate-500 dark:text-slate-400">{t('joinUs.sponsors.subtitle')}</p>
             </div>
             <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-8 md:gap-12 z-10">
               <a
@@ -301,13 +301,13 @@ const JoinUsView: React.FC = () => {
           </div>
 
           {/* Contact Strip */}
-          <div className="glass-panel rounded-[32px] sm:rounded-[40px] p-6 sm:p-8 md:p-12 border border-white/60 flex flex-col md:flex-row items-center justify-between gap-6 sm:gap-8">
+          <div className="glass-panel rounded-[32px] sm:rounded-[40px] p-6 sm:p-8 md:p-12 border border-white/60 dark:border-slate-800/60 bg-white/60 dark:bg-slate-900/60 flex flex-col md:flex-row items-center justify-between gap-6 sm:gap-8">
             <div className="text-center md:text-right w-full md:w-auto">
-              <h2 className="text-2xl sm:text-3xl font-bold text-[#1a1a1a] mb-2">{t('joinUs.contact.title')}</h2>
-              <p className="uyghur-text text-sm sm:text-base text-slate-500 mb-3">{t('joinUs.contact.description')}</p>
-              <p className="uyghur-text text-slate-500 font-medium text-base flex flex-wrap items-center justify-center md:justify-start gap-x-2 gap-y-1">
+              <h2 className="text-2xl sm:text-3xl font-bold text-[#1a1a1a] dark:text-slate-100 mb-2">{t('joinUs.contact.title')}</h2>
+              <p className="uyghur-text text-sm sm:text-base text-slate-500 dark:text-slate-400 mb-3">{t('joinUs.contact.description')}</p>
+              <p className="uyghur-text text-slate-500 dark:text-slate-400 font-medium text-base flex flex-wrap items-center justify-center md:justify-start gap-x-2 gap-y-1">
                 <span>{t('joinUs.contact.emailLabel')}</span>
-                <a href="mailto:contact@kitabim.ai" className="text-[#0369a1] hover:underline font-bold" dir="ltr">contact@kitabim.ai</a>
+                <a href="mailto:contact@kitabim.ai" className="text-[#0369a1] dark:text-[#38bdf8] hover:underline font-bold" dir="ltr">contact@kitabim.ai</a>
               </p>
             </div>
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 w-full md:w-auto">
@@ -316,7 +316,7 @@ const JoinUsView: React.FC = () => {
                   setContactForm({ ...contactForm, interest: 'other' });
                   setShowContactModal(true);
                 }}
-                className="px-6 sm:px-10 py-4 min-h-[48px] bg-white text-[#1a1a1a] border border-[#0369a1]/10 rounded-2xl font-bold hover:bg-[#0369a1] hover:text-white transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2"
+                className="px-6 sm:px-10 py-4 min-h-[48px] bg-white dark:bg-slate-850 text-[#1a1a1a] dark:text-slate-100 border border-[#0369a1]/10 dark:border-slate-700 rounded-2xl font-bold hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2"
               >
                 <Send size={18} />
                 {t('joinUs.contact.button')}
@@ -325,7 +325,7 @@ const JoinUsView: React.FC = () => {
                 href="https://github.com/omarjan/kitabim-ai"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-6 py-4 min-h-[48px] bg-slate-800 text-white rounded-2xl font-bold hover:bg-black transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2"
+                className="px-6 py-4 min-h-[48px] bg-slate-800 dark:bg-slate-850 text-white rounded-2xl font-bold hover:bg-black transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2"
               >
                 <Github size={20} />
               </a>
@@ -337,19 +337,19 @@ const JoinUsView: React.FC = () => {
       {/* Modal Backdrop and Content */}
       {showContactModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6">
-          <div className="absolute inset-0 bg-[#0369a1]/20 backdrop-blur-md" onClick={handleCloseModal} />
-          <div className="glass-panel bg-white/95 w-full max-w-xl rounded-[32px] sm:rounded-[40px] shadow-2xl relative z-10 overflow-y-auto max-h-[90vh] animate-fade-in border border-white">
+          <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-md" onClick={handleCloseModal} />
+          <div className="glass-panel bg-white/95 dark:bg-slate-900/95 w-full max-w-xl rounded-[32px] sm:rounded-[40px] shadow-2xl relative z-10 overflow-y-auto max-h-[90vh] animate-fade-in border border-white dark:border-slate-800/60">
             <div className="p-6 sm:p-10">
               {isSuccess ? (
                 <div className="flex flex-col items-center justify-center text-center py-8">
                   <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-6">
                     <CheckCircle2 size={40} />
                   </div>
-                  <h3 className="text-2xl font-bold text-[#1a1a1a] mb-2">{t('joinUs.contactModal.successTitle')}</h3>
-                  <p className="uyghur-text text-slate-500 text-lg mb-8">{t('joinUs.contactModal.successMessage')}</p>
+                  <h3 className="text-2xl font-bold text-[#1a1a1a] dark:text-slate-100 mb-2">{t('joinUs.contactModal.successTitle')}</h3>
+                  <p className="uyghur-text text-slate-500 dark:text-slate-400 text-lg mb-8">{t('joinUs.contactModal.successMessage')}</p>
                   <button
                     onClick={handleCloseModal}
-                    className="w-full py-4 bg-slate-100 hover:bg-slate-200 text-[#1a1a1a] rounded-2xl font-bold transition-all text-lg"
+                    className="w-full py-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-[#1a1a1a] dark:text-slate-100 rounded-2xl font-bold transition-all text-lg"
                   >
                     {t('common.close')}
                   </button>
@@ -357,20 +357,20 @@ const JoinUsView: React.FC = () => {
               ) : (
                 <>
                   <div className="flex justify-between items-center mb-10">
-                    <h3 className="text-3xl font-bold text-[#1a1a1a]">{t('joinUs.contactModal.title')}</h3>
-                    <button onClick={handleCloseModal} className="p-3 hover:bg-slate-100 rounded-2xl transition-all">
+                    <h3 className="text-3xl font-bold text-[#1a1a1a] dark:text-slate-100">{t('joinUs.contactModal.title')}</h3>
+                    <button onClick={handleCloseModal} className="p-3 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-all text-slate-500 dark:text-slate-400">
                       <X size={24} />
                     </button>
                   </div>
 
                   <form onSubmit={handleSubmit} className="space-y-6" noValidate>
                     <div className="space-y-2">
-                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">{t('joinUs.contactModal.interest')}</label>
+                      <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mr-2">{t('joinUs.contactModal.interest')}</label>
                       <div className="relative" ref={interestDropdownRef}>
                         <button
                           type="button"
                           onClick={() => setShowInterestDropdown(!showInterestDropdown)}
-                          className={`w-full flex items-center justify-between p-4 ${interestColors[contactForm.interest]?.bg || 'bg-slate-50'} ${interestColors[contactForm.interest]?.text || 'text-slate-600'} border-2 ${showInterestDropdown ? 'border-[#0369a1]' : 'border-slate-100'} rounded-2xl transition-all uyghur-text group`}
+                          className={`w-full flex items-center justify-between p-4 ${interestColors[contactForm.interest]?.bg || 'bg-slate-50'} ${interestColors[contactForm.interest]?.text || 'text-slate-600'} border-2 ${showInterestDropdown ? 'border-[#0369a1] dark:border-[#38bdf8]' : 'border-slate-100 dark:border-slate-800'} rounded-2xl transition-all uyghur-text group`}
                         >
                           <span className="font-bold">
                             {contactForm.interest === 'editor' && t('joinUs.contactModal.interestEditor')}
@@ -381,7 +381,7 @@ const JoinUsView: React.FC = () => {
                         </button>
 
                         {showInterestDropdown && (
-                          <div className="absolute top-full left-0 right-0 mt-2 glass-panel bg-white/95 shadow-2xl z-[150] overflow-hidden py-2 border border-[#0369a1]/10 rounded-[20px]">
+                          <div className="absolute top-full left-0 right-0 mt-2 glass-panel bg-white/95 dark:bg-slate-900/95 shadow-2xl z-[150] overflow-hidden py-2 border border-[#0369a1]/10 dark:border-slate-800 rounded-[20px]">
                             {(['editor', 'developer', 'other'] as const).map((interest) => (
                               <button
                                 key={interest}
@@ -390,7 +390,7 @@ const JoinUsView: React.FC = () => {
                                   setContactForm({ ...contactForm, interest });
                                   setShowInterestDropdown(false);
                                 }}
-                                className={`w-full flex items-center justify-between px-6 py-4 text-lg font-bold transition-all ${interest === contactForm.interest ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
+                                className={`w-full flex items-center justify-between px-6 py-4 text-lg font-bold transition-all ${interest === contactForm.interest ? 'bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8]' : 'text-[#1a1a1a] dark:text-slate-200 hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/5'}`}
                               >
                                 <span>
                                   {interest === 'editor' && t('joinUs.contactModal.interestEditor')}
@@ -407,20 +407,20 @@ const JoinUsView: React.FC = () => {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">{t('joinUs.contactModal.name')}</label>
+                        <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mr-2">{t('joinUs.contactModal.name')}</label>
                         <input
                           type="text"
-                          className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-[#0369a1] outline-none transition-all"
+                          className="w-full p-4 bg-slate-50 dark:bg-slate-950 border-2 border-slate-100 dark:border-slate-800 rounded-2xl focus:border-[#0369a1] dark:focus:border-[#38bdf8] outline-none text-slate-800 dark:text-slate-100 transition-all"
                           placeholder={t('joinUs.contactModal.namePlaceholder')}
                           value={contactForm.name}
                           onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })}
                         />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">{t('joinUs.contactModal.email')}</label>
+                        <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mr-2">{t('joinUs.contactModal.email')}</label>
                         <input
                           type="email"
-                          className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-[#0369a1] outline-none transition-all"
+                          className="w-full p-4 bg-slate-50 dark:bg-slate-950 border-2 border-slate-100 dark:border-slate-800 rounded-2xl focus:border-[#0369a1] dark:focus:border-[#38bdf8] outline-none text-slate-800 dark:text-slate-100 transition-all"
                           placeholder={t('joinUs.contactModal.emailPlaceholder')}
                           value={contactForm.email}
                           onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
@@ -429,10 +429,10 @@ const JoinUsView: React.FC = () => {
                     </div>
 
                     <div className="space-y-2">
-                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">{t('joinUs.contactModal.message')}</label>
+                      <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mr-2">{t('joinUs.contactModal.message')}</label>
                       <textarea
                         rows={4}
-                        className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-[#0369a1] outline-none transition-all resize-none uyghur-text"
+                        className="w-full p-4 bg-slate-50 dark:bg-slate-950 border-2 border-slate-100 dark:border-slate-800 rounded-2xl focus:border-[#0369a1] dark:focus:border-[#38bdf8] outline-none text-slate-800 dark:text-slate-100 transition-all resize-none uyghur-text"
                         placeholder={t('joinUs.contactModal.messagePlaceholder')}
                         value={contactForm.message}
                         onChange={(e) => setContactForm({ ...contactForm, message: e.target.value })}
@@ -440,8 +440,8 @@ const JoinUsView: React.FC = () => {
                     </div>
 
                     {submitError && (
-                      <div className="p-4 bg-red-50 border-2 border-red-200 rounded-2xl">
-                        <p className="text-red-600 text-sm font-medium">{submitError}</p>
+                      <div className="p-4 bg-red-50 dark:bg-red-950/20 border-2 border-red-200 dark:border-red-900/30 rounded-2xl">
+                        <p className="text-red-600 dark:text-red-400 text-sm font-medium">{submitError}</p>
                       </div>
                     )}
 
@@ -449,8 +449,8 @@ const JoinUsView: React.FC = () => {
                       type="submit"
                       disabled={isSubmitting}
                       className={`w-full py-5 rounded-2xl font-bold text-lg transition-all mt-4 ${isSubmitting
-                        ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
-                        : 'bg-[#0369a1] text-white hover:shadow-xl hover:shadow-[#0369a1]/20 active:scale-95'
+                        ? 'bg-slate-300 dark:bg-slate-800 text-slate-500 dark:text-slate-400 cursor-not-allowed'
+                        : 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 hover:shadow-xl hover:shadow-[#0369a1]/20 dark:hover:shadow-[#38bdf8]/10 active:scale-95'
                         }`}
                     >
                       {isSubmitting ? t('joinUs.contactModal.submitting') : t('joinUs.contactModal.submit')}
