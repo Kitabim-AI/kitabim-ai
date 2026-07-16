@@ -201,15 +201,15 @@ export const QuranView: React.FC = () => {
       )}
 
       {/* Page Title Header */}
-      <div className="flex items-center gap-3 md:gap-4 border-b border-[#0369a1]/10 pb-4">
-        <div className="p-3 bg-[#0369a1]/10 rounded-2xl text-[#0369a1]">
+      <div className="flex items-center gap-3 md:gap-4 border-b border-[#0369a1]/10 dark:border-[#38bdf8]/10 pb-4">
+        <div className="p-3 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 rounded-2xl text-[#0369a1] dark:text-[#38bdf8]">
           <BookOpen size={24} strokeWidth={2.5} />
         </div>
         <div>
-          <h1 className="text-xl md:text-2xl font-bold text-slate-800 uyghur-text">
+          <h1 className="text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100 uyghur-text">
             {t('quran.title') || 'قۇرئان كەرىم'}
           </h1>
-          <p className="text-xs text-slate-400 font-normal uyghur-text">
+          <p className="text-xs text-slate-400 dark:text-slate-500 font-normal uyghur-text">
             {t('quran.subtitle')}
           </p>
         </div>
@@ -218,7 +218,7 @@ export const QuranView: React.FC = () => {
       {/* Merged Search & Surah Selector Box */}
       <div className="flex flex-col-reverse md:flex-row items-center justify-between w-full gap-3 md:gap-4 relative z-30">
         <div className="relative flex-1 lg:flex-none lg:w-[45%] group w-full">
-          <div className="absolute inset-y-0 right-4 md:right-5 flex items-center pointer-events-none text-[#0369a1] transition-colors z-10 font-bold">
+          <div className="absolute inset-y-0 right-4 md:right-5 flex items-center pointer-events-none text-[#0369a1] dark:text-[#38bdf8] transition-colors z-10 font-bold">
             {isSearching ? (
               <RefreshCw className="animate-spin" size={16} />
             ) : (
@@ -231,7 +231,7 @@ export const QuranView: React.FC = () => {
             onFocus={handleInputFocus}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            className={`w-full pr-11 md:pr-14 py-2.5 md:py-3 bg-white border-2 border-[#0369a1]/10 rounded-2xl uyghur-text outline-none focus:border-[#0369a1] transition-all shadow-sm placeholder:text-slate-300 text-base md:pl-14 ${
+            className={`w-full pr-11 md:pr-14 py-2.5 md:py-3 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl uyghur-text outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] text-slate-800 dark:text-slate-100 transition-all shadow-sm placeholder:text-slate-300 dark:placeholder:text-slate-500 text-base md:pl-14 ${
               (searchQuery || isFocused) ? 'pl-11' : 'pl-4'
             }`}
             placeholder={t('quran.searchPlaceholder') || 'قۇرئاندىن سۈرە ياكى ئايەت ئىزدەش...'}
@@ -245,7 +245,7 @@ export const QuranView: React.FC = () => {
                   setInputValue('');
                   setIsFocused(false);
                 }}
-                className="p-1.5 md:p-2 text-slate-300 hover:text-red-500 transition-colors"
+                className="p-1.5 md:p-2 text-slate-300 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 transition-colors"
                 title={t('common.clear')}
               >
                 <X strokeWidth={2.5} className="w-4 h-4 md:w-5 md:h-5" />
@@ -255,8 +255,8 @@ export const QuranView: React.FC = () => {
 
           {/* Surah List Dropdown Panel */}
           {isFocused && surahs.length > 0 && (
-            <div className="absolute right-0 left-0 mt-2 max-h-[300px] overflow-y-auto bg-white/95 backdrop-blur-md border border-[#0369a1]/15 rounded-2xl shadow-xl z-40 divide-y divide-slate-50 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden animate-fade-in">
-              <div className="px-4 py-2 text-xs font-bold text-[#0369a1] bg-[#0369a1]/5 text-right uyghur-text">
+            <div className="absolute right-0 left-0 mt-2 max-h-[300px] overflow-y-auto bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-[#0369a1]/15 dark:border-[#38bdf8]/20 rounded-2xl shadow-xl z-40 divide-y divide-slate-50 dark:divide-slate-800 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden animate-fade-in">
+              <div className="px-4 py-2 text-xs font-bold text-[#0369a1] dark:text-[#38bdf8] bg-[#0369a1]/5 dark:bg-[#38bdf8]/5 text-right uyghur-text">
                 سۈرىلەر
               </div>
               {filteredSurahs.length > 0 ? (
@@ -264,17 +264,17 @@ export const QuranView: React.FC = () => {
                   <button
                     key={surah.surah}
                     onClick={() => handleSelectSurah(surah.surah)}
-                    className={`w-full text-right px-4 py-3 text-sm uyghur-text transition-all flex items-center justify-between hover:bg-[#0369a1]/5 ${
+                    className={`w-full text-right px-4 py-3 text-sm uyghur-text transition-all flex items-center justify-between hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/5 ${
                       activeSurah === surah.surah 
-                        ? 'bg-[#0369a1]/10 text-[#0369a1] font-semibold' 
-                        : 'text-slate-700'
+                        ? 'bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] font-semibold' 
+                        : 'text-slate-700 dark:text-slate-300'
                     }`}
                   >
                     <span>{surah.surah}. {surah.surah_name_ug} سۈرىسى</span>
                   </button>
                 ))
               ) : (
-                <div className="px-4 py-3 text-sm text-slate-400 text-center uyghur-text">
+                <div className="px-4 py-3 text-sm text-slate-400 dark:text-slate-500 text-center uyghur-text">
                   ماس كېلىدىغان سۈرە تېپىلمىدى (ئايەت ئىزدەش ئۈچۈن Enter بېسىڭ)
                 </div>
               )}
@@ -283,7 +283,7 @@ export const QuranView: React.FC = () => {
         </div>
 
         {stats && (
-          <div className="flex items-center gap-2 text-[12px] md:text-[14px] font-normal text-[#0369a1] bg-[#0369a1]/10 px-3 md:px-4 py-2 md:py-2.5 rounded-full border border-[#0369a1]/20 shadow-sm whitespace-nowrap self-end md:self-auto md:mr-auto">
+          <div className="flex items-center gap-2 text-[12px] md:text-[14px] font-normal text-[#0369a1] dark:text-[#38bdf8] bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 px-3 md:px-4 py-2 md:py-2.5 rounded-full border border-[#0369a1]/20 dark:border-[#38bdf8]/20 shadow-sm whitespace-nowrap self-end md:self-auto md:mr-auto">
             <Hash size={12} className="md:w-[14px] md:h-[14px]" />
             {searchQuery.trim() 
               ? t('quran.totalVerses', { count: suggestions.length.toLocaleString() }) || `${suggestions.length} ئايەت`
@@ -307,7 +307,7 @@ export const QuranView: React.FC = () => {
                 <AlertCircle className="w-6 h-6 md:w-8 md:h-8" />
              </div>
              <div className="space-y-1">
-                <h3 className="text-lg md:text-xl font-normal text-[#1a1a1a]">
+                <h3 className="text-lg md:text-xl font-normal text-[#1a1a1a] dark:text-slate-100">
                   {t('quran.ayahNotFound') || 'ئايەت تېپىلمىدى.'}
                 </h3>
                 <p className="text-slate-400 font-bold text-[9px] md:text-xs uppercase tracking-widest opacity-60 line-clamp-1">
@@ -319,8 +319,8 @@ export const QuranView: React.FC = () => {
 
         {activeEntries.length > 0 && (
           <div className="space-y-4">
-            <div className="glass-panel rounded-[32px] p-4 md:p-6 overflow-hidden shadow-xl animate-fade-in border border-[#0369a1]/5 bg-white">
-              <div className="divide-y divide-slate-100">
+            <div className="glass-panel rounded-[32px] p-4 md:p-6 overflow-hidden shadow-xl animate-fade-in border border-[#0369a1]/5 dark:border-[#38bdf8]/10 bg-white dark:bg-slate-900/60">
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
                 {activeEntries.map((entry) => (
                   <div 
                     key={entry.id} 
@@ -328,7 +328,7 @@ export const QuranView: React.FC = () => {
                   >
                     {/* Arabic Text (Centered, large, Adobe Arabic Font) */}
                     <div 
-                      className="text-right text-3xl md:text-4xl text-slate-900 leading-[2] md:leading-[2.2] font-normal text-right w-full arabic-text"
+                      className="text-right text-3xl md:text-4xl text-slate-900 dark:text-slate-100 leading-[2] md:leading-[2.2] font-normal w-full arabic-text"
                       dir="rtl"
                       lang="ar"
                     >
@@ -337,7 +337,7 @@ export const QuranView: React.FC = () => {
 
                     {/* Uyghur Text */}
                     <div 
-                      className="uyghur-text text-base md:text-lg text-slate-700 leading-relaxed text-right mt-2"
+                      className="uyghur-text text-base md:text-lg text-slate-700 dark:text-slate-200 leading-relaxed text-right mt-2"
                       dir="rtl"
                       lang="ug"
                     >
@@ -346,7 +346,7 @@ export const QuranView: React.FC = () => {
 
                     {/* English Text */}
                     <div 
-                      className="text-left text-sm md:text-base text-slate-500 leading-relaxed font-sans mt-1"
+                      className="text-left text-sm md:text-base text-slate-500 dark:text-slate-400 leading-relaxed font-sans mt-1"
                       dir="ltr"
                       lang="en"
                     >
@@ -354,8 +354,8 @@ export const QuranView: React.FC = () => {
                     </div>
 
                     {/* Verse Badge / Info */}
-                    <div className="flex justify-between items-center mt-2 pt-3 border-t border-slate-50">
-                      <span className="text-[11px] md:text-xs text-[#0369a1] font-semibold bg-[#0369a1]/10 px-3 py-1 rounded-full border border-[#0369a1]/20 shadow-sm whitespace-nowrap self-end uyghur-text">
+                    <div className="flex justify-between items-center mt-2 pt-3 border-t border-slate-50 dark:border-slate-800">
+                      <span className="text-[11px] md:text-xs text-[#0369a1] dark:text-[#38bdf8] font-semibold bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 px-3 py-1 rounded-full border border-[#0369a1]/20 dark:border-[#38bdf8]/20 shadow-sm whitespace-nowrap self-end uyghur-text">
                         {t('quran.badgeTemplate', { 
                           surah: entry.surah, 
                           surahName: language === 'ug' ? entry.surah_name_ug : entry.surah_name_en, 
