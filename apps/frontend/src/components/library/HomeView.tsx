@@ -362,16 +362,16 @@ export const HomeView: React.FC = () => {
         {showKeyboardMap && (
           <div
             ref={keyboardRef}
-            className="absolute left-4 right-4 mt-3 bg-white/95 backdrop-blur-2xl border border-slate-200/60 rounded-3xl p-5 shadow-2xl z-20 hidden md:block animate-in fade-in slide-in-from-top-4 duration-200"
+            className="absolute left-4 right-4 mt-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl border border-slate-200/60 dark:border-slate-800 rounded-3xl p-5 shadow-2xl z-20 hidden md:block animate-in fade-in slide-in-from-top-4 duration-200"
             dir="ltr"
           >
             {/* Keyboard Header */}
-            <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100" dir="rtl">
+            <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100 dark:border-slate-800" dir="rtl">
               <div className="flex flex-col gap-0.5">
-                <h4 className="text-sm font-semibold text-slate-800 uyghur-text">
+                <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 uyghur-text">
                   {t('home.keyboardMapTitle')}
                 </h4>
-                <p className="text-[11px] text-slate-400 uyghur-text">
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 uyghur-text">
                   {t('home.keyboardMapSubtitle')}
                 </p>
               </div>
@@ -379,7 +379,7 @@ export const HomeView: React.FC = () => {
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => setShowKeyboardMap(false)}
-                className="p-1.5 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors"
+                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
               >
                 <X size={16} />
               </button>
@@ -395,9 +395,9 @@ export const HomeView: React.FC = () => {
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => handleKeyClick(isShiftPressed ? key.shift : key.uyghur)}
-                    className="h-12 flex-1 max-w-[54px] min-w-[36px] bg-white hover:bg-slate-50 border border-slate-200 rounded-lg flex flex-col justify-between p-1.5 shadow-sm text-slate-800 transition-all active:scale-95 cursor-pointer hover:border-slate-300 select-none"
+                    className="h-12 flex-1 max-w-[54px] min-w-[36px] bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 border border-slate-200 dark:border-slate-700 rounded-lg flex flex-col justify-between p-1.5 shadow-sm text-slate-800 dark:text-slate-200 transition-all active:scale-95 cursor-pointer hover:border-slate-300 dark:hover:border-slate-600 select-none"
                   >
-                    <span className="text-[9px] text-slate-400 font-medium uppercase self-start">{key.latin}</span>
+                    <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium uppercase self-start">{key.latin}</span>
                     <span className="text-base sm:text-lg font-bold self-center leading-none mt-0.5">{isShiftPressed ? key.shift : key.uyghur}</span>
                   </button>
                 ))}
@@ -411,9 +411,9 @@ export const HomeView: React.FC = () => {
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => handleKeyClick(isShiftPressed ? key.shift : key.uyghur)}
-                    className="h-12 flex-1 max-w-[54px] min-w-[36px] bg-white hover:bg-slate-50 border border-slate-200 rounded-lg flex flex-col justify-between p-1.5 shadow-sm text-slate-800 transition-all active:scale-95 cursor-pointer hover:border-slate-300 select-none"
+                    className="h-12 flex-1 max-w-[54px] min-w-[36px] bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 border border-slate-200 dark:border-slate-700 rounded-lg flex flex-col justify-between p-1.5 shadow-sm text-slate-800 dark:text-slate-200 transition-all active:scale-95 cursor-pointer hover:border-slate-300 dark:hover:border-slate-600 select-none"
                   >
-                    <span className="text-[9px] text-slate-400 font-medium uppercase self-start">{key.latin}</span>
+                    <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium uppercase self-start">{key.latin}</span>
                     <span className="text-base sm:text-lg font-bold self-center leading-none mt-0.5">{isShiftPressed ? key.shift : key.uyghur}</span>
                   </button>
                 ))}
@@ -427,8 +427,8 @@ export const HomeView: React.FC = () => {
                   onClick={() => setIsShiftPressed(!isShiftPressed)}
                   className={`h-12 px-3 border rounded-lg flex items-center justify-center font-semibold text-xs transition-all active:scale-95 cursor-pointer select-none ${
                     isShiftPressed
-                      ? 'bg-[#0369a1] text-white border-[#0369a1]'
-                      : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200 hover:border-slate-300'
+                      ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white border-[#0369a1] dark:border-[#38bdf8]'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
                   }`}
                 >
                   Shift
@@ -440,9 +440,9 @@ export const HomeView: React.FC = () => {
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => handleKeyClick(isShiftPressed ? key.shift : key.uyghur)}
-                    className="h-12 flex-1 max-w-[54px] min-w-[36px] bg-white hover:bg-slate-50 border border-slate-200 rounded-lg flex flex-col justify-between p-1.5 shadow-sm text-slate-800 transition-all active:scale-95 cursor-pointer hover:border-slate-300 select-none"
+                    className="h-12 flex-1 max-w-[54px] min-w-[36px] bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 border border-slate-200 dark:border-slate-700 rounded-lg flex flex-col justify-between p-1.5 shadow-sm text-slate-800 dark:text-slate-200 transition-all active:scale-95 cursor-pointer hover:border-slate-300 dark:hover:border-slate-600 select-none"
                   >
-                    <span className="text-[9px] text-slate-400 font-medium uppercase self-start">{key.latin}</span>
+                    <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium uppercase self-start">{key.latin}</span>
                     <span className="text-base sm:text-lg font-bold self-center leading-none mt-0.5">{isShiftPressed ? key.shift : key.uyghur}</span>
                   </button>
                 ))}
@@ -451,7 +451,7 @@ export const HomeView: React.FC = () => {
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={handleBackspaceClick}
-                  className="h-12 px-3 bg-slate-100 hover:bg-slate-200 border border-slate-200 hover:border-slate-300 rounded-lg flex items-center justify-center text-slate-700 transition-all active:scale-95 cursor-pointer select-none"
+                  className="h-12 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 rounded-lg flex items-center justify-center text-slate-700 dark:text-slate-300 transition-all active:scale-95 cursor-pointer select-none"
                   title="Backspace"
                 >
                   <Delete size={16} />
@@ -464,7 +464,7 @@ export const HomeView: React.FC = () => {
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleKeyClick(' ')}
-                  className="h-12 w-48 sm:w-64 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-center shadow-sm text-slate-800 text-xs font-semibold transition-all active:scale-95 cursor-pointer select-none hover:border-slate-300"
+                  className="h-12 w-48 sm:w-64 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 border border-slate-200 dark:border-slate-700 rounded-lg flex items-center justify-center shadow-sm text-slate-800 dark:text-slate-200 text-xs font-semibold transition-all active:scale-95 cursor-pointer select-none hover:border-slate-300 dark:hover:border-slate-600"
                 >
                   {t('home.spaceKey')}
                 </button>
