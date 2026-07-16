@@ -54,11 +54,11 @@ export const QuestionRotator: React.FC<QuestionRotatorProps> = ({
 
   return (
     <div className={`flex flex-col items-center gap-2 ${className}`}>
-      <span className="text-xs sm:text-sm font-normal tracking-widest uppercase text-[#94a3b8]">
+      <span className="text-xs sm:text-sm font-normal tracking-widest uppercase text-[#94a3b8] dark:text-slate-500">
         {t('home.recentQuestions')}
       </span>
       <p
-        className="uyghur-text text-sm sm:text-base font-normal text-[#94a3b8] text-center transition-opacity duration-300 cursor-pointer hover:text-[#0369a1] px-4"
+        className="uyghur-text text-sm sm:text-base font-normal text-[#94a3b8] dark:text-slate-400 text-center transition-opacity duration-300 cursor-pointer hover:text-[#0369a1] dark:hover:text-[#38bdf8] px-4"
         style={{ opacity: visible ? 1 : 0 }}
         dir="rtl"
         onClick={() => onQuestionClick?.(question)}

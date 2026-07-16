@@ -43,7 +43,7 @@ export const ProverbDisplay: React.FC<ProverbDisplayProps> = ({
   return (
     <div className={`flex flex-col gap-1 ${className}`}>
       <p
-        className={`uyghur-text font-normal text-[#1a1a1a] leading-relaxed italic transition-all duration-700
+        className={`uyghur-text font-normal text-[#1a1a1a] dark:text-slate-300 leading-relaxed italic transition-all duration-700
           ${size ? sizeClasses[size] : (!fontSize ? sizeClasses.sm : '')}
         `}
         style={fontSize ? { fontSize: `${fontSize}px` } : {}}
