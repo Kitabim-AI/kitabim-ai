@@ -147,6 +147,14 @@ export const AdminView: React.FC = () => {
   const [menuAnchorRect, setMenuAnchorRect] = useState<DOMRect | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [localSearch, setLocalSearch] = useState(searchQuery);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 50);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Debounce: update global search query after 500ms
   useEffect(() => {
@@ -292,7 +300,7 @@ export const AdminView: React.FC = () => {
       {/* Search and Filters Bar */}
       <div className="flex flex-col-reverse md:flex-row gap-3 md:gap-4">
         <div className="relative flex-1 lg:flex-none lg:w-[30%] group">
-          <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1] transition-colors">
+          <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1] dark:text-[#38bdf8] transition-colors">
             {(isInitialLoading || isLoadingMore) && localSearch ? (
               <RefreshCw size={18} strokeWidth={3} className="animate-spin" />
             ) : (
@@ -303,20 +311,21 @@ export const AdminView: React.FC = () => {
             type="text"
             value={localSearch}
             onChange={(e) => setLocalSearch(e.target.value)}
+            ref={inputRef}
             placeholder={t('library.searchPlaceholder')}
-            className="w-full pr-12 pl-12 py-2.5 md:py-3 bg-white border-2 border-[#0369a1]/10 rounded-2xl outline-none focus:border-[#0369a1] transition-all uyghur-text shadow-sm text-base"
+            className="w-full pr-12 pl-12 py-2.5 md:py-3 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all uyghur-text text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 shadow-sm text-base"
           />
           {localSearch && (
             <button
               onClick={() => { setLocalSearch(''); setSearchQuery(''); }}
-              className="absolute inset-y-0 left-4 flex items-center text-[#94a3b8] hover:text-[#0369a1] transition-colors active:scale-95"
+              className="absolute inset-y-0 left-4 flex items-center text-[#94a3b8] hover:text-[#0369a1] dark:hover:text-[#38bdf8] transition-colors active:scale-95"
             >
               <X size={16} strokeWidth={3} />
             </button>
           )}
         </div>
 
-        <div className="flex items-center gap-2 text-[12px] md:text-[14px] font-normal text-[#0369a1] bg-[#0369a1]/10 px-3 md:px-4 py-2 md:py-2.5 rounded-full border border-[#0369a1]/20 shadow-sm whitespace-nowrap self-end md:self-auto md:mr-auto">
+        <div className="flex items-center gap-2 text-[12px] md:text-[14px] font-normal text-[#0369a1] dark:text-[#38bdf8] bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 px-3 md:px-4 py-2 md:py-2.5 rounded-full border border-[#0369a1]/20 dark:border-[#38bdf8]/20 shadow-sm whitespace-nowrap self-end md:self-auto md:mr-auto">
           <TableOfContents size={12} className="md:w-[14px] md:h-[14px]" />
           {t('chat.libraryBookCount', { count: totalBooks })}
         </div>
@@ -326,25 +335,25 @@ export const AdminView: React.FC = () => {
 
       {(bookActions.isCheckingGlobal || (isInitialLoading && books.length === 0)) && (
         <div className="p-20 flex flex-col items-center justify-center text-center z-50">
-          <Database className="w-16 h-16 text-[#0369a1] mb-6 animate-bounce" />
-          <h3 className="text-xl font-normal text-[#1a1a1a]">{t('common.loading')}</h3>
+          <Database className="w-16 h-16 text-[#0369a1] dark:text-[#38bdf8] mb-6 animate-bounce" />
+          <h3 className="text-xl font-normal text-[#1a1a1a] dark:text-slate-100">{t('common.loading')}</h3>
         </div>
       )}
 
       {(!bookActions.isCheckingGlobal && !isInitialLoading && books.length === 0) && (
         <div className="glass-panel p-20 flex flex-col items-center justify-center text-center">
-          <Database className="w-16 h-16 text-[#94a3b8] mb-6" />
-          <h3 className="text-xl font-normal text-[#1a1a1a]">{t(searchQuery ? 'admin.table.noResults' : 'admin.table.noBooks')}</h3>
-          <p className="text-slate-500 font-normal">{t(searchQuery ? 'admin.table.tryDifferent' : 'admin.table.uploadFirst')}</p>
+          <Database className="w-16 h-16 text-[#94a3b8] dark:text-slate-600 mb-6" />
+          <h3 className="text-xl font-normal text-[#1a1a1a] dark:text-slate-100">{t(searchQuery ? 'admin.table.noResults' : 'admin.table.noBooks')}</h3>
+          <p className="text-slate-500 dark:text-slate-400 font-normal">{t(searchQuery ? 'admin.table.tryDifferent' : 'admin.table.uploadFirst')}</p>
         </div>
       )}
 
       {!bookActions.isCheckingGlobal && books.length > 0 && (
-        <div className="glass-panel overflow-hidden rounded-[16px] md:rounded-[24px] p-0 shadow-xl border border-[#0369a1]/10">
+        <div className="glass-panel dark:bg-slate-900/60 overflow-hidden rounded-[16px] md:rounded-[24px] p-0 shadow-xl border border-[#0369a1]/10 dark:border-slate-800">
           <div className="overflow-x-auto custom-scrollbar">
             <table className="w-full text-right lg:min-w-[900px]" dir="rtl">
               <thead>
-                <tr className="bg-[#0369a1]/5 border-b border-[#0369a1]/10 text-[12px] md:text-[14px] lg:text-[16px] font-normal text-[#0369a1] uppercase">
+                <tr className="bg-[#0369a1]/5 dark:bg-[#38bdf8]/5 border-b border-[#0369a1]/10 dark:border-slate-800 text-[12px] md:text-[14px] lg:text-[16px] font-normal text-[#0369a1] dark:text-[#38bdf8] uppercase">
                   <th className="px-3 md:px-6 py-3 md:py-5 text-right font-normal">{t('admin.table.bookName')}</th>
                   <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 w-20 md:w-28 text-right font-normal">{t('book.volumeLabel') || t('admin.table.pageCount')}</th>
                   <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 w-40 md:w-52 text-right font-normal">{t('admin.table.author')}</th>
@@ -353,19 +362,19 @@ export const AdminView: React.FC = () => {
                   <th className="px-3 md:px-6 py-3 md:py-5 text-left font-normal">{t('admin.table.actions')}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#75C5F0]/5">
+              <tbody className="divide-y divide-[#75C5F0]/5 dark:divide-slate-800/30">
                 {books.map(book => {
                   const isEditing = editingId === book.id;
                   return (
-                    <tr key={book.id} className={`hover:bg-[#e8f4f8]/20 transition-colors group/row ${isEditing ? 'bg-[#0369a1]/5' : ''}`}>
+                    <tr key={book.id} className={`hover:bg-[#e8f4f8]/20 dark:hover:bg-[#38bdf8]/5 transition-colors group/row ${isEditing ? 'bg-[#0369a1]/5 dark:bg-[#38bdf8]/5' : ''}`}>
                       <td className={`px-3 md:px-6 py-4 md:py-6 font-uyghur ${isEditing ? 'align-top' : ''}`}>
                         <div className="flex items-center gap-2 md:gap-4">
                           <button
                             onClick={() => bookActions.openReader(book)}
                             disabled={!isBookReadable(book) || isEditing}
                             className={`p-2 md:p-3 rounded-xl transition-all shadow-sm active:scale-90 ${!isBookReadable(book) || isEditing
-                              ? 'bg-slate-100 text-slate-300 cursor-not-allowed'
-                              : 'bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white group-hover/row:scale-110'
+                              ? 'bg-slate-100 dark:bg-slate-800 text-slate-300 dark:text-slate-600 cursor-not-allowed'
+                              : 'bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 group-hover/row:scale-110'
                               }`}
                             title={t('admin.table.view')}
                           >
@@ -379,7 +388,7 @@ export const AdminView: React.FC = () => {
                                 value={editData?.title}
                                 onChange={e => setEditData(prev => prev ? { ...prev, title: e.target.value } : null)}
                                 onKeyDown={e => e.key === 'Enter' && handleSaveRow(book.id)}
-                                className="px-3 md:px-4 py-1.5 md:py-2 text-[14px] md:text-[16px] border-2 border-[#0369a1] rounded-xl bg-white w-full outline-none focus:ring-4 focus:ring-[#0369a1]/10 transition-all font-black"
+                                className="px-3 md:px-4 py-1.5 md:py-2 text-[14px] md:text-[16px] border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 w-full outline-none focus:ring-4 focus:ring-[#0369a1]/10 dark:focus:ring-[#38bdf8]/10 transition-all font-black"
                                 placeholder={t('admin.table.bookName')}
                               />
                             </div>
@@ -394,15 +403,15 @@ export const AdminView: React.FC = () => {
                               className={`text-right group/title transition-all duration-300 block ${isBookReadable(book) && !isEditing ? 'cursor-pointer hover:translate-x-[-4px]' : 'cursor-default'}`}
                               disabled={!isBookReadable(book) || isEditing}
                             >
-                              <span className={`font-black text-[14px] md:text-[16px] lg:text-[18px] transition-colors block ${isBookReadable(book) && !isEditing ? 'text-[#1a1a1a] group-hover/title:text-[#0369a1]' : 'text-slate-400'}`}>
+                              <span className={`font-black text-[14px] md:text-[16px] lg:text-[18px] transition-colors block ${isBookReadable(book) && !isEditing ? 'text-[#1a1a1a] dark:text-slate-100 group-hover/title:text-[#0369a1] dark:group-hover/title:text-[#38bdf8]' : 'text-slate-400'}`}>
                                 {book.title}
                                 {book.volume !== null && (
-                                  <span className="lg:hidden text-[#0369a1] mr-2">
+                                  <span className="lg:hidden text-[#0369a1] dark:text-[#38bdf8] mr-2">
                                     {' '}{t('book.volume', { volume: book.volume })}
                                   </span>
                                 )}
                               </span>
-                              <div className="text-[10px] md:text-[12px] font-bold text-slate-400 mt-0.5">{t('book.pagesCount', { count: book.totalPages || 0 })}</div>
+                              <div className="text-[10px] md:text-[12px] font-bold text-slate-450 mt-0.5">{t('book.pagesCount', { count: book.totalPages || 0 })}</div>
                               
                               {/* Mobile Pipeline Progress */}
                               <div className="flex md:hidden items-center gap-1.5 mt-2">
@@ -433,11 +442,11 @@ export const AdminView: React.FC = () => {
                             value={editData?.volume}
                             onChange={e => setEditData(prev => prev ? { ...prev, volume: e.target.value } : null)}
                             onKeyDown={e => e.key === 'Enter' && handleSaveRow(book.id)}
-                            className="no-spinner px-2 md:px-3 py-1.5 md:py-2 border-2 border-[#0369a1] rounded-xl bg-white w-16 md:w-20 outline-none text-center font-black text-sm md:text-base"
+                            className="no-spinner px-2 md:px-3 py-1.5 md:py-2 border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 w-16 md:w-20 outline-none text-center font-black text-sm md:text-base"
                           />
                         ) : (
-                          <div className="p-1 md:p-2 text-[14px] md:text-[16px] font-black text-[#1a1a1a]">
-                            {book.volume !== null ? t('book.volume', { volume: book.volume }) : <Hash size={12} className="mx-auto text-slate-200 md:w-[14px] md:h-[14px]" />}
+                          <div className="p-1 md:p-2 text-[14px] md:text-[16px] font-black text-[#1a1a1a] dark:text-slate-100">
+                            {book.volume !== null ? t('book.volume', { volume: book.volume }) : <Hash size={12} className="mx-auto text-slate-200 dark:text-slate-700 md:w-[14px] md:h-[14px]" />}
                           </div>
                         )}
                       </td>
@@ -448,12 +457,12 @@ export const AdminView: React.FC = () => {
                             value={editData?.author}
                             onChange={e => setEditData(prev => prev ? { ...prev, author: e.target.value } : null)}
                             onKeyDown={e => e.key === 'Enter' && handleSaveRow(book.id)}
-                            className="px-3 md:px-4 py-1.5 md:py-2 text-[14px] md:text-[16px] border-2 border-[#0369a1] rounded-xl bg-white w-full outline-none font-normal"
+                            className="px-3 md:px-4 py-1.5 md:py-2 text-[14px] md:text-[16px] border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 w-full outline-none font-normal"
                             placeholder={t('admin.table.author')}
                           />
                         ) : (
-                          <div className="p-1 md:p-2 text-[14px] md:text-[16px] font-normal text-[#1a1a1a]">
-                            {book.author || <User size={12} className="text-slate-200 md:w-[14px] md:h-[14px]" />}
+                          <div className="p-1 md:p-2 text-[14px] md:text-[16px] font-normal text-[#1a1a1a] dark:text-slate-100">
+                            {book.author || <User size={12} className="text-slate-200 dark:text-slate-700 md:w-[14px] md:h-[14px]" />}
                           </div>
                         )}
                       </td>
@@ -548,14 +557,14 @@ export const AdminView: React.FC = () => {
                             <div className="flex items-center gap-2">
                               <button
                                 onClick={() => handleSaveRow(book.id)}
-                                className="p-2.5 bg-[#0369a1] text-white rounded-xl hover:bg-[#0369a1]/90 transition-all shadow-lg shadow-[#0369a1]/10"
+                                className="p-2.5 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl hover:bg-[#0369a1]/90 dark:hover:bg-[#38bdf8]/90 transition-all shadow-lg shadow-[#0369a1]/10 dark:shadow-[#38bdf8]/10"
                                 title={t('common.save')}
                               >
                                 <Save size={18} />
                               </button>
                               <button
                                 onClick={handleCancelEdit}
-                                className="p-2 bg-slate-100 text-slate-400 rounded-xl hover:bg-slate-200 active:scale-90 transition-all"
+                                className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-90 transition-all"
                                 title={t('common.cancel')}
                               >
                                 <X size={20} />
@@ -565,7 +574,7 @@ export const AdminView: React.FC = () => {
                             <div className="hidden md:flex items-center gap-2">
                               <button
                                 onClick={() => handleEditRow(book)}
-                                className="p-2 bg-[#0369a1]/10 text-[#0369a1] rounded-xl hover:bg-[#0369a1] hover:text-white transition-all"
+                                className="p-2 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 transition-all"
                                 title={t('common.edit')}
                               >
                                 <Edit2 size={18} />
@@ -573,8 +582,8 @@ export const AdminView: React.FC = () => {
                               <button
                                 onClick={() => bookActions.handleToggleVisibility(book.id, book.visibility || 'public')}
                                 className={`p-2 rounded-xl transition-all ${book.visibility === 'private'
-                                  ? 'bg-slate-100 text-slate-400 hover:bg-slate-200'
-                                  : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-500 hover:text-white'
+                                  ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                  : 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500 dark:hover:bg-emerald-400 hover:text-white dark:hover:text-slate-950'
                                   }`}
                                 title={book.visibility === 'private' ? t('admin.table.makePublic') : t('admin.table.makePrivate')}
                               >
@@ -594,7 +603,7 @@ export const AdminView: React.FC = () => {
                                   setMenuAnchorRect(e.currentTarget.getBoundingClientRect());
                                 }
                               }}
-                              className={`p-2 hover:bg-[#0369a1]/10 rounded-xl transition-all ${activeMenuId === book.id ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-slate-400'}`}
+                              className={`p-2 hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 rounded-xl transition-all ${activeMenuId === book.id ? 'bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8]' : 'text-slate-400'}`}
                             >
                               <MoreVertical size={20} />
                             </button>

@@ -36,14 +36,14 @@ const UserRow: React.FC<UserRowProps> = ({
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
 
   const roleColors: Record<string, { bg: string; text: string; label: string }> = {
-    admin: { bg: 'bg-red-50', text: 'text-red-600', label: t('admin.users.admin') },
-    editor: { bg: 'bg-blue-50', text: 'text-blue-600', label: t('admin.users.editor') },
-    reader: { bg: 'bg-emerald-50', text: 'text-emerald-600', label: t('admin.users.reader') },
+    admin: { bg: 'bg-red-500/5 dark:bg-red-400/5', text: 'text-red-500 dark:text-red-400', label: t('admin.users.admin') },
+    editor: { bg: 'bg-blue-500/5 dark:bg-blue-400/5', text: 'text-blue-500 dark:text-blue-400', label: t('admin.users.editor') },
+    reader: { bg: 'bg-emerald-500/5 dark:bg-emerald-400/5', text: 'text-emerald-500 dark:text-emerald-400', label: t('admin.users.reader') },
   };
 
   const statusColors: Record<string, { bg: string; text: string; label: string }> = {
-    active: { bg: 'bg-emerald-50', text: 'text-emerald-600', label: t('admin.users.active') },
-    inactive: { bg: 'bg-red-50', text: 'text-red-600', label: t('admin.users.suspended') },
+    active: { bg: 'bg-emerald-500/5 dark:bg-emerald-400/5', text: 'text-emerald-500 dark:text-emerald-400', label: t('admin.users.active') },
+    inactive: { bg: 'bg-red-500/5 dark:bg-red-400/5', text: 'text-red-500 dark:text-red-400', label: t('admin.users.suspended') },
   };
 
   const formatDate = (dateString?: string, includeTime: boolean = false) => {
@@ -59,7 +59,7 @@ const UserRow: React.FC<UserRowProps> = ({
   const currentStatus = isEditing && editData ? editData.isActive : user.is_active;
 
   return (
-    <tr className={`border-b border-[#0369a1]/5 hover:bg-[#0369a1]/5 transition-colors group/row ${isEditing ? 'bg-[#0369a1]/5' : ''}`}>
+    <tr className={`border-b border-[#0369a1]/5 dark:border-slate-800/30 hover:bg-[#e8f4f8]/20 dark:hover:bg-[#38bdf8]/5 transition-colors group/row ${isEditing ? 'bg-[#0369a1]/5 dark:bg-[#38bdf8]/5' : ''}`}>
       <td className="px-4 md:px-8 py-3 md:py-5">
         <div className="flex items-center gap-2 md:gap-4">
           <UserAvatar
@@ -68,8 +68,8 @@ const UserRow: React.FC<UserRowProps> = ({
             className="w-8 h-8 md:w-10 md:h-10 rounded-full object-cover ring-2 ring-[#0369a1]/20"
           />
           <div className="flex flex-col gap-1">
-            <div className="font-normal text-[#1a1a1a] text-[14px] md:text-[16px] lg:text-[18px]">{user.display_name}</div>
-            <div className="text-[11px] md:text-[13px] font-normal text-[#94a3b8] uppercase truncate max-w-[150px] md:max-w-none">{user.email}</div>
+            <div className="font-normal text-[#1a1a1a] dark:text-slate-100 text-[14px] md:text-[16px] lg:text-[18px]">{user.display_name}</div>
+            <div className="text-[11px] md:text-[13px] font-normal text-[#94a3b8] dark:text-slate-400 uppercase truncate max-w-[150px] md:max-w-none">{user.email}</div>
 
             {/* Mobile Role & Status Section */}
             <div className="flex lg:hidden items-center gap-2 mt-1.5 flex-wrap">
@@ -77,7 +77,7 @@ const UserRow: React.FC<UserRowProps> = ({
                 {isEditing ? (
                   <button
                     onClick={() => setShowRoleDropdown(!showRoleDropdown)}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 ${roleColors[currentRole]?.bg || 'bg-slate-50'} ${roleColors[currentRole]?.text || 'text-slate-500'} rounded-lg text-[10px] font-normal uppercase border-2 border-[#0369a1] transition-all active:scale-95 shadow-sm`}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 ${roleColors[currentRole]?.bg || 'bg-slate-50'} ${roleColors[currentRole]?.text || 'text-slate-500'} rounded-lg text-[10px] font-normal uppercase border-2 border-[#0369a1] dark:border-[#38bdf8] transition-all active:scale-95 shadow-sm`}
                   >
                     {roleColors[currentRole]?.label || currentRole}
                     <svg width="8" height="8" viewBox="0 0 12 12" fill="currentColor">
@@ -91,7 +91,7 @@ const UserRow: React.FC<UserRowProps> = ({
                 )}
 
                 {isEditing && showRoleDropdown && (
-                  <div className="absolute top-full right-0 mt-2 w-32 glass-panel shadow-2xl z-[100] overflow-hidden py-1.5 border border-[#0369a1]/10 rounded-xl" dir="rtl">
+                  <div className="absolute top-full right-0 mt-2 w-32 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl glass-panel shadow-2xl z-[100] overflow-hidden py-1.5 border border-[#0369a1]/10 dark:border-[#38bdf8]/15 rounded-xl" dir="rtl">
                     {(['admin', 'editor', 'reader'] as const).map((role) => (
                       <button
                         key={role}
@@ -99,7 +99,7 @@ const UserRow: React.FC<UserRowProps> = ({
                           setShowRoleDropdown(false);
                           onRoleChange(role);
                         }}
-                        className={`w-full flex items-center justify-between px-4 py-2.5 text-[12px] font-normal uppercase transition-all ${role === currentRole ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
+                        className={`w-full flex items-center justify-between px-4 py-2.5 text-[12px] font-normal uppercase transition-all ${role === currentRole ? 'bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8]' : 'text-[#1a1a1a] dark:text-slate-200 hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/10'}`}
                       >
                         {roleColors[role].label}
                       </button>
@@ -112,7 +112,7 @@ const UserRow: React.FC<UserRowProps> = ({
                 {isEditing ? (
                   <button
                     onClick={() => setShowStatusDropdown(!showStatusDropdown)}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 ${statusColors[currentStatus ? 'active' : 'inactive']?.bg || 'bg-slate-50'} ${statusColors[currentStatus ? 'active' : 'inactive']?.text || 'text-slate-500'} rounded-lg text-[10px] font-normal uppercase border-2 border-[#0369a1] transition-all active:scale-95 shadow-sm`}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 ${statusColors[currentStatus ? 'active' : 'inactive']?.bg || 'bg-slate-50'} ${statusColors[currentStatus ? 'active' : 'inactive']?.text || 'text-slate-500'} rounded-lg text-[10px] font-normal uppercase border-2 border-[#0369a1] dark:border-[#38bdf8] transition-all active:scale-95 shadow-sm`}
                   >
                     {statusColors[currentStatus ? 'active' : 'inactive']?.label}
                     <svg width="8" height="8" viewBox="0 0 12 12" fill="currentColor">
@@ -126,7 +126,7 @@ const UserRow: React.FC<UserRowProps> = ({
                 )}
 
                 {isEditing && showStatusDropdown && (
-                  <div className="absolute top-full right-0 mt-2 w-32 glass-panel shadow-2xl z-[100] overflow-hidden py-1.5 border border-[#0369a1]/10 rounded-xl" dir="rtl">
+                  <div className="absolute top-full right-0 mt-2 w-32 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl glass-panel shadow-2xl z-[100] overflow-hidden py-1.5 border border-[#0369a1]/10 dark:border-[#38bdf8]/15 rounded-xl" dir="rtl">
                     {([
                       { value: true, key: 'active' },
                       { value: false, key: 'inactive' }
@@ -137,7 +137,7 @@ const UserRow: React.FC<UserRowProps> = ({
                           setShowStatusDropdown(false);
                           onStatusChange(status.value);
                         }}
-                        className={`w-full flex items-center justify-between px-4 py-2.5 text-[12px] font-normal uppercase transition-all ${status.value === currentStatus ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
+                        className={`w-full flex items-center justify-between px-4 py-2.5 text-[12px] font-normal uppercase transition-all ${status.value === currentStatus ? 'bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8]' : 'text-[#1a1a1a] dark:text-slate-200 hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/10'}`}
                       >
                         {statusColors[status.key].label}
                       </button>
@@ -155,7 +155,7 @@ const UserRow: React.FC<UserRowProps> = ({
           <div className="relative">
             <button
               onClick={() => setShowRoleDropdown(!showRoleDropdown)}
-              className={`inline-flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 ${roleColors[currentRole]?.bg || 'bg-slate-50'} ${roleColors[currentRole]?.text || 'text-slate-500'} rounded-lg text-[11px] md:text-[14px] font-normal uppercase transition-all active:scale-95 border-2 border-[#0369a1]`}
+              className={`inline-flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 ${roleColors[currentRole]?.bg || 'bg-slate-50'} ${roleColors[currentRole]?.text || 'text-slate-500'} rounded-lg text-[11px] md:text-[14px] font-normal uppercase transition-all active:scale-95 border-2 border-[#0369a1] dark:border-[#38bdf8]`}
             >
               {roleColors[currentRole]?.label || currentRole}
               <svg width="8" height="8" viewBox="0 0 12 12" fill="currentColor" className="md:w-[10px] md:h-[10px]">
@@ -164,7 +164,7 @@ const UserRow: React.FC<UserRowProps> = ({
             </button>
 
             {showRoleDropdown && (
-              <div className="absolute top-full left-0 mt-2 w-48 glass-panel shadow-2xl z-[100] overflow-hidden py-2" style={{ borderRadius: '16px' }}>
+              <div className="absolute top-full left-0 mt-2 w-48 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl glass-panel shadow-2xl z-[100] overflow-hidden py-2 border border-[#0369a1]/10 dark:border-[#38bdf8]/15" style={{ borderRadius: '16px' }}>
                 {(['admin', 'editor', 'reader'] as const).map((role) => (
                   <button
                     key={role}
@@ -172,7 +172,7 @@ const UserRow: React.FC<UserRowProps> = ({
                       setShowRoleDropdown(false);
                       onRoleChange(role);
                     }}
-                    className={`w-full flex items-center px-5 py-3 text-[14px] font-normal uppercase transition-all ${role === currentRole ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
+                    className={`w-full flex items-center px-5 py-3 text-[14px] font-normal uppercase transition-all ${role === currentRole ? 'bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8]' : 'text-[#1a1a1a] dark:text-slate-200 hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/10'}`}
                   >
                     {roleColors[role].label}
                   </button>
@@ -192,7 +192,7 @@ const UserRow: React.FC<UserRowProps> = ({
           <div className="relative">
             <button
               onClick={() => setShowStatusDropdown(!showStatusDropdown)}
-              className={`inline-flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 ${statusColors[currentStatus ? 'active' : 'inactive']?.bg || 'bg-slate-50'} ${statusColors[currentStatus ? 'active' : 'inactive']?.text || 'text-slate-500'} rounded-lg text-[11px] md:text-[14px] font-normal uppercase transition-all active:scale-95 border-2 border-[#0369a1]`}
+              className={`inline-flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 ${statusColors[currentStatus ? 'active' : 'inactive']?.bg || 'bg-slate-50'} ${statusColors[currentStatus ? 'active' : 'inactive']?.text || 'text-slate-500'} rounded-lg text-[11px] md:text-[14px] font-normal uppercase transition-all active:scale-95 border-2 border-[#0369a1] dark:border-[#38bdf8]`}
             >
               {statusColors[currentStatus ? 'active' : 'inactive']?.label || (currentStatus ? t('admin.users.active') : t('admin.users.suspended'))}
               <svg width="8" height="8" viewBox="0 0 12 12" fill="currentColor" className="md:w-[10px] md:h-[10px]">
@@ -201,7 +201,7 @@ const UserRow: React.FC<UserRowProps> = ({
             </button>
 
             {showStatusDropdown && (
-              <div className="absolute top-full left-0 mt-2 w-48 glass-panel shadow-2xl z-[100] overflow-hidden py-2" style={{ borderRadius: '16px' }}>
+              <div className="absolute top-full left-0 mt-2 w-48 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl glass-panel shadow-2xl z-[100] overflow-hidden py-2 border border-[#0369a1]/10 dark:border-[#38bdf8]/15" style={{ borderRadius: '16px' }}>
                 {([
                   { value: true, key: 'active' },
                   { value: false, key: 'inactive' }
@@ -212,7 +212,7 @@ const UserRow: React.FC<UserRowProps> = ({
                       setShowStatusDropdown(false);
                       onStatusChange(status.value);
                     }}
-                    className={`w-full flex items-center px-5 py-3 text-[14px] font-normal uppercase transition-all ${status.value === currentStatus ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
+                    className={`w-full flex items-center px-5 py-3 text-[14px] font-normal uppercase transition-all ${status.value === currentStatus ? 'bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8]' : 'text-[#1a1a1a] dark:text-slate-200 hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/10'}`}
                   >
                     {statusColors[status.key].label}
                   </button>
@@ -227,11 +227,11 @@ const UserRow: React.FC<UserRowProps> = ({
         )}
       </td>
 
-      <td className="hidden lg:table-cell px-4 md:px-8 py-3 md:py-5 text-[13px] md:text-[16px] font-bold text-[#94a3b8]">
+      <td className="hidden lg:table-cell px-4 md:px-8 py-3 md:py-5 text-[13px] md:text-[16px] font-bold text-[#94a3b8] dark:text-slate-400">
         {formatDate(user.created_at)}
       </td>
 
-      <td className="hidden lg:table-cell px-4 md:px-8 py-3 md:py-5 text-[13px] md:text-[14px] font-bold text-[#94a3b8]">
+      <td className="hidden lg:table-cell px-4 md:px-8 py-3 md:py-5 text-[13px] md:text-[14px] font-bold text-[#94a3b8] dark:text-slate-400">
         {formatDate(user.last_login_at, true)}
       </td>
 
@@ -250,7 +250,7 @@ const UserRow: React.FC<UserRowProps> = ({
               <button
                 onClick={onCancel}
                 disabled={isSaving}
-                className="p-1.5 md:p-2 bg-slate-100 text-slate-400 rounded-xl hover:bg-slate-200 active:scale-90 transition-all disabled:opacity-50"
+                className="p-1.5 md:p-2 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-90 transition-all disabled:opacity-50"
                 title={t('common.cancel')}
               >
                 <X size={18} className="md:w-5 md:h-5" />
@@ -261,8 +261,8 @@ const UserRow: React.FC<UserRowProps> = ({
               onClick={onEdit}
               disabled={isOwnRecord}
               className={`p-1.5 md:p-2 rounded-xl transition-all ${isOwnRecord
-                ? 'bg-slate-100 text-slate-300 cursor-not-allowed'
-                : 'bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white'
+                ? 'bg-slate-100 dark:bg-slate-800 text-slate-300 dark:text-slate-650 cursor-not-allowed'
+                : 'bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950'
                 }`}
               title={isOwnRecord ? t('admin.users.cannotEditSelf') : t('common.edit')}
             >
@@ -296,6 +296,7 @@ export function UserManagementPanel() {
   const roleFilterRef = useRef<HTMLDivElement>(null);
   const statusFilterRef = useRef<HTMLDivElement>(null);
   const loaderRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Edit state
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -309,6 +310,13 @@ export function UserManagementPanel() {
     }, 500);
     return () => clearTimeout(timer);
   }, [searchQuery]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 50);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -422,15 +430,15 @@ export function UserManagementPanel() {
 
   if (!isAdmin) {
     return (
-      <div className="glass-panel p-20 flex flex-col items-center justify-center text-center">
-        <div className="p-4 bg-red-50 text-red-500 rounded-3xl mb-6">
+      <div className="glass-panel dark:bg-slate-900/60 border border-[#0369a1]/10 dark:border-slate-800 p-20 flex flex-col items-center justify-center text-center shadow-xl rounded-[24px]">
+        <div className="p-4 bg-red-50 dark:bg-red-950/20 text-red-500 rounded-3xl mb-6">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
             <path d="M7 11V7a5 5 0 0110 0v4" />
           </svg>
         </div>
-        <h3 className="text-xl font-normal text-[#1a1a1a] mb-2">{t('admin.users.accessRequired')}</h3>
-        <p className="text-[#94a3b8] font-normal">{t('admin.users.accessRequiredDetail')}</p>
+        <h3 className="text-xl font-normal text-[#1a1a1a] dark:text-slate-100 mb-2">{t('admin.users.accessRequired')}</h3>
+        <p className="text-[#94a3b8] dark:text-slate-400 font-normal">{t('admin.users.accessRequiredDetail')}</p>
       </div>
     );
   }
@@ -442,27 +450,28 @@ export function UserManagementPanel() {
       {/* Search and Filters Bar */}
       <div className="flex flex-col-reverse md:flex-row gap-3 md:gap-4">
         <div className="relative flex-1 lg:flex-none lg:w-[30%] group">
-          <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1] transition-colors">
+          <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1] dark:text-[#38bdf8] transition-colors">
             <Search size={18} strokeWidth={3} />
           </div>
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            ref={inputRef}
             placeholder={t('admin.users.searchPlaceholder') || "ئابونتلارنى ئىزدەش (نامى ياكى ئېلخەت)..."}
-            className="w-full pr-12 pl-12 py-2.5 md:py-3 bg-white border-2 border-[#0369a1]/10 rounded-2xl outline-none focus:border-[#0369a1] transition-all uyghur-text shadow-sm text-base"
+            className="w-full pr-12 pl-12 py-2.5 md:py-3 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl text-[#1a1a1a] dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all uyghur-text shadow-sm text-base"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute inset-y-0 left-4 flex items-center text-[#94a3b8] hover:text-[#0369a1] transition-colors active:scale-95"
+              className="absolute inset-y-0 left-4 flex items-center text-[#94a3b8] hover:text-[#0369a1] dark:hover:text-[#38bdf8] transition-colors active:scale-95"
             >
               <X size={16} strokeWidth={3} />
             </button>
           )}
         </div>
 
-        <div className="flex items-center gap-2 text-[12px] md:text-[14px] font-normal text-[#0369a1] bg-[#0369a1]/10 px-3 md:px-4 py-2 md:py-2.5 rounded-full border border-[#0369a1]/20 shadow-sm whitespace-nowrap self-end md:self-auto md:mr-auto">
+        <div className="flex items-center gap-2 text-[12px] md:text-[14px] font-normal text-[#0369a1] dark:text-[#38bdf8] bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 px-3 md:px-4 py-2 md:py-2.5 rounded-full border border-[#0369a1]/20 dark:border-[#38bdf8]/20 shadow-sm whitespace-nowrap self-end md:self-auto md:mr-auto">
           <Users size={12} className="md:w-[14px] md:h-[14px]" />
           {t('admin.users.total', { count: total })}
         </div>
@@ -481,11 +490,11 @@ export function UserManagementPanel() {
         </div>
       )}
 
-      <div className="glass-panel rounded-[16px] md:rounded-[24px]" style={{ padding: 0, overflow: 'visible' }}>
+      <div className="glass-panel dark:bg-slate-900/60 shadow-xl border border-[#0369a1]/10 dark:border-slate-800 rounded-[16px] md:rounded-[24px]" style={{ padding: 0, overflow: 'visible' }}>
         <div className="overflow-x-auto rounded-[16px] md:rounded-[24px]" style={{ overflow: 'hidden' }}>
           <table className="w-full text-right lg:min-w-[700px]" dir="rtl">
             <thead>
-              <tr className="bg-[#0369a1]/5 text-[12px] md:text-[14px] lg:text-[16px] font-normal text-[#0369a1] uppercase border-b border-[#0369a1]/10">
+              <tr className="bg-[#0369a1]/5 dark:bg-[#38bdf8]/5 text-[12px] md:text-[14px] lg:text-[16px] font-normal text-[#0369a1] dark:text-[#38bdf8] uppercase border-b border-[#0369a1]/10 dark:border-slate-800">
                 <th className="px-4 md:px-8 py-3 md:py-5 text-right font-normal">{t('admin.users.user')}</th>
                 <th className="hidden lg:table-cell px-4 md:px-8 py-3 md:py-5 text-right font-normal">
                   <div className="flex items-center gap-1 md:gap-2 relative">
@@ -500,7 +509,7 @@ export function UserManagementPanel() {
                     {isRoleFilterOpen && (
                       <div
                         ref={roleFilterRef}
-                        className="absolute top-full left-0 mt-2 w-48 glass-panel shadow-2xl z-[100] overflow-hidden py-2 border border-[#0369a1]/10"
+                        className="absolute top-full left-0 mt-2 w-48 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl glass-panel shadow-2xl z-[100] overflow-hidden py-2 border border-[#0369a1]/10 dark:border-[#38bdf8]/15"
                         style={{ borderRadius: '16px' }}
                       >
                         {[
@@ -515,7 +524,7 @@ export function UserManagementPanel() {
                               setRoleFilter(role.id);
                               setIsRoleFilterOpen(false);
                             }}
-                            className={`w-full flex items-center justify-between px-5 py-3 text-[14px] font-normal uppercase transition-all ${roleFilter === role.id ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
+                            className={`w-full flex items-center justify-between px-5 py-3 text-[14px] font-normal uppercase transition-all ${roleFilter === role.id ? 'bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8]' : 'text-[#1a1a1a] dark:text-slate-200 hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/10'}`}
                           >
                             {role.label}
                             {roleFilter === role.id && <Check size={14} strokeWidth={3} />}
@@ -538,7 +547,7 @@ export function UserManagementPanel() {
                     {isStatusFilterOpen && (
                       <div
                         ref={statusFilterRef}
-                        className="absolute top-full left-0 mt-2 w-48 glass-panel shadow-2xl z-[100] overflow-hidden py-2 border border-[#0369a1]/10"
+                        className="absolute top-full left-0 mt-2 w-48 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl glass-panel shadow-2xl z-[100] overflow-hidden py-2 border border-[#0369a1]/10 dark:border-[#38bdf8]/15"
                         style={{ borderRadius: '16px' }}
                       >
                         {[
@@ -552,7 +561,7 @@ export function UserManagementPanel() {
                               setStatusFilter(status.id);
                               setIsStatusFilterOpen(false);
                             }}
-                            className={`w-full flex items-center justify-between px-5 py-3 text-[14px] font-normal uppercase transition-all ${statusFilter === status.id ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'text-[#1a1a1a] hover:bg-[#0369a1]/5'}`}
+                            className={`w-full flex items-center justify-between px-5 py-3 text-[14px] font-normal uppercase transition-all ${statusFilter === status.id ? 'bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8]' : 'text-[#1a1a1a] dark:text-slate-200 hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/10'}`}
                           >
                             {status.label}
                             {statusFilter === status.id && <Check size={14} strokeWidth={3} />}
@@ -567,16 +576,16 @@ export function UserManagementPanel() {
                 <th className="px-4 md:px-8 py-3 md:py-5 text-left font-normal">{t('admin.table.actions')}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#0369a1]/5">
+            <tbody className="divide-y divide-[#0369a1]/5 dark:divide-slate-800/30">
               {isLoading && users.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-20 text-center">
-                    <div className="w-10 h-10 border-4 border-[#0369a1]/5 border-t-[#0369a1] rounded-full animate-spin mx-auto"></div>
+                    <div className="w-10 h-10 border-4 border-[#0369a1]/5 dark:border-[#38bdf8]/5 border-t-[#0369a1] dark:border-t-[#38bdf8] rounded-full animate-spin mx-auto text-[#0369a1] dark:text-[#38bdf8]"></div>
                   </td>
                 </tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-20 text-center font-bold text-[#94a3b8]">{t('admin.users.notFound')}</td>
+                  <td colSpan={6} className="py-20 text-center font-bold text-[#94a3b8] dark:text-slate-500">{t('admin.users.notFound')}</td>
                 </tr>
               ) : (
                 users.map((user) => (
@@ -600,17 +609,17 @@ export function UserManagementPanel() {
         </div>
 
         {/* Infinite Scroll Trigger */}
-        <div ref={loaderRef} className="px-8 py-8 border-t border-[#0369a1]/10 flex flex-col items-center justify-center bg-[#0369a1]/5 gap-4">
+        <div ref={loaderRef} className="px-8 py-8 border-t border-[#0369a1]/10 dark:border-slate-800/50 flex flex-col items-center justify-center bg-[#0369a1]/5 dark:bg-[#38bdf8]/5 gap-4">
           {isLoadingMore && !isLoading ? (
             <div className="flex flex-col items-center gap-3 animate-fade-in">
-              <div className="w-8 h-8 border-3 border-[#0369a1]/10 border-t-[#0369a1] rounded-full animate-spin"></div>
-              <span className="text-[10px] font-black text-[#0369a1] uppercase animate-pulse">{t('common.loadingMore')}</span>
+              <div className="w-8 h-8 border-3 border-[#0369a1]/10 dark:border-[#38bdf8]/10 border-t-[#0369a1] dark:border-t-[#38bdf8] rounded-full animate-spin"></div>
+              <span className="text-[10px] font-black text-[#0369a1] dark:text-[#38bdf8] uppercase animate-pulse">{t('common.loadingMore')}</span>
             </div>
           ) : !hasMore && users.length > 0 && (
             <div className="flex flex-col items-center gap-3 opacity-30">
-              <div className="w-12 h-[1px] bg-[#94a3b8]" />
-              <p className="text-[10px] font-black text-[#94a3b8] uppercase">{t('common.endOfList')}</p>
-              <div className="w-12 h-[2px] bg-[#94a3b8]" />
+              <div className="w-12 h-[1px] bg-[#94a3b8] dark:bg-slate-700" />
+              <p className="text-[10px] font-black text-[#94a3b8] dark:text-slate-400 uppercase">{t('common.endOfList')}</p>
+              <div className="w-12 h-[2px] bg-[#94a3b8] dark:bg-slate-700" />
             </div>
           )}
         </div>

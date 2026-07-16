@@ -820,16 +820,32 @@ class BooksRepository(BaseRepository[Book]):
 def _normalize_uyghur(text: str) -> str:
     return (
         text.replace("\u06d0", "\u06cc")
+        .replace("\u06d1", "\u06cc")
         .replace("\u0649", "\u06cc")
         .replace("\u064a", "\u06cc")
     )
 
 
-_PUNCT = '«»،؟!()[]{}"' "''"
+_PUNCT = "«»،؟!()[]{}\"''"
+
+
+def _collapse_duplicates(text: str) -> str:
+    """Collapse consecutive identical characters into a single character.
+
+    Helps handle Uyghur spelling/transliteration variations where consonants
+    are sometimes doubled or simplified (e.g. جالالىددىن vs جالالىدىن).
+    """
+    if not text:
+        return ""
+    res = [text[0]]
+    for char in text[1:]:
+        if char != res[-1]:
+            res.append(char)
+    return "".join(res)
 
 
 def _entity_matches_question(entity: str, question: str) -> bool:
-    """Word-prefix match handling Uyghur agglutinative suffixes.
+    """Word-prefix match handling Uyghur agglutinative suffixes and spelling variants.
 
     Single-word entities are allowed when at least 4 characters long.
     Leading/trailing punctuation (e.g. «») is stripped from question tokens
@@ -846,11 +862,18 @@ def _entity_matches_question(entity: str, question: str) -> bool:
     q_words = [_normalize_uyghur(w).strip(_PUNCT) for w in question.strip().split()]
 
     def _word_matches(e_word: str) -> bool:
-        alt = e_word[:-1] + "ی" if e_word.endswith("ە") else None
-        return any(
-            q_word.startswith(e_word) or (alt is not None and q_word.startswith(alt))
-            for q_word in q_words
-        )
+        e_norm = _collapse_duplicates(e_word)
+        alt = None
+        if e_word.endswith("ە"):
+            alt = _collapse_duplicates(e_word[:-1] + "ی")
+
+        for q_word in q_words:
+            q_norm = _collapse_duplicates(q_word)
+            if q_norm.startswith(e_norm) or (
+                alt is not None and q_norm.startswith(alt)
+            ):
+                return True
+        return False
 
     return all(_word_matches(e_word) for e_word in entity_words)
 

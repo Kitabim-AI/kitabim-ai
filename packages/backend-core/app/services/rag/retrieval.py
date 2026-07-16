@@ -30,12 +30,24 @@ logger = logging.getLogger("app.rag.retrieval")
 
 
 async def embed_query(query: str, ctx: "QueryContext") -> List[float]:
-    """Embed *query* with Level-1 cache (shared across all RAG handlers).
+    """Embed *query* with Level-1 cache (shared across all RAG handlers) and request-local cache.
 
     Returns an empty list on any failure — callers must handle the empty-vector
     case (usually by returning no results rather than crashing).
     """
-    q_hash = hashlib.md5(query.strip().encode()).hexdigest()
+    query_stripped = query.strip()
+
+    # 1. Request-local memory cache check
+    local_cache = getattr(ctx, "_query_embeddings", None)
+    if local_cache is None:
+        local_cache = {}
+        ctx._query_embeddings = local_cache
+
+    if query_stripped in local_cache:
+        return local_cache[query_stripped]
+
+    # 2. Redis/External API check
+    q_hash = hashlib.md5(query_stripped.encode()).hexdigest()
     emb_cache_key = cache_config.KEY_RAG_EMBEDDING.format(hash=q_hash)
     try:
         vector = await cache_service.get(emb_cache_key)
@@ -45,6 +57,8 @@ async def embed_query(query: str, ctx: "QueryContext") -> List[float]:
                 await cache_service.set(
                     emb_cache_key, vector, ttl=settings.cache_ttl_rag_query
                 )
+        if vector:
+            local_cache[query_stripped] = vector
         return vector or []
     except Exception as exc:
         log_json(logger, logging.WARNING, "Embedding failed", error=str(exc))
@@ -172,8 +186,23 @@ async def find_books_by_title_in_question(
             sa_text("categories && CAST(:cats AS text[])").bindparams(cats=categories)
         )
 
-    title_result = await session.execute(stmt)
-    rows = title_result.fetchall()
+    # Use request-level cache if session has info dict to prevent duplicate DB queries
+    cache_key = None
+    if hasattr(session, "info") and isinstance(session.info, dict):
+        cat_hash = (
+            hashlib.md5(",".join(sorted(categories)).encode()).hexdigest()
+            if categories
+            else "all"
+        )
+        cache_key = f"find_books_by_title_rows_{cat_hash}"
+
+    if cache_key and cache_key in session.info:
+        rows = session.info[cache_key]
+    else:
+        title_result = await session.execute(stmt)
+        rows = title_result.fetchall()
+        if cache_key is not None:
+            session.info[cache_key] = rows
 
     title_to_books: dict = {}
     for row in rows:
@@ -203,8 +232,35 @@ async def find_books_by_title_in_question(
     # --- Fuzzy word-prefix match (no quotes in question) ---
     # Collect ALL matching titles so multi-book questions return info for every
     # named book (not just the first one that happens to match).
-    all_matching_books: list = []
-    for title, books in title_to_books.items():
+    matching_titles: list[str] = []
+    for title in title_to_books.keys():
         if entity_matches_question(title, q):
-            all_matching_books.extend(books)
+            matching_titles.append(title)
+
+    # Filter out titles that are strict subsets of other matched titles.
+    # For example, if both "لېيىغان بۇلاق" and "بۇلاق" matched, we keep "لېيىغان بۇلاق"
+    # and discard "بۇلاق" because its words are a subset of the longer title.
+    # Normalize variants before checking subset relationship.
+    filtered_titles = []
+    for title in matching_titles:
+        title_norm = normalize_uyghur(title.strip())
+        title_words = set(title_norm.split())
+
+        is_subset = False
+        for other in matching_titles:
+            if title == other:
+                continue
+            other_norm = normalize_uyghur(other.strip())
+            other_words = set(other_norm.split())
+            if title_words.issubset(other_words) and len(title_words) < len(
+                other_words
+            ):
+                is_subset = True
+                break
+        if not is_subset:
+            filtered_titles.append(title)
+
+    all_matching_books: list = []
+    for title in filtered_titles:
+        all_matching_books.extend(title_to_books[title])
     return all_matching_books if all_matching_books else None

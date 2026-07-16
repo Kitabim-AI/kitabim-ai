@@ -144,7 +144,8 @@ async def summary_job(ctx, book_id: str) -> None:
                 "title": book.title or "Unknown",
                 "author": book.author or "Unknown",
                 "text": sampled_text,
-            }
+            },
+            timeout_config_key="gemini_summary_timeout",
         )
         summary = (summary or "").strip()
         if not summary:

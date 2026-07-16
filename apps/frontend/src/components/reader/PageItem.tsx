@@ -4,6 +4,15 @@ import { useIsEditor } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
 import { MarkdownContent } from '../common/MarkdownContent';
 
+const normalizeArabic = (text: string): string => {
+  if (!text) return '';
+  return text
+    .replace(/\u06E1/g, '\u0652') // Uthmanic Sukun -> Standard Sukun
+    .replace(/\u0671/g, '\u0627') // Alif Wasla -> Standard Alif
+    .replace(/[\u06D6-\u06DC\u06DF-\u06E0\u06E2-\u06ED]/g, '') // Remove Uthmanic signs that disrupt cursive connections
+    ;
+};
+
 interface PageItemProps {
   page: any;
   isActive: boolean;
@@ -32,25 +41,31 @@ export const PageItem: React.FC<PageItemProps> = ({
   const isEditor = useIsEditor();
 
   return (
-    <div onMouseEnter={onSetActive} className={`group relative p-6 rounded-[24px] transition-all duration-300 border ${isEditing ? 'flex-1 flex flex-col min-h-0' : ''} ${isActive ? 'bg-white shadow-xl border-[#0369a1]/10' : 'border-transparent'}`}>
-      <div className="flex items-center justify-between mb-4 border-b border-[#0369a1]/5 pb-3">
+    <div onMouseEnter={onSetActive} className={`group relative p-6 rounded-[24px] transition-all duration-300 border ${isEditing ? 'flex-1 flex flex-col min-h-0' : ''} ${isActive ? 'bg-white dark:bg-slate-900/60 shadow-xl border-[#0369a1]/10 dark:border-[#38bdf8]/10' : 'border-transparent'}`}>
+      <div className="flex items-center justify-between mb-4 border-b border-[#0369a1]/5 dark:border-slate-800 pb-3">
         <div className="flex items-center gap-2">
           {isEditor && !isEditing && (
             <div className={`flex items-center gap-2 transition-all ${isFullscreen ? 'hidden' : `${isActive ? 'opacity-100' : 'opacity-0'} sm:group-hover:opacity-100`}`}>
-              <button onClick={onReprocess} className="p-2 bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white rounded-lg" title={t('reader.reprocessPage')}><RotateCcw size={14} /></button>
-              <button onClick={onEdit} className="flex items-center gap-2 px-3 py-1.5 bg-[#0369a1]/10 text-[#0369a1] hover:bg-[#0369a1] hover:text-white rounded-lg text-xs font-bold uppercase"><Edit3 size={12} /> {t('reader.editPage')}</button>
+              <button onClick={onReprocess} className="p-2 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg" title={t('reader.reprocessPage')}><RotateCcw size={14} /></button>
+              <button onClick={onEdit} className="flex items-center gap-2 px-3 py-1.5 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg text-xs font-bold uppercase"><Edit3 size={12} /> {t('reader.editPage')}</button>
             </div>
           )}
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs font-bold text-[#94a3b8] uppercase">{t('chat.pageNumber', { page: page.pageNumber })}</span>
+          <span className="text-xs font-bold text-[#94a3b8] dark:text-slate-500 uppercase">{t('chat.pageNumber', { page: page.pageNumber })}</span>
         </div>
       </div>
 
       {isEditing ? (
         <div className="flex-1 flex flex-col gap-4 min-h-0">
           <div className="relative flex-1 flex flex-col min-h-0">
-            <textarea value={tempText} onChange={(e) => onTempTextChange(e.target.value)} className={`flex-1 w-full p-4 uyghur-text border-2 border-[#0369a1] rounded-xl outline-none resize-none bg-white relative z-10 min-h-0 custom-scrollbar ${contentFontClassName || ''}`} style={{ fontSize: `${fontSize}px`, fontFamily: contentFontFamily }} dir="rtl" />
+            <textarea 
+              value={contentFontClassName === 'reader-font-adobe' ? normalizeArabic(tempText) : tempText} 
+              onChange={(e) => onTempTextChange(contentFontClassName === 'reader-font-adobe' ? normalizeArabic(e.target.value) : e.target.value)} 
+              className={`flex-1 w-full p-4 uyghur-text border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl outline-none resize-none bg-white dark:bg-slate-800 text-[#1a1a1a] dark:text-slate-100 relative z-10 min-h-0 custom-scrollbar ${contentFontClassName || ''}`} 
+              style={{ fontSize: `${fontSize}px`, fontFamily: contentFontFamily }} 
+              dir="rtl" 
+            />
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -64,7 +79,7 @@ export const PageItem: React.FC<PageItemProps> = ({
             <button
               onClick={onCancel}
               disabled={isSaving}
-              className="px-6 py-2 bg-slate-100 text-slate-400 rounded-xl text-sm transition-all disabled:opacity-30"
+              className="px-6 py-2 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded-xl text-sm transition-all disabled:opacity-30"
             >
               {t('common.cancel')}
             </button>
@@ -72,9 +87,13 @@ export const PageItem: React.FC<PageItemProps> = ({
         </div>
       ) : (
         isLoading ? (
-          <div className="flex flex-col items-center justify-center py-10 opacity-50"><Loader2 className="animate-spin text-[#0369a1] mb-2" /><span className="text-xs uppercase">{t('admin.table.recognizing')}</span></div>
+          <div className="flex flex-col items-center justify-center py-10 opacity-50"><Loader2 className="animate-spin text-[#0369a1] dark:text-[#38bdf8] mb-2" /><span className="text-xs uppercase dark:text-slate-400">{t('admin.table.recognizing')}</span></div>
         ) : (
-          <MarkdownContent content={page.text || "..."} className={`uyghur-text text-[#1a1a1a] ${contentFontClassName || ''}`} style={{ fontSize: `${fontSize}px`, fontFamily: contentFontFamily }} />
+          <MarkdownContent 
+            content={contentFontClassName === 'reader-font-adobe' ? normalizeArabic(page.text || '') : (page.text || "...")} 
+            className={`uyghur-text text-[#1a1a1a] dark:text-slate-100 ${contentFontClassName || ''}`} 
+            style={{ fontSize: `${fontSize}px`, fontFamily: contentFontFamily }} 
+          />
         )
       )}
     </div>

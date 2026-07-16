@@ -83,6 +83,34 @@ class WorkerSettings:
 
 
 # Wrap all worker job functions with track_request_id to support request_id context propagation
-from app.utils.observability import track_request_id
+import functools
+import logging
+from app.utils.observability import track_request_id, log_json
 
 WorkerSettings.functions = [track_request_id(f) for f in WorkerSettings.functions]
+
+
+def safe_cron_job(func):
+    """Wrapper decorator to prevent cron job exceptions from crashing the worker."""
+    cron_logger = logging.getLogger(func.__module__)
+
+    @functools.wraps(func)
+    async def wrapper(ctx, *args, **kwargs):
+        try:
+            return await func(ctx, *args, **kwargs)
+        except Exception as exc:
+            log_json(
+                cron_logger,
+                logging.ERROR,
+                "Cron job failed with unhandled exception",
+                cron_job=func.__name__,
+                error=str(exc),
+            )
+            # Suppress exception so worker doesn't crash
+
+    return wrapper
+
+
+# Wrap all worker cron jobs with safe_cron_job to prevent unhandled exceptions from crashing the worker
+for job in WorkerSettings.cron_jobs:
+    job.coroutine = safe_cron_job(job.coroutine)

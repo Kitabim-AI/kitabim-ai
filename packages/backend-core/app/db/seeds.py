@@ -20,12 +20,12 @@ async def seed_system_configs(session: AsyncSession):
         },
         {
             "key": "gemini_chat_model",
-            "value": "gemini-3-flash-preview",
+            "value": "gemini-3.1-flash-lite",
             "description": "Gemini model used for chat responses (reader chat and global chat).",
         },
         {
             "key": "gemini_ocr_model",
-            "value": "gemini-3-flash-preview",
+            "value": "gemini-3.5-flash",
             "description": "Gemini model used for OCR page processing.",
         },
         {
@@ -92,6 +92,31 @@ async def seed_system_configs(session: AsyncSession):
             "key": "fictional_categories",
             "value": "رومان, تارىخىي رومان, بالىلار رومانى, ساتىرىك رومان, پەلسەپىۋىي رومان, پوۋېست, پوۋېستلار, تارىخىي پوۋېست, ھېكايىلەر, تارىخىي ھېكايىلەر, بالىلار ھېكايىلېرى, چۆچەكلەر, قىسسە, تارىخىي قىسسە, داستان, داستانلار, تارىخىي داستان, رىۋايەتلەر, مەسەللەر, لەتىپىلەر, يۇمۇرلار, شېئىرلار, سەھنە ئەسەرلېرى, كىنو سېنارىيىلىرى",
             "description": "Comma-separated list of categories that indicate a book is fictional. If a book's categories match any in this list, its Person entities will be namespaced to prevent cross-book duplication. Otherwise, it defaults to non-fictional.",
+        },
+        {
+            "key": "use_deterministic_router",
+            "value": "false",
+            "description": "Globally enable/disable the deterministic Python RAG router instead of the LLM-driven ADK ReAct agent. Set to 'true' to activate.",
+        },
+        {
+            "key": "ocr_scanner_batch_size",
+            "value": "10",
+            "description": "Maximum number of pages claimed and processed in a single OCR job batch.",
+        },
+        {
+            "key": "gemini_ocr_timeout",
+            "value": "300",
+            "description": "Timeout in seconds for Gemini OCR vision API calls.",
+        },
+        {
+            "key": "gemini_chat_timeout",
+            "value": "60",
+            "description": "Timeout in seconds for Gemini chat/text generation API calls.",
+        },
+        {
+            "key": "gemini_embed_timeout",
+            "value": "15",
+            "description": "Timeout in seconds for Gemini vector embedding API calls.",
         },
     ]
 

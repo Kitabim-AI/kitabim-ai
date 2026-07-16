@@ -205,7 +205,12 @@ class GraphRepository:
         normalized = [unicodedata.normalize("NFC", n) for n in entity_names if n]
         query = """
         MATCH (e:Entity)-[r:RELATED_TO]->(n:Entity)
-        WHERE (e.name IN $entity_names OR n.name IN $entity_names)
+        WHERE (
+            e.name IN $entity_names 
+            OR n.name IN $entity_names
+            OR any(alt IN COALESCE(e.aliases, []) WHERE alt IN $entity_names)
+            OR any(alt IN COALESCE(n.aliases, []) WHERE alt IN $entity_names)
+        )
           AND ($book_ids IS NULL OR r.book_id IN $book_ids)
         RETURN e.name AS source, e.type AS source_type, r.type AS rel, n.name AS target, n.type AS target_type
         LIMIT 30
@@ -216,3 +221,102 @@ class GraphRepository:
             )
             records = await result.data()
             return records
+
+    async def merge_entities(self, keep_name: str, remove_name: str) -> bool:
+        """Merge a duplicate entity node into a target entity node in Neo4j.
+
+        Normalizes properties, moves all relationships, and deletes the duplicate.
+        Returns True if successful, raises ValueError if keep_name or remove_name is not found.
+        """
+        keep_norm = unicodedata.normalize("NFC", keep_name)
+        remove_norm = unicodedata.normalize("NFC", remove_name)
+
+        # First, check if both entities exist
+        check_query = """
+        MATCH (e:Entity)
+        WHERE e.name IN [$keep, $remove]
+        RETURN e.name AS name, e.aliases AS aliases
+        """
+        async with self._driver.session() as session:
+            result = await session.run(check_query, keep=keep_norm, remove=remove_norm)
+            records = await result.data()
+
+        found = {r["name"] for r in records}
+        if keep_norm not in found:
+            raise ValueError(f"Target entity to keep '{keep_name}' does not exist.")
+        if remove_norm not in found:
+            raise ValueError(
+                f"Duplicate entity to remove '{remove_name}' does not exist."
+            )
+
+        # Extract current aliases and combine/deduplicate them in Python
+        keep_aliases = []
+        remove_aliases = []
+        for r in records:
+            if r["name"] == keep_norm:
+                keep_aliases = r.get("aliases") or []
+            elif r["name"] == remove_norm:
+                remove_aliases = r.get("aliases") or []
+
+        combined_aliases = list(
+            dict.fromkeys(
+                [
+                    a
+                    for a in keep_aliases + [remove_norm] + remove_aliases
+                    if a and a != keep_norm
+                ]
+            )
+        )
+
+        # Perform the merge Cypher statement in a session transaction
+        merge_query = """
+        MATCH (keep:Entity {name: $keep})
+        MATCH (remove:Entity {name: $remove})
+
+        // Copy properties to keep node if not already present
+        SET keep.type = COALESCE(keep.type, remove.type),
+            keep.subtype = COALESCE(keep.subtype, remove.subtype),
+            keep.year_hijri = COALESCE(keep.year_hijri, remove.year_hijri),
+            keep.year_gregorian = COALESCE(keep.year_gregorian, remove.year_gregorian),
+            keep.century_gregorian = COALESCE(keep.century_gregorian, remove.century_gregorian),
+            keep.aliases = $combined_aliases
+
+        WITH keep, remove
+ 
+        // Migrate outgoing relationships
+        OPTIONAL MATCH (remove)-[r_out:RELATED_TO]->(target:Entity)
+        FOREACH (ignored IN case when r_out is not null then [1] else [] end |
+            MERGE (keep)-[new_out:RELATED_TO {book_id: r_out.book_id}]->(target)
+            SET new_out.type = COALESCE(new_out.type, r_out.type),
+                new_out.year_hijri = COALESCE(new_out.year_hijri, r_out.year_hijri),
+                new_out.year_gregorian = COALESCE(new_out.year_gregorian, r_out.year_gregorian),
+                new_out.century_gregorian = COALESCE(new_out.century_gregorian, r_out.century_gregorian)
+        )
+        WITH keep, remove, r_out
+        DELETE r_out
+ 
+        WITH keep, remove
+ 
+        // Migrate incoming relationships
+        OPTIONAL MATCH (source:Entity)-[r_inc:RELATED_TO]->(remove)
+        FOREACH (ignored IN case when r_inc is not null then [1] else [] end |
+            MERGE (source)-[new_inc:RELATED_TO {book_id: r_inc.book_id}]->(keep)
+            SET new_inc.type = COALESCE(new_inc.type, r_inc.type),
+                new_inc.year_hijri = COALESCE(new_inc.year_hijri, r_inc.year_hijri),
+                new_inc.year_gregorian = COALESCE(new_inc.year_gregorian, r_inc.year_gregorian),
+                new_inc.century_gregorian = COALESCE(new_inc.century_gregorian, r_inc.century_gregorian)
+        )
+        WITH keep, remove, r_inc
+        DELETE r_inc
+ 
+        WITH remove
+        DELETE remove
+        """
+        async with self._driver.session() as session:
+            await session.run(
+                merge_query,
+                keep=keep_norm,
+                remove=remove_norm,
+                combined_aliases=combined_aliases,
+            )
+        return True

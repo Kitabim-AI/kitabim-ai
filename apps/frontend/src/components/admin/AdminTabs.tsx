@@ -2,14 +2,14 @@
  * Admin Tabs - Tabbed interface for admin panels
  */
 
-import { BarChart3, BookA, Mail, Settings, Sparkles, TableOfContents, Users } from 'lucide-react';
+import { BarChart3, Mail, MessageSquare, Settings, Sparkles, TableOfContents, Users } from 'lucide-react';
 import React from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth, useIsAdmin, useIsEditor } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
+import { AdminQuestions } from './AdminQuestions';
 import { SystemConfigPanel } from './config/SystemConfigPanel';
 import { ContactSubmissionsPanel } from './ContactSubmissionsPanel';
-import { DictionaryManagementPanel } from './dictionary/DictionaryManagementPanel';
 import { AutoCorrectRulesPanel } from './rules/AutoCorrectRulesPanel';
 import { StatsPanel } from './StatsPanel';
 import { UserManagementPanel } from './users/UserManagementPanel';
@@ -18,7 +18,7 @@ interface AdminTabsProps {
   bookManagementPanel: React.ReactNode;
 }
 
-type TabId = 'books' | 'stats' | 'users' | 'contacts' | 'config' | 'rules' | 'dictionary';
+type TabId = 'books' | 'stats' | 'users' | 'contacts' | 'config' | 'rules' | 'questions';
 
 interface Tab {
   id: TabId;
@@ -51,9 +51,9 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
     { id: 'books', label: t('admin.booksLabel'), icon: <TableOfContents size={18} /> },
     { id: 'users', label: t('admin.usersLabel'), icon: <Users size={18} />, adminOnly: true },
     { id: 'rules', label: t('admin.rulesLabel') || 'Auto-Correction', icon: <Sparkles size={18} />, adminOnly: false },
-    { id: 'dictionary', label: t('admin.dictionaryLabel') || 'Dictionary', icon: <BookA size={18} />, adminOnly: false },
     { id: 'stats', label: t('admin.statsLabel') || 'Statistics', icon: <BarChart3 size={18} />, adminOnly: true },
     { id: 'config', label: t('admin.configLabel'), icon: <Settings size={18} />, adminOnly: true },
+    { id: 'questions', label: t('admin.questionsLabel'), icon: <MessageSquare size={18} />, adminOnly: true },
     { id: 'contacts', label: t('admin.contactsLabel'), icon: <Mail size={18} />, adminOnly: true },
   ];
 
@@ -62,7 +62,7 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
   return (
     <div className="space-y-0 px-3 py-3 sm:px-6 md:px-0" dir="rtl" lang="ug">
       {/* Tab Navigation */}
-      <div className="border-b border-slate-200">
+      <div className="border-b border-slate-200 dark:border-slate-800">
         <div className="flex items-end overflow-x-auto overflow-y-hidden gap-1" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
           {visibleTabs.map((tab) => (
             <button
@@ -72,13 +72,13 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
                 flex items-center gap-2 md:gap-2.5 px-4 sm:px-5 md:px-6 py-2.5 md:py-3 transition-all duration-200
                 text-[13px] md:text-[14px] whitespace-nowrap rounded-t-xl font-normal
                 ${activeTab === tab.id
-                  ? 'bg-[#0369a1] text-white shadow-sm'
-                  : 'bg-white text-slate-600 border border-b-0 border-slate-200 hover:bg-slate-50 hover:text-slate-800'
+                  ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 shadow-sm'
+                  : 'bg-white dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 border border-b-0 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/80 hover:text-slate-800 dark:hover:text-slate-200'
                 }
               `}
               title={tab.label}
             >
-              <span className="transition-all duration-200">
+              <span className="transition-all duration-200 flex items-center">
                 {React.cloneElement(tab.icon as React.ReactElement<any>, { size: 16, className: 'md:w-[17px] md:h-[17px]' })}
               </span>
               <span className="hidden lg:inline mt-[3px]">
@@ -94,10 +94,10 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
         {activeTab === 'books' && bookManagementPanel}
         {activeTab === 'users' && isAdmin && <UserManagementPanel />}
         {activeTab === 'rules' && <AutoCorrectRulesPanel />}
+        {activeTab === 'questions' && isAdmin && <AdminQuestions />}
         {activeTab === 'contacts' && isAdmin && <ContactSubmissionsPanel />}
         {activeTab === 'stats' && isAdmin && <StatsPanel />}
         {activeTab === 'config' && isAdmin && <SystemConfigPanel />}
-        {activeTab === 'dictionary' && <DictionaryManagementPanel />}
       </div>
     </div>
   );

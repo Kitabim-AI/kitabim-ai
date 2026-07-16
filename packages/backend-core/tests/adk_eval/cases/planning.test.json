@@ -1,0 +1,115 @@
+{
+  "eval_set_id": "kitabim_eval_set_planning",
+  "name": "Kitabim RAG Agent Planning and Coreference Evaluation Set",
+  "description": "Evaluation cases for multi-turn coreference resolution, query rewriting, and context planning.",
+  "eval_cases": [
+    {
+      "eval_id": "test_coreference_resolution",
+      "conversation": [
+        {
+          "invocation_id": "fc-planning-coref",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "ئۇنىڭ كىتابلىرى قايسىلار؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "زوردۇن سابىرنىڭ كىتابلىرى قايسىلار؟"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "rewrite_query",
+                "args": {
+                  "question": "ئۇنىڭ كىتابلىرى قايسىلار؟"
+                }
+              },
+              {
+                "name": "get_books_by_author",
+                "args": {
+                  "question": "زوردۇن سابىرنىڭ كىتابلىرى قايسىلار؟"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [
+              {"role": "user", "text": "زوردۇن سابىر كىم؟"},
+              {"role": "model", "text": "زوردۇن سابىر داڭلىق ئۇيغۇر يازغۇچىسى."}
+            ],
+            "agent_model": "gemini-2.5-flash"
+          },
+          "observations": []
+        }
+      }
+    },
+    {
+      "eval_id": "test_active_page_query",
+      "conversation": [
+        {
+          "invocation_id": "fc-planning-page",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "بۇ بەتتە نېمە دېيىلگەن؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "بۇ بەتتە ئۇيغۇر تارىخى ۋە مەدەنىيىتى ھەققىدە قىسقىچە بايان قىلىنغان."
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "get_current_page",
+                "args": {}
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": false,
+            "book_id": "book-ana-yurt",
+            "current_page": 12,
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          },
+          "observations": []
+        }
+      }
+    }
+  ]
+}

@@ -372,6 +372,33 @@ class Proverb(Base):
     )
 
 
+class Quran(Base):
+    """Quran model for Uyghur, English and Arabic verses (ayahs)"""
+
+    __tablename__ = "quran"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    surah: Mapped[int] = mapped_column(Integer, nullable=False)
+    surah_name_en: Mapped[str] = mapped_column(String(255), nullable=False)
+    surah_name_ar: Mapped[str] = mapped_column(String(255), nullable=False)
+    surah_name_ug: Mapped[str] = mapped_column(String(255), nullable=False)
+    ayah: Mapped[int] = mapped_column(Integer, nullable=False)
+    text_ar: Mapped[str] = mapped_column(Text, nullable=False)
+    text_en: Mapped[str] = mapped_column(Text, nullable=False)
+    text_ug: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding: Mapped[Optional[List[float]]] = mapped_column(
+        Vector(3072),  # pgvector type
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+
 class RAGEvaluation(Base):
     """RAG evaluation model for tracking RAG query performance metrics"""
 
@@ -429,6 +456,14 @@ class RAGEvaluation(Base):
     # User feedback ('positive' = 👍, 'negative' = 👎, None = no feedback yet)
     user_feedback: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
 
+    # True when this question opened a new conversation (history was empty)
+    is_first_turn: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Admin-curated flag: show this question in the home-page rotator
+    show_on_homepage: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+
     # Timestamp
     ts: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -439,8 +474,19 @@ class RAGEvaluation(Base):
     )
 
 
+class Word(Base):
+    """Word model for Uyghur language spell checking"""
+
+    __tablename__ = "words"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    word: Mapped[str] = mapped_column(
+        String(255), nullable=False, unique=True, index=True
+    )
+
+
 class Dictionary(Base):
-    """Dictionary model for Uyghur language spell checking"""
+    """Dictionary model containing definitions and audio"""
 
     __tablename__ = "dictionary"
 
@@ -448,6 +494,8 @@ class Dictionary(Base):
     word: Mapped[str] = mapped_column(
         String(255), nullable=False, unique=True, index=True
     )
+    definition: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    audio: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
 
 class PageSpellIssue(Base):
@@ -640,6 +688,60 @@ class ContactSubmission(Base):
             name="contact_submissions_status_check",
         ),
     )
+
+
+class Synonym(Base):
+    """Uyghur synonym dictionary — one row per headword"""
+
+    __tablename__ = "synonyms"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    word: Mapped[str] = mapped_column(
+        String(255), nullable=False, unique=True, index=True
+    )
+    letter_group: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    synonyms: Mapped[List[str]] = mapped_column(
+        ARRAY(Text), nullable=False, default=list, server_default=text("'{}'")
+    )
+
+
+class HistoryDictionary(Base):
+    """Uyghur historical dictionary — entries parsed from the uyghur-language history corpus"""
+
+    __tablename__ = "history_dictionary"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    term: Mapped[str] = mapped_column(
+        String(500), nullable=False, unique=True, index=True
+    )
+    transliteration: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    definition: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    letter_group: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+
+
+class NamesDictionary(Base):
+    """Uyghur person names dictionary"""
+
+    __tablename__ = "names_dictionary"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(
+        String(500), nullable=False, unique=True, index=True
+    )
+    letter_group: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+
+
+class EnglishUyghurDictionary(Base):
+    """English-Uyghur bilingual dictionary"""
+
+    __tablename__ = "english_uyghur_dictionary"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    english: Mapped[str] = mapped_column(
+        String(500), nullable=False, unique=True, index=True
+    )
+    uyghur: Mapped[str] = mapped_column(Text, nullable=False)
+    letter_group: Mapped[str] = mapped_column(String(5), nullable=False, index=True)
 
 
 class PipelineEvent(Base):

@@ -64,11 +64,18 @@ async def ocr_image(
             status_code=500, detail="system_config 'gemini_ocr_model' is not set"
         )
 
+    # Fetch OCR timeout from system_configs
+    gemini_ocr_timeout_str = await config_repo.get_value("gemini_ocr_timeout")
+    gemini_ocr_timeout = (
+        float(gemini_ocr_timeout_str) if gemini_ocr_timeout_str else None
+    )
+
     try:
         text = await generate_text_with_image(
             OCR_PROMPT,
             img_bytes,
             gemini_ocr_model,
+            timeout=gemini_ocr_timeout,
         )
         return {"text": clean_uyghur_text(text or "")}
     except Exception as exc:

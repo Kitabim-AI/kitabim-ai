@@ -15,11 +15,13 @@ from neo4j.exceptions import ServiceUnavailable, SessionExpired
 from google.adk.tools import ToolContext
 
 from app.services.rag.context import QueryContext
+from app.services.rag.keywords import CURRENT_BOOK_KEYWORDS
 from app.services.rag.retrieval import (
     embed_query,
     find_books_by_title_in_question,
     vector_search,
 )
+from app.services.rag.utils import normalize_uyghur
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.rag.agent.tools")
@@ -208,8 +210,14 @@ async def get_book_summary(
     Returns the text of the book's summary.
 
     Args:
-        book_ids: List of book IDs to fetch summaries for. Limit to at most 5 IDs —
-                  each summary is large; passing more is wasteful and dilutes the answer.
+        book_ids: List of book IDs to fetch summaries for. If an ID belongs to a
+                  multi-volume book, ALL of that book's sister volumes are
+                  included automatically (server-side) — you do not need to
+                  enumerate every volume ID yourself, and none will be dropped
+                  even if you only pass one. This cap only applies to distinct,
+                  unrelated books: limit to at most 5 DIFFERENT books — each
+                  summary is large, and passing many unrelated ones is wasteful
+                  and dilutes the answer.
     """
     args = {"book_ids": book_ids}
     return await _execute_and_record_tool(tool_context, "get_book_summary", args)
@@ -248,6 +256,7 @@ async def get_current_page(
 
 async def query_knowledge_graph(
     query: str,
+    book_ids: Optional[List[str]] = None,
     tool_context: ToolContext = None,
 ) -> dict:
     """Query the book knowledge graph to retrieve connections and relationships between entities.
@@ -257,24 +266,142 @@ async def query_knowledge_graph(
 
     Args:
         query: The search query or question containing entities to query.
+        book_ids: Optional list of book IDs to restrict the knowledge graph query scope.
     """
     args = {"query": query}
+    if book_ids is not None:
+        args["book_ids"] = book_ids
     return await _execute_and_record_tool(tool_context, "query_knowledge_graph", args)
 
 
-AGENT_TOOLS = [
-    search_chunks,
-    search_books_by_summary,
-    find_books_by_title,
-    rewrite_query,
-    get_book_author,
-    get_books_by_author,
-    search_catalog,
-    get_book_summary,
-    get_sister_volumes,
-    get_current_page,
-    query_knowledge_graph,
-]
+async def lookup_uyghur_word(
+    term: str,
+    tool_context: ToolContext = None,
+) -> dict:
+    """Look up a Uyghur word's dictionary definition.
+
+    Call this for lexical questions such as "what does X mean?", "X دېگەن نېمە؟",
+    or when the user asks for a word explanation rather than book passages.
+
+    Args:
+        term: The Uyghur word or phrase to define.
+    """
+    args = {"term": term}
+    return await _execute_and_record_tool(tool_context, "lookup_uyghur_word", args)
+
+
+async def lookup_history_term(
+    term: str,
+    tool_context: ToolContext = None,
+) -> dict:
+    """Look up a historical term, person, event, location, or concept.
+
+    Call this for history vocabulary and encyclopedia-style questions, especially
+    "X كىم؟" or "X نېمە؟" when X looks like a historical name or term.
+
+    Args:
+        term: The historical term, person name, event, or concept to explain.
+    """
+    args = {"term": term}
+    return await _execute_and_record_tool(tool_context, "lookup_history_term", args)
+
+
+async def translate_english_to_uyghur(
+    term: str,
+    tool_context: ToolContext = None,
+) -> dict:
+    """Translate an English word or phrase into Uyghur.
+
+    Call this when the user asks for the Uyghur equivalent of an English word.
+
+    Args:
+        term: The English word or phrase to translate.
+    """
+    args = {"term": term}
+    return await _execute_and_record_tool(
+        tool_context, "translate_english_to_uyghur", args
+    )
+
+
+async def check_word_spelling(
+    word: str,
+    tool_context: ToolContext = None,
+) -> dict:
+    """Check whether a Uyghur word exists in the spelling word list.
+
+    Call this when the user asks if a Uyghur spelling is correct or valid.
+
+    Args:
+        word: The Uyghur word to validate.
+    """
+    args = {"word": word}
+    return await _execute_and_record_tool(tool_context, "check_word_spelling", args)
+
+
+async def lookup_uyghur_name(
+    term: str,
+    tool_context: ToolContext = None,
+) -> dict:
+    """Look up a Uyghur name or list names starting with a letter.
+
+    Call this when the user asks about Uyghur names, is looking up a name,
+    or wants a list of names starting with a specific letter.
+
+    Args:
+        term: The name or the target starting letter (e.g., "ب", "ئا").
+    """
+    args = {"term": term}
+    return await _execute_and_record_tool(tool_context, "lookup_uyghur_name", args)
+
+
+async def search_language_sources(
+    query: str,
+    tool_context: ToolContext = None,
+) -> dict:
+    """Search all dictionary/language sources with exact and fuzzy matching.
+
+    Call this when the user asks a dictionary-style question but it is unclear
+    whether the answer belongs in the Uyghur dictionary, history dictionary,
+    names list, spelling word list, or English-Uyghur dictionary.
+
+    Args:
+        query: The word, term, name, or short phrase to search.
+    """
+    args = {"query": query}
+    return await _execute_and_record_tool(tool_context, "search_language_sources", args)
+
+
+async def lookup_proverbs(
+    term: str,
+    tool_context: ToolContext = None,
+) -> dict:
+    """Look up a Uyghur proverb or find proverbs matching a search term/keyword.
+
+    Call this when the user asks about proverbs, wants to look up a proverb,
+    or asks for proverbs matching a specific word or theme.
+
+    Args:
+        term: The search term or keyword to look up (e.g., "بىلىم", "knowledge").
+    """
+    args = {"term": term}
+    return await _execute_and_record_tool(tool_context, "lookup_proverbs", args)
+
+
+async def search_quran(
+    surah: Optional[int] = None,
+    ayah: Optional[int] = None,
+    q: Optional[str] = None,
+    tool_context: ToolContext = None,
+) -> dict:
+    """Retrieve or search Quran surahs and verses (ayahs) using surah number, ayah number, or text keywords.
+
+    Args:
+        surah: Optional Surah number (1-114).
+        ayah: Optional Ayah/verse number in the specified Surah.
+        q: Optional search query/text to search across Quranic verses.
+    """
+    args = {"surah": surah, "ayah": ayah, "q": q}
+    return await _execute_and_record_tool(tool_context, "search_quran", args)
 
 
 # ---------------------------------------------------------------------------
@@ -350,6 +477,30 @@ async def _dispatch_tool_with_retry(
     if tool_name == "query_knowledge_graph":
         result = await _run_query_knowledge_graph(tool_args, ctx)
         return {"ok": True, **result, "found_count": len(result.get("relations", []))}
+    if tool_name == "lookup_uyghur_word":
+        result = await _run_lookup_uyghur_word(tool_args, ctx)
+        return {"ok": True, **result, "found_count": len(result.get("entries", []))}
+    if tool_name == "lookup_history_term":
+        result = await _run_lookup_history_term(tool_args, ctx)
+        return {"ok": True, **result, "found_count": len(result.get("entries", []))}
+    if tool_name == "translate_english_to_uyghur":
+        result = await _run_translate_english_to_uyghur(tool_args, ctx)
+        return {"ok": True, **result, "found_count": len(result.get("entries", []))}
+    if tool_name == "check_word_spelling":
+        result = await _run_check_word_spelling(tool_args, ctx)
+        return {"ok": True, **result, "found_count": result.get("found_count", 0)}
+    if tool_name == "lookup_uyghur_name":
+        result = await _run_lookup_uyghur_name(tool_args, ctx)
+        return {"ok": True, **result, "found_count": len(result.get("entries", []))}
+    if tool_name == "search_language_sources":
+        result = await _run_search_language_sources(tool_args, ctx)
+        return {"ok": True, **result, "found_count": result.get("found_count", 0)}
+    if tool_name == "lookup_proverbs":
+        result = await _run_lookup_proverbs(tool_args, ctx)
+        return {"ok": True, **result, "found_count": len(result.get("entries", []))}
+    if tool_name == "search_quran":
+        result = await _run_search_quran(tool_args, ctx)
+        return {"ok": True, **result, "found_count": len(result.get("entries", []))}
     raise ValueError(f"Unknown tool: {tool_name}")
 
 
@@ -449,13 +600,26 @@ async def _run_search_books_by_summary(args: dict, ctx: QueryContext) -> List[st
 
 async def _run_get_book_summary(args: dict, ctx: QueryContext) -> dict:
     from app.db.repositories.book_summaries_repository import BookSummariesRepository
+    from app.db.repositories.books_repository import BooksRepository
 
     book_ids = args.get("book_ids") or []
     if not book_ids:
         return {"context": "No book IDs provided.", "summaries": []}
 
+    # The LLM may under-comply with the "pass all sister volumes" guidance
+    # (observed in production: a title resolving to 6 volumes, only 5 passed
+    # here). Expand server-side rather than trusting the model's book_ids.
+    books_repo = BooksRepository(ctx.session)
+    expanded_ids = list(dict.fromkeys(str(bid) for bid in book_ids))
+    for book_id in list(expanded_ids):
+        sister_volumes = await books_repo.find_sister_volumes(book_id)
+        for sister in sister_volumes:
+            sister_id = str(sister.id)
+            if sister_id not in expanded_ids:
+                expanded_ids.append(sister_id)
+
     repo = BookSummariesRepository(ctx.session)
-    summaries = await repo.get_summaries_for_books(book_ids)
+    summaries = await repo.get_summaries_for_books(expanded_ids)
 
     if not summaries:
         log_json(logger, logging.INFO, "Agent tool get_book_summary", count=0)
@@ -562,10 +726,24 @@ async def _run_get_current_page(ctx: QueryContext) -> dict:
 
 async def _run_find_books_by_title(args: dict, ctx: QueryContext) -> List[dict]:
     question = args.get("question", "")
+    if not hasattr(ctx, "_title_cache"):
+        ctx._title_cache = {}
+    if question in ctx._title_cache:
+        result = ctx._title_cache[question]
+        log_json(
+            logger,
+            logging.INFO,
+            "Agent tool find_books_by_title (cached)",
+            question=question[:120],
+            books=len(result),
+        )
+        return result
+
     books = await find_books_by_title_in_question(
         question, ctx.session, categories=ctx.character_categories or None
     )
     result = books or []
+    ctx._title_cache[question] = result
     log_json(
         logger,
         logging.INFO,
@@ -610,6 +788,28 @@ async def _run_get_book_author(args: dict, ctx: QueryContext) -> dict:
             "title": title,
             "author": author,
         }
+
+    # No title/author string matched in the question. If the user is reading a
+    # specific book and refers to it deictically ("this book") instead of
+    # naming it, answer with the current book rather than reporting no match.
+    q_norm = normalize_uyghur(question.lower())
+    refers_to_current_book = any(
+        normalize_uyghur(kw) in q_norm for kw in CURRENT_BOOK_KEYWORDS
+    )
+    if refers_to_current_book and not ctx.is_global and ctx.book and ctx.book.author:
+        log_json(
+            logger,
+            logging.INFO,
+            "Agent tool get_book_author — current book fallback",
+            title=ctx.book.title,
+            author=ctx.book.author,
+        )
+        return {
+            "context": f"The book '{ctx.book.title}' was written by {ctx.book.author}.",
+            "title": ctx.book.title,
+            "author": ctx.book.author,
+        }
+
     log_json(logger, logging.INFO, "Agent tool get_book_author", found=False)
     return {"context": "", "title": None, "author": None}
 
@@ -697,7 +897,9 @@ async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
     # Extract entities from the query using the LLM
     prompt = (
         "Extract any names of key entities (persons, locations, events, organizations, historical eras, or concepts) "
-        "mentioned in the following user query. Return them ONLY as a comma-separated list, with no other text, explanation, or formatting. "
+        "mentioned in the following user query. "
+        "CRITICAL: Keep the names in their original script and spelling (e.g., Uyghur Arabic script). Do NOT translate or transliterate names to English or Latin characters. "
+        "Return them ONLY as a comma-separated list, with no other text, explanation, or formatting. "
         "If no specific entities are mentioned, return an empty string.\n\n"
         f"Query: {query}"
     )
@@ -733,7 +935,10 @@ async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
         }
 
     book_ids = None
-    if not ctx.is_global and ctx.book_id:
+    book_ids_arg = args.get("book_ids")
+    if book_ids_arg:
+        book_ids = [str(bid) for bid in book_ids_arg]
+    elif not ctx.is_global and ctx.book_id:
         from app.db.repositories.books_repository import BooksRepository
 
         books_repo = BooksRepository(ctx.session)
@@ -743,9 +948,53 @@ async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
         else:
             book_ids = [str(ctx.book_id)]
 
+    search_entities = list(entities)
+    if book_ids:
+        try:
+            from sqlalchemy import select
+            from app.db.models import Book
+            from app.db.repositories.system_configs_repository import (
+                SystemConfigsRepository,
+            )
+
+            config_repo = SystemConfigsRepository(ctx.session)
+
+            fictional_categories_val = await config_repo.get_value(
+                "fictional_categories",
+                "رومان, تارىخىي رومان, بالىلار رومانى, ساتىرىك رومان, پەلسەپىۋىي رومان, پوۋېست, پوۋېستلار, تارىخىي پوۋېست, ھېكايىلەر, تارىخىي ھېكايىلەر, بالىلار ھېكايىلېرى, چۆچەكلەر, قىسسە, تارىخىي قىسسە, داستان, داستانلار, تارىخىي داستان, رىۋايەتلەر, مەسەللەر, لەتىپىلەر, يۇمۇرلار, شېئىرلار, سەھنە ئەسەرلېرى, كىنو سېنارىيىلىرى, fiction, novel, story, drama, poetry, fairytale, fable, play",
+            )
+            fictional_cats = [
+                c.strip().lower()
+                for c in fictional_categories_val.split(",")
+                if c.strip()
+            ]
+
+            stmt = select(Book).where(Book.id.in_(book_ids))
+            res = await ctx.session.execute(stmt)
+            books = res.scalars().all()
+            for book in books:
+                book_cats = [
+                    c.strip().lower() for c in (book.categories or []) if c.strip()
+                ]
+                is_fictional = any(c in fictional_cats for c in book_cats)
+                if is_fictional:
+                    base_title = re.sub(r"[\s-]+\d+\s*$", "", book.title or "").strip()
+                    if base_title:
+                        for ent in entities:
+                            namespaced = f"{ent} ({base_title})"
+                            if namespaced not in search_entities:
+                                search_entities.append(namespaced)
+        except Exception as ns_exc:
+            log_json(
+                logger,
+                logging.WARNING,
+                "Failed to namespace entities for query",
+                error=str(ns_exc),
+            )
+
     graph_repo = GraphRepository()
     try:
-        records = await graph_repo.query_subgraph(entities, book_ids=book_ids)
+        records = await graph_repo.query_subgraph(search_entities, book_ids=book_ids)
     except Exception as kg_exc:
         log_json(
             logger,
@@ -787,3 +1036,440 @@ async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
         relations=len(records),
     )
     return {"context": context_text, "relations": records}
+
+
+def _format_dictionary_context(source_label: str, entries: list[dict]) -> str:
+    if not entries:
+        return ""
+
+    blocks = []
+    for entry in entries:
+        if source_label == "dictionary":
+            blocks.append(
+                "[Dictionary Source: Uyghur Dictionary, "
+                f"Term: {entry.get('word', '')}]\n"
+                f"{entry.get('definition') or 'No definition text available.'}"
+            )
+        elif source_label == "history_dictionary":
+            transliteration = entry.get("transliteration")
+            trans_part = (
+                f", Transliteration: {transliteration}" if transliteration else ""
+            )
+            blocks.append(
+                "[Dictionary Source: History Dictionary, "
+                f"Term: {entry.get('term', '')}{trans_part}]\n"
+                f"{entry.get('definition') or 'No definition text available.'}"
+            )
+        elif source_label == "english_uyghur_dictionary":
+            blocks.append(
+                "[Dictionary Source: English-Uyghur Dictionary, "
+                f"English: {entry.get('english', '')}]\n"
+                f"{entry.get('uyghur') or 'No translation text available.'}"
+            )
+        elif source_label == "names_dictionary":
+            blocks.append(
+                "[Dictionary Source: Names Dictionary, "
+                f"Name: {entry.get('name', '')}]\n"
+                "This name exists in the names dictionary."
+            )
+        elif source_label == "proverbs":
+            vol = entry.get("volume")
+            page = entry.get("page_number")
+            ref_info = ""
+            if vol and page:
+                ref_info = f" (Found in Volume: {vol}, Page: {page})"
+            elif page:
+                ref_info = f" (Found on Page: {page})"
+            elif vol:
+                ref_info = f" (Found in Volume: {vol})"
+            blocks.append(
+                "[Dictionary/Culture Source: Uyghur Proverbs, "
+                f"Text: {entry.get('text', '')}]\n"
+                f'This is a Uyghur proverb: "{entry.get("text", "")}"{ref_info}'
+            )
+    return "\n\n---\n\n".join(blocks)
+
+
+async def _run_lookup_uyghur_word(args: dict, ctx: QueryContext) -> dict:
+    from app.db.repositories.dictionary_repository import DictionaryRepository
+
+    term = args.get("term", "")
+    repo = DictionaryRepository(ctx.session)
+    entries = await repo.lookup_uyghur_definition(term)
+    context = _format_dictionary_context("dictionary", entries)
+    log_json(
+        logger,
+        logging.INFO,
+        "Agent tool lookup_uyghur_word",
+        term=term[:60],
+        count=len(entries),
+    )
+    return {"context": context, "entries": entries}
+
+
+async def _run_lookup_history_term(args: dict, ctx: QueryContext) -> dict:
+    from app.db.repositories.dictionary_repository import DictionaryRepository
+
+    term = args.get("term", "")
+    repo = DictionaryRepository(ctx.session)
+    entries = await repo.lookup_history_term(term)
+    context = _format_dictionary_context("history_dictionary", entries)
+    log_json(
+        logger,
+        logging.INFO,
+        "Agent tool lookup_history_term",
+        term=term[:60],
+        count=len(entries),
+    )
+    return {"context": context, "entries": entries}
+
+
+async def _run_translate_english_to_uyghur(args: dict, ctx: QueryContext) -> dict:
+    from app.db.repositories.dictionary_repository import DictionaryRepository
+
+    term = args.get("term", "")
+    repo = DictionaryRepository(ctx.session)
+    entries = await repo.translate_english_to_uyghur(term)
+    context = _format_dictionary_context("english_uyghur_dictionary", entries)
+    log_json(
+        logger,
+        logging.INFO,
+        "Agent tool translate_english_to_uyghur",
+        term=term[:60],
+        count=len(entries),
+    )
+    return {"context": context, "entries": entries}
+
+
+async def _run_check_word_spelling(args: dict, ctx: QueryContext) -> dict:
+    from app.db.repositories.dictionary_repository import DictionaryRepository
+
+    word = args.get("word", "")
+    repo = DictionaryRepository(ctx.session)
+    result = await repo.check_word_spelling(word)
+    suggestions = result.get("suggestions", [])
+    if result.get("is_known"):
+        context = (
+            "[Dictionary Source: Spelling Word List, "
+            f"Word: {result.get('word', word)}]\n"
+            "The word exists in the spelling word list."
+        )
+        found_count = 1
+    elif suggestions:
+        suggestion_text = "\n".join(f"- {s.get('word')}" for s in suggestions)
+        context = (
+            "[Dictionary Source: Spelling Word List, "
+            f"Word: {word}]\n"
+            "The exact word was not found. Similar spellings:\n"
+            f"{suggestion_text}"
+        )
+        found_count = len(suggestions)
+    else:
+        context = (
+            "[Dictionary Source: Spelling Word List, "
+            f"Word: {word}]\n"
+            "The exact word was not found and no similar spellings were found."
+        )
+        found_count = 0
+
+    log_json(
+        logger,
+        logging.INFO,
+        "Agent tool check_word_spelling",
+        word=word[:60],
+        found=found_count,
+    )
+    return {
+        "context": context,
+        "is_known": result.get("is_known", False),
+        "suggestions": suggestions,
+        "found_count": found_count,
+    }
+
+
+async def _run_search_language_sources(args: dict, ctx: QueryContext) -> dict:
+    from app.db.repositories.dictionary_repository import DictionaryRepository
+
+    query = args.get("query", "")
+    repo = DictionaryRepository(ctx.session)
+    results = await repo.search_language_sources(query)
+
+    context_parts = []
+    found_count = 0
+    for source_label, entries in results.items():
+        found_count += len(entries)
+        formatted = _format_dictionary_context(source_label, entries)
+        if formatted:
+            context_parts.append(formatted)
+
+    context = (
+        "\n\n---\n\n".join(context_parts)
+        if context_parts
+        else "NO RELEVANT DICTIONARY ENTRIES FOUND."
+    )
+    log_json(
+        logger,
+        logging.INFO,
+        "Agent tool search_language_sources",
+        query=query[:60],
+        found=found_count,
+    )
+    return {"context": context, "results": results, "found_count": found_count}
+
+
+async def _run_lookup_uyghur_name(args: dict, ctx: QueryContext) -> dict:
+    from app.db.repositories.dictionary_repository import DictionaryRepository
+    from app.db.models import NamesDictionary
+    from sqlalchemy import select
+
+    term = args.get("term", "").strip()
+    repo = DictionaryRepository(ctx.session)
+
+    valid_groups = {
+        "ئا",
+        "ئە",
+        "ب",
+        "پ",
+        "ت",
+        "ج",
+        "چ",
+        "خ",
+        "د",
+        "ر",
+        "ز",
+        "ژ",
+        "س",
+        "ش",
+        "غ",
+        "ف",
+        "ق",
+        "ك",
+        "گ",
+        "ڭ",
+        "ل",
+        "م",
+        "ن",
+        "ھ",
+        "ئو",
+        "ئۇ",
+        "ئۆ",
+        "ئۈ",
+        "ۋ",
+        "ئې",
+        "ئى",
+        "ي",
+    }
+
+    if term in valid_groups or len(term) <= 2:
+        stmt = (
+            select(NamesDictionary)
+            .where(NamesDictionary.letter_group == term)
+            .order_by(NamesDictionary.name)
+            .limit(100)
+        )
+        res = await ctx.session.execute(stmt)
+        entries = [
+            dict(id=r.id, name=r.name, letter_group=r.letter_group)
+            for r in res.scalars().all()
+        ]
+
+        if entries:
+            names_list = ", ".join(entry["name"] for entry in entries)
+            context = (
+                f"[Dictionary Source: Names Dictionary, Letter Group: {term}]\n"
+                f"Here are Uyghur person names starting with the letter '{term}':\n"
+                f"{names_list}"
+            )
+        else:
+            context = f"No names found starting with the letter '{term}' in the names dictionary."
+    else:
+        entries = await repo.lookup_name(term, limit=10)
+        if entries:
+            context_parts = []
+            for entry in entries:
+                context_parts.append(
+                    f"[Dictionary Source: Names Dictionary, Name: {entry.get('name')}]\n"
+                    f"This name exists in the names dictionary (Letter Group: {entry.get('letter_group')})."
+                )
+            context = "\n\n---\n\n".join(context_parts)
+        else:
+            context = f"The name '{term}' was not found in the names dictionary."
+
+    log_json(
+        logger,
+        logging.INFO,
+        "Agent tool lookup_uyghur_name",
+        term=term[:60],
+        count=len(entries),
+    )
+    return {"context": context, "entries": entries, "found_count": len(entries)}
+
+
+async def _run_lookup_proverbs(args: dict, ctx: QueryContext) -> dict:
+    from app.db.repositories.proverbs_repository import ProverbsRepository
+    from app.db.models import Proverb
+    from sqlalchemy import select
+
+    term = args.get("term", "").strip()
+    repo = ProverbsRepository(ctx.session)
+
+    if not term:
+        proverb = await repo.get_random_proverb()
+        entries = [proverb] if proverb else []
+    else:
+        stmt = select(Proverb).where(Proverb.text.op("~*")(term)).limit(10)
+        res = await ctx.session.execute(stmt)
+        entries = list(res.scalars().all())
+
+    entries_dict = []
+    for entry in entries:
+        entries_dict.append(
+            {
+                "id": entry.id,
+                "text": entry.text,
+                "volume": entry.volume,
+                "page_number": entry.page_number,
+            }
+        )
+
+    if entries_dict:
+        context_parts = []
+        for entry in entries_dict:
+            source_info = (
+                f"[Dictionary/Culture Source: Uyghur Proverbs, Text: {entry['text']}]"
+            )
+            ref_info = ""
+            if entry.get("volume") or entry.get("page_number"):
+                vol = entry.get("volume")
+                page = entry.get("page_number")
+                ref_info = (
+                    f" (Found in Volume: {vol}, Page: {page})"
+                    if vol and page
+                    else f" (Found on Page: {page})"
+                    if page
+                    else f" (Found in Volume: {vol})"
+                )
+            context_parts.append(
+                f'{source_info}\nThis is a Uyghur proverb: "{entry["text"]}"{ref_info}'
+            )
+        context = "\n\n---\n\n".join(context_parts)
+    else:
+        context = f"No proverbs found matching '{term}'."
+
+    log_json(
+        logger,
+        logging.INFO,
+        "Agent tool lookup_proverbs",
+        term=term[:60],
+        count=len(entries_dict),
+    )
+    return {"context": context, "entries": entries_dict}
+
+
+async def _run_search_quran(args: dict, ctx: QueryContext) -> dict:
+    from app.db import session as db_session
+    from app.db.models import Quran
+    from sqlalchemy import select, or_
+
+    surah = args.get("surah")
+    ayah = args.get("ayah")
+    q = args.get("q")
+
+    async with db_session.async_session_factory() as session:
+        if surah is not None:
+            stmt = select(Quran).where(Quran.surah == surah)
+            if ayah is not None:
+                stmt = stmt.where(Quran.ayah == ayah)
+            stmt = stmt.order_by(Quran.ayah.asc()).limit(30)
+            res = await session.execute(stmt)
+            entries = list(res.scalars().all())
+        elif q:
+            # Try semantic vector search first
+            query_vector = None
+            try:
+                from app.services.rag.retrieval import embed_query
+
+                query_vector = await embed_query(q, ctx)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to embed query in search_quran, falling back to keyword search: {e}"
+                )
+
+            if query_vector:
+                from sqlalchemy import text
+
+                embedding_str = str(query_vector)
+                stmt = text("""
+                    SELECT 
+                        id, surah, surah_name_en, surah_name_ar, surah_name_ug,
+                        ayah, text_ar, text_en, text_ug, created_at
+                    FROM quran
+                    WHERE embedding IS NOT NULL
+                    ORDER BY embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))
+                    LIMIT :limit
+                """)
+                res = await session.execute(
+                    stmt, {"embedding": embedding_str, "limit": 15}
+                )
+                entries = res.fetchall()
+            else:
+                # Fallback to standard keyword search
+                search_pattern = f"%{q}%"
+                stmt = (
+                    select(Quran)
+                    .where(
+                        or_(
+                            Quran.text_ug.ilike(search_pattern),
+                            Quran.text_ar.ilike(search_pattern),
+                            Quran.text_en.ilike(search_pattern),
+                            Quran.surah_name_ug.ilike(search_pattern),
+                            Quran.surah_name_en.ilike(search_pattern),
+                        )
+                    )
+                    .order_by(Quran.surah.asc(), Quran.ayah.asc())
+                    .limit(10)
+                )
+                res = await session.execute(stmt)
+                entries = list(res.scalars().all())
+        else:
+            entries = []
+
+    formatted_entries = []
+    context_parts = []
+    for entry in entries:
+        formatted = {
+            "surah": entry.surah,
+            "surah_name_ug": entry.surah_name_ug,
+            "surah_name_en": entry.surah_name_en,
+            "surah_name_ar": entry.surah_name_ar,
+            "ayah": entry.ayah,
+            "text_ar": entry.text_ar,
+            "text_ug": entry.text_ug,
+            "text_en": entry.text_en,
+        }
+        formatted_entries.append(formatted)
+
+        # Build clean markup citation context for RAG
+        context_parts.append(
+            f"[Source: Holy Quran, Surah: {entry.surah_name_ug} ({entry.surah_name_en}), Ayah: {entry.ayah}]\n"
+            f"Arabic: {entry.text_ar}\n"
+            f"Uyghur Translation: {entry.text_ug}\n"
+            f"English Translation: {entry.text_en}"
+        )
+
+    context = (
+        "\n\n---\n\n".join(context_parts)
+        if context_parts
+        else "No Quranic verses found matching criteria."
+    )
+
+    log_json(
+        logger,
+        logging.INFO,
+        "Agent tool search_quran",
+        surah=surah,
+        ayah=ayah,
+        q=q[:60] if q else None,
+        count=len(formatted_entries),
+    )
+    return {"context": context, "entries": formatted_entries}

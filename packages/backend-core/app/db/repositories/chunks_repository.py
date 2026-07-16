@@ -115,35 +115,42 @@ class ChunksRepository(BaseRepository[Chunk]):
             if not book_ids:
                 return []
             query = text(f"""
-                WITH vector_matches AS (
+                WITH filtered_chunks AS (
                     SELECT
                         c.book_id,
                         c.page_number,
                         c.chunk_index,
                         c.text,
-                        1 - (c.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) AS similarity
+                        c.embedding
                     FROM chunks c
                     WHERE c.book_id = ANY(:book_ids)
                       AND c.embedding IS NOT NULL
-                    ORDER BY c.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))
-                    LIMIT :inner_limit
+                ),
+                ranked_matches AS (
+                    SELECT
+                        fc.book_id,
+                        fc.page_number,
+                        fc.chunk_index,
+                        fc.text,
+                        1 - (fc.embedding <=> CAST(:embedding AS vector(3072))) AS similarity
+                    FROM filtered_chunks fc
                 )
                 SELECT
-                    vm.book_id,
-                    vm.page_number,
-                    vm.chunk_index,
-                    vm.text,
+                    rm.book_id,
+                    rm.page_number,
+                    rm.chunk_index,
+                    rm.text,
                     b.title,
                     b.volume,
                     b.author,
-                    vm.similarity
-                FROM vector_matches vm
-                JOIN books b ON vm.book_id = b.id
-                LEFT JOIN pages p ON vm.book_id = p.book_id AND vm.page_number = p.page_number
-                WHERE vm.similarity > :threshold
+                    rm.similarity
+                FROM ranked_matches rm
+                JOIN books b ON rm.book_id = b.id
+                LEFT JOIN pages p ON rm.book_id = p.book_id AND rm.page_number = p.page_number
+                WHERE rm.similarity > :threshold
                   AND (p.is_toc IS NOT TRUE OR p.id IS NULL)
                   {cat_filter}
-                ORDER BY vm.similarity DESC
+                ORDER BY rm.similarity DESC
                 LIMIT :limit
             """)
             params = {
@@ -151,7 +158,6 @@ class ChunksRepository(BaseRepository[Chunk]):
                 "book_ids": [str(bid) for bid in book_ids],
                 "threshold": threshold,
                 "limit": limit,
-                "inner_limit": inner_limit,
             }
             if categories:
                 params["categories"] = categories

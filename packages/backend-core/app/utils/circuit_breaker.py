@@ -187,7 +187,13 @@ class CircuitBreaker:
             str(self.config.cooling_period),
         )
 
-    async def call(self, fn: Callable[..., Awaitable[T]], *args, **kwargs) -> T:
+    async def call(
+        self,
+        fn: Callable[..., Awaitable[T]],
+        *args,
+        ignore_on_failure: Callable[[Exception], bool] | None = None,
+        **kwargs,
+    ) -> T:
         allowed, state = await self._allow_call()
         if not allowed:
             if state == "half_open":
@@ -198,8 +204,9 @@ class CircuitBreaker:
 
         try:
             result = await fn(*args, **kwargs)
-        except Exception:
-            await self._on_failure()
+        except Exception as e:
+            if not (ignore_on_failure and ignore_on_failure(e)):
+                await self._on_failure()
             raise
         await self._on_success()
         return result

@@ -18,9 +18,14 @@ from app.utils.rate_limiter import RedisRateLimiter
 
 _logger = logging.getLogger("app.llm")
 
-# Rate limit for Gemini API (Total across all workers)
-# The user's quota is 25 RPM; we use 20 to be safe.
-_GEMINI_LIMITER = RedisRateLimiter("gemini_api", limit=20, window=60)
+# Dedicated rate limiters for different purposes to prevent OCR from starving Chat/Text requests
+_TEXT_LIMITER = RedisRateLimiter(
+    "gemini_text", limit=settings.gemini_text_rpm, window=60
+)
+_OCR_LIMITER = RedisRateLimiter("gemini_ocr", limit=settings.gemini_ocr_rpm, window=60)
+_EMBED_LIMITER = RedisRateLimiter(
+    "gemini_embed", limit=settings.gemini_embed_rpm, window=60
+)
 
 _TEXT_BREAKER = CircuitBreaker(
     "llm_generate",
@@ -122,14 +127,28 @@ async def get_circuit_breaker_status() -> dict:
     }
 
 
-_client: genai.Client | None = None
+_text_client: genai.Client | None = None
+_ocr_client: genai.Client | None = None
 
 
-def _get_genai_client() -> genai.Client:
-    global _client
-    if _client is None:
-        _client = genai.Client(api_key=settings.gemini_api_key)
-    return _client
+def _get_text_client() -> genai.Client:
+    global _text_client
+    if _text_client is None:
+        _text_client = genai.Client(
+            api_key=settings.gemini_api_key,
+            http_options=types.HttpOptions(timeout=int(_INVOKE_TIMEOUT * 1000)),
+        )
+    return _text_client
+
+
+def _get_ocr_client() -> genai.Client:
+    global _ocr_client
+    if _ocr_client is None:
+        _ocr_client = genai.Client(
+            api_key=settings.gemini_api_key,
+            http_options=types.HttpOptions(timeout=int(_OCR_INVOKE_TIMEOUT * 1000)),
+        )
+    return _ocr_client
 
 
 def _normalize_prompt_value(value: Any) -> str:
@@ -144,17 +163,36 @@ def _normalize_prompt_value(value: Any) -> str:
 _STREAM_FIRST_CHUNK_TIMEOUT = (
     60.0  # seconds to wait for the first chunk before treating as failure
 )
-_INVOKE_TIMEOUT = 30.0  # seconds to wait for a non-streaming ainvoke to complete
+_INVOKE_TIMEOUT = 60.0  # seconds to wait for a non-streaming ainvoke to complete
 _OCR_INVOKE_TIMEOUT = (
-    120.0  # seconds for OCR vision calls (image + prompt, much slower)
+    300.0  # seconds for OCR vision calls (image + prompt, much slower)
 )
+
+
+def is_transient_error(exc: Exception) -> bool:
+    """Check if the exception represents a transient API error (429, 503, overloaded)."""
+    err_msg = str(exc)
+    return any(
+        x in err_msg or x in err_msg.lower()
+        for x in [
+            "429",
+            "503",
+            "overloaded",
+            "resource_exhausted",
+        ]
+    )
 
 
 async def _call_with_breaker(
     breaker: CircuitBreaker, fn, *args, timeout: float | None = None, **kwargs
 ):
-    # Apply global rate limiting before attempting the call
-    await _GEMINI_LIMITER.wait()
+    # Apply rate limiting based on the breaker before attempting the call
+    if breaker.name == "llm_ocr":
+        await _OCR_LIMITER.wait()
+    elif breaker.name == "llm_embed":
+        await _EMBED_LIMITER.wait()
+    else:
+        await _TEXT_LIMITER.wait()
     effective_timeout = timeout or _INVOKE_TIMEOUT
 
     async def _fn_with_timeout():
@@ -165,7 +203,7 @@ async def _call_with_breaker(
         except asyncio.TimeoutError:
             log_json(
                 _logger,
-                logging.ERROR,
+                logging.WARNING,
                 "LLM invoke timed out",
                 timeout=effective_timeout,
                 breaker=breaker.name,
@@ -173,14 +211,17 @@ async def _call_with_breaker(
             raise TimeoutError(f"LLM did not respond within {effective_timeout}s")
 
     try:
-        return await breaker.call(_fn_with_timeout)
+        return await breaker.call(
+            _fn_with_timeout, ignore_on_failure=is_transient_error
+        )
     except CircuitBreakerOpen as exc:
         log_json(_logger, logging.ERROR, "LLM circuit open", error=str(exc))
         raise
     except Exception as exc:
+        log_level = logging.WARNING if is_transient_error(exc) else logging.ERROR
         log_json(
             _logger,
-            logging.ERROR,
+            log_level,
             "LLM call failed",
             error=str(exc),
             breaker=breaker.name,
@@ -235,10 +276,12 @@ async def _stream_with_breaker(breaker: CircuitBreaker, fn, *args, **kwargs):
     except (TimeoutError, asyncio.TimeoutError):
         raise
     except Exception as exc:
-        await breaker._on_failure()
+        if not is_transient_error(exc):
+            await breaker._on_failure()
+        log_level = logging.WARNING if is_transient_error(exc) else logging.ERROR
         log_json(
             _logger,
-            logging.ERROR,
+            log_level,
             "LLM stream failed",
             error=str(exc),
             breaker=breaker.name,
@@ -247,7 +290,7 @@ async def _stream_with_breaker(breaker: CircuitBreaker, fn, *args, **kwargs):
 
 
 async def generate_text(prompt: str, model_name: str) -> str:
-    client = _get_genai_client()
+    client = _get_text_client()
     model = (
         model_name.replace("models/", "", 1)
         if model_name.startswith("models/")
@@ -271,27 +314,59 @@ async def generate_text(prompt: str, model_name: str) -> str:
     return text
 
 
+_BREAKER_TIMEOUT_CONFIGS = {
+    "llm_ocr": ("gemini_ocr_timeout", 300.0),
+    "llm_generate": ("gemini_chat_timeout", 60.0),
+    "llm_embed": ("gemini_embed_timeout", 15.0),
+}
+
+
+async def get_system_config_timeout(key: str, default_val: float) -> float:
+    try:
+        from app.db import session as db_session
+        from app.db.repositories.system_configs_repository import (
+            SystemConfigsRepository,
+        )
+
+        async with db_session.async_session_factory() as session:
+            repo = SystemConfigsRepository(session)
+            val_str = await repo.get_value(key)
+            if val_str:
+                return float(val_str)
+    except Exception as e:
+        _logger.warning("Failed to fetch system config for %s: %s", key, e)
+    return default_val
+
+
 async def generate_text_with_image(
-    prompt: str, image_bytes: bytes, model_name: str
+    prompt: str, image_bytes: bytes, model_name: str, timeout: float | None = None
 ) -> str:
-    client = _get_genai_client()
+    client = _get_ocr_client()
     model = (
         model_name.replace("models/", "", 1)
         if model_name.startswith("models/")
         else model_name
     )
     image_part = types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
-    config = types.GenerateContentConfig(temperature=0.0)
+    config = types.GenerateContentConfig(
+        temperature=0.0,
+        system_instruction=prompt,
+    )
+    effective_timeout = timeout or await get_system_config_timeout(
+        "gemini_ocr_timeout", _OCR_INVOKE_TIMEOUT
+    )
+    if effective_timeout is not None:
+        config.http_options = types.HttpOptions(timeout=int(effective_timeout * 1000))
 
     async def _call():
         response = await client.aio.models.generate_content(
             model=model,
-            contents=[prompt, image_part],
+            contents=[image_part],
             config=config,
         )
         return response.text or ""
 
-    text = await _call_with_breaker(_OCR_BREAKER, _call, timeout=_OCR_INVOKE_TIMEOUT)
+    text = await _call_with_breaker(_OCR_BREAKER, _call, timeout=effective_timeout)
     log_json(
         _logger,
         logging.INFO,
@@ -314,7 +389,7 @@ class ProtectedLLM:
     async def ainvoke(
         self, input: Any, config: Any | None = None, **kwargs: Any
     ) -> str:
-        client = _get_genai_client()
+        client = _get_text_client()
         prompt = _normalize_prompt_value(input)
         model = (
             self.model_name.replace("models/", "", 1)
@@ -322,13 +397,45 @@ class ProtectedLLM:
             else self.model_name
         )
 
+        timeout = kwargs.pop("timeout", None)
+        timeout_config_key = kwargs.pop("timeout_config_key", None)
+        if timeout is None:
+            if timeout_config_key:
+                default_val = (
+                    300.0
+                    if "summary" in timeout_config_key or "ocr" in timeout_config_key
+                    else 30.0
+                )
+                timeout = await get_system_config_timeout(
+                    timeout_config_key, default_val
+                )
+            else:
+                config_key, default_val = _BREAKER_TIMEOUT_CONFIGS.get(
+                    self.breaker.name, (None, _INVOKE_TIMEOUT)
+                )
+                if config_key:
+                    timeout = await get_system_config_timeout(config_key, default_val)
+                else:
+                    timeout = default_val
+
+        if timeout is not None:
+            if config is None:
+                config = types.GenerateContentConfig(
+                    http_options=types.HttpOptions(timeout=int(timeout * 1000))
+                )
+            elif isinstance(config, dict):
+                config = config.copy()
+                config["http_options"] = types.HttpOptions(timeout=int(timeout * 1000))
+            elif isinstance(config, types.GenerateContentConfig):
+                config.http_options = types.HttpOptions(timeout=int(timeout * 1000))
+
         async def _call():
             response = await client.aio.models.generate_content(
-                model=model, contents=prompt, **kwargs
+                model=model, contents=prompt, config=config, **kwargs
             )
             return response.text or ""
 
-        text = await _call_with_breaker(self.breaker, _call)
+        text = await _call_with_breaker(self.breaker, _call, timeout=timeout)
         log_json(
             _logger,
             logging.INFO,
@@ -340,7 +447,7 @@ class ProtectedLLM:
     async def astream(
         self, input: Any, config: Any | None = None, **kwargs: Any
     ) -> AsyncIterator[str]:
-        client = _get_genai_client()
+        client = _get_text_client()
         prompt = _normalize_prompt_value(input)
         model = (
             self.model_name.replace("models/", "", 1)
@@ -349,9 +456,41 @@ class ProtectedLLM:
         )
         log_json(_logger, logging.INFO, "ProtectedLLM stream started", model=model)
 
+        timeout = kwargs.pop("timeout", None)
+        timeout_config_key = kwargs.pop("timeout_config_key", None)
+        if timeout is None:
+            if timeout_config_key:
+                default_val = (
+                    300.0
+                    if "summary" in timeout_config_key or "ocr" in timeout_config_key
+                    else 30.0
+                )
+                timeout = await get_system_config_timeout(
+                    timeout_config_key, default_val
+                )
+            else:
+                config_key, default_val = _BREAKER_TIMEOUT_CONFIGS.get(
+                    self.breaker.name, (None, _INVOKE_TIMEOUT)
+                )
+                if config_key:
+                    timeout = await get_system_config_timeout(config_key, default_val)
+                else:
+                    timeout = default_val
+
+        if timeout is not None:
+            if config is None:
+                config = types.GenerateContentConfig(
+                    http_options=types.HttpOptions(timeout=int(timeout * 1000))
+                )
+            elif isinstance(config, dict):
+                config = config.copy()
+                config["http_options"] = types.HttpOptions(timeout=int(timeout * 1000))
+            elif isinstance(config, types.GenerateContentConfig):
+                config.http_options = types.HttpOptions(timeout=int(timeout * 1000))
+
         async def _get_stream():
             return await client.aio.models.generate_content_stream(
-                model=model, contents=prompt, **kwargs
+                model=model, contents=prompt, config=config, **kwargs
             )
 
         chunk_count = 0
@@ -405,7 +544,9 @@ class GeminiEmbeddings:
                     req["outputDimensionality"] = dimensions
                 requests.append(req)
 
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=15.0)
+            ) as session:
                 async with session.post(url, json={"requests": requests}) as resp:
                     resp.raise_for_status()
                     data = await resp.json()
@@ -434,7 +575,9 @@ class GeminiEmbeddings:
             if dimensions:
                 req["outputDimensionality"] = dimensions
 
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=15.0)
+            ) as session:
                 async with session.post(url, json=req) as resp:
                     resp.raise_for_status()
                     data = await resp.json()

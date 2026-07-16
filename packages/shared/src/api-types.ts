@@ -347,6 +347,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/books/graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Global Graph
+         * @description Retrieve global knowledge graph data for public visualization.
+         */
+        get: operations["get_global_graph_api_books_graph_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/books/graph/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Merge Graph Entities
+         * @description Merge two knowledge graph entities (admin only).
+         */
+        post: operations["merge_graph_entities_api_books_graph_merge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/books/{book_id}": {
         parameters: {
             query?: never;
@@ -642,6 +682,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/books/{book_id}/reprocess/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reprocess Summary
+         * @description Manually trigger/reprocess AI summary generation for a book.
+         *
+         *     Deletes any existing summary row so the summary_job generates a fresh one.
+         */
+        post: operations["reprocess_summary_api_books__book_id__reprocess_summary_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/books/{book_id}/retry-failed": {
         parameters: {
             query?: never;
@@ -673,7 +735,7 @@ export interface paths {
         put?: never;
         /**
          * Reset Page
-         * @description Reset a single page to ocr/idle so the v2 OCR scanner re-processes it.
+         * @description Reset a single page so the OCR scanner re-processes it from scratch.
          */
         post: operations["reset_page_api_books__book_id__pages__page_num__reset_post"];
         delete?: never;
@@ -864,6 +926,28 @@ export interface paths {
          * @description Record thumbs-up/down feedback for an assistant response.
          */
         post: operations["submit_chat_feedback_api_chat_feedback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/recent-questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Recent Questions
+         * @description Return recent distinct first-turn questions for the home page rotator.
+         *
+         *     No auth required — these are public showcase questions.
+         */
+        get: operations["get_recent_questions_api_chat_recent_questions_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1482,6 +1566,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/questions/admin/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Admin Questions
+         * @description Return all RAG evaluation questions, newest first, paginated.
+         *
+         *     Admin-only endpoint.
+         */
+        get: operations["get_admin_questions_api_questions_admin_questions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questions/admin/questions/{eval_id}/featured": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Toggle Featured Question
+         * @description Set or clear the show_on_homepage flag for a question.
+         *
+         *     Admin-only endpoint.
+         */
+        patch: operations["toggle_featured_question_api_questions_admin_questions__eval_id__featured_patch"];
+        trace?: never;
+    };
+    "/api/questions/featured": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Featured Questions
+         * @description Return questions flagged for home-page display (show_on_homepage=True).
+         *
+         *     Public endpoint — no auth required.
+         */
+        get: operations["get_featured_questions_api_questions_featured_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/config": {
         parameters: {
             query?: never;
@@ -1951,6 +2101,13 @@ export interface components {
             /** Issue Ids */
             issue_ids: number[];
         };
+        /** MergeEntitiesRequest */
+        MergeEntitiesRequest: {
+            /** Keep Name */
+            keep_name: string;
+            /** Remove Name */
+            remove_name: string;
+        };
         /** OcrRequest */
         OcrRequest: {
             /** Imagebase64 */
@@ -2066,6 +2223,65 @@ export interface components {
             avg_faithfulness?: number | null;
             /** Avg Answer Relevance */
             avg_answer_relevance?: number | null;
+        };
+        /**
+         * RagQuestionAdmin
+         * @description Admin view of a single RAG evaluation question row.
+         */
+        RagQuestionAdmin: {
+            /** Id */
+            id: number;
+            /** Question */
+            question: string;
+            /** Isglobal */
+            isGlobal: boolean;
+            /** Bookid */
+            bookId?: string | null;
+            /** Userid */
+            userId?: string | null;
+            /** Isfirstturn */
+            isFirstTurn: boolean;
+            /** Showonhomepage */
+            showOnHomepage: boolean;
+            /** Userfeedback */
+            userFeedback?: string | null;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+        };
+        /**
+         * RagQuestionToggle
+         * @description Request body for toggling show_on_homepage.
+         */
+        RagQuestionToggle: {
+            /** Showonhomepage */
+            showOnHomepage: boolean;
+        };
+        /**
+         * RagQuestionToggleResponse
+         * @description Response after toggling show_on_homepage.
+         */
+        RagQuestionToggleResponse: {
+            /** Id */
+            id: number;
+            /** Showonhomepage */
+            showOnHomepage: boolean;
+        };
+        /**
+         * RagQuestionsPage
+         * @description Paginated response for admin questions list.
+         */
+        RagQuestionsPage: {
+            /** Items */
+            items: components["schemas"]["RagQuestionAdmin"][];
+            /** Total */
+            total: number;
+            /** Offset */
+            offset: number;
+            /** Limit */
+            limit: number;
         };
         /** RandomBookOut */
         RandomBookOut: {
@@ -2718,6 +2934,70 @@ export interface operations {
             };
         };
     };
+    get_global_graph_api_books_graph_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    merge_graph_entities_api_books_graph_merge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergeEntitiesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_book_api_books__book_id__get: {
         parameters: {
             query?: never;
@@ -3186,6 +3466,37 @@ export interface operations {
             };
         };
     };
+    reprocess_summary_api_books__book_id__reprocess_summary_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     retry_failed_pages_api_books__book_id__retry_failed_post: {
         parameters: {
             query?: never;
@@ -3514,6 +3825,37 @@ export interface operations {
                 "application/json": components["schemas"]["FeedbackRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_recent_questions_api_chat_recent_questions_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -4525,6 +4867,105 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_admin_questions_api_questions_admin_questions_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                query?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagQuestionsPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    toggle_featured_question_api_questions_admin_questions__eval_id__featured_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eval_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RagQuestionToggle"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagQuestionToggleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_featured_questions_api_questions_featured_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
                 };
             };
             /** @description Validation Error */

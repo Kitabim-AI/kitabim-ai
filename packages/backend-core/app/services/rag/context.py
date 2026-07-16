@@ -67,6 +67,7 @@ class QueryContext:
     # ── Dynamic Agent Configurations ────────────────────────────────────────
     agent_max_steps: int = 6
     agent_enough_chunks: int = 8
+    use_deterministic_router: bool = False
 
     def __deepcopy__(self, memo):
         # Return self directly to prevent copy.deepcopy from failing on non-pickleable

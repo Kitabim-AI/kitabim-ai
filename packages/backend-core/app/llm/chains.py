@@ -5,7 +5,7 @@ from typing import Any, AsyncIterator
 from pydantic import BaseModel
 
 from app.core.providers import get_llm_provider
-from app.llm.models import _get_genai_client
+from app.llm.models import _get_text_client
 
 _logger = logging.getLogger("app.llm.chains")
 
@@ -56,7 +56,7 @@ class StructuredChain:
         self.run_name = run_name
 
     async def ainvoke(self, input: dict[str, Any], **kwargs: Any) -> BaseModel:
-        client = _get_genai_client()
+        client = _get_text_client()
         model = (
             self.model_name.replace("models/", "", 1)
             if self.model_name.startswith("models/")
@@ -75,6 +75,24 @@ class StructuredChain:
             temperature=0.0,
         )
 
+        timeout = kwargs.pop("timeout", None)
+        timeout_config_key = kwargs.pop("timeout_config_key", None)
+        if timeout is None:
+            if timeout_config_key:
+                from app.llm.models import get_system_config_timeout
+
+                default_val = (
+                    300.0
+                    if "summary" in timeout_config_key or "ocr" in timeout_config_key
+                    else 30.0
+                )
+                timeout = await get_system_config_timeout(
+                    timeout_config_key, default_val
+                )
+
+        if timeout is not None:
+            config.http_options = types.HttpOptions(timeout=int(timeout * 1000))
+
         from app.llm.models import _TEXT_BREAKER, _call_with_breaker
 
         async def _call():
@@ -83,7 +101,7 @@ class StructuredChain:
             )
             return response.text or ""
 
-        raw_response = await _call_with_breaker(_TEXT_BREAKER, _call)
+        raw_response = await _call_with_breaker(_TEXT_BREAKER, _call, timeout=timeout)
         if not raw_response:
             raise ValueError(
                 f"Empty LLM response for schema {self.response_schema.__name__}"

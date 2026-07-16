@@ -42,11 +42,12 @@ async def test_reprocess_graph_disabled():
     mock_configs_repo = MagicMock()
     mock_configs_repo.get_value = AsyncMock(return_value="false")
 
-    with patch(
-        "api.endpoints.books_router.BooksRepository", return_value=mock_repo
-    ), patch(
-        "api.endpoints.books_router.SystemConfigsRepository",
-        return_value=mock_configs_repo,
+    with (
+        patch("api.endpoints.books_router.BooksRepository", return_value=mock_repo),
+        patch(
+            "api.endpoints.books_router.SystemConfigsRepository",
+            return_value=mock_configs_repo,
+        ),
     ):
         with pytest.raises(HTTPException) as excinfo:
             await reprocess_graph(
@@ -143,3 +144,27 @@ async def test_get_books():
     assert result["books"][0].id == "book-1"
     assert result["books"][0].has_summary is True
     assert result["books"][0].has_graph is True
+
+
+@pytest.mark.asyncio
+async def test_merge_graph_entities_endpoint():
+    setup_paths()
+    from api.endpoints.books_router import merge_graph_entities, MergeEntitiesRequest
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+
+    mock_request = MergeEntitiesRequest(keep_name="A", remove_name="B")
+
+    mock_repo = MagicMock()
+    mock_repo.merge_entities = AsyncMock()
+
+    with patch(
+        "app.db.repositories.graph_repository.GraphRepository", return_value=mock_repo
+    ):
+        response = await merge_graph_entities(
+            request=mock_request, current_user=mock_user, session=mock_session
+        )
+
+    assert response["status"] == "success"
+    mock_repo.merge_entities.assert_called_once_with("A", "B")

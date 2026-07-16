@@ -9,9 +9,13 @@ import JoinUsView from './components/pages/JoinUsView';
 import { ReaderView } from './components/reader/ReaderView';
 import { SpellCheckView } from './components/spell-check';
 import { AppProvider, useAppContext } from './context/AppContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { useAuth, useIsEditor } from './hooks/useAuth';
 import { useUyghurInput } from './hooks/useUyghurInput';
 import { PersistenceService } from './services/persistenceService';
+import { GraphView } from './components/graph/GraphView';
+import DictionaryView from './components/pages/DictionaryView';
+import QuranView from './components/pages/QuranView';
 
 const AppContent: React.FC = () => {
   const {
@@ -93,6 +97,7 @@ const AppContent: React.FC = () => {
     <Shell>
       {view === 'home' && <HomeView />}
       {view === 'library' && <LibraryView />}
+      {view === 'graph' && <GraphView />}
       
       {/* Protected Views - Strictly Conditional */}
       {view === 'admin' && isAuthorizedToView && (
@@ -124,15 +129,19 @@ const AppContent: React.FC = () => {
         />
       )}
       {view === 'join-us' && <JoinUsView />}
+      {view === 'dictionary' && <DictionaryView />}
+      {view === 'quran' && <QuranView />}
     </Shell>
   );
 };
 
 const App: React.FC = () => {
   return (
-    <AppProvider>
-      <AppContent />
-    </AppProvider>
+    <ThemeProvider>
+      <AppProvider>
+        <AppContent />
+      </AppProvider>
+    </ThemeProvider>
   );
 };
 

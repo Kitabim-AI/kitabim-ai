@@ -1,6 +1,6 @@
-# Question Answering Pipeline Diagram (Google ADK Version)
+# Question Answering Pipeline Diagram (Deterministic Router & Google ADK)
 
-Visual representation of the current RAG question answering pipeline using the Google ADK and google-genai SDK.
+Visual representation of the RAG question answering pipeline, supporting both the **Deterministic Python Router** and the **Google ADK Agentic Loop** (fallback).
 
 ---
 
@@ -16,11 +16,24 @@ flowchart TD
         BUILD["Resolve character, models<br/>read system_configs"] --> CTX[QueryContext]
     end
 
-    CTX --> H_AG
+    CTX --> ROUTE{use_deterministic_router?}
+
+    ROUTE -- Yes --> H_DET["DeterministicRAGHandler<br/>(Deterministic Router)"]
+    ROUTE -- No --> H_AG["AgentRAGHandler<br/>(Google ADK Fallback)"]
+
+    %% Deterministic Router Flow
+    subgraph DetRouter ["Deterministic RAG Flow"]
+        H_DET --> S1_DB["DB Metadata Check<br/>(Fuzzy Title & Author)"]
+        S1_DB --> S1_LLM["[LLM] Unified Query Analyzer<br/>(Extract intent, signals, & rewrite)<br/>emits: planning / rewrite_query"]
+        S1_LLM --> S4["Stage 2: Execution Router<br/>(Run path A-H directly)"]
+        S4 --> T_DET["Execute Path Tool<br/>emits: tool_call<br/>tool_result"]
+        T_DET -->|Return observations| S4
+        S4 --> DET_MERGE["Universal Fallback Check<br/>(Widen if < 4 chunks)"]
+    end
 
     %% Agentic RAG — Google ADK Execution Flow
     subgraph AgentRAG ["AgentRAGHandler — Google ADK"]
-        H_AG["AgentRAGHandler<br/>sole handler"] --> INTENT["Intent Detection<br/>_detect_intent<br/>emits: planning"]
+        H_AG --> INTENT["Intent Detection<br/>_detect_intent<br/>emits: planning"]
         INTENT --> DECOMP["[LLM] Query Decomposition<br/>_llm_split<br/>emits: decompose"]
         DECOMP --> CTX_INJ["Context Injection<br/>_build_human_message<br/>Inject [Context] block:<br/>current book_id, context book IDs,<br/>category filter"]
         CTX_INJ --> ADK["[LLM] ADK Agent Execution<br/>InMemoryRunner.run_async<br/>emits: agent_thinking"]
@@ -29,7 +42,13 @@ flowchart TD
         TOOL -->|Return observation<br/>data| ADK
 
         ADK -->|Finish Loop / Max Steps| DEDUP["Deduplicate Observations<br/>by book_id and page"]
-        DEDUP --> GRADE["Context Grading<br/>_grade_context<br/>filter low-relevance chunks<br/>emits: grading"]
+    end
+
+    DET_MERGE --> GRADE
+    DEDUP --> GRADE
+
+    subgraph PostProcess ["Post-processing & Generation"]
+        GRADE["Context Grading<br/>_grade_context<br/>filter low-relevance chunks<br/>emits: grading"]
         GRADE --> SYNTHESIS["[LLM] Answer Synthesis<br/>generate_answer_stream<br/>emits: answer_start<br/>chunk × N<br/>answer_end"]
         SYNTHESIS --> END_AG(["END<br/>write final_answer"])
     end
@@ -41,22 +60,26 @@ flowchart TD
     classDef process fill:#d4f1f4,stroke:#189ab4,stroke-width:1px
     classDef llm fill:#fef08a,stroke:#ca8a04,stroke-width:2px
 
-    class H_AG handler
-    class TOOL tool
-    class INTENT,CTX_INJ,DEDUP,GRADE process
-    class DECOMP,ADK,SYNTHESIS llm
+    class H_AG,H_DET handler
+    class TOOL,T_DET tool
+    class INTENT,CTX_INJ,DEDUP,GRADE,S1_DB,S4,DET_MERGE process
+    class DECOMP,ADK,SYNTHESIS,S1_LLM llm
 ```
 
 ---
 
 ## Handler Routing Reference
 
-All questions route directly to `AgentRAGHandler`.
+Handler selection is dynamically governed by the `use_deterministic_router` config:
 
 ```mermaid
 flowchart LR
-    Q([Question]) --> RAGENT["AgentRAGHandler<br/>Google ADK ReAct loop — 11 tools"]
-    RAGENT --> ANS([Answer])
+    Q([Question]) --> REG["HandlerRegistry"]
+    REG --> CAN_DET{"can_handle?<br/>(use_deterministic_router == true)"}
+    CAN_DET -- Yes --> DET["DeterministicRAGHandler<br/>Deterministic path selection"]
+    CAN_DET -- No --> ADK["AgentRAGHandler<br/>ADK ReAct reasoning loop"]
+    DET --> ANS([Answer])
+    ADK --> ANS([Answer])
 ```
 
 ---

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import List, Optional
 from datetime import datetime, UTC
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import RAGEvaluation
 from app.db.repositories.base_repository import BaseRepository
@@ -41,6 +41,7 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
         eval_status: str = "skipped",
         answer: Optional[str] = None,
         retrieved_context: Optional[str] = None,
+        is_first_turn: bool = False,
     ) -> RAGEvaluation:
         """Create a new RAG evaluation record"""
         evaluation = await self.create(
@@ -67,8 +68,30 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
             eval_status=eval_status,
             answer=answer,
             retrieved_context=retrieved_context,
+            is_first_turn=is_first_turn,
         )
         return evaluation
+
+    async def get_recent_standalone_questions(self, limit: int = 20) -> List[str]:
+        """Return recent distinct first-turn questions for the home page rotator."""
+        stmt = (
+            select(RAGEvaluation.question)
+            .where(RAGEvaluation.is_first_turn.is_(True))
+            .order_by(RAGEvaluation.ts.desc())
+            .limit(limit * 3)
+        )
+        result = await self.session.execute(stmt)
+        rows = result.scalars().all()
+        seen: set[str] = set()
+        unique: List[str] = []
+        for q in rows:
+            key = q.strip().lower()
+            if key not in seen:
+                seen.add(key)
+                unique.append(q)
+            if len(unique) == limit:
+                break
+        return unique
 
     async def get_recent_evaluations(
         self, limit: int = 100, book_id: Optional[str] = None
@@ -141,14 +164,56 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
             else None,
         }
 
+    async def get_questions_paginated(
+        self, limit: int = 20, offset: int = 0, query: Optional[str] = None
+    ) -> tuple[List[RAGEvaluation], int]:
+        """Return all questions descending by ts, with total count for pagination."""
+        count_stmt = select(func.count()).select_from(RAGEvaluation)
+        if query:
+            count_stmt = count_stmt.where(RAGEvaluation.question.ilike(f"%{query}%"))
+        count_result = await self.session.execute(count_stmt)
+        total = count_result.scalar_one()
+
+        stmt = (
+            select(RAGEvaluation)
+            .order_by(RAGEvaluation.ts.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        if query:
+            stmt = stmt.where(RAGEvaluation.question.ilike(f"%{query}%"))
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all()), total
+
+    async def toggle_show_on_homepage(
+        self, eval_id: int, value: bool
+    ) -> Optional[RAGEvaluation]:
+        """Set or clear the show_on_homepage flag for a question."""
+        await self.session.execute(
+            sql_update(RAGEvaluation)
+            .where(RAGEvaluation.id == eval_id)
+            .values(show_on_homepage=value)
+        )
+        await self.session.commit()
+        return await self.session.get(RAGEvaluation, eval_id)
+
+    async def get_featured_questions(self, limit: int = 20) -> List[str]:
+        """Return questions flagged show_on_homepage=True, most recent first."""
+        stmt = (
+            select(RAGEvaluation.question)
+            .where(RAGEvaluation.show_on_homepage.is_(True))
+            .order_by(RAGEvaluation.ts.desc())
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def update_feedback(
         self,
         eval_id: int,
         feedback: str,
     ) -> Optional[RAGEvaluation]:
         """Record user thumbs-up/down feedback on an evaluation row."""
-        from sqlalchemy import update as sql_update
-
         values: dict = {"user_feedback": feedback}
 
         await self.session.execute(

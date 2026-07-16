@@ -51,7 +51,9 @@ async def run_pipeline_driver(ctx) -> None:
                 update(Page)
                 .where(Page.id.in_(init_page_ids))
                 .values(
-                    retry_count=0,
+                    retry_count=case(
+                        (Page.pipeline_step.is_(None), 0), else_=Page.retry_count
+                    ),
                     pipeline_step=case(
                         (Page.pipeline_step.is_(None), "ocr"), else_=Page.pipeline_step
                     ),

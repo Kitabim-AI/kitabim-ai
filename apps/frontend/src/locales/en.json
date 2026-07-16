@@ -81,7 +81,9 @@
     "footer": {
       "text": "Uyghur Electronic Library - Combining Knowledge and Culture with Artificial Intelligence",
       "copyright": "All Rights Reserved",
-      "contactUs": "Contact Us"
+      "contactUs": "Contact Us",
+      "donate": "Donate",
+      "sponsors": "Sponsors:"
     }
   },
   "nav": {
@@ -92,7 +94,17 @@
     "joinUs": "Join Us",
     "admin": "Admin",
     "addBook": "Add Book",
+    "graph": "Knowledge Graph",
+    "dictionary": "Dictionary",
+    "quran": "Quran",
     "switchLanguage": "Switch Language"
+  },
+  "theme": {
+    "selector": "Theme Selector",
+    "title": "Theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System"
   },
   "home": {
     "searchOrChatPlaceholder": "Ask questions or search books, authors or topics...",
@@ -103,7 +115,12 @@
     "totalBooks": "books",
     "pressEnterToChat": "No books found — press Enter to ask the assistant",
     "pressReturnToChat": "No books found — press Return to ask the assistant",
-    "tapToChat": "No books found — tap the search icon to ask the assistant"
+    "tapToChat": "No books found — tap the search icon to ask the assistant",
+    "recentQuestions": "Recently answered questions",
+    "keyboardMapTooltip": "Show Uyghur keyboard map",
+    "keyboardMapTitle": "Uyghur Keyboard Layout Map",
+    "keyboardMapSubtitle": "Use your physical keyboard or click virtual keys below to type. Press Ctrl+K to toggle Uyghur/English layout.",
+    "spaceKey": "Space"
   },
   "library": {
     "title": "Public Library",
@@ -129,7 +146,6 @@
       "ocr": "OCR",
       "chunking": "Chunking",
       "embedding": "Embedding",
-      "word_index": "Word index",
       "spell_check": "Spell check",
       "ready": "Ready",
       "idle": "Waiting",
@@ -167,6 +183,8 @@
     "inputPlaceholderBook": "Type your question...",
     "inputPlaceholderWithLimit": "Type your question... ({{usage}}/{{limit}} used)",
     "limitReached": "Daily chat limit reached. Please try again tomorrow.",
+    "invalidLanguage": "Please write your question in Uyghur.",
+    "textTooLong": "Your question is too long. The maximum length is 500 characters.",
     "usageInfo": "Messages used: {{usage}} of {{limit}}",
     "referenceTitle": "Reference Content",
     "bookSummary": "Book Summary",
@@ -243,6 +261,7 @@
     "statsLabel": "Statistics",
     "configLabel": "Settings",
     "contactsLabel": "Contacts",
+    "questionsLabel": "Questions",
     "rulesLabel": "Auto-Correction",
     "dictionaryLabel": "Dictionary",
     "systemConfigLabel": "System Config",
@@ -293,12 +312,28 @@
       "noSubmissions": "No contact submissions yet",
       "error": "Failed to load submissions"
     },
+    "questions": {
+      "title": "Questions",
+      "subtitle": "All questions asked through the chat, newest first",
+      "searchPlaceholder": "Search questions...",
+      "total": "{{count}} questions total",
+      "colQuestion": "Question",
+      "colScope": "Scope",
+      "colFeedback": "Feedback",
+      "colDate": "Date",
+      "colShowOnHome": "Show on Home",
+      "scopeGlobal": "Global",
+      "scopeBook": "Book",
+      "showOnHome": "Show on home page",
+      "hideFromHome": "Hide from home page",
+      "empty": "No questions yet",
+      "error": "Failed to load questions"
+    },
     "pipeline": {
       "ocr": "OCR",
       "chunking": "Chunking",
       "embedding": "Vector Indices",
       "summary": "AI Summary",
-      "wordIndex": "Word Index",
       "spellCheck": "Spell check",
       "graph": "Knowledge Graph"
     },
@@ -323,9 +358,9 @@
         "ocr": "Full OCR Reprocess",
         "chunking": "Reprocess Chunking",
         "embedding": "Reprocess Embedding",
-        "word_index": "Reprocess Word Index",
         "spell_check": "Reprocess Spell Check",
-        "graph": "Reprocess Knowledge Graph"
+        "graph": "Reprocess Knowledge Graph",
+        "summary": "Rebuild AI Summary"
       },
       "redoOcr": "Redo OCR",
       "email": "Email",
@@ -448,22 +483,50 @@
         "pending": "Pending Issues"
       }
     },
+    "words": {
+      "title": "Spell-Check Words",
+      "searchPlaceholder": "Search word...",
+      "totalWords": "Total {{count}} words",
+      "wordExists": "Word exists in words list.",
+      "wordNotFound": "Word not found in words list."
+    },
     "dictionary": {
       "title": "Dictionary Management",
-      "subtitle": "Search, add or remove dictionary words.",
-      "searchPlaceholder": "Search word...",
-      "searchPlaceholderWithCount": "Search within {{count}} words...",
-      "totalWords": "Total {{count}} words",
-      "addWord": "Add to Dictionary",
-      "removeWord": "Remove from Dictionary",
-      "confirmDeleteTitle": "Remove from Dictionary",
-      "confirmDelete": "Are you sure you want to remove \"{{word}}\" from the dictionary?",
-      "wordExists": "Word exists in dictionary.",
-      "wordNotFound": "Word not found in dictionary.",
-      "stats": {
-        "total": "Total Words"
-      },
-      "emptyStateTitle": "Search Dictionary"
+      "searchPlaceholder": "Search dictionary...",
+      "totalWords": "Total {{count}} entries",
+      "wordNotFound": "Word not found in dictionary."
+    },
+    "synonyms": {
+      "title": "Synonym Dictionary",
+      "searchPlaceholder": "Search synonyms...",
+      "totalWords": "Total {{count}} entries",
+      "wordNotFound": "Word not found in synonym dictionary."
+    },
+    "historyDictionary": {
+      "title": "History Dictionary",
+      "searchPlaceholder": "Search history dictionary...",
+      "totalEntries": "Total {{count}} entries",
+      "entryNotFound": "No matching entries found.",
+      "transliteration": "Romanization"
+    },
+    "namesDictionary": {
+      "title": "Person Names",
+      "searchPlaceholder": "Search person names...",
+      "totalEntries": "Total {{count}} names",
+      "entryNotFound": "No matching names found."
+    },
+    "englishUyghurDictionary": {
+      "title": "English-Uyghur",
+      "searchPlaceholder": "Search English words...",
+      "totalEntries": "Total {{count}} entries",
+      "entryNotFound": "No matching entries found."
+    },
+    "proverbs": {
+      "title": "Proverbs",
+      "searchPlaceholder": "Search proverbs...",
+      "totalEntries": "Total {{count}} proverbs",
+      "entryNotFound": "No matching proverbs found.",
+      "volumeAndPage": "Vol. {{volume}}, Page {{page}}"
     }
   },
   "spellCheck": {
@@ -606,14 +669,14 @@
     "reprocessEmbedding": {
       "title": "Reprocess Embedding"
     },
-    "reprocessWordIndex": {
-      "title": "Reprocess Word Index"
-    },
     "reprocessSpellCheck": {
       "title": "Reprocess Spell Check"
     },
     "reprocessGraph": {
       "title": "Reprocess Knowledge Graph"
+    },
+    "reprocessSummary": {
+      "title": "Rebuild AI Summary"
     },
     "reprocess": {
       "ocr": {
@@ -625,14 +688,14 @@
       "embedding": {
         "message": "Are you sure you want to reprocess all pages and chunks from the Embedding step?"
       },
-      "word-index": {
-        "message": "Are you sure you want to regenerate the Word Index?"
-      },
       "spell-check": {
         "message": "Are you sure you want to re-run Spell Check?"
       },
       "graph": {
         "message": "Are you sure you want to regenerate the Knowledge Graph?"
+      },
+      "summary": {
+        "message": "Are you sure you want to rebuild the AI summary? The existing summary will be deleted and regenerated."
       }
     },
     "redoOcrError": {
@@ -777,5 +840,38 @@
     "answerLabel": "Answer",
     "textCopied": "Text Copied!",
     "pasteHint": "Text copied — paste it into your Facebook post"
+  },
+  "graph": {
+    "title": "Knowledge Graph",
+    "subtitle": "Interactive visualization of entities and relations extracted from digitized books",
+    "searchPlaceholder": "Search entities (e.g. names, places)...",
+    "loading": "Loading knowledge graph...",
+    "noData": "No nodes found matching your search.",
+    "enterFullscreen": "Fullscreen Mode",
+    "exitFullscreen": "Exit Fullscreen",
+    "filterNodeTypes": "Entity Types",
+    "filterEdgeTypes": "Relationship Types",
+    "all": "All",
+    "tabDetails": "Details",
+    "tabFilters": "Filters",
+    "nodePanel": {
+      "title": "Entity Details",
+      "name": "Name",
+      "type": "Type",
+      "subtype": "Subtype",
+      "connections": "Connections",
+      "yearHijri": "Hijri Year",
+      "yearGregorian": "Gregorian Year",
+      "centuryGregorian": "Gregorian Century"
+    }
+  },
+  "quran": {
+    "title": "Holy Quran",
+    "subtitle": "Quran translation in Uyghur, Arabic and English",
+    "searchPlaceholder": "Search in Quran (Arabic, Uyghur, or English)...",
+    "ayahNotFound": "No verses found matching your search.",
+    "totalVerses": "{{count}} Verses",
+    "ayahSuffix": "-ayah",
+    "badgeTemplate": "Surah {{surah}}: {{surahName}} — Ayah {{ayah}}"
   }
 }

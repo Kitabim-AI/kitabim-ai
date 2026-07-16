@@ -88,6 +88,11 @@ class Settings:
         os.getenv("LLM_CB_COOLING_PERIOD", "60")
     )  # Grace period after service restart (seconds)
 
+    # Gemini API rate limits (RPM)
+    gemini_text_rpm: int = int(os.getenv("GEMINI_TEXT_RPM", "10"))
+    gemini_ocr_rpm: int = int(os.getenv("GEMINI_OCR_RPM", "30"))
+    gemini_embed_rpm: int = int(os.getenv("GEMINI_EMBED_RPM", "100"))
+
     # Queue / Workers
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     neo4j_url: str = os.getenv("NEO4J_URL", "bolt://localhost:37687")

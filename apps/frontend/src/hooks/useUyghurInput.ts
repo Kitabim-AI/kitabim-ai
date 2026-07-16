@@ -133,12 +133,27 @@ function insertText(target: HTMLInputElement | HTMLTextAreaElement, text: string
 
   const event = new Event('input', { bubbles: true });
   target.dispatchEvent(event);
+
+  // Scroll to caret after React processes the input event and re-renders
+  setTimeout(() => {
+    if (target.dir === 'rtl') {
+      target.scrollLeft = -target.scrollWidth;
+      if (target.scrollLeft === 0) {
+        target.scrollLeft = target.scrollWidth;
+      }
+    } else {
+      target.scrollLeft = target.scrollWidth;
+    }
+  }, 0);
 }
 
 function handleKeyDown(e: KeyboardEvent) {
   const target = e.target as HTMLElement;
   if (!target || (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA')) return;
   if (target.tagName === 'INPUT' && (target as HTMLInputElement).type !== 'text' && (target as HTMLInputElement).type !== 'search') return;
+
+  // Skip Uyghur remapping for inputs that are explicitly marked as Latin/English
+  if (target.getAttribute('data-latin') === 'true' || target.getAttribute('lang') === 'en') return;
 
   // Ctrl+K to toggle Uyghur/English mode
   if (e.ctrlKey && e.key.toLowerCase() === 'k') {

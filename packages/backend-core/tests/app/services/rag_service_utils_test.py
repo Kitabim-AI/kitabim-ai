@@ -104,7 +104,7 @@ def test_detect_intent():
         "ئانا يۇرتنىڭ ئاپتورى كىم؟",
     ]
     for q in questions:
-        assert _detect_intent(q, ctx) == "catalog"
+        assert _detect_intent(q, ctx) == "content_search"
 
 
 def test_grade_context_local_grading():
@@ -198,12 +198,13 @@ def test_build_instructions_dynamic_numbering():
 
     # They should be strictly sequential starting at 1
     assert numbers == list(range(1, len(numbers) + 1))
-    assert len(numbers) == 11
+    assert len(numbers) == 12
 
     # Check key contents
     assert "Markdown structural characters" in instr_permissive
     assert "omit the 'ref:' link and cite inline as" in instr_permissive
     assert "Librarian (زېرەكچاق)" in instr_permissive
+    assert "multiple volumes" in instr_permissive.lower()
 
     # 2. Test Strict Mode with all extra flags
     instr_strict = build_instructions(
@@ -219,12 +220,13 @@ def test_build_instructions_dynamic_numbering():
     ]
     numbers_strict = [int(line.split(".")[0]) for line in numbered_lines_strict]
 
-    # They should be strictly sequential starting at 1 (7 rules in strict mode)
+    # They should be strictly sequential starting at 1 (8 rules in strict mode)
     assert numbers_strict == list(range(1, len(numbers_strict) + 1))
-    assert len(numbers_strict) == 7
+    assert len(numbers_strict) == 8
 
     assert "Markdown structural characters" in instr_strict
     assert (
         "format citations in Uyghur as a markdown link using the EXACT author"
         in instr_strict
     )
+    assert "multiple volumes" in instr_strict.lower()
