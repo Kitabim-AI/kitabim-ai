@@ -499,12 +499,12 @@ export const HomeView: React.FC = () => {
         <div className="w-full max-w-none px-4 md:px-8 pb-24 sm:pb-32">
           <div className="flex flex-col mb-10 sm:mb-12 md:mb-16 gap-2">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl sm:text-2xl md:text-3xl font-normal text-[#1a1a1a]">{t('home.searchResults')}</h2>
-              <div className="px-3 sm:px-4 py-1 bg-[#0369a1]/10 text-[#0369a1] rounded-xl text-xs sm:text-sm font-normal shadow-inner border border-[#0369a1]/5">
+              <h2 className="text-xl sm:text-2xl md:text-3xl font-normal text-[#1a1a1a] dark:text-slate-100">{t('home.searchResults')}</h2>
+              <div className="px-3 sm:px-4 py-1 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] rounded-xl text-xs sm:text-sm font-normal shadow-inner border border-[#0369a1]/5 dark:border-[#38bdf8]/5">
                 {isInitialLoading ? <RefreshCw size={12} className="inline-block animate-spin mx-1" /> : totalBooks} <span className="opacity-60">{t('home.totalBooks')}</span>
               </div>
             </div>
-            <p className="text-xs sm:text-sm font-normal text-[#94a3b8] uppercase">«{searchQuery || selectedCategory}» {t('home.resultsFor')}</p>
+            <p className="text-xs sm:text-sm font-normal text-[#94a3b8] dark:text-slate-400 uppercase">«{searchQuery || selectedCategory}» {t('home.resultsFor')}</p>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-3 sm:gap-x-8 gap-y-8 sm:gap-y-12 justify-items-center">
@@ -549,8 +549,8 @@ export const HomeView: React.FC = () => {
             )}
             {!hasMore && books.length > 0 && (
               <div className="flex flex-col items-center gap-2 opacity-30">
-                <div className="w-8 h-[1px] bg-[#94a3b8]"></div>
-                <span className="text-xs font-black text-[#94a3b8] uppercase">{t('common.of')}</span>
+                <div className="w-8 h-[1px] bg-[#94a3b8] dark:bg-slate-700"></div>
+                <span className="text-xs font-black text-[#94a3b8] dark:text-slate-500 uppercase">{t('common.endOfList')}</span>
               </div>
             )}
           </div>
