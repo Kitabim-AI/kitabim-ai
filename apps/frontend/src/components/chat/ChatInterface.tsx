@@ -295,8 +295,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 ) : agentSteps.length > 0 ? (
                   <AgentThinkingSteps steps={agentSteps} fontSize={chatFontSize} />
                 ) : (
-                  <div className="w-full bg-[#0369a1]/10 px-5 py-4 rounded-[28px] rounded-tl-none flex gap-2 items-center border border-[#0369a1]/10 shadow-sm">
-                    <TypingCarousel className="text-[#0369a1]" fontSize={chatFontSize} />
+                  <div className="w-full bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 px-5 py-4 rounded-[28px] rounded-tl-none flex gap-2 items-center border border-[#0369a1]/10 dark:border-[#38bdf8]/10 shadow-sm">
+                    <TypingCarousel className="text-[#0369a1] dark:text-[#38bdf8]" fontSize={chatFontSize} />
                   </div>
                 )}
               </div>
@@ -418,7 +418,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         )}
         {chatMessages.map((msg, idx) => (
           <div key={idx} className={`flex gap-2 ${msg.role === 'user' ? 'flex-col items-start' : 'flex-col items-end'}`}>
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm shadow-sm ${msg.role === 'user' ? 'bg-[#0369a1]/10 text-[#0369a1]' : 'bg-[#0369a1] text-white'
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm shadow-sm ${msg.role === 'user' ? 'bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8]' : 'bg-[#0369a1] text-white'
               }`}>
               {msg.role === 'user' ? (
                 <User size={18} strokeWidth={2.5} />
@@ -513,8 +513,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             ) : agentSteps.length > 0 ? (
               <AgentThinkingSteps steps={agentSteps} fontSize={chatFontSize} compact />
             ) : (
-              <div className="bg-[#0369a1]/10 px-4 py-3 rounded-2xl rounded-tl-none flex gap-2 items-center border border-[#0369a1]/10 shadow-sm">
-                <TypingCarousel className="text-[#0369a1]" fontSize={chatFontSize} />
+              <div className="bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 px-4 py-3 rounded-2xl rounded-tl-none flex gap-2 items-center border border-[#0369a1]/10 dark:border-[#38bdf8]/10 shadow-sm">
+                <TypingCarousel className="text-[#0369a1] dark:text-[#38bdf8]" fontSize={chatFontSize} />
               </div>
             )}
           </div>

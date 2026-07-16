@@ -140,7 +140,7 @@ export const AgentThinkingSteps: React.FC<AgentThinkingStepsProps> = ({ steps, f
 
   return (
     <div
-      className={`bg-[#0369a1]/10 border border-[#0369a1]/10 shadow-sm flex flex-col w-full ${
+      className={`bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 border border-[#0369a1]/10 dark:border-[#38bdf8]/10 shadow-sm flex flex-col w-full ${
         compact ? 'gap-1 px-3 py-2.5 rounded-2xl rounded-tl-none' : 'gap-1.5 px-5 py-4 rounded-[28px] rounded-tl-none'
       }`}
     >
@@ -157,12 +157,12 @@ export const AgentThinkingSteps: React.FC<AgentThinkingStepsProps> = ({ steps, f
           >
             <span
               className={`shrink-0 w-4 h-4 rounded-full flex items-center justify-center ${
-                isActive ? 'bg-[#0369a1] text-white' : 'bg-[#0369a1]/20 text-[#0369a1]'
+                isActive ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950' : 'bg-[#0369a1]/20 dark:bg-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8]'
               }`}
             >
               {stepIcon(step)}
             </span>
-            <span className="text-[#0369a1] font-normal uyghur-text" style={{ fontSize: `${textSize}px` }}>
+            <span className="text-[#0369a1] dark:text-[#38bdf8] font-normal uyghur-text" style={{ fontSize: `${textSize}px` }}>
               {label}{isActive ? '...' : ''}
               {sublabel && <span className="opacity-60 mx-1 uyghur-text">— {sublabel}</span>}
             </span>
