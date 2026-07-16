@@ -99,6 +99,13 @@
     "quran": "Quran",
     "switchLanguage": "Switch Language"
   },
+  "theme": {
+    "selector": "Theme Selector",
+    "title": "Theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System"
+  },
   "home": {
     "searchOrChatPlaceholder": "Ask questions or search books, authors or topics...",
     "searchPlaceholder": "Search books, authors or topics...",

@@ -1,6 +1,7 @@
-import { BookA, BookOpen, BookOpenCheck, Bot, HeartHandshake, Home, LibraryBig, Menu, Network, RefreshCw, Search, Settings, Upload, X } from 'lucide-react';
-import React, { useRef, useState } from 'react';
+import { BookA, BookOpen, BookOpenCheck, Bot, HeartHandshake, Home, LibraryBig, Menu, Monitor, Moon, Network, RefreshCw, Search, Settings, Sun, Upload, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
+import { useTheme } from '../../context/ThemeContext';
 import { useAuth, useIsEditor } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
 import { AuthButton } from '../auth';
@@ -26,6 +27,28 @@ export const Navbar: React.FC = () => {
     activeTab
   } = useAppContext();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { theme, setTheme } = useTheme();
+  const [themeDropdownOpen, setThemeDropdownOpen] = useState(false);
+  const themeRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (themeRef.current && !themeRef.current.contains(e.target as Node)) {
+        setThemeDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  const getThemeIcon = () => {
+    switch (theme) {
+      case 'light': return <Sun size={22} className="text-[#0369a1] dark:text-[#38bdf8]" />;
+      case 'dark': return <Moon size={22} className="text-[#0369a1] dark:text-[#38bdf8]" />;
+      case 'system': return <Monitor size={22} className="text-[#0369a1] dark:text-[#38bdf8]" />;
+    }
+  };
 
   const handleNavClick = (callback: () => void) => {
     callback();
@@ -127,12 +150,53 @@ export const Navbar: React.FC = () => {
           {/* Search Toggle Button */}
           <button
             onClick={() => setIsGlobalSearchOpen(true)}
-            className="group relative flex items-center justify-center w-9 h-9 md:w-11 md:h-11 bg-white/50 backdrop-blur-md border border-[#0369a1]/10 rounded-xl md:rounded-2xl hover:border-[#0369a1] hover:bg-[#0369a1]/5 transition-all shadow-sm overflow-hidden active:scale-90"
+            className="group relative flex items-center justify-center w-9 h-9 md:w-11 md:h-11 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md border border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-xl md:rounded-2xl hover:border-[#0369a1] dark:hover:border-[#38bdf8] hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/5 transition-all shadow-sm overflow-hidden active:scale-90"
             title={t('library.searchPlaceholder')}
           >
-            <Search size={22} className="text-[#0369a1] group-hover:scale-110 transition-transform" strokeWidth={2.5} />
+            <Search size={22} className="text-[#0369a1] dark:text-[#38bdf8] group-hover:scale-110 transition-transform" strokeWidth={2.5} />
             <div className="absolute inset-0 bg-gradient-to-tr from-[#0369a1]/0 to-[#0369a1]/10 opacity-0 group-hover:opacity-100 transition-opacity" />
           </button>
+
+          {/* Theme Toggle Dropdown */}
+          <div className="relative" ref={themeRef}>
+            <button
+              onClick={() => setThemeDropdownOpen(!themeDropdownOpen)}
+              className="group relative flex items-center justify-center w-9 h-9 md:w-11 md:h-11 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md border border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-xl md:rounded-2xl hover:border-[#0369a1] dark:hover:border-[#38bdf8] hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/5 transition-all shadow-sm overflow-hidden active:scale-90"
+              title={t('theme.selector') || 'تېما'}
+            >
+              {getThemeIcon()}
+              <div className="absolute inset-0 bg-gradient-to-tr from-[#0369a1]/0 to-[#0369a1]/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </button>
+
+            {themeDropdownOpen && (
+              <div className="absolute left-0 mt-2 w-32 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl shadow-xl z-[110] py-1.5 animate-fade-in">
+                <button
+                  onClick={() => { setTheme('light'); setThemeDropdownOpen(false); }}
+                  className={`w-full px-3 py-2 text-sm flex items-center gap-2.5 transition-all text-right ${theme === 'light' ? 'bg-[#0369a1]/10 text-[#0369a1] dark:text-[#38bdf8] font-medium' : 'text-slate-600 dark:text-slate-300 hover:bg-[#0369a1]/5'}`}
+                  dir="rtl"
+                >
+                  <Sun size={16} />
+                  <span className="uyghur-text">{t('theme.light') || 'يورۇق'}</span>
+                </button>
+                <button
+                  onClick={() => { setTheme('dark'); setThemeDropdownOpen(false); }}
+                  className={`w-full px-3 py-2 text-sm flex items-center gap-2.5 transition-all text-right ${theme === 'dark' ? 'bg-[#0369a1]/10 text-[#0369a1] dark:text-[#38bdf8] font-medium' : 'text-slate-600 dark:text-slate-300 hover:bg-[#0369a1]/5'}`}
+                  dir="rtl"
+                >
+                  <Moon size={16} />
+                  <span className="uyghur-text">{t('theme.dark') || 'قاراڭغۇ'}</span>
+                </button>
+                <button
+                  onClick={() => { setTheme('system'); setThemeDropdownOpen(false); }}
+                  className={`w-full px-3 py-2 text-sm flex items-center gap-2.5 transition-all text-right ${theme === 'system' ? 'bg-[#0369a1]/10 text-[#0369a1] dark:text-[#38bdf8] font-medium' : 'text-slate-600 dark:text-slate-300 hover:bg-[#0369a1]/5'}`}
+                  dir="rtl"
+                >
+                  <Monitor size={16} />
+                  <span className="uyghur-text">{t('theme.system') || 'ئاپتوماتىك'}</span>
+                </button>
+              </div>
+            )}
+          </div>
 
           {isEditor && (
             <>
@@ -183,7 +247,7 @@ export const Navbar: React.FC = () => {
           />
 
           {/* Menu Panel */}
-          <div className="fixed top-[72px] left-0 right-0 bg-white/95 backdrop-blur-2xl border-b border-[#0369a1]/10 shadow-2xl z-[95] lg:hidden animate-fade-in" dir="rtl">
+          <div className="fixed top-[72px] left-0 right-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl border-b border-[#0369a1]/10 dark:border-[#38bdf8]/10 shadow-2xl z-[95] lg:hidden animate-fade-in" dir="rtl">
             <div className="px-4 py-6 space-y-2">
               <MobileNavButton
                 active={view === 'home'}
@@ -244,8 +308,39 @@ export const Navbar: React.FC = () => {
                 label={t('nav.joinUs')}
               />
 
+              {/* Mobile Theme Selector */}
+              <div className="pt-4 border-t border-[#0369a1]/10 dark:border-[#38bdf8]/10 flex items-center justify-between px-2">
+                <span className="text-sm font-medium text-slate-500 dark:text-slate-400 uyghur-text">{t('theme.title') || 'تېما'}:</span>
+                <div className="flex bg-[#0369a1]/5 dark:bg-[#38bdf8]/5 rounded-xl p-1 gap-1 border border-[#0369a1]/10 dark:border-[#38bdf8]/10">
+                  <button
+                    onClick={() => setTheme('light')}
+                    className={`p-2 rounded-lg transition-all flex items-center gap-1.5 ${theme === 'light' ? 'bg-[#0369a1] text-white shadow-md' : 'text-slate-500 dark:text-slate-400 hover:text-[#0369a1]'}`}
+                    title={t('theme.light') || 'Light'}
+                  >
+                    <Sun size={16} />
+                    <span className="text-xs uyghur-text">{t('theme.light') || 'يورۇق'}</span>
+                  </button>
+                  <button
+                    onClick={() => setTheme('dark')}
+                    className={`p-2 rounded-lg transition-all flex items-center gap-1.5 ${theme === 'dark' ? 'bg-[#0369a1] text-white shadow-md' : 'text-slate-500 dark:text-slate-400 hover:text-[#0369a1]'}`}
+                    title={t('theme.dark') || 'Dark'}
+                  >
+                    <Moon size={16} />
+                    <span className="text-xs uyghur-text">{t('theme.dark') || 'قاراڭغۇ'}</span>
+                  </button>
+                  <button
+                    onClick={() => setTheme('system')}
+                    className={`p-2 rounded-lg transition-all flex items-center gap-1.5 ${theme === 'system' ? 'bg-[#0369a1] text-white shadow-md' : 'text-slate-500 dark:text-slate-400 hover:text-[#0369a1]'}`}
+                    title={t('theme.system') || 'System'}
+                  >
+                    <Monitor size={16} />
+                    <span className="text-xs uyghur-text">{t('theme.system') || 'ئاپتوماتىك'}</span>
+                  </button>
+                </div>
+              </div>
+
               {/* Auth section in mobile menu */}
-              <div className="pt-4 border-t border-[#0369a1]/10 sm:hidden">
+              <div className="pt-4 border-t border-[#0369a1]/10 dark:border-[#38bdf8]/10 sm:hidden">
                 <AuthButton onLogout={() => { setView('home'); setMobileMenuOpen(false); }} dropdownSide="right" inline />
               </div>
             </div>
