@@ -380,17 +380,13 @@ export function SystemConfigPanel() {
               setNewDescription('');
             }}
           />
-          <div className="relative w-full max-w-2xl bg-white/90 backdrop-blur-xl rounded-[32px] border border-white/20 shadow-2xl shadow-slate-900/20 overflow-hidden animate-in zoom-in-95 duration-300">
+          <div className="relative w-full max-w-2xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl rounded-[32px] border border-white/20 dark:border-slate-800 shadow-2xl shadow-slate-900/20 overflow-hidden animate-in zoom-in-95 duration-300">
             {/* Modal Header */}
-            <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-[#0369a1]/5 to-transparent">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20">
-                  <Plus size={20} />
-                </div>
-                <h3 className="text-xl font-normal text-[#1a1a1a]">
-                  {t('admin.systemConfig.createNew')}
-                </h3>
-              </div>
+            <div className="px-8 py-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
+              <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-3">
+                <Settings className="text-[#0369a1] dark:text-[#38bdf8] w-6 h-6" />
+                {t('admin.systemConfig.createNew')}
+              </h3>
               <button
                 onClick={() => {
                   setIsCreating(false);
@@ -398,7 +394,7 @@ export function SystemConfigPanel() {
                   setNewValue('');
                   setNewDescription('');
                 }}
-                className="p-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-400 hover:text-slate-600"
+                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-100"
               >
                 <X size={24} />
               </button>
@@ -415,7 +411,7 @@ export function SystemConfigPanel() {
                   value={newKey}
                   onChange={(e) => setNewKey(e.target.value)}
                   placeholder="e.g., llm_cb_failure_threshold"
-                  className="w-full px-5 py-4 border-2 border-slate-100 rounded-2xl bg-slate-50/50 outline-none focus:ring-4 focus:ring-[#0369a1]/10 focus:border-[#0369a1] transition-all text-left font-mono"
+                  className="w-full px-5 py-4 border-2 border-slate-100 dark:border-slate-800 rounded-2xl bg-slate-50/50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-550 outline-none focus:ring-4 focus:ring-[#0369a1]/10 dark:focus:ring-[#38bdf8]/10 focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all text-left font-mono"
                   dir="ltr"
                   data-latin="true"
                 />
@@ -430,7 +426,7 @@ export function SystemConfigPanel() {
                   value={newValue}
                   onChange={(e) => setNewValue(e.target.value)}
                   placeholder="e.g., 5"
-                  className="w-full px-5 py-4 border-2 border-slate-100 rounded-2xl bg-slate-50/50 outline-none focus:ring-4 focus:ring-[#0369a1]/10 focus:border-[#0369a1] transition-all text-left"
+                  className="w-full px-5 py-4 border-2 border-slate-100 dark:border-slate-800 rounded-2xl bg-slate-50/50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-550 outline-none focus:ring-4 focus:ring-[#0369a1]/10 dark:focus:ring-[#38bdf8]/10 focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all text-left"
                   dir="ltr"
                   data-latin="true"
                 />
@@ -445,7 +441,7 @@ export function SystemConfigPanel() {
                   value={newDescription}
                   onChange={(e) => setNewDescription(e.target.value)}
                   placeholder="Describe the purpose of this configuration..."
-                  className="w-full px-5 py-4 border-2 border-slate-100 rounded-2xl bg-slate-50/50 outline-none focus:ring-4 focus:ring-[#0369a1]/10 focus:border-[#0369a1] transition-all text-left"
+                  className="w-full px-5 py-4 border-2 border-slate-100 dark:border-slate-800 rounded-2xl bg-slate-50/50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-550 outline-none focus:ring-4 focus:ring-[#0369a1]/10 dark:focus:ring-[#38bdf8]/10 focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all text-left"
                   dir="ltr"
                   data-latin="true"
                 />
@@ -453,7 +449,7 @@ export function SystemConfigPanel() {
             </div>
 
             {/* Modal Footer */}
-            <div className="px-8 py-6 bg-slate-50/80 border-t border-slate-100 flex items-center justify-end gap-3">
+            <div className="px-8 py-6 bg-slate-50/80 dark:bg-slate-950/80 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-3">
               <button
                 onClick={() => {
                   setIsCreating(false);
@@ -461,7 +457,7 @@ export function SystemConfigPanel() {
                   setNewValue('');
                   setNewDescription('');
                 }}
-                className="flex items-center gap-2 px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-all font-normal shadow-sm"
+                className="flex items-center gap-2 px-6 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-all font-normal shadow-sm"
               >
                 <X size={18} />
                 {t('common.cancel')}
@@ -469,7 +465,7 @@ export function SystemConfigPanel() {
               <button
                 onClick={handleCreate}
                 disabled={!newKey.trim() || !newValue.trim()}
-                className="flex items-center gap-2 px-8 py-3 bg-[#0369a1] text-white rounded-xl hover:bg-[#0369a1]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-normal shadow-lg shadow-[#0369a1]/20 transform active:scale-95"
+                className="flex items-center gap-2 px-8 py-3 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl hover:bg-[#0284c7] dark:hover:bg-[#38bdf8]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-normal shadow-lg shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10 transform active:scale-95"
               >
                 <Save size={18} />
                 {t('common.save')}
@@ -483,7 +479,7 @@ export function SystemConfigPanel() {
       {!isLoading && (
         <div className="flex flex-col-reverse md:flex-row gap-3 md:gap-4 items-center">
           <div className="relative flex-1 lg:flex-none lg:w-[30%] group w-full">
-            <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1]">
+            <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1] dark:text-[#38bdf8]">
               <RefreshCw size={18} className="hidden" /> {/* dummy for layout matching */}
               {/* Lucide Search Icon */}
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-search"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
@@ -493,14 +489,14 @@ export function SystemConfigPanel() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={t('common.search')}
-              className="w-full pr-12 pl-6 py-2.5 md:py-3 bg-white border-2 border-[#0369a1]/10 rounded-2xl outline-none focus:border-[#0369a1] transition-all shadow-sm text-base"
+              className="w-full pr-12 pl-6 py-2.5 md:py-3 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl text-[#1a1a1a] dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all shadow-sm text-base"
               dir="ltr"
               data-latin="true"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute inset-y-0 left-4 flex items-center text-slate-400 hover:text-[#0369a1] transition-colors"
+                className="absolute inset-y-0 left-4 flex items-center text-slate-400 hover:text-[#0369a1] dark:hover:text-[#38bdf8] transition-colors"
               >
                 <X size={18} />
               </button>
@@ -510,14 +506,14 @@ export function SystemConfigPanel() {
           <div className="flex items-center gap-2 md:gap-3 shrink-0 w-full justify-end md:w-auto md:justify-start md:mr-auto">
             <button
               onClick={loadConfigs}
-              className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-2.5 bg-white text-[#0369a1] rounded-xl border border-[#0369a1]/20 hover:border-[#0369a1] transition-all shadow-sm"
+              className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-2.5 bg-white dark:bg-slate-800 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] rounded-xl hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 transition-all shadow-sm"
             >
               <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
               <span className="text-xs md:text-sm font-normal">{t('common.refresh')}</span>
             </button>
             <button
               onClick={() => setIsCreating(true)}
-              className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-2.5 bg-[#0369a1] text-white rounded-xl hover:bg-[#0369a1]/90 transition-all shadow-lg shadow-[#0369a1]/20"
+              className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-2.5 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl hover:bg-[#0284c7] dark:hover:bg-[#38bdf8]/90 transition-all shadow-lg shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10"
             >
               <Plus size={14} className="md:w-4 md:h-4" />
               <span className="text-xs md:text-sm font-normal">{t('admin.systemConfig.add')}</span>
@@ -553,12 +549,12 @@ export function SystemConfigPanel() {
                           type="text"
                           value={editValue}
                           onChange={(e) => setEditValue(e.target.value)}
-                          className="w-full px-2 md:px-3 py-1.5 md:py-2 border-2 border-[#0369a1] rounded-xl bg-white outline-none text-left text-base"
+                          className="w-full px-2 md:px-3 py-1.5 md:py-2 border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none text-left text-base"
                           dir="ltr"
                           data-latin="true"
                         />
                       ) : (
-                        <span className="font-normal text-[#1a1a1a] text-sm md:text-base break-all">
+                        <span className="font-normal text-[#1a1a1a] dark:text-slate-100 text-sm md:text-base break-all">
                           {formatDisplayValue(config.key, config.value)}
                         </span>
                       )}
@@ -569,12 +565,12 @@ export function SystemConfigPanel() {
                           type="text"
                           value={editDescription}
                           onChange={(e) => setEditDescription(e.target.value)}
-                          className="w-full px-2 md:px-3 py-1.5 md:py-2 border-2 border-[#0369a1] rounded-xl bg-white outline-none text-left text-base"
+                          className="w-full px-2 md:px-3 py-1.5 md:py-2 border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none text-left text-base"
                           dir="ltr"
                           data-latin="true"
                         />
                       ) : (
-                        <span className="text-xs md:text-sm text-[#94a3b8]">
+                        <span className="text-xs md:text-sm text-[#94a3b8] dark:text-slate-400">
                           {config.description || <em className="opacity-50">No description</em>}
                         </span>
                       )}
