@@ -487,7 +487,7 @@ export const ReaderView: React.FC = () => {
               <button
                 onClick={() => setShowShare(true)}
                 title={t('share.shareBook')}
-                className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 border border-[#1877F2]/20 text-[#1877F2] hover:bg-[#1877F2]/10"
+                className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-[#1877F2]/20 dark:border-[#1877F2]/30 text-[#1877F2] dark:text-[#38bdf8] hover:bg-[#1877F2]/10 dark:hover:bg-[#38bdf8]/10"
               >
                 <Share2 size={18} className="sm:w-5 sm:h-5" />
               </button>
@@ -503,17 +503,17 @@ export const ReaderView: React.FC = () => {
                   }
                   setShowFontSlider(prev => !prev);
                 }}
-                className={`p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all focus:outline-none ${showFontSlider ? 'bg-[#0369a1] text-white shadow-md' : 'bg-white/60 border border-[#0369a1]/20 text-[#0369a1] hover:bg-[#0369a1]/10'}`}
+                className={`p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all focus:outline-none ${showFontSlider ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 shadow-md' : 'bg-white/60 dark:bg-slate-800/80 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10'}`}
               >
                 <ALargeSmall size={21} className="sm:w-[23px] sm:h-[23px] -translate-x-[1px]" />
               </button>
               {showFontSlider && createPortal(
                 <div
                   ref={fontSliderRef}
-                  className="fixed flex flex-col items-center gap-2 bg-white/95 backdrop-blur-xl border border-[#0369a1]/20 rounded-2xl shadow-2xl px-3 py-4 z-[9999]"
+                  className="fixed flex flex-col items-center gap-2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-[#0369a1]/20 dark:border-[#38bdf8]/20 rounded-2xl shadow-2xl px-3 py-4 z-[9999]"
                   style={{ top: sliderPos.top, left: sliderPos.left }}
                 >
-                  <button onClick={() => setFontSize(f => Math.max(14, f - 2))} className="text-[11px] font-bold text-[#94a3b8] select-none px-2 py-1 rounded-lg hover:bg-[#0369a1]/10 active:scale-90 transition-all">A-</button>
+                  <button onClick={() => setFontSize(f => Math.max(14, f - 2))} className="text-[11px] font-bold text-[#94a3b8] dark:text-slate-500 select-none px-2 py-1 rounded-lg hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 active:scale-90 transition-all">A-</button>
                   <div style={{ height: '120px', width: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'visible' }}>
                     <input
                       type="range"
@@ -522,11 +522,11 @@ export const ReaderView: React.FC = () => {
                       step={2}
                       value={fontSize}
                       onChange={(e) => setFontSize(Number(e.target.value))}
-                      style={{ width: '120px', transform: 'rotate(-90deg)', cursor: 'pointer', accentColor: '#0369a1', flexShrink: 0 }}
+                      style={{ width: '120px', transform: 'rotate(-90deg)', cursor: 'pointer', accentColor: 'var(--primary-blue)', flexShrink: 0 }}
                     />
                   </div>
-                  <button onClick={() => setFontSize(f => Math.min(64, f + 2))} className="text-[11px] font-bold text-[#0369a1] select-none px-2 py-1 rounded-lg hover:bg-[#0369a1]/10 active:scale-90 transition-all">A+</button>
-                  <span className="text-[11px] font-mono font-bold text-[#0369a1] select-none">{fontSize}</span>
+                  <button onClick={() => setFontSize(f => Math.min(64, f + 2))} className="text-[11px] font-bold text-[#0369a1] dark:text-[#38bdf8] select-none px-2 py-1 rounded-lg hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 active:scale-90 transition-all">A+</button>
+                  <span className="text-[11px] font-mono font-bold text-[#0369a1] dark:text-[#38bdf8] select-none">{fontSize}</span>
                 </div>,
                 document.body
               )}
@@ -535,14 +535,14 @@ export const ReaderView: React.FC = () => {
 
             <button
               onClick={() => setIsFullscreen(prev => !prev)}
-              className="lg:hidden p-1.5 sm:p-2.5 min-w-[32px] sm:min-w-[44px] min-h-[32px] sm:min-h-[44px] text-[#94a3b8] hover:bg-[#0369a1]/10 hover:text-[#0369a1] rounded-xl transition-all"
+              className="lg:hidden p-1.5 sm:p-2.5 min-w-[32px] sm:min-w-[44px] min-h-[32px] sm:min-h-[44px] text-[#94a3b8] dark:text-slate-400 hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 hover:text-[#0369a1] dark:hover:text-[#38bdf8] rounded-xl transition-all"
               title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
             >
               {isFullscreen ? <Minimize2 size={18} className="sm:w-5 sm:h-5" /> : <Maximize2 size={18} className="sm:w-5 sm:h-5" />}
             </button>
             <button
               onClick={() => setIsSidebarCollapsed(prev => !prev)}
-              className="hidden xl:flex items-center justify-center p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 border border-[#0369a1]/20 text-[#0369a1] hover:bg-[#0369a1]/10"
+              className="hidden xl:flex items-center justify-center p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10"
               title={isSidebarCollapsed ? t('reader.showChat') : t('reader.hideChat')}
             >
               {isSidebarCollapsed ? <PanelLeftOpen size={18} className="sm:w-5 sm:h-5" /> : <PanelLeftClose size={18} className="sm:w-5 sm:h-5" />}
@@ -550,7 +550,7 @@ export const ReaderView: React.FC = () => {
             <button
               onClick={() => isEditing ? setIsEditing(false) : (editingPageNum !== null ? setEditingPageNum(null) : onClose())}
               title={isEditing || editingPageNum !== null ? t('reader.cancel') : t('reader.backToLibrary')}
-              className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 border border-red-200 text-red-400 hover:bg-red-50 hover:text-red-500"
+              className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-red-200 dark:border-red-900/30 text-red-400 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 hover:text-red-500 dark:hover:text-red-400"
             >
               <X size={18} className="sm:w-5 sm:h-5" />
             </button>
@@ -627,19 +627,19 @@ export const ReaderView: React.FC = () => {
         <GlassPanel className={`flex-1 min-h-0 flex flex-col ${mobileTab === 'chat' ? 'rounded-[24px] border' : 'rounded-none xl:rounded-[32px] border'} shadow-xl border-[#0369a1]/10 overflow-hidden`}>
           {/* Chat tab header — mobile only, mirrors reader header without edit button */}
           {mobileTab === 'chat' && (
-            <div className="xl:hidden flex-shrink-0 px-3 sm:px-6 py-2 sm:py-4 border-b border-[#0369a1]/10 flex flex-row items-center justify-between gap-1 sm:gap-4 bg-white/80 backdrop-blur-sm mb-0">
+            <div className="xl:hidden flex-shrink-0 px-3 sm:px-6 py-2 sm:py-4 border-b border-[#0369a1]/10 dark:border-[#38bdf8]/10 flex flex-row items-center justify-between gap-1 sm:gap-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm mb-0">
               {/* Book title — left in RTL */}
               <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-shrink">
-                <div className="hidden sm:flex p-2 bg-[#0369a1] text-white rounded-xl shadow-lg shrink-0">
+                <div className="hidden sm:flex p-2 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl shadow-lg shrink-0">
                   <BookOpen size={20} />
                 </div>
                 <div className="min-w-0 flex flex-col justify-center">
-                  <h2 className="font-bold text-[#1a1a1a] truncate" style={{ fontSize: '18px' }}>
+                  <h2 className="font-bold text-[#1a1a1a] dark:text-slate-100 truncate" style={{ fontSize: '18px' }}>
                     {selectedBook.title}
                     {selectedBook.volume ? ` (${t('book.volume', { volume: selectedBook.volume })})` : ''}
                   </h2>
                   {selectedBook.author && (
-                    <p className="text-[#64748b] mt-0.5 truncate hidden sm:block" style={{ fontSize: '14px' }}>
+                    <p className="text-[#64748b] dark:text-slate-400 mt-0.5 truncate hidden sm:block" style={{ fontSize: '14px' }}>
                       {selectedBook.author}
                     </p>
                   )}
@@ -651,7 +651,7 @@ export const ReaderView: React.FC = () => {
                   <button
                     onClick={handleDownload}
                     disabled={isDownloading}
-                    className="flex items-center gap-2 px-2 sm:px-4 py-2 min-h-[36px] sm:min-h-[44px] bg-white border border-[#0369a1]/20 text-[#0369a1] text-xs sm:text-sm rounded-xl sm:rounded-2xl hover:bg-[#0369a1]/10 transition-all font-bold disabled:opacity-50"
+                    className="flex items-center gap-2 px-2 sm:px-4 py-2 min-h-[36px] sm:min-h-[44px] bg-white dark:bg-slate-800 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] text-xs sm:text-sm rounded-xl sm:rounded-2xl hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 transition-all font-bold disabled:opacity-50"
                   >
                     {isDownloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
                     <span className="hidden sm:inline">{t('common.download')}</span>
@@ -666,11 +666,11 @@ export const ReaderView: React.FC = () => {
                     }
                     setShowFontSlider(prev => !prev);
                   }}
-                  className={`p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all focus:outline-none ${showFontSlider ? 'bg-[#0369a1] text-white shadow-md' : 'bg-white/60 border border-[#0369a1]/20 text-[#0369a1] hover:bg-[#0369a1]/10'}`}
+                  className={`p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all focus:outline-none ${showFontSlider ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 shadow-md' : 'bg-white/60 dark:bg-slate-800/80 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10'}`}
                 >
                   <ALargeSmall size={21} className="sm:w-[23px] sm:h-[23px] -translate-x-[1px]" />
                 </button>
-                <button onClick={onClose} className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 border border-red-200 text-red-400 hover:bg-red-50 hover:text-red-500">
+                <button onClick={onClose} className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-red-200 dark:border-red-900/30 text-red-400 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 hover:text-red-500 dark:hover:text-red-400">
                   <X size={18} className="sm:w-5 sm:h-5" />
                 </button>
               </div>
