@@ -322,13 +322,11 @@ export const QuranView: React.FC = () => {
     handlePrevClick = () => {
       if (activeAyah > 1) {
         setActiveAyah(activeAyah - 1);
-        document.querySelector('main')?.scrollTo({ top: 0, behavior: 'instant' });
       }
     };
     handleNextClick = () => {
       if (activeAyah < verses.length) {
         setActiveAyah(activeAyah + 1);
-        document.querySelector('main')?.scrollTo({ top: 0, behavior: 'instant' });
       }
     };
   } else if (activeSurah !== null && activeAyah === null) {
