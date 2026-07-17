@@ -238,20 +238,33 @@ export const QuranView: React.FC = () => {
     }
   };
 
-  const handleGlobalSearchSubmit = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!globalSearchQuery.trim()) {
-      handleClearGlobalSearch();
+  useEffect(() => {
+    const query = globalSearchQuery.trim();
+    if (!query) {
+      if (activeSurah === null) {
+        setSuggestions([]);
+        setActiveSurah(1);
+        setActiveAyah(null);
+        fetchStats(1);
+        fetchVerses(1);
+      }
       return;
     }
-    setActiveSurah(null);
-    setActiveAyah(null);
-    setSurahInputValue('');
-    setAyahInputValue('');
-    setSurahSearchQuery('');
-    setAyahSearchQuery('');
-    searchEntries(globalSearchQuery);
-  };
+
+    const timer = setTimeout(() => {
+      if (query.length >= 2) {
+        setActiveSurah(null);
+        setActiveAyah(null);
+        setSurahInputValue('');
+        setAyahInputValue('');
+        setSurahSearchQuery('');
+        setAyahSearchQuery('');
+        searchEntries(query);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [globalSearchQuery]);
 
   const handleClearGlobalSearch = () => {
     setGlobalSearchQuery('');
@@ -374,7 +387,7 @@ export const QuranView: React.FC = () => {
         
         {/* Mobile: Search Box on top, Desktop: Search Box in middle */}
         <div className="order-1 md:order-2 flex-1 min-w-[280px]">
-          <form onSubmit={handleGlobalSearchSubmit} className="relative w-full group">
+          <div className="relative w-full group">
             <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1] dark:text-[#38bdf8] transition-colors z-10 font-bold">
               {isSearching ? (
                 <RefreshCw className="animate-spin" size={16} />
@@ -386,29 +399,25 @@ export const QuranView: React.FC = () => {
               type="text"
               value={globalSearchQuery}
               onChange={(e) => setGlobalSearchQuery(e.target.value)}
-              className="w-full pr-11 pl-12 py-2.5 md:py-3 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl uyghur-text outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] text-slate-800 dark:text-slate-100 transition-all shadow-sm placeholder:text-slate-300 dark:placeholder:text-slate-500 text-base"
+              className={`w-full pr-11 md:pr-14 py-2.5 md:py-3 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl uyghur-text outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] text-slate-800 dark:text-slate-100 transition-all shadow-sm placeholder:text-slate-300 dark:placeholder:text-slate-500 text-base md:pl-14 ${
+                globalSearchQuery ? 'pl-11' : 'pl-4'
+              }`}
               placeholder={t('quran.searchKeyword') || 'ھالقىلىق سۆز بويىچە ئىزدەش...'}
               dir="rtl"
             />
-            <div className="absolute inset-y-0 left-3 flex items-center gap-1.5 z-10">
+            <div className="absolute inset-y-0 left-3 md:left-4 flex items-center gap-1 md:gap-2 z-10">
               {globalSearchQuery && (
                 <button 
                   type="button"
                   onClick={handleClearGlobalSearch}
-                  className="p-1.5 text-slate-300 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                  className="p-1.5 md:p-2 text-slate-300 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 transition-colors"
                   title={t('common.clear')}
                 >
                   <X strokeWidth={2.5} className="w-4 h-4 md:w-5 md:h-5" />
                 </button>
               )}
-              <button
-                type="submit"
-                className="px-3 py-1 bg-[#0369a1] text-white rounded-lg text-xs hover:bg-[#0369a1]/95 transition-all uyghur-text font-semibold hidden md:block"
-              >
-                {t('quran.searchBtn') || 'ئىزدەش'}
-              </button>
             </div>
-          </form>
+          </div>
         </div>
 
         {/* Dropdowns side-by-side on mobile and next to search on desktop */}
