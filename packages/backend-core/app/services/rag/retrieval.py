@@ -137,6 +137,59 @@ async def vector_search(
                 }
                 for chunk in similar_chunks
             ]
+
+            # 2. Integrate Quran vector search
+            from app.services.rag.utils import is_islam_or_quran_query
+            from sqlalchemy import text as sa_text
+
+            is_islam = is_islam_or_quran_query(ctx.question) or (
+                ctx.enriched_question and is_islam_or_quran_query(ctx.enriched_question)
+            )
+
+            if is_islam:
+                embedding_str = str(effective_vector)
+                # Query Quran table using pgvector
+                quran_query = sa_text("""
+                    SELECT 
+                        id, surah, surah_name_en, surah_name_ar, surah_name_ug,
+                        ayah, text_ar, text_en, text_ug,
+                        1 - (embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) AS similarity
+                    FROM quran
+                    WHERE embedding IS NOT NULL
+                    ORDER BY embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))
+                    LIMIT :limit
+                """)
+                res = await ctx.session.execute(
+                    quran_query,
+                    {"embedding": embedding_str, "limit": settings.rag_top_k},
+                )
+                rows = res.fetchall()
+
+                quran_results = []
+                for row in rows:
+                    similarity = float(row.similarity)
+                    if similarity >= settings.rag_score_threshold:
+                        quran_results.append(
+                            {
+                                "text": f"Arabic: {row.text_ar}\nUyghur Translation: {row.text_ug}\nEnglish Translation: {row.text_en}",
+                                "score": similarity,
+                                "page": row.ayah,
+                                "title": row.surah_name_ug,
+                                "surah_name_en": row.surah_name_en,
+                                "surah_name_ar": row.surah_name_ar,
+                                "surah": row.surah,
+                                "ayah": row.ayah,
+                                "volume": row.surah,
+                                "author": "Holy Quran",
+                                "book_id": "quran",
+                            }
+                        )
+
+                # Merge, sort globally by score, and limit
+                top_results = top_results + quran_results
+                top_results.sort(key=lambda x: x["score"], reverse=True)
+                top_results = top_results[: settings.rag_top_k]
+
             if top_results is not None:
                 await cache_service.set(
                     search_cache_key, top_results, ttl=settings.cache_ttl_rag_query
