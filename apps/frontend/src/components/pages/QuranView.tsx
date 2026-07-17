@@ -282,6 +282,65 @@ export const QuranView: React.FC = () => {
       ? verses.filter(v => v.ayah === activeAyah)
       : verses;
 
+  // Smart navigation calculations
+  let prevDisabled = false;
+  let nextDisabled = false;
+  let prevLabel = '';
+  let nextLabel = '';
+  let handlePrevClick = () => {};
+  let handleNextClick = () => {};
+
+  if (globalSearchQuery.trim()) {
+    prevDisabled = true;
+    nextDisabled = true;
+    prevLabel = t('common.previous') || 'ئالدىنقى';
+    nextLabel = t('common.next') || 'كېيىنكى';
+  } else if (activeSurah !== null && activeAyah !== null) {
+    prevDisabled = activeAyah <= 1;
+    nextDisabled = activeAyah >= verses.length;
+    
+    prevLabel = activeAyah > 1 
+      ? (language === 'ug' ? `${activeAyah - 1}-ئايەت` : `Ayah ${activeAyah - 1}`)
+      : (t('common.previous') || 'ئالدىنقى');
+    nextLabel = activeAyah < verses.length
+      ? (language === 'ug' ? `${activeAyah + 1}-ئايەت` : `Ayah ${activeAyah + 1}`)
+      : (t('common.next') || 'كېيىنكى');
+      
+    handlePrevClick = () => {
+      if (activeAyah > 1) {
+        setActiveAyah(activeAyah - 1);
+        document.querySelector('main')?.scrollTo({ top: 0, behavior: 'instant' });
+      }
+    };
+    handleNextClick = () => {
+      if (activeAyah < verses.length) {
+        setActiveAyah(activeAyah + 1);
+        document.querySelector('main')?.scrollTo({ top: 0, behavior: 'instant' });
+      }
+    };
+  } else if (activeSurah !== null && activeAyah === null) {
+    prevDisabled = !prevSurahObj;
+    nextDisabled = !nextSurahObj;
+    
+    prevLabel = prevSurahObj 
+      ? `${prevSurahObj.surah}. ${prevSurahObj.surah_name_ug}` 
+      : (t('common.previous') || 'ئالدىنقى');
+    nextLabel = nextSurahObj 
+      ? `${nextSurahObj.surah}. ${nextSurahObj.surah_name_ug}` 
+      : (t('common.next') || 'كېيىنكى');
+      
+    handlePrevClick = () => {
+      if (prevSurahObj) {
+        handleSurahSelect(prevSurahObj.surah);
+      }
+    };
+    handleNextClick = () => {
+      if (nextSurahObj) {
+        handleSurahSelect(nextSurahObj.surah);
+      }
+    };
+  }
+
   return (
     <div className="quran-page space-y-6 md:space-y-8 px-3 py-3 sm:px-6 md:px-0 animate-fade-in pb-20 relative" dir="rtl" lang="ug">
       {/* Backdrop overlay for dropdown click-away */}
@@ -545,26 +604,22 @@ export const QuranView: React.FC = () => {
           </div>
         )}
 
-        {!globalSearchQuery.trim() && !isLoadingVerses && verses.length > 0 && (
+        {!isLoadingVerses && (
           <div className="flex items-center justify-between gap-3 pt-2">
             <button
-              onClick={() => prevSurahObj && handleSurahSelect(prevSurahObj.surah)}
-              disabled={!prevSurahObj}
+              onClick={handlePrevClick}
+              disabled={prevDisabled}
               className="flex-1 flex items-center gap-2 justify-center px-4 py-3 md:py-3.5 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl text-[#0369a1] dark:text-[#38bdf8] font-semibold text-sm hover:border-[#0369a1]/30 dark:hover:border-[#38bdf8]/30 transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none uyghur-text shadow-sm"
             >
               <ChevronRight size={18} strokeWidth={2.5} />
-              <span className="truncate">
-                {prevSurahObj ? `${prevSurahObj.surah}. ${prevSurahObj.surah_name_ug}` : t('common.previous')}
-              </span>
+              <span className="truncate">{prevLabel}</span>
             </button>
             <button
-              onClick={() => nextSurahObj && handleSurahSelect(nextSurahObj.surah)}
-              disabled={!nextSurahObj}
+              onClick={handleNextClick}
+              disabled={nextDisabled}
               className="flex-1 flex items-center gap-2 justify-center px-4 py-3 md:py-3.5 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl text-[#0369a1] dark:text-[#38bdf8] font-semibold text-sm hover:border-[#0369a1]/30 dark:hover:border-[#38bdf8]/30 transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none uyghur-text shadow-sm"
             >
-              <span className="truncate">
-                {nextSurahObj ? `${nextSurahObj.surah}. ${nextSurahObj.surah_name_ug}` : t('common.next')}
-              </span>
+              <span className="truncate">{nextLabel}</span>
               <ChevronLeft size={18} strokeWidth={2.5} />
             </button>
           </div>
