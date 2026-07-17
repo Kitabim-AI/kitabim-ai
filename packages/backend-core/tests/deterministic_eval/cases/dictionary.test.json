@@ -1,0 +1,390 @@
+{
+  "eval_set_id": "deterministic_eval_dictionary",
+  "name": "Dictionary and Language Tools Evaluation Set",
+  "description": "Evaluation cases for Uyghur word definition, history terms, English translation, spelling, names, and proverbs.",
+  "eval_cases": [
+    {
+      "eval_id": "test_dictionary_definition",
+      "conversation": [
+        {
+          "invocation_id": "fc-dict-def",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "ئابايا سۆزىنىڭ مەنىسى نېمە؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "رەۋىش"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "lookup_uyghur_word",
+                "args": {
+                  "term": "ئابايا"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          }
+        }
+      }
+    },
+    {
+      "eval_id": "test_dictionary_history_term",
+      "conversation": [
+        {
+          "invocation_id": "fc-dict-hist",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "ئارتۇر گوردون دېگەن كىم؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "باش ۋەلىيسى"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "lookup_history_term",
+                "args": {
+                  "term": "ئارتۇر گوردون"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          }
+        }
+      }
+    },
+    {
+      "eval_id": "test_dictionary_translation",
+      "conversation": [
+        {
+          "invocation_id": "fc-dict-trans",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "abacus سۆزىنىڭ ئۇيغۇرچە تەرجىمىسى نېمە؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "چوت"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "translate_english_to_uyghur",
+                "args": {
+                  "term": "abacus"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          }
+        }
+      }
+    },
+    {
+      "eval_id": "test_dictionary_spelling",
+      "conversation": [
+        {
+          "invocation_id": "fc-dict-spell",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "توزۇماس سۆزىنىڭ ئىملاسى توغرىمۇ؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "توغرا"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "check_word_spelling",
+                "args": {
+                  "word": "توزۇماس"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          }
+        }
+      }
+    },
+    {
+      "eval_id": "test_dictionary_names",
+      "conversation": [
+        {
+          "invocation_id": "fc-dict-names",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "ئۇيغۇرلاردا بابۇر دەيدىغان ئىسىم بارمۇ؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "بابۇر"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "lookup_uyghur_name",
+                "args": {
+                  "term": "بابۇر"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          }
+        }
+      }
+    },
+    {
+      "eval_id": "test_dictionary_proverbs",
+      "conversation": [
+        {
+          "invocation_id": "fc-dict-proverbs",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "«يەتتە ئۆلچەپ بىر كەس» دېگەن ماقالنىڭ مەنىسى نېمە؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "يەتتە ئۆلچەپ بىر كەس"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "lookup_proverbs",
+                "args": {
+                  "query": "يەتتە ئۆلچەپ بىر كەس"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          }
+        }
+      }
+    },
+    {
+      "eval_id": "test_dictionary_general",
+      "conversation": [
+        {
+          "invocation_id": "fc-dict-gen",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "ئۇيغۇر تىلىدىكى سۆزلۈك مەنبەلىرى"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "مەنبەلىرى"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "search_language_sources",
+                "args": {
+                  "query": "ئۇيغۇر تىلىدىكى سۆزلۈك مەنبەلىرى"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          }
+        }
+      }
+    },
+    {
+      "eval_id": "test_dictionary_fallback",
+      "conversation": [
+        {
+          "invocation_id": "fc-dict-fallback",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "پىنگۋىن سۆزىنىڭ مەنىسى نېمە؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "مەنىسى"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "lookup_uyghur_word",
+                "args": {
+                  "term": "پىنگۋىن"
+                }
+              },
+              {
+                "name": "search_chunks",
+                "args": {
+                  "query": "پىنگۋىن سۆزىنىڭ مەنىسى نېمە؟",
+                  "book_ids": null
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          }
+        }
+      }
+    }
+  ]
+}

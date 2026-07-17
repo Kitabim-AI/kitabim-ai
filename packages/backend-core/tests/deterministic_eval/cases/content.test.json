@@ -1,0 +1,417 @@
+{
+  "eval_set_id": "deterministic_eval_content",
+  "name": "Content RAG and Current Page Evaluation Set",
+  "description": "Evaluation cases for book summary, passage retrieval (fallback path), and reader active page content queries.",
+  "eval_cases": [
+    {
+      "eval_id": "test_book_summary",
+      "conversation": [
+        {
+          "invocation_id": "fc-book-summary",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "ئانا يۇرت رومانىنىڭ قىسقىچە مەزمۇنى نېمە؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "ئانا يۇرت"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "find_books_by_title",
+                "args": {
+                  "question": "ئانا يۇرت رومانىنىڭ قىسقىچە مەزمۇنى نېمە؟"
+                }
+              },
+              {
+                "name": "get_book_summary",
+                "args": {
+                  "book_ids": ["631481d3a7e9", "683238d33c15", "f0a9bc581a27"]
+                }
+              },
+              {
+                "name": "search_chunks",
+                "args": {
+                  "query": "ئانا يۇرت رومانىنىڭ قىسقىچە مەزمۇنى نېمە؟",
+                  "book_ids": ["631481d3a7e9", "683238d33c15", "f0a9bc581a27"]
+                }
+              },
+              {
+                "name": "search_books_by_summary",
+                "args": {
+                  "query": "ئانا يۇرت رومانىنىڭ قىسقىچە مەزمۇنى نېمە؟"
+                }
+              },
+              {
+                "name": "search_chunks",
+                "args": {
+                  "query": "ئانا يۇرت رومانىنىڭ قىسقىچە مەزمۇنى نېمە؟",
+                  "book_ids": ["683238d33c15", "f0a9bc581a27", "495780b08baf", "81e4fe0df8ba", "631481d3a7e9", "72e9db7fbd9b", "8b2b8056417a", "a68abb29efa7", "d92d66fd5ff6", "f18968dff0f9", "62c5bf711986", "9071cd613fe1", "b25be2dbd52f", "ac85a09a9f44", "f7b222f2472f", "63d88724d182", "fd031306350a", "0ae699767fb1", "04ca8ea5b35a", "1c6e52a793ce"]
+                }
+              },
+              {
+                "name": "search_chunks",
+                "args": {
+                  "query": "ئانا يۇرت رومانىنىڭ قىسقىچە مەزمۇنى نېمە؟",
+                  "book_ids": null
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          }
+        }
+      }
+    },
+    {
+      "eval_id": "test_identity_or_passage_lookup",
+      "conversation": [
+        {
+          "invocation_id": "fc-passage-lookup",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "كىشىلىك مۇناسىۋەتنى قانداق ياخشىلاش كېرەك؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "مۇناسىۋەت"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "query_knowledge_graph",
+                "args": {
+                  "query": "كىشىلىك مۇناسىۋەتنى قانداق ياخشىلاش كېرەك؟"
+                }
+              },
+              {
+                "name": "search_books_by_summary",
+                "args": {
+                  "query": "كىشىلىك مۇناسىۋەتنى قانداق ياخشىلاش كېرەك؟"
+                }
+              },
+              {
+                "name": "search_chunks",
+                "args": {
+                  "query": "كىشىلىك مۇناسىۋەتنى قانداق ياخشىلاش كېرەك؟",
+                  "book_ids": ["d218d1274e3e", "f503e9463cf5", "f4b0cc6ab7fd", "6c9419987a4d", "f52ffb7dd3e6"]
+                }
+              },
+              {
+                "name": "search_chunks",
+                "args": {
+                  "query": "كىشىلىك مۇناسىۋەتنى قانداق ياخشىلاش كېرەك؟",
+                  "book_ids": null
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          }
+        }
+      }
+    },
+    {
+      "eval_id": "test_current_page_query",
+      "conversation": [
+        {
+          "invocation_id": "fc-curr-page",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "بۇ بەتتە نېمە يېزىلغان؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "نەسرىدىن"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "get_current_page",
+                "args": {}
+              }
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": false,
+            "book_id": "009188027d84",
+            "current_page": 1,
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          }
+        }
+      }
+    },
+    {
+      "eval_id": "test_author_passage_lookup",
+      "conversation": [
+        {
+          "invocation_id": "fc-author-passage",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "زوردۇن سابىرنىڭ ئەسەرلىرىدىكى سىياسىي قاراشلار توغرىسىدا"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "زوردۇن سابىر"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "get_books_by_author",
+                "args": {
+                  "question": "زوردۇن سابىرنىڭ ئەسەرلىرىدىكى سىياسىي قاراشلار توغرىسىدا"
+                }
+              },
+              {
+                "name": "search_chunks",
+                "args": {
+                  "query": "زوردۇن سابىرنىڭ ئەسەرلىرىدىكى سىياسىي قاراشلار توغرىسىدا",
+                  "book_ids": ["2a069b84fb68", "44bf6a2c7666", "886038c4774c", "b9323a069c0e", "631481d3a7e9", "ad5913bbde8b", "683238d33c15", "f0a9bc581a27"]
+                }
+              },
+              {
+                "name": "search_books_by_summary",
+                "args": {
+                  "query": "زوردۇن سابىرنىڭ ئەسەرلىرىدىكى سىياسىي قاراشلار توغرىسىدا"
+                }
+              },
+              {
+                "name": "search_chunks",
+                "args": {
+                  "query": "زوردۇن سابىرنىڭ ئەسەرلىرىدىكى سىياسىي قاراشلار توغرىسىدا",
+                  "book_ids": ["683238d33c15", "44bf6a2c7666", "f7b222f2472f", "ad5913bbde8b", "ee38b4d2be54", "2a069b84fb68", "c9e780da1359", "81e4fe0df8ba", "57f9a71d96e9", "75cb69c86c5e", "70359ef50513", "e87a4b2c4f35", "1c6e52a793ce", "0b7eff3f9e5f", "ac85a09a9f44", "6db091102400", "2c38f311ff5d", "8b2b8056417a", "2ec10e4dbe6e", "82612969d348"]
+                }
+              },
+              {
+                "name": "search_chunks",
+                "args": {
+                  "query": "زوردۇن سابىرنىڭ ئەسەرلىرىدىكى سىياسىي قاراشلار توغرىسىدا",
+                  "book_ids": null
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          }
+        }
+      }
+    },
+    {
+      "eval_id": "test_volume_shift_query",
+      "conversation": [
+        {
+          "invocation_id": "fc-volume-shift",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "ئالدىنقى تومدا نېمە يېزىلغان؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "ئالدىنقى توم"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "get_sister_volumes",
+                "args": {
+                  "book_id": "009188027d84"
+                }
+              },
+              {
+                "name": "search_chunks",
+                "args": {
+                  "query": "ئالدىنقى تومدا نېمە يېزىلغان؟",
+                  "book_ids": ["009188027d84"]
+                }
+              },
+              {
+                "name": "search_books_by_summary",
+                "args": {
+                  "query": "ئالدىنقى تومدا نېمە يېزىلغان؟"
+                }
+              },
+              {
+                "name": "search_chunks",
+                "args": {
+                  "query": "ئالدىنقى تومدا نېمە يېزىلغان؟",
+                  "book_ids": ["73915637d641", "1e9f63d391b7", "4448603e58b4", "c64c9e1fadd9", "8b2b8056417a", "63d88724d182", "c9e780da1359", "1f834d948928", "f18968dff0f9", "6546c1f5b631", "729ed7505fee", "2ec10e4dbe6e", "0b7eff3f9e5f", "d92d66fd5ff6", "f7b222f2472f", "3ca1492a8d4c", "06be05f2d848", "d7efcb377027", "9071cd613fe1", "47eead8ef959"]
+                }
+              },
+              {
+                "name": "search_chunks",
+                "args": {
+                  "query": "ئالدىنقى تومدا نېمە يېزىلغان؟",
+                  "book_ids": null
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": false,
+            "book_id": "009188027d84",
+            "current_page": 10,
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          }
+        }
+      }
+    },
+    {
+      "eval_id": "test_global_passage_search",
+      "conversation": [
+        {
+          "invocation_id": "fc-global-passage",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "سۇلياۋنىڭ مۇھىتقا كۆرسىتىدىغان تەسىرى قايسىلار؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "سۇلياۋ"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "search_chunks",
+                "args": {
+                  "query": "سۇلياۋنىڭ مۇھىتقا كۆرسىتىدىغان تەسىرى قايسىلار؟",
+                  "book_ids": null
+                }
+              },
+              {
+                "name": "search_books_by_summary",
+                "args": {
+                  "query": "سۇلياۋنىڭ مۇھىتقا كۆرسىتىدىغان تەسىرى قايسىلار؟"
+                }
+              },
+              {
+                "name": "search_chunks",
+                "args": {
+                  "query": "سۇلياۋنىڭ مۇھىتقا كۆرسىتىدىغان تەسىرى قايسىلار؟",
+                  "book_ids": ["90c9248087d8", "53c5d4f2db5d", "46095ffcdf19", "fcee71d56af1", "fc2e374092ab", "dcf476d4c6d5", "495780b08baf", "f503e9463cf5", "6e8bdab32ad3", "04d35c7b2e7f", "2ec10e4dbe6e", "efb8b34926ba", "243b2863da10", "5dd33ccb8c80", "73915637d641", "16d4e066c7df", "584b0de1c5bb", "f24b85bcf8a2", "3e888fa18b9f", "82d1750b1d0e"]
+                }
+              },
+              {
+                "name": "search_chunks",
+                "args": {
+                  "query": "سۇلياۋنىڭ مۇھىتقا كۆرسىتىدىغان تەسىرى قايسىلار؟",
+                  "book_ids": null
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          }
+        }
+      }
+    }
+  ]
+}
