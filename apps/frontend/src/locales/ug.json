@@ -893,6 +893,11 @@
     "totalVerses": "{{count}} ئايەت",
     "ayahSuffix": "-ئايەت",
     "badgeTemplate": "{{surah}}-سۈرە: {{surahName}} — {{ayah}}-ئايەت",
-    "switchSurahHint": "سۈرە تاللاش ئۈچۈن چېكىڭ"
+    "switchSurahHint": "سۈرە تاللاش ئۈچۈن چېكىڭ",
+    "selectSurah": "سۈرە تاللاڭ",
+    "selectAyah": "ئايەت تاللاڭ",
+    "allAyahs": "ھەممە ئايەت",
+    "searchKeyword": "ھالقىلىق سۆز بويىچە ئىزدەش...",
+    "searchBtn": "ئىزدەش"
   }
 }

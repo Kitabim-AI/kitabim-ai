@@ -873,6 +873,11 @@
     "totalVerses": "{{count}} Verses",
     "ayahSuffix": "-ayah",
     "badgeTemplate": "Surah {{surah}}: {{surahName}} — Ayah {{ayah}}",
-    "switchSurahHint": "tap to switch surah"
+    "switchSurahHint": "tap to switch surah",
+    "selectSurah": "Select Surah",
+    "selectAyah": "Select Ayah",
+    "allAyahs": "All Ayahs",
+    "searchKeyword": "Search by keyword...",
+    "searchBtn": "Search"
   }
 }
