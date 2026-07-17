@@ -396,6 +396,10 @@ export const QuranView: React.FC = () => {
             <input
               type="text"
               value={globalSearchQuery}
+              onFocus={() => {
+                setIsSurahFocused(false);
+                setIsAyahFocused(false);
+              }}
               onChange={(e) => setGlobalSearchQuery(e.target.value)}
               className={`w-full pr-11 md:pr-14 py-2.5 md:py-3 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl uyghur-text outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] text-slate-800 dark:text-slate-100 transition-all shadow-sm placeholder:text-slate-300 dark:placeholder:text-slate-500 text-base md:pl-14 ${
                 globalSearchQuery ? 'pl-11' : 'pl-4'
