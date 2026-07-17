@@ -313,8 +313,8 @@ export const QuranView: React.FC = () => {
       {/* Control Bar (Dropdowns and Search Box) */}
       <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between w-full gap-4 relative z-30">
         
-        {/* Mobile: Search Box on top, Desktop: Search Box on right */}
-        <div className="order-1 md:order-3 flex-1 min-w-[280px]">
+        {/* Mobile: Search Box on top, Desktop: Search Box in middle */}
+        <div className="order-1 md:order-2 flex-1 min-w-[280px]">
           <form onSubmit={handleGlobalSearchSubmit} className="relative w-full group">
             <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1] dark:text-[#38bdf8] transition-colors z-10 font-bold">
               {isSearching ? (
@@ -456,7 +456,7 @@ export const QuranView: React.FC = () => {
 
         {/* Stats Badge */}
         {stats && (
-          <div className="order-3 md:order-2 flex items-center gap-2 text-[12px] md:text-[14px] font-normal text-[#0369a1] dark:text-[#38bdf8] bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 px-3.5 md:px-4 py-2 md:py-2.5 rounded-full border border-[#0369a1]/20 dark:border-[#38bdf8]/20 shadow-sm whitespace-nowrap self-end md:self-auto">
+          <div className="order-3 md:order-3 flex items-center gap-2 text-[12px] md:text-[14px] font-normal text-[#0369a1] dark:text-[#38bdf8] bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 px-3.5 md:px-4 py-2 md:py-2.5 rounded-full border border-[#0369a1]/20 dark:border-[#38bdf8]/20 shadow-sm whitespace-nowrap self-end md:self-auto">
             <Hash size={12} className="md:w-[14px] md:h-[14px]" />
             {globalSearchQuery.trim() 
               ? t('quran.totalVerses', { count: suggestions.length.toLocaleString() }) || `${suggestions.length} ئايەت`
