@@ -1451,7 +1451,7 @@ async def _run_search_quran(args: dict, ctx: QueryContext) -> dict:
 
         # Build clean markup citation context for RAG
         context_parts.append(
-            f"[Source: Holy Quran, Surah: {entry.surah_name_ug} ({entry.surah_name_en}), Ayah: {entry.ayah}]\n"
+            f"[Source: Holy Quran, Surah: {entry.surah} - {entry.surah_name_ug} ({entry.surah_name_en}), Ayah: {entry.ayah}]\n"
             f"Arabic: {entry.text_ar}\n"
             f"Uyghur Translation: {entry.text_ug}\n"
             f"English Translation: {entry.text_en}"
