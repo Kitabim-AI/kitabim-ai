@@ -155,6 +155,11 @@ def format_document(doc: Document) -> str:
     page = doc.metadata.get("page")
     book_id = doc.metadata.get("book_id") or "unknown"
 
+    if book_id == "quran":
+        surah_name_en = doc.metadata.get("surah_name_en") or "Unknown"
+        ayah = doc.metadata.get("ayah") or page or 1
+        return f"[Source: Holy Quran, Surah: {title} ({surah_name_en}), Ayah: {ayah}]\n{doc.page_content}"
+
     source_parts = [f"BookID: {book_id}", f"Book: {title}"]
     if author:
         source_parts.append(f"Author: {author}")
