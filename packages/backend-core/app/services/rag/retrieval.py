@@ -176,8 +176,10 @@ async def find_books_by_title_in_question(
 
     q = question.strip()
 
-    stmt = select(Book.id, Book.title, Book.author, Book.volume).where(
-        Book.status != "error"
+    stmt = (
+        select(Book.id, Book.title, Book.author, Book.volume)
+        .where(Book.status != "error")
+        .order_by(Book.volume.asc().nulls_first())
     )
     if categories:
         from sqlalchemy import text as sa_text
