@@ -162,6 +162,9 @@ def _grade_context(observations: list[dict]) -> tuple[str, int, int]:
                     "page": c.get("page"),
                     "book_id": c.get("book_id"),
                     "score": c.get("score", 0.0),
+                    "surah_name_en": c.get("surah_name_en"),
+                    "surah": c.get("surah"),
+                    "ayah": c.get("ayah"),
                 },
             )
             for c in chunks
