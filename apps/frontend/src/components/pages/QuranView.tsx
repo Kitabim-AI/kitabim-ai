@@ -432,7 +432,7 @@ export const QuranView: React.FC = () => {
                 onChange={handleSurahChange}
                 onKeyDown={handleSurahKeyDown}
                 placeholder={t('quran.selectSurah') || 'سۈرە تاللاڭ'}
-                className="w-full bg-transparent border-none outline-none text-slate-800 dark:text-slate-100 text-sm font-semibold uyghur-text"
+                className="w-full bg-transparent border-none outline-none text-slate-800 dark:text-slate-100 text-base md:text-sm font-semibold uyghur-text"
                 dir="rtl"
               />
               <ChevronDown size={16} className="text-[#0369a1] dark:text-[#38bdf8] opacity-70 pointer-events-none" />
@@ -479,7 +479,7 @@ export const QuranView: React.FC = () => {
                 onKeyDown={handleAyahKeyDown}
                 disabled={activeSurah === null}
                 placeholder={t('quran.selectAyah') || 'ئايەت تاللاڭ'}
-                className="w-full bg-transparent border-none outline-none text-slate-800 dark:text-slate-100 text-sm font-semibold uyghur-text"
+                className="w-full bg-transparent border-none outline-none text-slate-800 dark:text-slate-100 text-base md:text-sm font-semibold uyghur-text"
                 dir="rtl"
               />
               <ChevronDown size={16} className="text-[#0369a1] dark:text-[#38bdf8] opacity-70 pointer-events-none" />
