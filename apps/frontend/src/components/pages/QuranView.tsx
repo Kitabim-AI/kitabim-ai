@@ -1,5 +1,7 @@
 import {
   AlertCircle,
+  ChevronLeft,
+  ChevronRight,
   Hash,
   Loader2,
   RefreshCw,
@@ -133,10 +135,13 @@ export const QuranView: React.FC = () => {
 
   const activeSurahObj = surahs.find(s => s.surah === activeSurah);
 
+  const formatIdleValue = (s: SurahEntry) =>
+    `${s.surah}. ${s.surah_name_ug} سۈرىسى  —  ${t('quran.switchSurahHint') || 'سۈرە ئالماشتۇرۇش ئۈچۈن بېسىڭ'}`;
+
   useEffect(() => {
     if (!isFocused && !searchQuery) {
       if (activeSurahObj) {
-        setInputValue(`${activeSurahObj.surah}. ${activeSurahObj.surah_name_ug} سۈرىسى`);
+        setInputValue(formatIdleValue(activeSurahObj));
       }
     }
   }, [activeSurah, surahs, isFocused, searchQuery]);
@@ -147,6 +152,7 @@ export const QuranView: React.FC = () => {
     setSuggestions([]);
     fetchStats(surahNum);
     fetchVerses(surahNum);
+    document.querySelector('main')?.scrollTo({ top: 0, behavior: 'instant' });
   };
 
   const handleInputFocus = () => {
@@ -171,7 +177,7 @@ export const QuranView: React.FC = () => {
     setIsFocused(false);
     if (!searchQuery) {
       if (activeSurahObj) {
-        setInputValue(`${activeSurahObj.surah}. ${activeSurahObj.surah_name_ug} سۈرىسى`);
+        setInputValue(formatIdleValue(activeSurahObj));
       }
     }
   };
@@ -182,11 +188,14 @@ export const QuranView: React.FC = () => {
     }
   };
 
-  const filteredSurahs = surahs.filter(s => 
+  const filteredSurahs = surahs.filter(s =>
     s.surah_name_ug.toLowerCase().includes(dropdownSearch.toLowerCase()) ||
     s.surah_name_en.toLowerCase().includes(dropdownSearch.toLowerCase()) ||
     s.surah.toString().includes(dropdownSearch)
   );
+
+  const prevSurahObj = surahs.find(s => s.surah === activeSurah - 1);
+  const nextSurahObj = surahs.find(s => s.surah === activeSurah + 1);
 
   const activeEntries = searchQuery.trim() ? suggestions : verses;
 
@@ -367,6 +376,31 @@ export const QuranView: React.FC = () => {
                 ))}
               </div>
             </div>
+          </div>
+        )}
+
+        {!searchQuery.trim() && !isLoadingVerses && verses.length > 0 && (
+          <div className="flex items-center justify-between gap-3 pt-2">
+            <button
+              onClick={() => prevSurahObj && handleSurahSelect(prevSurahObj.surah)}
+              disabled={!prevSurahObj}
+              className="flex-1 flex items-center gap-2 justify-center px-4 py-3 md:py-3.5 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl text-[#0369a1] dark:text-[#38bdf8] font-semibold text-sm hover:border-[#0369a1]/30 dark:hover:border-[#38bdf8]/30 transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none uyghur-text shadow-sm"
+            >
+              <ChevronRight size={18} strokeWidth={2.5} />
+              <span className="truncate">
+                {prevSurahObj ? `${prevSurahObj.surah}. ${prevSurahObj.surah_name_ug}` : t('common.previous')}
+              </span>
+            </button>
+            <button
+              onClick={() => nextSurahObj && handleSurahSelect(nextSurahObj.surah)}
+              disabled={!nextSurahObj}
+              className="flex-1 flex items-center gap-2 justify-center px-4 py-3 md:py-3.5 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl text-[#0369a1] dark:text-[#38bdf8] font-semibold text-sm hover:border-[#0369a1]/30 dark:hover:border-[#38bdf8]/30 transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none uyghur-text shadow-sm"
+            >
+              <span className="truncate">
+                {nextSurahObj ? `${nextSurahObj.surah}. ${nextSurahObj.surah_name_ug}` : t('common.next')}
+              </span>
+              <ChevronLeft size={18} strokeWidth={2.5} />
+            </button>
           </div>
         )}
       </div>

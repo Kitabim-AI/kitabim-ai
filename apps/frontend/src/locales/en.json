@@ -872,6 +872,7 @@
     "ayahNotFound": "No verses found matching your search.",
     "totalVerses": "{{count}} Verses",
     "ayahSuffix": "-ayah",
-    "badgeTemplate": "Surah {{surah}}: {{surahName}} — Ayah {{ayah}}"
+    "badgeTemplate": "Surah {{surah}}: {{surahName}} — Ayah {{ayah}}",
+    "switchSurahHint": "tap to switch surah"
   }
 }

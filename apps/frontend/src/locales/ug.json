@@ -892,6 +892,7 @@
     "ayahNotFound": "ھالقىلىق سۆزگە ماس كېلىدىغان ئايەت تېپىلمىدى.",
     "totalVerses": "{{count}} ئايەت",
     "ayahSuffix": "-ئايەت",
-    "badgeTemplate": "{{surah}}-سۈرە: {{surahName}} — {{ayah}}-ئايەت"
+    "badgeTemplate": "{{surah}}-سۈرە: {{surahName}} — {{ayah}}-ئايەت",
+    "switchSurahHint": "سۈرە تاللاش ئۈچۈن چېكىڭ"
   }
 }
