@@ -8,6 +8,7 @@ from app.services.rag.utils import (
     normalize_uyghur,
     is_author_or_catalog_query,
     entity_matches_question,
+    is_islam_or_quran_query,
 )
 from app.services.rag.answer_builder import format_document
 from app.services.rag.handlers.catalog import CatalogHandler
@@ -230,3 +231,11 @@ def test_build_instructions_dynamic_numbering():
         in instr_strict
     )
     assert "multiple volumes" in instr_strict.lower()
+
+
+def test_is_islam_or_quran_query():
+    assert is_islam_or_quran_query("ئىسلامدىكى بەش پەرز نېمە؟") is True
+    assert is_islam_or_quran_query("قۇرئاندىكى بەقەرە سۈرىسى") is True
+    assert is_islam_or_quran_query("What does the Quran say about charity?") is True
+    assert is_islam_or_quran_query("ئانا يۇرت رومانى قاچان يېزىلغان؟") is False
+    assert is_islam_or_quran_query("What is the temperature in Paris?") is False

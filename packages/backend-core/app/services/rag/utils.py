@@ -170,3 +170,48 @@ def cosine_similarity(v1: List[float], v2: List[float]) -> float:
     if denom == 0:
         return 0.0
     return float(np.dot(a, b) / denom)
+
+
+def is_islam_or_quran_query(question: str) -> bool:
+    """Check if the question or its context pertains to Islam or the Quran."""
+    if not question:
+        return False
+    q_norm = normalize_uyghur(question.lower())
+
+    # Comprehensive, unambiguous terms to avoid false positives on general words
+    islam_keywords = [
+        # Uyghur
+        "قۇرئان",
+        "سۈرە",
+        "ئايەت",
+        "ئاللاھ",
+        "خۇدا",
+        "پەرۋەردىگار",
+        "پەيغەمبەر",
+        "مۇھەممەد",
+        "ئىسلام",
+        "مۇسۇلمان",
+        "ناماز",
+        "روزا",
+        "زاكات",
+        "ھەج",
+        "ھەدىس",
+        "شەرىئەت",
+        # English
+        "quran",
+        "koran",
+        "surah",
+        "ayah",
+        "verse",
+        "allah",
+        "prophet",
+        "muhammad",
+        "islam",
+        "muslim",
+        "ramadan",
+        "hadith",
+        "sharia",
+    ]
+
+    normalized_keywords = [normalize_uyghur(k.lower()) for k in islam_keywords]
+    return any(k in q_norm for k in normalized_keywords)
