@@ -37,7 +37,9 @@
                 "args": {
                   "query": "نۇرى دەسلەپتە قايسى مەكتەپتە ئوقۇيدۇ؟",
                   "book_ids": [
-                    "book-ana-yurt"
+                    "631481d3a7e9",
+                    "683238d33c15",
+                    "f0a9bc581a27"
                   ]
                 }
               }
@@ -95,7 +97,7 @@
                 "name": "get_book_summary",
                 "args": {
                   "book_ids": [
-                    "book-bahadirname"
+                    "427a5621d325"
                   ]
                 }
               }
@@ -144,9 +146,15 @@
           "intermediate_data": {
             "tool_uses": [
               {
-                "name": "lookup_history_term",
+                "name": "search_books_by_summary",
                 "args": {
-                  "term": "زىياۋۇدۇن"
+                  "query": "زىياۋۇدۇن"
+                }
+              },
+              {
+                "name": "get_book_summary",
+                "args": {
+                  "book_ids": ["<VERIFY-LIVE>"]
                 }
               }
             ],
@@ -194,9 +202,10 @@
           "intermediate_data": {
             "tool_uses": [
               {
-                "name": "lookup_history_term",
+                "name": "search_chunks",
                 "args": {
-                  "term": "قۇمچاقار يېزىسى"
+                  "query": "قۇمچاقار يېزىسى قەيەردە؟",
+                  "book_ids": ["336119148ffb"]
                 }
               }
             ],
@@ -211,7 +220,7 @@
         "state": {
           "query_context": {
             "is_global": false,
-            "book_id": "book-123",
+            "book_id": "336119148ffb",
             "user_id": "test-eval-user",
             "history": [],
             "agent_model": "gemini-2.5-flash"
