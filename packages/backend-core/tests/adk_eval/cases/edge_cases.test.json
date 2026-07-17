@@ -1,0 +1,163 @@
+{
+  "eval_set_id": "kitabim_eval_set_edge_cases",
+  "name": "Kitabim RAG Agent Edge Case Evaluation Set",
+  "description": "Evaluation cases for not-found results and multi-part questions spanning more than one entity.",
+  "eval_cases": [
+    {
+      "eval_id": "test_book_not_found",
+      "conversation": [
+        {
+          "invocation_id": "fc-edge-book-notfound",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "TODO_UG: ask who wrote a book titled literally «TODO_UG_NONEXISTENT_BOOK» — keep this exact marker string verbatim inside the translated question text (do not translate the marker itself), so the test mock in test_adk_agent.py can recognize it and simulate a not-found result. If you change the marker, update the matching `if \"TODO_UG_NONEXISTENT_BOOK\" in question` check in test_adk_agent.py's get_book_author mock branch to match."
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "TODO_UG: polite response saying no matching book/author was found in the library"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "get_book_author",
+                "args": {
+                  "question": "TODO_UG: same question text as user_content above, including the TODO_UG_NONEXISTENT_BOOK marker"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          },
+          "observations": []
+        }
+      }
+    },
+    {
+      "eval_id": "test_dictionary_word_not_found",
+      "conversation": [
+        {
+          "invocation_id": "fc-edge-word-notfound",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "TODO_UG: ask what the word «TODO_UG_NONEXISTENT_WORD» means — keep this exact marker string verbatim inside the translated question text, so the test mock's `if term == \"TODO_UG_NONEXISTENT_WORD\"` check in test_adk_agent.py fires and simulates a not-found result. Update that check too if you change the marker."
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "TODO_UG: polite response saying the word was not found in the dictionary"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "lookup_uyghur_word",
+                "args": {
+                  "term": "TODO_UG_NONEXISTENT_WORD"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          },
+          "observations": []
+        }
+      }
+    },
+    {
+      "eval_id": "test_multi_book_question",
+      "conversation": [
+        {
+          "invocation_id": "fc-edge-multi",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "TODO_UG: single message asking who wrote BOTH «ئانا يۇرت» AND «باھادىرنامە» — two distinct sub-questions in one turn"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "TODO_UG: answer giving both authors — زوردۇن سابىر for «ئانا يۇرت» and ياسىنجان سادىق چوغلان for «باھادىرنامە»"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "get_book_author",
+                "args": {
+                  "question": "TODO_UG: sub-question focused on «ئانا يۇرت»'s author"
+                }
+              },
+              {
+                "name": "get_book_author",
+                "args": {
+                  "question": "TODO_UG: sub-question focused on «باھادىرنامە»'s author"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          },
+          "observations": []
+        }
+      }
+    }
+  ]
+}

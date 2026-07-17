@@ -23,175 +23,30 @@ def custom_tokenize(text: str, stemmer=None) -> list[str]:
     return cleaned_tokens
 
 
-# Mock tool dispatcher to decouple ADK agent reasoning from live database/graph resources during unit/regression tests.
-async def mock_dispatch_tool_with_retry(tool_name: str, tool_args: dict, ctx) -> dict:
-    if tool_name == "find_books_by_title":
-        question = tool_args.get("question", "")
-        if "ئانا يۇرت" in question:
-            return {
-                "ok": True,
-                "book_ids": ["book-ana-yurt"],
-                "books": [
-                    {
-                        "id": "book-ana-yurt",
-                        "title": "ئانا يۇرت",
-                        "author": "زوردۇن سابىر",
-                        "volume": 1,
-                    }
-                ],
-                "found_count": 1,
-            }
-        elif "باھادىرنامە" in question:
-            return {
-                "ok": True,
-                "book_ids": ["book-bahadirname"],
-                "books": [
-                    {
-                        "id": "book-bahadirname",
-                        "title": "باھادىرنامە",
-                        "author": "ياسىنجان سادىق چوغلان",
-                        "volume": 1,
-                    }
-                ],
-                "found_count": 1,
-            }
-        return {
-            "ok": True,
-            "book_ids": ["book-123"],
-            "books": [
-                {
-                    "id": "book-123",
-                    "title": "لېيىغان بۇلاق",
-                    "author": "جالالىدىن بەھرام",
-                    "volume": 1,
-                }
-            ],
-            "found_count": 1,
-        }
-    elif tool_name == "get_book_author":
-        question = tool_args.get("question", "")
-        if "ئانا يۇرت" in question:
-            return {
-                "ok": True,
-                "author": "زوردۇن سابىر",
-                "title": "ئانا يۇرت",
-                "context": "«ئانا يۇرت» كىتابىنى زوردۇن سابىر يازغان.",
-                "found_count": 1,
-            }
-        elif "باھادىرنامە" in question:
-            return {
-                "ok": True,
-                "author": "ياسىنجان سادىق چوغلان",
-                "title": "باھادىرنامە",
-                "context": "«باھادىرنامە» كىتابىنى ياسىنجان سادىق چوغلان يازغان.",
-                "found_count": 1,
-            }
-        return {"ok": True, "author": "جالالىدىن بەھرام", "found_count": 1}
-    elif tool_name == "get_books_by_author":
-        question = tool_args.get("question", "")
-        if "زوردۇن" in question or "سابىر" in question:
-            return {
-                "ok": True,
-                "author": "زوردۇن سابىر",
-                "books": [
-                    {
-                        "id": "book-ana-yurt",
-                        "title": "ئانا يۇرت",
-                    }
-                ],
-                "found_count": 1,
-            }
-        return {"ok": True, "books": [], "found_count": 0}
-    elif tool_name == "search_catalog":
-        return {
-            "ok": True,
-            "context": "كۇتۇبخانىدا بىر قىسىم كىتابلار بار، مەسىلەن «لېيىغان بۇلاق»، «ئانا يۇرت» ۋە «باھادىرنامە».",
-            "book_count": 3,
-        }
-    elif tool_name == "search_chunks":
-        query = tool_args.get("query", "")
-        if "ئانا يۇرت" in query or "زوردۇن" in query:
-            return {
-                "ok": True,
-                "chunks": [
-                    {
-                        "text": "بۇ كىتابنىڭ ئاپتورى زوردۇن سابىر.",
-                        "score": 0.9,
-                        "book_id": "book-ana-yurt",
-                        "page": 1,
-                    }
-                ],
-                "found_count": 1,
-            }
-        elif "باھادىرنامە" in query or "ياسىنجان" in query:
-            return {
-                "ok": True,
-                "chunks": [
-                    {
-                        "text": "بۇ كىتابنىڭ ئاپتورى ياسىنجان سادىق چوغلان.",
-                        "score": 0.9,
-                        "book_id": "book-bahadirname",
-                        "page": 1,
-                    }
-                ],
-                "found_count": 1,
-            }
-        return {
-            "ok": True,
-            "chunks": [
-                {
-                    "text": "بۇ كىتابنىڭ ئاپتورى جالالىدىن بەھرام.",
-                    "score": 0.9,
-                    "book_id": "book-123",
-                    "page": 1,
-                }
-            ],
-            "found_count": 1,
-        }
-    elif tool_name == "lookup_uyghur_word":
-        word = tool_args.get("word", "")
-        return {
-            "ok": True,
-            "entries": [
-                {"word": word, "definition": f"{word} - دوستلۇق، سۆيگۈ، ئىشق-مۇھەببەت."}
-            ],
-            "found_count": 1,
-        }
-    elif tool_name == "lookup_history_term":
-        term = tool_args.get("term", "")
-        return {
-            "ok": True,
-            "definition": f"{term} - موغۇلىستاننىڭ خاقانى، چىڭگىزخان سۇلالىسىدىن بولغان تارىخىي شەخس.",
-            "found_count": 1,
-        }
-    elif tool_name == "lookup_uyghur_name":
-        name = tool_args.get("name", "")
-        return {
-            "ok": True,
-            "meaning": f"{name} دېگەن ئىسىم بىلىملىك، ئوقۇمۇشلۇق دېگەن مەنىدە.",
-            "found_count": 1,
-        }
-    elif tool_name == "lookup_proverbs":
-        keyword = tool_args.get("keyword", "")
-        return {
-            "ok": True,
-            "proverbs": [{"text": f"{keyword} كۈچتۇر."}],
-            "found_count": 1,
-        }
-    elif tool_name == "rewrite_query":
-        query = tool_args.get("query", "")
-        return {
-            "ok": True,
-            "rewritten_query": "زوردۇن سابىرنىڭ كىتابلىرى قايسىلار؟",
-        }
-    elif tool_name == "get_current_page":
-        return {
-            "ok": True,
-            "content": "بۇ بەتتە ئۇيغۇر تارىخى ۋە مەدەنىيىتى ھەققىدە قىسقىچە بايان قىلىنغان.",
-            "page": 12,
-            "book_title": "ئانا يۇرت",
-        }
-    return {"ok": True, "data": {}, "found_count": 0}
+async def _build_real_query_context(session, state: dict):
+    """Build a production-equivalent QueryContext backed by the real local dev DB.
+
+    Mirrors RAGService._build_context so eval tool dispatch hits real Postgres,
+    but honors the eval case's explicit agent_model (RAGService normally sources
+    agent_model from system_configs, which would make eval trajectories drift
+    whenever that config changes).
+    """
+    from app.models.schemas import ChatRequest
+    from app.services.rag_service import RAGService
+
+    qc_state = state.get("query_context") or {}
+    req = ChatRequest(
+        book_id=qc_state.get("book_id", "global"),
+        # Placeholder text only — ctx.question is never read by tool dispatch,
+        # but ChatRequest.validate_question requires Arabic/Uyghur script.
+        question="سوئال",
+        history=qc_state.get("history", []),
+        current_page=qc_state.get("current_page"),
+    )
+    ctx = await RAGService()._build_context(req, session, qc_state.get("user_id"))
+    if qc_state.get("agent_model"):
+        ctx.agent_model = qc_state["agent_model"]
+    return ctx
 
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -211,21 +66,31 @@ async def test_adk_agent_evaluation(eval_dataset_file):
 
     original_generate = EvaluationGenerator._generate_inferences_from_root_agent
 
-    async def sleep_then_generate(*args, **kwargs):
+    async def run_with_real_db(*args, **kwargs):
+        from app.db.session import async_session_factory
+
         # Sleep for 4.0 seconds before running each case to prevent Gemini API rate limiting
         await asyncio.sleep(4.0)
-        return await original_generate(*args, **kwargs)
 
-    # Patch the dispatching, the tokenizer, and generator so we execute cleanly in Uyghur.
+        initial_session = kwargs.get("initial_session")
+        if initial_session is None or not initial_session.state.get("query_context"):
+            return await original_generate(*args, **kwargs)
+
+        async with async_session_factory() as session:
+            try:
+                ctx = await _build_real_query_context(session, initial_session.state)
+                initial_session.state["query_context"] = ctx
+                return await original_generate(*args, **kwargs)
+            finally:
+                await session.rollback()
+
+    # Patch the tokenizer and generator so we execute cleanly in Uyghur against real Postgres.
     with patch(
-        "app.services.rag.agent.tools._dispatch_tool_with_retry",
-        side_effect=mock_dispatch_tool_with_retry,
-    ), patch(
         "rouge_score.tokenize.tokenize",
         side_effect=custom_tokenize,
     ), patch(
         "google.adk.evaluation.evaluation_generator.EvaluationGenerator._generate_inferences_from_root_agent",
-        side_effect=sleep_then_generate,
+        side_effect=run_with_real_db,
     ):
         await AgentEvaluator.evaluate(
             agent_module="app.services.rag.agent",

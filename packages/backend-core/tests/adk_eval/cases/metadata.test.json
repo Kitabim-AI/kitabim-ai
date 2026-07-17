@@ -452,6 +452,56 @@
           "observations": []
         }
       }
+    },
+    {
+      "eval_id": "test_find_books_by_author_direct",
+      "conversation": [
+        {
+          "invocation_id": "fc-books-by-author",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "TODO_UG: ask what books زوردۇن سابىر has written — a direct 'what did author X write?' question, no pronouns, no prior conversation history"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "TODO_UG: answer listing زوردۇن سابىر's books, including «ئانا يۇرت»"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "get_books_by_author",
+                "args": {
+                  "question": "TODO_UG: same question text as user_content above"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          },
+          "observations": []
+        }
+      }
     }
   ]
 }

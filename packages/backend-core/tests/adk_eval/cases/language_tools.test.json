@@ -1,0 +1,157 @@
+{
+  "eval_set_id": "kitabim_eval_set_language_tools",
+  "name": "Kitabim RAG Agent Language Tools Evaluation Set",
+  "description": "Evaluation cases for English-Uyghur translation, spelling checks, and ambiguous-source dictionary lookups.",
+  "eval_cases": [
+    {
+      "eval_id": "test_translate_english_word_to_uyghur",
+      "conversation": [
+        {
+          "invocation_id": "fc-lang-translate",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "TODO_UG: ask for the Uyghur word for the English word 'book' (or another simple English word) — must ask for a translation FROM English"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "TODO_UG: give the Uyghur translation of the word"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "translate_english_to_uyghur",
+                "args": {
+                  "term": "book"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          },
+          "observations": []
+        }
+      }
+    },
+    {
+      "eval_id": "test_check_word_spelling_valid",
+      "conversation": [
+        {
+          "invocation_id": "fc-lang-spelling",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "TODO_UG: ask whether a specific Uyghur word is spelled correctly / exists — must be a spelling-validity question, not a definition question"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "TODO_UG: confirm the spelling is correct/known"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "check_word_spelling",
+                "args": {
+                  "word": "TODO_UG: the exact word being checked, matching the one named in user_content above"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          },
+          "observations": []
+        }
+      }
+    },
+    {
+      "eval_id": "test_ambiguous_dictionary_source",
+      "conversation": [
+        {
+          "invocation_id": "fc-lang-ambiguous",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "TODO_UG: ask a short lookup-style question where it's unclear whether the answer is a word definition, a historical term, a name, or a proverb"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "TODO_UG: answer using whichever dictionary source matched"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "search_language_sources",
+                "args": {
+                  "query": "TODO_UG: same term as user_content above"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          },
+          "observations": []
+        }
+      }
+    }
+  ]
+}

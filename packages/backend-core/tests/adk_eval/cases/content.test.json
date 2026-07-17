@@ -1,0 +1,224 @@
+{
+  "eval_set_id": "kitabim_eval_set_content",
+  "name": "Kitabim RAG Agent Content Retrieval Evaluation Set",
+  "description": "Evaluation cases for in-book passage search, book plot/character summaries, and topic-based book discovery.",
+  "eval_cases": [
+    {
+      "eval_id": "test_content_search_named_book",
+      "conversation": [
+        {
+          "invocation_id": "fc-content-passage",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "ئانا يۇرت رومانىدىكى نۇرى دەسلەپتە قايسى مەكتەپتە ئوقۇيدۇ؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "دۆڭمەھەللىدىكى «روشەن» مەكتەپتە"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "find_books_by_title",
+                "args": {
+                  "question": "ئانا يۇرت رومانىدىكى نۇرى دەسلەپتە قايسى مەكتەپتە ئوقۇيدۇ؟"
+                }
+              },
+              {
+                "name": "search_chunks",
+                "args": {
+                  "query": "نۇرى دەسلەپتە قايسى مەكتەپتە ئوقۇيدۇ؟",
+                  "book_ids": [
+                    "book-ana-yurt"
+                  ]
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          },
+          "observations": []
+        }
+      }
+    },
+    {
+      "eval_id": "test_content_book_plot_summary",
+      "conversation": [
+        {
+          "invocation_id": "fc-content-summary",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "باھادىرنامە رومانىنىڭ 1 - قىسىمىنىڭ قىسقىچە مەزمونىنى بىر جۈملىگە يىغىنچاقلاڭ"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "ياسىنجان سادىق چوغلاننىڭ «باھادىرنامە» رومانىنىڭ 1-قىسمى 14-ئەسىرنىڭ ئاخىرىدىن 16-ئەسىرنىڭ باشلىرىغىچە بولغان ئوتتۇرا ئاسىيا تارىخىدىكى موغۇلىستان خانلىقى بىلەن تېمۇرىيلار سۇلالىسى ئوتتۇرىسىدىكى مۇرەككەپ سىياسىي كۈرەشلەرنى، تەخت تالىشىش ماجىرالىرىنى ۋە سۇلتان ئۇۋەيسخان قاتارلىق تارىخىي شەخسلەرنىڭ باھادىرلىق ھەم زاۋاللىق مۇساپىسىنى بايان قىلىدۇ. مەنبە: باھادىرنامە (ياسىنجان سادىق چوغلان) — قىسقىچە مەزمۇنى"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "find_books_by_title",
+                "args": {
+                  "question": "باھادىرنامە رومانىنىڭ 1 - قىسىمىنىڭ قىسقىچە مەزمونىنى بىر جۈملىگە يىغىنچاقلاڭ"
+                }
+              },
+              {
+                "name": "get_book_summary",
+                "args": {
+                  "book_ids": [
+                    "book-bahadirname"
+                  ]
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          },
+          "observations": []
+        }
+      }
+    },
+    {
+      "eval_id": "test_content_character_identity_discovery",
+      "conversation": [
+        {
+          "invocation_id": "fc-content-character",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "زىياۋۇدۇن كىم؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "زىياۋۇدۇن ئاتاقلىق يازغۇچى زوردۇن سابىرنىڭ «ئانا يۇرت» ناملىق تارىخىي تىرىلوگىيەسىدىكى مەركىزىي قەھرىمان ئوبرازلارنىڭ بىرىدۇر."
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "lookup_history_term",
+                "args": {
+                  "term": "زىياۋۇدۇن"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          },
+          "observations": []
+        }
+      }
+    },
+    {
+      "eval_id": "test_content_search_current_book_reader_mode",
+      "conversation": [
+        {
+          "invocation_id": "fc-content-reader",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "قۇمچاقار يېزىسى قەيەردە؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "قۇمچاقار يېزىسى تەكلىماكان چۆللۈكىنىڭ باغرىغا جايلاشقان"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "lookup_history_term",
+                "args": {
+                  "term": "قۇمچاقار يېزىسى"
+                }
+              }
+            ],
+            "tool_responses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": false,
+            "book_id": "book-123",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          },
+          "observations": []
+        }
+      }
+    }
+  ]
+}
