@@ -206,3 +206,100 @@ async def test_graph_repository_merge_entities_missing():
         assert "Duplicate entity to remove 'RemoveName' does not exist." in str(
             excinfo.value
         )
+
+
+@pytest.mark.asyncio
+async def test_graph_repository_query_paths_empty():
+    mock_driver = MagicMock()
+    with patch(
+        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
+        return_value=mock_driver,
+    ):
+        repo = GraphRepository()
+        # Less than 2 entity names should return empty list directly without querying DB
+        records = await repo.query_paths(["A"])
+        assert records == []
+        assert not mock_driver.session.called
+
+
+@pytest.mark.asyncio
+async def test_graph_repository_query_paths_success():
+    mock_result = AsyncMock()
+    mock_result.data.return_value = [{"source": "A", "rel": "SON_OF", "target": "B"}]
+    mock_session = AsyncMock()
+    mock_session.__aenter__.return_value = mock_session
+    mock_session.run.return_value = mock_result
+    mock_driver = MagicMock()
+    mock_driver.session.return_value = mock_session
+
+    with patch(
+        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
+        return_value=mock_driver,
+    ):
+        repo = GraphRepository()
+        records = await repo.query_paths(
+            ["A", "B"], book_ids=["bid-1"], familial_only=True
+        )
+
+        assert mock_session.run.called
+        call_args = mock_session.run.call_args[0]
+        call_kwargs = mock_session.run.call_args[1]
+        assert "MATCH p = (a:Entity)-[r:RELATED_TO*1..4]-(b:Entity)" in call_args[0]
+        assert (
+            "all(rel in relationships(p) WHERE rel.type IN $familial_rels)"
+            in call_args[0]
+        )
+        assert call_kwargs["entity_names"] == ["A", "B"]
+        assert call_kwargs["book_ids"] == ["bid-1"]
+        assert "familial_rels" in call_kwargs
+        assert records == [{"source": "A", "rel": "SON_OF", "target": "B"}]
+
+
+@pytest.mark.asyncio
+async def test_graph_repository_delete_relationship_success():
+    mock_result = AsyncMock()
+    mock_result.data.return_value = [{"deleted": 2}]
+    mock_session = AsyncMock()
+    mock_session.__aenter__.return_value = mock_session
+    mock_session.run.return_value = mock_result
+    mock_driver = MagicMock()
+    mock_driver.session.return_value = mock_session
+
+    with patch(
+        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
+        return_value=mock_driver,
+    ):
+        repo = GraphRepository()
+        success = await repo.delete_relationship("A", "B", "SON_OF")
+
+        assert success is True
+        assert mock_session.run.called
+        call_args = mock_session.run.call_args[0]
+        call_kwargs = mock_session.run.call_args[1]
+        assert "DELETE r" in call_args[0]
+        assert "RELATED_TO {type: $rel_type}" in call_args[0]
+        assert call_kwargs["source_name"] == "A"
+        assert call_kwargs["target_name"] == "B"
+        assert call_kwargs["rel_type"] == "SON_OF"
+
+
+@pytest.mark.asyncio
+async def test_graph_repository_delete_relationship_not_found():
+    mock_result = AsyncMock()
+    mock_result.data.return_value = [{"deleted": 0}]
+    mock_session = AsyncMock()
+    mock_session.__aenter__.return_value = mock_session
+    mock_session.run.return_value = mock_result
+    mock_driver = MagicMock()
+    mock_driver.session.return_value = mock_session
+
+    with patch(
+        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
+        return_value=mock_driver,
+    ):
+        repo = GraphRepository()
+        with pytest.raises(ValueError) as excinfo:
+            await repo.delete_relationship("A", "B", "SON_OF")
+        assert "No 'SON_OF' relationship found between 'A' and 'B'." in str(
+            excinfo.value
+        )
