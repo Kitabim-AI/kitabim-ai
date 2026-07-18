@@ -866,11 +866,11 @@
     },
     "admin": {
       "deleteRelationshipTitle": "Delete Relationship",
-      "deleteRelationshipMessage": "Delete the \"{relType}\" relationship between \"{sourceName}\" and \"{targetName}\"? This removes it from every book it was extracted from.",
+      "deleteRelationshipMessage": "Delete the \"{{relType}}\" relationship between \"{{sourceName}}\" and \"{{targetName}}\"? This removes it from every book it was extracted from.",
       "deleteRelationshipSuccess": "Relationship deleted.",
       "deleteRelationshipError": "Failed to delete relationship.",
       "mergeStart": "Merge into another entity...",
-      "mergePickTarget": "Click another node to merge with \"{name}\" (Esc to cancel)",
+      "mergePickTarget": "Click another node to merge with \"{{name}}\" (Esc to cancel)",
       "mergeConfirmMessage": "Choose which entity should survive the merge. The other entity's relationships will be moved over and it will be deleted.",
       "mergeKeep": "Keep",
       "mergeConfirmButton": "Merge",
