@@ -395,6 +395,12 @@ async def search_quran(
 ) -> dict:
     """Retrieve or search Quran surahs and verses (ayahs) using surah number, ayah number, or text keywords.
 
+    Call this when the user asks about a Quran surah, ayah/verse, or translation, or wants
+    to search for a phrase within the Quran (e.g. "what is surah 1?", "read ayah 1:2",
+    "فاتىھە سۈرىسى", "ئاللاھنىڭ ئىسمى بىلەن باشلايمەن قايسى سۈرىدە بار؟").
+    Do NOT call this for questions about the library's books — use search_chunks or the
+    dictionary tools for those. The Quran is a separate source from the book library.
+
     Args:
         surah: Optional Surah number (1-114).
         ayah: Optional Ayah/verse number in the specified Surah.
@@ -877,6 +883,14 @@ async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
     if not query:
         return {"context": "No query provided.", "relations": []}
 
+    if not ctx.use_knowledge_graph_in_chat:
+        log_json(
+            logger,
+            logging.INFO,
+            "Agent tool query_knowledge_graph — skipped, disabled by config",
+        )
+        return {"context": "Knowledge graph is disabled.", "relations": []}
+
     # Skip if in single-book mode and graph has not been built for this book
     if (
         not ctx.is_global
@@ -995,6 +1009,25 @@ async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
     graph_repo = GraphRepository()
     try:
         records = await graph_repo.query_subgraph(search_entities, book_ids=book_ids)
+        if len(search_entities) >= 2:
+            try:
+                path_records = await graph_repo.query_paths(
+                    search_entities, book_ids=book_ids, familial_only=True
+                )
+                if path_records:
+                    existing = {(r["source"], r["rel"], r["target"]) for r in records}
+                    for r in path_records:
+                        key = (r["source"], r["rel"], r["target"])
+                        if key not in existing:
+                            records.append(r)
+                            existing.add(key)
+            except Exception as path_exc:
+                log_json(
+                    logger,
+                    logging.WARNING,
+                    "Failed to query multi-hop paths in knowledge graph",
+                    error=str(path_exc),
+                )
     except Exception as kg_exc:
         log_json(
             logger,

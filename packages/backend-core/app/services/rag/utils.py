@@ -215,3 +215,30 @@ def is_islam_or_quran_query(question: str) -> bool:
 
     normalized_keywords = [normalize_uyghur(k.lower()) for k in islam_keywords]
     return any(k in q_norm for k in normalized_keywords)
+
+
+def is_who_is_query(question: str) -> bool:
+    """Check if the query is a 'who is X' style question in English or Uyghur.
+
+    Such queries ask about a person's biography/identity rather than looking up
+    names in a person name dictionary, so they should skip names_dictionary check.
+    """
+    if not question:
+        return False
+    q_norm = normalize_uyghur(question.lower())
+
+    # Check English patterns: match "who", "who's", "whos" as whole words.
+    # Excludes possessive "whose" or objective "whom".
+    english_who = re.search(r"\b(who|whos|who's)\b", q_norm)
+    if english_who:
+        return True
+
+    # Check Uyghur patterns: match "كىم", "كىمدۇر", "كىملەر", "كىملىكى", "كىملىك".
+    # Excludes case-suffixed variants like "كىمنىڭ" (whose), "كىمگە" (to whom), "كىمنى" (whom), etc.
+    allowed_ug = {"كیم", "كیمدۇر", "كیملەر", "كیملیكی", "كیملیك"}
+    words = [w.strip(".,?!;:()[]{}«»\"'`؟،؛") for w in q_norm.split()]
+    for w in words:
+        if w in allowed_ug:
+            return True
+
+    return False

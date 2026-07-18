@@ -134,6 +134,11 @@ class RAGService:
         )
         use_deterministic_router = use_deterministic_router_str.lower() == "true"
 
+        use_knowledge_graph_in_chat_str = await configs_repo.get_value(
+            "use_knowledge_graph_in_chat", "false"
+        )
+        use_knowledge_graph_in_chat = use_knowledge_graph_in_chat_str.lower() == "true"
+
         book = None
         if not is_global:
             books_repo = BooksRepository(session)
@@ -164,6 +169,7 @@ class RAGService:
             agent_max_steps=agent_max_steps,
             agent_enough_chunks=agent_enough_chunks,
             use_deterministic_router=use_deterministic_router,
+            use_knowledge_graph_in_chat=use_knowledge_graph_in_chat,
         )
 
     # ------------------------------------------------------------------

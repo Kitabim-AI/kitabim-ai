@@ -53,13 +53,11 @@ export function AdminQuestions() {
   const offsetRef = useRef(0);
   const hasMore = questions.length < total;
   const loaderRef = useRef<HTMLDivElement | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      inputRef.current?.focus();
-    }, 50);
-    return () => clearTimeout(timer);
+  const inputRef = useCallback((node: HTMLInputElement | null) => {
+    if (node) {
+      node.focus();
+    }
   }, []);
 
   const fetchPage = useCallback(async (offset: number, append: boolean, query: string) => {

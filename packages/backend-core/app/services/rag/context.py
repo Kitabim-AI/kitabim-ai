@@ -68,6 +68,7 @@ class QueryContext:
     agent_max_steps: int = 6
     agent_enough_chunks: int = 8
     use_deterministic_router: bool = False
+    use_knowledge_graph_in_chat: bool = False
 
     def __deepcopy__(self, memo):
         # Return self directly to prevent copy.deepcopy from failing on non-pickleable

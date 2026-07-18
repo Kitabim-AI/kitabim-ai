@@ -9,6 +9,7 @@ from app.services.rag.utils import (
     is_author_or_catalog_query,
     entity_matches_question,
     is_islam_or_quran_query,
+    is_who_is_query,
 )
 from app.services.rag.answer_builder import format_document
 from app.services.rag.handlers.catalog import CatalogHandler
@@ -239,3 +240,22 @@ def test_is_islam_or_quran_query():
     assert is_islam_or_quran_query("What does the Quran say about charity?") is True
     assert is_islam_or_quran_query("ئانا يۇرت رومانى قاچان يېزىلغان؟") is False
     assert is_islam_or_quran_query("What is the temperature in Paris?") is False
+
+
+def test_is_who_is_query():
+    # English queries
+    assert is_who_is_query("Who is Mahmud Kashgari?") is True
+    assert is_who_is_query("who was Yusuf?") is True
+    assert is_who_is_query("Whose book is this?") is False
+    assert is_who_is_query("who's the author?") is True
+    assert is_who_is_query("What is the meaning of life?") is False
+
+    # Uyghur queries
+    assert is_who_is_query("ئۆمەرجان كىم؟") is True
+    assert is_who_is_query("ئۇ كىمدۇر؟") is True
+    assert is_who_is_query("كىم ئۇ ئۆمەرجان؟") is True
+    assert is_who_is_query("يۈسۈپ خاس ھاجىپ كىم بولغان؟") is True
+    assert is_who_is_query("ئانا يۇرت رومانى كىمنىڭ ئەسىرى؟") is False
+    assert is_who_is_query("ئانا يۇرت كىمنىڭ؟") is False
+    assert is_who_is_query("ئانا يۇرت رومانى قاچان يېزىلغان؟") is False
+    assert is_who_is_query("ئالىم دېگەن ئىسىم مەنىسى نېمە؟") is False

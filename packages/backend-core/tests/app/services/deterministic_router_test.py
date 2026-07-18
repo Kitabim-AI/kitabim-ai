@@ -246,7 +246,7 @@ async def test_execute_path_c_summary_fallback(mock_ctx):
     # Mock _dispatch_tool_with_retry
     # find_books_by_title returns empty book_ids
     # search_books_by_summary returns book-456
-    # get_book_summary returns context text
+    # get_book_summary returns empty summaries list to trigger fallback
     async def mock_dispatch(tool_name, tool_args, ctx):
         if tool_name == "find_books_by_title":
             return {"ok": True, "book_ids": [], "found_count": 0}
@@ -256,8 +256,8 @@ async def test_execute_path_c_summary_fallback(mock_ctx):
             return {
                 "ok": True,
                 "context": "Book Summary Info",
-                "summaries": [{"book_id": "book-456"}],
-                "found_count": 1,
+                "summaries": [],
+                "found_count": 0,
             }
         return {"ok": True}
 
@@ -285,6 +285,41 @@ async def test_execute_path_c_summary_fallback(mock_ctx):
             o for o in observations if o["tool"] == "search_chunks"
         )
         assert search_chunks_call["args"]["book_ids"] == ["book-456"]
+
+
+@pytest.mark.asyncio
+async def test_execute_path_c_summary_no_chunk_search_when_summary_found(mock_ctx):
+    handler = DeterministicRAGHandler()
+    signals = {"has_title": True}
+    observations = []
+
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        if tool_name == "find_books_by_title":
+            return {"ok": True, "book_ids": ["book-123"], "found_count": 1}
+        if tool_name == "get_book_summary":
+            return {
+                "ok": True,
+                "context": "Book Summary Info",
+                "summaries": [{"book_id": "book-123"}],
+                "found_count": 1,
+            }
+        return {"ok": True}
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        async for _ in handler.execute_path(
+            "summary", signals, "ئانا يۇرت رومانىنى كۆرسەت", mock_ctx, observations
+        ):
+            pass
+
+        # Check observations populated correctly
+        tools_called = [o["tool"] for o in observations]
+        assert "find_books_by_title" in tools_called
+        assert "get_book_summary" in tools_called
+        # search_chunks should NOT be called since summary was found
+        assert "search_chunks" not in tools_called
 
 
 @pytest.mark.asyncio
@@ -536,7 +571,11 @@ async def test_execute_path_identity_query_knowledge_graph(mock_ctx):
         mock_ctx.context_book_ids = ["book-123"]
         mock_ctx.book_id = "book-123"
         async for _ in handler.execute_path(
-            "identity", {}, "جانىبەك سۇلتان كىم؟", mock_ctx, observations
+            "identity",
+            {"graph_available": True},
+            "جانىبەك سۇلتان كىم؟",
+            mock_ctx,
+            observations,
         ):
             pass
 

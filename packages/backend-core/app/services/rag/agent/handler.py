@@ -97,9 +97,13 @@ def _build_human_message(ctx: QueryContext, question: str) -> str:
         lines.append(f"Current book: {book_info} (book_id: {ctx.book_id})")
         if ctx.current_page is not None:
             lines.append(f"Current page: {ctx.current_page}")
-        graph_available = getattr(book, "graph_milestone", None) == "complete"
+        graph_available = ctx.use_knowledge_graph_in_chat and (
+            getattr(book, "graph_milestone", None) == "complete"
+        )
         lines.append(f"Graph available: {'yes' if graph_available else 'no'}")
     elif ctx.is_global:
+        if not ctx.use_knowledge_graph_in_chat:
+            lines.append("Graph available: no")
         if ctx.context_book_ids:
             lines.append(
                 f"Previous response book IDs: {', '.join(ctx.context_book_ids[:10])}"
