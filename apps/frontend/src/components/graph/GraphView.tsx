@@ -416,11 +416,27 @@ export const GraphView: React.FC = () => {
 
     handleResize();
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (containerRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        handleResize();
+      });
+      resizeObserver.observe(containerRef.current);
+    }
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
+    };
   }, [isFullScreen]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setSelectedNode(null);
+    setActiveTab('filters');
     fetchGraphData(searchQuery);
   };
 
@@ -645,8 +661,7 @@ export const GraphView: React.FC = () => {
         )}
 
         <h4 className={`text-sm font-bold mb-3 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{t('graph.nodePanel.connections')}</h4>
-        <div className={`flex-grow overflow-y-auto pr-1 space-y-2.5 [scrollbar-width:thin] ${isDark ? 'scrollbar-thumb-slate-800 [&::-webkit-scrollbar-thumb]:bg-slate-800' : ''
-          } [&::-webkit-scrollbar]:w-1`}>
+        <div className="flex-grow overflow-y-auto pr-1 space-y-2.5 custom-scrollbar">
           {nodeConnections.length === 0 ? (
             <p className="text-slate-400 text-xs italic text-center py-4">{t('common.noData')}</p>
           ) : (
@@ -768,7 +783,12 @@ export const GraphView: React.FC = () => {
               {searchQuery && (
                 <button
                   type="button"
-                  onClick={() => { setSearchQuery(''); fetchGraphData(''); }}
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSelectedNode(null);
+                    setActiveTab('filters');
+                    fetchGraphData('');
+                  }}
                   className="absolute inset-y-0 left-4 flex items-center text-[#94a3b8] hover:text-[#0369a1] dark:hover:text-[#38bdf8] transition-colors active:scale-95"
                 >
                   <X size={16} strokeWidth={3} />
@@ -790,7 +810,7 @@ export const GraphView: React.FC = () => {
       <div className="flex-grow flex flex-col lg:flex-row gap-6 min-h-0 mb-6 relative">
         {/* Sidebar Info/Connections Panel (Only shown in standard mode) */}
         {!isFullScreen && (
-          <div className="hidden lg:flex w-full lg:w-96 flex-col shrink-0 gap-4">
+          <div className="hidden lg:flex w-full lg:w-96 flex-col shrink-0 gap-4 lg:h-full lg:min-h-0">
             {/* Search filter form (Desktop view - rendered above nodePanel) */}
             <form onSubmit={handleSearchSubmit} className="flex gap-3 w-full items-center">
               <div className="relative flex-grow group">
@@ -807,7 +827,12 @@ export const GraphView: React.FC = () => {
                 {searchQuery && (
                   <button
                     type="button"
-                    onClick={() => { setSearchQuery(''); fetchGraphData(''); }}
+                    onClick={() => {
+                      setSearchQuery('');
+                      setSelectedNode(null);
+                      setActiveTab('filters');
+                      fetchGraphData('');
+                    }}
                     className="absolute inset-y-0 left-4 flex items-center text-[#94a3b8] hover:text-[#0369a1] dark:hover:text-[#38bdf8] transition-colors active:scale-95"
                   >
                     <X size={16} strokeWidth={3} />
@@ -1061,7 +1086,12 @@ export const GraphView: React.FC = () => {
                   {searchQuery && (
                     <button
                       type="button"
-                      onClick={() => { setSearchQuery(''); fetchGraphData(''); }}
+                      onClick={() => {
+                        setSearchQuery('');
+                        setSelectedNode(null);
+                        setActiveTab('filters');
+                        fetchGraphData('');
+                      }}
                       className="absolute inset-y-0 left-4 flex items-center text-slate-500 hover:text-slate-300 transition-colors active:scale-95"
                     >
                       <X size={16} strokeWidth={3} />
@@ -1182,13 +1212,13 @@ export const GraphView: React.FC = () => {
           />
 
           {/* Bottom Sheet */}
-          <div className="relative w-full max-h-[70vh] bg-white rounded-t-[32px] px-6 pb-6 pt-4 flex flex-col min-h-0 shadow-[0_-12px_48px_rgba(0,0,0,0.15)] border-t border-[#0369a1]/10 animate-slide-up" dir="rtl">
+          <div className="relative w-full max-h-[70vh] bg-white dark:bg-slate-900 rounded-t-[32px] px-6 pb-6 pt-4 flex flex-col min-h-0 shadow-[0_-12px_48px_rgba(0,0,0,0.15)] dark:shadow-[0_-12px_48px_rgba(0,0,0,0.4)] border-t border-[#0369a1]/10 dark:border-slate-800 animate-slide-up" dir="rtl">
             {/* Grab handle */}
-            <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-4 shrink-0" />
+            <div className="w-12 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full mx-auto mb-4 shrink-0" />
 
             {/* Content */}
-            <div className="flex-grow overflow-y-auto [scrollbar-width:thin] pr-1">
-              {renderDetailsPanelContent(false)}
+            <div className="flex-grow overflow-y-auto custom-scrollbar pr-1">
+              {renderDetailsPanelContent(isThemeDark)}
             </div>
           </div>
         </div>
