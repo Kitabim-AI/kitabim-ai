@@ -2,7 +2,11 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { useI18n } from '../../i18n/I18nContext';
 import { useTheme } from '../../context/ThemeContext';
-import { Search, Loader2, ZoomIn, ZoomOut, Maximize, Minimize, Maximize2, Network, BookOpen, MapPin, User, Calendar, HelpCircle, X, SlidersHorizontal, Building, Clock, Lightbulb, ChevronDown } from 'lucide-react';
+import { useAppContext } from '../../context/AppContext';
+import { useNotification } from '../../context/NotificationContext';
+import { useIsAdmin } from '../../hooks/useAuth';
+import { authFetch } from '../../services/authService';
+import { Search, Loader2, ZoomIn, ZoomOut, Maximize, Minimize, Maximize2, Network, BookOpen, MapPin, User, Calendar, HelpCircle, X, SlidersHorizontal, Building, Clock, Lightbulb, ChevronDown, Trash2, GitMerge } from 'lucide-react';
 
 interface GraphNode {
   id: string;
@@ -57,6 +61,9 @@ export const GraphView: React.FC = () => {
   const { t, language } = useI18n();
   const { theme } = useTheme();
   const isThemeDark = theme === 'dark';
+  const isAdmin = useIsAdmin();
+  const { setModal } = useAppContext();
+  const { addNotification } = useNotification();
   const [rawGraphData, setRawGraphData] = useState<GraphData>({ nodes: [], links: [] });
   const [selectedNodeTypes, setSelectedNodeTypes] = useState<string[]>([]);
   const [selectedEdgeTypes, setSelectedEdgeTypes] = useState<string[]>([]);
@@ -467,6 +474,46 @@ export const GraphView: React.FC = () => {
     setNodeConnections(connections);
   }, [selectedNode, filteredData]);
 
+  const handleDeleteRelationship = (conn: any) => {
+    if (!selectedNode) return;
+    const isOutgoing = conn.direction === 'outgoing';
+    const sourceName = isOutgoing ? selectedNode.id : conn.node.id;
+    const targetName = isOutgoing ? conn.node.id : selectedNode.id;
+    const relType = conn.label;
+
+    setModal({
+      isOpen: true,
+      title: t('graph.admin.deleteRelationshipTitle'),
+      message: t('graph.admin.deleteRelationshipMessage', { relType, sourceName, targetName }),
+      type: 'confirm',
+      destructive: true,
+      confirmText: t('common.delete'),
+      onConfirm: async () => {
+        try {
+          const res = await authFetch('/api/books/graph/relationship/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sourceName, targetName, relType }),
+          });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body.detail || t('graph.admin.deleteRelationshipError'));
+          }
+          setModal({ isOpen: false, title: '', message: '', type: 'alert' });
+          addNotification(t('graph.admin.deleteRelationshipSuccess'), 'success');
+          fetchGraphData(searchQuery);
+        } catch (err: any) {
+          setModal({
+            isOpen: true,
+            title: t('common.error'),
+            message: err.message || t('graph.admin.deleteRelationshipError'),
+            type: 'alert',
+          });
+        }
+      },
+    });
+  };
+
   // Zoom helpers
   const zoomIn = () => {
     if (fgRef.current) {
@@ -568,10 +615,22 @@ export const GraphView: React.FC = () => {
               >
                 <div className="flex justify-between items-center mb-1">
                   <span className={`text-xs font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{conn.node.label}</span>
-                  <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded ${isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-200 text-slate-600'
-                    }`}>
-                    {conn.direction === 'outgoing' ? '←' : '→'} {conn.label}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded ${isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-200 text-slate-600'
+                      }`}>
+                      {conn.direction === 'outgoing' ? '←' : '→'} {conn.label}
+                    </span>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); handleDeleteRelationship(conn); }}
+                        title={t('graph.admin.deleteRelationshipTitle')}
+                        className="p-1 text-slate-400 hover:text-red-500 rounded-md transition-all active:scale-95"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center justify-between mt-0.5">
                   <div className="flex items-center gap-1">

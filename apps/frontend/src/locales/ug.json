@@ -883,6 +883,19 @@
       "yearHijri": "ھىجرىيە يىلى",
       "yearGregorian": "مىلادىيە يىلى",
       "centuryGregorian": "مىلادىيە ئەسىرى"
+    },
+    "admin": {
+      "deleteRelationshipTitle": "مۇناسىۋەتنى ئۆچۈرۈش",
+      "deleteRelationshipMessage": "«{sourceName}» بىلەن «{targetName}» ئارىسىدىكى «{relType}» مۇناسىۋىتىنى ئۆچۈرەمسىز؟ بۇ ئۇنى بارلىق كىتابلاردىن ئۆچۈرىدۇ.",
+      "deleteRelationshipSuccess": "مۇناسىۋەت ئۆچۈرۈلدى.",
+      "deleteRelationshipError": "مۇناسىۋەتنى ئۆچۈرەلمىدى.",
+      "mergeStart": "باشقا سۆزلۈك بىلەن بىرلەشتۈرۈش...",
+      "mergePickTarget": "«{name}» بىلەن بىرلەشتۈرۈش ئۈچۈن باشقا كۇنۇپكىنى چېكىڭ (Esc ئارقىلىق بىكار قىلىڭ)",
+      "mergeConfirmMessage": "بىرلەشتۈرگەندە قايسى سۆزلۈك ساقلىنىدىغانلىقىنى تاللاڭ. يەنە بىرىنىڭ مۇناسىۋەتلىرى كۆچۈرۈلۈپ، ئۆزى ئۆچۈرۈلىدۇ.",
+      "mergeKeep": "ساقلا",
+      "mergeConfirmButton": "بىرلەشتۈر",
+      "mergeSuccess": "سۆزلۈكلەر بىرلەشتۈرۈلدى.",
+      "mergeError": "بىرلەشتۈرەلمىدى."
     }
   },
   "quran": {
