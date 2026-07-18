@@ -72,6 +72,10 @@ export const GraphView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [nodeConnections, setNodeConnections] = useState<any[]>([]);
+  const [mergeCandidate, setMergeCandidate] = useState<GraphNode | null>(null);
+  const [mergePair, setMergePair] = useState<{ a: GraphNode; b: GraphNode; keepIsA: boolean } | null>(null);
+  const [mergeError, setMergeError] = useState<string | null>(null);
+  const [mergeSubmitting, setMergeSubmitting] = useState(false);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [showLegend, setShowLegend] = useState(window.innerWidth >= 768);
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -420,16 +424,17 @@ export const GraphView: React.FC = () => {
     fetchGraphData(searchQuery);
   };
 
-  // Escape key to exit fullscreen
+  // Escape key to exit fullscreen or cancel an in-progress merge pick
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isFullScreen) {
-        setIsFullScreen(false);
+      if (e.key === 'Escape') {
+        if (isFullScreen) setIsFullScreen(false);
+        if (mergeCandidate) setMergeCandidate(null);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFullScreen]);
+  }, [isFullScreen, mergeCandidate]);
 
   // Prevent scroll and hide navbar when fullscreen
   useEffect(() => {
@@ -512,6 +517,33 @@ export const GraphView: React.FC = () => {
         }
       },
     });
+  };
+
+  const handleConfirmMerge = async () => {
+    if (!mergePair) return;
+    const keepNode = mergePair.keepIsA ? mergePair.a : mergePair.b;
+    const removeNode = mergePair.keepIsA ? mergePair.b : mergePair.a;
+    setMergeSubmitting(true);
+    setMergeError(null);
+    try {
+      const res = await authFetch('/api/books/graph/merge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keepName: keepNode.id, removeName: removeNode.id }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || t('graph.admin.mergeError'));
+      }
+      setMergePair(null);
+      addNotification(t('graph.admin.mergeSuccess'), 'success');
+      await fetchGraphData(searchQuery);
+      setSelectedNode(keepNode);
+    } catch (err: any) {
+      setMergeError(err.message || t('graph.admin.mergeError'));
+    } finally {
+      setMergeSubmitting(false);
+    }
   };
 
   // Zoom helpers
@@ -597,6 +629,20 @@ export const GraphView: React.FC = () => {
             </div>
           )}
         </div>
+
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => setMergeCandidate(selectedNode)}
+            className={`mb-6 flex items-center justify-center gap-2 text-xs font-semibold rounded-xl px-3 py-2 border transition-all active:scale-95 ${isDark
+              ? 'text-amber-400 border-amber-900/40 hover:border-amber-700 bg-amber-950/20'
+              : 'text-amber-700 border-amber-200 hover:border-amber-300 bg-amber-50'
+              }`}
+          >
+            <GitMerge size={14} />
+            {t('graph.admin.mergeStart')}
+          </button>
+        )}
 
         <h4 className={`text-sm font-bold mb-3 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{t('graph.nodePanel.connections')}</h4>
         <div className={`flex-grow overflow-y-auto pr-1 space-y-2.5 [scrollbar-width:thin] ${isDark ? 'scrollbar-thumb-slate-800 [&::-webkit-scrollbar-thumb]:bg-slate-800' : ''
@@ -834,6 +880,78 @@ export const GraphView: React.FC = () => {
             </div>
           )}
 
+          {mergeCandidate && (
+            <div className="absolute top-3 inset-x-0 z-[161] flex justify-center px-4 animate-fade-in">
+              <div className="flex items-center gap-3 bg-slate-900/90 backdrop-blur-xl border border-amber-400/30 rounded-2xl px-4 py-2.5 shadow-lg">
+                <GitMerge size={16} className="text-amber-400 shrink-0" />
+                <span className="text-xs text-slate-200 font-medium">
+                  {t('graph.admin.mergePickTarget', { name: mergeCandidate.label })}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setMergeCandidate(null)}
+                  className="text-xs text-slate-400 hover:text-slate-200 border border-slate-700 hover:border-slate-600 rounded-lg px-2 py-1 transition-all active:scale-95"
+                >
+                  {t('common.cancel')}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {mergePair && (
+            <div className="absolute top-3 inset-x-0 z-[161] flex justify-center px-4 animate-fade-in">
+              <div className="flex flex-col gap-3 bg-slate-900/95 backdrop-blur-xl border border-amber-400/30 rounded-2xl px-4 py-3 shadow-lg max-w-md w-full">
+                <span className="text-xs text-slate-200 font-medium text-center">
+                  {t('graph.admin.mergeConfirmMessage')}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setMergePair({ ...mergePair, keepIsA: true })}
+                    className={`flex-1 text-xs rounded-lg px-2 py-2 border transition-all active:scale-95 ${mergePair.keepIsA
+                      ? 'border-emerald-500 bg-emerald-950/40 text-emerald-300'
+                      : 'border-slate-700 text-slate-400'
+                      }`}
+                  >
+                    {t('graph.admin.mergeKeep')}: {mergePair.a.label}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMergePair({ ...mergePair, keepIsA: false })}
+                    className={`flex-1 text-xs rounded-lg px-2 py-2 border transition-all active:scale-95 ${!mergePair.keepIsA
+                      ? 'border-emerald-500 bg-emerald-950/40 text-emerald-300'
+                      : 'border-slate-700 text-slate-400'
+                      }`}
+                  >
+                    {t('graph.admin.mergeKeep')}: {mergePair.b.label}
+                  </button>
+                </div>
+                {mergeError && (
+                  <span className="text-[11px] text-red-400 text-center">{mergeError}</span>
+                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setMergePair(null); setMergeError(null); }}
+                    disabled={mergeSubmitting}
+                    className="flex-1 text-xs text-slate-300 border border-slate-700 hover:border-slate-600 rounded-lg px-2 py-1.5 transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    {t('common.cancel')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmMerge}
+                    disabled={mergeSubmitting}
+                    className="flex-1 text-xs text-white bg-red-500 hover:bg-red-600 rounded-lg px-2 py-1.5 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  >
+                    {mergeSubmitting && <Loader2 size={12} className="animate-spin" />}
+                    {t('graph.admin.mergeConfirmButton')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {!loading && rawGraphData.nodes.length === 0 && (
             <div className="text-center p-8 z-10 text-slate-400 animate-fade-in">
               <Network size={48} className="mx-auto mb-4 text-slate-600 animate-pulse" />
@@ -854,7 +972,16 @@ export const GraphView: React.FC = () => {
               linkDirectionalArrowLength={4}
               linkDirectionalArrowColor={() => 'rgba(148, 163, 184, 0.4)'}
               linkDirectionalArrowRelPos={1}
-              onNodeClick={(node: any) => setSelectedNode(node)}
+              onNodeClick={(node: any) => {
+                if (mergeCandidate) {
+                  if (node.id !== mergeCandidate.id) {
+                    setMergePair({ a: mergeCandidate, b: node, keepIsA: true });
+                  }
+                  setMergeCandidate(null);
+                  return;
+                }
+                setSelectedNode(node);
+              }}
               nodeCanvasObject={(node: any, ctx, globalScale) => {
                 const label = node.label;
                 const fontSize = 11 / globalScale;
