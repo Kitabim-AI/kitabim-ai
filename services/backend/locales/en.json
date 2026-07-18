@@ -33,6 +33,7 @@
     "no_text_to_check": "Page has no text to check",
     "apply_corrections_failed": "Failed to apply corrections: {error}",
     "book_or_page_not_found": "Book or page not found",
+    "relationship_not_found": "Relationship not found",
     "gcs_sync_failed": "GCS sync failed: {error}",
     "chat_no_context": "The system is busy or no relevant content was found for your question. Please try again with more detail.",
     "chat_no_answer": "No answer found",

@@ -38,7 +38,7 @@ from app.db.repositories.books_repository import BooksRepository
 from app.db.repositories.pages_repository import PagesRepository
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.db.models import Book as BookDB, Page, Chunk, BookSummary
-from app.models.schemas import Book, PaginatedBooks, ExtractionResult
+from app.models.schemas import Book, PaginatedBooks, ExtractionResult, to_camel
 from app.models.user import User
 from app.services.storage_service import storage
 from app.services.chunking_service import chunking_service
@@ -988,10 +988,12 @@ async def get_global_graph(
     return {"nodes": nodes, "links": links}
 
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class MergeEntitiesRequest(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
     keep_name: str
     remove_name: str
 
@@ -1019,6 +1021,43 @@ async def merge_graph_entities(
     return {
         "status": "success",
         "message": f"Merged entity '{request.remove_name}' into '{request.keep_name}'",
+    }
+
+
+class DeleteRelationshipRequest(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    source_name: str
+    target_name: str
+    rel_type: str
+
+
+@router.post("/graph/relationship/delete")
+async def delete_graph_relationship(
+    request: DeleteRelationshipRequest,
+    current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    """Delete a relationship between two knowledge graph entities (admin only)."""
+    from app.db.repositories.graph_repository import GraphRepository
+
+    graph_repo = GraphRepository()
+    try:
+        await graph_repo.delete_relationship(
+            request.source_name, request.target_name, request.rel_type
+        )
+    except ValueError:
+        raise HTTPException(status_code=400, detail=t("errors.relationship_not_found"))
+    except Exception as exc:
+        logger.error(f"Failed to delete relationship: {exc}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error during relationship deletion.",
+        )
+
+    return {
+        "status": "success",
+        "message": f"Deleted relationship '{request.rel_type}' between '{request.source_name}' and '{request.target_name}'",
     }
 
 

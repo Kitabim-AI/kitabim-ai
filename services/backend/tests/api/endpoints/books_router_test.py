@@ -168,3 +168,84 @@ async def test_merge_graph_entities_endpoint():
 
     assert response["status"] == "success"
     mock_repo.merge_entities.assert_called_once_with("A", "B")
+
+
+@pytest.mark.asyncio
+async def test_merge_entities_request_accepts_camel_case():
+    setup_paths()
+    from api.endpoints.books_router import MergeEntitiesRequest
+
+    req = MergeEntitiesRequest.model_validate(
+        {"keepName": "KeepName", "removeName": "RemoveName"}
+    )
+    assert req.keep_name == "KeepName"
+    assert req.remove_name == "RemoveName"
+
+
+@pytest.mark.asyncio
+async def test_delete_graph_relationship_endpoint():
+    setup_paths()
+    from api.endpoints.books_router import (
+        delete_graph_relationship,
+        DeleteRelationshipRequest,
+    )
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+
+    mock_request = DeleteRelationshipRequest(
+        source_name="A", target_name="B", rel_type="SON_OF"
+    )
+
+    mock_repo = MagicMock()
+    mock_repo.delete_relationship = AsyncMock()
+
+    with patch(
+        "app.db.repositories.graph_repository.GraphRepository", return_value=mock_repo
+    ):
+        response = await delete_graph_relationship(
+            request=mock_request, current_user=mock_user, session=mock_session
+        )
+
+    assert response["status"] == "success"
+    mock_repo.delete_relationship.assert_called_once_with("A", "B", "SON_OF")
+
+
+@pytest.mark.asyncio
+async def test_delete_graph_relationship_endpoint_not_found():
+    setup_paths()
+    from api.endpoints.books_router import (
+        delete_graph_relationship,
+        DeleteRelationshipRequest,
+    )
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+    mock_request = DeleteRelationshipRequest(
+        source_name="A", target_name="B", rel_type="SON_OF"
+    )
+
+    mock_repo = MagicMock()
+    mock_repo.delete_relationship = AsyncMock(side_effect=ValueError("not found"))
+
+    with patch(
+        "app.db.repositories.graph_repository.GraphRepository", return_value=mock_repo
+    ):
+        with pytest.raises(HTTPException) as excinfo:
+            await delete_graph_relationship(
+                request=mock_request, current_user=mock_user, session=mock_session
+            )
+    assert excinfo.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_delete_relationship_request_accepts_camel_case():
+    setup_paths()
+    from api.endpoints.books_router import DeleteRelationshipRequest
+
+    req = DeleteRelationshipRequest.model_validate(
+        {"sourceName": "A", "targetName": "B", "relType": "SON_OF"}
+    )
+    assert req.source_name == "A"
+    assert req.target_name == "B"
+    assert req.rel_type == "SON_OF"
