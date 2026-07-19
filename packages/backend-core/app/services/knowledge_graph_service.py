@@ -92,6 +92,10 @@ class ExtractedEntity(BaseModel):
         None,
         description="Gregorian century associated with this entity (e.g. 15 for 15th century CE). Use only when a Gregorian century is stated but no specific Hijri year.",
     )
+    context_summary: Optional[str] = Field(
+        None,
+        description="Brief context summary or description of the entity from the text (e.g. 'son of Ibrahim, governor of Kashgar') to help resolve duplicates.",
+    )
 
 
 # ── Chunk-level extraction (used by knowledge_graph_job) ─────────────────────
@@ -121,6 +125,25 @@ class KnowledgeExtraction(BaseModel):
     relations: List[ExtractedRelation] = Field(
         default_factory=list,
         description="List of directed relationships between the found entities",
+    )
+
+
+# ── Entity Resolution Models ──────────────────────────────────────────────────
+
+
+class EntityOccurrenceResolution(BaseModel):
+    occurrence_index: int = Field(
+        ..., description="The index of the occurrence in the input list"
+    )
+    resolved_name: str = Field(
+        ...,
+        description="The resolved name for this occurrence. If it represents a distinct person from others with the same base name, append a Roman numeral. If it is the same person, use the same name.",
+    )
+
+
+class NameResolutionResponse(BaseModel):
+    resolutions: List[EntityOccurrenceResolution] = Field(
+        ..., description="Resolutions for each occurrence of the name"
     )
 
 

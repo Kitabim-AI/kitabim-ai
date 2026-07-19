@@ -1061,6 +1061,39 @@ async def delete_graph_relationship(
     }
 
 
+class RenameEntityRequest(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    old_name: str
+    new_name: str
+
+
+@router.post("/graph/entity/rename")
+async def rename_graph_entity(
+    request: RenameEntityRequest,
+    current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    """Rename a knowledge graph entity (admin only)."""
+    from app.db.repositories.graph_repository import GraphRepository
+
+    graph_repo = GraphRepository()
+    try:
+        await graph_repo.rename_entity(request.old_name, request.new_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.error(f"Failed to rename entity: {exc}")
+        raise HTTPException(
+            status_code=500, detail="Internal server error during entity rename."
+        )
+
+    return {
+        "status": "success",
+        "message": f"Renamed entity '{request.old_name}' to '{request.new_name}'",
+    }
+
+
 @router.get("/{book_id}", response_model=Book)
 async def get_book(
     book_id: str,

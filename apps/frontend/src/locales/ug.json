@@ -546,6 +546,7 @@
     "noErrors": "{{page}}-بەتتە ئىملا خاتالىقى بايقالمىدى!",
     "noErrorsDetail": "بۇ بەتتىكى تېكىستلەردە ئىملا خاتالىقى بايقالمىدى.",
     "suggestion": "تەۋسىيە قىلىنغان يېزىلىشى",
+    "confidenceLabel": "Confidence: {{percent}}%",
     "ignore": "خاتا ئەمەس",
     "applied": "تۈزىتىلدى",
     "ignored": "ئۆزگەرمىدى",
@@ -895,7 +896,14 @@
       "mergeKeep": "ساقلا",
       "mergeConfirmButton": "بىرلەشتۈر",
       "mergeSuccess": "سۆزلۈكلەر بىرلەشتۈرۈلدى.",
-      "mergeError": "بىرلەشتۈرەلمىدى."
+      "mergeError": "بىرلەشتۈرەلمىدى.",
+      "renameStart": "نامىنى ئۆزگەرتىش...",
+      "renameTitle": "سۆزلۈك نامىنى ئۆزگەرتىش",
+      "renameLabel": "يېڭى نامى",
+      "renameCancel": "بىكار قىلىش",
+      "renameConfirm": "ئۆزگەرتىش",
+      "renameSuccess": "سۆزلۈك نامى ئۆزگەرتىلدى.",
+      "renameError": "نامىنى ئۆزگەرتەلمىدى."
     }
   },
   "quran": {

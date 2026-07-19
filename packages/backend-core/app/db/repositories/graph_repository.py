@@ -417,3 +417,39 @@ class GraphRepository:
                 combined_aliases=combined_aliases,
             )
         return True
+
+    async def rename_entity(self, old_name: str, new_name: str) -> bool:
+        """Rename an entity node in Neo4j.
+
+        Normalizes the names, updates the name property, and returns True if successful.
+        Raises ValueError if the new name already exists or old name is not found.
+        """
+        old_norm = unicodedata.normalize("NFC", old_name)
+        new_norm = unicodedata.normalize("NFC", new_name)
+
+        if old_norm == new_norm:
+            return True
+
+        # Check if the old name exists, and if the new name already exists
+        check_query = """
+        MATCH (e:Entity)
+        WHERE e.name IN [$old, $new]
+        RETURN e.name AS name
+        """
+        async with self._driver.session() as session:
+            result = await session.run(check_query, old=old_norm, new=new_norm)
+            records = await result.data()
+
+        found = {r["name"] for r in records}
+        if old_norm not in found:
+            raise ValueError(f"Entity to rename '{old_name}' does not exist.")
+        if new_norm in found:
+            raise ValueError(f"An entity with the name '{new_name}' already exists.")
+
+        rename_query = """
+        MATCH (e:Entity {name: $old})
+        SET e.name = $new
+        """
+        async with self._driver.session() as session:
+            await session.run(rename_query, old=old_norm, new=new_norm)
+        return True

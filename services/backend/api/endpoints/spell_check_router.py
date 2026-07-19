@@ -22,7 +22,7 @@ from app.core.pipeline import (
 from app.db.session import get_session
 from app.db.models import Page, PageSpellIssue, Word
 from app.models.user import User
-from app.services.spell_check_service import run_spell_check_for_page
+from app.services.spell_check_service import run_spell_check_for_page, score_confidence
 from auth.dependencies import require_editor
 
 router = APIRouter()
@@ -31,15 +31,38 @@ router = APIRouter()
 # ── Response schemas ──────────────────────────────────────────────────────────
 
 
+class SpellSuggestionOut(BaseModel):
+    word: str
+    confidence: float
+
+
 class SpellIssueOut(BaseModel):
     id: int
     word: str
     char_offset: Optional[int]
     char_end: Optional[int]
-    ocr_corrections: List[str]
+    ocr_corrections: List[SpellSuggestionOut]
     status: str
 
     model_config = {"from_attributes": True}
+
+
+def _issue_to_out(issue: PageSpellIssue) -> SpellIssueOut:
+    candidate_count = len(issue.ocr_corrections)
+    suggestions = [
+        SpellSuggestionOut(
+            word=c, confidence=score_confidence(issue.word, c, candidate_count)
+        )
+        for c in issue.ocr_corrections
+    ]
+    return SpellIssueOut(
+        id=issue.id,
+        word=issue.word,
+        char_offset=issue.char_offset,
+        char_end=issue.char_end,
+        ocr_corrections=suggestions,
+        status=issue.status,
+    )
 
 
 class PageSpellCheckOut(BaseModel):
@@ -278,7 +301,7 @@ async def get_page_spell_issues(
     )
     return PageSpellCheckOut(
         milestone=page.spell_check_milestone,
-        issues=list(issues_result.scalars().all()),
+        issues=[_issue_to_out(i) for i in issues_result.scalars().all()],
     )
 
 

@@ -303,3 +303,94 @@ async def test_graph_repository_delete_relationship_not_found():
         assert "No 'SON_OF' relationship found between 'A' and 'B'." in str(
             excinfo.value
         )
+
+
+@pytest.mark.asyncio
+async def test_graph_repository_rename_entity_success():
+    mock_result_check = AsyncMock()
+    mock_result_check.data.return_value = [{"name": "OldName"}]
+
+    mock_session = AsyncMock()
+    mock_session.__aenter__.return_value = mock_session
+    mock_session.run.side_effect = [
+        mock_result_check,
+        AsyncMock(),
+    ]
+
+    mock_driver = MagicMock()
+    mock_driver.session.return_value = mock_session
+
+    with patch(
+        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
+        return_value=mock_driver,
+    ):
+        repo = GraphRepository()
+        success = await repo.rename_entity("OldName", "NewName")
+        assert success is True
+        assert mock_session.run.call_count == 2
+
+        second_call_args = mock_session.run.call_args_list[1][0]
+        second_call_kwargs = mock_session.run.call_args_list[1][1]
+        assert "SET e.name = $new" in second_call_args[0]
+        assert second_call_kwargs["old"] == "OldName"
+        assert second_call_kwargs["new"] == "NewName"
+
+
+@pytest.mark.asyncio
+async def test_graph_repository_rename_entity_missing():
+    mock_result_check = AsyncMock()
+    mock_result_check.data.return_value = []
+
+    mock_session = AsyncMock()
+    mock_session.__aenter__.return_value = mock_session
+    mock_session.run.return_value = mock_result_check
+
+    mock_driver = MagicMock()
+    mock_driver.session.return_value = mock_session
+
+    with patch(
+        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
+        return_value=mock_driver,
+    ):
+        repo = GraphRepository()
+        with pytest.raises(ValueError) as excinfo:
+            await repo.rename_entity("OldName", "NewName")
+        assert "Entity to rename 'OldName' does not exist." in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_graph_repository_rename_entity_already_exists():
+    mock_result_check = AsyncMock()
+    mock_result_check.data.return_value = [
+        {"name": "OldName"},
+        {"name": "NewName"},
+    ]
+
+    mock_session = AsyncMock()
+    mock_session.__aenter__.return_value = mock_session
+    mock_session.run.return_value = mock_result_check
+
+    mock_driver = MagicMock()
+    mock_driver.session.return_value = mock_session
+
+    with patch(
+        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
+        return_value=mock_driver,
+    ):
+        repo = GraphRepository()
+        with pytest.raises(ValueError) as excinfo:
+            await repo.rename_entity("OldName", "NewName")
+        assert "An entity with the name 'NewName' already exists." in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_graph_repository_rename_entity_identical():
+    mock_driver = MagicMock()
+    with patch(
+        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
+        return_value=mock_driver,
+    ):
+        repo = GraphRepository()
+        success = await repo.rename_entity("SameName", "SameName")
+        assert success is True
+        assert not mock_driver.session.called

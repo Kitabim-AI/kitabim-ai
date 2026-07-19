@@ -249,3 +249,69 @@ async def test_delete_relationship_request_accepts_camel_case():
     assert req.source_name == "A"
     assert req.target_name == "B"
     assert req.rel_type == "SON_OF"
+
+
+@pytest.mark.asyncio
+async def test_rename_graph_entity_endpoint_success():
+    setup_paths()
+    from api.endpoints.books_router import (
+        rename_graph_entity,
+        RenameEntityRequest,
+    )
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+    mock_request = RenameEntityRequest(old_name="OldName", new_name="NewName")
+
+    mock_repo = MagicMock()
+    mock_repo.rename_entity = AsyncMock(return_value=True)
+
+    with patch(
+        "app.db.repositories.graph_repository.GraphRepository", return_value=mock_repo
+    ):
+        response = await rename_graph_entity(
+            request=mock_request, current_user=mock_user, session=mock_session
+        )
+
+    assert response["status"] == "success"
+    assert response["message"] == "Renamed entity 'OldName' to 'NewName'"
+    mock_repo.rename_entity.assert_called_once_with("OldName", "NewName")
+
+
+@pytest.mark.asyncio
+async def test_rename_graph_entity_endpoint_error():
+    setup_paths()
+    from api.endpoints.books_router import (
+        rename_graph_entity,
+        RenameEntityRequest,
+    )
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+    mock_request = RenameEntityRequest(old_name="OldName", new_name="NewName")
+
+    mock_repo = MagicMock()
+    mock_repo.rename_entity = AsyncMock(side_effect=ValueError("Already exists"))
+
+    with patch(
+        "app.db.repositories.graph_repository.GraphRepository", return_value=mock_repo
+    ):
+        with pytest.raises(HTTPException) as excinfo:
+            await rename_graph_entity(
+                request=mock_request, current_user=mock_user, session=mock_session
+            )
+
+    assert excinfo.value.status_code == 400
+    assert "Already exists" in excinfo.value.detail
+
+
+@pytest.mark.asyncio
+async def test_rename_entity_request_accepts_camel_case():
+    setup_paths()
+    from api.endpoints.books_router import RenameEntityRequest
+
+    req = RenameEntityRequest.model_validate(
+        {"oldName": "OldName", "newName": "NewName"}
+    )
+    assert req.old_name == "OldName"
+    assert req.new_name == "NewName"

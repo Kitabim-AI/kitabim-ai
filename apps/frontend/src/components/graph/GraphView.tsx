@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import ForceGraph2D from 'react-force-graph-2d';
 import { useI18n } from '../../i18n/I18nContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -6,7 +7,7 @@ import { useAppContext } from '../../context/AppContext';
 import { useNotification } from '../../context/NotificationContext';
 import { useIsAdmin } from '../../hooks/useAuth';
 import { authFetch } from '../../services/authService';
-import { Search, Loader2, ZoomIn, ZoomOut, Maximize, Minimize, Maximize2, Network, BookOpen, MapPin, User, Calendar, HelpCircle, X, SlidersHorizontal, Building, Clock, Lightbulb, ChevronDown, Trash2, GitMerge } from 'lucide-react';
+import { Search, Loader2, ZoomIn, ZoomOut, Maximize, Minimize, Maximize2, Network, BookOpen, MapPin, User, Calendar, HelpCircle, X, SlidersHorizontal, Building, Clock, Lightbulb, ChevronDown, Trash2, GitMerge, Edit3 } from 'lucide-react';
 
 interface GraphNode {
   id: string;
@@ -76,6 +77,10 @@ export const GraphView: React.FC = () => {
   const [mergePair, setMergePair] = useState<{ a: GraphNode; b: GraphNode; keepIsA: boolean } | null>(null);
   const [mergeError, setMergeError] = useState<string | null>(null);
   const [mergeSubmitting, setMergeSubmitting] = useState(false);
+  const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const [renameSubmitting, setRenameSubmitting] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [showLegend, setShowLegend] = useState(window.innerWidth >= 768);
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -562,6 +567,34 @@ export const GraphView: React.FC = () => {
     }
   };
 
+  const handleConfirmRename = async () => {
+    if (!selectedNode || !renameValue.trim() || renameValue.trim() === selectedNode.label) return;
+    setRenameSubmitting(true);
+    setRenameError(null);
+    try {
+      const res = await authFetch('/api/books/graph/entity/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldName: selectedNode.id, newName: renameValue.trim() }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || t('graph.admin.renameError'));
+      }
+      addNotification(t('graph.admin.renameSuccess'), 'success');
+      setIsRenameModalOpen(false);
+      
+      const updatedNode = { ...selectedNode, id: renameValue.trim(), label: renameValue.trim() };
+      setSelectedNode(updatedNode);
+      
+      await fetchGraphData(searchQuery);
+    } catch (err: any) {
+      setRenameError(err.message || t('graph.admin.renameError'));
+    } finally {
+      setRenameSubmitting(false);
+    }
+  };
+
   // Zoom helpers
   const zoomIn = () => {
     if (fgRef.current) {
@@ -647,17 +680,34 @@ export const GraphView: React.FC = () => {
         </div>
 
         {isAdmin && (
-          <button
-            type="button"
-            onClick={() => setMergeCandidate(selectedNode)}
-            className={`mb-6 flex items-center justify-center gap-2 text-xs font-semibold rounded-xl px-3 py-2 border transition-all active:scale-95 ${isDark
-              ? 'text-amber-400 border-amber-900/40 hover:border-amber-700 bg-amber-950/20'
-              : 'text-amber-700 border-amber-200 hover:border-amber-300 bg-amber-50'
-              }`}
-          >
-            <GitMerge size={14} />
-            {t('graph.admin.mergeStart')}
-          </button>
+          <div className="flex gap-2 mb-6">
+            <button
+              type="button"
+              onClick={() => {
+                setRenameValue(selectedNode.label);
+                setIsRenameModalOpen(true);
+                setRenameError(null);
+              }}
+              className={`flex-1 flex items-center justify-center gap-2 text-xs font-semibold rounded-xl px-3 py-2 border transition-all active:scale-95 ${isDark
+                ? 'text-sky-400 border-sky-900/40 hover:border-sky-700 bg-sky-950/20'
+                : 'text-sky-700 border-sky-200 hover:border-sky-300 bg-sky-50'
+                }`}
+            >
+              <Edit3 size={14} />
+              {t('graph.admin.renameStart')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMergeCandidate(selectedNode)}
+              className={`flex-1 flex items-center justify-center gap-2 text-xs font-semibold rounded-xl px-3 py-2 border transition-all active:scale-95 ${isDark
+                ? 'text-amber-400 border-amber-900/40 hover:border-amber-700 bg-amber-950/20'
+                : 'text-amber-700 border-amber-200 hover:border-amber-300 bg-amber-50'
+                }`}
+            >
+              <GitMerge size={14} />
+              {t('graph.admin.mergeStart')}
+            </button>
+          </div>
         )}
 
         <h4 className={`text-sm font-bold mb-3 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{t('graph.nodePanel.connections')}</h4>
@@ -905,77 +955,7 @@ export const GraphView: React.FC = () => {
             </div>
           )}
 
-          {mergeCandidate && (
-            <div className="absolute top-3 inset-x-0 z-[161] flex justify-center px-4 animate-fade-in">
-              <div className="flex items-center gap-3 bg-slate-900/90 backdrop-blur-xl border border-amber-400/30 rounded-2xl px-4 py-2.5 shadow-lg">
-                <GitMerge size={16} className="text-amber-400 shrink-0" />
-                <span className="text-xs text-slate-200 font-medium">
-                  {t('graph.admin.mergePickTarget', { name: mergeCandidate.label })}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setMergeCandidate(null)}
-                  className="text-xs text-slate-400 hover:text-slate-200 border border-slate-700 hover:border-slate-600 rounded-lg px-2 py-1 transition-all active:scale-95"
-                >
-                  {t('common.cancel')}
-                </button>
-              </div>
-            </div>
-          )}
 
-          {mergePair && (
-            <div className="absolute top-3 inset-x-0 z-[161] flex justify-center px-4 animate-fade-in">
-              <div className="flex flex-col gap-3 bg-slate-900/95 backdrop-blur-xl border border-amber-400/30 rounded-2xl px-4 py-3 shadow-lg max-w-md w-full">
-                <span className="text-xs text-slate-200 font-medium text-center">
-                  {t('graph.admin.mergeConfirmMessage')}
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setMergePair({ ...mergePair, keepIsA: true })}
-                    className={`flex-1 text-xs rounded-lg px-2 py-2 border transition-all active:scale-95 ${mergePair.keepIsA
-                      ? 'border-emerald-500 bg-emerald-950/40 text-emerald-300'
-                      : 'border-slate-700 text-slate-400'
-                      }`}
-                  >
-                    {t('graph.admin.mergeKeep')}: {mergePair.a.label}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMergePair({ ...mergePair, keepIsA: false })}
-                    className={`flex-1 text-xs rounded-lg px-2 py-2 border transition-all active:scale-95 ${!mergePair.keepIsA
-                      ? 'border-emerald-500 bg-emerald-950/40 text-emerald-300'
-                      : 'border-slate-700 text-slate-400'
-                      }`}
-                  >
-                    {t('graph.admin.mergeKeep')}: {mergePair.b.label}
-                  </button>
-                </div>
-                {mergeError && (
-                  <span className="text-[11px] text-red-400 text-center">{mergeError}</span>
-                )}
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => { setMergePair(null); setMergeError(null); }}
-                    disabled={mergeSubmitting}
-                    className="flex-1 text-xs text-slate-300 border border-slate-700 hover:border-slate-600 rounded-lg px-2 py-1.5 transition-all active:scale-95 disabled:opacity-50"
-                  >
-                    {t('common.cancel')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleConfirmMerge}
-                    disabled={mergeSubmitting}
-                    className="flex-1 text-xs text-white bg-red-500 hover:bg-red-600 rounded-lg px-2 py-1.5 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
-                  >
-                    {mergeSubmitting && <Loader2 size={12} className="animate-spin" />}
-                    {t('graph.admin.mergeConfirmButton')}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
 
           {!loading && rawGraphData.nodes.length === 0 && (
             <div className="text-center p-8 z-10 text-slate-400 animate-fade-in">
@@ -1219,6 +1199,134 @@ export const GraphView: React.FC = () => {
             {/* Content */}
             <div className="flex-grow overflow-y-auto custom-scrollbar pr-1">
               {renderDetailsPanelContent(isThemeDark)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Global Administrative Overlays */}
+      {mergeCandidate && createPortal(
+        <div className="fixed top-[80px] sm:top-[96px] lg:top-[104px] left-0 right-0 z-[210] px-4 animate-fade-in">
+          <div className="mx-auto flex items-center justify-between gap-3 bg-slate-900/90 backdrop-blur-xl border border-amber-400/30 rounded-2xl px-4 py-2.5 shadow-lg max-w-md w-full">
+            <GitMerge size={16} className="text-amber-400 shrink-0" />
+            <span className="text-xs text-slate-200 font-medium">
+              {t('graph.admin.mergePickTarget', { name: mergeCandidate.label })}
+            </span>
+            <button
+              type="button"
+              onClick={() => setMergeCandidate(null)}
+              className="text-xs text-slate-400 hover:text-slate-200 border border-slate-700 hover:border-slate-600 rounded-lg px-2 py-1 transition-all active:scale-95"
+            >
+              {t('common.cancel')}
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {mergePair && createPortal(
+        <div className="fixed top-[80px] sm:top-[96px] lg:top-[104px] left-0 right-0 z-[210] px-4 animate-fade-in">
+          <div className="mx-auto flex flex-col gap-3 bg-slate-900/95 backdrop-blur-xl border border-amber-400/30 rounded-2xl px-4 py-3 shadow-lg max-w-md w-full">
+            <span className="text-xs text-slate-200 font-medium text-center">
+              {t('graph.admin.mergeConfirmMessage')}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setMergePair({ ...mergePair, keepIsA: true })}
+                className={`flex-1 text-xs rounded-lg px-2 py-2 border transition-all active:scale-95 ${mergePair.keepIsA
+                  ? 'border-emerald-500 bg-emerald-950/40 text-emerald-300'
+                  : 'border-slate-700 text-slate-400'
+                  }`}
+              >
+                {t('graph.admin.mergeKeep')}: {mergePair.a.label}
+              </button>
+              <button
+                type="button"
+                onClick={() => setMergePair({ ...mergePair, keepIsA: false })}
+                className={`flex-1 text-xs rounded-lg px-2 py-2 border transition-all active:scale-95 ${!mergePair.keepIsA
+                  ? 'border-emerald-500 bg-emerald-950/40 text-emerald-300'
+                  : 'border-slate-700 text-slate-400'
+                  }`}
+              >
+                {t('graph.admin.mergeKeep')}: {mergePair.b.label}
+              </button>
+            </div>
+            {mergeError && (
+              <span className="text-[11px] text-red-400 text-center">{mergeError}</span>
+            )}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => { setMergePair(null); setMergeError(null); }}
+                disabled={mergeSubmitting}
+                className="flex-1 text-xs text-slate-300 border border-slate-700 hover:border-slate-600 rounded-lg px-2 py-1.5 transition-all active:scale-95 disabled:opacity-50"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmMerge}
+                disabled={mergeSubmitting}
+                className="flex-1 text-xs text-white bg-red-500 hover:bg-red-600 rounded-lg px-2 py-1.5 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {mergeSubmitting && <Loader2 size={12} className="animate-spin" />}
+                {t('graph.admin.mergeConfirmButton')}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {isRenameModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[210] flex items-center justify-center p-4 animate-fade-in">
+          <div className={`flex flex-col gap-4 bg-slate-900/95 backdrop-blur-xl border border-sky-400/30 rounded-2xl p-5 shadow-lg max-w-sm w-full text-right`}>
+            <div className="flex justify-between items-center border-b border-slate-800 pb-2.5">
+              <button
+                type="button"
+                onClick={() => { setIsRenameModalOpen(false); setRenameError(null); }}
+                className="text-slate-400 hover:text-slate-200 transition-all"
+              >
+                <X size={16} />
+              </button>
+              <span className="text-sm font-bold text-slate-100">{t('graph.admin.renameTitle')}</span>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="rename-input" className="text-xs text-slate-400 font-medium">
+                {t('graph.admin.renameLabel')}
+              </label>
+              <input
+                id="rename-input"
+                type="text"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                dir="rtl"
+                className="w-full text-sm rounded-xl px-3 py-2 border border-slate-700 bg-slate-950 text-slate-100 focus:outline-none focus:border-sky-500 transition-all font-medium"
+                placeholder={selectedNode?.label}
+              />
+            </div>
+            {renameError && (
+              <span className="text-xs text-red-400 text-center font-medium">{renameError}</span>
+            )}
+            <div className="flex items-center gap-2 mt-2">
+              <button
+                type="button"
+                onClick={() => { setIsRenameModalOpen(false); setRenameError(null); }}
+                disabled={renameSubmitting}
+                className="flex-1 text-xs text-slate-300 border border-slate-700 hover:border-slate-600 rounded-xl px-3 py-2 transition-all active:scale-95 disabled:opacity-50 font-semibold"
+              >
+                {t('graph.admin.renameCancel')}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmRename}
+                disabled={renameSubmitting || !renameValue.trim() || renameValue.trim() === selectedNode?.label}
+                className="flex-1 text-xs text-white bg-sky-500 hover:bg-sky-600 rounded-xl px-3 py-2 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5 font-semibold"
+              >
+                {renameSubmitting && <Loader2 size={12} className="animate-spin" />}
+                {t('graph.admin.renameConfirm')}
+              </button>
             </div>
           </div>
         </div>

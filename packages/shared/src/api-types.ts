@@ -387,6 +387,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/books/graph/relationship/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete Graph Relationship
+         * @description Delete a relationship between two knowledge graph entities (admin only).
+         */
+        post: operations["delete_graph_relationship_api_books_graph_relationship_delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/books/graph/entity/rename": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rename Graph Entity
+         * @description Rename a knowledge graph entity (admin only).
+         */
+        post: operations["rename_graph_entity_api_books_graph_entity_rename_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/books/{book_id}": {
         parameters: {
             query?: never;
@@ -1426,31 +1466,7 @@ export interface paths {
         patch: operations["update_auto_correct_rule_api_auto_correct_rules__word__patch"];
         trace?: never;
     };
-    "/api/spell-check/dictionary": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Dictionary Words
-         * @description List words in the dictionary with pagination, sorted by latest added (ID DESC).
-         */
-        get: operations["list_dictionary_words_api_spell_check_dictionary_get"];
-        put?: never;
-        /**
-         * Add To Dictionary
-         * @description Add a word to the global spell check dictionary. Editor and Admin allowed.
-         */
-        post: operations["add_to_dictionary_api_spell_check_dictionary_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/spell-check/dictionary/search": {
+    "/api/dictionary/search": {
         parameters: {
             query?: never;
             header?: never;
@@ -1459,9 +1475,9 @@ export interface paths {
         };
         /**
          * Search Dictionary
-         * @description Search for words in the dictionary (autocomplete).
+         * @description Search for entries in the dictionary (autocomplete).
          */
-        get: operations["search_dictionary_api_spell_check_dictionary_search_get"];
+        get: operations["search_dictionary_api_dictionary_search_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1470,7 +1486,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/spell-check/dictionary/stats": {
+    "/api/dictionary/stats": {
         parameters: {
             query?: never;
             header?: never;
@@ -1479,9 +1495,9 @@ export interface paths {
         };
         /**
          * Get Dictionary Stats
-         * @description Get total word count in the dictionary.
+         * @description Get total entry count in the dictionary.
          */
-        get: operations["get_dictionary_stats_api_spell_check_dictionary_stats_get"];
+        get: operations["get_dictionary_stats_api_dictionary_stats_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1490,21 +1506,425 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/spell-check/dictionary/{word}": {
+    "/api/dictionary/letter-groups": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List Letter Groups
+         * @description Return all distinct first letters present in the dictionary.
+         */
+        get: operations["list_letter_groups_api_dictionary_letter_groups_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dictionary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
         /**
-         * Delete From Dictionary
-         * @description Remove a word from the dictionary. Only allowed for editors/admins.
+         * List Dictionary Entries
+         * @description List dictionary entries with pagination, sorted alphabetically.
          */
-        delete: operations["delete_from_dictionary_api_spell_check_dictionary__word__delete"];
+        get: operations["list_dictionary_entries_api_dictionary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/spell-check/words/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Words
+         * @description Search for words in the spell check list (autocomplete).
+         */
+        get: operations["search_words_api_spell_check_words_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/spell-check/words/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Words Stats
+         * @description Get total word count in the spell check list.
+         */
+        get: operations["get_words_stats_api_spell_check_words_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/spell-check/words/letter-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Letter Groups
+         * @description Return all distinct first letters present in the words list.
+         */
+        get: operations["list_letter_groups_api_spell_check_words_letter_groups_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/spell-check/words": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Words
+         * @description List words in the spell check list with pagination, sorted alphabetically.
+         */
+        get: operations["list_words_api_spell_check_words_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/synonyms/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Synonyms
+         * @description Search synonyms by word prefix/substring (autocomplete).
+         */
+        get: operations["search_synonyms_api_synonyms_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/synonyms/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lookup Synonym
+         * @description Exact lookup — returns the entry and its synonyms for the given word.
+         */
+        get: operations["lookup_synonym_api_synonyms_lookup_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/synonyms/letter-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Letter Groups
+         * @description Return all distinct letter groups in alphabetical order.
+         */
+        get: operations["list_letter_groups_api_synonyms_letter_groups_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/synonyms/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Synonym Stats
+         * @description Return total word count in the synonym dictionary.
+         */
+        get: operations["get_synonym_stats_api_synonyms_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/synonyms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Synonyms
+         * @description List synonym entries with optional letter-group filter and pagination.
+         */
+        get: operations["list_synonyms_api_synonyms_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/history-dictionary/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get History Stats */
+        get: operations["get_history_stats_api_history_dictionary_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/history-dictionary/letter-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List History Letter Groups */
+        get: operations["list_history_letter_groups_api_history_dictionary_letter_groups_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/history-dictionary/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search History Dictionary */
+        get: operations["search_history_dictionary_api_history_dictionary_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/history-dictionary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List History Entries */
+        get: operations["list_history_entries_api_history_dictionary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/names-dictionary/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Names Stats */
+        get: operations["get_names_stats_api_names_dictionary_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/names-dictionary/letter-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Names Letter Groups */
+        get: operations["list_names_letter_groups_api_names_dictionary_letter_groups_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/names-dictionary/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Names Dictionary */
+        get: operations["search_names_dictionary_api_names_dictionary_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/names-dictionary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Names Entries */
+        get: operations["list_names_entries_api_names_dictionary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/english-uyghur-dictionary/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get English Uyghur Stats */
+        get: operations["get_english_uyghur_stats_api_english_uyghur_dictionary_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/english-uyghur-dictionary/letter-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List English Uyghur Letter Groups */
+        get: operations["list_english_uyghur_letter_groups_api_english_uyghur_dictionary_letter_groups_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/english-uyghur-dictionary/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search English Uyghur Dictionary */
+        get: operations["search_english_uyghur_dictionary_api_english_uyghur_dictionary_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/english-uyghur-dictionary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List English Uyghur Entries */
+        get: operations["list_english_uyghur_entries_api_english_uyghur_dictionary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1632,6 +2052,146 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/proverbs/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Proverbs
+         * @description Search for proverbs (autocomplete).
+         */
+        get: operations["search_proverbs_api_proverbs_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/proverbs/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Proverbs Stats
+         * @description Get total entry count in the proverbs list.
+         */
+        get: operations["get_proverbs_stats_api_proverbs_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/proverbs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Proverbs Entries
+         * @description List proverbs with pagination, sorted alphabetically.
+         */
+        get: operations["list_proverbs_entries_api_proverbs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quran/surahs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Surahs
+         * @description Get distinct list of all surahs with their names.
+         */
+        get: operations["list_surahs_api_quran_surahs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quran/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Quran
+         * @description Search for verses in Arabic, English or Uyghur.
+         */
+        get: operations["search_quran_api_quran_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quran/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Quran Stats
+         * @description Get total ayah count in the quran list, optionally filtered by surah.
+         */
+        get: operations["get_quran_stats_api_quran_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quran": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Quran Entries
+         * @description List quran verses, sorted by surah and ayah. Optionally filtered by surah.
+         */
+        get: operations["list_quran_entries_api_quran_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/config": {
         parameters: {
             query?: never;
@@ -1707,11 +2267,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** AddToDictionaryRequest */
-        AddToDictionaryRequest: {
-            /** Word */
-            word: string;
-        };
         /** ApplyCorrectionsRequest */
         ApplyCorrectionsRequest: {
             /** Corrections */
@@ -1766,18 +2321,12 @@ export interface components {
         };
         /** Body_update_book_cover_api_books__book_id__cover_post */
         Body_update_book_cover_api_books__book_id__cover_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
         };
         /** Body_upload_pdf_api_books_upload_post */
         Body_upload_pdf_api_books_upload_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
         };
         /**
@@ -2031,17 +2580,46 @@ export interface components {
             /** Description */
             description?: string | null;
         };
+        /** DeleteRelationshipRequest */
+        DeleteRelationshipRequest: {
+            /** Sourcename */
+            sourceName: string;
+            /** Targetname */
+            targetName: string;
+            /** Reltype */
+            relType: string;
+        };
+        /** DictionaryEntryOut */
+        DictionaryEntryOut: {
+            /** Id */
+            id: number;
+            /** Word */
+            word: string;
+            /** Definition */
+            definition?: string | null;
+            /** Audio */
+            audio?: string | null;
+        };
         /** DictionaryStatsOut */
         DictionaryStatsOut: {
             /** Total Words */
             total_words: number;
         };
-        /** DictionaryWordOut */
-        DictionaryWordOut: {
+        /** EnglishUyghurEntryOut */
+        EnglishUyghurEntryOut: {
             /** Id */
             id: number;
-            /** Word */
-            word: string;
+            /** English */
+            english: string;
+            /** Uyghur */
+            uyghur: string;
+            /** Letter Group */
+            letter_group: string;
+        };
+        /** EnglishUyghurStatsOut */
+        EnglishUyghurStatsOut: {
+            /** Total Entries */
+            total_entries: number;
         };
         /** ErrorEvent */
         ErrorEvent: {
@@ -2096,6 +2674,24 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** HistoryEntryOut */
+        HistoryEntryOut: {
+            /** Id */
+            id: number;
+            /** Term */
+            term: string;
+            /** Transliteration */
+            transliteration?: string | null;
+            /** Definition */
+            definition?: string | null;
+            /** Letter Group */
+            letter_group: string;
+        };
+        /** HistoryStatsOut */
+        HistoryStatsOut: {
+            /** Total Entries */
+            total_entries: number;
+        };
         /** IgnoreIssuesRequest */
         IgnoreIssuesRequest: {
             /** Issue Ids */
@@ -2103,10 +2699,24 @@ export interface components {
         };
         /** MergeEntitiesRequest */
         MergeEntitiesRequest: {
-            /** Keep Name */
-            keep_name: string;
-            /** Remove Name */
-            remove_name: string;
+            /** Keepname */
+            keepName: string;
+            /** Removename */
+            removeName: string;
+        };
+        /** NameEntryOut */
+        NameEntryOut: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Letter Group */
+            letter_group: string;
+        };
+        /** NamesStatsOut */
+        NamesStatsOut: {
+            /** Total Entries */
+            total_entries: number;
         };
         /** OcrRequest */
         OcrRequest: {
@@ -2209,6 +2819,48 @@ export interface components {
             /** Total Events */
             total_events: number;
         };
+        /** ProverbEntryOut */
+        ProverbEntryOut: {
+            /** Id */
+            id: number;
+            /** Text */
+            text: string;
+            /** Volume */
+            volume?: number | null;
+            /** Page Number */
+            page_number?: number | null;
+        };
+        /** ProverbsStatsOut */
+        ProverbsStatsOut: {
+            /** Total Entries */
+            total_entries: number;
+        };
+        /** QuranAyahOut */
+        QuranAyahOut: {
+            /** Id */
+            id: number;
+            /** Surah */
+            surah: number;
+            /** Surah Name En */
+            surah_name_en: string;
+            /** Surah Name Ar */
+            surah_name_ar: string;
+            /** Surah Name Ug */
+            surah_name_ug: string;
+            /** Ayah */
+            ayah: number;
+            /** Text Ar */
+            text_ar: string;
+            /** Text En */
+            text_en: string;
+            /** Text Ug */
+            text_ug: string;
+        };
+        /** QuranStatsOut */
+        QuranStatsOut: {
+            /** Total Entries */
+            total_entries: number;
+        };
         /** RAGQualityStats */
         RAGQualityStats: {
             /** Total Evaluations */
@@ -2302,6 +2954,13 @@ export interface components {
             /** First Issue Page */
             first_issue_page: number;
         };
+        /** RenameEntityRequest */
+        RenameEntityRequest: {
+            /** Oldname */
+            oldName: string;
+            /** Newname */
+            newName: string;
+        };
         /** SpellIssueOut */
         SpellIssueOut: {
             /** Id */
@@ -2313,9 +2972,43 @@ export interface components {
             /** Char End */
             char_end: number | null;
             /** Ocr Corrections */
-            ocr_corrections: string[];
+            ocr_corrections: components["schemas"]["SpellSuggestionOut"][];
             /** Status */
             status: string;
+        };
+        /** SpellSuggestionOut */
+        SpellSuggestionOut: {
+            /** Word */
+            word: string;
+            /** Confidence */
+            confidence: number;
+        };
+        /** SurahOut */
+        SurahOut: {
+            /** Surah */
+            surah: number;
+            /** Surah Name En */
+            surah_name_en: string;
+            /** Surah Name Ar */
+            surah_name_ar: string;
+            /** Surah Name Ug */
+            surah_name_ug: string;
+        };
+        /** SynonymEntryOut */
+        SynonymEntryOut: {
+            /** Id */
+            id: number;
+            /** Word */
+            word: string;
+            /** Letter Group */
+            letter_group: string;
+            /** Synonyms */
+            synonyms: string[];
+        };
+        /** SynonymStatsOut */
+        SynonymStatsOut: {
+            /** Total Words */
+            total_words: number;
         };
         /** SystemConfigCreate */
         SystemConfigCreate: {
@@ -2417,6 +3110,22 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
+        };
+        /** WordOut */
+        WordOut: {
+            /** Id */
+            id: number;
+            /** Word */
+            word: string;
+        };
+        /** WordsStatsOut */
+        WordsStatsOut: {
+            /** Total Words */
+            total_words: number;
         };
     };
     responses: never;
@@ -2975,6 +3684,72 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["MergeEntitiesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_graph_relationship_api_books_graph_relationship_delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteRelationshipRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_graph_entity_api_books_graph_entity_rename_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameEntityRequest"];
             };
         };
         responses: {
@@ -4637,72 +5412,7 @@ export interface operations {
             };
         };
     };
-    list_dictionary_words_api_spell_check_dictionary_get: {
-        parameters: {
-            query?: {
-                skip?: number;
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DictionaryWordOut"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    add_to_dictionary_api_spell_check_dictionary_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AddToDictionaryRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    search_dictionary_api_spell_check_dictionary_search_get: {
+    search_dictionary_api_dictionary_search_get: {
         parameters: {
             query: {
                 q: string;
@@ -4720,7 +5430,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DictionaryWordOut"][];
+                    "application/json": components["schemas"]["DictionaryEntryOut"][];
                 };
             };
             /** @description Validation Error */
@@ -4734,9 +5444,11 @@ export interface operations {
             };
         };
     };
-    get_dictionary_stats_api_spell_check_dictionary_stats_get: {
+    get_dictionary_stats_api_dictionary_stats_get: {
         parameters: {
-            query?: never;
+            query?: {
+                letter_group?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4752,15 +5464,22 @@ export interface operations {
                     "application/json": components["schemas"]["DictionaryStatsOut"];
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
-    delete_from_dictionary_api_spell_check_dictionary__word__delete: {
+    list_letter_groups_api_dictionary_letter_groups_get: {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                word: string;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -4771,7 +5490,642 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": string[];
+                };
+            };
+        };
+    };
+    list_dictionary_entries_api_dictionary_get: {
+        parameters: {
+            query?: {
+                skip?: number;
+                limit?: number;
+                letter_group?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DictionaryEntryOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_words_api_spell_check_words_search_get: {
+        parameters: {
+            query: {
+                q: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WordOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_words_stats_api_spell_check_words_stats_get: {
+        parameters: {
+            query?: {
+                letter_group?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WordsStatsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_letter_groups_api_spell_check_words_letter_groups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+        };
+    };
+    list_words_api_spell_check_words_get: {
+        parameters: {
+            query?: {
+                skip?: number;
+                limit?: number;
+                letter_group?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WordOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_synonyms_api_synonyms_search_get: {
+        parameters: {
+            query: {
+                q: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SynonymEntryOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lookup_synonym_api_synonyms_lookup_get: {
+        parameters: {
+            query: {
+                word: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SynonymEntryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_letter_groups_api_synonyms_letter_groups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+        };
+    };
+    get_synonym_stats_api_synonyms_stats_get: {
+        parameters: {
+            query?: {
+                letter_group?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SynonymStatsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_synonyms_api_synonyms_get: {
+        parameters: {
+            query?: {
+                letter_group?: string | null;
+                skip?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SynonymEntryOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_history_stats_api_history_dictionary_stats_get: {
+        parameters: {
+            query?: {
+                letter_group?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryStatsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_history_letter_groups_api_history_dictionary_letter_groups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+        };
+    };
+    search_history_dictionary_api_history_dictionary_search_get: {
+        parameters: {
+            query: {
+                q: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryEntryOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_history_entries_api_history_dictionary_get: {
+        parameters: {
+            query?: {
+                skip?: number;
+                limit?: number;
+                letter_group?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryEntryOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_names_stats_api_names_dictionary_stats_get: {
+        parameters: {
+            query?: {
+                letter_group?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NamesStatsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_names_letter_groups_api_names_dictionary_letter_groups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+        };
+    };
+    search_names_dictionary_api_names_dictionary_search_get: {
+        parameters: {
+            query: {
+                q: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NameEntryOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_names_entries_api_names_dictionary_get: {
+        parameters: {
+            query?: {
+                skip?: number;
+                limit?: number;
+                letter_group?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NameEntryOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_english_uyghur_stats_api_english_uyghur_dictionary_stats_get: {
+        parameters: {
+            query?: {
+                letter_group?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnglishUyghurStatsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_english_uyghur_letter_groups_api_english_uyghur_dictionary_letter_groups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+        };
+    };
+    search_english_uyghur_dictionary_api_english_uyghur_dictionary_search_get: {
+        parameters: {
+            query: {
+                q: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnglishUyghurEntryOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_english_uyghur_entries_api_english_uyghur_dictionary_get: {
+        parameters: {
+            query?: {
+                skip?: number;
+                limit?: number;
+                letter_group?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnglishUyghurEntryOut"][];
                 };
             };
             /** @description Validation Error */
@@ -4966,6 +6320,218 @@ export interface operations {
                 };
                 content: {
                     "application/json": string[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_proverbs_api_proverbs_search_get: {
+        parameters: {
+            query: {
+                q: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProverbEntryOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_proverbs_stats_api_proverbs_stats_get: {
+        parameters: {
+            query?: {
+                letter_group?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProverbsStatsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_proverbs_entries_api_proverbs_get: {
+        parameters: {
+            query?: {
+                skip?: number;
+                limit?: number;
+                letter_group?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProverbEntryOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_surahs_api_quran_surahs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SurahOut"][];
+                };
+            };
+        };
+    };
+    search_quran_api_quran_search_get: {
+        parameters: {
+            query: {
+                q: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuranAyahOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_quran_stats_api_quran_stats_get: {
+        parameters: {
+            query?: {
+                surah?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuranStatsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_quran_entries_api_quran_get: {
+        parameters: {
+            query?: {
+                skip?: number;
+                limit?: number;
+                surah?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuranAyahOut"][];
                 };
             };
             /** @description Validation Error */

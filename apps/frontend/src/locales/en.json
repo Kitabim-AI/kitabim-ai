@@ -544,6 +544,7 @@
     "noErrors": "Page {{page}}: No errors found!",
     "noErrorsDetail": "The text on this page looks correct.",
     "suggestion": "Suggested Correction",
+    "confidenceLabel": "Confidence: {{percent}}%",
     "ignore": "Ignore",
     "applied": "Corrected",
     "ignored": "Ignored",
@@ -875,7 +876,14 @@
       "mergeKeep": "Keep",
       "mergeConfirmButton": "Merge",
       "mergeSuccess": "Entities merged.",
-      "mergeError": "Failed to merge entities."
+      "mergeError": "Failed to merge entities.",
+      "renameStart": "Rename...",
+      "renameTitle": "Rename Entity",
+      "renameLabel": "New Name",
+      "renameCancel": "Cancel",
+      "renameConfirm": "Rename",
+      "renameSuccess": "Entity renamed.",
+      "renameError": "Failed to rename entity."
     }
   },
   "quran": {
