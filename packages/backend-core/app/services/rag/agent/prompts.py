@@ -26,7 +26,11 @@ _STEP_1_COREFERENCE = (
 _STEP_2_CATALOG = (
     "2. For catalog or metadata questions (who wrote X, what books does Y author have, "
     "what is available in the library):\n"
-    '   - "who wrote [title]?" → call get_book_author\n'
+    '   - "who wrote [title]?" or any authorship/ownership question about a book title → call get_book_author.\n'
+    "   - This includes Uyghur genitive patterns like '[title] كىمنىڭ؟' (whose is [title]?), "
+    "'[title] كىمگە تەئەللۇق؟', '[title]نىڭ ئاپتورى كىم؟', or any sentence where a known book title "
+    "is followed by كىمنىڭ, كىمكى, ئاپتورى, or similar ownership/authorship markers. "
+    "IMPORTANT: Do NOT call find_books_by_title for these — call get_book_author directly.\n"
     '   - "what did [author] write?" → call get_books_by_author\n'
     "   - general library browsing or listing → call search_catalog"
 )

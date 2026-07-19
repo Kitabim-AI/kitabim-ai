@@ -157,7 +157,12 @@ async def get_book_author(
 ) -> dict:
     """Look up the author of a specific book title mentioned in the question.
 
-    Call when the user asks who wrote a book or wants the author of a title.
+    Call when the user asks who wrote a book or wants the author/owner of a title.
+    This includes Uyghur genitive authorship patterns such as:
+      - '[title] كىمنىڭ؟'  (whose is [title]?)
+      - '[title] كىمگە تەئەللۇق؟'  (who does [title] belong to?)
+      - '[title]نىڭ ئاپتورى كىم؟'  (who is the author of [title]?)
+    Do NOT call find_books_by_title for these — call get_book_author directly.
     Returns the book title and its author name.
 
     Args:
