@@ -23,26 +23,16 @@ CRITICAL: Pay close attention to visually similar Perso-Arabic characters based 
 - Waw-family vowels: و (oe), ۇ (u), ۆ (ö), ۈ (ü), ۋ (w/v) — pay strict attention to diacritics.
 - Do not confuse ڭ (Uyghur velar nasal) with ك.
 - Do not confuse ر (r) with ز (z).
-- Do not confuse ە (ae/open-he) with ھ (dotless-he/h).
+- Do not confuse ە (ae/open-he) with ھ (dotless-he/h). This is especially common in Arabic-origin words (e.g. راھىب, قاھىرە, جاھاندارچىلىق, شاھى) — do not default to ە when the source letter is ھ.
 - Do not confuse ف (f - one dot) with ق (q - two dots).
 - Non-Uyghur Arabic Letters: ع (Ain) and ح (Ha) are NOT letters in the modern Uyghur alphabet. You almost certainly mean غ (Ghain - with dot) or خ (Kha - with dot). Do not omit the dots above them.
+- Do not drop a short "ى" or "ي" that sits between a stem and a common suffix — especially the reported-past suffix "-غاندى/-گەندى", which is almost always "-غانىدى/-گەنىدى" (e.g. كەتكەندى -> كەتكەنىدى, دېگەندى -> دېگەنىدى, بەرگەندى -> بەرگەنىدى). Verify the vowel letter is present before suffixes like -نىڭ, -دى, -تىپ, -دان rather than omitting it.
+- Arabic/Persian-origin adjectives ending in the nisba suffix "-ىي" are frequently truncated to a single "ى" — preserve the full ending (e.g. رەسمىي, جەمئىي, تەرەققىي, غەنىيمەت, قەدىمىي — not رەسمى, جەمئى, تەرەققى, غەنىمەت, قەدىمى).
 </character_accuracy>
 
 <frequent_corrections>
 Automatically correct the following common OCR transcription errors. If you detect the word on the left, output the correct spelling on the right:
-ئولار -> ئۇلار | ئونىڭغا -> ئۇنىڭغا | ئونىڭ -> ئۇنىڭ | خوشال -> خۇشال
-ئولارنىڭ -> ئۇلارنىڭ | ئولارغا -> ئۇلارغا | ئونىڭدىن -> ئۇنىڭدىن | تويۇقسىز -> تۇيۇقسىز
-بونداق -> بۇنداق | ئوزاق -> ئۇزاق | ئونداق -> ئۇنداق | ئەسرنىڭ -> ئەسىرنىڭ
-ئويان -> ئۇيان | ئۈزۈن -> ئۇزۇن | موشۇ -> مۇشۇ | ئودۇل -> ئۇدۇل
-يوقىرىدا -> يۇقىرىدا | ھوزۇر -> ھۇزۇر | خوراسان -> خۇراسان | يوقىرىغا -> يۇقىرىغا
-ئوزاقتىن -> ئۇزاقتىن | يوقىرىدىكى -> يۇقىرىدىكى | ئوزاققىچە -> ئۇزاققىچە | ئوستام -> ئۇستام
-ئۆنداق -> ئۇنداق | ئابرويى -> ئابرۇيى | خوشخۇي -> خۇشخۇي | روسلاپ -> رۇسلاپ
-جەمئى -> جەمئىي | ئوزاققا -> ئۇزاققا | ئئوچقاندەك -> ئۇچقاندەك | گۇياكى -> گوياكى
-بونچە -> بۇنچە | خوشى -> خۇشى | رەسمى -> رەسمىي | ئابرويىنى -> ئابرۇيىنى
-بوقا -> بۇقا | قەتئىنەزەر -> قەتئىينەزەر | تېگىرقاپ -> تېڭىرقاپ | ھوجرا -> ھۇجرا
-سۆرلۈك -> سۈرلۈك | مولايىم -> مۇلايىم | بۈگۈنكىچە -> بۈگۈنگىچە | كۆچلۈك -> كۇچلۈك
-مۆرىسىدىن -> مۈرىسىدىن | ئوسۇل -> ئۇسۇل | ژورنىلى -> ژۇرنىلى | سەمىز -> سېمىز
-قومۇلدا -> قۇمۇلدا | ئولارمۇ -> ئۇلارمۇ
+{frequent_corrections}
 </frequent_corrections>"""
 
 CATEGORY_PROMPT = """You are a librarian efficiently categorizing a user's question to find the right section of the library.

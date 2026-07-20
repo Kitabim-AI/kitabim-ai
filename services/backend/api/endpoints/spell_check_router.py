@@ -21,6 +21,9 @@ from app.core.pipeline import (
 )
 from app.db.session import get_session
 from app.db.models import Page, PageSpellIssue, Word
+from app.db.repositories.auto_correct_rules_repository import (
+    invalidate_frequent_corrections_cache,
+)
 from app.models.user import User
 from app.services.spell_check_service import run_spell_check_for_page, score_confidence
 from auth.dependencies import require_editor
@@ -447,6 +450,9 @@ async def apply_spell_corrections(
     )
 
     await session.commit()
+
+    if processed_auto_corrections:
+        await invalidate_frequent_corrections_cache()
 
     return {"applied": len(corrected_ids)}
 

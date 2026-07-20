@@ -16,6 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
 from app.db.models import AutoCorrectRule
+from app.db.repositories.auto_correct_rules_repository import (
+    invalidate_frequent_corrections_cache,
+)
 from app.models.user import User
 from app.services.auto_correct_service import get_auto_correction_stats
 from auth.dependencies import require_editor
@@ -203,6 +206,7 @@ async def create_auto_correct_rule(
         existing_rule.updated_at = func.now()
         await session.commit()
         await session.refresh(existing_rule)
+        await invalidate_frequent_corrections_cache()
         return existing_rule
     else:
         # Create new rule
@@ -216,6 +220,7 @@ async def create_auto_correct_rule(
         session.add(rule)
         await session.commit()
         await session.refresh(rule)
+        await invalidate_frequent_corrections_cache()
         return rule
 
 
@@ -258,6 +263,7 @@ async def update_auto_correct_rule(
 
     await session.commit()
     await session.refresh(rule)
+    await invalidate_frequent_corrections_cache()
     return rule
 
 
@@ -278,4 +284,5 @@ async def delete_auto_correct_rule(
         raise HTTPException(status_code=404, detail="Auto-correction rule not found")
 
     await session.commit()
+    await invalidate_frequent_corrections_cache()
     return None

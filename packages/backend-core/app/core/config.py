@@ -62,6 +62,7 @@ class Settings:
 
     # OCR Settings
     ocr_max_retries: int = int(os.getenv("OCR_MAX_RETRIES", "4"))
+    ocr_page_zoom_factor: float = float(os.getenv("OCR_PAGE_ZOOM_FACTOR", "1.5"))
 
     # RAG Settings
     rag_score_threshold: float = float(os.getenv("RAG_SCORE_THRESHOLD", "0.50"))
@@ -187,6 +188,9 @@ class Settings:
     cache_ttl_proverbs: int = int(
         os.getenv("CACHE_TTL_PROVERBS", "86400")
     )  # 1 day by default
+    cache_ttl_ocr_frequent_corrections: int = int(
+        os.getenv("CACHE_TTL_OCR_FREQUENT_CORRECTIONS", "86400")
+    )  # 1 day by default; explicitly invalidated on auto_correct_rules writes
 
     # Cache behavior
     cache_skip_for_admins: bool = (
