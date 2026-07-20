@@ -14,7 +14,7 @@ from app.db.models import (
     NamesDictionary,
     Word,
 )
-from app.services.rag.utils import normalize_uyghur_spelling
+from app.services.rag.utils import normalize_uyghur_spelling, is_who_is_query
 
 
 def _sql_normalize_uyghur(column):
@@ -231,7 +231,7 @@ class DictionaryRepository:
 
     async def lookup_name(self, name: str, limit: int = 5) -> list[dict[str, Any]]:
         name = name.strip()
-        if not name:
+        if not name or is_who_is_query(name):
             return []
 
         norm_name = normalize_uyghur_spelling(name)

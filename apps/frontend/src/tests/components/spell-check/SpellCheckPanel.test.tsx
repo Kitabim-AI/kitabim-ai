@@ -11,7 +11,10 @@ const baseIssue: SpellIssue = {
   word: 'teh',
   char_offset: 0,
   char_end: 3,
-  ocr_corrections: ['the', 'thee'],
+  ocr_corrections: [
+    { word: 'the', confidence: 0.8 },
+    { word: 'thee', confidence: 0.5 },
+  ],
   status: 'open',
 };
 
@@ -32,6 +35,8 @@ const defaultProps = {
   onIgnoreIssue: vi.fn(),
   onNextPage: vi.fn(),
   onPrevPage: vi.fn(),
+  skippedIds: [] as number[],
+  onToggleSkip: vi.fn(),
 };
 
 beforeEach(() => {

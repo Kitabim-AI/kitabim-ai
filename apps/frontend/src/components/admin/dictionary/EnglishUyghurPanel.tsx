@@ -149,7 +149,7 @@ export const EnglishUyghurPanel: React.FC = () => {
       {/* Search + Stats row */}
       <div className="flex flex-col-reverse md:flex-row items-center justify-between w-full gap-3 md:gap-4">
         <div className="relative flex-1 lg:flex-none lg:w-[40%] group w-full">
-          <div className="absolute inset-y-0 right-4 md:right-5 flex items-center pointer-events-none text-[#0369a1] dark:text-[#38bdf8] transition-colors z-10 font-bold">
+          <div className="absolute inset-y-0 left-4 md:left-5 flex items-center pointer-events-none text-[#0369a1] dark:text-[#38bdf8] transition-colors z-10 font-bold">
             {isSearching ? (
               <RefreshCw className="animate-spin" size={16} />
             ) : (
@@ -161,14 +161,14 @@ export const EnglishUyghurPanel: React.FC = () => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             ref={inputRef}
-            className="w-full pr-11 md:pr-14 pl-10 md:pl-11 py-2.5 md:py-3 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] text-slate-800 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-500 text-base"
+            className="w-full pl-11 md:pl-14 pr-10 md:pr-11 py-2.5 md:py-3 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] text-slate-800 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-500 text-base"
             placeholder={t('admin.englishUyghurDictionary.searchPlaceholder')}
             dir="ltr"
             lang="en"
             data-latin="true"
           />
           {searchQuery && (
-            <div className="absolute inset-y-0 left-3 md:left-4 flex items-center z-10">
+            <div className="absolute inset-y-0 right-3 md:right-4 flex items-center z-10">
               <button
                 onClick={() => setSearchQuery('')}
                 className="p-1.5 md:p-2 text-slate-300 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 transition-colors"

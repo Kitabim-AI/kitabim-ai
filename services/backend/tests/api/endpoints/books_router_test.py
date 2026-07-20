@@ -168,3 +168,150 @@ async def test_merge_graph_entities_endpoint():
 
     assert response["status"] == "success"
     mock_repo.merge_entities.assert_called_once_with("A", "B")
+
+
+@pytest.mark.asyncio
+async def test_merge_entities_request_accepts_camel_case():
+    setup_paths()
+    from api.endpoints.books_router import MergeEntitiesRequest
+
+    req = MergeEntitiesRequest.model_validate(
+        {"keepName": "KeepName", "removeName": "RemoveName"}
+    )
+    assert req.keep_name == "KeepName"
+    assert req.remove_name == "RemoveName"
+
+
+@pytest.mark.asyncio
+async def test_delete_graph_relationship_endpoint():
+    setup_paths()
+    from api.endpoints.books_router import (
+        delete_graph_relationship,
+        DeleteRelationshipRequest,
+    )
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+
+    mock_request = DeleteRelationshipRequest(
+        source_name="A", target_name="B", rel_type="SON_OF"
+    )
+
+    mock_repo = MagicMock()
+    mock_repo.delete_relationship = AsyncMock()
+
+    with patch(
+        "app.db.repositories.graph_repository.GraphRepository", return_value=mock_repo
+    ):
+        response = await delete_graph_relationship(
+            request=mock_request, current_user=mock_user, session=mock_session
+        )
+
+    assert response["status"] == "success"
+    mock_repo.delete_relationship.assert_called_once_with("A", "B", "SON_OF")
+
+
+@pytest.mark.asyncio
+async def test_delete_graph_relationship_endpoint_not_found():
+    setup_paths()
+    from api.endpoints.books_router import (
+        delete_graph_relationship,
+        DeleteRelationshipRequest,
+    )
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+    mock_request = DeleteRelationshipRequest(
+        source_name="A", target_name="B", rel_type="SON_OF"
+    )
+
+    mock_repo = MagicMock()
+    mock_repo.delete_relationship = AsyncMock(side_effect=ValueError("not found"))
+
+    with patch(
+        "app.db.repositories.graph_repository.GraphRepository", return_value=mock_repo
+    ):
+        with pytest.raises(HTTPException) as excinfo:
+            await delete_graph_relationship(
+                request=mock_request, current_user=mock_user, session=mock_session
+            )
+    assert excinfo.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_delete_relationship_request_accepts_camel_case():
+    setup_paths()
+    from api.endpoints.books_router import DeleteRelationshipRequest
+
+    req = DeleteRelationshipRequest.model_validate(
+        {"sourceName": "A", "targetName": "B", "relType": "SON_OF"}
+    )
+    assert req.source_name == "A"
+    assert req.target_name == "B"
+    assert req.rel_type == "SON_OF"
+
+
+@pytest.mark.asyncio
+async def test_rename_graph_entity_endpoint_success():
+    setup_paths()
+    from api.endpoints.books_router import (
+        rename_graph_entity,
+        RenameEntityRequest,
+    )
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+    mock_request = RenameEntityRequest(old_name="OldName", new_name="NewName")
+
+    mock_repo = MagicMock()
+    mock_repo.rename_entity = AsyncMock(return_value=True)
+
+    with patch(
+        "app.db.repositories.graph_repository.GraphRepository", return_value=mock_repo
+    ):
+        response = await rename_graph_entity(
+            request=mock_request, current_user=mock_user, session=mock_session
+        )
+
+    assert response["status"] == "success"
+    assert response["message"] == "Renamed entity 'OldName' to 'NewName'"
+    mock_repo.rename_entity.assert_called_once_with("OldName", "NewName")
+
+
+@pytest.mark.asyncio
+async def test_rename_graph_entity_endpoint_error():
+    setup_paths()
+    from api.endpoints.books_router import (
+        rename_graph_entity,
+        RenameEntityRequest,
+    )
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+    mock_request = RenameEntityRequest(old_name="OldName", new_name="NewName")
+
+    mock_repo = MagicMock()
+    mock_repo.rename_entity = AsyncMock(side_effect=ValueError("Already exists"))
+
+    with patch(
+        "app.db.repositories.graph_repository.GraphRepository", return_value=mock_repo
+    ):
+        with pytest.raises(HTTPException) as excinfo:
+            await rename_graph_entity(
+                request=mock_request, current_user=mock_user, session=mock_session
+            )
+
+    assert excinfo.value.status_code == 400
+    assert "Already exists" in excinfo.value.detail
+
+
+@pytest.mark.asyncio
+async def test_rename_entity_request_accepts_camel_case():
+    setup_paths()
+    from api.endpoints.books_router import RenameEntityRequest
+
+    req = RenameEntityRequest.model_validate(
+        {"oldName": "OldName", "newName": "NewName"}
+    )
+    assert req.old_name == "OldName"
+    assert req.new_name == "NewName"

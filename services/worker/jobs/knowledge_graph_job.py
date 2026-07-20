@@ -30,6 +30,7 @@ from app.services.knowledge_graph_service import (
     KnowledgeExtraction,
     parse_and_clean_json_from_exception,
     EntityType,
+    NameResolutionResponse,
 )
 from app.utils.observability import log_json
 
@@ -207,6 +208,8 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                         "- If the text mentions a Gregorian century (e.g. '15th century', '15-ئەسىر CE') without a specific Hijri year, extract it as an integer in the century_gregorian field (e.g. 15 for 15th century).\n"
                         "- Do NOT set both year_hijri and century_gregorian on the same entity/relation.\n"
                         "- Do NOT embed years or centuries inside entity names — store the name cleanly (e.g. 'ئىسان بۇغاخاننىڭ ۋاپاتى', not 'ئىسان بۇغاخاننىڭ ۋاپاتى (ھىجرىيە 866-يىلى)').\n\n"
+                        "Context Summary Guideline:\n"
+                        "- For every extracted entity, especially Person entities, provide a brief `context_summary` from the text (e.g., 'son of Ibrahim, ruler of Kashgar', 'general under Abdurashid Khan') to help resolve potential duplicates later.\n\n"
                         f"Text Chunks:\n{combined_text}"
                     )
 
@@ -254,17 +257,217 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
             tasks = [extract_batch(batch) for batch in batches]
             results = await asyncio.gather(*tasks)
 
-            # 6. Accumulate all entities and relations across all batches, then write
-            #    to Neo4j in exactly 2 round-trips (upsert + connect) instead of 2×N.
-            #    Entity names are deduplicated — the same historical figure appears in
-            #    many batches and Neo4j MERGE handles it, but sending 1 entry is cheaper.
-            seen_entity_names: set[str] = set()
-            all_entities: list[dict] = []
-            all_relations: list[dict] = []
+            # 6. Accumulate all entities and relations across all batches, perform
+            #    entity resolution on duplicate names, and then write to Neo4j.
+            entity_occurrences = []
+            relation_occurrences = []
+
+            for batch_idx, (batch, extraction) in enumerate(results):
+                if not extraction:
+                    continue
+
+                # Map entity name -> entity object in this extraction batch
+                batch_entities_map = {
+                    e.name.strip(): e for e in extraction.entities if e.name
+                }
+
+                added_names_in_batch = set()
+
+                def add_entity_occurrence(
+                    name: str, fallback_type: EntityType | str | None = None
+                ):
+                    name_stripped = name.strip()
+                    if not name_stripped or name_stripped in added_names_in_batch:
+                        return
+                    added_names_in_batch.add(name_stripped)
+
+                    ent = batch_entities_map.get(name_stripped)
+                    if ent:
+                        entity_occurrences.append(
+                            {
+                                "batch_idx": batch_idx,
+                                "name": name_stripped,
+                                "type": ent.type,
+                                "subtype": ent.subtype,
+                                "year_hijri": ent.year_hijri,
+                                "century_gregorian": ent.century_gregorian,
+                                "context_summary": ent.context_summary,
+                            }
+                        )
+                    else:
+                        entity_occurrences.append(
+                            {
+                                "batch_idx": batch_idx,
+                                "name": name_stripped,
+                                "type": fallback_type or EntityType.CONCEPT,
+                                "subtype": "Auto-extracted from relation",
+                                "year_hijri": None,
+                                "century_gregorian": None,
+                                "context_summary": None,
+                            }
+                        )
+
+                # Add all explicit entities
+                for ent in extraction.entities:
+                    if ent.name:
+                        add_entity_occurrence(ent.name)
+
+                # Add all relations and capture implicit entities
+                for rel in extraction.relations:
+                    src = rel.source_entity.strip() if rel.source_entity else ""
+                    tgt = rel.target_entity.strip() if rel.target_entity else ""
+                    rtype = rel.relation_type.strip() if rel.relation_type else ""
+                    if not src or not tgt or not rtype:
+                        continue
+
+                    src_type = (
+                        batch_entities_map.get(src).type
+                        if batch_entities_map.get(src)
+                        else None
+                    )
+                    tgt_type = (
+                        batch_entities_map.get(tgt).type
+                        if batch_entities_map.get(tgt)
+                        else None
+                    )
+
+                    add_entity_occurrence(src, fallback_type=src_type)
+                    add_entity_occurrence(tgt, fallback_type=tgt_type)
+
+                    relation_occurrences.append(
+                        {
+                            "batch_idx": batch_idx,
+                            "source_name": src,
+                            "rel_type": rtype,
+                            "target_name": tgt,
+                            "year_hijri": rel.year_hijri,
+                            "century_gregorian": rel.century_gregorian,
+                        }
+                    )
+
+            # Gather local relationships for each Person occurrence to provide context to the resolver
+            person_occurrences = []
+            for idx, occ in enumerate(entity_occurrences):
+                etype = occ["type"]
+                is_person = False
+                if isinstance(etype, EntityType) and etype == EntityType.PERSON:
+                    is_person = True
+                elif isinstance(etype, str) and etype.strip().lower() == "person":
+                    is_person = True
+
+                if is_person:
+                    person_occurrences.append((idx, occ))
+
+            for global_idx, occ in person_occurrences:
+                b_idx = occ["batch_idx"]
+                raw_name = occ["name"]
+
+                related_info = []
+                for rel in relation_occurrences:
+                    if rel["batch_idx"] == b_idx:
+                        if rel["source_name"] == raw_name:
+                            related_info.append(
+                                f"{rel['rel_type']} -> {rel['target_name']}"
+                            )
+                        elif rel["target_name"] == raw_name:
+                            related_info.append(
+                                f"{rel['source_name']} -> {rel['rel_type']}"
+                            )
+                occ["relationships"] = related_info
+
+            # Run global person name resolution if we have multiple person occurrences
+            if len(person_occurrences) > 1:
+                occurrences_data = []
+                for global_idx, occ in person_occurrences:
+                    occurrences_data.append(
+                        {
+                            "occurrence_index": len(occurrences_data),
+                            "name": occ["name"],
+                            "subtype": occ["subtype"],
+                            "year_hijri": occ["year_hijri"],
+                            "century_gregorian": occ["century_gregorian"],
+                            "context_summary": occ["context_summary"],
+                            "relationships": occ.get("relationships", []),
+                        }
+                    )
+
+                items_str = ""
+                for occ in occurrences_data:
+                    items_str += f"Occurrence index: {occ['occurrence_index']}\n"
+                    items_str += f"  Name: {occ['name']}\n"
+                    if occ.get("subtype"):
+                        items_str += f"  Subtype: {occ['subtype']}\n"
+                    if occ.get("year_hijri"):
+                        items_str += f"  Hijri Year: {occ['year_hijri']}\n"
+                    if occ.get("century_gregorian"):
+                        items_str += (
+                            f"  Gregorian Century: {occ['century_gregorian']}\n"
+                        )
+                    if occ.get("context_summary"):
+                        items_str += f"  Context: {occ['context_summary']}\n"
+                    if occ.get("relationships"):
+                        items_str += (
+                            f"  Relationships: {', '.join(occ['relationships'])}\n"
+                        )
+                    items_str += "\n"
+
+                prompt = (
+                    "You are an expert historical analyst and librarian. We have extracted a list of person name occurrences "
+                    "from different parts/chunks of a book. Some occurrences represent the exact same person, some represent "
+                    "different people with the exact same name, and some represent the same person but with variation in names/titles "
+                    "(e.g., 'بابۇر' and 'بابۇر پادىشاھ').\n\n"
+                    "Your task is to analyze these occurrences and group them into distinct real-world individuals, resolving "
+                    "their names to a canonical standard form.\n\n"
+                    "Rules:\n"
+                    "1. If multiple occurrences represent the same individual, resolve them to the exact same canonical name. For example, "
+                    "if occurrence A has name 'بابۇر پادىشاھ' and occurrence B has name 'بابۇر', and they represent the same person, resolve "
+                    "both to the cleaner canonical name 'بابۇر'.\n"
+                    "2. If occurrences represent different individuals with the exact same name (or very similar names), append Roman numerals "
+                    "to their names to distinguish them (e.g. 'ئابدۇللاھ I', 'ئابدۇللاھ II', 'ئابدۇللاھ III'). Order them chronologically "
+                    "(using their Hijri year/century) or by order of appearance. Start numbering from I.\n"
+                    "3. If there is only one distinct person matching a name group across all occurrences, do NOT append any Roman numeral to that name.\n"
+                    "4. Keep the original script/language of the name exactly, and append a space followed by the Roman numeral (ASCII letters: I, II, III, IV, etc.).\n\n"
+                    f"Occurrences to analyze:\n{items_str}"
+                )
+
+                try:
+                    response = await client.aio.models.generate_content(
+                        model=chat_model,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            response_schema=NameResolutionResponse,
+                            temperature=0.0,
+                        ),
+                    )
+                    raw_text = response.text
+                    resolution = NameResolutionResponse.model_validate_json(raw_text)
+                    for res in resolution.resolutions:
+                        local_idx = res.occurrence_index
+                        if 0 <= local_idx < len(person_occurrences):
+                            global_idx = person_occurrences[local_idx][0]
+                            entity_occurrences[global_idx]["resolved_name"] = (
+                                res.resolved_name.strip()
+                            )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to run global person resolution: {e}. Keeping original names."
+                    )
+
+            # Create a lookup mapping from (batch_idx, raw_name) to the final resolved name
+            name_resolution_map = {}
+            for occ in entity_occurrences:
+                batch_idx = occ["batch_idx"]
+                raw_name = occ["name"]
+                resolved_name = occ.get("resolved_name", raw_name)
+                name_resolution_map[(batch_idx, raw_name)] = resolved_name
+
+            name_type_map = {}
+            for occ in entity_occurrences:
+                name_type_map[(occ["batch_idx"], occ["name"])] = occ["type"]
 
             base_title = re.sub(r"[\s-]+\d+\s*$", "", book.title or "").strip()
 
-            # Helper to namespace Person entity names for fictional books
             def get_display_name(name: str, etype: EntityType | str | None) -> str:
                 if not name:
                     return ""
@@ -278,90 +481,66 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                     return f"{name} ({base_title})"
                 return name
 
-            for batch, extraction in results:
-                if not extraction:
-                    continue
+            seen_entity_names = set()
+            all_entities = []
+            for occ in entity_occurrences:
+                batch_idx = occ["batch_idx"]
+                raw_name = occ["name"]
+                resolved_name = name_resolution_map.get((batch_idx, raw_name), raw_name)
+                display_name = get_display_name(resolved_name, occ["type"])
 
-                chunks_with_text = [c for c in batch if c.text]
-                if not chunks_with_text:
+                if display_name in seen_entity_names:
                     continue
-
-                # Map entity name -> type in this extraction batch
-                entity_types = {
-                    e.name.strip(): e.type
-                    for e in extraction.entities
-                    if e.name and e.type
+                seen_entity_names.add(display_name)
+                etype = occ["type"]
+                entity_data: dict = {
+                    "name": display_name,
+                    "type": etype.value
+                    if isinstance(etype, EntityType)
+                    else (etype if etype else EntityType.OTHER.value),
+                    "subtype": occ["subtype"],
                 }
+                if occ["year_hijri"]:
+                    entity_data["year_hijri"] = occ["year_hijri"]
+                    entity_data["year_gregorian"] = hijri_to_gregorian(
+                        occ["year_hijri"]
+                    )
+                elif occ["century_gregorian"]:
+                    entity_data["century_gregorian"] = occ["century_gregorian"]
+                all_entities.append(entity_data)
 
-                for entity in extraction.entities:
-                    name = entity.name.strip() if entity.name else ""
-                    if not name:
-                        continue
-                    etype = entity.type
-                    display_name = get_display_name(name, etype)
-                    if display_name in seen_entity_names:
-                        continue
-                    seen_entity_names.add(display_name)
-                    entity_data: dict = {
-                        "name": display_name,
-                        "type": etype.value
-                        if isinstance(etype, EntityType)
-                        else (etype if etype else EntityType.OTHER.value),
-                        "subtype": entity.subtype,
-                    }
-                    if entity.year_hijri:
-                        entity_data["year_hijri"] = entity.year_hijri
-                        entity_data["year_gregorian"] = hijri_to_gregorian(
-                            entity.year_hijri
-                        )
-                    elif entity.century_gregorian:
-                        entity_data["century_gregorian"] = entity.century_gregorian
-                    all_entities.append(entity_data)
+            all_relations = []
+            for rel in relation_occurrences:
+                batch_idx = rel["batch_idx"]
+                src_raw = rel["source_name"]
+                tgt_raw = rel["target_name"]
 
-                # Ensure relation endpoints exist as entities (fallback to Concept type)
-                for rel in extraction.relations:
-                    src = rel.source_entity.strip() if rel.source_entity else ""
-                    tgt = rel.target_entity.strip() if rel.target_entity else ""
+                src_type = name_type_map.get((batch_idx, src_raw))
+                tgt_type = name_type_map.get((batch_idx, tgt_raw))
 
-                    src_type = entity_types.get(src)
-                    tgt_type = entity_types.get(tgt)
+                src_resolved = name_resolution_map.get((batch_idx, src_raw), src_raw)
+                tgt_resolved = name_resolution_map.get((batch_idx, tgt_raw), tgt_raw)
 
-                    src_display = get_display_name(src, src_type)
-                    tgt_display = get_display_name(tgt, tgt_type)
+                src_display = get_display_name(src_resolved, src_type)
+                tgt_display = get_display_name(tgt_resolved, tgt_type)
 
-                    for raw_name, display_name, etype in [
-                        (src, src_display, src_type),
-                        (tgt, tgt_display, tgt_type),
-                    ]:
-                        if display_name and display_name not in seen_entity_names:
-                            seen_entity_names.add(display_name)
-                            all_entities.append(
-                                {
-                                    "name": display_name,
-                                    "type": etype.value
-                                    if isinstance(etype, EntityType)
-                                    else (etype if etype else "Concept"),
-                                    "subtype": "Auto-extracted from relation",
-                                }
-                            )
+                if not src_display or not tgt_display or not rel["rel_type"]:
+                    continue
 
-                    rtype = rel.relation_type.strip() if rel.relation_type else ""
-                    if not src_display or not tgt_display or not rtype:
-                        continue
-                    relation_data: dict = {
-                        "source_name": src_display,
-                        "rel_type": rtype,
-                        "target_name": tgt_display,
-                        "book_id": str(book_id),
-                    }
-                    if rel.year_hijri:
-                        relation_data["year_hijri"] = rel.year_hijri
-                        relation_data["year_gregorian"] = hijri_to_gregorian(
-                            rel.year_hijri
-                        )
-                    elif rel.century_gregorian:
-                        relation_data["century_gregorian"] = rel.century_gregorian
-                    all_relations.append(relation_data)
+                relation_data: dict = {
+                    "source_name": src_display,
+                    "rel_type": rel["rel_type"],
+                    "target_name": tgt_display,
+                    "book_id": str(book_id),
+                }
+                if rel["year_hijri"]:
+                    relation_data["year_hijri"] = rel["year_hijri"]
+                    relation_data["year_gregorian"] = hijri_to_gregorian(
+                        rel["year_hijri"]
+                    )
+                elif rel["century_gregorian"]:
+                    relation_data["century_gregorian"] = rel["century_gregorian"]
+                all_relations.append(relation_data)
 
             # Single bulk write: 2 Neo4j round-trips for the entire book
             save_errors = 0

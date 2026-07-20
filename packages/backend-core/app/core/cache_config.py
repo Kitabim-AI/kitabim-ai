@@ -9,6 +9,7 @@ TTL_RAG_QUERY = settings.cache_ttl_rag_query
 TTL_USER_PROFILE = settings.cache_ttl_user_profile
 TTL_STATS = settings.cache_ttl_stats
 TTL_SUMMARY_SEARCH = settings.cache_ttl_summary_search
+TTL_OCR_FREQUENT_CORRECTIONS = settings.cache_ttl_ocr_frequent_corrections
 
 # Cache key patterns
 KEY_BOOK = "book:{book_id}"
@@ -25,3 +26,4 @@ KEY_STATS = "stats:system"
 KEY_CONFIG = "config:{key}"
 KEY_CHAT_USAGE = "chat:usage:{user_id}:{date}"
 KEY_RAG_REWRITE = "rag:rewrite:{hash}"
+KEY_OCR_FREQUENT_CORRECTIONS = "ocr:frequent_corrections"

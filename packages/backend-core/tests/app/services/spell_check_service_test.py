@@ -2,9 +2,11 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from app.services.spell_check_service import (
     ThreadSafeSpellCheckCache,
+    classify_transform,
     find_unknown_words,
     get_ocr_corrections_batch,
     run_spell_check_for_page,
+    score_confidence,
 )
 from app.db.models import Page
 
@@ -107,6 +109,50 @@ async def test_run_spell_check_for_page_with_issues():
             issues = session.add_all.call_args[0][0]
             assert issues[0].word == "نامەلۇم"
             assert issues[0].ocr_corrections == ["پىلان"]
+
+
+def test_classify_transform_single_substitution():
+    # و -> ۇ is a known OCR-confusable pair; one occurrence swapped.
+    assert classify_transform("بو", "بۇ") == "substitution_1"
+
+
+def test_classify_transform_double_substitution():
+    # Both occurrences of و swapped requires two rounds of _apply_single.
+    assert classify_transform("وو", "ۇۇ") == "substitution_2"
+
+
+def test_classify_transform_insertion():
+    # Any length mismatch is classified as insertion, regardless of content.
+    assert classify_transform("سوز", "سووز") == "insertion"
+
+
+def test_score_confidence_weight_ordering():
+    # Same original ("وو") and candidate_count: substitution_1 > substitution_2 > insertion.
+    single = score_confidence("بو", "بۇ", candidate_count=1)
+    double = score_confidence("وو", "ۇۇ", candidate_count=1)
+    insertion = score_confidence("وو", "ووو", candidate_count=1)
+    assert single > double > insertion
+
+
+def test_score_confidence_length_weight_caps_at_one():
+    long_word = "تولۇقلاشتۇرۇش"  # 13 chars, well over the length_weight=1.0 cap of 8
+    assert len(long_word) >= 8
+    score = score_confidence(long_word, long_word[:-1] + "ۇ", candidate_count=1)
+    # length_weight should be capped at 1.0, not scale past it
+    assert score <= 1.0
+
+
+def test_score_confidence_count_weight_scales_down():
+    one_candidate = score_confidence("بو", "بۇ", candidate_count=1)
+    two_candidates = score_confidence("بو", "بۇ", candidate_count=2)
+    # Rounded to 2 decimals, so allow for rounding error rather than exact halving.
+    assert two_candidates == pytest.approx(one_candidate / 2, abs=0.01)
+    assert two_candidates < one_candidate
+
+
+def test_score_confidence_rounds_to_two_decimals():
+    score = score_confidence("بو", "بۇ", candidate_count=3)
+    assert score == round(score, 2)
 
 
 @pytest.mark.asyncio

@@ -157,7 +157,12 @@ async def get_book_author(
 ) -> dict:
     """Look up the author of a specific book title mentioned in the question.
 
-    Call when the user asks who wrote a book or wants the author of a title.
+    Call when the user asks who wrote a book or wants the author/owner of a title.
+    This includes Uyghur genitive authorship patterns such as:
+      - '[title] كىمنىڭ؟'  (whose is [title]?)
+      - '[title] كىمگە تەئەللۇق؟'  (who does [title] belong to?)
+      - '[title]نىڭ ئاپتورى كىم؟'  (who is the author of [title]?)
+    Do NOT call find_books_by_title for these — call get_book_author directly.
     Returns the book title and its author name.
 
     Args:
@@ -394,6 +399,12 @@ async def search_quran(
     tool_context: ToolContext = None,
 ) -> dict:
     """Retrieve or search Quran surahs and verses (ayahs) using surah number, ayah number, or text keywords.
+
+    Call this when the user asks about a Quran surah, ayah/verse, or translation, or wants
+    to search for a phrase within the Quran (e.g. "what is surah 1?", "read ayah 1:2",
+    "فاتىھە سۈرىسى", "ئاللاھنىڭ ئىسمى بىلەن باشلايمەن قايسى سۈرىدە بار؟").
+    Do NOT call this for questions about the library's books — use search_chunks or the
+    dictionary tools for those. The Quran is a separate source from the book library.
 
     Args:
         surah: Optional Surah number (1-114).
@@ -877,6 +888,14 @@ async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
     if not query:
         return {"context": "No query provided.", "relations": []}
 
+    if not ctx.use_knowledge_graph_in_chat:
+        log_json(
+            logger,
+            logging.INFO,
+            "Agent tool query_knowledge_graph — skipped, disabled by config",
+        )
+        return {"context": "Knowledge graph is disabled.", "relations": []}
+
     # Skip if in single-book mode and graph has not been built for this book
     if (
         not ctx.is_global
@@ -995,6 +1014,25 @@ async def _run_query_knowledge_graph(args: dict, ctx: QueryContext) -> dict:
     graph_repo = GraphRepository()
     try:
         records = await graph_repo.query_subgraph(search_entities, book_ids=book_ids)
+        if len(search_entities) >= 2:
+            try:
+                path_records = await graph_repo.query_paths(
+                    search_entities, book_ids=book_ids, familial_only=True
+                )
+                if path_records:
+                    existing = {(r["source"], r["rel"], r["target"]) for r in records}
+                    for r in path_records:
+                        key = (r["source"], r["rel"], r["target"])
+                        if key not in existing:
+                            records.append(r)
+                            existing.add(key)
+            except Exception as path_exc:
+                log_json(
+                    logger,
+                    logging.WARNING,
+                    "Failed to query multi-hop paths in knowledge graph",
+                    error=str(path_exc),
+                )
     except Exception as kg_exc:
         log_json(
             logger,
@@ -1451,7 +1489,7 @@ async def _run_search_quran(args: dict, ctx: QueryContext) -> dict:
 
         # Build clean markup citation context for RAG
         context_parts.append(
-            f"[Source: Holy Quran, Surah: {entry.surah_name_ug} ({entry.surah_name_en}), Ayah: {entry.ayah}]\n"
+            f"[Source: Holy Quran, Surah: {entry.surah} - {entry.surah_name_ug} ({entry.surah_name_en}), Ayah: {entry.ayah}]\n"
             f"Arabic: {entry.text_ar}\n"
             f"Uyghur Translation: {entry.text_ug}\n"
             f"English Translation: {entry.text_en}"

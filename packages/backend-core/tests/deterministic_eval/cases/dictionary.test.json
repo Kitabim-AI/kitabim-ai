@@ -1,18 +1,18 @@
 {
-  "eval_set_id": "kitabim_eval_set_metadata",
-  "name": "Kitabim RAG Agent Metadata Evaluation Set",
-  "description": "Evaluation cases for catalog metadata and author details queries.",
+  "eval_set_id": "deterministic_eval_dictionary",
+  "name": "Dictionary and Language Tools Evaluation Set",
+  "description": "Evaluation cases for Uyghur word definition, history terms, English translation, spelling, names, and proverbs.",
   "eval_cases": [
     {
-      "eval_id": "test_find_book_author",
+      "eval_id": "test_dictionary_definition",
       "conversation": [
         {
-          "invocation_id": "fc-1",
+          "invocation_id": "fc-dict-def",
           "user_content": {
             "role": "user",
             "parts": [
               {
-                "text": "«لېيىغان بۇلاق» كىتابىنى كىم يازغان؟"
+                "text": "ئابايا سۆزىنىڭ مەنىسى نېمە؟"
               }
             ]
           },
@@ -20,21 +20,19 @@
             "role": "model",
             "parts": [
               {
-                "text": "بۇ كىتابنى جالالىدىن بەھرام يازغان."
+                "text": "رەۋىش"
               }
             ]
           },
           "intermediate_data": {
             "tool_uses": [
               {
-                "name": "get_book_author",
+                "name": "lookup_uyghur_word",
                 "args": {
-                  "question": "«لېيىغان بۇلاق» كىتابىنى كىم يازغان؟"
+                  "term": "ئابايا"
                 }
               }
-            ],
-            "tool_responses": [],
-            "intermediate_responses": []
+            ]
           }
         }
       ],
@@ -48,21 +46,20 @@
             "user_id": "test-eval-user",
             "history": [],
             "agent_model": "gemini-2.5-flash"
-          },
-          "observations": []
+          }
         }
       }
     },
     {
-      "eval_id": "test_find_book_author_ana_yurt",
+      "eval_id": "test_dictionary_history_term",
       "conversation": [
         {
-          "invocation_id": "fc-ana-yurt",
+          "invocation_id": "fc-dict-hist",
           "user_content": {
             "role": "user",
             "parts": [
               {
-                "text": "«ئانا يۇرت» كىتابىنى كىم يازغان؟"
+                "text": "ئارتۇر گوردون دېگەن كىم؟"
               }
             ]
           },
@@ -70,21 +67,19 @@
             "role": "model",
             "parts": [
               {
-                "text": "بۇ كىتابنى زوردۇن سابىر يازغان."
+                "text": "باش ۋەلىيسى"
               }
             ]
           },
           "intermediate_data": {
             "tool_uses": [
               {
-                "name": "get_book_author",
+                "name": "lookup_history_term",
                 "args": {
-                  "question": "«ئانا يۇرت» كىتابىنى كىم يازغان؟"
+                  "term": "ئارتۇر گوردون"
                 }
               }
-            ],
-            "tool_responses": [],
-            "intermediate_responses": []
+            ]
           }
         }
       ],
@@ -98,21 +93,20 @@
             "user_id": "test-eval-user",
             "history": [],
             "agent_model": "gemini-2.5-flash"
-          },
-          "observations": []
+          }
         }
       }
     },
     {
-      "eval_id": "test_find_book_author_bahadirname",
+      "eval_id": "test_dictionary_translation",
       "conversation": [
         {
-          "invocation_id": "fc-bahadirname",
+          "invocation_id": "fc-dict-trans",
           "user_content": {
             "role": "user",
             "parts": [
               {
-                "text": "«باھادىرنامە» كىتابىنى كىم يازغان؟"
+                "text": "abacus سۆزىنىڭ ئۇيغۇرچە تەرجىمىسى نېمە؟"
               }
             ]
           },
@@ -120,21 +114,19 @@
             "role": "model",
             "parts": [
               {
-                "text": "بۇ كىتابنى ياسىنجان سادىق چوغلان يازغان."
+                "text": "چوت"
               }
             ]
           },
           "intermediate_data": {
             "tool_uses": [
               {
-                "name": "get_book_author",
+                "name": "translate_english_to_uyghur",
                 "args": {
-                  "question": "«باھادىرنامە» كىتابىنى كىم يازغان؟"
+                  "term": "abacus"
                 }
               }
-            ],
-            "tool_responses": [],
-            "intermediate_responses": []
+            ]
           }
         }
       ],
@@ -148,21 +140,20 @@
             "user_id": "test-eval-user",
             "history": [],
             "agent_model": "gemini-2.5-flash"
-          },
-          "observations": []
+          }
         }
       }
     },
     {
-      "eval_id": "test_find_book_author_ana_yurt_opt1",
+      "eval_id": "test_dictionary_spelling",
       "conversation": [
         {
-          "invocation_id": "fc-ana-yurt-opt1",
+          "invocation_id": "fc-dict-spell",
           "user_content": {
             "role": "user",
             "parts": [
               {
-                "text": "ئانا يۇرت رومانىنىڭ ئاپتورى كىم؟"
+                "text": "توزۇماس سۆزىنىڭ ئىملاسى توغرىمۇ؟"
               }
             ]
           },
@@ -170,21 +161,19 @@
             "role": "model",
             "parts": [
               {
-                "text": "بۇ كىتابنى زوردۇن سابىر يازغان."
+                "text": "توغرا"
               }
             ]
           },
           "intermediate_data": {
             "tool_uses": [
               {
-                "name": "get_book_author",
+                "name": "check_word_spelling",
                 "args": {
-                  "question": "ئانا يۇرت رومانىنىڭ ئاپتورى كىم؟"
+                  "word": "توزۇماس"
                 }
               }
-            ],
-            "tool_responses": [],
-            "intermediate_responses": []
+            ]
           }
         }
       ],
@@ -198,21 +187,20 @@
             "user_id": "test-eval-user",
             "history": [],
             "agent_model": "gemini-2.5-flash"
-          },
-          "observations": []
+          }
         }
       }
     },
     {
-      "eval_id": "test_find_book_author_ana_yurt_opt2",
+      "eval_id": "test_dictionary_names",
       "conversation": [
         {
-          "invocation_id": "fc-ana-yurt-opt2",
+          "invocation_id": "fc-dict-names",
           "user_content": {
             "role": "user",
             "parts": [
               {
-                "text": "ئانا يۇرت رومانى كىمنىڭ؟"
+                "text": "ئۇيغۇرلاردا بابۇر دەيدىغان ئىسىم بارمۇ؟"
               }
             ]
           },
@@ -220,21 +208,19 @@
             "role": "model",
             "parts": [
               {
-                "text": "بۇ كىتابنى زوردۇن سابىر يازغان."
+                "text": "بابۇر"
               }
             ]
           },
           "intermediate_data": {
             "tool_uses": [
               {
-                "name": "get_book_author",
+                "name": "lookup_uyghur_name",
                 "args": {
-                  "question": "ئانا يۇرت رومانى كىمنىڭ؟"
+                  "term": "بابۇر"
                 }
               }
-            ],
-            "tool_responses": [],
-            "intermediate_responses": []
+            ]
           }
         }
       ],
@@ -248,21 +234,20 @@
             "user_id": "test-eval-user",
             "history": [],
             "agent_model": "gemini-2.5-flash"
-          },
-          "observations": []
+          }
         }
       }
     },
     {
-      "eval_id": "test_find_book_author_ana_yurt_opt3",
+      "eval_id": "test_dictionary_proverbs",
       "conversation": [
         {
-          "invocation_id": "fc-ana-yurt-opt3",
+          "invocation_id": "fc-dict-proverbs",
           "user_content": {
             "role": "user",
             "parts": [
               {
-                "text": "ئانا يۇرت رومانىنى كىم يازغان؟"
+                "text": "«يەتتە ئۆلچەپ بىر كەس» دېگەن ماقالنىڭ مەنىسى نېمە؟"
               }
             ]
           },
@@ -270,21 +255,19 @@
             "role": "model",
             "parts": [
               {
-                "text": "بۇ كىتابنى زوردۇن سابىر يازغان."
+                "text": "يەتتە ئۆلچەپ بىر كەس"
               }
             ]
           },
           "intermediate_data": {
             "tool_uses": [
               {
-                "name": "get_book_author",
+                "name": "lookup_proverbs",
                 "args": {
-                  "question": "ئانا يۇرت رومانىنى كىم يازغان؟"
+                  "query": "يەتتە ئۆلچەپ بىر كەس"
                 }
               }
-            ],
-            "tool_responses": [],
-            "intermediate_responses": []
+            ]
           }
         }
       ],
@@ -298,21 +281,20 @@
             "user_id": "test-eval-user",
             "history": [],
             "agent_model": "gemini-2.5-flash"
-          },
-          "observations": []
+          }
         }
       }
     },
     {
-      "eval_id": "test_find_book_author_ana_yurt_opt4",
+      "eval_id": "test_dictionary_general",
       "conversation": [
         {
-          "invocation_id": "fc-ana-yurt-opt4",
+          "invocation_id": "fc-dict-gen",
           "user_content": {
             "role": "user",
             "parts": [
               {
-                "text": "ئانا يۇرت رومانى قايسى داڭلىق يازغۇچىنىڭ؟"
+                "text": "ئۇيغۇر تىلىدىكى سۆزلۈك مەنبەلىرى"
               }
             ]
           },
@@ -320,21 +302,19 @@
             "role": "model",
             "parts": [
               {
-                "text": "بۇ كىتابنى زوردۇن سابىر يازغان."
+                "text": "مەنبەلىرى"
               }
             ]
           },
           "intermediate_data": {
             "tool_uses": [
               {
-                "name": "get_book_author",
+                "name": "search_language_sources",
                 "args": {
-                  "question": "ئانا يۇرت رومانى قايسى داڭلىق يازغۇچىنىڭ؟"
+                  "query": "ئۇيغۇر تىلىدىكى سۆزلۈك مەنبەلىرى"
                 }
               }
-            ],
-            "tool_responses": [],
-            "intermediate_responses": []
+            ]
           }
         }
       ],
@@ -348,21 +328,20 @@
             "user_id": "test-eval-user",
             "history": [],
             "agent_model": "gemini-2.5-flash"
-          },
-          "observations": []
+          }
         }
       }
     },
     {
-      "eval_id": "test_find_book_author_ana_yurt_opt5",
+      "eval_id": "test_dictionary_fallback",
       "conversation": [
         {
-          "invocation_id": "fc-ana-yurt-opt5",
+          "invocation_id": "fc-dict-fallback",
           "user_content": {
             "role": "user",
             "parts": [
               {
-                "text": "ئانا يۇرت كىمنىڭ؟"
+                "text": "پىنگۋىن سۆزىنىڭ مەنىسى نېمە؟"
               }
             ]
           },
@@ -370,21 +349,26 @@
             "role": "model",
             "parts": [
               {
-                "text": "بۇ كىتابنى زوردۇن سابىر يازغان."
+                "text": "مەنىسى"
               }
             ]
           },
           "intermediate_data": {
             "tool_uses": [
               {
-                "name": "get_book_author",
+                "name": "lookup_uyghur_word",
                 "args": {
-                  "question": "ئانا يۇرت كىمنىڭ؟"
+                  "term": "پىنگۋىن"
+                }
+              },
+              {
+                "name": "search_chunks",
+                "args": {
+                  "query": "پىنگۋىن سۆزىنىڭ مەنىسى نېمە؟",
+                  "book_ids": null
                 }
               }
-            ],
-            "tool_responses": [],
-            "intermediate_responses": []
+            ]
           }
         }
       ],
@@ -398,58 +382,7 @@
             "user_id": "test-eval-user",
             "history": [],
             "agent_model": "gemini-2.5-flash"
-          },
-          "observations": []
-        }
-      }
-    },
-    {
-      "eval_id": "test_find_book_author_ana_yurt_opt6",
-      "conversation": [
-        {
-          "invocation_id": "fc-ana-yurt-opt6",
-          "user_content": {
-            "role": "user",
-            "parts": [
-              {
-                "text": "ئانا يۇرتنىڭ ئاپتورى كىم؟"
-              }
-            ]
-          },
-          "final_response": {
-            "role": "model",
-            "parts": [
-              {
-                "text": "بۇ كىتابنى زوردۇن سابىر يازغان."
-              }
-            ]
-          },
-          "intermediate_data": {
-            "tool_uses": [
-              {
-                "name": "get_book_author",
-                "args": {
-                  "question": "ئانا يۇرتنىڭ ئاپتورى كىم؟"
-                }
-              }
-            ],
-            "tool_responses": [],
-            "intermediate_responses": []
           }
-        }
-      ],
-      "session_input": {
-        "app_name": "kitabim",
-        "user_id": "test-eval-user",
-        "state": {
-          "query_context": {
-            "is_global": true,
-            "book_id": "global",
-            "user_id": "test-eval-user",
-            "history": [],
-            "agent_model": "gemini-2.5-flash"
-          },
-          "observations": []
         }
       }
     }

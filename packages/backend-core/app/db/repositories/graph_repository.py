@@ -194,6 +194,39 @@ class GraphRepository:
                 "MATCH (e:Entity) WHERE NOT (e)-[:RELATED_TO]-() AND NOT ()-[:RELATED_TO]->(e) DELETE e"
             )
 
+    async def delete_relationship(
+        self, source_name: str, target_name: str, rel_type: str
+    ) -> bool:
+        """Delete every RELATED_TO edge of a given type between two entities.
+
+        Matches on (source_name, target_name, rel_type) and removes all matching
+        edges, including duplicates from different books (book_id is not part of
+        the match). Raises ValueError if no matching edge exists.
+        """
+        source_norm = unicodedata.normalize("NFC", source_name)
+        target_norm = unicodedata.normalize("NFC", target_name)
+
+        query = """
+        MATCH (a:Entity {name: $source_name})-[r:RELATED_TO {type: $rel_type}]->(b:Entity {name: $target_name})
+        DELETE r
+        RETURN count(r) AS deleted
+        """
+        async with self._driver.session() as session:
+            result = await session.run(
+                query,
+                source_name=source_norm,
+                target_name=target_norm,
+                rel_type=rel_type,
+            )
+            records = await result.data()
+
+        deleted = records[0]["deleted"] if records else 0
+        if deleted == 0:
+            raise ValueError(
+                f"No '{rel_type}' relationship found between '{source_name}' and '{target_name}'."
+            )
+        return True
+
     async def query_subgraph(
         self, entity_names: List[str], book_ids: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
@@ -218,6 +251,70 @@ class GraphRepository:
         async with self._driver.session() as session:
             result = await session.run(
                 query, entity_names=normalized, book_ids=book_ids
+            )
+            records = await result.data()
+            return records
+
+    async def query_paths(
+        self,
+        entity_names: List[str],
+        book_ids: Optional[List[str]] = None,
+        familial_only: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """Find relationship paths of length 1-4 connecting any pair of search entities.
+
+        When book_ids is provided, only paths consisting entirely of relationships
+        extracted from those books are returned.
+        """
+        if len(entity_names) < 2:
+            return []
+
+        normalized = [unicodedata.normalize("NFC", n) for n in entity_names if n]
+
+        familial_rels = [
+            "SON_OF",
+            "FATHER_OF",
+            "DAUGHTER_OF",
+            "MOTHER_OF",
+            "PARENT_OF",
+            "CHILD_OF",
+            "GRANDSON_OF",
+            "GRANDFATHER_OF",
+            "GRANDMOTHER_OF",
+            "GRANDDAUGHTER_OF",
+            "SPOUSE_OF",
+            "WIFE_OF",
+            "HUSBAND_OF",
+            "BROTHER_OF",
+            "SISTER_OF",
+            "SIBLING_OF",
+        ]
+
+        rel_filter = (
+            "all(rel in relationships(p) WHERE rel.type IN $familial_rels)"
+            if familial_only
+            else "true"
+        )
+
+        query = f"""
+        MATCH p = (a:Entity)-[r:RELATED_TO*1..4]-(b:Entity)
+        WHERE (a.name IN $entity_names OR any(alt IN COALESCE(a.aliases, []) WHERE alt IN $entity_names))
+          AND (b.name IN $entity_names OR any(alt IN COALESCE(b.aliases, []) WHERE alt IN $entity_names))
+          AND a.name < b.name
+          AND {rel_filter}
+          AND ($book_ids IS NULL OR all(rel in relationships(p) WHERE rel.book_id IN $book_ids))
+        UNWIND relationships(p) AS rel
+        WITH startNode(rel) AS s, endNode(rel) AS t, rel
+        RETURN DISTINCT s.name AS source, s.type AS source_type, rel.type AS rel, t.name AS target, t.type AS target_type
+        LIMIT 40
+        """
+
+        async with self._driver.session() as session:
+            result = await session.run(
+                query,
+                entity_names=normalized,
+                familial_rels=familial_rels,
+                book_ids=book_ids,
             )
             records = await result.data()
             return records
@@ -319,4 +416,40 @@ class GraphRepository:
                 remove=remove_norm,
                 combined_aliases=combined_aliases,
             )
+        return True
+
+    async def rename_entity(self, old_name: str, new_name: str) -> bool:
+        """Rename an entity node in Neo4j.
+
+        Normalizes the names, updates the name property, and returns True if successful.
+        Raises ValueError if the new name already exists or old name is not found.
+        """
+        old_norm = unicodedata.normalize("NFC", old_name)
+        new_norm = unicodedata.normalize("NFC", new_name)
+
+        if old_norm == new_norm:
+            return True
+
+        # Check if the old name exists, and if the new name already exists
+        check_query = """
+        MATCH (e:Entity)
+        WHERE e.name IN [$old, $new]
+        RETURN e.name AS name
+        """
+        async with self._driver.session() as session:
+            result = await session.run(check_query, old=old_norm, new=new_norm)
+            records = await result.data()
+
+        found = {r["name"] for r in records}
+        if old_norm not in found:
+            raise ValueError(f"Entity to rename '{old_name}' does not exist.")
+        if new_norm in found:
+            raise ValueError(f"An entity with the name '{new_name}' already exists.")
+
+        rename_query = """
+        MATCH (e:Entity {name: $old})
+        SET e.name = $new
+        """
+        async with self._driver.session() as session:
+            await session.run(rename_query, old=old_norm, new=new_norm)
         return True

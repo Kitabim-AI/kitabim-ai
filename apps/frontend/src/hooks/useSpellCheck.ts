@@ -1,12 +1,17 @@
 import { useCallback, useMemo, useState } from 'react';
 import { authFetch } from '../services/authService';
 
+export interface SpellSuggestion {
+  word: string;
+  confidence: number;
+}
+
 export interface SpellIssue {
   id: number;
   word: string;
   char_offset: number | null;
   char_end: number | null;
-  ocr_corrections: string[];
+  ocr_corrections: SpellSuggestion[];
   status: 'open' | 'corrected' | 'ignored';
 }
 

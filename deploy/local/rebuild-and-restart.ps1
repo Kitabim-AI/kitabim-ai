@@ -34,11 +34,23 @@ if ($Component -eq "all") {
     } until ($LASTEXITCODE -eq 0)
     Write-Host "Postgres ready" -ForegroundColor Green
 
-    # Apply all migrations (IF NOT EXISTS guards make these idempotent)
+    # Apply all migrations (tracked via schema_migrations)
     Write-Host "Applying migrations..." -ForegroundColor Blue
+    "CREATE TABLE IF NOT EXISTS schema_migrations (version VARCHAR(255) PRIMARY KEY, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);" | docker compose exec -T postgres psql -U kitabim -d kitabim-ai | Out-Null
+
     Get-ChildItem "packages\backend-core\migrations\*.sql" | Where-Object { $_.Name -notlike "*rollback*" } | Sort-Object Name | ForEach-Object {
-        Write-Host "  -> $($_.Name)"
-        Get-Content $_.FullName | docker compose exec -T postgres psql -U kitabim -d kitabim-ai
+        $version = $_.Name
+        $checkQuery = "SELECT 1 FROM schema_migrations WHERE version = '$version';"
+        $exists = ($checkQuery | docker compose exec -T postgres psql -t -A -U kitabim -d kitabim-ai).Trim()
+
+        if ($exists -ne "1") {
+            Write-Host "  -> Applying: $version"
+            $content = Get-Content $_.FullName -Raw
+            $content | docker compose exec -T postgres psql -U kitabim -d kitabim-ai
+            
+            # Record migration as successfully applied
+            "INSERT INTO schema_migrations (version) VALUES ('$version');" | docker compose exec -T postgres psql -U kitabim -d kitabim-ai | Out-Null
+        }
     }
 
     docker compose up -d

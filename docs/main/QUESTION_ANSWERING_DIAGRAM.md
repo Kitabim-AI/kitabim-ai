@@ -84,93 +84,137 @@ flowchart LR
 
 ---
 
-## Agentic Retrieval Strategy
+## Agent Prompt Routing Decision Tree
 
-This diagram illustrates the agent's internal decision tree for tool selection, governed entirely by the `AGENT_SYSTEM_PROMPT`.
+This diagram illustrates the agent's internal decision tree for tool selection, governed entirely by the `AGENT_SYSTEM_PROMPT` in [prompts.py](file:///Users/Omarjan/Projects/kitabim-ai/packages/backend-core/app/services/rag/agent/prompts.py).
 
 ```mermaid
 flowchart TD
-    Q([User Question]) --> PRON{"Step 1:<br/>Pronouns/چۇ particle<br/>+ chat history?"}
+    %% Entry & Step 1: Co-reference
+    Start([User Question Received]) --> Step1{"Step 1: Uyghur pronouns or 'چۇ' particle + history?"}
+    Step1 -- "Yes" --> Rewrite["Call Tool: rewrite_query (Resolve co-references)"]
+    Rewrite --> CheckTitle{"Rewritten query names book title?"}
+    CheckTitle -- "Yes" --> FindTitle["Call Tool: find_books_by_title (Do NOT reuse previous book IDs)"]
+    FindTitle --> Step2
+    CheckTitle -- "No" --> Step2
+    Step1 -- "No" --> Step2
 
-    %% Step 1 — pronoun / co-reference rewrite
-    PRON -->|No| INTENT
-    PRON -->|Yes| REWRITE["[LLM] Tool: rewrite_query"]
-    REWRITE --> RETITLE{"Rewritten question<br/>now names a title?"}
-    RETITLE -->|"Yes — MUST use find_books_by_title<br/>do NOT reuse stale context IDs"| FBT_R[Tool: find_books_by_title]
-    RETITLE -->|"No — re-evaluate rewritten<br/>question from step 2"| INTENT
+    %% Step 2: Catalog & Metadata
+    Step2{"Step 2: Catalog or Metadata query?"}
+    Step2 -- "Yes: 'Who wrote title?'" --> ToolAuthor["Call Tool: get_book_author"] --> Stop
+    Step2 -- "Yes: 'What did author write?'" --> ToolBooksAuthor["Call Tool: get_books_by_author"] --> Stop
+    Step2 -- "Yes: Library browsing" --> ToolCatalog["Call Tool: search_catalog"] --> Stop
+    Step2 -- "No" --> Step3
 
-    FBT_R --> CHAR_R{"Characters /<br/>plot / themes?"}
-    CHAR_R -->|Yes| GBS_R[Tool: get_book_summary] --> STOP
-    CHAR_R -->|"No — passages"| SC_R[Tool: search_chunks] --> CHK
+    %% Step 3: Current Page Reading
+    Step3{"Step 3: Question about currently read page?"}
+    Step3 -- "Yes" --> ToolCurrentPage["Call Tool: get_current_page (Stop; do NOT call search_chunks)"] --> Stop
+    Step3 -- "No" --> Step4
 
-    %% Shared intent branch
-    INTENT{"Steps 2–4:<br/>Intent + context"}
+    %% Step 4: Quran Queries
+    Step4{"Step 4: Quran query? (Surah, Ayah, Translation)"}
+    Step4 -- "Yes" --> ToolQuran["Call Tool: search_quran (Stop; do NOT call book/dict tools)"] --> Stop
+    Step4 -- "No" --> Step5
 
-    %% Step 2 — catalog / metadata
-    INTENT -->|"who wrote title? — step 2"| T_AUTH[Tool: get_book_author] --> STOP
-    INTENT -->|"what did author write? — step 2"| T_BAUTH[Tool: get_books_by_author] --> STOP
-    INTENT -->|"library browsing — step 2"| T_CAT[Tool: search_catalog] --> STOP
+    %% Step 5: Dictionary & Language
+    Step5{"Step 5: Uyghur dictionary / language query?"}
+    Step5 -- "Yes" --> DictRouter{"Dictionary Type"}
+    DictRouter -- "Word definition" --> ToolLookupWord["Call Tool: lookup_uyghur_word"]
+    DictRouter -- "Historical term/person" --> ToolLookupHist["Call Tool: lookup_history_term (Fallback: search_language_sources)"]
+    DictRouter -- "Eng-to-Uyg Translation" --> ToolTranslate["Call Tool: translate_english_to_uyghur"]
+    DictRouter -- "Spelling Check" --> ToolSpelling["Call Tool: check_word_spelling"]
+    DictRouter -- "Uyghur Name Lookup" --> ToolLookupName["Call Tool: lookup_uyghur_name"]
+    DictRouter -- "Proverbs/Sayings" --> ToolProverbs["Call Tool: lookup_proverbs"]
+    DictRouter -- "Unclear Source" --> ToolSearchLang["Call Tool: search_language_sources"]
+    
+    ToolLookupWord --> DictStop{"User only asked for definition/translation/etc?"}
+    ToolLookupHist --> DictStop
+    ToolTranslate --> DictStop
+    ToolSpelling --> DictStop
+    ToolLookupName --> DictStop
+    ToolProverbs --> DictStop
+    ToolSearchLang --> DictStop
+    
+    DictStop -- "Yes: Only definition" --> Stop
+    DictStop -- "No: Also ask about books/library usage" --> Step6
+    Step5 -- "No" --> Step6
 
-    %% Step 3 — current page shortcut
-    INTENT -->|"Content on current page<br/>context has current_page — step 3"| T_CUR[Tool: get_current_page] --> STOP
+    %% Step 6: Content Retrieval
+    subgraph Step6Content ["Step 6: Content Retrieval & Passage Search"]
+        Step6{"Step 6 Path Router"}
+        
+        %% Step 6 Rules & Modifiers
+        Step6 --> Modifiers["Apply Modifiers:<br/>1. Relationship Query + Graph Available -> query_knowledge_graph first<br/>2. Character/Entity Identity ('Who is X?') -> Use get_book_summary paths"]
+        
+        Modifiers --> PathRouter{"Query Context / Named Entities"}
+        
+        %% Path a: Plot/Theme of Specific Book
+        PathRouter -- "a. Plot/Theme of named book" --> PathA["find_books_by_title<br/>↓<br/>get_book_summary (Do NOT call search_chunks)"] --> Step7
+        
+        %% Path b: Details of Named Book
+        PathRouter -- "b. Details/Passages of named book" --> PathB["find_books_by_title<br/>↓<br/>search_chunks (with book IDs)"] --> CheckChunks
+        
+        %% Path c: Named Author
+        PathRouter -- "c. Named Author" --> PathC["get_books_by_author<br/>↓<br/>search_chunks (with book IDs)"] --> CheckChunks
+        
+        %% Path d: Current Book Context (No explicit book name)
+        PathRouter -- "d. Has current book ID in context" --> PathD{"Is sister volume query?"}
+        PathD -- "Yes" --> PathDSis["get_sister_volumes<br/>↓<br/>search_chunks (sister volume ID)"] --> CheckChunks
+        PathD -- "No" --> PathDCur["search_chunks (current book ID)"] --> CheckChunks
+        
+        %% Path e: Context Book IDs (Character identity query)
+        PathRouter -- "e. Has previous book IDs + Character query" --> PathE["search_books_by_summary (verify topic)<br/>↓<br/>get_book_summary (max 5 IDs)"] --> Step7
+        
+        %% Path f: Context Book IDs (Non-character detail query)
+        PathRouter -- "f. Has previous book IDs + Detail query" --> PathF{"Is sister volume query?"}
+        PathF -- "Yes" --> PathFSis["get_sister_volumes<br/>↓<br/>search_chunks (sister volume ID)"] --> CheckChunks
+        PathF -- "No" --> PathFCur["search_chunks (prev book IDs)"] --> CheckChunks
+        
+        %% Path g: General fallback
+        PathRouter -- "g. All other cases / general topic" --> PathG["search_books_by_summary (discover book IDs)<br/>↓<br/>search_chunks (or get_book_summary if character query)"]
+        PathG --> CheckChunks
+        
+        %% Chunks threshold check & broadening (Path h)
+        CheckChunks{"Step 6h: Chunks returned < 4?"}
+        CheckChunks -- "Yes" --> RetryRephrased["Retry with rephrased query in same scope"]
+        RetryRephrased --> CheckChunks2{"Chunks still < 4?"}
+        CheckChunks2 -- "Yes" --> Broaden["search_chunks (empty book_ids list = global library)"] --> Step7
+        CheckChunks2 -- "No" --> Step7
+        CheckChunks -- "No" --> Step7
+    end
 
-    %% Step 4a — named title + plot/characters/themes
-    INTENT -->|"Named title +<br/>plot/characters/themes — 4a"| FBT_A[Tool: find_books_by_title]
-    FBT_A -->|IDs| GBS_A[Tool: get_book_summary] --> STOP
+    %% Step 7/8/Limits: Stopping and Loops
+    Step7{"Step 7: Sufficient context (6-12 chunks) or Hard Limit reached?"}
+    Step7 -- "No" --> Step8{"Step 8: Has pending Sub-questions?"}
+    Step8 -- "Yes" --> Step8Loop["Get next sub-question (Always find_books/summaries fresh; do NOT reuse old IDs)"] --> Step1
+    Step8 -- "No" --> Stop
+    Step7 -- "Yes" --> Stop
 
-    %% Step 4b — named title + passages
-    INTENT -->|"Named title +<br/>passages/details — 4b"| FBT_B[Tool: find_books_by_title]
-    FBT_B -->|IDs| SC_B[Tool: search_chunks] --> CHK
-
-    %% Step 4c — named author
-    INTENT -->|"Named author — 4c"| GBA_C[Tool: get_books_by_author]
-    GBA_C -->|IDs| SC_C[Tool: search_chunks] --> CHK
-
-    %% Step 4d — current book_id in context
-    INTENT -->|"No title/author;<br/>context: current book_id — 4d"| VOL_D{"Sister volume<br/>question?<br/>next/prev/numbered volume"}
-    VOL_D -->|Yes| GSV_D[Tool: get_sister_volumes<br/>with current book_id]
-    GSV_D --> SC_D_SIS[Tool: search_chunks<br/>with sister volume book_id] --> CHK
-    VOL_D -->|No| SC_D[Tool: search_chunks<br/>with current book_id] --> CHK
-
-    %% Step 4e — previous book IDs + who is X
-    INTENT -->|"No title/author;<br/>context: prev book IDs;<br/>who is X / tell me about X — 4e"| SBS_E[Tool: search_books_by_summary<br/>with context_book_ids]
-    SBS_E -->|Results — topic still matches| GBS_E[Tool: get_book_summary] --> STOP
-    SBS_E -->|No results — topic shifted| SBS_G
-
-    %% Step 4f — previous book IDs, non-character
-    INTENT -->|"No title/author;<br/>context: prev book IDs;<br/>non-character question — 4f"| VOL_F{"Sister volume<br/>question?"}
-    VOL_F -->|Yes| GSV_F[Tool: get_sister_volumes<br/>with context_book_ids[0]]
-    GSV_F --> SC_F_SIS[Tool: search_chunks<br/>with sister volume book_id] --> CHK
-    VOL_F -->|No| SC_F[Tool: search_chunks<br/>with context_book_ids] --> CHK
-
-    %% Step 4g — no context / general fallback
-    INTENT -->|"No title/author/context<br/>or fallthrough from 4e/4f — 4g"| SBS_G[Tool: search_books_by_summary]
-    SBS_G --> WHO{"Who is X /<br/>tell me about X?"}
-    WHO -->|Yes| GBS_G[Tool: get_book_summary<br/>max 5 IDs] --> STOP
-    WHO -->|No| SC_G[Tool: search_chunks<br/>with returned book_ids] --> CHK
-
-    %% Step 4h — relationships / connections
-    INTENT -->|"Relationships / connections — 4h"| T_KG["[LLM] Tool: query_knowledge_graph"]
-    T_KG -->|Precise passages needed| SC_KG[Tool: search_chunks] --> CHK
-    T_KG -->|Only graph relations| STOP
-
-    %% Step 4i — retry (search_chunks only, never after get_book_summary)
-    CHK{"Step 4i:<br/>search_chunks < 4 results?<br/>Never applies after<br/>get_book_summary"}
-    CHK -->|Yes| SC_H[Tool: search_chunks<br/>empty book_ids = entire library] --> STOP
-    CHK -->|No — sufficient context| STOP
-
-    STOP([Stop — respond with no tool calls\nto signal completion])
+    Stop([Stop: Respond with NO tool calls to signal completion])
 
     classDef tool fill:#dcfce7,stroke:#16a34a,stroke-width:2px
     classDef decision fill:#fef9c3,stroke:#854d0e,stroke-width:1px
     classDef stop fill:#fee2e2,stroke:#dc2626,stroke-width:2px
     classDef llm fill:#fef08a,stroke:#ca8a04,stroke-width:2px
 
-    class FBT_R,GBS_R,SC_R,T_AUTH,T_BAUTH,T_CAT,T_CUR,FBT_A,GBS_A,FBT_B,SC_B,GBA_C,SC_C,SC_D,SBS_E,GBS_E,SBS_G,GBS_G,SC_G,SC_H,GSV_D,SC_D_SIS,GSV_F,SC_F_SIS,SC_KG tool
-    class PRON,RETITLE,CHAR_R,INTENT,WHO,CHK,VOL_D,VOL_F decision
-    class STOP stop
-    class REWRITE,T_KG llm
+    class Rewrite,FindTitle,ToolAuthor,ToolBooksAuthor,ToolCatalog,ToolCurrentPage,ToolQuran,ToolLookupWord,ToolLookupHist,ToolTranslate,ToolSpelling,ToolLookupName,ToolProverbs,ToolSearchLang,PathA,PathB,PathC,PathDSis,PathDCur,PathE,PathFSis,PathFCur,PathG,RetryRephrased,Broaden tool
+    class Step1,CheckTitle,Step2,Step3,Step4,Step5,DictRouter,DictStop,PathRouter,PathD,PathF,CheckChunks,CheckChunks2,Step7,Step8 decision
+    class Stop stop
 ```
+
+### Key Prompt Rules
+
+* **Co-reference Resolution (Step 1)**:
+  * **When to Call**: Pronoun or topic-shift clitic present, AND `[Context]` explicitly shows `Chat history: Available`.
+  * **When NOT to Call**: No chat history present, or if the pronoun's antecedent is already named in the same turn (e.g., *"Yunus Khan is who? How many children did he have?"*).
+  * **Post-Rewrite**: If the rewritten question resolves to a book title, the agent MUST immediately invoke `find_books_by_title` rather than reusing stale context IDs.
+* **Separation of Sources (Step 4 & 5)**: 
+  * Quran queries (Step 4) are strictly routed to `search_quran` and terminate immediately.
+  * Dictionary definitions, translations, name checks, and proverb lookups (Step 5) run respective dictionary tools and stop immediately unless a book-level usage is explicitly queried.
+* **Knowledge Graph Modifier (Step 6)**: Queries asking about relationships or lineages must call `query_knowledge_graph` to retrieve entity relationship networks before/alongside `search_chunks`.
+* **Character Identity Optimization (Step 6e/g)**: Biographical queries (*"Who is X?"*) utilize `get_book_summary` instead of raw text chunks `search_chunks`, preventing irrelevant context.
+* **Broadening (Step 6h)**: Global library search (`book_ids=[]`) is strictly forbidden as a first action and serves only as a fallback when scoped retrieval yields `< 4` passages.
+* **Hard Limits**: The agent is bounded by a maximum of 6 tool calls per turn (increased to 10 for turns containing multiple `[Sub-questions]`).
 
 ---
 

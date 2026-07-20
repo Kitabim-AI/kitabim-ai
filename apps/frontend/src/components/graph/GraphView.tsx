@@ -1,8 +1,13 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import ForceGraph2D from 'react-force-graph-2d';
 import { useI18n } from '../../i18n/I18nContext';
 import { useTheme } from '../../context/ThemeContext';
-import { Search, Loader2, ZoomIn, ZoomOut, Maximize, Minimize, Maximize2, Network, BookOpen, MapPin, User, Calendar, HelpCircle, X, SlidersHorizontal, Building, Clock, Lightbulb, ChevronDown } from 'lucide-react';
+import { useAppContext } from '../../context/AppContext';
+import { useNotification } from '../../context/NotificationContext';
+import { useIsAdmin } from '../../hooks/useAuth';
+import { authFetch } from '../../services/authService';
+import { Search, Loader2, ZoomIn, ZoomOut, Maximize, Minimize, Maximize2, Network, BookOpen, MapPin, User, Calendar, HelpCircle, X, SlidersHorizontal, Building, Clock, Lightbulb, ChevronDown, Trash2, GitMerge, Edit3 } from 'lucide-react';
 
 interface GraphNode {
   id: string;
@@ -57,6 +62,9 @@ export const GraphView: React.FC = () => {
   const { t, language } = useI18n();
   const { theme } = useTheme();
   const isThemeDark = theme === 'dark';
+  const isAdmin = useIsAdmin();
+  const { setModal } = useAppContext();
+  const { addNotification } = useNotification();
   const [rawGraphData, setRawGraphData] = useState<GraphData>({ nodes: [], links: [] });
   const [selectedNodeTypes, setSelectedNodeTypes] = useState<string[]>([]);
   const [selectedEdgeTypes, setSelectedEdgeTypes] = useState<string[]>([]);
@@ -65,6 +73,14 @@ export const GraphView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [nodeConnections, setNodeConnections] = useState<any[]>([]);
+  const [mergeCandidate, setMergeCandidate] = useState<GraphNode | null>(null);
+  const [mergePair, setMergePair] = useState<{ a: GraphNode; b: GraphNode; keepIsA: boolean } | null>(null);
+  const [mergeError, setMergeError] = useState<string | null>(null);
+  const [mergeSubmitting, setMergeSubmitting] = useState(false);
+  const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const [renameSubmitting, setRenameSubmitting] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [showLegend, setShowLegend] = useState(window.innerWidth >= 768);
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -405,24 +421,41 @@ export const GraphView: React.FC = () => {
 
     handleResize();
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (containerRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        handleResize();
+      });
+      resizeObserver.observe(containerRef.current);
+    }
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
+    };
   }, [isFullScreen]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setSelectedNode(null);
+    setActiveTab('filters');
     fetchGraphData(searchQuery);
   };
 
-  // Escape key to exit fullscreen
+  // Escape key to exit fullscreen or cancel an in-progress merge pick
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isFullScreen) {
-        setIsFullScreen(false);
+      if (e.key === 'Escape') {
+        if (isFullScreen) setIsFullScreen(false);
+        if (mergeCandidate) setMergeCandidate(null);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFullScreen]);
+  }, [isFullScreen, mergeCandidate]);
 
   // Prevent scroll and hide navbar when fullscreen
   useEffect(() => {
@@ -466,6 +499,101 @@ export const GraphView: React.FC = () => {
     });
     setNodeConnections(connections);
   }, [selectedNode, filteredData]);
+
+  const handleDeleteRelationship = (conn: any) => {
+    if (!selectedNode) return;
+    const isOutgoing = conn.direction === 'outgoing';
+    const sourceName = isOutgoing ? selectedNode.id : conn.node.id;
+    const targetName = isOutgoing ? conn.node.id : selectedNode.id;
+    const relType = conn.label;
+
+    setModal({
+      isOpen: true,
+      title: t('graph.admin.deleteRelationshipTitle'),
+      message: t('graph.admin.deleteRelationshipMessage', { relType, sourceName, targetName }),
+      type: 'confirm',
+      destructive: true,
+      confirmText: t('common.delete'),
+      onConfirm: async () => {
+        try {
+          const res = await authFetch('/api/books/graph/relationship/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sourceName, targetName, relType }),
+          });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body.detail || t('graph.admin.deleteRelationshipError'));
+          }
+          setModal({ isOpen: false, title: '', message: '', type: 'alert' });
+          addNotification(t('graph.admin.deleteRelationshipSuccess'), 'success');
+          fetchGraphData(searchQuery);
+        } catch (err: any) {
+          setModal({
+            isOpen: true,
+            title: t('common.error'),
+            message: err.message || t('graph.admin.deleteRelationshipError'),
+            type: 'alert',
+          });
+        }
+      },
+    });
+  };
+
+  const handleConfirmMerge = async () => {
+    if (!mergePair) return;
+    const keepNode = mergePair.keepIsA ? mergePair.a : mergePair.b;
+    const removeNode = mergePair.keepIsA ? mergePair.b : mergePair.a;
+    setMergeSubmitting(true);
+    setMergeError(null);
+    try {
+      const res = await authFetch('/api/books/graph/merge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keepName: keepNode.id, removeName: removeNode.id }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || t('graph.admin.mergeError'));
+      }
+      setMergePair(null);
+      addNotification(t('graph.admin.mergeSuccess'), 'success');
+      await fetchGraphData(searchQuery);
+      setSelectedNode(keepNode);
+    } catch (err: any) {
+      setMergeError(err.message || t('graph.admin.mergeError'));
+    } finally {
+      setMergeSubmitting(false);
+    }
+  };
+
+  const handleConfirmRename = async () => {
+    if (!selectedNode || !renameValue.trim() || renameValue.trim() === selectedNode.label) return;
+    setRenameSubmitting(true);
+    setRenameError(null);
+    try {
+      const res = await authFetch('/api/books/graph/entity/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldName: selectedNode.id, newName: renameValue.trim() }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || t('graph.admin.renameError'));
+      }
+      addNotification(t('graph.admin.renameSuccess'), 'success');
+      setIsRenameModalOpen(false);
+      
+      const updatedNode = { ...selectedNode, id: renameValue.trim(), label: renameValue.trim() };
+      setSelectedNode(updatedNode);
+      
+      await fetchGraphData(searchQuery);
+    } catch (err: any) {
+      setRenameError(err.message || t('graph.admin.renameError'));
+    } finally {
+      setRenameSubmitting(false);
+    }
+  };
 
   // Zoom helpers
   const zoomIn = () => {
@@ -551,9 +679,39 @@ export const GraphView: React.FC = () => {
           )}
         </div>
 
+        {isAdmin && (
+          <div className="flex gap-2 mb-6">
+            <button
+              type="button"
+              onClick={() => {
+                setRenameValue(selectedNode.label);
+                setIsRenameModalOpen(true);
+                setRenameError(null);
+              }}
+              className={`flex-1 flex items-center justify-center gap-2 text-xs font-semibold rounded-xl px-3 py-2 border transition-all active:scale-95 ${isDark
+                ? 'text-sky-400 border-sky-900/40 hover:border-sky-700 bg-sky-950/20'
+                : 'text-sky-700 border-sky-200 hover:border-sky-300 bg-sky-50'
+                }`}
+            >
+              <Edit3 size={14} />
+              {t('graph.admin.renameStart')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMergeCandidate(selectedNode)}
+              className={`flex-1 flex items-center justify-center gap-2 text-xs font-semibold rounded-xl px-3 py-2 border transition-all active:scale-95 ${isDark
+                ? 'text-amber-400 border-amber-900/40 hover:border-amber-700 bg-amber-950/20'
+                : 'text-amber-700 border-amber-200 hover:border-amber-300 bg-amber-50'
+                }`}
+            >
+              <GitMerge size={14} />
+              {t('graph.admin.mergeStart')}
+            </button>
+          </div>
+        )}
+
         <h4 className={`text-sm font-bold mb-3 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{t('graph.nodePanel.connections')}</h4>
-        <div className={`flex-grow overflow-y-auto pr-1 space-y-2.5 [scrollbar-width:thin] ${isDark ? 'scrollbar-thumb-slate-800 [&::-webkit-scrollbar-thumb]:bg-slate-800' : ''
-          } [&::-webkit-scrollbar]:w-1`}>
+        <div className="flex-grow overflow-y-auto pr-1 space-y-2.5 custom-scrollbar">
           {nodeConnections.length === 0 ? (
             <p className="text-slate-400 text-xs italic text-center py-4">{t('common.noData')}</p>
           ) : (
@@ -568,10 +726,22 @@ export const GraphView: React.FC = () => {
               >
                 <div className="flex justify-between items-center mb-1">
                   <span className={`text-xs font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{conn.node.label}</span>
-                  <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded ${isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-200 text-slate-600'
-                    }`}>
-                    {conn.direction === 'outgoing' ? '←' : '→'} {conn.label}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded ${isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-200 text-slate-600'
+                      }`}>
+                      {conn.direction === 'outgoing' ? '←' : '→'} {conn.label}
+                    </span>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); handleDeleteRelationship(conn); }}
+                        title={t('graph.admin.deleteRelationshipTitle')}
+                        className="p-1 text-slate-400 hover:text-red-500 rounded-md transition-all active:scale-95"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center justify-between mt-0.5">
                   <div className="flex items-center gap-1">
@@ -663,7 +833,12 @@ export const GraphView: React.FC = () => {
               {searchQuery && (
                 <button
                   type="button"
-                  onClick={() => { setSearchQuery(''); fetchGraphData(''); }}
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSelectedNode(null);
+                    setActiveTab('filters');
+                    fetchGraphData('');
+                  }}
                   className="absolute inset-y-0 left-4 flex items-center text-[#94a3b8] hover:text-[#0369a1] dark:hover:text-[#38bdf8] transition-colors active:scale-95"
                 >
                   <X size={16} strokeWidth={3} />
@@ -685,7 +860,7 @@ export const GraphView: React.FC = () => {
       <div className="flex-grow flex flex-col lg:flex-row gap-6 min-h-0 mb-6 relative">
         {/* Sidebar Info/Connections Panel (Only shown in standard mode) */}
         {!isFullScreen && (
-          <div className="hidden lg:flex w-full lg:w-96 flex-col shrink-0 gap-4">
+          <div className="hidden lg:flex w-full lg:w-96 flex-col shrink-0 gap-4 lg:h-full lg:min-h-0">
             {/* Search filter form (Desktop view - rendered above nodePanel) */}
             <form onSubmit={handleSearchSubmit} className="flex gap-3 w-full items-center">
               <div className="relative flex-grow group">
@@ -702,7 +877,12 @@ export const GraphView: React.FC = () => {
                 {searchQuery && (
                   <button
                     type="button"
-                    onClick={() => { setSearchQuery(''); fetchGraphData(''); }}
+                    onClick={() => {
+                      setSearchQuery('');
+                      setSelectedNode(null);
+                      setActiveTab('filters');
+                      fetchGraphData('');
+                    }}
                     className="absolute inset-y-0 left-4 flex items-center text-[#94a3b8] hover:text-[#0369a1] dark:hover:text-[#38bdf8] transition-colors active:scale-95"
                   >
                     <X size={16} strokeWidth={3} />
@@ -775,6 +955,8 @@ export const GraphView: React.FC = () => {
             </div>
           )}
 
+
+
           {!loading && rawGraphData.nodes.length === 0 && (
             <div className="text-center p-8 z-10 text-slate-400 animate-fade-in">
               <Network size={48} className="mx-auto mb-4 text-slate-600 animate-pulse" />
@@ -795,7 +977,16 @@ export const GraphView: React.FC = () => {
               linkDirectionalArrowLength={4}
               linkDirectionalArrowColor={() => 'rgba(148, 163, 184, 0.4)'}
               linkDirectionalArrowRelPos={1}
-              onNodeClick={(node: any) => setSelectedNode(node)}
+              onNodeClick={(node: any) => {
+                if (mergeCandidate) {
+                  if (node.id !== mergeCandidate.id) {
+                    setMergePair({ a: mergeCandidate, b: node, keepIsA: true });
+                  }
+                  setMergeCandidate(null);
+                  return;
+                }
+                setSelectedNode(node);
+              }}
               nodeCanvasObject={(node: any, ctx, globalScale) => {
                 const label = node.label;
                 const fontSize = 11 / globalScale;
@@ -875,7 +1066,12 @@ export const GraphView: React.FC = () => {
                   {searchQuery && (
                     <button
                       type="button"
-                      onClick={() => { setSearchQuery(''); fetchGraphData(''); }}
+                      onClick={() => {
+                        setSearchQuery('');
+                        setSelectedNode(null);
+                        setActiveTab('filters');
+                        fetchGraphData('');
+                      }}
                       className="absolute inset-y-0 left-4 flex items-center text-slate-500 hover:text-slate-300 transition-colors active:scale-95"
                     >
                       <X size={16} strokeWidth={3} />
@@ -996,13 +1192,141 @@ export const GraphView: React.FC = () => {
           />
 
           {/* Bottom Sheet */}
-          <div className="relative w-full max-h-[70vh] bg-white rounded-t-[32px] px-6 pb-6 pt-4 flex flex-col min-h-0 shadow-[0_-12px_48px_rgba(0,0,0,0.15)] border-t border-[#0369a1]/10 animate-slide-up" dir="rtl">
+          <div className="relative w-full max-h-[70vh] bg-white dark:bg-slate-900 rounded-t-[32px] px-6 pb-6 pt-4 flex flex-col min-h-0 shadow-[0_-12px_48px_rgba(0,0,0,0.15)] dark:shadow-[0_-12px_48px_rgba(0,0,0,0.4)] border-t border-[#0369a1]/10 dark:border-slate-800 animate-slide-up" dir="rtl">
             {/* Grab handle */}
-            <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-4 shrink-0" />
+            <div className="w-12 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full mx-auto mb-4 shrink-0" />
 
             {/* Content */}
-            <div className="flex-grow overflow-y-auto [scrollbar-width:thin] pr-1">
-              {renderDetailsPanelContent(false)}
+            <div className="flex-grow overflow-y-auto custom-scrollbar pr-1">
+              {renderDetailsPanelContent(isThemeDark)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Global Administrative Overlays */}
+      {mergeCandidate && createPortal(
+        <div className="fixed top-[80px] sm:top-[96px] lg:top-[104px] left-0 right-0 z-[210] px-4 animate-fade-in">
+          <div className="mx-auto flex items-center justify-between gap-3 bg-slate-900/90 backdrop-blur-xl border border-amber-400/30 rounded-2xl px-4 py-2.5 shadow-lg max-w-md w-full">
+            <GitMerge size={16} className="text-amber-400 shrink-0" />
+            <span className="text-xs text-slate-200 font-medium">
+              {t('graph.admin.mergePickTarget', { name: mergeCandidate.label })}
+            </span>
+            <button
+              type="button"
+              onClick={() => setMergeCandidate(null)}
+              className="text-xs text-slate-400 hover:text-slate-200 border border-slate-700 hover:border-slate-600 rounded-lg px-2 py-1 transition-all active:scale-95"
+            >
+              {t('common.cancel')}
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {mergePair && createPortal(
+        <div className="fixed top-[80px] sm:top-[96px] lg:top-[104px] left-0 right-0 z-[210] px-4 animate-fade-in">
+          <div className="mx-auto flex flex-col gap-3 bg-slate-900/95 backdrop-blur-xl border border-amber-400/30 rounded-2xl px-4 py-3 shadow-lg max-w-md w-full">
+            <span className="text-xs text-slate-200 font-medium text-center">
+              {t('graph.admin.mergeConfirmMessage')}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setMergePair({ ...mergePair, keepIsA: true })}
+                className={`flex-1 text-xs rounded-lg px-2 py-2 border transition-all active:scale-95 ${mergePair.keepIsA
+                  ? 'border-emerald-500 bg-emerald-950/40 text-emerald-300'
+                  : 'border-slate-700 text-slate-400'
+                  }`}
+              >
+                {t('graph.admin.mergeKeep')}: {mergePair.a.label}
+              </button>
+              <button
+                type="button"
+                onClick={() => setMergePair({ ...mergePair, keepIsA: false })}
+                className={`flex-1 text-xs rounded-lg px-2 py-2 border transition-all active:scale-95 ${!mergePair.keepIsA
+                  ? 'border-emerald-500 bg-emerald-950/40 text-emerald-300'
+                  : 'border-slate-700 text-slate-400'
+                  }`}
+              >
+                {t('graph.admin.mergeKeep')}: {mergePair.b.label}
+              </button>
+            </div>
+            {mergeError && (
+              <span className="text-[11px] text-red-400 text-center">{mergeError}</span>
+            )}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => { setMergePair(null); setMergeError(null); }}
+                disabled={mergeSubmitting}
+                className="flex-1 text-xs text-slate-300 border border-slate-700 hover:border-slate-600 rounded-lg px-2 py-1.5 transition-all active:scale-95 disabled:opacity-50"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmMerge}
+                disabled={mergeSubmitting}
+                className="flex-1 text-xs text-white bg-red-500 hover:bg-red-600 rounded-lg px-2 py-1.5 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {mergeSubmitting && <Loader2 size={12} className="animate-spin" />}
+                {t('graph.admin.mergeConfirmButton')}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {isRenameModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[210] flex items-center justify-center p-4 animate-fade-in">
+          <div className={`flex flex-col gap-4 bg-slate-900/95 backdrop-blur-xl border border-sky-400/30 rounded-2xl p-5 shadow-lg max-w-sm w-full text-right`}>
+            <div className="flex justify-between items-center border-b border-slate-800 pb-2.5">
+              <button
+                type="button"
+                onClick={() => { setIsRenameModalOpen(false); setRenameError(null); }}
+                className="text-slate-400 hover:text-slate-200 transition-all"
+              >
+                <X size={16} />
+              </button>
+              <span className="text-sm font-bold text-slate-100">{t('graph.admin.renameTitle')}</span>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="rename-input" className="text-xs text-slate-400 font-medium">
+                {t('graph.admin.renameLabel')}
+              </label>
+              <input
+                id="rename-input"
+                type="text"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                dir="rtl"
+                className="w-full text-sm rounded-xl px-3 py-2 border border-slate-700 bg-slate-950 text-slate-100 focus:outline-none focus:border-sky-500 transition-all font-medium"
+                placeholder={selectedNode?.label}
+              />
+            </div>
+            {renameError && (
+              <span className="text-xs text-red-400 text-center font-medium">{renameError}</span>
+            )}
+            <div className="flex items-center gap-2 mt-2">
+              <button
+                type="button"
+                onClick={() => { setIsRenameModalOpen(false); setRenameError(null); }}
+                disabled={renameSubmitting}
+                className="flex-1 text-xs text-slate-300 border border-slate-700 hover:border-slate-600 rounded-xl px-3 py-2 transition-all active:scale-95 disabled:opacity-50 font-semibold"
+              >
+                {t('graph.admin.renameCancel')}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmRename}
+                disabled={renameSubmitting || !renameValue.trim() || renameValue.trim() === selectedNode?.label}
+                className="flex-1 text-xs text-white bg-sky-500 hover:bg-sky-600 rounded-xl px-3 py-2 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5 font-semibold"
+              >
+                {renameSubmitting && <Loader2 size={12} className="animate-spin" />}
+                {t('graph.admin.renameConfirm')}
+              </button>
             </div>
           </div>
         </div>

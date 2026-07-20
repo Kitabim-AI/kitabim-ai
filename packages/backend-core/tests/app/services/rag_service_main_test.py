@@ -18,7 +18,15 @@ async def test_answer_question_catalog_query(rag_service):
     with (
         patch(
             "app.db.repositories.system_configs_repository.SystemConfigsRepository.get_value",
-            side_effect=["chat-model", "emb-model", "agent-model", "6", "8", "false"],
+            side_effect=[
+                "chat-model",
+                "emb-model",
+                "agent-model",
+                "6",
+                "8",
+                "false",
+                "false",
+            ],
         ),
         patch("app.services.rag_service.llm_resources") as mock_resources,
     ):
@@ -54,7 +62,15 @@ async def test_answer_question_current_page_only(rag_service):
     with (
         patch(
             "app.db.repositories.system_configs_repository.SystemConfigsRepository.get_value",
-            side_effect=["chat-model", "emb-model", "agent-model", "6", "8", "false"],
+            side_effect=[
+                "chat-model",
+                "emb-model",
+                "agent-model",
+                "6",
+                "8",
+                "false",
+                "false",
+            ],
         ),
         patch(
             "app.db.repositories.books_repository.BooksRepository.get",
@@ -88,7 +104,15 @@ async def test_answer_question_stream(rag_service):
     with (
         patch(
             "app.db.repositories.system_configs_repository.SystemConfigsRepository.get_value",
-            side_effect=["chat-model", "emb-model", "agent-model", "6", "8", "false"],
+            side_effect=[
+                "chat-model",
+                "emb-model",
+                "agent-model",
+                "6",
+                "8",
+                "false",
+                "false",
+            ],
         ),
         patch("app.services.rag_service.llm_resources") as mock_resources,
     ):
