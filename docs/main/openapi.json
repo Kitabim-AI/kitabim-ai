@@ -1051,6 +1051,96 @@
         ]
       }
     },
+    "/api/books/graph/relationship/delete": {
+      "post": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Delete Graph Relationship",
+        "description": "Delete a relationship between two knowledge graph entities (admin only).",
+        "operationId": "delete_graph_relationship_api_books_graph_relationship_delete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteRelationshipRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/books/graph/entity/rename": {
+      "post": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Rename Graph Entity",
+        "description": "Rename a knowledge graph entity (admin only).",
+        "operationId": "rename_graph_entity_api_books_graph_entity_rename_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameEntityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/books/{book_id}": {
       "get": {
         "tags": [
@@ -3623,125 +3713,14 @@
         }
       }
     },
-    "/api/spell-check/dictionary": {
-      "post": {
-        "tags": [
-          "dictionary"
-        ],
-        "summary": "Add To Dictionary",
-        "description": "Add a word to the global spell check dictionary. Editor and Admin allowed.",
-        "operationId": "add_to_dictionary_api_spell_check_dictionary_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AddToDictionaryRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "get": {
-        "tags": [
-          "dictionary"
-        ],
-        "summary": "List Dictionary Words",
-        "description": "List words in the dictionary with pagination, sorted by latest added (ID DESC).",
-        "operationId": "list_dictionary_words_api_spell_check_dictionary_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "skip",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 0,
-              "title": "Skip"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 20,
-              "title": "Limit"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/DictionaryWordOut"
-                  },
-                  "title": "Response List Dictionary Words Api Spell Check Dictionary Get"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/spell-check/dictionary/search": {
+    "/api/dictionary/search": {
       "get": {
         "tags": [
           "dictionary"
         ],
         "summary": "Search Dictionary",
-        "description": "Search for words in the dictionary (autocomplete).",
-        "operationId": "search_dictionary_api_spell_check_dictionary_search_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
+        "description": "Search for entries in the dictionary (autocomplete).",
+        "operationId": "search_dictionary_api_dictionary_search_get",
         "parameters": [
           {
             "name": "q",
@@ -3771,9 +3750,9 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/DictionaryWordOut"
+                    "$ref": "#/components/schemas/DictionaryEntryOut"
                   },
-                  "title": "Response Search Dictionary Api Spell Check Dictionary Search Get"
+                  "title": "Response Search Dictionary Api Dictionary Search Get"
                 }
               }
             }
@@ -3791,14 +3770,32 @@
         }
       }
     },
-    "/api/spell-check/dictionary/stats": {
+    "/api/dictionary/stats": {
       "get": {
         "tags": [
           "dictionary"
         ],
         "summary": "Get Dictionary Stats",
-        "description": "Get total word count in the dictionary.",
-        "operationId": "get_dictionary_stats_api_spell_check_dictionary_stats_get",
+        "description": "Get total entry count in the dictionary.",
+        "operationId": "get_dictionary_stats_api_dictionary_stats_get",
+        "parameters": [
+          {
+            "name": "letter_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Letter Group"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -3809,32 +3806,396 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
+        }
       }
     },
-    "/api/spell-check/dictionary/{word}": {
-      "delete": {
+    "/api/dictionary/letter-groups": {
+      "get": {
         "tags": [
           "dictionary"
         ],
-        "summary": "Delete From Dictionary",
-        "description": "Remove a word from the dictionary. Only allowed for editors/admins.",
-        "operationId": "delete_from_dictionary_api_spell_check_dictionary__word__delete",
-        "security": [
+        "summary": "List Letter Groups",
+        "description": "Return all distinct first letters present in the dictionary.",
+        "operationId": "list_letter_groups_api_dictionary_letter_groups_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array",
+                  "title": "Response List Letter Groups Api Dictionary Letter Groups Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dictionary": {
+      "get": {
+        "tags": [
+          "dictionary"
+        ],
+        "summary": "List Dictionary Entries",
+        "description": "List dictionary entries with pagination, sorted alphabetically.",
+        "operationId": "list_dictionary_entries_api_dictionary_get",
+        "parameters": [
           {
-            "HTTPBearer": []
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "letter_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Letter Group"
+            }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DictionaryEntryOut"
+                  },
+                  "title": "Response List Dictionary Entries Api Dictionary Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/spell-check/words/search": {
+      "get": {
+        "tags": [
+          "words"
+        ],
+        "summary": "Search Words",
+        "description": "Search for words in the spell check list (autocomplete).",
+        "operationId": "search_words_api_spell_check_words_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WordOut"
+                  },
+                  "title": "Response Search Words Api Spell Check Words Search Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/spell-check/words/stats": {
+      "get": {
+        "tags": [
+          "words"
+        ],
+        "summary": "Get Words Stats",
+        "description": "Get total word count in the spell check list.",
+        "operationId": "get_words_stats_api_spell_check_words_stats_get",
+        "parameters": [
+          {
+            "name": "letter_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Letter Group"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WordsStatsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/spell-check/words/letter-groups": {
+      "get": {
+        "tags": [
+          "words"
+        ],
+        "summary": "List Letter Groups",
+        "description": "Return all distinct first letters present in the words list.",
+        "operationId": "list_letter_groups_api_spell_check_words_letter_groups_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array",
+                  "title": "Response List Letter Groups Api Spell Check Words Letter Groups Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/spell-check/words": {
+      "get": {
+        "tags": [
+          "words"
+        ],
+        "summary": "List Words",
+        "description": "List words in the spell check list with pagination, sorted alphabetically.",
+        "operationId": "list_words_api_spell_check_words_get",
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "letter_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Letter Group"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WordOut"
+                  },
+                  "title": "Response List Words Api Spell Check Words Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/synonyms/search": {
+      "get": {
+        "tags": [
+          "synonyms"
+        ],
+        "summary": "Search Synonyms",
+        "description": "Search synonyms by word prefix/substring (autocomplete).",
+        "operationId": "search_synonyms_api_synonyms_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SynonymEntryOut"
+                  },
+                  "title": "Response Search Synonyms Api Synonyms Search Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/synonyms/lookup": {
+      "get": {
+        "tags": [
+          "synonyms"
+        ],
+        "summary": "Lookup Synonym",
+        "description": "Exact lookup \u2014 returns the entry and its synonyms for the given word.",
+        "operationId": "lookup_synonym_api_synonyms_lookup_get",
         "parameters": [
           {
             "name": "word",
-            "in": "path",
+            "in": "query",
             "required": true,
             "schema": {
               "type": "string",
@@ -3847,7 +4208,768 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SynonymEntryOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/synonyms/letter-groups": {
+      "get": {
+        "tags": [
+          "synonyms"
+        ],
+        "summary": "List Letter Groups",
+        "description": "Return all distinct letter groups in alphabetical order.",
+        "operationId": "list_letter_groups_api_synonyms_letter_groups_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array",
+                  "title": "Response List Letter Groups Api Synonyms Letter Groups Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/synonyms/stats": {
+      "get": {
+        "tags": [
+          "synonyms"
+        ],
+        "summary": "Get Synonym Stats",
+        "description": "Return total word count in the synonym dictionary.",
+        "operationId": "get_synonym_stats_api_synonyms_stats_get",
+        "parameters": [
+          {
+            "name": "letter_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Letter Group"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SynonymStatsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/synonyms": {
+      "get": {
+        "tags": [
+          "synonyms"
+        ],
+        "summary": "List Synonyms",
+        "description": "List synonym entries with optional letter-group filter and pagination.",
+        "operationId": "list_synonyms_api_synonyms_get",
+        "parameters": [
+          {
+            "name": "letter_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Letter Group"
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SynonymEntryOut"
+                  },
+                  "title": "Response List Synonyms Api Synonyms Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history-dictionary/stats": {
+      "get": {
+        "tags": [
+          "history-dictionary"
+        ],
+        "summary": "Get History Stats",
+        "operationId": "get_history_stats_api_history_dictionary_stats_get",
+        "parameters": [
+          {
+            "name": "letter_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Letter Group"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryStatsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history-dictionary/letter-groups": {
+      "get": {
+        "tags": [
+          "history-dictionary"
+        ],
+        "summary": "List History Letter Groups",
+        "operationId": "list_history_letter_groups_api_history_dictionary_letter_groups_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array",
+                  "title": "Response List History Letter Groups Api History Dictionary Letter Groups Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history-dictionary/search": {
+      "get": {
+        "tags": [
+          "history-dictionary"
+        ],
+        "summary": "Search History Dictionary",
+        "operationId": "search_history_dictionary_api_history_dictionary_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/HistoryEntryOut"
+                  },
+                  "title": "Response Search History Dictionary Api History Dictionary Search Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history-dictionary": {
+      "get": {
+        "tags": [
+          "history-dictionary"
+        ],
+        "summary": "List History Entries",
+        "operationId": "list_history_entries_api_history_dictionary_get",
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "letter_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Letter Group"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/HistoryEntryOut"
+                  },
+                  "title": "Response List History Entries Api History Dictionary Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/names-dictionary/stats": {
+      "get": {
+        "tags": [
+          "names-dictionary"
+        ],
+        "summary": "Get Names Stats",
+        "operationId": "get_names_stats_api_names_dictionary_stats_get",
+        "parameters": [
+          {
+            "name": "letter_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Letter Group"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NamesStatsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/names-dictionary/letter-groups": {
+      "get": {
+        "tags": [
+          "names-dictionary"
+        ],
+        "summary": "List Names Letter Groups",
+        "operationId": "list_names_letter_groups_api_names_dictionary_letter_groups_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array",
+                  "title": "Response List Names Letter Groups Api Names Dictionary Letter Groups Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/names-dictionary/search": {
+      "get": {
+        "tags": [
+          "names-dictionary"
+        ],
+        "summary": "Search Names Dictionary",
+        "operationId": "search_names_dictionary_api_names_dictionary_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/NameEntryOut"
+                  },
+                  "title": "Response Search Names Dictionary Api Names Dictionary Search Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/names-dictionary": {
+      "get": {
+        "tags": [
+          "names-dictionary"
+        ],
+        "summary": "List Names Entries",
+        "operationId": "list_names_entries_api_names_dictionary_get",
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "letter_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Letter Group"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/NameEntryOut"
+                  },
+                  "title": "Response List Names Entries Api Names Dictionary Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/english-uyghur-dictionary/stats": {
+      "get": {
+        "tags": [
+          "english-uyghur-dictionary"
+        ],
+        "summary": "Get English Uyghur Stats",
+        "operationId": "get_english_uyghur_stats_api_english_uyghur_dictionary_stats_get",
+        "parameters": [
+          {
+            "name": "letter_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Letter Group"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnglishUyghurStatsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/english-uyghur-dictionary/letter-groups": {
+      "get": {
+        "tags": [
+          "english-uyghur-dictionary"
+        ],
+        "summary": "List English Uyghur Letter Groups",
+        "operationId": "list_english_uyghur_letter_groups_api_english_uyghur_dictionary_letter_groups_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array",
+                  "title": "Response List English Uyghur Letter Groups Api English Uyghur Dictionary Letter Groups Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/english-uyghur-dictionary/search": {
+      "get": {
+        "tags": [
+          "english-uyghur-dictionary"
+        ],
+        "summary": "Search English Uyghur Dictionary",
+        "operationId": "search_english_uyghur_dictionary_api_english_uyghur_dictionary_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EnglishUyghurEntryOut"
+                  },
+                  "title": "Response Search English Uyghur Dictionary Api English Uyghur Dictionary Search Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/english-uyghur-dictionary": {
+      "get": {
+        "tags": [
+          "english-uyghur-dictionary"
+        ],
+        "summary": "List English Uyghur Entries",
+        "operationId": "list_english_uyghur_entries_api_english_uyghur_dictionary_get",
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "letter_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Letter Group"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EnglishUyghurEntryOut"
+                  },
+                  "title": "Response List English Uyghur Entries Api English Uyghur Dictionary Get"
+                }
               }
             }
           },
@@ -4205,6 +5327,394 @@
         }
       }
     },
+    "/api/proverbs/search": {
+      "get": {
+        "tags": [
+          "proverbs"
+        ],
+        "summary": "Search Proverbs",
+        "description": "Search for proverbs (autocomplete).",
+        "operationId": "search_proverbs_api_proverbs_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProverbEntryOut"
+                  },
+                  "title": "Response Search Proverbs Api Proverbs Search Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/proverbs/stats": {
+      "get": {
+        "tags": [
+          "proverbs"
+        ],
+        "summary": "Get Proverbs Stats",
+        "description": "Get total entry count in the proverbs list.",
+        "operationId": "get_proverbs_stats_api_proverbs_stats_get",
+        "parameters": [
+          {
+            "name": "letter_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Letter Group"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProverbsStatsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/proverbs": {
+      "get": {
+        "tags": [
+          "proverbs"
+        ],
+        "summary": "List Proverbs Entries",
+        "description": "List proverbs with pagination, sorted alphabetically.",
+        "operationId": "list_proverbs_entries_api_proverbs_get",
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "letter_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Letter Group"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProverbEntryOut"
+                  },
+                  "title": "Response List Proverbs Entries Api Proverbs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/quran/surahs": {
+      "get": {
+        "tags": [
+          "quran"
+        ],
+        "summary": "List Surahs",
+        "description": "Get distinct list of all surahs with their names.",
+        "operationId": "list_surahs_api_quran_surahs_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SurahOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Surahs Api Quran Surahs Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/quran/search": {
+      "get": {
+        "tags": [
+          "quran"
+        ],
+        "summary": "Search Quran",
+        "description": "Search for verses in Arabic, English or Uyghur.",
+        "operationId": "search_quran_api_quran_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 15,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/QuranAyahOut"
+                  },
+                  "title": "Response Search Quran Api Quran Search Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/quran/stats": {
+      "get": {
+        "tags": [
+          "quran"
+        ],
+        "summary": "Get Quran Stats",
+        "description": "Get total ayah count in the quran list, optionally filtered by surah.",
+        "operationId": "get_quran_stats_api_quran_stats_get",
+        "parameters": [
+          {
+            "name": "surah",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Surah"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuranStatsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/quran": {
+      "get": {
+        "tags": [
+          "quran"
+        ],
+        "summary": "List Quran Entries",
+        "description": "List quran verses, sorted by surah and ayah. Optionally filtered by surah.",
+        "operationId": "list_quran_entries_api_quran_get",
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "surah",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Surah"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/QuranAyahOut"
+                  },
+                  "title": "Response List Quran Entries Api Quran Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/config": {
       "get": {
         "summary": "Get Public Config",
@@ -4273,19 +5783,6 @@
   },
   "components": {
     "schemas": {
-      "AddToDictionaryRequest": {
-        "properties": {
-          "word": {
-            "type": "string",
-            "title": "Word"
-          }
-        },
-        "type": "object",
-        "required": [
-          "word"
-        ],
-        "title": "AddToDictionaryRequest"
-      },
       "ApplyCorrectionsRequest": {
         "properties": {
           "corrections": {
@@ -4429,7 +5926,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -4443,7 +5940,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -5057,6 +6554,69 @@
         ],
         "title": "CreateAutoCorrectRuleRequest"
       },
+      "DeleteRelationshipRequest": {
+        "properties": {
+          "sourceName": {
+            "type": "string",
+            "title": "Sourcename"
+          },
+          "targetName": {
+            "type": "string",
+            "title": "Targetname"
+          },
+          "relType": {
+            "type": "string",
+            "title": "Reltype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sourceName",
+          "targetName",
+          "relType"
+        ],
+        "title": "DeleteRelationshipRequest"
+      },
+      "DictionaryEntryOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "word": {
+            "type": "string",
+            "title": "Word"
+          },
+          "definition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Definition"
+          },
+          "audio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "word"
+        ],
+        "title": "DictionaryEntryOut"
+      },
       "DictionaryStatsOut": {
         "properties": {
           "total_words": {
@@ -5070,23 +6630,46 @@
         ],
         "title": "DictionaryStatsOut"
       },
-      "DictionaryWordOut": {
+      "EnglishUyghurEntryOut": {
         "properties": {
           "id": {
             "type": "integer",
             "title": "Id"
           },
-          "word": {
+          "english": {
             "type": "string",
-            "title": "Word"
+            "title": "English"
+          },
+          "uyghur": {
+            "type": "string",
+            "title": "Uyghur"
+          },
+          "letter_group": {
+            "type": "string",
+            "title": "Letter Group"
           }
         },
         "type": "object",
         "required": [
           "id",
-          "word"
+          "english",
+          "uyghur",
+          "letter_group"
         ],
-        "title": "DictionaryWordOut"
+        "title": "EnglishUyghurEntryOut"
+      },
+      "EnglishUyghurStatsOut": {
+        "properties": {
+          "total_entries": {
+            "type": "integer",
+            "title": "Total Entries"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_entries"
+        ],
+        "title": "EnglishUyghurStatsOut"
       },
       "ErrorEvent": {
         "properties": {
@@ -5235,6 +6818,64 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "HistoryEntryOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "term": {
+            "type": "string",
+            "title": "Term"
+          },
+          "transliteration": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transliteration"
+          },
+          "definition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Definition"
+          },
+          "letter_group": {
+            "type": "string",
+            "title": "Letter Group"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "term",
+          "letter_group"
+        ],
+        "title": "HistoryEntryOut"
+      },
+      "HistoryStatsOut": {
+        "properties": {
+          "total_entries": {
+            "type": "integer",
+            "title": "Total Entries"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_entries"
+        ],
+        "title": "HistoryStatsOut"
+      },
       "IgnoreIssuesRequest": {
         "properties": {
           "issue_ids": {
@@ -5253,21 +6894,57 @@
       },
       "MergeEntitiesRequest": {
         "properties": {
-          "keep_name": {
+          "keepName": {
             "type": "string",
-            "title": "Keep Name"
+            "title": "Keepname"
           },
-          "remove_name": {
+          "removeName": {
             "type": "string",
-            "title": "Remove Name"
+            "title": "Removename"
           }
         },
         "type": "object",
         "required": [
-          "keep_name",
-          "remove_name"
+          "keepName",
+          "removeName"
         ],
         "title": "MergeEntitiesRequest"
+      },
+      "NameEntryOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "letter_group": {
+            "type": "string",
+            "title": "Letter Group"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "letter_group"
+        ],
+        "title": "NameEntryOut"
+      },
+      "NamesStatsOut": {
+        "properties": {
+          "total_entries": {
+            "type": "integer",
+            "title": "Total Entries"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_entries"
+        ],
+        "title": "NamesStatsOut"
       },
       "OcrRequest": {
         "properties": {
@@ -5548,6 +7225,125 @@
         ],
         "title": "PipelineStageStats"
       },
+      "ProverbEntryOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "volume": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume"
+          },
+          "page_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Number"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "text"
+        ],
+        "title": "ProverbEntryOut"
+      },
+      "ProverbsStatsOut": {
+        "properties": {
+          "total_entries": {
+            "type": "integer",
+            "title": "Total Entries"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_entries"
+        ],
+        "title": "ProverbsStatsOut"
+      },
+      "QuranAyahOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "surah": {
+            "type": "integer",
+            "title": "Surah"
+          },
+          "surah_name_en": {
+            "type": "string",
+            "title": "Surah Name En"
+          },
+          "surah_name_ar": {
+            "type": "string",
+            "title": "Surah Name Ar"
+          },
+          "surah_name_ug": {
+            "type": "string",
+            "title": "Surah Name Ug"
+          },
+          "ayah": {
+            "type": "integer",
+            "title": "Ayah"
+          },
+          "text_ar": {
+            "type": "string",
+            "title": "Text Ar"
+          },
+          "text_en": {
+            "type": "string",
+            "title": "Text En"
+          },
+          "text_ug": {
+            "type": "string",
+            "title": "Text Ug"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "surah",
+          "surah_name_en",
+          "surah_name_ar",
+          "surah_name_ug",
+          "ayah",
+          "text_ar",
+          "text_en",
+          "text_ug"
+        ],
+        "title": "QuranAyahOut"
+      },
+      "QuranStatsOut": {
+        "properties": {
+          "total_entries": {
+            "type": "integer",
+            "title": "Total Entries"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_entries"
+        ],
+        "title": "QuranStatsOut"
+      },
       "RAGQualityStats": {
         "properties": {
           "total_evaluations": {
@@ -5801,6 +7597,24 @@
         ],
         "title": "RandomBookOut"
       },
+      "RenameEntityRequest": {
+        "properties": {
+          "oldName": {
+            "type": "string",
+            "title": "Oldname"
+          },
+          "newName": {
+            "type": "string",
+            "title": "Newname"
+          }
+        },
+        "type": "object",
+        "required": [
+          "oldName",
+          "newName"
+        ],
+        "title": "RenameEntityRequest"
+      },
       "SpellIssueOut": {
         "properties": {
           "id": {
@@ -5835,7 +7649,7 @@
           },
           "ocr_corrections": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/SpellSuggestionOut"
             },
             "type": "array",
             "title": "Ocr Corrections"
@@ -5855,6 +7669,96 @@
           "status"
         ],
         "title": "SpellIssueOut"
+      },
+      "SpellSuggestionOut": {
+        "properties": {
+          "word": {
+            "type": "string",
+            "title": "Word"
+          },
+          "confidence": {
+            "type": "number",
+            "title": "Confidence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "word",
+          "confidence"
+        ],
+        "title": "SpellSuggestionOut"
+      },
+      "SurahOut": {
+        "properties": {
+          "surah": {
+            "type": "integer",
+            "title": "Surah"
+          },
+          "surah_name_en": {
+            "type": "string",
+            "title": "Surah Name En"
+          },
+          "surah_name_ar": {
+            "type": "string",
+            "title": "Surah Name Ar"
+          },
+          "surah_name_ug": {
+            "type": "string",
+            "title": "Surah Name Ug"
+          }
+        },
+        "type": "object",
+        "required": [
+          "surah",
+          "surah_name_en",
+          "surah_name_ar",
+          "surah_name_ug"
+        ],
+        "title": "SurahOut"
+      },
+      "SynonymEntryOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "word": {
+            "type": "string",
+            "title": "Word"
+          },
+          "letter_group": {
+            "type": "string",
+            "title": "Letter Group"
+          },
+          "synonyms": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Synonyms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "word",
+          "letter_group",
+          "synonyms"
+        ],
+        "title": "SynonymEntryOut"
+      },
+      "SynonymStatsOut": {
+        "properties": {
+          "total_words": {
+            "type": "integer",
+            "title": "Total Words"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_words"
+        ],
+        "title": "SynonymStatsOut"
       },
       "SystemConfigCreate": {
         "properties": {
@@ -6150,6 +8054,13 @@
           "type": {
             "type": "string",
             "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
           }
         },
         "type": "object",
@@ -6159,6 +8070,37 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "WordOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "word": {
+            "type": "string",
+            "title": "Word"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "word"
+        ],
+        "title": "WordOut"
+      },
+      "WordsStatsOut": {
+        "properties": {
+          "total_words": {
+            "type": "integer",
+            "title": "Total Words"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_words"
+        ],
+        "title": "WordsStatsOut"
       }
     },
     "securitySchemes": {

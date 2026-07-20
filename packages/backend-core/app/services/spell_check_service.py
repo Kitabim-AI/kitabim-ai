@@ -142,24 +142,26 @@ _OCR_PAIRS: list[tuple[str, str, str]] = [
 ]
 
 
+def _apply_single(w: str) -> list[str]:
+    """Apply one round of OCR-confusable-pair substitution, all positions."""
+    out = []
+    for wrong, correct, _ in _OCR_PAIRS:
+        if wrong not in w:
+            continue
+        idx = 0
+        while True:
+            pos = w.find(wrong, idx)
+            if pos == -1:
+                break
+            out.append(w[:pos] + correct + w[pos + len(wrong) :])
+            idx = pos + 1
+    return out
+
+
 def ocr_variants(word: str) -> list[str]:
     """Generate all single- and double-substitution OCR variants for a word."""
     seen: set[str] = set()
     results: list[str] = []
-
-    def _apply_single(w: str) -> list[str]:
-        out = []
-        for wrong, correct, _ in _OCR_PAIRS:
-            if wrong not in w:
-                continue
-            idx = 0
-            while True:
-                pos = w.find(wrong, idx)
-                if pos == -1:
-                    break
-                out.append(w[:pos] + correct + w[pos + len(wrong) :])
-                idx = pos + 1
-        return out
 
     for variant in _apply_single(word):
         if variant not in seen and variant != word:
@@ -205,6 +207,47 @@ def insertion_variants(word: str) -> list[str]:
                 seen.add(variant)
                 results.append(variant)
     return results
+
+
+# ── Confidence scoring (read-time only — no DB/schema changes) ────────────────
+# A candidate's confidence is derived purely from how it was generated:
+# a targeted substitution of a known-confusable character pair is much stronger
+# evidence than a blind vowel insertion, and a word with multiple competing
+# candidates is inherently more ambiguous than one with a single match.
+
+_TRANSFORM_WEIGHTS = {
+    "substitution_1": 1.0,
+    "substitution_2": 0.6,
+    "insertion": 0.4,
+}
+
+
+def classify_transform(original: str, candidate: str) -> str:
+    """Classify which generation strategy produced `candidate` from `original`.
+
+    Substitution variants are always the same length as the original (1-for-1
+    character swaps); insertion variants are always exactly one character
+    longer. These output spaces are disjoint by construction, so length alone
+    distinguishes insertion from substitution.
+    """
+    if len(candidate) != len(original):
+        return "insertion"
+    if candidate in _apply_single(original):
+        return "substitution_1"
+    return "substitution_2"
+
+
+def score_confidence(original: str, candidate: str, candidate_count: int) -> float:
+    """Confidence in [0, 1] that `candidate` is the correct OCR fix for `original`.
+
+    `original` is normalized internally (matching how ocr_variants/
+    insertion_variants were generated against the normalized token form).
+    """
+    normalized = normalize_uyghur_chars(original)
+    transform_weight = _TRANSFORM_WEIGHTS[classify_transform(normalized, candidate)]
+    length_weight = min(1.0, len(normalized) / 8)
+    count_weight = 1.0 / candidate_count
+    return round(transform_weight * length_weight * count_weight, 2)
 
 
 # ── DB helpers ─────────────────────────────────────────────────────────────────

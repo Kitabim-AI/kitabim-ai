@@ -27,9 +27,9 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
         <Navbar />
       </div>
 
-      <main className={`flex-grow overscroll-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden pt-[72px] sm:pt-[88px] lg:pt-[96px] px-0 sm:px-2 md:px-4 lg:px-8 max-w-[1600px] mx-auto w-full relative z-10 flex flex-col min-h-0 ${view === 'spell-check' ? 'overflow-y-auto lg:overflow-hidden' : ['global-chat', 'reader'].includes(view) ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+      <main className={`flex-grow overscroll-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden pt-[72px] sm:pt-[88px] lg:pt-[96px] px-0 sm:px-2 md:px-4 lg:px-8 max-w-[1600px] mx-auto w-full relative z-10 flex flex-col min-h-0 ${['spell-check', 'graph'].includes(view) ? 'overflow-y-auto lg:overflow-hidden' : ['global-chat', 'reader'].includes(view) ? 'overflow-hidden' : 'overflow-y-auto'}`}>
 
-        <div className={`flex-grow flex flex-col ${['global-chat', 'reader', 'spell-check'].includes(view) ? 'min-h-0' : ''}`}>
+        <div className={`flex-grow flex flex-col ${['global-chat', 'reader', 'spell-check', 'graph'].includes(view) ? 'min-h-0' : ''}`}>
           {children}
         </div>
 

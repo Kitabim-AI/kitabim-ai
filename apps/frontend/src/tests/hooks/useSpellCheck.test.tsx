@@ -8,8 +8,8 @@ beforeEach(() => {
 });
 
 const mockIssues = [
-  { id: 1, word: 'teh', char_offset: 0, char_end: 3, ocr_corrections: ['the'], status: 'open' },
-  { id: 2, word: 'quikc', char_offset: 4, char_end: 9, ocr_corrections: ['quick'], status: 'open' },
+  { id: 1, word: 'teh', char_offset: 0, char_end: 3, ocr_corrections: [{ word: 'the', confidence: 0.8 }], status: 'open' },
+  { id: 2, word: 'quikc', char_offset: 4, char_end: 9, ocr_corrections: [{ word: 'quick', confidence: 0.8 }], status: 'open' },
 ];
 
 test('useSpellCheck loadIssues fetches and stores open issues', async () => {

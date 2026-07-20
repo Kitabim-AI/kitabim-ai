@@ -546,6 +546,7 @@
     "noErrors": "{{page}}-بەتتە ئىملا خاتالىقى بايقالمىدى!",
     "noErrorsDetail": "بۇ بەتتىكى تېكىستلەردە ئىملا خاتالىقى بايقالمىدى.",
     "suggestion": "تەۋسىيە قىلىنغان يېزىلىشى",
+    "confidenceLabel": "Confidence: {{percent}}%",
     "ignore": "خاتا ئەمەس",
     "applied": "تۈزىتىلدى",
     "ignored": "ئۆزگەرمىدى",
@@ -883,6 +884,26 @@
       "yearHijri": "ھىجرىيە يىلى",
       "yearGregorian": "مىلادىيە يىلى",
       "centuryGregorian": "مىلادىيە ئەسىرى"
+    },
+    "admin": {
+      "deleteRelationshipTitle": "مۇناسىۋەتنى ئۆچۈرۈش",
+      "deleteRelationshipMessage": "«{{sourceName}}» بىلەن «{{targetName}}» ئارىسىدىكى «{{relType}}» مۇناسىۋىتىنى ئۆچۈرەمسىز؟ بۇ ئۇنى بارلىق كىتابلاردىن ئۆچۈرىدۇ.",
+      "deleteRelationshipSuccess": "مۇناسىۋەت ئۆچۈرۈلدى.",
+      "deleteRelationshipError": "مۇناسىۋەتنى ئۆچۈرەلمىدى.",
+      "mergeStart": "باشقا سۆزلۈك بىلەن بىرلەشتۈرۈش...",
+      "mergePickTarget": "«{{name}}» بىلەن بىرلەشتۈرۈش ئۈچۈن باشقا سۆزلۈكنى چېكىڭ (Esc ئارقىلىق بىكار قىلىڭ)",
+      "mergeConfirmMessage": "بىرلەشتۈرگەندە قايسى سۆزلۈك ساقلىنىدىغانلىقىنى تاللاڭ. ئۆچۈرۈلىدىغان مۇناسىۋەتلىرى كۆچۈرۈلۈپ، سۆزلۈك ئۆزى ئۆچۈرۈلىدۇ.",
+      "mergeKeep": "ساقلا",
+      "mergeConfirmButton": "بىرلەشتۈر",
+      "mergeSuccess": "سۆزلۈكلەر بىرلەشتۈرۈلدى.",
+      "mergeError": "بىرلەشتۈرەلمىدى.",
+      "renameStart": "نامىنى ئۆزگەرتىش...",
+      "renameTitle": "سۆزلۈك نامىنى ئۆزگەرتىش",
+      "renameLabel": "يېڭى نامى",
+      "renameCancel": "بىكار قىلىش",
+      "renameConfirm": "ئۆزگەرتىش",
+      "renameSuccess": "سۆزلۈك نامى ئۆزگەرتىلدى.",
+      "renameError": "نامىنى ئۆزگەرتەلمىدى."
     }
   },
   "quran": {
@@ -892,6 +913,12 @@
     "ayahNotFound": "ھالقىلىق سۆزگە ماس كېلىدىغان ئايەت تېپىلمىدى.",
     "totalVerses": "{{count}} ئايەت",
     "ayahSuffix": "-ئايەت",
-    "badgeTemplate": "{{surah}}-سۈرە: {{surahName}} — {{ayah}}-ئايەت"
+    "badgeTemplate": "{{surah}}-سۈرە: {{surahName}} — {{ayah}}-ئايەت",
+    "switchSurahHint": "سۈرە تاللاش ئۈچۈن چېكىڭ",
+    "selectSurah": "سۈرە تاللاڭ",
+    "selectAyah": "ئايەت تاللاڭ",
+    "allAyahs": "ھەممە ئايەت",
+    "searchKeyword": "ھالقىلىق سۆز بويىچە ئىزدەش...",
+    "searchBtn": "ئىزدەش"
   }
 }

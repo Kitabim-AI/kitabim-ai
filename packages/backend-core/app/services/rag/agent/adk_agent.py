@@ -26,8 +26,13 @@ from app.services.rag.agent.tools import (
 from app.services.rag.agent.prompts import AGENT_SYSTEM_PROMPT
 
 
-def build_rag_agent(model_name: str) -> Agent:
-    """Build the Google ADK Agent with standard tools and system instructions."""
+def build_rag_agent(model_name: str, graph_enabled: bool = True) -> Agent:
+    """Build the Google ADK Agent with standard tools and system instructions.
+
+    query_knowledge_graph is only offered to the agent when graph_enabled is
+    True — the agent can otherwise still attempt the call despite prompt
+    instructions telling it not to, wasting a tool round-trip.
+    """
     # Strip 'models/' prefix from model name if present
     model = (
         model_name.replace("models/", "", 1)
@@ -35,30 +40,33 @@ def build_rag_agent(model_name: str) -> Agent:
         else model_name
     )
 
+    tools = [
+        search_chunks,
+        search_books_by_summary,
+        find_books_by_title,
+        rewrite_query,
+        get_book_author,
+        get_books_by_author,
+        search_catalog,
+        get_book_summary,
+        get_sister_volumes,
+        get_current_page,
+        lookup_uyghur_word,
+        lookup_history_term,
+        translate_english_to_uyghur,
+        check_word_spelling,
+        lookup_uyghur_name,
+        search_language_sources,
+        lookup_proverbs,
+        search_quran,
+    ]
+    if graph_enabled:
+        tools.append(query_knowledge_graph)
+
     return Agent(
         name="kitabim_retrieval_agent",
         model=model,
         instruction=AGENT_SYSTEM_PROMPT,
         generate_content_config=types.GenerateContentConfig(temperature=0.0),
-        tools=[
-            search_chunks,
-            search_books_by_summary,
-            find_books_by_title,
-            rewrite_query,
-            get_book_author,
-            get_books_by_author,
-            search_catalog,
-            get_book_summary,
-            get_sister_volumes,
-            get_current_page,
-            query_knowledge_graph,
-            lookup_uyghur_word,
-            lookup_history_term,
-            translate_english_to_uyghur,
-            check_word_spelling,
-            lookup_uyghur_name,
-            search_language_sources,
-            lookup_proverbs,
-            search_quran,
-        ],
+        tools=tools,
     )

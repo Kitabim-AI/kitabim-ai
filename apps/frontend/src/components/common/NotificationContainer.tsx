@@ -12,19 +12,19 @@ export const NotificationContainer: React.FC = () => {
       {notifications.map((notification) => (
         <div
           key={notification.id}
-          className={`pointer-events-auto flex items-center justify-between p-6 bg-white/80 backdrop-blur-2xl rounded-3xl border shadow-2xl animate-fade-in ${notification.type === 'success'
-            ? 'border-emerald-500/20 text-[#1a1a1a] shadow-emerald-500/5'
+          className={`pointer-events-auto flex items-center justify-between p-6 bg-white/80 dark:bg-slate-900/90 backdrop-blur-2xl rounded-3xl border shadow-2xl dark:shadow-black/40 animate-fade-in ${notification.type === 'success'
+            ? 'border-emerald-500/20 dark:border-emerald-400/20 text-[#1a1a1a] dark:text-slate-100 shadow-emerald-500/5'
             : notification.type === 'error'
-              ? 'border-red-500/20 text-[#1a1a1a] shadow-red-500/5'
-              : 'border-[#0369a1]/20 text-[#1a1a1a] shadow-[#0369a1]/5'
+              ? 'border-red-500/20 dark:border-red-400/20 text-[#1a1a1a] dark:text-slate-100 shadow-red-500/5'
+              : 'border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#1a1a1a] dark:text-slate-100 shadow-[#0369a1]/5'
             }`}
         >
           <div className="flex items-center gap-4">
             <div className={`p-2.5 rounded-2xl ${notification.type === 'success'
-              ? 'bg-emerald-50 text-emerald-500'
+              ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-500 dark:text-emerald-400'
               : notification.type === 'error'
-                ? 'bg-red-50 text-red-500'
-                : 'bg-[#0369a1]/10 text-[#0369a1]'
+                ? 'bg-red-50 dark:bg-red-950/30 text-red-500 dark:text-red-400'
+                : 'bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8]'
               }`}>
               {notification.type === 'success' ? (
                 <CheckCircle2 size={24} strokeWidth={3} />
@@ -38,7 +38,7 @@ export const NotificationContainer: React.FC = () => {
           </div>
           <button
             onClick={() => removeNotification(notification.id)}
-            className="p-2 hover:bg-slate-100 text-slate-300 hover:text-slate-500 rounded-xl transition-all active:scale-90"
+            className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-300 dark:text-slate-500 hover:text-slate-500 dark:hover:text-slate-300 rounded-xl transition-all active:scale-90"
           >
             <X size={20} strokeWidth={3} />
           </button>

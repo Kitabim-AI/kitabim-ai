@@ -102,7 +102,7 @@ def build_instructions(
             "   Each document in the context starts with a header like: [BookID: abc123, Book: title, Author: name, Volume: N, Page: N]\n"
             "   Book summaries use the marker SUMMARY instead of Page: [BookID: abc123, Book: title, Author: name, SUMMARY]\n"
             "   Dictionary sources use headers like: [Dictionary Source: Uyghur Dictionary, Term: X], [Dictionary Source: History Dictionary, Term: X], [Dictionary Source: English-Uyghur Dictionary, English: X], or [Dictionary Source: Spelling Word List, Word: X]\n"
-            "   Quran sources use headers like: [Source: Holy Quran, Surah: SurahName (EnglishName), Ayah: N]\n"
+            "   Quran sources use headers like: [Source: Holy Quran, Surah: SurahNumber - SurahName (EnglishName), Ayah: N]\n"
             "   You MUST use the EXACT author name from the 'Author:' field in book headers. If there is no 'Author:' field in the header, omit the author from the citation entirely — do NOT write any 'unknown' or placeholder text for the author."
         ),
         _MULTI_VOLUME_INSTRUCTION,
@@ -154,6 +154,12 @@ def format_document(doc: Document) -> str:
     volume = doc.metadata.get("volume")
     page = doc.metadata.get("page")
     book_id = doc.metadata.get("book_id") or "unknown"
+
+    if book_id == "quran":
+        surah_name_en = doc.metadata.get("surah_name_en") or "Unknown"
+        surah = doc.metadata.get("surah") or volume or 1
+        ayah = doc.metadata.get("ayah") or page or 1
+        return f"[Source: Holy Quran, Surah: {surah} - {title} ({surah_name_en}), Ayah: {ayah}]\n{doc.page_content}"
 
     source_parts = [f"BookID: {book_id}", f"Book: {title}"]
     if author:

@@ -147,16 +147,6 @@ export const Navbar: React.FC = () => {
             <div className="absolute inset-0 bg-gradient-to-tr from-[#0369a1]/0 to-[#0369a1]/10 opacity-0 group-hover:opacity-100 transition-opacity" />
           </button>
 
-          {/* Theme Toggle Button */}
-          <button
-            onClick={toggleTheme}
-            className="group relative flex items-center justify-center w-9 h-9 md:w-11 md:h-11 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md border border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-xl md:rounded-2xl hover:border-[#0369a1] dark:hover:border-[#38bdf8] hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/5 transition-all shadow-sm overflow-hidden active:scale-90"
-            title={theme === 'light' ? t('theme.dark') || 'قاراڭغۇ' : t('theme.light') || 'يورۇق'}
-          >
-            {getThemeIcon()}
-            <div className="absolute inset-0 bg-gradient-to-tr from-[#0369a1]/0 to-[#0369a1]/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-          </button>
-
           {isEditor && (
             <>
               <button
@@ -182,6 +172,16 @@ export const Navbar: React.FC = () => {
               />
             </>
           )}
+
+          {/* Theme Toggle Button */}
+          <button
+            onClick={toggleTheme}
+            className="group relative flex items-center justify-center w-9 h-9 md:w-11 md:h-11 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md border border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-xl md:rounded-2xl hover:border-[#0369a1] dark:hover:border-[#38bdf8] hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/5 transition-all shadow-sm overflow-hidden active:scale-90"
+            title={theme === 'light' ? t('theme.dark') || 'قاراڭغۇ' : t('theme.light') || 'يورۇق'}
+          >
+            {getThemeIcon()}
+            <div className="absolute inset-0 bg-gradient-to-tr from-[#0369a1]/0 to-[#0369a1]/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </button>
           <div className="hidden sm:block">
             <AuthButton onLogout={() => setView('home')} />
           </div>
@@ -189,9 +189,14 @@ export const Navbar: React.FC = () => {
           {/* Mobile Menu Button */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="lg:hidden flex items-center justify-center w-9 h-9 rounded-xl hover:bg-[#0369a1]/10 text-[#0369a1] border border-[#0369a1]/10 transition-all relative z-10"
+            className="lg:hidden group relative flex items-center justify-center w-9 h-9 md:w-11 md:h-11 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md border border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-xl md:rounded-2xl hover:border-[#0369a1] dark:hover:border-[#38bdf8] hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/5 transition-all shadow-sm overflow-hidden active:scale-90 z-10"
           >
-            {mobileMenuOpen ? <X size={24} strokeWidth={2.5} /> : <Menu size={24} strokeWidth={2.5} />}
+            {mobileMenuOpen ? (
+              <X size={22} className="text-[#0369a1] dark:text-[#38bdf8] group-hover:scale-110 transition-transform" strokeWidth={2.5} />
+            ) : (
+              <Menu size={22} className="text-[#0369a1] dark:text-[#38bdf8] group-hover:scale-110 transition-transform" strokeWidth={2.5} />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-tr from-[#0369a1]/0 to-[#0369a1]/10 dark:from-[#38bdf8]/0 dark:to-[#38bdf8]/10 opacity-0 group-hover:opacity-100 transition-opacity" />
           </button>
         </div>
       </nav>
@@ -266,29 +271,6 @@ export const Navbar: React.FC = () => {
                 icon={<HeartHandshake size={20} strokeWidth={2.5} />}
                 label={t('nav.joinUs')}
               />
-
-              {/* Mobile Theme Selector */}
-              <div className="pt-4 border-t border-[#0369a1]/10 dark:border-[#38bdf8]/10 flex items-center justify-between px-2">
-                <span className="text-sm font-medium text-slate-500 dark:text-slate-400 uyghur-text">{t('theme.title') || 'تېما'}:</span>
-                <div className="flex bg-[#0369a1]/5 dark:bg-[#38bdf8]/5 rounded-xl p-1 gap-1 border border-[#0369a1]/10 dark:border-[#38bdf8]/10">
-                  <button
-                    onClick={() => setTheme('light')}
-                    className={`p-2 rounded-lg transition-all flex items-center gap-1.5 ${theme === 'light' ? 'bg-[#0369a1] text-white shadow-md' : 'text-slate-500 dark:text-slate-400 hover:text-[#0369a1]'}`}
-                    title={t('theme.light') || 'Light'}
-                  >
-                    <Sun size={16} />
-                    <span className="text-xs uyghur-text">{t('theme.light') || 'يورۇق'}</span>
-                  </button>
-                  <button
-                    onClick={() => setTheme('dark')}
-                    className={`p-2 rounded-lg transition-all flex items-center gap-1.5 ${theme === 'dark' ? 'bg-[#0369a1] text-white shadow-md' : 'text-slate-500 dark:text-slate-400 hover:text-[#0369a1]'}`}
-                    title={t('theme.dark') || 'Dark'}
-                  >
-                    <Moon size={16} />
-                    <span className="text-xs uyghur-text">{t('theme.dark') || 'قاراڭغۇ'}</span>
-                  </button>
-                </div>
-              </div>
 
               {/* Auth section in mobile menu */}
               <div className="pt-4 border-t border-[#0369a1]/10 dark:border-[#38bdf8]/10 sm:hidden">

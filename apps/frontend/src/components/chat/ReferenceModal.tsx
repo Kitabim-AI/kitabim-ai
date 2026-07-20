@@ -49,14 +49,15 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
     setCurrentPageData(null);
     if (bookId === 'quran') {
       const initialSurah = pageNumbers[0] ?? 1;
-      setCurrentPageNum(initialSurah);
+      const initialAyah = pageNumbers.slice(1)[0] ?? 1;
+      setCurrentPageNum(initialAyah);
       PersistenceService.getQuranSurah(initialSurah)
         .then(verses => {
           if (verses && verses.length > 0) {
             setBookData({
               title: `${verses[0].surah_name_ug} سۈرىسى`,
               author: `قۇرئان كەرىم (${verses[0].surah_name_ar})`,
-              totalPages: 114,
+              totalPages: verses.length,
             });
             setCurrentPageData({ verses });
           } else {
@@ -102,45 +103,13 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
     }
   }, [isOpen, bookId, pageNumbers, isSummaryMode, t]);
 
-  useEffect(() => {
-    if (bookId === 'quran' && !loading && !pageLoading && currentPageData?.verses) {
-      const targetAyah = pageNumbers.slice(1)[0];
-      if (targetAyah) {
-        const timer = setTimeout(() => {
-          const element = document.getElementById(`ayah-${targetAyah}`);
-          if (element) {
-            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }
-        }, 300);
-        return () => clearTimeout(timer);
-      }
-    }
-  }, [bookId, loading, pageLoading, currentPageData, pageNumbers]);
+  // No scroll-to-ayah needed when paginating ayahs directly
 
   const totalPages: number = bookData?.totalPages ?? 0;
   const navigateToPage = useCallback((newPage: number) => {
     setCurrentPageNum(newPage);
-    setPageLoading(true);
-    if (bookId === 'quran') {
-      PersistenceService.getQuranSurah(newPage)
-        .then(verses => {
-          if (verses && verses.length > 0) {
-            setBookData({
-              title: `${verses[0].surah_name_ug} سۈرىسى`,
-              author: `قۇرئان كەرىم (${verses[0].surah_name_ar})`,
-              totalPages: 114,
-            });
-            setCurrentPageData({ verses });
-          } else {
-            setCurrentPageData(null);
-          }
-          setPageLoading(false);
-        })
-        .catch(err => {
-          console.error("Failed to fetch Quran page:", err);
-          setPageLoading(false);
-        });
-    } else {
+    if (bookId !== 'quran') {
+      setPageLoading(true);
       PersistenceService.getPage(bookId, newPage)
         .then(page => { setCurrentPageData(page); setPageLoading(false); })
         .catch(err => { console.error("Failed to fetch page:", err); setPageLoading(false); });
@@ -240,8 +209,10 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
             )
           ) : bookId === 'quran' && currentPageData?.verses ? (
             <div className="quran-reference max-w-3xl mx-auto space-y-6">
-              {currentPageData.verses.map((v: any) => {
-                const isReferenced = pageNumbers.slice(1).includes(v.ayah);
+              {currentPageData.verses
+                .filter((v: any) => v.ayah === currentPageNum)
+                .map((v: any) => {
+                  const isReferenced = pageNumbers.slice(1).includes(v.ayah);
                 return (
                   <div
                     key={v.id}

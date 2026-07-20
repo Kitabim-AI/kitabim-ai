@@ -2,6 +2,7 @@ import { BookOpen, Check, FileSearch, FileText, Filter, Layers, Library, Loader2
 import React from 'react';
 import { AgentStep } from '../../hooks/useChat';
 import { useI18n } from '../../i18n/I18nContext';
+import { useIsAdmin } from '../../hooks/useAuth';
 
 function stepIcon(step: AgentStep): React.ReactNode {
   const s = 11;
@@ -136,6 +137,7 @@ interface AgentThinkingStepsProps {
 
 export const AgentThinkingSteps: React.FC<AgentThinkingStepsProps> = ({ steps, fontSize, compact = false }) => {
   const { t } = useI18n();
+  const isAdmin = useIsAdmin();
   const textSize = fontSize ? Math.max(fontSize - 2, 11) : 12;
 
   return (
@@ -166,6 +168,14 @@ export const AgentThinkingSteps: React.FC<AgentThinkingStepsProps> = ({ steps, f
               {label}{isActive ? '...' : ''}
               {sublabel && <span className="opacity-60 mx-1 uyghur-text">— {sublabel}</span>}
             </span>
+            {isAdmin && step.type === 'tool' && step.tool && (
+              <span
+                className="font-mono text-[9px] px-1 py-0.5 rounded bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1]/70 dark:text-[#38bdf8]/70 shrink-0 ltr"
+                dir="ltr"
+              >
+                {step.tool}
+              </span>
+            )}
           </div>
         );
       })}

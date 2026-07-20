@@ -1,0 +1,283 @@
+{
+  "eval_set_id": "deterministic_eval_catalog",
+  "name": "Catalog Evaluation Set",
+  "description": "Evaluation cases for book catalog metadata lookups (author, books by author, general catalog search).",
+  "eval_cases": [
+    {
+      "eval_id": "test_catalog_author_of",
+      "conversation": [
+        {
+          "invocation_id": "fc-catalog-author",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "ئانا يۇرت رومانىنىڭ ئاپتورى كىم؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "زوردۇن سابىر"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "get_book_author",
+                "args": {
+                  "question": "ئانا يۇرت رومانىنىڭ ئاپتورى كىم؟"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          }
+        }
+      }
+    },
+    {
+      "eval_id": "test_catalog_books_by_author",
+      "conversation": [
+        {
+          "invocation_id": "fc-catalog-books-by",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "زوردۇن سابىرنىڭ قانداق ئەسەرلېرى بار؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "ئانا يۇرت"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "get_books_by_author",
+                "args": {
+                  "question": "زوردۇن سابىرنىڭ قانداق ئەسەرلېرى بار؟"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          }
+        }
+      }
+    },
+    {
+      "eval_id": "test_catalog_general",
+      "conversation": [
+        {
+          "invocation_id": "fc-catalog-gen",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "مەھمۇد كاشىغەرىي ھەققىدە قانداق كىتابلار بار؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "مەھمۇد كاشىغەرىي"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "search_catalog",
+                "args": {
+                  "query": "مەھمۇد كاشىغەرىي ھەققىدە قانداق كىتابلار بار؟"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          }
+        }
+      }
+    },
+    {
+      "eval_id": "test_catalog_author_of_fallback",
+      "conversation": [
+        {
+          "invocation_id": "fc-catalog-author-fallback",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "بۇخارا ھەققىدىكى كىتابنىڭ ئاپتورى كىم؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "ئىلھام زاھىر"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "get_book_author",
+                "args": {
+                  "question": "بۇخارا ھەققىدىكى كىتابنىڭ ئاپتورى كىم؟"
+                }
+              },
+              {
+                "name": "search_books_by_summary",
+                "args": {
+                  "query": "بۇخارا ھەققىدىكى كىتابنىڭ ئاپتورى كىم؟"
+                }
+              },
+              {
+                "name": "search_chunks",
+                "args": {
+                  "query": "بۇخارا ھەققىدىكى كىتابنىڭ ئاپتورى كىم؟",
+                  "book_ids": [
+                    "85b7a8636250",
+                    "009188027d84",
+                    "720f243f74d2",
+                    "4845a61ec538",
+                    "e86c472ba65e",
+                    "ce73f7f0c4bd",
+                    "4448603e58b4",
+                    "a24a7a753a0e",
+                    "63d88724d182",
+                    "1ca6261c70b1",
+                    "06be05f2d848",
+                    "16d4e066c7df",
+                    "6e8bdab32ad3",
+                    "302abec9edfb",
+                    "1f834d948928",
+                    "0b7eff3f9e5f",
+                    "d725ff64fb31",
+                    "2ec10e4dbe6e",
+                    "556b4f378a4d",
+                    "5c9c4ea4c866"
+                  ]
+                }
+              },
+              {
+                "name": "search_chunks",
+                "args": {
+                  "query": "بۇخارا ھەققىدىكى كىتابنىڭ ئاپتورى كىم؟",
+                  "book_ids": null
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          }
+        }
+      }
+    },
+    {
+      "eval_id": "test_catalog_general_universal_fallback",
+      "conversation": [
+        {
+          "invocation_id": "fc-catalog-universal",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "بالىلار ھەققىدە قانداق كىتابلار بار؟"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "پەرزەنتنامە"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "search_catalog",
+                "args": {
+                  "query": "بالىلار ھەققىدە قانداق كىتابلار بار؟"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          }
+        }
+      }
+    }
+  ]
+}

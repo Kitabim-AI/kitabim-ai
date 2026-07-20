@@ -1,0 +1,154 @@
+{
+  "eval_set_id": "deterministic_eval_quran",
+  "name": "Quran Search Evaluation Set",
+  "description": "Evaluation cases for Quran surah/ayah lookups and keyword searches.",
+  "eval_cases": [
+    {
+      "eval_id": "test_quran_surah_ayah_lookup",
+      "conversation": [
+        {
+          "invocation_id": "fc-quran-verse",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "فاتىھە سۈرىسى 1-ئايەت"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "بىسمىللاھىر رەھمانىر رەھىم"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "search_quran",
+                "args": {
+                  "surah": 1,
+                  "ayah": 1,
+                  "q": "فاتىھە سۈرىسى 1-ئايەت"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          }
+        }
+      }
+    },
+    {
+      "eval_id": "test_quran_keyword_search",
+      "conversation": [
+        {
+          "invocation_id": "fc-quran-keyword",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "ئاللاھنىڭ ئىسمى بىلەن باشلايمەن"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "بىسمىللاھىر رەھمانىر رەھىم"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "search_quran",
+                "args": {
+                  "surah": null,
+                  "ayah": null,
+                  "q": "ئاللاھنىڭ ئىسمى بىلەن باشلايمەن"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          }
+        }
+      }
+    },
+    {
+      "eval_id": "test_quran_surah_only_lookup",
+      "conversation": [
+        {
+          "invocation_id": "fc-quran-surah",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "فاتىھە سۈرىسى"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "فاتىھە"
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "search_quran",
+                "args": {
+                  "surah": 1,
+                  "ayah": null,
+                  "q": "فاتىھە سۈرىسى"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "kitabim",
+        "user_id": "test-eval-user",
+        "state": {
+          "query_context": {
+            "is_global": true,
+            "book_id": "global",
+            "user_id": "test-eval-user",
+            "history": [],
+            "agent_model": "gemini-2.5-flash"
+          }
+        }
+      }
+    }
+  ]
+}

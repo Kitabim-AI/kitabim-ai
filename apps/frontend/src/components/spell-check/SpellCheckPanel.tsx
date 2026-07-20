@@ -41,6 +41,17 @@ interface SpellCheckPanelProps {
   bookAuthor?: string | null;
 }
 
+function confidenceBadgeClass(confidence: number): string {
+  const base = 'text-[9px] px-1.5 py-0.5 rounded-full font-bold leading-none border';
+  if (confidence >= 0.6) {
+    return `${base} bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/30`;
+  }
+  if (confidence >= 0.3) {
+    return `${base} bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/30`;
+  }
+  return `${base} bg-slate-100 dark:bg-slate-700/40 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-600/30`;
+}
+
 function extractContext(
   pageText: string,
   charOffset: number | null,
@@ -353,17 +364,27 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
                   <div className="flex flex-wrap gap-2">
                     {suggestions.map((correction) => (
                       <button
-                        key={correction}
-                        onClick={() => { setCustomInput(correction); handleCustomApply(); }}
+                        key={correction.word}
+                        onClick={() => { setCustomInput(correction.word); handleCustomApply(); }}
                         disabled={isBusy || isApplying !== null}
                         className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-xl text-xs sm:text-sm font-bold transition-all shadow-sm active:scale-95 uyghur-text relative overflow-hidden"
                         style={{ fontSize: `${Math.max(14, fontSize - 2)}px` }}
                       >
-                        {isApplying === correction ? (
+                        {isApplying === correction.word ? (
                           <div className="absolute inset-0 flex items-center justify-center bg-[#0369a1] dark:bg-[#38bdf8]">
                             <Loader2 size={14} className="animate-spin text-white dark:text-slate-950" />
                           </div>
-                        ) : correction}
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5">
+                            <span>{correction.word}</span>
+                            <span
+                              aria-label={t('spellCheck.confidenceLabel', { percent: Math.round(correction.confidence * 100) })}
+                              className={confidenceBadgeClass(correction.confidence)}
+                            >
+                              {Math.round(correction.confidence * 100)}%
+                            </span>
+                          </span>
+                        )}
                       </button>
                     ))}
                   </div>

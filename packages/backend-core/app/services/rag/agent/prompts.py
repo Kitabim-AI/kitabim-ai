@@ -9,21 +9,28 @@ _ROLE = (
 _STEP_1_COREFERENCE = (
     "Retrieval strategy:\n"
     "1. Co-reference resolution:\n"
-    "   - Call rewrite_query first to resolve pronouns if the question contains Uyghur pronouns (ئۇ، بۇ، شۇ، ئۇنىڭ، بۇنىڭ، ئۇنى، بۇنى) "
-    'or the topic-shift particle "چۇ" attached to a word (e.g. ئارالنىڭچۇ؟، كىتابچۇ؟) '
-    "and there is prior conversation context.\n"
-    "   - EXCEPTION: Do NOT call rewrite_query if the pronoun's antecedent is already named within "
-    'the same question (e.g. "يۇنۇسخان كىم؟ ئۇنىڭ قانچە پەرزەنتى بار؟" — "ئۇنىڭ" refers to '
-    "يۇنۇسخان which is already stated; skip straight to book discovery).\n"
-    "   - After rewrite_query returns, re-evaluate the rewritten question from step 2 onward as if it were the original question. "
-    "If the rewritten question now explicitly names a book title, you MUST call find_books_by_title next — "
+    "   - When to call rewrite_query:\n"
+    "     * Only call rewrite_query if the question contains Uyghur pronouns (ئۇ، بۇ، شۇ، ئۇنىڭ، بۇنىڭ، ئۇنى، بۇنى) "
+    'or the topic-shift particle "چۇ" attached to a word (e.g. ئارالنىڭچۇ؟، كىتابچۇ؟),\n'
+    "     * AND [Context] explicitly contains 'Chat history: Available'.\n"
+    "   - When NOT to call rewrite_query:\n"
+    "     * Do NOT call rewrite_query if [Context] does not show 'Chat history: Available' (or if there is no chat history).\n"
+    "     * Do NOT call rewrite_query if the pronoun's antecedent is already named within the same question "
+    '(e.g., in "يۇنۇسخان كىم؟ ئۇنىڭ قانچە پەرزەنتى بار؟" — "ئۇنىڭ" refers to "يۇنۇسخان" which is already named in the query itself).\n'
+    "   - Post-rewrite action:\n"
+    "     * After rewrite_query returns, re-evaluate the rewritten question from step 2 onward as if it were the original question.\n"
+    "     * If the rewritten question now explicitly names a book title, you MUST call find_books_by_title next — "
     "do NOT reuse [Context] book IDs from a previous turn whose topic differs from the rewritten question."
 )
 
 _STEP_2_CATALOG = (
     "2. For catalog or metadata questions (who wrote X, what books does Y author have, "
     "what is available in the library):\n"
-    '   - "who wrote [title]?" → call get_book_author\n'
+    '   - "who wrote [title]?" or any authorship/ownership question about a book title → call get_book_author.\n'
+    "   - This includes Uyghur genitive patterns like '[title] كىمنىڭ؟' (whose is [title]?), "
+    "'[title] كىمگە تەئەللۇق؟', '[title]نىڭ ئاپتورى كىم؟', or any sentence where a known book title "
+    "is followed by كىمنىڭ, كىمكى, ئاپتورى, or similar ownership/authorship markers. "
+    "IMPORTANT: Do NOT call find_books_by_title for these — call get_book_author directly.\n"
     '   - "what did [author] write?" → call get_books_by_author\n'
     "   - general library browsing or listing → call search_catalog"
 )
@@ -34,8 +41,17 @@ _STEP_3_CURRENT_PAGE = (
     '"بۇ بەتتە نېمە دېيىلگەن") → call get_current_page immediately. Do NOT call search_chunks.'
 )
 
-_STEP_4_DICTIONARY = (
-    "4. For dictionary/language questions, use dictionary tools BEFORE book retrieval:\n"
+_STEP_4_QURAN = (
+    "4. For Quran questions (asking about a Quran surah, ayah/verse, translation, or "
+    'searching for a phrase within the Quran, e.g. "what is surah 1?", "read ayah 1:2", '
+    '"فاتىھە سۈرىسى", "ئاللاھنىڭ ئىسمى بىلەن باشلايمەن قايسى سۈرىدە بار؟") → call search_quran '
+    "directly with surah/ayah/q as applicable. Do NOT call search_chunks, search_catalog, or "
+    "dictionary tools for these — the Quran is a separate source from the book library. "
+    "Stop as soon as search_quran returns."
+)
+
+_STEP_5_DICTIONARY = (
+    "5. For dictionary/language questions, use dictionary tools BEFORE book retrieval:\n"
     "   - If the user asks what a Uyghur word means or asks for a definition (e.g. 'X دېگەن نېمە؟', 'X مەنىسى نېمە؟') → call lookup_uyghur_word.\n"
     "   - If the user asks about a historical term, historical person, event, location, or concept (especially 'X كىم؟' or 'X نېمە؟' without naming a book) → call lookup_history_term first. If no result is found, call search_language_sources.\n"
     "   - If the user asks for the Uyghur translation of an English word or phrase → call translate_english_to_uyghur.\n"
@@ -46,8 +62,8 @@ _STEP_4_DICTIONARY = (
     "   - Stop after dictionary retrieval when the user only asked for a definition, spelling check, name lookup, proverb lookup, or translation. Continue to search_chunks only if the user explicitly asks how the term is used in books or what the library says about it."
 )
 
-_STEP_4_CONTENT = (
-    "5. For content questions (what does the book say about X, explain Y, summarize Z, which book is character W in):\n"
+_STEP_6_CONTENT = (
+    "6. For content questions (what does the book say about X, explain Y, summarize Z, which book is character W in):\n"
     "   - Modifier for relationship/connection queries: If the question asks about relationships, lineages, or connections (e.g. 'how are X and Y related?', 'who is the grandchild/child of Z?', 'list the events in location W'), AND [Context] shows 'Graph available: yes' (or no Graph available line is present, meaning global mode), call query_knowledge_graph first to retrieve semantic relationship networks before calling search_chunks. Combine this with search_chunks if precise textual passages are also needed. If [Context] shows 'Graph available: no', skip query_knowledge_graph entirely.\n"
     "   - Note on Character identity vs. detail questions: If the question specifically asks who or what a character/person/entity is (e.g. 'X كىم؟', 'tell me about X') and does NOT ask for specific details, events, facts, passages, or explanations about them, call search_books_by_summary first to identify relevant book IDs, then call get_book_summary (at most 5 book IDs) rather than search_chunks. If get_book_summary completes for a character identity question about a SINGLE entity, stop immediately. However, if the question is a follow-up or asks for specific details, events, facts, or descriptions, you MUST skip get_book_summary and call search_chunks to retrieve the actual page passages.\n"
     "   a. If the question asks for the plot, themes, or main characters of a specific book → call find_books_by_title, then "
@@ -68,7 +84,7 @@ _STEP_4_CONTENT = (
     "information about the queried person. If results are returned, call get_book_summary with those book_ids (at most 5). "
     "If search_books_by_summary returns no results, the topic has changed — proceed to step g.\n"
     "   f. If no title/author is explicitly named, [Context] provides previous response book IDs, AND no current book_id is provided in [Context] "
-    "(skip this step if in-reader mode with a current book_id, which is handled by 4d; also skip to step g if the question is a character identity question that did not match 4e) :\n"
+    "(skip this step if in-reader mode with a current book_id, which is handled by 6d; also skip to step g if the question is a character identity question that did not match 6e) :\n"
     "      - If the question asks about a DIFFERENT volume of those books (mentions next/previous/numbered volume), "
     "call get_sister_volumes with the first context book_id to discover the full series, then call search_chunks "
     "with the relevant sister volume's book_id.\n"
@@ -83,13 +99,13 @@ _STEP_4_CONTENT = (
     "If that still returns fewer than 4 results, then broaden by calling search_chunks with an empty book_ids list to search the entire library."
 )
 
-_STEP_5_STOP = (
-    "6. Stop as soon as you have sufficient context (6–12 passages for content questions, "
+_STEP_7_STOP = (
+    "7. Stop as soon as you have sufficient context (6–12 passages for content questions, "
     "or a catalog/author result for metadata questions)."
 )
 
-_STEP_MULTI_QUESTION = (
-    "7. If the question contains a [Sub-questions] section listing multiple numbered questions, "
+_STEP_8_MULTI_QUESTION = (
+    "8. If the question contains a [Sub-questions] section listing multiple numbered questions, "
     "you MUST retrieve evidence for ALL of them before finishing. "
     "Use separate tool calls for each sub-question if their topics differ. "
     "Do not stop after finding evidence for only the first sub-question. "
@@ -114,10 +130,11 @@ AGENT_SYSTEM_PROMPT = "\n\n".join(
         _STEP_1_COREFERENCE,
         _STEP_2_CATALOG,
         _STEP_3_CURRENT_PAGE,
-        _STEP_4_DICTIONARY,
-        _STEP_4_CONTENT,
-        _STEP_5_STOP,
-        _STEP_MULTI_QUESTION,
+        _STEP_4_QURAN,
+        _STEP_5_DICTIONARY,
+        _STEP_6_CONTENT,
+        _STEP_7_STOP,
+        _STEP_8_MULTI_QUESTION,
         _HARD_LIMITS,
     ]
 )

@@ -109,7 +109,7 @@ Return ONLY valid JSON matching this schema:
   "is_current_page_query": boolean, // True if the user asks about the page/text they are currently looking at (e.g. "what is on this page", "read this page", "بۇ بەتتە نېمە بار")
   "is_volume_shift": boolean,       // True if the user wants to go to another volume (e.g. "next volume", "previous volume", "ئالدىنقى توم", "2-توم")
   "target_volume": integer | null,  // The volume number to shift to if specified (e.g. 2, 3), else null
-  "needs_rewrite": boolean,         // True if the query has unresolved pronouns/coreferences referring to history (e.g. "who wrote it?", "what is his age?", "ئۇ كىم؟")
+  "needs_rewrite": boolean,         // True ONLY if the query has unresolved pronouns/coreferences or implicit references (ellipsis) referring to prior chat history. MUST be false if the query is fully self-contained, or if there is no chat history.
   "rewritten_question": string | null, // If needs_rewrite is true, rewrite the question to resolve all pronouns/references using chat history to make it self-contained in Uyghur/English. If needs_rewrite is false, return null.
   "catalog_subtype": "author_of" | "books_by" | "general" | null, // Use "author_of" if asking who wrote a book, "books_by" if asking what books an author wrote, "general" for other catalog/library-wide queries (like "what books do you have"), or null if this is NOT a catalog query.
   "dictionary_subtype": "uyghur_definition" | "history_term" | "english_uyghur" | "spelling" | "names" | "proverbs" | "general" | null, // Use only when intent is "dictionary".
@@ -190,10 +190,10 @@ Dictionary subtype rules:
         has_current_book = ctx.book_id is not None and not ctx.is_global
         has_context_books = len(ctx.context_book_ids) > 0
         is_global = ctx.is_global
-        graph_available = (
-            getattr(ctx.book, "graph_milestone", None) == "complete"
-            if ctx.book
-            else False
+        graph_available = bool(
+            ctx.use_knowledge_graph_in_chat
+            and ctx.book
+            and getattr(ctx.book, "graph_milestone", None) == "complete"
         )
 
         # 2. LLM query analysis (intent & signals) with keyword fallback fallback
@@ -468,10 +468,10 @@ Return ONLY valid JSON matching this schema:
         has_current_book = ctx.book_id is not None and not ctx.is_global
         has_context_books = len(ctx.context_book_ids) > 0
         is_global = ctx.is_global
-        graph_available = (
-            getattr(ctx.book, "graph_milestone", None) == "complete"
-            if ctx.book
-            else False
+        graph_available = bool(
+            ctx.use_knowledge_graph_in_chat
+            and ctx.book
+            and getattr(ctx.book, "graph_milestone", None) == "complete"
         )
 
         is_current_page_query = sub_q_data.get("is_current_page_query", False)
@@ -777,14 +777,16 @@ Return ONLY valid JSON matching this schema:
                     result_holder,
                 ):
                     yield ev
-                async for ev in self._run_tool_and_yield(
-                    "search_chunks",
-                    {"query": question, "book_ids": book_ids},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
+                summaries = result_holder.get("result", {}).get("summaries", [])
+                if not summaries:
+                    async for ev in self._run_tool_and_yield(
+                        "search_chunks",
+                        {"query": question, "book_ids": book_ids},
+                        ctx,
+                        observations,
+                        result_holder,
+                    ):
+                        yield ev
             elif intent == "identity":
                 if signals.get("graph_available"):
                     async for ev in self._run_tool_and_yield(
@@ -1021,14 +1023,16 @@ Return ONLY valid JSON matching this schema:
                     result_holder,
                 ):
                     yield ev
-                async for ev in self._run_tool_and_yield(
-                    "search_chunks",
-                    {"query": question, "book_ids": context_book_ids},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
+                summaries = result_holder.get("result", {}).get("summaries", [])
+                if not summaries:
+                    async for ev in self._run_tool_and_yield(
+                        "search_chunks",
+                        {"query": question, "book_ids": context_book_ids},
+                        ctx,
+                        observations,
+                        result_holder,
+                    ):
+                        yield ev
             elif intent == "relationship":
                 if signals.get("graph_available"):
                     async for ev in self._run_tool_and_yield(
@@ -1069,14 +1073,15 @@ Return ONLY valid JSON matching this schema:
         # chunk slots. The universal fallback widens to global scope if results are thin.
         _TOP_BOOKS_FOR_CHUNK_SEARCH = 5
         if intent == "identity":
-            async for ev in self._run_tool_and_yield(
-                "query_knowledge_graph",
-                {"query": question},
-                ctx,
-                observations,
-                result_holder,
-            ):
-                yield ev
+            if signals.get("graph_available"):
+                async for ev in self._run_tool_and_yield(
+                    "query_knowledge_graph",
+                    {"query": question},
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
             async for ev in self._run_tool_and_yield(
                 "search_books_by_summary",
                 {"query": question},
@@ -1122,23 +1127,29 @@ Return ONLY valid JSON matching this schema:
                 result_holder,
             ):
                 yield ev
-            async for ev in self._run_tool_and_yield(
-                "search_chunks",
-                {"query": question, "book_ids": top_ids[:_TOP_BOOKS_FOR_CHUNK_SEARCH]},
-                ctx,
-                observations,
-                result_holder,
-            ):
-                yield ev
+            summaries = result_holder.get("result", {}).get("summaries", [])
+            if not summaries:
+                async for ev in self._run_tool_and_yield(
+                    "search_chunks",
+                    {
+                        "query": question,
+                        "book_ids": top_ids[:_TOP_BOOKS_FOR_CHUNK_SEARCH],
+                    },
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
         elif intent == "relationship":
-            async for ev in self._run_tool_and_yield(
-                "query_knowledge_graph",
-                {"query": question},
-                ctx,
-                observations,
-                result_holder,
-            ):
-                yield ev
+            if signals.get("graph_available"):
+                async for ev in self._run_tool_and_yield(
+                    "query_knowledge_graph",
+                    {"query": question},
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
             async for ev in self._run_tool_and_yield(
                 "search_books_by_summary",
                 {"query": question},
@@ -1286,6 +1297,9 @@ Return ONLY valid JSON matching this schema:
 
         # 2. Stage 2: Coreference Resolution
         needs_rewrite = signals_orig.get("needs_rewrite", False)
+        if not ctx.history:
+            needs_rewrite = False
+
         is_composite = signals_orig.get("is_composite", False)
         sub_questions = signals_orig.get("sub_questions")
 
@@ -1295,7 +1309,10 @@ Return ONLY valid JSON matching this schema:
 
         if needs_rewrite:
             rewritten_question = signals_orig.get("rewritten_question")
-            if rewritten_question:
+            if (
+                rewritten_question
+                and rewritten_question.strip().lower() != question.strip().lower()
+            ):
                 ctx.enriched_question = rewritten_question
                 # Record to observations for tracing
                 res = {
@@ -1317,7 +1334,7 @@ Return ONLY valid JSON matching this schema:
                     "name": "rewrite_query",
                 }
                 yield {"type": "tool_result", "tool": "rewrite_query", "found": 0}
-            else:
+            elif not rewritten_question:
                 # Fallback to separate LLM tool execution on fallback path
                 result_holder = {}
                 async for ev in self._run_tool_and_yield(
@@ -1328,6 +1345,16 @@ Return ONLY valid JSON matching this schema:
                     result_holder,
                 ):
                     yield ev
+                # Double-check if the fallback rewrite is actually different
+                final_rewritten = result_holder.get("result", {}).get(
+                    "rewritten_question"
+                )
+                if (
+                    final_rewritten
+                    and final_rewritten.strip().lower() == question.strip().lower()
+                ):
+                    # If it ended up the same, clear enriched_question to avoid downstream confusion
+                    ctx.enriched_question = None
                 llm_calls += 1
 
         # 3. Query Decomposition (splitting multi-questions)

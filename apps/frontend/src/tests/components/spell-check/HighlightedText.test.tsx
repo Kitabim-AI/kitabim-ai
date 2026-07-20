@@ -8,7 +8,7 @@ const issue = {
   word: 'bad',
   char_offset: 0,
   char_end: 3,
-  ocr_corrections: ['good'],
+  ocr_corrections: [{ word: 'good', confidence: 0.8 }],
   status: 'open' as const,
 };
 

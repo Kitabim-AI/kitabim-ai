@@ -544,6 +544,7 @@
     "noErrors": "Page {{page}}: No errors found!",
     "noErrorsDetail": "The text on this page looks correct.",
     "suggestion": "Suggested Correction",
+    "confidenceLabel": "Confidence: {{percent}}%",
     "ignore": "Ignore",
     "applied": "Corrected",
     "ignored": "Ignored",
@@ -863,6 +864,26 @@
       "yearHijri": "Hijri Year",
       "yearGregorian": "Gregorian Year",
       "centuryGregorian": "Gregorian Century"
+    },
+    "admin": {
+      "deleteRelationshipTitle": "Delete Relationship",
+      "deleteRelationshipMessage": "Delete the \"{{relType}}\" relationship between \"{{sourceName}}\" and \"{{targetName}}\"? This removes it from every book it was extracted from.",
+      "deleteRelationshipSuccess": "Relationship deleted.",
+      "deleteRelationshipError": "Failed to delete relationship.",
+      "mergeStart": "Merge into another entity...",
+      "mergePickTarget": "Click another node to merge with \"{{name}}\" (Esc to cancel)",
+      "mergeConfirmMessage": "Choose which entity should survive the merge. The other entity's relationships will be moved over and it will be deleted.",
+      "mergeKeep": "Keep",
+      "mergeConfirmButton": "Merge",
+      "mergeSuccess": "Entities merged.",
+      "mergeError": "Failed to merge entities.",
+      "renameStart": "Rename...",
+      "renameTitle": "Rename Entity",
+      "renameLabel": "New Name",
+      "renameCancel": "Cancel",
+      "renameConfirm": "Rename",
+      "renameSuccess": "Entity renamed.",
+      "renameError": "Failed to rename entity."
     }
   },
   "quran": {
@@ -872,6 +893,12 @@
     "ayahNotFound": "No verses found matching your search.",
     "totalVerses": "{{count}} Verses",
     "ayahSuffix": "-ayah",
-    "badgeTemplate": "Surah {{surah}}: {{surahName}} — Ayah {{ayah}}"
+    "badgeTemplate": "Surah {{surah}}: {{surahName}} — Ayah {{ayah}}",
+    "switchSurahHint": "tap to switch surah",
+    "selectSurah": "Select Surah",
+    "selectAyah": "Select Ayah",
+    "allAyahs": "All Ayahs",
+    "searchKeyword": "Search by keyword...",
+    "searchBtn": "Search"
   }
 }

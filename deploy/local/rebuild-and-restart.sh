@@ -54,14 +54,25 @@ if [ "$COMPONENT" = "all" ]; then
   done
   echo "✅ Postgres ready"
 
-  # Apply all migrations (IF NOT EXISTS guards make these idempotent)
+  # Apply all migrations (tracked via schema_migrations)
   echo "🗄️  Applying migrations..."
+  psql "postgresql://kitabim:kitabim@127.0.0.1:5432/kitabim-ai" -c "CREATE TABLE IF NOT EXISTS schema_migrations (version VARCHAR(255) PRIMARY KEY, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);" >/dev/null 2>&1
+
   for f in packages/backend-core/migrations/*.sql; do
     if [[ "$f" == *"rollback"* ]]; then
       continue
     fi
-    echo "  → $(basename "$f")"
-    psql "postgresql://kitabim:kitabim@127.0.0.1:5432/kitabim-ai" < "$f"
+    version=$(basename "$f")
+    exists=$(psql "postgresql://kitabim:kitabim@127.0.0.1:5432/kitabim-ai" -tAc "SELECT 1 FROM schema_migrations WHERE version = '$version';" 2>/dev/null)
+    if [ "$exists" != "1" ]; then
+      echo "  → Applying: $version"
+      if psql "postgresql://kitabim:kitabim@127.0.0.1:5432/kitabim-ai" < "$f"; then
+        psql "postgresql://kitabim:kitabim@127.0.0.1:5432/kitabim-ai" -c "INSERT INTO schema_migrations (version) VALUES ('$version');" >/dev/null 2>&1
+      else
+        echo "❌ Error applying migration $version"
+        exit 1
+      fi
+    fi
   done
 
   docker compose up -d

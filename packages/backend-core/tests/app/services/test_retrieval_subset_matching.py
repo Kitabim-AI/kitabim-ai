@@ -39,3 +39,18 @@ async def test_find_books_by_title_subset_filtering():
 
     # b8 (بۇلاق) must NOT be present
     assert "b8" not in matched_ids
+
+
+@pytest.mark.asyncio
+async def test_find_books_by_title_orders_by_volume():
+    session = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.fetchall.return_value = []
+    session.execute.return_value = mock_result
+
+    await find_books_by_title_in_question("ئانا يۇرت رومانى", session)
+
+    executed_stmt = session.execute.call_args[0][0]
+    compiled = str(executed_stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "ORDER BY" in compiled
+    assert "volume" in compiled.lower()
