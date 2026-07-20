@@ -31,6 +31,22 @@ logger = logging.getLogger("app.rag.agent.tools")
 # ADK Tool implementations and observation logging helper
 # ---------------------------------------------------------------------------
 
+# Recoverable tool-level errors — only these are caught and recorded as ok=False.
+# Do NOT use bare `except Exception` here; ADK 2.x uses framework signals
+# (e.g. NodeInterruptedError) that are subclasses of Exception and must
+# propagate freely so the ADK runtime can handle them correctly.
+_TOOL_RECOVERABLE_EXCEPTIONS = (
+    DBAPIError,
+    OperationalError,
+    ServiceUnavailable,
+    SessionExpired,
+    httpx.HTTPError,
+    socket.error,
+    asyncio.TimeoutError,
+    ConnectionError,
+    OSError,
+)
+
 
 async def _execute_and_record_tool(
     tool_context: ToolContext | None,
@@ -45,7 +61,10 @@ async def _execute_and_record_tool(
     ctx: QueryContext = tool_context.state["query_context"]
     try:
         res = await _dispatch_tool_with_retry(tool_name, tool_args, ctx)
-    except Exception as exc:
+    except _TOOL_RECOVERABLE_EXCEPTIONS as exc:
+        # Recoverable tool-level errors — log and return ok=False so the agent
+        # can continue with partial results. All other exceptions (including ADK
+        # framework signals and BaseException subclasses) propagate freely.
         log_json(
             logger,
             logging.WARNING,
@@ -53,6 +72,7 @@ async def _execute_and_record_tool(
             tool=tool_name,
             error=str(exc),
         )
+        res = {"ok": False, "error": str(exc)}
         if "observations" in tool_context.state:
             tool_context.state["observations"] = list(
                 tool_context.state["observations"]
@@ -60,10 +80,10 @@ async def _execute_and_record_tool(
                 {
                     "tool": tool_name,
                     "args": tool_args,
-                    "result": {"ok": False, "error": str(exc)},
+                    "result": res,
                 }
             ]
-        raise
+        return res
 
     # Append to observations list in session state for context building and grading
     if "observations" in tool_context.state:
