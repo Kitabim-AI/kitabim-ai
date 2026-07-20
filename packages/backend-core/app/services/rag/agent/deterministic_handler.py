@@ -20,17 +20,11 @@ from app.services.rag.utils import normalize_uyghur
 from app.db.repositories.books_repository import BooksRepository
 from app.llm.models import build_text_llm
 
-from app.services.rag.agent.handler import (
-    _grade_context,
-    _extract_used_book_ids,
-    _populate_ctx_from_observations,
+from app.services.rag.agent.graph_nodes import (
+    grade_context,
+    extract_used_book_ids,
+    populate_ctx_from_observations,
 )
-
-logger = logging.getLogger("app.rag.agent.deterministic_handler")
-
-# Punctuation boundaries for pronouns
-_PUNCT = "«»،؟!()[]{}\"''"
-
 from app.services.rag.keywords import (
     UYGHUR_PRONOUN_TOKENS,
     VOLUME_SHIFT_KEYWORDS,
@@ -38,6 +32,11 @@ from app.services.rag.keywords import (
     CATALOG_BOOKS_QUERIES,
     PAGE_QUERY_PATTERNS,
 )
+
+logger = logging.getLogger("app.rag.agent.deterministic_handler")
+
+# Punctuation boundaries for pronouns
+_PUNCT = "«»،؟!()[]{}\"''"
 
 
 def _cap_summary_book_ids(book_ids: list, books: list, cap: int = 5) -> list[str]:
@@ -1404,12 +1403,12 @@ Return ONLY valid JSON matching this schema:
                 yield ev
 
         # 5. Grading and Post-processing
-        graded_context, before_count, after_count = _grade_context(observations)
+        graded_context, before_count, after_count = grade_context(observations)
 
         # Update QueryContext metrics
-        used_book_ids = _extract_used_book_ids(observations)
+        used_book_ids = extract_used_book_ids(observations)
         ctx.used_book_ids = used_book_ids
-        _populate_ctx_from_observations(ctx, observations, graded_context, llm_calls)
+        populate_ctx_from_observations(ctx, observations, graded_context, llm_calls)
 
         yield {
             "type": "result",
