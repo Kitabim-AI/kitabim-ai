@@ -6,10 +6,11 @@ built on extracted signals and conditional intent classification.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
-from typing import AsyncIterator, Union
+from typing import AsyncIterator, TYPE_CHECKING, Union
 from google.genai import types
 
 from app.services.rag.base_handler import QueryHandler
@@ -25,6 +26,9 @@ from app.services.rag.agent.handler import (
     _extract_used_book_ids,
     _populate_ctx_from_observations,
 )
+
+if TYPE_CHECKING:
+    from app.services.rag.agent.graph_router import RunnerServices
 
 logger = logging.getLogger("app.rag.agent.deterministic_handler")
 
@@ -71,6 +75,50 @@ def repair_json_unescaped_quotes(json_str: str) -> str:
     return re.sub(pattern, escape_internal_quotes, json_str, flags=re.MULTILINE)
 
 
+async def _merge_sub_question_streams(
+    generators: list,
+) -> AsyncIterator[tuple[int, object]]:
+    """Runs multiple async generators concurrently, yielding (index, item)
+    tuples as items arrive from any of them — arrival order, not generator
+    order, so events from a fast sub-question can interleave with a slow
+    one's rather than waiting for it.
+
+    Re-raises the first exception encountered (after cancelling the rest)
+    once that generator's stream ends — by then its own items are already
+    yielded, matching "partial work already visible before the error" the
+    same way the sequential loop always has.
+    """
+    queue: asyncio.Queue = asyncio.Queue()
+    _DONE = object()
+    errors: dict[int, BaseException] = {}
+
+    async def _drain(gen, idx: int) -> None:
+        try:
+            async for item in gen:
+                await queue.put((idx, item))
+        except BaseException as exc:  # noqa: BLE001 - re-raised by the caller below
+            errors[idx] = exc
+        finally:
+            await queue.put((idx, _DONE))
+
+    tasks = [asyncio.create_task(_drain(gen, i)) for i, gen in enumerate(generators)]
+    remaining = len(tasks)
+    try:
+        while remaining > 0:
+            idx, item = await queue.get()
+            if item is _DONE:
+                remaining -= 1
+                if idx in errors:
+                    raise errors[idx]
+                continue
+            yield idx, item
+    finally:
+        for t in tasks:
+            if not t.done():
+                t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
 class DeterministicRAGHandler(QueryHandler):
     """Deterministic Python RAG Handler.
 
@@ -112,7 +160,7 @@ Return ONLY valid JSON matching this schema:
   "needs_rewrite": boolean,         // True ONLY if the query has unresolved pronouns/coreferences or implicit references (ellipsis) referring to prior chat history. MUST be false if the query is fully self-contained, or if there is no chat history.
   "rewritten_question": string | null, // If needs_rewrite is true, rewrite the question to resolve all pronouns/references using chat history to make it self-contained in Uyghur/English. If needs_rewrite is false, return null.
   "catalog_subtype": "author_of" | "books_by" | "general" | null, // Use "author_of" if asking who wrote a book, "books_by" if asking what books an author wrote, "general" for other catalog/library-wide queries (like "what books do you have"), or null if this is NOT a catalog query.
-  "dictionary_subtype": "uyghur_definition" | "history_term" | "english_uyghur" | "spelling" | "names" | "proverbs" | "general" | null, // Use only when intent is "dictionary".
+  "dictionary_subtype": "uyghur_definition" | "history_term" | "english_uyghur" | "spelling" | "names" | "proverbs" | "synonyms" | "general" | null, // Use only when intent is "dictionary".
   "dictionary_term": string | null, // The exact word/term/name/English phrase to look up when intent is "dictionary".
   "quran_surah": integer | null,    // The surah number (1-114) if specified (e.g. 1 for Fatihah, 2 for Baqarah), or null.
   "quran_ayah": integer | null,     // The ayah/verse number if specified, or null.
@@ -126,7 +174,7 @@ Return ONLY valid JSON matching this schema:
     "is_volume_shift": boolean,
     "target_volume": integer | null,
     "catalog_subtype": "author_of" | "books_by" | "general" | null,
-    "dictionary_subtype": "uyghur_definition" | "history_term" | "english_uyghur" | "spelling" | "names" | "proverbs" | "general" | null,
+    "dictionary_subtype": "uyghur_definition" | "history_term" | "english_uyghur" | "spelling" | "names" | "proverbs" | "synonyms" | "general" | null,
     "dictionary_term": string | null,
     "quran_surah": integer | null,
     "quran_ayah": integer | null,
@@ -136,7 +184,7 @@ Return ONLY valid JSON matching this schema:
 
 Intents:
 - catalog     : asking about book metadata, authors of books, book listings, or what books exist in the library
-- dictionary  : asking for word meanings, dictionary definitions, spelling validity, names, historical vocabulary explanations, or English-to-Uyghur translation
+- dictionary  : asking for word meanings, dictionary definitions, spelling validity, names, synonyms, historical vocabulary explanations, or English-to-Uyghur translation
 - identity    : asking who/what a person or character IS (biography, role, background)
 - summary     : asking about the plot, themes, or main characters of a book
 - relationship: asking about connections, lineages, family trees, or how X and Y relate
@@ -150,6 +198,7 @@ Dictionary subtype rules:
 - "spelling": user asks whether a Uyghur spelling is correct or valid
 - "names": Uyghur person name lookup, or listing/asking about names starting with a specific letter/alphabet (e.g. "ب ھەرىپىدىن باشلانغان كىشى ئىسىملىرى", "ئالىم دېگەن ئىسىم"). For requests listing names starting with a letter, extract the target letter (e.g., "ب") as the dictionary_term.
 - "proverbs": user asks for proverbs, Uyghur proverbs/sayings, or searches for proverbs containing a word (e.g. "ماقال-تەمسىللەر", "بىلىم ھەققىدە ماقال-تەمسىل", "proverb about knowledge")
+- "synonyms": user asks for synonyms of a Uyghur word, words with the same or similar meaning, or a list of synonym-dictionary headwords starting with a letter (e.g. "مەنىداش سۆز", "X نىڭ مەنىداش سۆزى نېمە؟", "ئوخشاش مەنىلىك سۆزلەر", "synonym for X")
 - "general": dictionary-style query where the exact source is unclear
 """
         llm = build_text_llm(ctx.agent_model)
@@ -190,11 +239,6 @@ Dictionary subtype rules:
         has_current_book = ctx.book_id is not None and not ctx.is_global
         has_context_books = len(ctx.context_book_ids) > 0
         is_global = ctx.is_global
-        graph_available = bool(
-            ctx.use_knowledge_graph_in_chat
-            and ctx.book
-            and getattr(ctx.book, "graph_milestone", None) == "complete"
-        )
 
         # 2. LLM query analysis (intent & signals) with keyword fallback fallback
         try:
@@ -342,7 +386,6 @@ Dictionary subtype rules:
             "has_current_book": has_current_book,
             "has_context_books": has_context_books,
             "is_global": is_global,
-            "graph_available": graph_available,
             "intent": intent,
             "dictionary_subtype": dictionary_subtype,
             "dictionary_term": dictionary_term,
@@ -468,11 +511,6 @@ Return ONLY valid JSON matching this schema:
         has_current_book = ctx.book_id is not None and not ctx.is_global
         has_context_books = len(ctx.context_book_ids) > 0
         is_global = ctx.is_global
-        graph_available = bool(
-            ctx.use_knowledge_graph_in_chat
-            and ctx.book
-            and getattr(ctx.book, "graph_milestone", None) == "complete"
-        )
 
         is_current_page_query = sub_q_data.get("is_current_page_query", False)
         is_volume_shift = sub_q_data.get("is_volume_shift", False)
@@ -494,7 +532,6 @@ Return ONLY valid JSON matching this schema:
             "has_current_book": has_current_book,
             "has_context_books": has_context_books,
             "is_global": is_global,
-            "graph_available": graph_available,
             "intent": intent,
             "dictionary_subtype": dictionary_subtype,
             "dictionary_term": dictionary_term,
@@ -512,107 +549,116 @@ Return ONLY valid JSON matching this schema:
         question: str,
         ctx: QueryContext,
         observations: list,
+        runner_services: "RunnerServices | None" = None,
     ) -> AsyncIterator[dict]:
-        """Stage 4: Execution Router — picks and runs a fixed path."""
-        top_intent = signals.get("top_intent")
+        """Stage 4: Execution Router — builds and runs the ADK graph that
+        picks and executes a fixed path.
+
+        Routing itself lives in graph_router.py as a declarative
+        google.adk.workflow.Workflow (select_path -> one of the 9 ``_path_*``
+        branch methods below via RoutingMap/DEFAULT_ROUTE). Tool-call events
+        are bridged through google.genai.types.Content so they never trip
+        ADK's one-output-per-node limit, then decoded back into the plain
+        dicts this method has always yielded — see graph_router.py's module
+        docstring for why.
+
+        Six of the nine branches (named_title, named_author, volume_shift,
+        in_reader_only, context_books, open) always run `_run_universal_
+        fallback` after their own retrieval — that call is a graph edge
+        (see graph_router.py), not inline Python, so it appears in
+        `observations` exactly once regardless of which branch ran.
+        `_path_catalog` is the one exception: it calls `_run_universal_
+        fallback` inline, conditionally, only when the strict title/author
+        match found nothing — genuine branch-local business logic, not
+        routing structure, so it stays inside the method rather than
+        becoming an unconditional edge.
+
+        `runner_services`: pass the same `RunnerServices` instance across
+        every sub-question of one chat turn to reuse its session/artifact/
+        memory backends instead of building fresh ones per call (see
+        graph_router.py). Omit it for a self-contained run — every
+        existing caller (including all direct unit tests) does this today.
+        """
+        from app.services.rag.agent.graph_router import run_path_selection_workflow
+
+        async for ev in run_path_selection_workflow(
+            intent, signals, question, ctx, observations, self, runner_services
+        ):
+            yield ev
+
+    # --- Path A: Current Page ---
+    async def _path_current_page(
+        self,
+        intent: str,
+        signals: dict,
+        question: str,
+        ctx: QueryContext,
+        observations: list,
+    ) -> AsyncIterator[dict]:
         result_holder = {}
+        async for ev in self._run_tool_and_yield(
+            "get_current_page", {}, ctx, observations, result_holder
+        ):
+            yield ev
 
-        # --- Path A: Current Page ---
-        if top_intent == "current_page" and signals.get("in_reader"):
-            async for ev in self._run_tool_and_yield(
-                "get_current_page", {}, ctx, observations, result_holder
-            ):
-                yield ev
-            return
+    # --- Path: Quran ---
+    async def _path_quran(
+        self,
+        intent: str,
+        signals: dict,
+        question: str,
+        ctx: QueryContext,
+        observations: list,
+    ) -> AsyncIterator[dict]:
+        result_holder = {}
+        surah = signals.get("quran_surah")
+        ayah = signals.get("quran_ayah")
+        q = signals.get("quran_query") or question
+        async for ev in self._run_tool_and_yield(
+            "search_quran",
+            {"surah": surah, "ayah": ayah, "q": q},
+            ctx,
+            observations,
+            result_holder,
+        ):
+            yield ev
 
-        # --- Path: Quran ---
-        if intent == "quran":
-            surah = signals.get("quran_surah")
-            ayah = signals.get("quran_ayah")
-            q = signals.get("quran_query") or question
+    # --- Path B: Dictionary / Language Sources ---
+    async def _path_dictionary(
+        self,
+        intent: str,
+        signals: dict,
+        question: str,
+        ctx: QueryContext,
+        observations: list,
+    ) -> AsyncIterator[dict]:
+        result_holder = {}
+        subtype = signals.get("dictionary_subtype") or "general"
+        term = (
+            signals.get("dictionary_term") or _extract_dictionary_term(question)
+        ).strip()
+        if not term:
+            term = question.strip()
+
+        if subtype == "uyghur_definition":
             async for ev in self._run_tool_and_yield(
-                "search_quran",
-                {"surah": surah, "ayah": ayah, "q": q},
+                "lookup_uyghur_word",
+                {"term": term},
                 ctx,
                 observations,
                 result_holder,
             ):
                 yield ev
-            return
-
-        # --- Path B: Dictionary / Language Sources ---
-        if intent == "dictionary":
-            subtype = signals.get("dictionary_subtype") or "general"
-            term = (
-                signals.get("dictionary_term") or _extract_dictionary_term(question)
-            ).strip()
-            if not term:
-                term = question.strip()
-
-            if subtype == "uyghur_definition":
-                async for ev in self._run_tool_and_yield(
-                    "lookup_uyghur_word",
-                    {"term": term},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
-            elif subtype == "history_term":
-                async for ev in self._run_tool_and_yield(
-                    "lookup_history_term",
-                    {"term": term},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
-                if result_holder.get("result", {}).get("found_count", 0) == 0:
-                    async for ev in self._run_tool_and_yield(
-                        "search_language_sources",
-                        {"query": term},
-                        ctx,
-                        observations,
-                        result_holder,
-                    ):
-                        yield ev
-            elif subtype == "english_uyghur":
-                async for ev in self._run_tool_and_yield(
-                    "translate_english_to_uyghur",
-                    {"term": term},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
-            elif subtype == "spelling":
-                async for ev in self._run_tool_and_yield(
-                    "check_word_spelling",
-                    {"word": term},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
-            elif subtype == "names":
-                async for ev in self._run_tool_and_yield(
-                    "lookup_uyghur_name",
-                    {"term": term},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
-            elif subtype == "proverbs":
-                async for ev in self._run_tool_and_yield(
-                    "lookup_proverbs",
-                    {"term": term},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
-            else:
+        elif subtype == "history_term":
+            async for ev in self._run_tool_and_yield(
+                "lookup_history_term",
+                {"term": term},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
+            if result_holder.get("result", {}).get("found_count", 0) == 0:
                 async for ev in self._run_tool_and_yield(
                     "search_language_sources",
                     {"query": term},
@@ -621,273 +667,147 @@ Return ONLY valid JSON matching this schema:
                     result_holder,
                 ):
                     yield ev
-
-            # Fallback to book chunk search if no dictionary results were found
-            total_found = 0
-            for obs in observations:
-                if obs.get("tool") in {
-                    "lookup_uyghur_word",
-                    "lookup_history_term",
-                    "translate_english_to_uyghur",
-                    "check_word_spelling",
-                    "lookup_uyghur_name",
-                    "lookup_proverbs",
-                    "search_language_sources",
-                }:
-                    total_found += obs.get("result", {}).get("found_count", 0)
-
-            if total_found == 0:
-                search_query = ctx.enriched_question or question
-                async for ev in self._run_tool_and_yield(
-                    "search_chunks",
-                    {"query": search_query, "book_ids": None},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
-            return
-
-        # --- Path B: Catalog ---
-        if intent == "catalog":
-            subtype = signals.get("catalog_subtype", "general")
-            catalog_found = True
-            if subtype == "author_of":
-                async for ev in self._run_tool_and_yield(
-                    "get_book_author",
-                    {"question": question},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
-                catalog_found = bool(result_holder.get("result", {}).get("title"))
-            elif subtype == "books_by":
-                async for ev in self._run_tool_and_yield(
-                    "get_books_by_author",
-                    {"question": question},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
-                catalog_found = bool(result_holder.get("result", {}).get("books"))
-            else:
-                async for ev in self._run_tool_and_yield(
-                    "search_catalog",
-                    {"query": question},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
-                catalog_found = result_holder.get("result", {}).get("book_count", 0) > 0
-
-            # The strict title/author string match found nothing (e.g. the book or
-            # author was described rather than named exactly) — fall back to
-            # semantic book discovery + chunk search instead of returning empty.
-            if not catalog_found:
-                async for ev in self._run_tool_and_yield(
-                    "search_books_by_summary",
-                    {"query": question},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
-                summary_res = result_holder["result"]
-                book_ids = summary_res.get("book_ids", [])
-                async for ev in self._run_tool_and_yield(
-                    "search_chunks",
-                    {"query": question, "book_ids": book_ids},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
-                async for ev in self._run_universal_fallback(
-                    question, ctx, observations
-                ):
-                    yield ev
-            return
-
-        # --- Path C: Named Title ---
-        if signals.get("has_title"):
-            matched_books = signals.get("matched_books", [])
-            matched_book_ids = (
-                [str(b["id"]) for b in matched_books]
-                if isinstance(matched_books, list)
-                else []
-            )
-
-            # Check if we already ran find_books_by_title and got the same book IDs in this request
-            prev_title_call = next(
-                (
-                    obs
-                    for obs in observations
-                    if obs.get("tool") == "find_books_by_title"
-                    and set(
-                        str(bid) for bid in obs.get("result", {}).get("book_ids", [])
-                    )
-                    == set(matched_book_ids)
-                ),
-                None,
-            )
-
-            if prev_title_call:
-                title_res = prev_title_call["result"]
-                result_holder["result"] = title_res
-                book_ids = title_res.get("book_ids", [])
-            else:
-                async for ev in self._run_tool_and_yield(
-                    "find_books_by_title",
-                    {"question": question},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
-                title_res = result_holder["result"]
-                book_ids = title_res.get("book_ids", [])
-
-            summary_book_ids = _cap_summary_book_ids(
-                book_ids, title_res.get("books", [])
-            )
-
-            # Fallback for summary lookups
-            if (intent == "summary" or intent == "identity") and not book_ids:
-                async for ev in self._run_tool_and_yield(
-                    "search_books_by_summary",
-                    {"query": question},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
-                summary_search_res = result_holder["result"]
-                book_ids = summary_search_res.get("book_ids", [])
-                summary_book_ids = book_ids[:5]
-
-            if intent == "summary":
-                async for ev in self._run_tool_and_yield(
-                    "get_book_summary",
-                    {"book_ids": summary_book_ids},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
-                summaries = result_holder.get("result", {}).get("summaries", [])
-                if not summaries:
-                    async for ev in self._run_tool_and_yield(
-                        "search_chunks",
-                        {"query": question, "book_ids": book_ids},
-                        ctx,
-                        observations,
-                        result_holder,
-                    ):
-                        yield ev
-            elif intent == "identity":
-                if signals.get("graph_available"):
-                    async for ev in self._run_tool_and_yield(
-                        "query_knowledge_graph",
-                        {"query": question, "book_ids": book_ids},
-                        ctx,
-                        observations,
-                        result_holder,
-                    ):
-                        yield ev
-                async for ev in self._run_tool_and_yield(
-                    "get_book_summary",
-                    {"book_ids": summary_book_ids},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
-                async for ev in self._run_tool_and_yield(
-                    "search_chunks",
-                    {"query": question, "book_ids": book_ids},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
-            elif intent == "relationship":
-                if signals.get("graph_available"):
-                    async for ev in self._run_tool_and_yield(
-                        "query_knowledge_graph",
-                        {"query": question, "book_ids": book_ids},
-                        ctx,
-                        observations,
-                        result_holder,
-                    ):
-                        yield ev
-                async for ev in self._run_tool_and_yield(
-                    "search_chunks",
-                    {"query": question, "book_ids": book_ids},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
-            else:  # intent == passage
-                async for ev in self._run_tool_and_yield(
-                    "search_chunks",
-                    {"query": question, "book_ids": book_ids},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
-
-            async for ev in self._run_universal_fallback(question, ctx, observations):
+        elif subtype == "english_uyghur":
+            async for ev in self._run_tool_and_yield(
+                "translate_english_to_uyghur",
+                {"term": term},
+                ctx,
+                observations,
+                result_holder,
+            ):
                 yield ev
-            return
+        elif subtype == "spelling":
+            async for ev in self._run_tool_and_yield(
+                "check_word_spelling",
+                {"word": term},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
+        elif subtype == "names":
+            async for ev in self._run_tool_and_yield(
+                "lookup_uyghur_name",
+                {"term": term},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
+        elif subtype == "proverbs":
+            async for ev in self._run_tool_and_yield(
+                "lookup_proverbs",
+                {"term": term},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
+        elif subtype == "synonyms":
+            async for ev in self._run_tool_and_yield(
+                "lookup_synonyms",
+                {"term": term},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
+        else:
+            async for ev in self._run_tool_and_yield(
+                "search_language_sources",
+                {"query": term},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
 
-        # --- Path D: Named Author (no title) ---
-        if signals.get("has_author") and not signals.get("has_title"):
-            matched_author_books = signals.get("matched_author_books", [])
-            matched_author_book_ids = (
-                [str(b.id) for b in matched_author_books]
-                if isinstance(matched_author_books, list)
-                else []
-            )
+        # Fallback to book chunk search if no dictionary results were found
+        total_found = 0
+        for obs in observations:
+            if obs.get("tool") in {
+                "lookup_uyghur_word",
+                "lookup_history_term",
+                "translate_english_to_uyghur",
+                "check_word_spelling",
+                "lookup_uyghur_name",
+                "lookup_proverbs",
+                "lookup_synonyms",
+                "search_language_sources",
+            }:
+                total_found += obs.get("result", {}).get("found_count", 0)
 
-            # Check if we already ran get_books_by_author and got the same book IDs in this request
-            prev_author_call = next(
-                (
-                    obs
-                    for obs in observations
-                    if obs.get("tool") == "get_books_by_author"
-                    and set(
-                        str(b["id"]) for b in obs.get("result", {}).get("books", [])
-                    )
-                    == set(matched_author_book_ids)
-                ),
-                None,
-            )
-
-            if prev_author_call:
-                author_res = prev_author_call["result"]
-                result_holder["result"] = author_res
-                books_list = author_res.get("books", [])
-                author_book_ids = [b["id"] for b in books_list]
-            else:
-                async for ev in self._run_tool_and_yield(
-                    "get_books_by_author",
-                    {"question": question},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
-                author_res = result_holder["result"]
-                books_list = author_res.get("books", [])
-                author_book_ids = [b["id"] for b in books_list]
+        if total_found == 0:
+            search_query = ctx.enriched_question or question
             async for ev in self._run_tool_and_yield(
                 "search_chunks",
-                {"query": question, "book_ids": author_book_ids},
+                {"query": search_query, "book_ids": None},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
+
+    # --- Path B: Catalog ---
+    async def _path_catalog(
+        self,
+        intent: str,
+        signals: dict,
+        question: str,
+        ctx: QueryContext,
+        observations: list,
+    ) -> AsyncIterator[dict]:
+        result_holder = {}
+        subtype = signals.get("catalog_subtype", "general")
+        catalog_found = True
+        if subtype == "author_of":
+            async for ev in self._run_tool_and_yield(
+                "get_book_author",
+                {"question": question},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
+            catalog_found = bool(result_holder.get("result", {}).get("title"))
+        elif subtype == "books_by":
+            async for ev in self._run_tool_and_yield(
+                "get_books_by_author",
+                {"question": question},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
+            catalog_found = bool(result_holder.get("result", {}).get("books"))
+        else:
+            async for ev in self._run_tool_and_yield(
+                "search_catalog",
+                {"query": question},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
+            catalog_found = result_holder.get("result", {}).get("book_count", 0) > 0
+
+        # The strict title/author string match found nothing (e.g. the book or
+        # author was described rather than named exactly) — fall back to
+        # semantic book discovery + chunk search instead of returning empty.
+        if not catalog_found:
+            async for ev in self._run_tool_and_yield(
+                "search_books_by_summary",
+                {"query": question},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
+            summary_res = result_holder["result"]
+            book_ids = summary_res.get("book_ids", [])
+            async for ev in self._run_tool_and_yield(
+                "search_chunks",
+                {"query": question, "book_ids": book_ids},
                 ctx,
                 observations,
                 result_holder,
@@ -895,154 +815,286 @@ Return ONLY valid JSON matching this schema:
                 yield ev
             async for ev in self._run_universal_fallback(question, ctx, observations):
                 yield ev
-            return
 
-        # --- Path E: Volume Shift ---
-        if signals.get("is_volume_shift") and (
-            signals.get("in_reader") or signals.get("has_context_books")
-        ):
-            current_book_id = ctx.book_id if (ctx.book and not ctx.is_global) else None
-            source_book_id = current_book_id or (
-                ctx.context_book_ids[0] if ctx.context_book_ids else None
-            )
-            if source_book_id:
-                repo = BooksRepository(ctx.session)
-                books = await repo.find_sister_volumes(source_book_id)
+    # --- Path C: Named Title ---
+    async def _path_named_title(
+        self,
+        intent: str,
+        signals: dict,
+        question: str,
+        ctx: QueryContext,
+        observations: list,
+    ) -> AsyncIterator[dict]:
+        result_holder = {}
+        matched_books = signals.get("matched_books", [])
+        matched_book_ids = (
+            [str(b["id"]) for b in matched_books]
+            if isinstance(matched_books, list)
+            else []
+        )
 
-                # Register the get_sister_volumes call in observations for tracing
-                async for ev in self._run_tool_and_yield(
-                    "get_sister_volumes",
-                    {"book_id": source_book_id},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
+        # Check if we already ran find_books_by_title and got the same book IDs in this request
+        prev_title_call = next(
+            (
+                obs
+                for obs in observations
+                if obs.get("tool") == "find_books_by_title"
+                and set(str(bid) for bid in obs.get("result", {}).get("book_ids", []))
+                == set(matched_book_ids)
+            ),
+            None,
+        )
 
-                target_volume = signals.get("target_volume")
-                target_volume_id = None
-                if books and target_volume is not None:
-                    for b in books:
-                        if b.volume == target_volume:
-                            target_volume_id = str(b.id)
-                            break
-
-                search_book_ids = (
-                    [target_volume_id]
-                    if target_volume_id
-                    else [str(b.id) for b in books]
-                )
-                async for ev in self._run_tool_and_yield(
-                    "search_chunks",
-                    {"query": question, "book_ids": search_book_ids},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
-                async for ev in self._run_universal_fallback(
-                    question, ctx, observations
-                ):
-                    yield ev
-            return
-
-        # --- Path F: In-Reader, No Title/Author ---
-        if (
-            signals.get("in_reader")
-            and not signals.get("has_title")
-            and not signals.get("has_author")
-        ):
-            current_book_id = ctx.book_id
+        if prev_title_call:
+            title_res = prev_title_call["result"]
+            result_holder["result"] = title_res
+            book_ids = title_res.get("book_ids", [])
+        else:
             async for ev in self._run_tool_and_yield(
-                "search_chunks",
-                {"query": question, "book_ids": [current_book_id]},
+                "find_books_by_title",
+                {"question": question},
                 ctx,
                 observations,
                 result_holder,
             ):
                 yield ev
-            async for ev in self._run_universal_fallback(question, ctx, observations):
-                yield ev
-            return
+            title_res = result_holder["result"]
+            book_ids = title_res.get("book_ids", [])
 
-        # --- Path G: Prior Context, No Title/Author ---
-        if signals.get("has_context_books"):
-            context_book_ids = ctx.context_book_ids
-            if intent == "identity":
-                if signals.get("graph_available"):
-                    async for ev in self._run_tool_and_yield(
-                        "query_knowledge_graph",
-                        {"query": question, "book_ids": context_book_ids},
-                        ctx,
-                        observations,
-                        result_holder,
-                    ):
-                        yield ev
+        summary_book_ids = _cap_summary_book_ids(book_ids, title_res.get("books", []))
+
+        # Fallback for summary lookups
+        if (intent == "summary" or intent == "identity") and not book_ids:
+            async for ev in self._run_tool_and_yield(
+                "search_books_by_summary",
+                {"query": question},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
+            summary_search_res = result_holder["result"]
+            book_ids = summary_search_res.get("book_ids", [])
+            summary_book_ids = book_ids[:5]
+
+        if intent == "summary":
+            async for ev in self._run_tool_and_yield(
+                "get_book_summary",
+                {"book_ids": summary_book_ids},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
+            summaries = result_holder.get("result", {}).get("summaries", [])
+            if not summaries:
                 async for ev in self._run_tool_and_yield(
-                    "search_books_by_summary",
-                    {"query": question, "book_ids": context_book_ids},
+                    "search_chunks",
+                    {"query": question, "book_ids": book_ids},
                     ctx,
                     observations,
                     result_holder,
                 ):
                     yield ev
-                summary_res = result_holder["result"]
-                verified_ids = summary_res.get("book_ids", [])
-                if verified_ids:
-                    async for ev in self._run_tool_and_yield(
-                        "get_book_summary",
-                        {"book_ids": verified_ids[:5]},
-                        ctx,
-                        observations,
-                        result_holder,
-                    ):
-                        yield ev
-                    async for ev in self._run_tool_and_yield(
-                        "search_chunks",
-                        {"query": question, "book_ids": verified_ids},
-                        ctx,
-                        observations,
-                        result_holder,
-                    ):
-                        yield ev
-                else:
-                    async for ev in self._run_tool_and_yield(
-                        "search_chunks",
-                        {"query": question, "book_ids": context_book_ids},
-                        ctx,
-                        observations,
-                        result_holder,
-                    ):
-                        yield ev
-            elif intent == "summary":
+        elif intent == "identity":
+            async for ev in self._run_tool_and_yield(
+                "get_book_summary",
+                {"book_ids": summary_book_ids},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
+            async for ev in self._run_tool_and_yield(
+                "search_chunks",
+                {"query": question, "book_ids": book_ids},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
+        elif intent == "relationship":
+            async for ev in self._run_tool_and_yield(
+                "search_chunks",
+                {"query": question, "book_ids": book_ids},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
+        else:  # intent == passage
+            async for ev in self._run_tool_and_yield(
+                "search_chunks",
+                {"query": question, "book_ids": book_ids},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
+
+    # --- Path D: Named Author (no title) ---
+    async def _path_named_author(
+        self,
+        intent: str,
+        signals: dict,
+        question: str,
+        ctx: QueryContext,
+        observations: list,
+    ) -> AsyncIterator[dict]:
+        result_holder = {}
+        matched_author_books = signals.get("matched_author_books", [])
+        matched_author_book_ids = (
+            [str(b.id) for b in matched_author_books]
+            if isinstance(matched_author_books, list)
+            else []
+        )
+
+        # Check if we already ran get_books_by_author and got the same book IDs in this request
+        prev_author_call = next(
+            (
+                obs
+                for obs in observations
+                if obs.get("tool") == "get_books_by_author"
+                and set(str(b["id"]) for b in obs.get("result", {}).get("books", []))
+                == set(matched_author_book_ids)
+            ),
+            None,
+        )
+
+        if prev_author_call:
+            author_res = prev_author_call["result"]
+            result_holder["result"] = author_res
+            books_list = author_res.get("books", [])
+            author_book_ids = [b["id"] for b in books_list]
+        else:
+            async for ev in self._run_tool_and_yield(
+                "get_books_by_author",
+                {"question": question},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
+            author_res = result_holder["result"]
+            books_list = author_res.get("books", [])
+            author_book_ids = [b["id"] for b in books_list]
+        async for ev in self._run_tool_and_yield(
+            "search_chunks",
+            {"query": question, "book_ids": author_book_ids},
+            ctx,
+            observations,
+            result_holder,
+        ):
+            yield ev
+
+    # --- Path E: Volume Shift ---
+    async def _path_volume_shift(
+        self,
+        intent: str,
+        signals: dict,
+        question: str,
+        ctx: QueryContext,
+        observations: list,
+    ) -> AsyncIterator[dict]:
+        result_holder = {}
+        current_book_id = ctx.book_id if (ctx.book and not ctx.is_global) else None
+        source_book_id = current_book_id or (
+            ctx.context_book_ids[0] if ctx.context_book_ids else None
+        )
+        if source_book_id:
+            repo = BooksRepository(ctx.session)
+            books = await repo.find_sister_volumes(source_book_id)
+
+            # Register the get_sister_volumes call in observations for tracing
+            async for ev in self._run_tool_and_yield(
+                "get_sister_volumes",
+                {"book_id": source_book_id},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
+
+            target_volume = signals.get("target_volume")
+            target_volume_id = None
+            if books and target_volume is not None:
+                for b in books:
+                    if b.volume == target_volume:
+                        target_volume_id = str(b.id)
+                        break
+
+            search_book_ids = (
+                [target_volume_id] if target_volume_id else [str(b.id) for b in books]
+            )
+            async for ev in self._run_tool_and_yield(
+                "search_chunks",
+                {"query": question, "book_ids": search_book_ids},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
+
+    # --- Path F: In-Reader, No Title/Author ---
+    async def _path_in_reader_only(
+        self,
+        intent: str,
+        signals: dict,
+        question: str,
+        ctx: QueryContext,
+        observations: list,
+    ) -> AsyncIterator[dict]:
+        result_holder = {}
+        current_book_id = ctx.book_id
+        async for ev in self._run_tool_and_yield(
+            "search_chunks",
+            {"query": question, "book_ids": [current_book_id]},
+            ctx,
+            observations,
+            result_holder,
+        ):
+            yield ev
+
+    # --- Path G: Prior Context, No Title/Author ---
+    async def _path_context_books(
+        self,
+        intent: str,
+        signals: dict,
+        question: str,
+        ctx: QueryContext,
+        observations: list,
+    ) -> AsyncIterator[dict]:
+        result_holder = {}
+        context_book_ids = ctx.context_book_ids
+        if intent == "identity":
+            async for ev in self._run_tool_and_yield(
+                "search_books_by_summary",
+                {"query": question, "book_ids": context_book_ids},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
+            summary_res = result_holder["result"]
+            verified_ids = summary_res.get("book_ids", [])
+            if verified_ids:
                 async for ev in self._run_tool_and_yield(
                     "get_book_summary",
-                    {"book_ids": context_book_ids[:5]},
+                    {"book_ids": verified_ids[:5]},
                     ctx,
                     observations,
                     result_holder,
                 ):
                     yield ev
-                summaries = result_holder.get("result", {}).get("summaries", [])
-                if not summaries:
-                    async for ev in self._run_tool_and_yield(
-                        "search_chunks",
-                        {"query": question, "book_ids": context_book_ids},
-                        ctx,
-                        observations,
-                        result_holder,
-                    ):
-                        yield ev
-            elif intent == "relationship":
-                if signals.get("graph_available"):
-                    async for ev in self._run_tool_and_yield(
-                        "query_knowledge_graph",
-                        {"query": question, "book_ids": context_book_ids},
-                        ctx,
-                        observations,
-                        result_holder,
-                    ):
-                        yield ev
+                async for ev in self._run_tool_and_yield(
+                    "search_chunks",
+                    {"query": question, "book_ids": verified_ids},
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
+            else:
                 async for ev in self._run_tool_and_yield(
                     "search_chunks",
                     {"query": question, "book_ids": context_book_ids},
@@ -1051,37 +1103,61 @@ Return ONLY valid JSON matching this schema:
                     result_holder,
                 ):
                     yield ev
-            else:  # intent == passage
-                async for ev in self._run_tool_and_yield(
-                    "search_chunks",
-                    {"query": question, "book_ids": context_book_ids},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
-
-            async for ev in self._run_universal_fallback(question, ctx, observations):
+        elif intent == "summary":
+            async for ev in self._run_tool_and_yield(
+                "get_book_summary",
+                {"book_ids": context_book_ids[:5]},
+                ctx,
+                observations,
+                result_holder,
+            ):
                 yield ev
-            return
+            summaries = result_holder.get("result", {}).get("summaries", [])
+            if not summaries:
+                async for ev in self._run_tool_and_yield(
+                    "search_chunks",
+                    {"query": question, "book_ids": context_book_ids},
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
+        elif intent == "relationship":
+            async for ev in self._run_tool_and_yield(
+                "search_chunks",
+                {"query": question, "book_ids": context_book_ids},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
+        else:  # intent == passage
+            async for ev in self._run_tool_and_yield(
+                "search_chunks",
+                {"query": question, "book_ids": context_book_ids},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
 
-        # --- Path H: Open / No Context ---
+    # --- Path H: Open / No Context ---
+    async def _path_open(
+        self,
+        intent: str,
+        signals: dict,
+        question: str,
+        ctx: QueryContext,
+        observations: list,
+    ) -> AsyncIterator[dict]:
         # intent routing for global searches
         # search_books_by_summary returns up to 20 books; passing all 20 to search_chunks
         # spreads RAG_TOP_K=25 slots across too many books (~1-2 per book), diluting the
         # specific passage that may only appear in 1 book. Focus on top 5 to concentrate
         # chunk slots. The universal fallback widens to global scope if results are thin.
+        result_holder = {}
         _TOP_BOOKS_FOR_CHUNK_SEARCH = 5
         if intent == "identity":
-            if signals.get("graph_available"):
-                async for ev in self._run_tool_and_yield(
-                    "query_knowledge_graph",
-                    {"query": question},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
             async for ev in self._run_tool_and_yield(
                 "search_books_by_summary",
                 {"query": question},
@@ -1141,15 +1217,6 @@ Return ONLY valid JSON matching this schema:
                 ):
                     yield ev
         elif intent == "relationship":
-            if signals.get("graph_available"):
-                async for ev in self._run_tool_and_yield(
-                    "query_knowledge_graph",
-                    {"query": question},
-                    ctx,
-                    observations,
-                    result_holder,
-                ):
-                    yield ev
             async for ev in self._run_tool_and_yield(
                 "search_books_by_summary",
                 {"query": question},
@@ -1177,9 +1244,6 @@ Return ONLY valid JSON matching this schema:
                 result_holder,
             ):
                 yield ev
-
-        async for ev in self._run_universal_fallback(question, ctx, observations):
-            yield ev
 
     async def _execute_tool(
         self, tool_name: str, tool_args: dict, ctx: QueryContext, observations: list
@@ -1287,6 +1351,67 @@ Return ONLY valid JSON matching this schema:
             ):
                 yield ev
 
+    async def _run_sub_question(
+        self,
+        sub_q_item,
+        question: str,
+        sub_questions: list,
+        signals_orig: dict,
+        ctx: QueryContext,
+        runner_services: "RunnerServices",
+    ) -> AsyncIterator[tuple]:
+        """Runs Stage 3 (intent classification) + Stage 4 (execute_path) for
+        one sub-question against its own, isolated observations list.
+
+        Isolation matters once sub-questions run concurrently (see
+        _execute_workflow_stream): sharing one observations list across
+        concurrent runs would let their duplicate-tool-call dedup checks
+        (e.g. "did we already run find_books_by_title for these book ids")
+        race on interleaving timing, making the deterministic router
+        non-deterministic. The cost is that cross-sub-question dedup this
+        currently enables is lost for composite questions specifically —
+        an efficiency tradeoff (possible redundant tool calls), not a
+        correctness one.
+
+        Yields ("event", dict) tuples to stream, and exactly one final
+        ("done", (sub_q_text, sub_observations, llm_calls_delta)).
+        """
+        sub_observations: list = []
+        llm_calls_delta = 0
+
+        if isinstance(sub_q_item, dict):
+            # Optimized path: signals already extracted by the first LLM call.
+            # Only DB lookups (title/author) are re-run per sub-question.
+            sub_q = sub_q_item["question"]
+            sub_signals = await self._build_sub_signals_from_llm(sub_q_item, ctx)
+        else:
+            sub_q = sub_q_item
+            if len(sub_questions) == 1 and sub_q == question:
+                sub_signals = signals_orig.copy()
+            else:
+                sub_signals = await self.extract_signals(sub_q, ctx)
+                sub_signals["needs_rewrite"] = False
+                if "intent" in sub_signals:
+                    llm_calls_delta += 1
+
+        sub_intent = await self.classify_intent(sub_signals, sub_q, ctx)
+        if "intent" not in sub_signals:
+            if (
+                sub_intent != "passage"
+                or sub_signals.get("has_title")
+                or sub_signals.get("has_context_books")
+                or sub_signals.get("is_global")
+            ):
+                # Intent classification LLM was run for non-skipped flows
+                llm_calls_delta += 1
+
+        async for ev in self.execute_path(
+            sub_intent, sub_signals, sub_q, ctx, sub_observations, runner_services
+        ):
+            yield ("event", ev)
+
+        yield ("done", (sub_q, sub_observations, llm_calls_delta))
+
     async def _execute_workflow_stream(
         self, ctx: QueryContext, question: str, observations: list
     ) -> AsyncIterator[dict]:
@@ -1366,42 +1491,66 @@ Return ONLY valid JSON matching this schema:
             sub_questions = [question_to_process]
 
         # 4. Stage 3 & 4: Intent Classifier and Execution Router per sub-question
+        #
+        # runner_services is shared across every sub-question in this turn so
+        # each execute_path() call reuses the same in-memory session/artifact/
+        # memory backends instead of constructing fresh ones — see
+        # graph_router.py's RunnerServices docstring for why this is safe
+        # even when sub-questions below run concurrently.
+        from app.services.rag.agent.graph_router import RunnerServices
+
+        runner_services = RunnerServices()
         sub_question_texts: list[str] = []
-        for sub_q_item in sub_questions:
-            if isinstance(sub_q_item, dict):
-                # Optimized path: signals already extracted by the first LLM call.
-                # Only DB lookups (title/author) are re-run per sub-question.
-                sub_q = sub_q_item["question"]
-                sub_signals = await self._build_sub_signals_from_llm(sub_q_item, ctx)
-            else:
-                sub_q = sub_q_item
-                if len(sub_questions) == 1 and sub_q == question:
-                    sub_signals = signals_orig.copy()
-                else:
-                    sub_signals = await self.extract_signals(sub_q, ctx)
-                    sub_signals["needs_rewrite"] = False
-                    if "intent" in sub_signals:
-                        llm_calls += 1
 
-            sub_question_texts.append(sub_q)
-
-            # Classify sub-question intent
-            sub_intent = await self.classify_intent(sub_signals, sub_q, ctx)
-            if "intent" not in sub_signals:
-                if (
-                    sub_intent != "passage"
-                    or sub_signals.get("has_title")
-                    or sub_signals.get("has_context_books")
-                    or sub_signals.get("is_global")
-                ):
-                    # Intent classification LLM was run for non-skipped flows
-                    llm_calls += 1
-
-            # Run execution path
-            async for ev in self.execute_path(
-                sub_intent, sub_signals, sub_q, ctx, observations
+        if len(sub_questions) == 1:
+            # Common case — nothing to parallelize, run directly with no
+            # generator-merging overhead.
+            async for kind, payload in self._run_sub_question(
+                sub_questions[0],
+                question,
+                sub_questions,
+                signals_orig,
+                ctx,
+                runner_services,
             ):
-                yield ev
+                if kind == "event":
+                    yield payload
+                else:
+                    sub_q, sub_observations, llm_calls_delta = payload
+                    sub_question_texts.append(sub_q)
+                    observations.extend(sub_observations)
+                    llm_calls += llm_calls_delta
+        else:
+            # Composite: sub-questions are independent of each other, so run
+            # them concurrently. Each gets its own observations list (see
+            # _run_sub_question's docstring for why they can't share one),
+            # merged back into `observations` in original sub-question order
+            # — not completion order — once every sub-question is done, so
+            # the final result is identical regardless of which one finishes
+            # first.
+            generators = [
+                self._run_sub_question(
+                    sub_q_item,
+                    question,
+                    sub_questions,
+                    signals_orig,
+                    ctx,
+                    runner_services,
+                )
+                for sub_q_item in sub_questions
+            ]
+            done_by_index: dict = {}
+            async for idx, (kind, payload) in _merge_sub_question_streams(generators):
+                if kind == "event":
+                    yield payload
+                else:
+                    done_by_index[idx] = payload
+
+            for idx in range(len(sub_questions)):
+                sub_q, sub_observations, llm_calls_delta = done_by_index[idx]
+                sub_question_texts.append(sub_q)
+                observations.extend(sub_observations)
+                llm_calls += llm_calls_delta
 
         # 5. Grading and Post-processing
         graded_context, before_count, after_count = _grade_context(observations)
@@ -1555,6 +1704,10 @@ def _looks_like_dictionary_question(q_norm: str) -> bool:
         "تەمسىل",
         "proverb",
         "saying",
+        "مەنىداش",
+        "ئوخشاش مەنىلىك",
+        "يېقىن مەنىلىك",
+        "synonym",
     ]
     return any(normalize_uyghur(marker) in q_norm for marker in dictionary_markers)
 
@@ -1583,6 +1736,11 @@ def _guess_dictionary_subtype(q_norm: str) -> str:
         return "names"
     if any(
         normalize_uyghur(marker) in q_norm
+        for marker in ["مەنىداش", "ئوخشاش مەنىلىك", "يېقىن مەنىلىك", "synonym"]
+    ):
+        return "synonyms"
+    if any(
+        normalize_uyghur(marker) in q_norm
         for marker in ["ماقال", "تەمسىل", "proverb", "saying"]
     ):
         return "proverbs"
@@ -1602,7 +1760,7 @@ def _extract_dictionary_term(question: str) -> str:
     letter_match = re.search(r"([\u0621-\u06ff]{1,2})\s+ھەر[پى]", text)
     if letter_match and any(
         normalize_uyghur(m) in normalize_uyghur(text)
-        for m in ["كىشى ئىسىملىرى", "ئىسىملىرى", "ئىسىملەر", "ئىسىم"]
+        for m in ["كىشى ئىسىملىرى", "ئىسىملىرى", "ئىسىملەر", "ئىسىم", "مەنىداش"]
     ):
         return letter_match.group(1).strip()
 
@@ -1626,6 +1784,13 @@ def _extract_dictionary_term(question: str) -> str:
         r"تەمسىللەر",
         r"\bproverbs?\b",
         r"\bsayings?\b",
+        r"نىڭ\s+مەنىداش\s+سۆزى\s+نېمە.*$",
+        r"مەنىداش\s+سۆز(?:لىرى|لەر|ى)?",
+        r"ئوخشاش\s+مەنىلىك\s+سۆز(?:لەر)?",
+        r"يېقىن\s+مەنىلىك\s+سۆز(?:لەر)?",
+        r"\bsynonyms?\b",
+        r"\bfor\b",
+        r"\bof\b",
         r"بارمۇ.*$",
         r"[؟?!.]+$",
     ]

@@ -85,15 +85,6 @@ def _detect_intent(question: str, ctx: QueryContext) -> str:
     return "content_search"
 
 
-def _is_graph_enabled(ctx: QueryContext) -> bool:
-    """Whether query_knowledge_graph should be offered to the agent at all."""
-    if not ctx.use_knowledge_graph_in_chat:
-        return False
-    if not ctx.is_global and ctx.book:
-        return getattr(ctx.book, "graph_milestone", None) == "complete"
-    return True
-
-
 def _build_human_message(ctx: QueryContext, question: str) -> str:
     lines = []
     if not ctx.is_global and ctx.book:
@@ -106,11 +97,7 @@ def _build_human_message(ctx: QueryContext, question: str) -> str:
         lines.append(f"Current book: {book_info} (book_id: {ctx.book_id})")
         if ctx.current_page is not None:
             lines.append(f"Current page: {ctx.current_page}")
-        graph_available = _is_graph_enabled(ctx)
-        lines.append(f"Graph available: {'yes' if graph_available else 'no'}")
     elif ctx.is_global:
-        if not ctx.use_knowledge_graph_in_chat:
-            lines.append("Graph available: no")
         if ctx.context_book_ids:
             lines.append(
                 f"Previous response book IDs: {', '.join(ctx.context_book_ids[:10])}"
@@ -311,7 +298,7 @@ class AgentRAGHandler(QueryHandler):
                 question = question + f"\n\n[Sub-questions]\n{numbered}"
 
         # 3. Agent Execution
-        agent = build_rag_agent(ctx.agent_model, graph_enabled=_is_graph_enabled(ctx))
+        agent = build_rag_agent(ctx.agent_model)
         runner = InMemoryRunner(agent=agent, app_name="kitabim")
         session = await runner.session_service.create_session(
             app_name="kitabim",

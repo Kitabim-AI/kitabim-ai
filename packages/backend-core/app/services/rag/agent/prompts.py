@@ -58,13 +58,13 @@ _STEP_5_DICTIONARY = (
     "   - If the user asks whether a spelling is correct or whether a word exists → call check_word_spelling.\n"
     "   - If the user asks about a Uyghur person's name (what it means, whether it exists) or asks for a list of names starting with a given letter → call lookup_uyghur_name.\n"
     "   - If the user asks for a proverb, Uyghur proverbs/sayings, or searches for proverbs containing a word → call lookup_proverbs.\n"
+    "   - If the user asks for synonyms of a Uyghur word, words with the same or similar meaning ('مەنىداش سۆز', 'ئوخشاش مەنىلىك سۆز'), or a list of synonym-dictionary headwords starting with a letter → call lookup_synonyms.\n"
     "   - If the dictionary source is unclear → call search_language_sources.\n"
-    "   - Stop after dictionary retrieval when the user only asked for a definition, spelling check, name lookup, proverb lookup, or translation. Continue to search_chunks only if the user explicitly asks how the term is used in books or what the library says about it."
+    "   - Stop after dictionary retrieval when the user only asked for a definition, spelling check, name lookup, proverb lookup, synonym lookup, or translation. Continue to search_chunks only if the user explicitly asks how the term is used in books or what the library says about it."
 )
 
 _STEP_6_CONTENT = (
     "6. For content questions (what does the book say about X, explain Y, summarize Z, which book is character W in):\n"
-    "   - Modifier for relationship/connection queries: If the question asks about relationships, lineages, or connections (e.g. 'how are X and Y related?', 'who is the grandchild/child of Z?', 'list the events in location W'), AND [Context] shows 'Graph available: yes' (or no Graph available line is present, meaning global mode), call query_knowledge_graph first to retrieve semantic relationship networks before calling search_chunks. Combine this with search_chunks if precise textual passages are also needed. If [Context] shows 'Graph available: no', skip query_knowledge_graph entirely.\n"
     "   - Note on Character identity vs. detail questions: If the question specifically asks who or what a character/person/entity is (e.g. 'X كىم؟', 'tell me about X') and does NOT ask for specific details, events, facts, passages, or explanations about them, call search_books_by_summary first to identify relevant book IDs, then call get_book_summary (at most 5 book IDs) rather than search_chunks. If get_book_summary completes for a character identity question about a SINGLE entity, stop immediately. However, if the question is a follow-up or asks for specific details, events, facts, or descriptions, you MUST skip get_book_summary and call search_chunks to retrieve the actual page passages.\n"
     "   a. If the question asks for the plot, themes, or main characters of a specific book → call find_books_by_title, then "
     "call get_book_summary with the resulting book IDs. Do NOT call search_chunks for these questions.\n"
