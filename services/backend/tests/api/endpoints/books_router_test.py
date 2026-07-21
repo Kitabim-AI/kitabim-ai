@@ -147,6 +147,119 @@ async def test_get_books():
 
 
 @pytest.mark.asyncio
+async def test_update_book_details_overrides_error_status_when_made_public():
+    setup_paths()
+    from api.endpoints.books_router import update_book_details
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+    mock_user.email = "editor@example.com"
+
+    mock_book = MagicMock()
+    mock_book.status = "error"
+
+    mock_repo = MagicMock()
+    mock_repo.get = AsyncMock(return_value=mock_book)
+    mock_repo.update_one = AsyncMock(return_value=mock_book)
+
+    mock_cache = MagicMock()
+    mock_cache.delete = AsyncMock()
+    mock_cache.bump_namespace_version = AsyncMock()
+
+    with (
+        patch("api.endpoints.books_router.BooksRepository", return_value=mock_repo),
+        patch("api.endpoints.books_router.PagesRepository", return_value=MagicMock()),
+        patch("api.endpoints.books_router.cache_service", mock_cache),
+    ):
+        await update_book_details(
+            book_id="book-1",
+            book_update={"visibility": "public"},
+            current_user=mock_user,
+            session=mock_session,
+        )
+
+    _, kwargs = mock_repo.update_one.call_args
+    assert kwargs["visibility"] == "public"
+    assert kwargs["status"] == "ready"
+    assert kwargs["pipeline_step"] == "ready"
+
+
+@pytest.mark.asyncio
+async def test_update_book_details_does_not_override_status_when_already_ready():
+    setup_paths()
+    from api.endpoints.books_router import update_book_details
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+    mock_user.email = "editor@example.com"
+
+    mock_book = MagicMock()
+    mock_book.status = "ready"
+
+    mock_repo = MagicMock()
+    mock_repo.get = AsyncMock(return_value=mock_book)
+    mock_repo.update_one = AsyncMock(return_value=mock_book)
+
+    mock_cache = MagicMock()
+    mock_cache.delete = AsyncMock()
+    mock_cache.bump_namespace_version = AsyncMock()
+
+    with (
+        patch("api.endpoints.books_router.BooksRepository", return_value=mock_repo),
+        patch("api.endpoints.books_router.PagesRepository", return_value=MagicMock()),
+        patch("api.endpoints.books_router.cache_service", mock_cache),
+    ):
+        await update_book_details(
+            book_id="book-1",
+            book_update={"visibility": "public"},
+            current_user=mock_user,
+            session=mock_session,
+        )
+
+    _, kwargs = mock_repo.update_one.call_args
+    assert kwargs["visibility"] == "public"
+    assert "status" not in kwargs
+    assert "pipeline_step" not in kwargs
+
+
+@pytest.mark.asyncio
+async def test_update_book_details_does_not_override_status_when_not_going_public():
+    setup_paths()
+    from api.endpoints.books_router import update_book_details
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+    mock_user.email = "editor@example.com"
+
+    mock_book = MagicMock()
+    mock_book.status = "error"
+
+    mock_repo = MagicMock()
+    mock_repo.get = AsyncMock(return_value=mock_book)
+    mock_repo.update_one = AsyncMock(return_value=mock_book)
+
+    mock_cache = MagicMock()
+    mock_cache.delete = AsyncMock()
+    mock_cache.bump_namespace_version = AsyncMock()
+
+    with (
+        patch("api.endpoints.books_router.BooksRepository", return_value=mock_repo),
+        patch("api.endpoints.books_router.PagesRepository", return_value=MagicMock()),
+        patch("api.endpoints.books_router.cache_service", mock_cache),
+    ):
+        await update_book_details(
+            book_id="book-1",
+            book_update={"title": "New Title"},
+            current_user=mock_user,
+            session=mock_session,
+        )
+
+    _, kwargs = mock_repo.update_one.call_args
+    assert "status" not in kwargs
+    assert "pipeline_step" not in kwargs
+
+
+@pytest.mark.asyncio
 async def test_merge_graph_entities_endpoint():
     setup_paths()
     from api.endpoints.books_router import merge_graph_entities, MergeEntitiesRequest

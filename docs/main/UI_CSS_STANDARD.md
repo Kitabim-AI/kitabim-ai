@@ -1,30 +1,34 @@
 # Kitabim AI — UI CSS Standard
 
-> **Status:** Draft — Not yet implemented
-> **Stack:** Tailwind CSS 3.4, custom components, RTL (Uyghur), glass morphism design language
+> **Status:** Proposed standard, not yet adopted — `apps/frontend/tailwind.config.js` currently has an empty `theme.extend`, so none of the semantic tokens below exist as Tailwind utilities yet. Components use arbitrary values (`text-[30px]`, `bg-[#0369a1]/10`, `rounded-[28px]`) and hardcoded hex colors directly.
+> **Stack:** Tailwind CSS 3.4, React 19, RTL (Uyghur), glass morphism design language, class-based dark mode
 
 ---
 
 ## Overview
 
-This document defines the project-wide visual standard for font sizes, colors, spacing, border radii, shadows, and other look-and-feel attributes. The goal is to replace scattered arbitrary Tailwind values (e.g. `text-[30px]`, `bg-[#0369a1]/10`) with named, semantic tokens defined in `tailwind.config.js` and `index.css`.
+This document defines the project-wide visual standard for font sizes, colors, spacing, border radii, shadows, and dark mode. The goal is to replace scattered arbitrary Tailwind values and repeated hex literals with named, semantic tokens defined in `tailwind.config.js` and CSS variables in `apps/frontend/index.css`.
+
+Until this is implemented, treat the tables below as the target values to converge on when touching a component, not as classes that exist today.
 
 ---
 
 ## Color Tokens
 
-To be added to `tailwind.config.js` under `theme.extend.colors`.
+To be added to `tailwind.config.js` under `theme.extend.colors`. Current hex values are taken from the CSS variables already defined in `apps/frontend/index.css` `:root` and from the values hardcoded throughout components.
 
 ### Brand Colors
 
-| Token | Hex | Usage |
-|---|---|---|
-| `primary` | `#0369a1` | Main brand blue — borders, icons, active states |
-| `primary-light` | `#0284c7` | Hover / lighter variant of primary |
-| `primary-soft` | `rgba(3, 105, 161, 0.1)` | Tinted backgrounds, subtle highlights |
-| `accent-gold` | `#FFD54F` | Gold accents, highlights, decorative borders |
-| `accent-orange` | `#FF9800` | Warm accent, progress indicators, badges |
-| `accent-purple` | `#9C27B0` | Secondary decorative accent |
+| Token | Hex (light) | Hex (dark) | Usage |
+|---|---|---|---|
+| `primary` | `#0369a1` | `#38bdf8` | Main brand blue — borders, icons, active states |
+| `primary-light` | `#0284c7` | `#0ea5e9` | Hover / lighter variant of primary |
+| `primary-soft` | `rgba(3, 105, 161, 0.1)` | — | Tinted backgrounds, subtle highlights |
+| `accent-gold` | `#FFD54F` | — | Gold accents, highlights, decorative borders |
+| `accent-orange` | `#FF9800` | — | Warm accent, progress indicators, badges |
+| `accent-purple` | `#9C27B0` | — | Secondary decorative accent |
+
+The light/dark pairs above already exist as CSS variables (`--primary-blue`, `--secondary-blue`) that swap value under the `.dark` class selector in `index.css`. Components currently reproduce this manually with `dark:` variants (e.g. `text-[#0369a1] dark:text-[#38bdf8]`) rather than referencing the variables — see [Dark Mode](#dark-mode) below.
 
 ### Neutral / Text Colors
 
@@ -37,10 +41,12 @@ To be added to `tailwind.config.js` under `theme.extend.colors`.
 
 ### Status Colors (Admin / Processing Pipeline)
 
+Confirmed in active use today via Tailwind's built-in palette (not yet as named tokens):
+
 | Token | Tailwind Equivalent | Usage |
 |---|---|---|
 | `status-ready` | `emerald-500` | Step or Book is 100% complete |
-| `status-active` | `[#FF9800]` | Step is in progress / started (Blinking) |
+| `status-active` | `[#FF9800]` | Step is in progress / started (blinking) |
 | `status-pending` | `slate-300` | Step is waiting/idle |
 | `status-error` | `red-500` | Step encountered an error |
 
@@ -62,8 +68,14 @@ To be added to `tailwind.config.js` under `theme.extend.fontSize`.
 | `text-ui-2xl` | 30px | Page headings, library title |
 | `text-ui-3xl` | 40px | Logo / hero / display text |
 
+**Fonts** (declared via `@font-face` in `index.css`, applied through CSS variables):
+- `--font-uyghur` (`ALKATIP Basma`) — default body/UI font, applied globally to `*, body, button, input, textarea, select`
+- `--font-headers` (`ALKATIP Basma`) — `h1`–`h6`; book content headings switch to `ALKATIP Basma Tom` via `.uyghur-text h1`–`h6`
+- `--font-nav` (`ALKATIP Basma`) — nav/`.navbar`/`[role="navigation"]`
+- `Adobe Arabic` (`.reader-font-adobe`, `.arabic-text`) and `KFGQPC Uthmanic Script HAFS` (`.quran-page .arabic-text`) — alternate reader fonts and Quran text
+
 **Line height conventions:**
-- Uyghur content text: `1.8` (handled by `.uyghur-text` class)
+- Uyghur content text: `1.8` (`.uyghur-text` class)
 - UI / chrome text: `1.5` (Tailwind default `leading-normal`)
 
 ---
@@ -79,7 +91,7 @@ To be added to `tailwind.config.js` under `theme.extend.borderRadius`.
 | `rounded-ui-lg` | 16px | Side panels, larger containers |
 | `rounded-ui-xl` | 20px | Modals, major panels |
 | `rounded-ui-2xl` | 28px | Book cards, hero cards |
-| `rounded-ui-full` | 9999px | Avatars, pill badges |
+| `rounded-ui-full` | 9999px (`rounded-full`) | Avatars, pill badges — already used consistently today |
 
 ---
 
@@ -115,20 +127,40 @@ To be added to `tailwind.config.js` under `theme.extend.boxShadow`.
 
 ## Glass Morphism
 
-The `.glass-panel` utility class (already in `index.css`) is the standard for all frosted surface elements.
+`.glass-panel` (defined in `apps/frontend/index.css`) is the standard frosted-surface utility class and is already used across the app (navbar, admin menus, modals, ~24 components).
 
-| Class | Opacity | Usage |
-|---|---|---|
-| `.glass-panel` | `rgba(255,255,255,0.8)` | Navbar, sidebars, main chat container |
-| `.glass-panel-light` | `rgba(255,255,255,0.5)` | Inner nested panels, secondary surfaces |
-| `.glass-panel-strong` | `rgba(255,255,255,0.95)` | Modals, critical dialogs requiring readability |
+| Class | Status | Opacity | Usage |
+|---|---|---|---|
+| `.glass-panel` | Implemented | `rgba(255,255,255,0.8)` light / `rgba(15,23,42,0.65)` dark | Navbar, sidebars, main chat container, dropdown menus |
+| `.glass-panel-light` | Proposed, not yet in `index.css` | `rgba(255,255,255,0.5)` | Inner nested panels, secondary surfaces |
+| `.glass-panel-strong` | Proposed, not yet in `index.css` | `rgba(255,255,255,0.95)` | Modals, critical dialogs requiring readability |
 
-CSS variables (in `index.css :root`):
+CSS variables backing `.glass-panel` (in `index.css` `:root`, overridden under `.dark`):
 ```css
 --glass-bg: rgba(255, 255, 255, 0.8);
 --glass-blur: blur(20px) saturate(180%);
 --glass-border: 1px solid rgba(255, 193, 7, 0.15);
 ```
+
+---
+
+## Dark Mode
+
+`tailwind.config.js` sets `darkMode: 'class'`. Dark mode is toggled by adding a `.dark` class to the root element (not a media-query strategy), and is already extensively adopted — components use `dark:` variants directly (over 2,000 occurrences across `apps/frontend/src`), most often paired with the arbitrary-hex pattern rather than a semantic token, e.g.:
+
+```
+text-[#0369a1] dark:text-[#38bdf8]
+bg-[#0369a1]/5 dark:bg-[#38bdf8]/10
+border-slate-200 dark:border-slate-800
+```
+
+`index.css` also defines a `.dark` override block that repoints the brand CSS variables (`--primary-blue`, `--secondary-blue`, `--bg-light`, `--glass-bg`, `--glass-border`) and the page background gradient/decorative overlays for dark mode. When the color tokens above are implemented in `tailwind.config.js`, each brand color token should resolve through these variables so `dark:` variants are unnecessary for brand colors — only status/neutral colors would still need explicit `dark:` classes.
+
+---
+
+## RTL
+
+The document root is RTL by default (`html { direction: rtl }` in `index.css`), matching the Uyghur-first UI. Individual components additionally set `dir="rtl"` where content needs to be explicit (e.g. reader panes, modals). Uyghur body/content text uses the `.uyghur-text` utility class (line-height `1.8`, ligature/kerning feature settings tuned for Perso-Arabic script, italics disabled since most Uyghur webfonts break letter connections under `font-style: italic`).
 
 ---
 
@@ -144,9 +176,12 @@ When ready to implement, make changes in this order — no component files need 
 
 ## Current Inconsistencies to Fix During Migration
 
+Verified against `apps/frontend/src` — arbitrary values remain widespread (over 260 arbitrary font-size classes alone):
+
 | Issue | Example (current) | Target |
 |---|---|---|
 | Arbitrary font sizes | `text-[30px]`, `text-[10px]` | `text-ui-2xl`, `text-ui-2xs` |
 | Hardcoded color values | `bg-[#0369a1]/10`, `text-[#0369a1]/50` | `bg-primary-soft`, `text-primary/50` |
 | Mixed border radii | `rounded-[20px]`, `rounded-[28px]`, `rounded-[40px]` | `rounded-ui-xl`, `rounded-ui-2xl` |
 | Inline shadow overrides | `shadow-xl shadow-[#0369a1]/20` | `shadow-ui-lg` |
+| Manual dark-mode color pairs | `text-[#0369a1] dark:text-[#38bdf8]` | `text-primary` (resolves via CSS variable) |

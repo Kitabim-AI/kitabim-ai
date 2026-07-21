@@ -13,7 +13,6 @@ from app.services.rag.agent.tools import (
     get_book_summary,
     get_sister_volumes,
     get_current_page,
-    query_knowledge_graph,
     lookup_uyghur_word,
     lookup_history_term,
     translate_english_to_uyghur,
@@ -21,18 +20,14 @@ from app.services.rag.agent.tools import (
     lookup_uyghur_name,
     search_language_sources,
     lookup_proverbs,
+    lookup_synonyms,
     search_quran,
 )
 from app.services.rag.agent.prompts import AGENT_SYSTEM_PROMPT
 
 
-def build_rag_agent(model_name: str, graph_enabled: bool = True) -> Agent:
-    """Build the Google ADK Agent with standard tools and system instructions.
-
-    query_knowledge_graph is only offered to the agent when graph_enabled is
-    True — the agent can otherwise still attempt the call despite prompt
-    instructions telling it not to, wasting a tool round-trip.
-    """
+def build_rag_agent(model_name: str) -> Agent:
+    """Build the Google ADK Agent with standard tools and system instructions."""
     # Strip 'models/' prefix from model name if present
     model = (
         model_name.replace("models/", "", 1)
@@ -58,10 +53,9 @@ def build_rag_agent(model_name: str, graph_enabled: bool = True) -> Agent:
         lookup_uyghur_name,
         search_language_sources,
         lookup_proverbs,
+        lookup_synonyms,
         search_quran,
     ]
-    if graph_enabled:
-        tools.append(query_knowledge_graph)
 
     return Agent(
         name="kitabim_retrieval_agent",

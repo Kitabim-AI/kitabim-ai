@@ -1,4 +1,10 @@
-"""AgentRAGHandler — Google ADK-backed agentic RAG.
+"""LLMRoutedRAGHandler — LLM-driven ADK ReAct retrieval loop.
+
+Unlike DeterministicRAGHandler (fixed Python precedence over a set of
+extracted signals), this handler lets an LLM agent decide which tools to
+call and in what order, guided by AGENT_SYSTEM_PROMPT. Both handlers use
+Google ADK — this one for a free-form ReAct loop, the other as a fixed
+Workflow graph — so "ADK-backed" no longer distinguishes them.
 
 Streams custom events: planning, decompose, tool_call, answer_start, chunk, answer_end.
 """
@@ -17,7 +23,7 @@ from app.services.rag.base_handler import QueryHandler
 from app.services.rag.context import QueryContext
 from app.utils.observability import log_json
 
-logger = logging.getLogger("app.rag.agent.handler")
+logger = logging.getLogger("app.rag.agent.llm_routed_handler")
 
 from app.services.rag.keywords import (
     PAGE_QUERY_PATTERNS,
@@ -85,15 +91,6 @@ def _detect_intent(question: str, ctx: QueryContext) -> str:
     return "content_search"
 
 
-def _is_graph_enabled(ctx: QueryContext) -> bool:
-    """Whether query_knowledge_graph should be offered to the agent at all."""
-    if not ctx.use_knowledge_graph_in_chat:
-        return False
-    if not ctx.is_global and ctx.book:
-        return getattr(ctx.book, "graph_milestone", None) == "complete"
-    return True
-
-
 def _build_human_message(ctx: QueryContext, question: str) -> str:
     lines = []
     if not ctx.is_global and ctx.book:
@@ -106,11 +103,7 @@ def _build_human_message(ctx: QueryContext, question: str) -> str:
         lines.append(f"Current book: {book_info} (book_id: {ctx.book_id})")
         if ctx.current_page is not None:
             lines.append(f"Current page: {ctx.current_page}")
-        graph_available = _is_graph_enabled(ctx)
-        lines.append(f"Graph available: {'yes' if graph_available else 'no'}")
     elif ctx.is_global:
-        if not ctx.use_knowledge_graph_in_chat:
-            lines.append("Graph available: no")
         if ctx.context_book_ids:
             lines.append(
                 f"Previous response book IDs: {', '.join(ctx.context_book_ids[:10])}"
@@ -282,10 +275,10 @@ def _populate_ctx_from_observations(
     ctx.graded_context = graded_context
 
 
-class AgentRAGHandler(QueryHandler):
-    """Google ADK agentic RAG handler. Fallback for all unmatched intents."""
+class LLMRoutedRAGHandler(QueryHandler):
+    """LLM-driven ADK ReAct RAG handler. Fallback for all unmatched intents."""
 
-    intent_name = "agent_rag"
+    intent_name = "llm_routed_rag"
 
     def can_handle(self, _ctx: QueryContext) -> bool:
         return True
@@ -311,7 +304,7 @@ class AgentRAGHandler(QueryHandler):
                 question = question + f"\n\n[Sub-questions]\n{numbered}"
 
         # 3. Agent Execution
-        agent = build_rag_agent(ctx.agent_model, graph_enabled=_is_graph_enabled(ctx))
+        agent = build_rag_agent(ctx.agent_model)
         runner = InMemoryRunner(agent=agent, app_name="kitabim")
         session = await runner.session_service.create_session(
             app_name="kitabim",
@@ -409,7 +402,7 @@ class AgentRAGHandler(QueryHandler):
         log_json(
             logger,
             logging.INFO,
-            "ADK agent invoked (non-stream)",
+            "LLM-routed RAG handler invoked (non-stream)",
             model=ctx.agent_model,
         )
 
@@ -427,7 +420,7 @@ class AgentRAGHandler(QueryHandler):
             log_json(
                 logger,
                 logging.WARNING,
-                "ADK agent yielded no result events — using empty-context fallback",
+                "LLM-routed RAG handler yielded no result events — using empty-context fallback",
             )
             graded_context = "NO RELEVANT DOCUMENTS FOUND IN THE LIBRARY."
             sub_questions = [question]
@@ -458,7 +451,10 @@ class AgentRAGHandler(QueryHandler):
         from app.services.rag.answer_builder import generate_answer_stream
 
         log_json(
-            logger, logging.INFO, "ADK agent invoked (stream)", model=ctx.agent_model
+            logger,
+            logging.INFO,
+            "LLM-routed RAG handler invoked (stream)",
+            model=ctx.agent_model,
         )
 
         question = ctx.enriched_question or ctx.question
@@ -481,7 +477,7 @@ class AgentRAGHandler(QueryHandler):
             log_json(
                 logger,
                 logging.WARNING,
-                "ADK agent yielded no result events — using empty-context fallback",
+                "LLM-routed RAG handler yielded no result events — using empty-context fallback",
             )
             graded_context = "NO RELEVANT DOCUMENTS FOUND IN THE LIBRARY."
             sub_questions = [question]

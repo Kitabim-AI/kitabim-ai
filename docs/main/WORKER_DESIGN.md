@@ -1,297 +1,319 @@
 # Worker Design — Event-Driven Pipeline
 
+See also: [book_processing_diagram.md](book_processing_diagram.md) for the visual pipeline diagram, admin recovery actions, and page-milestone transition diagrams.
+
 ## Overview
 
-The Kitabim.AI processing pipeline uses a **decoupled, event-driven architecture** based on the **Transactional Outbox Pattern**. This design ensures high reliability, observability, and responsiveness by separating the concern of "what work needs doing" from the "execution of that work."
+The Kitabim.AI processing pipeline is a **decoupled, event-driven architecture** built on the **Transactional Outbox Pattern**. Work is expressed as small, single-purpose ARQ jobs; scanners run on a cron schedule to find eligible work and dispatch jobs; an event dispatcher reacts to completed work and dispatches the next step immediately, without waiting for the next cron tick.
 
 Key characteristics:
-- **`milestone` columns** — each stage (`ocr`, `chunking`, `embedding`, `spell_check`) has its own milestone in the `pages` table.
-- **States** — `idle | in_progress | succeeded | failed`.
-- **Mandatory pipeline** — `ocr → chunking → embedding` is sequential; a book becomes `ready` when embedding is terminal.
-- **Spell check is independent** — it only requires OCR to be done, runs in parallel with chunking/embedding, and does **not** block book readiness.
-- **Transactional Outbox** — the `pipeline_events` table captures successful milestones within the same database transaction as the result application.
-- **Event Dispatcher** — a low-latency scanner that polls the outbox and immediately enqueues the next required job, bypassing traditional 1-minute cron delays.
 
----
+- **Milestone columns** — each pipeline step (`ocr`, `chunking`, `embedding`, `spell_check`) has its own state column on the `pages` table, denormalized onto `books` for fast listing/filtering.
+- **States** — `idle | in_progress | succeeded | failed`, one per step, per page.
+- **Mandatory pipeline** — `ocr → chunking → embedding` is sequential; embedding is the terminal mandatory step.
+- **Spell check** — an independent quality layer. It only depends on OCR being done, runs in parallel with chunking/embedding, and does not block book readiness.
+- **Knowledge graph extraction and spell check are feature-flagged** — see [Feature Flags](#feature-flags).
+- **Transactional Outbox** — the `pipeline_events` table records a row for every milestone transition, written in the same DB transaction as the result. The Event Dispatcher polls this table and immediately enqueues the next job, so most pages move `ocr → chunking → embedding` inside seconds rather than waiting for the next 1-minute scanner tick.
+- **Per-page distributed locking** — `ocr_job`, `chunking_job`, `embedding_job`, and `spell_check_job` each wrap their claimed page IDs in a `MultiPageLock` (Redis `SET NX` per page, 1‑hour expiry) before processing, so the same page can never be worked on by two job instances concurrently even if a scanner double-claims it.
 
 ## Goals
 
 - Clear, unambiguous page and book state at all times
-- Per-page retry with exhausted retry detection
-- Uniform stale detection across all steps (one rule)
-- Each component has a single responsibility
-- Adding a new pipeline step requires only a new scanner + job, nothing else changes
+- Per-page retry with exhausted-retry detection
+- Uniform stale-page detection across all steps (one rule, worker-heartbeat aware)
+- Each component has a single responsibility: scanners claim and dispatch, jobs execute
+- Adding a new pipeline step only requires a new scanner + job
 
-## Non-Goals
+## Feature Flags
 
-- Gemini Batch API mode (realtime only)
-- **Circuit breaker** — Implemented for AI services and Redis.
-- Backwards compatibility with v1 status columns
+Several pipeline stages are gated by boolean flags in `system_configs` (checked at the top of the relevant scanner/job, default is what ships in `packages/backend-core/app/db/seeds.py`):
 
----
+| Flag | Default | Gates |
+|---|---|---|
+| `spell_check_enabled` | `true` | `spell_check_scanner` — returns immediately if not `"true"` |
+| `auto_correct_enabled` | `true` | `auto_correct_scanner` — returns immediately if not `"true"` |
+| `knowledge_graph_enabled` | `false` | `graph_scanner` and `knowledge_graph_job` — both no-op (and reset `graph_milestone` back to `idle`) if not `"true"` |
+
+> **Knowledge graph extraction is off by default in a fresh environment.** It must be explicitly enabled via `system_configs` before `graph_scanner` or the "Reprocess Graph" admin action will do anything.
 
 ## Schema
-Current implementation uses granular milestone columns on the `pages` table and a `pipeline_step` column on the `books` table.
 
 ### `pages` table
 
 | Column | Type | Description |
 |---|---|---|
-| `ocr_milestone` | `varchar` | State of OCR: `idle \| in_progress \| succeeded \| failed` |
-| `chunking_milestone` | `varchar` | State of Chunking: `idle \| in_progress \| succeeded \| failed` |
-| `embedding_milestone` | `varchar` | State of Embedding: `idle \| in_progress \| succeeded \| failed` |
-| `spell_check_milestone` | `varchar` | State of Spell Check: `idle \| in_progress \| succeeded \| failed` |
-| `retry_count` | `integer` | Number of failed attempts for the current step. |
+| `ocr_milestone` | `varchar` | `idle \| in_progress \| succeeded \| failed` |
+| `chunking_milestone` | `varchar` | `idle \| in_progress \| succeeded \| failed` |
+| `embedding_milestone` | `varchar` | `idle \| in_progress \| succeeded \| failed` |
+| `spell_check_milestone` | `varchar` | `idle \| in_progress \| succeeded \| failed` |
+| `retry_count` | `integer` | Shared failure counter for the page — incremented by whichever step's job fails (OCR, chunking, embedding, or spell check all write to the same counter). |
+| `worker_id` / `claimed_at` | `varchar` / `timestamptz` | Set by the scanner that claimed the page; used by `StaleWatchdog` to detect dead workers. |
+| `pipeline_step` | `varchar` | Legacy/display field showing the step a page is currently associated with (`ocr`, `chunking`, `embedding`, `spell_check`). Not read by scanners to gate work — milestones are the source of truth. |
 
 ### `books` table
 
 | Column | Type | Description |
 |---|---|---|
-| `pipeline_step` | `varchar` | Primary step for progress tracking: `ocr \| chunking \| embedding \| spell_check \| ready` |
-
----
+| `pipeline_step` | `varchar` | Coarse progress indicator for the UI: `ocr \| chunking \| embedding \| spell_check \| ready \| failed` |
+| `status` | `varchar` | `pending \| ready \| error` — the field that actually gates search visibility and further scanner eligibility |
+| `ocr_milestone` / `chunking_milestone` / `embedding_milestone` / `spell_check_milestone` | `varchar` | Book-level rollups of the page milestones (`idle \| in_progress \| complete \| partial_failure \| failed`), maintained by `BookMilestoneService` for fast listing without joining `pages`. |
+| `graph_milestone` | `varchar` | `idle \| in_progress \| complete \| partial \| failed`. `has_graph` in the API is derived as `graph_milestone == 'complete'` — there is no separate Neo4j lookup. |
 
 ## Architecture
 
 ```
 worker/
   scanners/
-    gcs_discovery_scanner.py ← lists GCS uploads/, registers new books in DB
-    pipeline_driver.py       ← state machine: initializes pages, advances steps, marks book ready
-    ocr_scanner.py           ← claims idle ocr pages, dispatches OcrJob per book
-    chunking_scanner.py      ← claims idle chunking pages, dispatches ChunkingJob
-    embedding_scanner.py     ← claims idle embedding pages, dispatches EmbeddingJob
-    spell_check_scanner.py   ← claims idle spell_check pages, dispatches SpellCheckJob
-    event_dispatcher.py      ← monitors outbox, triggers next-step jobs immediately
-    auto_correct_scanner.py  ← claims all auto-correctable pages (daily)
-    stale_watchdog.py        ← resets stale in_progress pages to idle
-    maintenance_scanner.py   ← cleans up processed outbox events (daily)
+    gcs_discovery_scanner.py   ← lists GCS uploads/, registers new books in DB
+    pipeline_driver.py         ← state machine: initializes pages, resets retryable failures, marks book ready/error, enqueues summary_job
+    ocr_scanner.py             ← claims idle ocr pages (grouped by book), dispatches OcrJob per book
+    chunking_scanner.py        ← claims idle chunking pages across all books, dispatches one ChunkingJob
+    embedding_scanner.py       ← claims idle embedding pages across all books, dispatches one EmbeddingJob
+    spell_check_scanner.py     ← claims idle spell_check pages, dispatches SpellCheckJob (feature-flagged)
+    event_dispatcher.py        ← polls the outbox, immediately dispatches the next job
+    auto_correct_scanner.py    ← finds pages with auto-correctable spell issues, dispatches AutoCorrectJob in batches (feature-flagged)
+    stale_watchdog_scanner.py  ← resets pages/books stuck in_progress using worker-heartbeat detection
+    summary_scanner.py         ← backfills/retries missing book_summaries for ready books
+    graph_scanner.py           ← backfills/retries missing knowledge graphs for ready books (feature-flagged; see note below)
+    maintenance_scanner.py     ← deletes old processed pipeline_events rows
   jobs/
-    ocr_job.py               ← downloads PDF, OCRs pages via Gemini Vision (google-genai)
-    chunking_job.py          ← chunks page text into DB records
-    embedding_job.py         ← generates and stores embeddings (google-genai)
-    spell_check_job.py       ← identifies unknown words and suggests corrections
-    auto_correct_job.py      ← applies auto-correction rules to spell issues
-    summary_job.py           ← generates semantic book summaries for RAG routing (google-genai)
-    knowledge_graph_job.py   ← extracts semantic entities and relationships to index in Neo4j (google-genai)
-  worker.py                  ← ARQ WorkerSettings
+    ocr_job.py                 ← downloads PDF, OCRs pages via Gemini Vision (google-genai)
+    chunking_job.py            ← splits page text into chunks, upserts into the chunks table
+    embedding_job.py           ← generates and stores chunk embeddings (google-genai)
+    spell_check_job.py         ← identifies unknown words and suggests corrections
+    auto_correct_job.py        ← applies auto-correction rules to open spell issues
+    summary_job.py             ← generates a semantic book summary + embedding for RAG routing
+    knowledge_graph_job.py     ← extracts entities/relationships and indexes them in Neo4j
+  worker.py                    ← ARQ WorkerSettings: registers the 7 jobs and 11 of the 12 scanners as cron jobs
 ```
 
----
+**Job and scanner count:** 7 job functions are registered in `WorkerSettings.functions`. 12 scanner modules exist under `services/worker/scanners/`, but only **11** are wired into `WorkerSettings.cron_jobs` in `worker.py` — `graph_scanner.py` is fully implemented and tested but is **not currently scheduled** (see [Cron Schedule](#cron-schedule)).
 
 ## Component Responsibilities
 
 ### GcsDiscoveryScanner
 
-Polls the GCS bucket and registers books that aren't yet in the database. Runs every 5 minutes.
+Polls the GCS uploads bucket and registers books that aren't yet in the database.
 
-**Responsibilities:**
+1. List all `uploads/*.pdf` files in the GCS data bucket.
+2. Skip files already known by filename or by a book ID matching the filename stem.
+3. Download unknown files to compute a SHA-256 hash and extract PDF metadata (title/author/page count) and a cover image.
+4. Skip content-hash duplicates (same file under a different name).
+5. Standardize the GCS path to `uploads/{book_id}.pdf`, renaming if needed.
+6. Insert a `Book` row with `status='pending'` and create one `Page` stub per PDF page.
 
-1. List all `uploads/*.pdf` files in the GCS data bucket
-2. Skip files already known to the DB (by filename or book ID)
-3. Download unknown files to compute SHA-256 hash and extract PDF metadata
-4. Skip content-hash duplicates (same file under a different name)
-5. Standardize the GCS path to `uploads/{book_id}.pdf` (rename if needed)
-6. Insert a `Book` record with `status='pending'` and `pipeline_step=NULL`
-
-PipelineDriver picks up the new book on its next run and initializes its pages into `ocr / idle`. No explicit OCR triggering is needed.
-
-The manual admin API (`POST /api/books/storage/sync`) continues to use the existing `DiscoveryService` directly.
-
----
+`PipelineDriver` picks up the new pages on its next run and initializes them into `ocr / idle`.
 
 ### PipelineDriver
 
-Handles pipeline bookkeeping. Runs every minute as a cron job.
+The core state-machine bookkeeper. On every run:
 
-**Responsibilities:**
+1. **Initialize** — for pages with `ocr_milestone = 'idle'` on non-terminal books, ensures `pipeline_step` starts at `'ocr'`.
+2. **Reset** — for any page where a step milestone is `failed`/`error` and `retry_count < ocr_max_retry_count`, resets that milestone back to `idle` so the owning scanner retries it. `retry_count` is **not** reset here — it keeps accumulating across steps until the page either succeeds or hits the max.
+3. **Book ready / error** — for every book where **all** of its pages are terminal (each page's `embedding_milestone = 'succeeded'`, OR one of its mandatory steps failed with `retry_count >= ocr_max_retry_count`):
+   - If **zero** pages on the book have an exhausted mandatory-step failure → book is marked `status='ready'`, `pipeline_step='ready'`.
+   - If **any** page on the book has an exhausted mandatory-step failure → the whole book is marked `status='error'`, `pipeline_step='failed'`.
 
-1. **Initialize** — finds pages with `ocr_milestone = 'idle'` on non-ready books, ensures they are registered for processing
-2. **Reset** — resets `failed` milestones back to `idle` when retries remain
-3. **Book ready** — marks a book as `ready` when all **mandatory** pages are terminal
+   In practice this rarely blocks a book: `ocr_job` treats an exhausted per-page OCR failure as a **soft skip** — it marks that page `ocr_milestone='succeeded'` with empty text rather than `'failed'` (see OcrJob below), so it flows through chunking/embedding as an empty, harmless page instead of ever counting as an exhausted mandatory failure. A book only lands in `status='error'` if `chunking_job` or `embedding_job` itself exhausts retries on a page, or if the OCR job can't even download the book's PDF.
 
-> **Note:** Sequential promotion (`ocr → chunking → embedding`) is **not** done by PipelineDriver. Each scanner enforces its own dependency by checking the upstream milestone directly (e.g. `ChunkingScanner` only claims pages where `ocr_milestone = 'succeeded'`).
+4. `book.status='error'` removes the book from `chunking_scanner`/`embedding_scanner` eligibility (both explicitly exclude `Book.status == 'error'`) until an admin action resets it: either a pipeline recovery action (`/retry-failed`, a step reprocess, etc.) back to `pending`, or — unconditionally, without reprocessing anything — an editor setting the book's `visibility` to `public` via `PUT /books/{book_id}` (`update_book_details` in `books_router.py`), which clears it straight to `status='ready'`, `pipeline_step='ready'` on the assumption that publishing an errored book is an explicit signal it's actually usable. `scripts/retrofit_public_book_status.py` applies this same override retroactively to books that were already public before this behavior existed.
+5. For books newly transitioning to `ready` (and that don't already have a `book_summaries` row, to avoid re-enqueuing during unrelated spell-check updates), enqueues `summary_job`. It does **not** enqueue `knowledge_graph_job` — graph generation is picked up separately by `graph_scanner` (currently unscheduled — see below) or triggered manually via the admin "Reprocess Graph" action.
 
-**Mandatory pipeline (what gates book readiness):**
+### OcrScanner / ChunkingScanner / EmbeddingScanner / SpellCheckScanner
 
-```
-ocr / succeeded  →  (ChunkingScanner claims)  chunking / idle
-chunking / succeeded  →  (EmbeddingScanner claims)  embedding / idle
-```
+Each claims idle pages atomically (`SELECT ... FOR UPDATE SKIP LOCKED`, or an atomic `UPDATE` for OCR), flips the milestone to `in_progress`, and dispatches a job.
 
-Embedding is the terminal mandatory step. A book is marked `pipeline_step = ready` when every page has `embedding_milestone = 'succeeded'` OR any mandatory step has failed with exhausted retries.
-
-**Spell check is NOT mandatory** — it is a quality layer that runs independently (see SpellCheckScanner below) and does not block book readiness.
-
-This means a book with a few permanently failed pages is still marked ready and searchable.
-
----
-
-### Scanners (OcrScanner / ChunkingScanner / EmbeddingScanner)
-
-Each scanner is responsible for one step only: **claim idle pages atomically and dispatch a job**.
-
-**Generic scanner flow (every 1 min):**
-
-```sql
--- Step 1: Atomic claim (prevents double-dispatch)
-UPDATE pages
-SET <step>_milestone = 'in_progress'
-WHERE <step>_milestone = 'idle'
-LIMIT <scanner_page_limit>
-RETURNING id
-```
-
-```python
-# Step 2: Dispatch job with claimed page IDs
-await redis.enqueue_job("<step>_job", page_ids=[...])
-```
-
-**OcrScanner — groups by book:**
-
-OCR requires a PDF file. Processing pages from the same book in one job means one PDF download. The OcrScanner therefore groups idle OCR pages by book and dispatches one `OcrJob` per book.
+**OcrScanner — groups by book** (a PDF download is shared across all of a book's claimed pages):
 
 ```
-OcrScanner (every 1 min):
-  1. Find distinct book_ids where pages have (ocr / idle)
-  2. For each book (up to N books per run):
-       a. Claim all idle ocr pages for that book → in_progress
-       b. Dispatch OcrJob(book_id, page_ids)
+1. Find up to `scanner_book_limit` (default 2) books with ocr_milestone in
+   (idle, in_progress, partial_failure), oldest upload_date first.
+2. For each book: claim up to `ocr_scanner_batch_size` (default 10) idle OCR
+   pages → in_progress, dispatch OcrJob(book_id, page_ids).
 ```
 
-**ChunkingScanner / EmbeddingScanner:**
-
-Chunking and embedding only need text from the database, so pages from any book can be processed together.
+**ChunkingScanner / EmbeddingScanner — cross-book, text/vector work only:**
 
 ```
-ChunkingScanner (every 1 min):
-  Dependency: ocr_milestone = 'succeeded'
-  1. Claim up to N idle chunking pages across all books → in_progress
-  2. Dispatch one job with all claimed page IDs
+ChunkingScanner:
+  Dependency: ocr_milestone = 'succeeded', book.status != 'error'
+  Claim up to `scanner_page_limit` (default 100) idle chunking pages across all books.
+  Dispatch one ChunkingJob with all claimed page IDs.
 
-EmbeddingScanner (every 1 min):
-  Dependency: chunking_milestone = 'succeeded'
-  1. Claim up to N idle embedding pages across all books → in_progress
-  2. Dispatch one job with all claimed page IDs
+EmbeddingScanner:
+  Dependency: chunking_milestone = 'succeeded', book.status != 'error'
+  Claim up to `scanner_page_limit` (default 100) idle embedding pages across all books.
+  Dispatch one EmbeddingJob with all claimed page IDs.
 ```
 
-**SpellCheckScanner:**
+Both scanners deliberately do **not** exclude `ready` books — `auto_correct_service` resets `chunking_milestone`/`embedding_milestone` back to `idle` on corrected pages even after a book is `ready`, so corrected text gets re-indexed.
 
-Spell check runs as an **independent quality layer** — it does not block book readiness and does not need to wait for embedding.
+**SpellCheckScanner** (gated by `spell_check_enabled`):
 
 ```
-SpellCheckScanner (every 1 min):
-  Dependency: ocr_milestone = 'succeeded'  (NOT embedding)
-  1. Identify books currently in spell_check step + new candidates (up to max_concurrent limit)
-  2. Claim idle spell-check pages for those books → in_progress
-  3. Dispatch SpellCheckJob with claimed page IDs
+Dependency: ocr_milestone = 'succeeded' (independent of chunking/embedding)
+1. Books already mid spell-check (pipeline_step = 'spell_check') keep priority.
+2. Fill remaining slots up to `max_concurrent_spell_check_books` (config default 3)
+   with new candidate books that have idle spell-check pages.
+3. Claim up to `scanner_page_limit` idle spell-check pages for the allowed books.
+4. Dispatch SpellCheckJob with the claimed page IDs.
 ```
 
-A book can be fully `ready` (searchable, in the library) while its spell check is still running in the background.
-
----
+A book can be `ready` and searchable while its spell check is still running in the background.
 
 ### Jobs
-
-Jobs are pure executors — they process pages and report success or failure. They have no knowledge of what step comes next.
 
 **OcrJob(book_id, page_ids):**
 
 ```
-1. Download PDF once from storage
-2. For each page (async, semaphore-limited concurrency):
-     a. Render page as image (PyMuPDF, 1.5x zoom)
-     b. Call Gemini Vision API (via google-genai client)
-     c. Normalize text (Uyghur character normalization, markdown cleanup)
-     d. Save extracted text to page record
-     e. Set <step>_milestone = 'succeeded'
+1. Acquire a MultiPageLock for the claimed page IDs; skip any page whose lock
+   couldn't be acquired.
+2. Fetch gemini_ocr_model (system_configs, no fallback — required) and
+   ocr_max_parallel_pages (default 1 — sequential by default).
+3. Download the book PDF (re-download on missing/corrupt file); mark book
+   pipeline_step='ocr'.
+4. For each page (async, semaphore-limited to ocr_max_parallel_pages):
+     a. Render the page as an image (PyMuPDF, zoom = OCR_PAGE_ZOOM_FACTOR, default 1.5x)
+     b. Call Gemini Vision (google-genai), with an inner transient-error retry
+        loop (OCR_MAX_RETRIES env var, default 4 attempts per call)
+     c. Detect table-of-contents pages, normalize Uyghur text/markdown
+     d. Save text, set ocr_milestone='succeeded', emit an 'ocr_succeeded' outbox event
    On failure:
-     e.retry_count++
-     f. Set <step>_milestone = 'failed'
-3. Update book.pipeline_step = 'ocr' (marks book as actively in OCR step)
+     retry_count++
+     If retry_count >= ocr_max_retry_count (system_configs, default 10):
+       Soft-skip — set ocr_milestone='succeeded' with empty text and an error
+       note ("Page skipped."), still emits 'ocr_succeeded' so the page flows
+       through chunking/embedding as an empty page.
+     Else:
+       Set ocr_milestone='failed' (PipelineDriver will reset it to idle on
+       its next run since retries remain).
+   If the PDF itself can't be obtained, all claimed pages are marked
+   ocr_milestone='failed' (this is the one path that can genuinely exhaust
+   OCR retries and push a book to status='error').
 ```
 
 **ChunkingJob(page_ids):**
 
 ```
-1. For each page:
-     a. Load text from DB
-     b. Apply recursive character text splitter
+1. Acquire MultiPageLock; mark affected books pipeline_step='chunking'.
+2. For each page (sequential, own session per page):
+     a. Skip splitting for TOC pages (0 chunks)
+     b. Split text with a recursive character splitter
+        (chunk_size / chunk_overlap from CHUNK_SIZE / CHUNK_OVERLAP, default 1500 / 300)
      c. Delete chunks with index >= new chunk count (handles shrinking pages)
-     d. Upsert remaining chunks — on conflict update text and reset embedding/embedding_v1 to NULL
-     e. Set chunking_milestone = 'succeeded'
-   On failure:
-     f. retry_count++
-     g. Set chunking_milestone = 'failed'
+     d. Upsert chunks — on conflict, update text and reset embedding to NULL
+     e. Set chunking_milestone='succeeded', emit 'chunking_succeeded'
+   On failure: retry_count++, set chunking_milestone='failed', emit 'chunking_failed'.
 ```
 
 **EmbeddingJob(page_ids):**
 
 ```
-1. For each page:
-     a. Load chunks from DB
-     b. Generate 3072-dim embeddings via Gemini Embeddings API (google-genai client)
-     c. Store vectors on chunk records
-     d. Set embedding_milestone = 'succeeded'
-   On failure:
-     e. retry_count++
-     f. Set embedding_milestone = 'failed'
+1. Acquire MultiPageLock; mark affected books pipeline_step='embedding'.
+2. Fetch gemini_embedding_model (system_configs, no fallback — required; the
+   embedding vector column is `vector(3072)`, and the current default model
+   is gemini-embedding-2, which produces 3072-dim vectors).
+3. For each page (sequential, own session per page):
+     a. Load its chunks with embedding IS NULL
+     b. If none, mark embedding_milestone='succeeded' immediately (empty page)
+     c. Otherwise embed in batches of EMBED_BATCH_SIZE (default 50) via
+        GeminiEmbeddings, persist vectors, set embedding_milestone='succeeded',
+        emit 'embedding_succeeded'
+   On failure: retry_count++, set embedding_milestone='failed', emit 'embedding_failed'.
 ```
 
-**KnowledgeGraphJob(book_id):**
+**SpellCheckJob(page_ids):** acquires `MultiPageLock`, runs `run_spell_check_for_page` per page (semaphore-limited to `MAX_PARALLEL_SPELL_CHECK`, default 6), sets `spell_check_milestone='succeeded'`/`'failed'`, and once a book has no more `idle`/`in_progress` spell-check pages, sets its `pipeline_step` back to `'ready'` so the UI stops showing spell check as active.
+
+**AutoCorrectJob(page_ids):** applies pre-fetched auto-apply correction rules to each page (semaphore-limited to `MAX_PARALLEL_AUTO_CORRECT`, default 10), writes `auto_correct_succeeded`/`auto_correct_failed` outbox events, then recomputes book-level milestones for every affected book. Does not use `MultiPageLock`.
+
+**SummaryJob(book_id):** loads all non-TOC page text for the book, samples down to `SUMMARY_MAX_CHARS` (default 3,000,000 chars; capped at 100,000 for models without a large context window), generates a structured summary via the configured chat model, embeds it with `GeminiEmbeddings`, and upserts into `book_summaries`. A summary failure never blocks book availability — the RAG layer falls back to category-based search.
+
+**KnowledgeGraphJob(book_id):** (no-ops unless `knowledge_graph_enabled='true'`)
 
 ```
-1. Verify book exists and chunks are present in PostgreSQL.
-2. Load all chunks for the book ordered by page + chunk index.
-3. Group chunks into batches (kg_chunk_batch_size from system_configs, default 5).
-4. For each batch (async, semaphore-limited concurrency; kg_max_parallel_chunks, default 5):
-     a. Call Gemini with combined batch text to extract entities and relationships.
-     b. Parse structured JSON (KnowledgeExtraction schema): entity names, types, subtypes,
-        and directed relation triples (source → rel_type → target).
-5. Accumulate entities and relations across all batches, deduplicating entity names.
-   Person entities in fictional books are namespaced: "Name (Book Title)".
-6. Single bulk write to Neo4j — exactly 2 round-trips for the entire book:
-     a. Upsert Entity nodes (MERGE on name; SET type, subtype).
-     b. Create RELATED_TO edges between Entity nodes
-        (MERGE on source + target + book_id; SET rel_type).
-7. Set graph_milestone = 'complete' (or 'partial' if any batch save failed).
+1. Load chat model (gemini_kg_extraction_model, default gemini-3.1-flash-lite),
+   kg_max_parallel_chunks (default 5), kg_chunk_batch_size (default 5).
+2. Load all chunks for the book, ordered by page + chunk index.
+3. Group into batches of kg_chunk_batch_size chunks; run extract_batch()
+   concurrently (semaphore-limited to kg_max_parallel_chunks) — one Gemini
+   call per batch returns entities + directed relation triples.
+4. Accumulate entities/relations across all batches; for books whose category
+   is in the configurable fictional_categories list, namespace Person
+   entities as "Name (Book Title)" to avoid cross-book collisions.
+5. If more than one Person occurrence was extracted, run a second LLM pass
+   to resolve/deduplicate person names across batches (disambiguating
+   same-name different people with Roman numerals).
+6. Clear any existing graph data for the book, then a single bulk write to
+   Neo4j: upsert Entity nodes, then create RELATED_TO edges — 2 round-trips
+   for the whole book.
+7. Set book.graph_milestone = 'complete' (or 'partial' if any batch's Neo4j
+   write failed, or 'failed' on an unhandled exception).
 ```
 
----
+Only `Entity` nodes and `Entity -[:RELATED_TO]-> Entity` edges are stored in Neo4j — there are no `Book`/`Chunk` nodes; chunk text stays in Postgres.
 
 ### StaleWatchdog
 
-Resets pages that are stuck in `in_progress` (e.g. job crashed, pod restarted). One rule applies to all steps.
+Recovers pages (and books) stuck `in_progress` after a worker crash or restart. Unlike a flat timeout, it cross-references active worker heartbeats in Redis (`worker:heartbeat:*`) to reset stuck work faster when the owning worker is confirmed dead:
 
-```sql
-UPDATE pages
-SET <step>_milestone = 'idle'
-WHERE <step>_milestone = 'in_progress'
-  AND updated_at < NOW() - INTERVAL '30 minutes'
+```
+For every page with any milestone == 'in_progress':
+  - No worker_id recorded, or worker_id == 'unknown':
+      stale if claimed_at is older than 30 minutes (or missing)
+  - worker_id has no active heartbeat key in Redis (worker is dead):
+      stale if claimed_at is older than 2 minutes
+  - worker_id has an active heartbeat (worker is alive, just slow):
+      stale if claimed_at is older than 30 minutes
+
+For each stale page: reset the in_progress milestone(s) back to idle
+(including the legacy singular `milestone` column, kept in sync for
+backward compatibility), clear worker_id/claimed_at, and recompute the
+book's rolled-up milestones.
+
+Separately: any book with graph_milestone='in_progress' for more than
+1 hour is reset to graph_milestone='idle' so graph_scanner (or a manual
+retry) can pick it up again.
 ```
 
-Runs every 30 minutes.
+### EventDispatcher
 
----
+Polls up to 100 unprocessed rows from `pipeline_events` (`FOR UPDATE SKIP LOCKED`) per run and reacts immediately, rather than waiting for the next per-step scanner tick:
+
+| Event | Action |
+|---|---|
+| `ocr_succeeded` | Enqueue `chunking_job` for that single page |
+| `chunking_succeeded` | Enqueue `embedding_job` for that single page |
+| `embedding_succeeded` | No-op — `PipelineDriver` handles book-ready detection on its own schedule |
+
+Processed events are marked `processed=true`; `MaintenanceScanner` deletes them later.
+
+### MaintenanceScanner
+
+Deletes `pipeline_events` rows where `processed=true` and `created_at` is older than `maintenance_retention_days` (system_configs, default 7).
+
+### AutoCorrectScanner
+
+Loops in a single run — not just one batch — dispatching `auto_correct_job` in batches of `auto_correct_batch_size` (default 500) until `find_pages_with_auto_correctable_issues` returns nothing, cleaning up stale in-flight auto-corrections first. No-ops entirely if `auto_correct_enabled != 'true'`.
 
 ## Cron Schedule
+
+Authoritative source: `WorkerSettings.cron_jobs` in `services/worker/worker.py`.
 
 | Scanner | Interval | Notes |
 |---|---|---|
 | `gcs_discovery_scanner` | Every 5 min | List GCS bucket, register new books |
-| `pipeline_driver` | Every 1 min | Initialize + promote + book ready |
-| `ocr_scanner` | Every 1 min | Groups by book |
+| `pipeline_driver` | Every 1 min (+ at startup) | Initialize, reset retryable failures, mark ready/error, enqueue summary jobs |
+| `ocr_scanner` | Every 1 min | Groups claimed pages by book |
 | `chunking_scanner` | Every 1 min | Cross-book |
 | `embedding_scanner` | Every 1 min | Cross-book |
-| `spell_check_scanner`| Every 1 min | Cross-book |
-| `event_dispatcher` | Startup + 1 min (high frequency pool) | Triggers reactive progression |
-| `stale_watchdog` | Every 30 min | Uniform reset for all steps |
-| `maintenance_scanner`| Daily at 3 AM | Database housekeeping |
-| `summary_scanner`     | Every 5 min | Regenerates missing book summaries |
-| `graph_scanner`       | Every 5 min | Regenerates missing book knowledge graphs |
-| `auto_correct_scanner` | Daily at 3 AM | Bulk applies spell corrections |
+| `spell_check_scanner` | Every 1 min | Cross-book; no-op unless `spell_check_enabled` |
+| `event_dispatcher` | Every 1 min (+ at startup) | Reactive low-latency progression via the outbox |
+| `stale_watchdog` | Minute 0 and 30 (i.e. every 30 min) | Worker-heartbeat-aware reset |
+| `summary_scanner` | Every 5 min | Backfill/retry missing book summaries |
+| `auto_correct_scanner` | Daily at 3:00 AM | Loops through all eligible pages in batches |
+| `maintenance_scanner` | Daily at 3:00 AM | Deletes old processed outbox events |
 
----
+**`graph_scanner` is not in this list.** The module (`services/worker/scanners/graph_scanner.py`) and its unit tests exist, and `worker.py`'s own module docstring claims it runs every 5 minutes, but it is never imported or added to `cron_jobs`. With `knowledge_graph_enabled` also defaulting to `false`, knowledge-graph generation today only runs via the manual admin "Reprocess Graph" action (`POST /api/books/{book_id}/reprocess/graph`), which enqueues `knowledge_graph_job` directly.
 
 ## State Machine
 
@@ -299,8 +321,8 @@ Runs every 30 minutes.
 flowchart TD
     OCR_IDLE["ocr / idle"]
     OCR_IP["ocr / in_progress"]
-    OCR_OK["ocr / succeeded"]
-    OCR_FAIL["ocr / failed"]
+    OCR_OK["ocr / succeeded<br/>(incl. soft-skipped empty pages)"]
+    OCR_FAIL["ocr / failed<br/>(PDF download failure only)"]
     CHUNK_IDLE["chunking / idle"]
     CHUNK_IP["chunking / in_progress"]
     CHUNK_OK["chunking / succeeded"]
@@ -313,39 +335,39 @@ flowchart TD
     SPELL_IP["spell_check / in_progress"]
     SPELL_OK["spell_check / succeeded"]
     SPELL_FAIL["spell_check / failed"]
-    TERMINAL["ocr|chunking|embedding failed<br/>retry_count >= max<br/>(mandatory step — skipped)"]
+    EXHAUSTED["chunking/embedding failed<br/>retry_count >= max<br/>(book-wide status=error)"]
 
     OCR_IDLE -->|OcrScanner: claim| OCR_IP
-    OCR_IP -->|OcrJob: success| OCR_OK
-    OCR_IP -->|OcrJob: failure| OCR_FAIL
-    OCR_FAIL -->|StaleWatchdog or Scanner retry| OCR_IDLE
-    OCR_FAIL -->|retry_count >= max| TERMINAL
+    OCR_IP -->|Gemini call succeeds, or retries exhausted (soft-skip)| OCR_OK
+    OCR_IP -->|PDF download failed| OCR_FAIL
+    OCR_FAIL -->|retry_count < max: PipelineDriver reset| OCR_IDLE
+    OCR_FAIL -->|retry_count >= max| EXHAUSTED
     OCR_OK -->|ChunkingScanner: dep satisfied| CHUNK_IDLE
     OCR_OK -.->|SpellCheckScanner: dep satisfied| SPELL_IDLE
 
     CHUNK_IDLE -->|ChunkingScanner: claim| CHUNK_IP
     CHUNK_IP -->|ChunkingJob: success| CHUNK_OK
     CHUNK_IP -->|ChunkingJob: failure| CHUNK_FAIL
-    CHUNK_FAIL -->|Scanner retry| CHUNK_IDLE
-    CHUNK_FAIL -->|retry_count >= max| TERMINAL
+    CHUNK_FAIL -->|retry_count < max: PipelineDriver reset| CHUNK_IDLE
+    CHUNK_FAIL -->|retry_count >= max| EXHAUSTED
     CHUNK_OK -->|EmbeddingScanner: dep satisfied| EMB_IDLE
 
     EMB_IDLE -->|EmbeddingScanner: claim| EMB_IP
     EMB_IP -->|EmbeddingJob: success| EMB_OK
     EMB_IP -->|EmbeddingJob: failure| EMB_FAIL
-    EMB_FAIL -->|Scanner retry| EMB_IDLE
-    EMB_FAIL -->|retry_count >= max| TERMINAL
-    EMB_OK -->|PipelineDriver: mandatory terminal| BookReady(["book.pipeline_step = ready"])
-    TERMINAL -->|PipelineDriver: mandatory terminal| BookReady
+    EMB_FAIL -->|retry_count < max: PipelineDriver reset| EMB_IDLE
+    EMB_FAIL -->|retry_count >= max| EXHAUSTED
+    EMB_OK -->|"PipelineDriver: ALL pages on book terminal, zero exhausted"| BookReady(["book.status = ready"])
+    EXHAUSTED -->|"PipelineDriver: ANY page on book exhausted"| BookError(["book.status = error"])
 
-    BookReady -->|Enqueue| SummaryJob["summary_job<br/>(Gen summary)"]
-    BookReady -->|Enqueue| KGJob["knowledge_graph_job<br/>(Extract Graph)"]
+    BookReady -->|Enqueue| SummaryJob["summary_job<br/>(auto, once per book)"]
+    BookReady -.->|"graph_milestone reset to idle;<br/>manual trigger or (if scheduled) graph_scanner"| KGJob["knowledge_graph_job<br/>(feature-flagged, off by default)"]
 
     SPELL_IDLE -->|SpellCheckScanner: claim| SPELL_IP
     SPELL_IP -->|SpellCheckJob: success| SPELL_OK
     SPELL_IP -->|SpellCheckJob: failure| SPELL_FAIL
-    SPELL_FAIL -->|Scanner retry| SPELL_IDLE
-    SPELL_FAIL -->|retry_count >= max| SPELL_TERMINAL["spell_check / exhausted"]
+    SPELL_FAIL -->|retry_count < max: PipelineDriver reset| SPELL_IDLE
+    SPELL_FAIL -->|retry_count >= max| SPELL_TERMINAL["spell_check permanently failed<br/>(does not affect book status)"]
 
     classDef idle fill:#e9edc9,stroke:#606c38
     classDef active fill:#fff3cd,stroke:#856404
@@ -353,26 +375,54 @@ flowchart TD
     classDef fail fill:#ffcccb,stroke:#d32f2f
     classDef terminal fill:#f1f1f1,stroke:#888,stroke-dasharray:4 4
     classDef book fill:#d4f1f4,stroke:#189ab4,stroke-width:2px
+    classDef bookErr fill:#ffcccb,stroke:#d32f2f,stroke-width:2px
 
     class OCR_IDLE,CHUNK_IDLE,EMB_IDLE,SPELL_IDLE idle
     class OCR_IP,CHUNK_IP,EMB_IP,SPELL_IP active
     class OCR_OK,CHUNK_OK,EMB_OK,SPELL_OK done
     class OCR_FAIL,CHUNK_FAIL,EMB_FAIL,SPELL_FAIL fail
-    class TERMINAL terminal
+    class EXHAUSTED,SPELL_TERMINAL terminal
     class BookReady book
+    class BookError bookErr
 ```
-
----
 
 ## Retry Logic
 
-Retry state is tracked on the page row via `retry_count`.
+`retry_count` is a single counter per page, shared across all four steps.
 
 | Scenario | Behavior |
 |---|---|
-| Job sets `milestone = failed` | `retry_count++` |
-| Scanner finds `milestone = failed AND retry_count < max` | Resets to `idle` — page will be retried |
-| Scanner finds `milestone = failed AND retry_count >= max` | Skips — page is terminal |
-| Stale watchdog fires | Resets `in_progress → idle`, does **not** increment `retry_count` (timeout ≠ failure) |
+| A step's job sets `milestone = failed` | `retry_count++` |
+| `PipelineDriver` finds `milestone = failed AND retry_count < max` | Resets that milestone to `idle` — the owning scanner retries it |
+| `PipelineDriver` finds `milestone = failed AND retry_count >= max` | Leaves it `failed`; if the exhausted step is a mandatory one (OCR/chunking/embedding), the whole book is marked `status='error'` |
+| `StaleWatchdog` fires | Resets `in_progress → idle` without incrementing `retry_count` (a timeout is not a failure) |
 
-Max retries is configurable via `system_configs` (e.g. `ocr_max_retry_count`, default `10`).
+`ocr_max_retry_count` (system_configs, default `10`) is the pipeline-level retry budget used by all four steps. It is distinct from `OCR_MAX_RETRIES` (env var, default `4`), which only bounds the inner transient-error retry loop of a single Gemini Vision call inside `ocr_service`, before that call is even counted as one pipeline-level failure.
+
+## Configuration Reference
+
+All batch sizes, concurrency limits, and model names below are `system_configs` values (hot-reloadable without a deploy) unless marked "env" (`packages/backend-core/app/core/config.py`, requires a restart to change).
+
+| Key | Default | Used by |
+|---|---|---|
+| `ocr_max_retry_count` | `10` | All scanners/`PipelineDriver` — pipeline-level retry budget |
+| `ocr_max_parallel_pages` | `1` | `ocr_job` — pages OCR'd concurrently within one job |
+| `ocr_scanner_batch_size` | `10` | `ocr_scanner` — pages claimed per book per run |
+| `scanner_book_limit` | `2` | `ocr_scanner` — books dispatched per run |
+| `scanner_page_limit` | `100` | `chunking_scanner` / `embedding_scanner` / `spell_check_scanner` — pages claimed per run |
+| `gemini_ocr_timeout` | `300` (sec) | `ocr_job` — per-page Gemini Vision call timeout |
+| `auto_correct_batch_size` | `500` | `auto_correct_scanner` — pages per dispatched batch |
+| `summary_scanner_batch_size` | `5` | `summary_scanner` — books backfilled per run |
+| `graph_scanner_batch_size` | `5` | `graph_scanner` — books backfilled per run (scanner currently unscheduled) |
+| `kg_chunk_batch_size` | `5` | `knowledge_graph_job` — chunks combined per LLM call |
+| `kg_max_parallel_chunks` | `5` | `knowledge_graph_job` — concurrent batch LLM calls |
+| `maintenance_retention_days` | `7` | `maintenance_scanner` — processed-event retention |
+| `MAX_PARALLEL_SPELL_CHECK` (env) | `6` | `spell_check_job` — pages spell-checked concurrently |
+| `MAX_CONCURRENT_SPELL_CHECK_BOOKS` (env) | `3` | `spell_check_scanner` — books actively spell-checked at once |
+| `MAX_PARALLEL_AUTO_CORRECT` (env) | `10` | `auto_correct_job` — pages corrected concurrently |
+| `EMBED_BATCH_SIZE` (env) | `50` | `embedding_job` — chunks per embedding API call |
+| `CHUNK_SIZE` / `CHUNK_OVERLAP` (env) | `1500` / `300` | `chunking_service` — recursive character splitter |
+| `OCR_PAGE_ZOOM_FACTOR` (env) | `1.5` | `ocr_job` — PDF page render resolution |
+| `OCR_MAX_RETRIES` (env) | `4` | `ocr_service` — inner transient-error retry loop per Gemini call |
+
+Note: `.env.template` also defines `MAX_PARALLEL_PAGES=6`, but no setting in `config.py` reads that variable — OCR page concurrency is actually controlled by the `ocr_max_parallel_pages` system_config above (default `1`). Treat `MAX_PARALLEL_PAGES` in the env template as unused.

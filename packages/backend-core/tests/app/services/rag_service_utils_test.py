@@ -91,7 +91,7 @@ async def test_build_catalog_context_title_match():
 
 
 def test_detect_intent():
-    from app.services.rag.agent.handler import _detect_intent
+    from app.services.rag.agent.llm_routed_handler import _detect_intent
     from app.services.rag.context import QueryContext
 
     ctx = MagicMock(spec=QueryContext)
@@ -110,7 +110,7 @@ def test_detect_intent():
 
 
 def test_grade_context_local_grading():
-    from app.services.rag.agent.handler import _grade_context
+    from app.services.rag.agent.llm_routed_handler import _grade_context
 
     # Simulate two search calls.
     # Search A: high similarity scores (e.g. 0.95, 0.90) -> top_score = 0.95, floor = 0.8075 (keeps both)

@@ -1,171 +1,193 @@
 # System Design — Kitabim.AI
 
 ## 1) Overview
-Kitabim.AI is a monorepo-based platform for OCR, curation, and RAG-powered reading of Uyghur books. The system uses the **Gemini 2.0 Flash** model for high-throughput OCR, embeddings, and chat. It features a FastAPI backend with an asynchronous processing pipeline, a React/Vite frontend, and a Neo4j database for GraphRAG. 
 
-The core AI layers are built using the first-party **google-genai SDK** (for direct generation/embedding calls, deterministic routing, and semantic classification) and **Google ADK** (as a fallback agentic retrieval loop). Background orchestration is handled through a Redis-backed queue with a dedicated worker service. The backend API and worker share a common Python package (`packages/backend-core`).
+Kitabim.AI is a monorepo platform for OCR digitization, editorial curation, and RAG-powered conversational reading of Uyghur-language books. It combines a FastAPI backend, an asynchronous ARQ worker pipeline, a React/Vite frontend, PostgreSQL (with pgvector) for metadata and embeddings, and Neo4j for a GraphRAG knowledge graph of entities extracted from book text.
 
-## 2) Goals & Non‑Goals
+All AI calls — OCR, chat, embeddings, summarization, knowledge-graph extraction — go through **Google Gemini** models. Model names are never hardcoded: they are read from the `system_configs` table at request time (`gemini_ocr_model`, `gemini_chat_model`, `gemini_embedding_model`, `gemini_kg_extraction_model`, optionally `gemini_agent_loop_model`), so operators can change models without a deploy. If a required key is missing, the call fails loudly (`RuntimeError`) rather than silently falling back.
+
+The AI layer is built on two Google first-party stacks:
+- **`google-genai`** — direct generation, structured (Pydantic-schema) extraction, and embedding calls used throughout OCR, summarization, knowledge-graph extraction, and the deterministic RAG router's signal/intent classification.
+- **`google-adk`** — powers both RAG handlers' tool-execution: a free-form ReAct agent loop for `LLMRoutedRAGHandler`, and a declarative `Workflow` graph for `DeterministicRAGHandler`'s fixed routing.
+
+The backend API and worker are two separate deployable services that share one Python package, `packages/backend-core`, for models, repositories, LLM clients, and business logic.
+
+## 2) Goals & Non-Goals
+
 **Goals**
-- Efficient, page-level OCR and indexing of PDFs using Gemini API.
-- High-quality, robust RAG for book- and library-level Q&A.
-- Maintainable, modular architecture using Google first-party AI stack only.
-- Standardized file management (operational scripts in `scripts/`, deployment scripts in `deploy/`, docs in `docs/`).
-- Observability (request telemetry, user feedback tracking, detailed pipeline statistics).
+- Efficient, page-level OCR and indexing of PDFs using Gemini Vision.
+- High-quality, robust RAG for book- and library-level Q&A in Uyghur.
+- A maintainable, modular architecture built entirely on the Google first-party AI stack (no LangChain, no third-party LLM SDKs).
+- Observability: request telemetry, user thumbs-up/down feedback, and per-request tool-execution traces.
 
-**Non‑Goals (current)**
-- Multi-tenant auth and billing.
-- Use of Gemini Batch API (real-time/interactive API is preferred for lower latency).
-- Automated offline/background RAG metrics scoring (e.g. Ragas).
+**Non-Goals (current)**
+- Multi-tenant billing.
+- Use of the Gemini Batch API (the real-time/interactive API is used throughout for lower latency).
+- Automated offline RAG metrics scoring (e.g. Ragas) — telemetry is recorded for manual/human review only.
 
 ## 3) Architecture (High-Level)
 
 ### Core Services
+
 - **Backend API (`services/backend`)**
-   - FastAPI application built on shared backend core.
-   - Orchestrates upload, job management, and RAG chat.
-   - Exposes REST endpoints for books, chat, and admin dashboard.
-   - Uses PostgreSQL for metadata + embeddings (pgvector).
-   - **Redis Caching Layer**: High-performance caching for books, categories, and query rewrites (L0-L3 caching).
-   - **Circuit Breaker**: Resilient protection for Redis and external Gemini API services.
-   - **Neo4j Database**: Graph database (Bolt protocol, port 37687/7687) storing book semantic entities and relationships to support GraphRAG.
+  - FastAPI application (Python 3.13) built on `packages/backend-core`.
+  - Handles auth (JWT + OAuth), book/page CRUD, uploads, RAG chat (sync + SSE streaming), dictionary/proverb/Quran lookups, and admin/stats endpoints.
+  - Enqueues pipeline jobs to Redis/ARQ; does not run any pipeline processing itself.
+  - Uses PostgreSQL (via SQLAlchemy 2.0 async + asyncpg) for metadata, pgvector for embeddings.
+  - Talks to Neo4j (Bolt protocol) for knowledge-graph reads.
+  - Redis-backed response caching (books, categories, system configs, RAG query/embedding/rewrite results, stats) with per-key TTLs.
+  - Circuit breakers around the Redis cache and each class of Gemini call (text, OCR, embedding) so LLM/cache outages degrade gracefully instead of cascading.
 
 - **Worker (`services/worker`)**
-   - ARQ worker process for background orchestration.
-   - **Scanners**: Poll for idle work (OCR, Chunking, Embedding, Spell Check).
-   - **Jobs**: Focused executors that perform the actual AI or data processing in real-time.
-   - **Event Dispatcher**: Reacts to `PipelineEvent` entries to trigger next-step jobs immediately.
-   - **Maintenance**: Automated cleanup and staleness watchdog.
+  - ARQ worker process; runs the same `packages/backend-core` code as the backend.
+  - **Scanners** (`services/worker/scanners/`): periodic pollers that atomically lease `idle`-milestone pages/books and enqueue the matching job — OCR, chunking, embedding, spell-check, summary, knowledge-graph, auto-correct, plus GCS discovery, a staleness watchdog, and maintenance cleanup.
+  - **Event dispatcher**: reacts to `pipeline_events` (a transactional-outbox table) to trigger the next pipeline step immediately after a milestone succeeds, instead of waiting for the next scanner poll.
+  - **Jobs** (`services/worker/jobs/`): the actual per-page/per-book AI or data-processing executors.
 
 - **Frontend (`apps/frontend`)**
-   - React 19 + Vite UI.
-   - Real-time status updates for books and individual page milestones.
+  - React 19 SPA built with Vite, served by Nginx.
+  - Reader UI with real-time book/page milestone polling, curation/spell-check workspace, admin dashboard, and streaming chat UI (renders `planning`, `decompose`, `tool_call`, `grading`, and `chunk` SSE events as they arrive).
 
 - **Gemini Infrastructure**
-   - **Interactive API**: Real-time processing of OCR, Embedding, and Chat requests.
-   - **File API**: Transient storage for input images during OCR.
+  - Interactive (non-batch) API for OCR, embeddings, chat, summarization, and entity extraction.
+  - File API for transient image uploads during OCR (cleaned up after processing).
 
 - **Google Cloud Storage (GCS)**
-   - Private bucket for original PDFs (source of truth).
-   - Public bucket (CDN-enabled) for book covers.
+  - Private bucket for original PDFs (source of truth).
+  - Public, CDN-fronted bucket for book cover images.
 
 ### Architecture Diagram
 ```mermaid
 flowchart LR
-  FE[Frontend<br/>React/Vite] -->|/api| BE[Backend API<br/>FastAPI]
-  BE -->|jobs| RQ[(Redis/ARQ)]
-  RQ --> WK[Worker<br/>ARQ]
-  WK --> GEM[Gemini API<br/>google-genai / google-adk]
-  BE --> DB[(PostgreSQL<br/>pgvector)]
+  FE[Frontend<br/>React 19 + Vite] -->|/api, SSE| BE[Backend API<br/>FastAPI]
+  BE -->|enqueue jobs| RQ[(Redis / ARQ)]
+  RQ --> WK[Worker<br/>ARQ scanners + jobs]
+  BE --> GEM[Gemini API<br/>google-genai / google-adk]
+  WK --> GEM
+  BE --> DB[(PostgreSQL<br/>+ pgvector)]
   WK --> DB
-  WK -.->|Transactional Outbox| DB
-  DB -.->|Poll Events| WK
-  BE <-->|PDF/Covers| GCS[(Google Cloud Storage)]
-  WK <-->|PDF/Covers| GCS
-  BE <--Cache--> CACHE[(Redis Cache)]
-  BE --> N4J[(Neo4j Graph DB)]
+  WK -.->|transactional outbox| DB
+  DB -.->|pipeline_events poll| WK
+  BE <-->|PDFs / covers| GCS[(Google Cloud Storage)]
+  WK <-->|PDFs / covers| GCS
+  BE <--cache--> CACHE[(Redis Cache)]
+  BE --> N4J[(Neo4j<br/>Knowledge Graph)]
   WK --> N4J
 ```
 
 ## 4) Monorepo Structure
 ```
-/apps/frontend         # UI Application
-/services/backend      # API Service
-/services/worker       # Pipeline Worker
-/packages/backend-core # Shared logic, db entities, repositories, & LLM services
-/scripts               # Diagnostic & operational scripts
-/deploy                # Deployment infrastructure & local dev scripts
-/docs                  # Architecture & design docs
-/docker-compose.yml   # Primary local dev entry point
+apps/frontend          # React/Vite SPA
+packages/backend-core   # Shared models, repositories, LLM clients, services
+packages/shared          # Generated OpenAPI TypeScript types, shared by the frontend
+services/backend        # FastAPI HTTP API
+services/worker         # ARQ scanners + background jobs
+scripts/                 # Operational / diagnostic scripts
+deploy/local             # Local Docker Compose rebuild scripts
+deploy/gcp                # Production Docker Compose + deploy scripts
+docs/                      # Architecture & design docs
+docker-compose.yml          # Local dev entry point (Redis, backend, worker, frontend, Neo4j)
 ```
+PostgreSQL itself is **not** containerized in local dev — it runs standalone on the host and containers reach it via `host.docker.internal:5432`.
 
 ## 5) Data Model
 
-### PostgreSQL
-**Books**
-- `status` statuses: `pending`, `ocr_processing`, `ocr_done`, `indexing`, `ready`, `error`
-- `pipeline_step`: Active pipeline stage (`ocr`, `chunking`, `embedding`, `spell_check`, `ready`)
-- `pipeline_stats`: JSONB blob containing page counts per milestone (e.g., `spell_check_active`, `ocr_failed`)
+### PostgreSQL (21 tables)
 
-**Pages**
-- **Milestones**: `ocr_milestone`, `chunking_milestone`, `embedding_milestone`, `spell_check_milestone`.
-- Milestone States: `idle`, `in_progress`, `succeeded`, `failed`, `done`.
-- `text`, `is_indexed`.
+**`books`**
+- `status`: `pending`, `ocr_processing`, `ocr_done`, `indexing`, `ready`, `error`.
+- `pipeline_step`: current active stage (`ocr`, `chunking`, `embedding`, `spell_check`).
+- Book-level milestones, denormalized from pages for fast status reads: `ocr_milestone`, `chunking_milestone`, `embedding_milestone`, `spell_check_milestone`, `graph_milestone` — each one of `idle`, `in_progress`, `succeeded`/`complete`, `failed`, `error`/`partial_failure`.
+- `has_graph` (surfaced to the frontend) is derived purely from `graph_milestone == "complete"` — there is no live Neo4j existence check.
+- `visibility`: `public` / `private` — books are only public after editorial sign-off.
 
-**Pipeline Events**
-- Transactional outbox pattern: `page_id`, `event_type`, `processed`.
-- Used to trigger downstream processing immediately after a milestone succeeds.
+**`pages`**
+- `status`: `pending`, `ocr_processing`, `ocr_done`, `chunked`, `indexing`, `indexed`, `error`.
+- Per-page milestones mirroring the book-level ones: `ocr_milestone`, `chunking_milestone`, `embedding_milestone`, `spell_check_milestone`.
+- `text`, `is_indexed`, `is_toc`, `retry_count`, `worker_id`/`claimed_at` (atomic page-leasing for parallel workers).
 
-**Chunks**
-- Semantic units with `pgvector(3072)` embeddings (Gemini Embedding v2 / `text-embedding-004`).
+**`pipeline_events`**
+- Transactional outbox: `page_id`, `event_type`, `processed`. Polled by the worker's event dispatcher to trigger the next pipeline step immediately after a milestone succeeds.
+
+**`chunks`**
+- Semantic passages with `pgvector(3072)` embeddings, unique per `(book_id, page_number, chunk_index)`.
+
+**`book_summaries`**
+- One LLM-generated summary + `pgvector(3072)` embedding per ready book, used for hierarchical/topic-level book discovery ahead of chunk-level search.
+
+**Dictionary & reference tables**: `dictionary`, `words`, `synonyms`, `history_dictionary`, `names_dictionary`, `english_uyghur_dictionary`, `proverbs`, `quran` — power the RAG handlers' dedicated dictionary/Quran lookup tools independent of book content.
+
+**Curation tables**: `page_spell_issues`, `auto_correct_rules` — per-page spell-check findings and reusable OCR auto-correction rules.
+
+**Platform tables**: `users` (role: `admin` | `editor` | `reader`), `refresh_tokens`, `user_chat_usage` (daily chat-quota tracking), `rag_evaluations` (per-request RAG telemetry), `system_configs` (runtime-tunable settings, see below), `contact_submissions`.
+
+### `system_configs` — runtime configuration
+A key/value table (seeded with defaults, editable via the admin dashboard) that drives model selection and pipeline tuning without a redeploy — including `gemini_chat_model`, `gemini_ocr_model`, `gemini_embedding_model`, `gemini_kg_extraction_model`, `gemini_agent_loop_model` (optional override, otherwise falls back to `gemini_chat_model`), `use_deterministic_router`, `knowledge_graph_enabled`, `agent_max_steps`, `agent_enough_chunks`, and various batch-size/timeout/retention knobs.
 
 ### Neo4j (Knowledge Graph)
-Neo4j stores entities and their semantic relationships extracted from book chunks.
+Stores only entities and their relationships extracted from book chunks — no `Book`, `Author`, or `Chunk` nodes live in the graph; those stay in PostgreSQL.
 
 **Nodes**
-- `Entity`: Represents a conceptual or concrete entity extracted from the text.
-  - Properties: `name` (unique canonical name, NFC normalized), `type` (e.g., Person, Location, Event, Organization, HistoricalEra, Concept), `subtype` (optional detail string).
+- `Entity` — `name` (unique, NFC-normalized canonical name), `type` (e.g. Person, Location, Event, Organization, HistoricalEra, Concept), optional `subtype`.
 
 **Relationships**
-- `RELATED_TO`: Directed relationship between two `Entity` nodes.
-  - Properties: `book_id` (PostgreSQL Book UUID), `type` (the semantic relationship type, e.g., LIVED_IN, BORN_IN, FRIEND_OF).
+- `RELATED_TO` (directed, `Entity` → `Entity`) — `book_id` (the PostgreSQL book UUID the relationship was extracted from) and `type` (the semantic relation, e.g. `LIVED_IN`, `BORN_IN`, `FRIEND_OF`). Multiple books can contribute independent `RELATED_TO` edges between the same two entities; edges are deleted per-`book_id` when a book is reprocessed or removed, and orphaned `Entity` nodes are cleaned up afterward.
+
+Knowledge-graph extraction and ingestion are gated by the `knowledge_graph_enabled` system config (disabled by default).
 
 ## 6) Key Flows
 
-### A) PDF Processing Workflow (Realtime Pipeline)
-1. **Upload**: User uploads PDF to Backend → Saved to GCS.
-2. **OCR Submission**: Worker picks up `idle` pages, renders PDF to images, and calls Gemini Vision API via `google-genai` SDK.
-3. **OCR Application**: Worker applies text to `pages`, sets `ocr_milestone` to `succeeded`.
-4. **Local Chunking**: Worker cleans text and creates `chunks`. Sets `chunking_milestone` to `succeeded`.
-5. **Embedding**: Worker generates and stores vectors for chunks. Sets `embedding_milestone` to `succeeded`.
-6. **AI Polish**: Worker performs spell-check identification.
-7. **Finalization**: Book marked `ready` when all pages reach their terminal milestones.
-8. **Summary & Graph Ingestion**: Once marked ready, the worker triggers `summary_job` (generating book summary embeddings) and `knowledge_graph_job` (extracting entity relationships using the `google-genai` structured client and indexing them in Neo4j) concurrently.
+### A) PDF Processing Workflow (event-driven pipeline)
+1. **Upload**: user uploads a PDF via the backend, which stores it in the private GCS bucket and creates `book`/`page` rows.
+2. **OCR**: the OCR scanner leases `idle` pages, the OCR job renders each page to an image and calls Gemini Vision (via `google-genai`) using the `gemini_ocr_model` config. Text is written to `pages.text` and `ocr_milestone` set to `succeeded`.
+3. **Chunking**: triggered by the pipeline-event dispatcher immediately after OCR succeeds. The chunking job cleans OCR text and writes overlapping `chunks` rows; `chunking_milestone` → `succeeded`.
+4. **Embedding**: the embedding job vectorizes each chunk with `gemini_embedding_model` and stores it in `chunks.embedding`; `embedding_milestone` → `succeeded`.
+5. **Spell-check**: an independent milestone — the spell-check job flags likely OCR errors per page against the dictionary and auto-correct rules; `spell_check_milestone` → `succeeded`.
+6. **Finalization**: once every page has reached its terminal milestones for the pipeline steps, the book's `status` becomes `ready`.
+7. **Summary ingestion**: once `ready`, the summary scanner enqueues `summary_job`, generating the book's summary embedding. Knowledge-graph extraction (`knowledge_graph_job`, entity/relationship upsert into Neo4j via `google-genai` structured extraction) is feature-flagged off by default (`knowledge_graph_enabled=false`) and, even when enabled, its scanner (`graph_scanner`) is not currently wired into the worker's cron schedule — see [WORKER_DESIGN.md](WORKER_DESIGN.md#cron-schedule). Today it only runs via the manual admin "Reprocess Graph" action.
+8. A staleness watchdog scanner and a maintenance scanner run continuously to recover stuck pages and clean up processed pipeline events.
 
 ### B) RAG Chat
+Every chat request is dispatched through `HandlerRegistry` (`packages/backend-core/app/services/rag/registry.py`), which tries handlers in order and picks the first whose `can_handle()` returns true:
 
-All questions go to `HandlerRegistry`, which routes based on the `use_deterministic_router` config:
-1. **Deterministic RAG Handler (`DeterministicRAGHandler`)** (enabled when `use_deterministic_router = True`):
-   - **Stage 1: Signal Extractor** (pure Python, database metadata lookups): Extracts title matches, author names, volume shifts, Uyghur pronoun presence, and context signals from the question.
-   - **Stage 2: Coreference Resolver** (conditional LLM, `gemini-3.1-flash-lite`): Rewrites questions containing Uyghur pronouns using conversation history.
-   - **Stage 3: Intent Classifier** (conditional LLM, `gemini-3.1-flash-lite`): Structurally classifies question intent to `catalog`, `identity`, `summary`, `relationship`, or `passage` if python-based signals are insufficient.
-   - **Stage 4: Execution Router** (pure Python): Directly selects and runs an optimized, fixed tool execution path (Paths A to H) to populate observations.
-   - **Universal Fallback**: Automatically retries book discovery via summaries or expands search scope globally if a path's primary retrieval returns thin results.
+1. **`DeterministicRAGHandler`** (`services/rag/agent/deterministic_handler.py`) — matches when the `use_deterministic_router` system config is `true` (disabled by default).
+   - **Signal extraction**: a single structured Gemini call (with a keyword-based fallback if it fails) classifies intent (`catalog`, `dictionary`, `identity`, `summary`, `relationship`, `passage`, `quran`), detects composite/multi-part questions, pronoun-coreference needs, and volume-shift requests, alongside pure-Python DB lookups for title/author matches.
+   - **Coreference rewrite**: if the question depends on chat history, an LLM rewrite resolves pronouns into a self-contained question before retrieval.
+   - **Path selection & execution**: routing itself is a declarative `google.adk.workflow.Workflow` graph (`services/rag/agent/graph_router.py`) that picks one of nine fixed retrieval paths (current page, Quran, dictionary, catalog, named title, named author, volume shift, in-reader-only, prior-context, or an open/global fallback) and runs it via the corresponding `DeterministicRAGHandler._path_*` method — no LLM decides tool order once the path is chosen.
+   - **Universal fallback**: six of the nine paths automatically widen search scope (book-summary discovery, then global chunk search) when the primary retrieval returns thin or low-confidence results.
+   - Composite questions run their sub-questions concurrently, each against an isolated observation list, merged back in original order.
 
-2. **Agentic RAG Handler (`AgentRAGHandler`)** (fallback when `use_deterministic_router = False`):
-   - **Intent Detection & Query Decomposition**: Detects question scope and decomposes multi-question inputs.
-   - **Context Injection**: Pre-injects book metadata, context history, and category filters into a prompt block.
-   - **ADK Agent Loop**: Uses an LLM reasoning loop (`gemini-2.5-flash` with Google ADK `InMemoryRunner`) to dynamically sequence tool calls.
+2. **`LLMRoutedRAGHandler`** (`services/rag/agent/llm_routed_handler.py`) — the always-matching fallback, used whenever `use_deterministic_router` is `false` (the default).
+   - **Intent detection & decomposition**: a cheap LLM call splits compound questions into up to 4 self-contained sub-questions (skipped for single-entity comparison questions, which are kept whole).
+   - **Context injection**: the current book, prior-turn book IDs, and character/category filters are prepended to the question as a `[Context]` block so the agent can skip redundant discovery calls.
+   - **ADK ReAct loop**: a Google ADK `InMemoryRunner` drives a free-form reasoning loop (model from `gemini_agent_loop_model`, falling back to `gemini_chat_model`) over 19 registered tools (`services/rag/agent/tools.py`) — passage search (`search_chunks`), summary-based book discovery (`search_books_by_summary`), knowledge-graph lookup, catalog/author/title/volume metadata tools, per-page retrieval, query rewriting, and dedicated dictionary/proverb/name/spelling/Quran lookup tools — capped at `agent_max_steps` iterations or an early exit once `agent_enough_chunks` chunks are collected.
 
-**Post-processing & Generation (Shared by both handlers):**
-- **Deduplication and Grading**: Filters and grades retrieved chunks using relative scoring against the highest score.
-- **Answer Generation**: Synthesizes the final response stream (using `gemini-3-flash-preview` for high-quality Uyghur answer generation) with inline markdown citations.
-- **Telemetry Logging**: Writes request metrics, execution steps, and tool execution traces to the `rag_evaluations` table for performance auditing.
+**Shared post-processing (both handlers)**
+- **Grading**: retrieved chunks are deduplicated and filtered to those scoring within `GRADE_RELATIVE_THRESHOLD` (85%) of the top relevance score, never dropping below a minimum chunk floor.
+- **Answer synthesis**: the graded context and question are sent to `gemini_chat_model` to stream a Uyghur-language markdown answer with inline `ref:book_id:page` citations (or `ref:quran:surah:ayah` for Quranic sources).
+- **Telemetry**: request metadata, tool-execution traces, and user thumbs-up/down feedback are written to `rag_evaluations` when the `rag_eval_enabled` system config is on.
 
 ## 7) Gemini Integration Strategy
-- **google-genai SDK**: Used for direct, non-agentic AI operations:
-   - File API for uploading images during OCR.
-   - Summarization, text generation, and entity extraction tasks (structured output with Pydantic schemas).
-   - Vector embedding generation.
-   - Coreference resolution, intent classification, and multi-question splitting within the `DeterministicRAGHandler`.
-- **Google ADK**: Used for orchestration of the fallback agentic RAG chat loop in `AgentRAGHandler`. Wires custom Python tools and executes the ReAct reasoning flow.
-
+- **`google-genai` SDK** — used for every direct (non-agentic) AI call: the File API for OCR image uploads, OCR text extraction, book summarization, structured knowledge-graph entity/relation extraction (Pydantic schemas), embedding generation, and the deterministic router's signal-extraction/intent-classification/query-rewrite/decomposition calls.
+- **Google ADK (`google-adk`)** — used for both RAG handlers' tool orchestration: a free-form ReAct `Agent` + `InMemoryRunner` for `LLMRoutedRAGHandler`, and a declarative `Workflow` graph (fixed nodes/edges, no LLM-driven branching) for `DeterministicRAGHandler`'s path selection. Both share the same 19-tool registry.
 
 ## 8) Reliability & Observability
-- **Idempotency**: All jobs use standardized identifiers (e.g., `ocr_{book}_{page}`) to ensure results are mapped correctly even if retried.
-- **Cleanup**: Transient files in Gemini File API and local cache are deleted automatically after processing.
-- **Circuit Breaker**: Protects interactive services from LLM outages and Redis failures.
-- **Cache Service**: Centralized caching with lazy-loading and monitoring (`get_stats`).
-- **Worker Tracking**: Admin dashboard allows monitoring of real-time job states and detailed page-level progress.
-- **User Feedback & Telemetry**: RAG requests write telemetry to `rag_evaluations`. Administrators monitor usage statistics and user thumbs-up/down feedback. Offline evaluation scoring is omitted for clean container execution.
+- **Idempotency**: jobs use deterministic keys (e.g. `ocr_{book_id}_{page_number}`) so retries and concurrent workers converge on the same result.
+- **Cleanup**: transient Gemini File API uploads are deleted after each OCR call.
+- **Circuit breakers**: independent breakers protect Redis and each class of Gemini call (text, OCR, embedding) so an outage in one degrades gracefully instead of cascading.
+- **Caching**: Redis caches books, category lists, system configs, RAG query/embedding/rewrite/summary-search results, and stats, each with its own TTL.
+- **Worker tracking**: the admin dashboard exposes live job state and per-page pipeline progress.
+- **Feedback & telemetry**: `rag_evaluations` captures per-request metrics and thumbs-up/down feedback for manual review; there is no automated offline evaluation job.
 
 ## 9) Scalability
-- **Concurrency**: ARQ worker processes handles page-level tasks in parallel, providing high throughput.
-- **Cloud Storage**: GCS handles the heavy lifting for binary artifacts.
-- **Vector Search**: pgvector in PostgreSQL allows scaling retrieval without a separate vector database (using HNSW indexes).
-- **Graph Database**: Neo4j handles fast Cypher queries for relational GraphRAG subgraphs.
+- **Concurrency**: ARQ workers process pages/books in parallel; pages are leased atomically (`worker_id`/`claimed_at`) to avoid double-processing.
+- **Storage**: GCS handles all binary artifacts (source PDFs, covers).
+- **Vector search**: pgvector in PostgreSQL scales retrieval without a separate vector database — an HNSW index on `chunks.embedding` for passage search, an IVFFlat index on `book_summaries.embedding` for book-level discovery.
+- **Graph queries**: Neo4j handles multi-hop Cypher traversals for GraphRAG subgraphs independently of the relational store.
 
 ## 10) Security
-- All AI keys and GCS credentials are kept server-side.
-- JWT-based authentication with role-based access control (Admin, Editor, Reader).
-- Private GCS buckets ensure book content isn't exposed directly.
+- All Gemini API keys and GCS credentials stay server-side; the frontend never talks to Google APIs directly.
+- JWT-based authentication with role-based access control (`admin`, `editor`, `reader`); unauthenticated visitors get read-only/guest behavior in the frontend with no elevated DB role.
+- OAuth login via Google, Facebook, Twitter/X, and Instagram, with PKCE for Twitter and an httpOnly refresh-token cookie.
+- Private GCS bucket for source PDFs; only cover images are publicly served.
+- Per-route rate limiting (`slowapi`) on the FastAPI app.

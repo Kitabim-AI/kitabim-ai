@@ -26,8 +26,8 @@ def mock_ctx():
     ctx.history = []
     ctx.book = MagicMock()
     ctx.book.volume = 1
-    ctx.book.graph_milestone = "idle"
     ctx.agent_model = "test-model"
+    ctx.user_id = "test-user"
     return ctx
 
 
@@ -557,7 +557,9 @@ async def test_execute_path_h_passage_global_search(mock_ctx):
 
 
 @pytest.mark.asyncio
-async def test_execute_path_identity_query_knowledge_graph(mock_ctx):
+async def test_execute_path_relationship_never_calls_knowledge_graph(mock_ctx):
+    """The knowledge-graph tool has been removed from chat retrieval entirely —
+    relationship/identity queries must fall through to summary + chunk search only."""
     handler = DeterministicRAGHandler()
     observations = []
 
@@ -572,7 +574,7 @@ async def test_execute_path_identity_query_knowledge_graph(mock_ctx):
         mock_ctx.book_id = "book-123"
         async for _ in handler.execute_path(
             "identity",
-            {"graph_available": True},
+            {},
             "جانىبەك سۇلتان كىم؟",
             mock_ctx,
             observations,
@@ -580,7 +582,7 @@ async def test_execute_path_identity_query_knowledge_graph(mock_ctx):
             pass
 
         tools_called = [o["tool"] for o in observations]
-        assert "query_knowledge_graph" in tools_called
+        assert "query_knowledge_graph" not in tools_called
 
 
 @pytest.mark.asyncio
@@ -823,6 +825,108 @@ def test_extract_dictionary_term_proverbs():
     assert _extract_dictionary_term("بىلىم ھەققىدە ماقال-تەمسىللەر") == "بىلىم ھەققىدە"
     assert _extract_dictionary_term("ئىلىم ھەققىدە ماقاللار") == "ئىلىم ھەققىدە"
     assert _extract_dictionary_term("proverb about truth") == "about truth"
+
+
+@pytest.mark.asyncio
+async def test_execute_path_dictionary_synonyms(mock_ctx):
+    handler = DeterministicRAGHandler()
+    observations = []
+    signals = {
+        "dictionary_subtype": "synonyms",
+        "dictionary_term": "ئابايا",
+    }
+
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        assert tool_name == "lookup_synonyms"
+        assert tool_args == {"term": "ئابايا"}
+        return {
+            "ok": True,
+            "context": '[Dictionary Source: Synonyms Dictionary, Word: ئابايا]\nSynonyms of "ئابايا": بايا، ھېلى',
+            "entries": [
+                {"word": "ئابايا", "letter_group": "ئا", "synonyms": ["بايا", "ھېلى"]}
+            ],
+            "found_count": 1,
+        }
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        async for _ in handler.execute_path(
+            "dictionary",
+            signals,
+            "ئابايا نىڭ مەنىداش سۆزى نېمە؟",
+            mock_ctx,
+            observations,
+        ):
+            pass
+
+    assert [o["tool"] for o in observations] == ["lookup_synonyms"]
+
+
+@pytest.mark.asyncio
+async def test_execute_path_dictionary_synonyms_letter_group(mock_ctx):
+    handler = DeterministicRAGHandler()
+    observations = []
+    signals = {
+        "dictionary_subtype": "synonyms",
+        "dictionary_term": "ئا",
+    }
+
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        assert tool_name == "lookup_synonyms"
+        assert tool_args == {"term": "ئا"}
+        return {
+            "ok": True,
+            "context": "[Dictionary Source: Synonyms Dictionary, Letter Group: ئا]\n...",
+            "entries": [
+                {"word": "ئابايا", "letter_group": "ئا", "synonyms": ["بايا"]},
+                {"word": "ئاباسىيە", "letter_group": "ئا", "synonyms": ["ماڭالماسلىق"]},
+            ],
+            "found_count": 2,
+        }
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        async for _ in handler.execute_path(
+            "dictionary",
+            signals,
+            "ئا ھەرىپىدىن باشلانغان مەنىداش سۆزلەر",
+            mock_ctx,
+            observations,
+        ):
+            pass
+
+    assert [o["tool"] for o in observations] == ["lookup_synonyms"]
+
+
+@pytest.mark.asyncio
+async def test_fallback_synonyms_signals(mock_ctx):
+    handler = DeterministicRAGHandler()
+
+    # Mock LLM query analysis to raise an error so that keyword fallback is triggered
+    async def mock_llm_analyze(question, ctx):
+        raise ValueError("Simulate LLM error to trigger fallback")
+
+    handler._llm_analyze_query = mock_llm_analyze
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler.find_books_by_title_in_db",
+        return_value=[],
+    ):
+        sig = await handler.extract_signals("ئابايا نىڭ مەنىداش سۆزى نېمە؟", mock_ctx)
+        assert sig["intent"] == "dictionary"
+        assert sig["dictionary_subtype"] == "synonyms"
+        assert sig["dictionary_term"] == "ئابايا"
+
+
+def test_extract_dictionary_term_synonyms():
+    assert _extract_dictionary_term("ئابايا نىڭ مەنىداش سۆزى نېمە؟") == "ئابايا"
+    assert _extract_dictionary_term("synonym for ئابايا") == "ئابايا"
+    assert _extract_dictionary_term("synonyms of ئابايا") == "ئابايا"
+    assert _extract_dictionary_term("ئا ھەرىپىدىن باشلانغان مەنىداش سۆزلەر") == "ئا"
 
 
 @pytest.mark.asyncio

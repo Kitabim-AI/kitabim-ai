@@ -51,7 +51,8 @@ class QueryContext:
     scores: List[float] = field(default_factory=list)
     category_filter: List[str] = field(default_factory=list)
 
-    # ── Agentic eval metadata — only set by AgentRAGHandler ─────────────────
+    # ── Agent-execution eval metadata — set by _populate_ctx_from_observations,
+    # shared by both DeterministicRAGHandler and LLMRoutedRAGHandler ───────────
     agent_steps: Optional[int] = None
     agent_tools_called: List[str] = field(default_factory=list)
     agent_retry_count: Optional[int] = None
@@ -68,7 +69,6 @@ class QueryContext:
     agent_max_steps: int = 6
     agent_enough_chunks: int = 8
     use_deterministic_router: bool = False
-    use_knowledge_graph_in_chat: bool = False
 
     def __deepcopy__(self, memo):
         # Return self directly to prevent copy.deepcopy from failing on non-pickleable
