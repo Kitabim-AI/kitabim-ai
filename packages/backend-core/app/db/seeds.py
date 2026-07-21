@@ -99,11 +99,6 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Globally enable/disable the deterministic Python RAG router instead of the LLM-driven ADK ReAct agent. Set to 'true' to activate.",
         },
         {
-            "key": "use_knowledge_graph_in_chat",
-            "value": "false",
-            "description": "Globally enable/disable querying the knowledge graph (query_knowledge_graph tool) during chat retrieval. Does not affect graph extraction/scanning. Set to 'true' to activate.",
-        },
-        {
             "key": "ocr_scanner_batch_size",
             "value": "10",
             "description": "Maximum number of pages claimed and processed in a single OCR job batch.",

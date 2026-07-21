@@ -283,6 +283,40 @@ class DictionaryRepository:
         res = await self.session.execute(stmt)
         return [dict(r._mapping) for r in res.all()]
 
+    async def lookup_synonyms(self, query: str, limit: int = 3) -> list[dict[str, Any]]:
+        from app.db.models import Synonym
+
+        query = query.strip()
+        if not query:
+            return []
+
+        norm_query = normalize_uyghur_spelling(query)
+        stmt = (
+            select(
+                Synonym.id,
+                Synonym.word,
+                Synonym.letter_group,
+                Synonym.synonyms,
+                func.similarity(_sql_normalize_uyghur(Synonym.word), norm_query).label(
+                    "score"
+                ),
+            )
+            .where(
+                _sql_normalize_uyghur(Synonym.word).ilike(f"%{norm_query}%")
+                | (
+                    func.similarity(_sql_normalize_uyghur(Synonym.word), norm_query)
+                    > 0.3
+                )
+            )
+            .order_by(
+                func.similarity(_sql_normalize_uyghur(Synonym.word), norm_query).desc(),
+                func.length(Synonym.word),
+            )
+            .limit(limit)
+        )
+        res = await self.session.execute(stmt)
+        return [dict(r._mapping) for r in res.all()]
+
     async def search_language_sources(
         self, query: str, limit_per_source: int = 3
     ) -> dict[str, list[dict[str, Any]]]:
@@ -297,4 +331,5 @@ class DictionaryRepository:
             ),
             "names_dictionary": await self.lookup_name(query, limit_per_source),
             "proverbs": await self.lookup_proverbs(query, limit_per_source),
+            "synonyms_dictionary": await self.lookup_synonyms(query, limit_per_source),
         }

@@ -2428,6 +2428,21 @@ async def update_book_details(
     for field in read_only_fields:
         book_update.pop(field, None)
 
+    # An editor marking an errored book public is an explicit signal that the
+    # book is actually usable — clear the terminal error state so it behaves
+    # like a normal ready book (visible to guests, included in RAG scope)
+    # instead of silently staying hidden despite the visibility change.
+    if book_update.get("visibility") == "public" and book.status == "error":
+        book_update["status"] = "ready"
+        book_update["pipeline_step"] = "ready"
+        log_json(
+            logger,
+            logging.INFO,
+            "Book status overridden to ready on public visibility change",
+            book_id=book_id,
+            updated_by=current_user.email,
+        )
+
     # Set system fields
     book_update["last_updated"] = datetime.now(timezone.utc)
     book_update["updated_by"] = current_user.email

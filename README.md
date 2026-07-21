@@ -140,7 +140,7 @@ All architectural and design documents are located under the `docs/` directory.
 | Document | Contents |
 |----------|----------|
 | [docs/main/SYSTEM_DESIGN.md](docs/main/SYSTEM_DESIGN.md) | Architecture overview, data model, key flows, technology stack |
-| [docs/main/AGENTIC_RAG_DESIGN.md](docs/main/AGENTIC_RAG_DESIGN.md) | Handler registry, agent tools, loop logic, caching, latency budget |
+| [docs/main/LLM_ROUTED_RAG_DESIGN.md](docs/main/LLM_ROUTED_RAG_DESIGN.md) | Handler registry, agent tools, loop logic, caching, latency budget |
 | [docs/main/QUESTION_ANSWERING_DIAGRAM.md](docs/main/QUESTION_ANSWERING_DIAGRAM.md) | Visual pipeline and handler routing diagrams |
 | [docs/main/WORKER_DESIGN.md](docs/main/WORKER_DESIGN.md) | Event-driven pipeline, scanners, jobs, state machine |
 | [docs/main/PROJECT_STRUCTURE.md](docs/main/PROJECT_STRUCTURE.md) | Full directory structure, service responsibilities, configuration reference |
