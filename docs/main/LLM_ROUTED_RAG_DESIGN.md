@@ -1,52 +1,64 @@
 # LLM-Routed RAG — Google ADK Implementation
 
-This document describes the design and execution flow of the LLM-routed Retrieval-Augmented Generation (RAG) assistant, powered by the **Google ADK** framework and the **google-genai** SDK.
+This document describes the design and execution flow of `LLMRoutedRAGHandler`, one of two RAG query handlers in the system. It is powered by the **Google ADK** framework (`google.adk`) and the **google-genai** SDK.
 
-Note: both RAG handlers now run on Google ADK — `DeterministicRAGHandler` executes a fixed Python decision tree through an ADK `Workflow`/`Runner` (see `graph_router.py`), while this handler lets an LLM freely decide tool call order via an ADK ReAct agent loop. ADK usage itself is no longer what distinguishes the two; the distinction described below is LLM-driven tool selection vs. fixed Python precedence.
+Both RAG handlers run on Google ADK — `DeterministicRAGHandler` executes a fixed Python decision tree through an ADK `Workflow`/`Runner` (see `RAG_DETERMINISTIC_ROUTER_DESIGN.md`), while `LLMRoutedRAGHandler` (this document) lets an LLM freely decide tool call order via an ADK ReAct agent loop. ADK usage itself does not distinguish the two handlers; the distinction is LLM-driven tool selection vs. fixed Python precedence.
 
 ---
 
 ## Overview
 
-The query assistant uses an LLM-routed RAG loop (`LLMRoutedRAGHandler`, priority=998) as the sole handler for all content questions. The assistant is built using a stateless Google ADK `Agent` run via `InMemoryRunner` for each chat request. 
+`packages/backend-core/app/services/rag/agent/llm_routed_handler.py` implements `LLMRoutedRAGHandler`. Its `can_handle()` always returns `True`, so `HandlerRegistry` (`packages/backend-core/app/services/rag/registry.py`) uses it as the fallback whenever `DeterministicRAGHandler.can_handle()` returns `False` — i.e. whenever the `use_deterministic_router` system config is `false`. That config defaults to `false`, so `LLMRoutedRAGHandler` is the default active handler for all chat traffic unless an administrator opts a deployment into the deterministic router.
 
-Instead of embedding the entire pipeline inside a complex state graph, the workflow is split into:
-1. **Pre-processing steps**: Intent detection and query decomposition (LLM-based question splitting).
-2. **Core Agent Loop**: Google ADK-driven ReAct loop managing multi-step reasoning and automated tool execution.
-3. **Post-processing steps**: Context construction, relative score grading, and streaming answer synthesis.
-
----
-
-## Handler Registry
-
-| Handler | Priority | Behavior |
-|---------|----------|-----------|
-| `LLMRoutedRAGHandler` | 998 | Sole handler — all user chat questions run this handler |
+The assistant is built as a stateless Google ADK `Agent`, run via `InMemoryRunner` for each chat request. The workflow is split into:
+1. **Pre-processing steps**: query decomposition (LLM-based question splitting) and lightweight intent detection for the initial `planning` UI event.
+2. **Core Agent Loop**: an ADK-driven ReAct loop managing multi-step reasoning and automated tool execution, governed by `AGENT_SYSTEM_PROMPT` (`prompts.py`).
+3. **Post-processing steps**: context construction, relative-score grading, and streaming answer synthesis.
 
 ---
 
-## Agent Tool Set (11 Tools)
+## Agent Tool Set (19 Tools)
+
+Registered in `adk_agent.py::build_rag_agent()`. All tool functions live in `tools.py` and dispatch through `_execute_and_record_tool`, which appends every call to `tool_context.state["observations"]`.
 
 ### Content Retrieval
 
 | Tool | Wraps | Cache | Description |
 |------|-------|-------|-------------|
-| `search_chunks` | `ChunksRepository.similarity_search` | L1 (embed) + L2 (results) | Vector-search passages; primary retrieval tool. |
-| `search_books_by_summary` | `BookSummariesRepository.summary_search` | L3 | Find which books cover a topic when book scope is unknown. |
+| `search_chunks` | `ChunksRepository.similarity_search` (pgvector) | L1 (embed) + L2 (results) | Vector-search passages; primary retrieval tool. |
+| `search_books_by_summary` | `BookSummariesRepository` summary vector search | L3 | Find which books cover a topic when book scope is unknown. |
 | `find_books_by_title` | `BooksRepository` title match | — | Resolve a book title mentioned in the question to internal book IDs. |
-| `get_book_summary` | `BookSummariesRepository.get_summaries_for_books` | — | Fetch full semantic summary text for specific books (used for plot/character/theme queries). |
-| `get_current_page` | `PagesRepository.find_one` | — | Raw text of the page currently open in the reader (callable only in single-book reader mode). |
+| `get_book_summary` | `BookSummariesRepository` | — | Fetch full semantic summary text for specific books (plot/character/theme queries). |
+| `get_current_page` | `PagesRepository` | — | Raw text of the page currently open in the reader (callable only in single-book reader mode). |
 | `get_sister_volumes` | `BooksRepository.find_sister_volumes` | — | Retrieves other volumes of the same series as a given `book_id`. |
-| `rewrite_query` | `QueryRewriter.rewrite` | L0 | Resolves co-references and pronouns using conversation history. |
-| `query_knowledge_graph` | `GraphRepository.query_subgraph` | — | GraphRAG tool: queries Neo4j to retrieve a 1-hop subgraph of entities and their relationships. |
+| `rewrite_query` | `QueryRewriter` | L0 | Resolves co-references and pronouns using conversation history. |
 
 ### Catalog & Metadata
 
 | Tool | Wraps | Description |
 |------|-------|-------------|
-| `get_book_author` | `BooksRepository.find_author_by_title_in_question` | Author lookup for "who wrote X?" questions. |
-| `get_books_by_author` | `BooksRepository.find_books_by_author_in_question` | Book list for "what did Y write?" questions. |
-| `search_catalog` | `CatalogHandler._build_catalog_context` | Library browsing and general listing queries. |
+| `get_book_author` | `BooksRepository` title→author match | Author lookup for "who wrote X?" questions. |
+| `get_books_by_author` | `BooksRepository` author match | Book list for "what did Y write?" questions. |
+| `search_catalog` | Catalog query helpers | Library browsing and general listing queries. |
+
+### Dictionary & Language (8 tools)
+
+| Tool | Description |
+|------|-------------|
+| `lookup_uyghur_word` | Uyghur word definition lookup. |
+| `lookup_history_term` | Historical term/person/event/place lookup. |
+| `translate_english_to_uyghur` | English → Uyghur translation. |
+| `check_word_spelling` | Uyghur spelling validity check. |
+| `lookup_uyghur_name` | Uyghur person-name lookup (meaning, or listing by starting letter). |
+| `search_language_sources` | Fallback dictionary search when the source type is unclear. |
+| `lookup_proverbs` | Uyghur proverb/saying lookup. |
+| `lookup_synonyms` | Synonym-dictionary lookup. |
+
+### Quran
+
+| Tool | Description |
+|------|-------------|
+| `search_quran` | Surah/ayah lookup or free-text search within the Quran (a source separate from the book library). |
 
 ### Tool Execution Context
 Each tool function retrieves the active `QueryContext` from `tool_context.state["query_context"]`. Results of tool executions are appended to `tool_context.state["observations"]` to enable downstream context aggregation and grading.
@@ -67,8 +79,8 @@ Each tool function retrieves the active `QueryContext` from `tool_context.state[
  ┌───────────┐
  │ ADK Agent │ (ReAct Reasoning Loop; InMemoryRunner)
  └─────┬─────┘
-       │   ├────► Call Tools (11 available)
-       │   ◄────┤ Return Observations (search results, subgraphs)
+       │   ├────► Call Tools (19 available)
+       │   ◄────┤ Return Observations (search results, catalog/dictionary data)
        ▼
  ┌───────────┐
  │Post-Agent │ (Extract Book IDs, Context Grading, Answer Synthesis)
@@ -79,25 +91,21 @@ Each tool function retrieves the active `QueryContext` from `tool_context.state[
 ```
 
 ### 1. Pre-Processing Pipeline
-- **Intent Detection**: Classifies the question scope (current page, library catalog, or general content search) using fast heuristic patterns.
-- **Query Decomposition**: Checks if the query compares multiple entities or contains multiple question marks. If so, it uses a cheap Gemini Flash model call to split the query into up to 4 self-contained sub-questions and appends them to the prompt.
-- **Context Injection**: Pre-injects a `[Context]` block into the user message containing current book metadata, open pages, conversation history, and category filters.
+- **Intent Detection**: A fast heuristic (`_detect_intent`) classifies the question as `current_page` (if a page-query pattern matches while in-reader) or `content_search` — used only for the `planning` UI event, not to constrain the agent's own tool choice.
+- **Query Decomposition**: If the question contains more than one `?`/`؟`, or matches a comparison-pattern regex (multiple entities being compared), an LLM call (`_llm_split`) splits it into up to 4 self-contained sub-questions, appended to the prompt as a `[Sub-questions]` block.
+- **Context Injection**: `_build_human_message` prepends a `[Context]` block to the user message containing current book metadata, current page, prior-turn book IDs, category filters, and whether chat history is available.
 
 ### 2. Google ADK Agent Execution
-- Instantiates a stateless Google ADK `Agent` with `AGENT_SYSTEM_PROMPT` and the 11 registered tools.
+- Instantiates a stateless Google ADK `Agent` with `AGENT_SYSTEM_PROMPT` and the 19 registered tools, `temperature=0.0`.
 - Executes the query using `InMemoryRunner.run_async()`.
-- Captures and yields `tool_call` and `agent_thinking` events directly from the runner's async event stream to provide real-time UI animation triggers.
-- Gathers tool output data into an inline list of observations.
+- Captures and yields `tool_call` and `agent_thinking` events directly from the runner's async event stream to drive real-time UI animation.
+- Gathers tool output data into an inline list of observations (read from the event stream itself, not from `session.state`, since `InMemoryRunner` does not reliably persist state across the run).
 
 ### 3. Post-Processing Pipeline
-- **Deduplication**: Extracts passages from `search_chunks` and `get_book_summary` observations, deduplicating them by `(book_id, page)`.
-- **Context Grading**: Evaluates the retrieved passages using a relative-score threshold:
-  - Finds the highest similarity score.
-  - Filters out chunks scoring below `highest_score * GRADE_RELATIVE_THRESHOLD` (default 85%).
-  - Falls back to `MIN_CHUNKS_AFTER_GRADING` if too few survive.
-  - Caps the final context at `AGENT_MAX_CONTEXT_CHUNKS` (default 10).
-- **Answer Synthesis**: Streams the final answer utilizing the graded context. If the query was split into sub-questions, the synthesis prompt directs the model to format answers for each sub-question.
-- **Telemetry**: Records details (tool list, steps, chunk count, score ranges, and user feedback markers) to the `rag_evaluations` table.
+- **Deduplication & book-ID extraction**: `_extract_used_book_ids` pulls book IDs out of `search_chunks` and `get_book_summary` observations.
+- **Context Grading** (`_grade_context`): for each `search_chunks` call, finds its highest similarity score and keeps chunks scoring at or above `top_score × GRADE_RELATIVE_THRESHOLD` (0.85), falling back to at least `MIN_CHUNKS_AFTER_GRADING` (3) chunks if the filter is too aggressive. Chunks are deduplicated by `(book_id, page)` across all search calls, globally re-sorted by score, and capped at `AGENT_MAX_CONTEXT_CHUNKS` (25).
+- **Answer Synthesis**: streams the final answer via `generate_answer_stream` using the graded context. If the query was split into sub-questions, the synthesis prompt directs the model to address each one.
+- **Telemetry**: records tool list, step count, chunk counts, and score ranges to the `rag_evaluations` table via `_populate_ctx_from_observations`.
 
 ---
 
@@ -133,6 +141,14 @@ All caching leverages Redis to avoid redundant LLM and database queries:
 
 ---
 
+## Model Configuration
+
+`ctx.agent_model` is resolved per-request in `rag_service.py::_build_context()` from the `gemini_agent_loop_model` system config, falling back to `gemini_chat_model` if unset (it is unset by default, so the agent loop currently runs on the same model as chat answer generation — `gemini-3.1-flash-lite` by default). Both are DB-driven via `SystemConfigsRepository`, hot-reloadable without a deploy.
+
+Loop bounds (`agent_max_steps` = 6, `agent_enough_chunks` = 8) are also system configs, read into `QueryContext` per request.
+
+---
+
 ## Typical Agent Trace (Global Query Example)
 
 ```
@@ -154,17 +170,3 @@ User: ئابدۇرەھىم ئۆتكۈر كىم؟
    - Synthesizes answer using the 7 graded chunks
    - Streams answer with citations, writes metadata log
 ```
-
----
-
-## Latency Budget
-
-- **Intent & Preprocessing**: ~1–5 ms (heuristic-based).
-- **Query Decomposition (LLM)**: ~400–700 ms (only for compound/multi-question queries).
-- **Cache Hits (L0-L3)**: ~2 ms per lookup.
-- **Cache Miss (Embedding + Search)**: ~350 ms.
-- **Agent Reasoning Step (Gemini Flash)**: ~400–700 ms per step.
-- **Context Grading**: ~5 ms (heuristic-based).
-- **Answer Generation (Streaming)**: ~1–3 seconds (first token at ~300ms).
-
-Best-case RAG query latency sits at **~2.5 seconds** (including streaming start), while worst-case multi-step executions run **~6–8 seconds**.
