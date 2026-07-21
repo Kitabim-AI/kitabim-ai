@@ -1,4 +1,4 @@
-"""Agent tool schemas and dispatch for the agentic RAG loop.
+"""Agent tool schemas and dispatch for the LLM-routed RAG loop.
 
 Each tool wraps existing retrieval code — no new retrieval logic lives here.
 """

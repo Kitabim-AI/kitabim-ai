@@ -34,7 +34,7 @@ def setup_paths():
 # (chat/embedding/agent model, agent_max_steps, agent_enough_chunks,
 # use_deterministic_router) and then once more by _record_eval()
 # (rag_eval_enabled). use_deterministic_router="true" routes to
-# DeterministicRAGHandler instead of AgentRAGHandler; rag_eval_enabled="false"
+# DeterministicRAGHandler instead of LLMRoutedRAGHandler; rag_eval_enabled="false"
 # short-circuits eval recording (no extra DB calls).
 _CONFIG_VALUES = [
     "chat-model",

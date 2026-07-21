@@ -17,7 +17,7 @@ logger = logging.getLogger("app.rag.registry")
 class HandlerRegistry:
     """Routes a QueryContext to the first handler whose ``can_handle()`` returns True.
 
-    ``AgentRAGHandler`` always matches and acts as the fallback.
+    ``LLMRoutedRAGHandler`` always matches and acts as the fallback.
     """
 
     def __init__(self, handlers: List["QueryHandler"]) -> None:
@@ -35,7 +35,7 @@ class HandlerRegistry:
                 )
                 return handler
         raise RuntimeError(
-            "No handler matched — AgentRAGHandler must always be last with can_handle()=True"
+            "No handler matched — LLMRoutedRAGHandler must always be last with can_handle()=True"
         )
 
     async def dispatch(self, ctx: "QueryContext") -> str:
@@ -57,13 +57,13 @@ _registry_singleton: Optional[HandlerRegistry] = None
 
 
 def build_default_registry() -> HandlerRegistry:
-    from app.services.rag.agent.handler import AgentRAGHandler
+    from app.services.rag.agent.llm_routed_handler import LLMRoutedRAGHandler
     from app.services.rag.agent.deterministic_handler import DeterministicRAGHandler
 
     return HandlerRegistry(
         [
             DeterministicRAGHandler(),
-            AgentRAGHandler(),  # fallback handler
+            LLMRoutedRAGHandler(),  # fallback handler
         ]
     )
 

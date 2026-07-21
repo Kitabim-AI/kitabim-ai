@@ -1,4 +1,10 @@
-"""AgentRAGHandler — Google ADK-backed agentic RAG.
+"""LLMRoutedRAGHandler — LLM-driven ADK ReAct retrieval loop.
+
+Unlike DeterministicRAGHandler (fixed Python precedence over a set of
+extracted signals), this handler lets an LLM agent decide which tools to
+call and in what order, guided by AGENT_SYSTEM_PROMPT. Both handlers use
+Google ADK — this one for a free-form ReAct loop, the other as a fixed
+Workflow graph — so "ADK-backed" no longer distinguishes them.
 
 Streams custom events: planning, decompose, tool_call, answer_start, chunk, answer_end.
 """
@@ -17,7 +23,7 @@ from app.services.rag.base_handler import QueryHandler
 from app.services.rag.context import QueryContext
 from app.utils.observability import log_json
 
-logger = logging.getLogger("app.rag.agent.handler")
+logger = logging.getLogger("app.rag.agent.llm_routed_handler")
 
 from app.services.rag.keywords import (
     PAGE_QUERY_PATTERNS,
@@ -269,10 +275,10 @@ def _populate_ctx_from_observations(
     ctx.graded_context = graded_context
 
 
-class AgentRAGHandler(QueryHandler):
-    """Google ADK agentic RAG handler. Fallback for all unmatched intents."""
+class LLMRoutedRAGHandler(QueryHandler):
+    """LLM-driven ADK ReAct RAG handler. Fallback for all unmatched intents."""
 
-    intent_name = "agent_rag"
+    intent_name = "llm_routed_rag"
 
     def can_handle(self, _ctx: QueryContext) -> bool:
         return True
@@ -396,7 +402,7 @@ class AgentRAGHandler(QueryHandler):
         log_json(
             logger,
             logging.INFO,
-            "ADK agent invoked (non-stream)",
+            "LLM-routed RAG handler invoked (non-stream)",
             model=ctx.agent_model,
         )
 
@@ -414,7 +420,7 @@ class AgentRAGHandler(QueryHandler):
             log_json(
                 logger,
                 logging.WARNING,
-                "ADK agent yielded no result events — using empty-context fallback",
+                "LLM-routed RAG handler yielded no result events — using empty-context fallback",
             )
             graded_context = "NO RELEVANT DOCUMENTS FOUND IN THE LIBRARY."
             sub_questions = [question]
@@ -445,7 +451,10 @@ class AgentRAGHandler(QueryHandler):
         from app.services.rag.answer_builder import generate_answer_stream
 
         log_json(
-            logger, logging.INFO, "ADK agent invoked (stream)", model=ctx.agent_model
+            logger,
+            logging.INFO,
+            "LLM-routed RAG handler invoked (stream)",
+            model=ctx.agent_model,
         )
 
         question = ctx.enriched_question or ctx.question
@@ -468,7 +477,7 @@ class AgentRAGHandler(QueryHandler):
             log_json(
                 logger,
                 logging.WARNING,
-                "ADK agent yielded no result events — using empty-context fallback",
+                "LLM-routed RAG handler yielded no result events — using empty-context fallback",
             )
             graded_context = "NO RELEVANT DOCUMENTS FOUND IN THE LIBRARY."
             sub_questions = [question]

@@ -21,7 +21,7 @@ from app.services.rag.utils import normalize_uyghur
 from app.db.repositories.books_repository import BooksRepository
 from app.llm.models import build_text_llm
 
-from app.services.rag.agent.handler import (
+from app.services.rag.agent.llm_routed_handler import (
     _grade_context,
     _extract_used_book_ids,
     _populate_ctx_from_observations,
