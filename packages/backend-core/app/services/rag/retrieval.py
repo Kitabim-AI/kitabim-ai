@@ -5,6 +5,7 @@ All I/O-backed retrieval helpers live here — no LLM calls, no prompt logic.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import re
@@ -118,13 +119,40 @@ async def vector_search(
     try:
         top_results = await cache_service.get(search_cache_key)
         if top_results is None:
-            similar_chunks = await chunks_repo.similarity_search(
-                query_embedding=effective_vector,
-                book_ids=book_ids,
-                categories=ctx.character_categories or None,
-                limit=settings.rag_top_k,
-                threshold=settings.rag_score_threshold,
-            )
+            if len(sorted_book_ids) > 1:
+                # Multi-book named-title questions (e.g. "compare book A, B
+                # and C") would otherwise compete for one global top-K ranked
+                # across every book's chunks combined — whichever book scores
+                # highest can crowd out the others entirely. Guarantee each
+                # named book a minimum slice instead of letting a single
+                # embedding-similarity ranking decide.
+                per_book_limit = max(settings.rag_top_k // len(sorted_book_ids), 3)
+                per_book_results = await asyncio.gather(
+                    *[
+                        chunks_repo.similarity_search(
+                            query_embedding=effective_vector,
+                            book_ids=[bid],
+                            categories=ctx.character_categories or None,
+                            limit=per_book_limit,
+                            threshold=settings.rag_score_threshold,
+                        )
+                        for bid in sorted_book_ids
+                    ]
+                )
+                similar_chunks = [
+                    chunk for chunks in per_book_results for chunk in chunks
+                ]
+                similar_chunks.sort(
+                    key=lambda c: c.get("similarity", 0.0), reverse=True
+                )
+            else:
+                similar_chunks = await chunks_repo.similarity_search(
+                    query_embedding=effective_vector,
+                    book_ids=book_ids,
+                    categories=ctx.character_categories or None,
+                    limit=settings.rag_top_k,
+                    threshold=settings.rag_score_threshold,
+                )
             top_results = [
                 {
                     "text": chunk.get("text", ""),
@@ -137,6 +165,106 @@ async def vector_search(
                 }
                 for chunk in similar_chunks
             ]
+
+            # Fallback to database text matching when vector embeddings are missing
+            # (common in local dev dumps). Never runs in production — a genuine
+            # zero-hit vector search there means "nothing relevant", not "no
+            # embeddings backfilled yet", and this fuzzy match must not be mistaken
+            # for a real semantic match.
+            used_fallback = False
+            if not top_results and book_ids and settings.environment != "production":
+                from sqlalchemy import select, and_, or_
+                from app.db.models import Chunk, Book, Page
+                from app.services.rag.utils import (
+                    normalize_uyghur,
+                    fuzzy_token_similar,
+                    PUNCTUATION_STRIP_CHARS,
+                )
+
+                try:
+                    stmt = (
+                        select(
+                            Chunk.book_id,
+                            Chunk.page_number,
+                            Chunk.chunk_index,
+                            Chunk.text,
+                            Book.title,
+                            Book.volume,
+                            Book.author,
+                        )
+                        .join(Book, Chunk.book_id == Book.id)
+                        .outerjoin(
+                            Page,
+                            and_(
+                                Chunk.book_id == Page.book_id,
+                                Chunk.page_number == Page.page_number,
+                            ),
+                        )
+                        .where(
+                            Chunk.book_id.in_(book_ids),
+                            or_(Page.is_toc.is_not(True), Page.id.is_(None)),
+                        )
+                        .order_by(Chunk.page_number.asc(), Chunk.chunk_index.asc())
+                    )
+                    db_res = await ctx.session.execute(stmt)
+                    all_chunks = db_res.fetchall()
+
+                    q_norm = normalize_uyghur(ctx.question or "")
+                    q_words = [w.strip(PUNCTUATION_STRIP_CHARS) for w in q_norm.split()]
+                    q_words = [w for w in q_words if w and len(w) >= 3]
+
+                    if q_words:
+                        matched_chunks = []
+                        for row in all_chunks:
+                            chunk_text = normalize_uyghur(row[3] or "")
+
+                            # Check how many query keywords match this chunk (prefix or fuzzy)
+                            match_count = 0
+                            for qw in q_words:
+                                if qw in chunk_text:
+                                    match_count += 1
+                                    continue
+                                # Fuzzy spelling tolerance matching
+                                if any(
+                                    fuzzy_token_similar(
+                                        qw,
+                                        cw.strip(PUNCTUATION_STRIP_CHARS),
+                                        threshold=0.8,
+                                    )
+                                    for cw in chunk_text.split()
+                                ):
+                                    match_count += 1
+
+                            if match_count > 0:
+                                matched_chunks.append(
+                                    {"row": row, "match_count": match_count}
+                                )
+
+                        # Sort by match count DESC, then by page/index ASC
+                        matched_chunks.sort(
+                            key=lambda x: (-x["match_count"], x["row"][1], x["row"][2])
+                        )
+
+                        top_results = [
+                            {
+                                "text": mc["row"][3],
+                                "score": 0.8 + (0.05 * mc["match_count"]),
+                                "page": mc["row"][1],
+                                "title": mc["row"][4] or "Unknown",
+                                "volume": mc["row"][5],
+                                "author": mc["row"][6] or None,
+                                "book_id": mc["row"][0],
+                            }
+                            for mc in matched_chunks[: settings.rag_top_k]
+                        ]
+                        used_fallback = bool(top_results)
+                except Exception as exc:
+                    log_json(
+                        logger,
+                        logging.WARNING,
+                        "Fuzzy text search fallback failed",
+                        error=str(exc),
+                    )
 
             # 2. Integrate Quran vector search
             from app.services.rag.utils import is_islam_or_quran_query
@@ -190,7 +318,10 @@ async def vector_search(
                 top_results.sort(key=lambda x: x["score"], reverse=True)
                 top_results = top_results[: settings.rag_top_k]
 
-            if top_results is not None:
+            # Never cache fuzzy-fallback results under the same key real vector
+            # search hits use — once real embeddings are backfilled, a stale
+            # cached fallback entry must not keep shadowing them.
+            if top_results is not None and not used_fallback:
                 await cache_service.set(
                     search_cache_key, top_results, ttl=settings.cache_ttl_rag_query
                 )
@@ -275,14 +406,23 @@ async def find_books_by_title_in_question(
     # --- Exact match for «quoted» titles ---
     quoted = re.findall(r"«([^»]+)»", q)
     if quoted:
+        # Collect a match for every quoted title (not just the first one) so
+        # "«Book A» بىلەن «Book B» نى سېلىشتۇر" resolves both books.
+        matched_titles: list = []
+        matched_books: list = []
         for candidate in quoted:
             candidate_norm = normalize_uyghur(candidate.strip())
             for title, books in title_to_books.items():
-                if normalize_uyghur(title.strip()) == candidate_norm:
-                    return books
-        # Quoted title present but no exact match — don't fall through to fuzzy
+                if (
+                    normalize_uyghur(title.strip()) == candidate_norm
+                    and title not in matched_titles
+                ):
+                    matched_titles.append(title)
+                    matched_books.extend(books)
+                    break
+        # Quoted titles present but none matched — don't fall through to fuzzy
         # (avoids wrong-book answers like the «ئۇيغۇر تارىخى» case).
-        return None
+        return matched_books if matched_books else None
 
     # --- Fuzzy word-prefix match (no quotes in question) ---
     # Collect ALL matching titles so multi-book questions return info for every

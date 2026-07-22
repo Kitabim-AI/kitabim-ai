@@ -1106,3 +1106,202 @@ async def test_execute_path_catalog_books_by_fallback(mock_ctx):
         "search_books_by_summary",
         "search_chunks",
     ]
+
+
+@pytest.mark.asyncio
+@patch("app.llm.models._get_text_client")
+async def test_llm_analyze_query_tool_calling(mock_get_client, mock_ctx):
+    from google.genai import types
+    from app.services.rag.agent.deterministic_handler import DeterministicRAGHandler
+
+    handler = DeterministicRAGHandler()
+
+    mock_client = MagicMock()
+    mock_generate_content = AsyncMock()
+    mock_client.aio.models.generate_content = mock_generate_content
+    mock_get_client.return_value = mock_client
+
+    # Create mock response 1: tool call
+    class MockFunctionCall:
+        def __init__(self, name, args):
+            self.name = name
+            self.args = args
+
+    class MockCandidate:
+        def __init__(self, content):
+            self.content = content
+
+    mock_fc = MockFunctionCall("find_books_by_title", {"question": "ئانا يۇرت"})
+    mock_resp_1 = MagicMock()
+    mock_resp_1.function_calls = [mock_fc]
+    mock_resp_1.candidates = [
+        MockCandidate(content=types.Content(role="model", parts=[]))
+    ]
+    mock_resp_1.text = None
+
+    # Create mock response 2: final JSON text response
+    mock_resp_2 = MagicMock()
+    mock_resp_2.function_calls = []
+    mock_resp_2.candidates = [
+        MockCandidate(
+            content=types.Content(role="model", parts=[types.Part.from_text(text="{}")])
+        )
+    ]
+    mock_resp_2.text = '{"intent": "passage", "is_current_page_query": false, "is_volume_shift": false, "target_volume": null, "needs_rewrite": false, "rewritten_question": null, "catalog_subtype": null, "dictionary_subtype": null, "dictionary_term": null, "quran_surah": null, "quran_ayah": null, "quran_query": null, "is_composite": false, "sub_questions": null}'
+
+    mock_generate_content.side_effect = [mock_resp_1, mock_resp_2]
+
+    # Mock _dispatch_tool_with_retry
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        assert tool_name == "find_books_by_title"
+        assert tool_args == {"question": "ئانا يۇرت"}
+        return {
+            "ok": True,
+            "books": [
+                {
+                    "id": "book-111",
+                    "title": "ئانا يۇرت",
+                    "author": "زوردۇن سابىر",
+                    "volume": 1,
+                }
+            ],
+            "found_count": 1,
+        }
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        result = await handler._llm_analyze_query("ئانا يۇرت كىتابى بارمۇ؟", mock_ctx)
+
+    assert result["intent"] == "passage"
+    assert result["has_title"] is True
+    assert result["has_author"] is False
+    assert len(result["matched_books"]) == 1
+    assert result["matched_books"][0]["id"] == "book-111"
+    assert mock_generate_content.call_count == 2
+
+
+@pytest.mark.asyncio
+@patch("app.llm.models._get_text_client")
+async def test_llm_analyze_query_author_tool_calling(mock_get_client, mock_ctx):
+    from google.genai import types
+    from app.services.rag.agent.deterministic_handler import DeterministicRAGHandler
+
+    handler = DeterministicRAGHandler()
+
+    mock_client = MagicMock()
+    mock_generate_content = AsyncMock()
+    mock_client.aio.models.generate_content = mock_generate_content
+    mock_get_client.return_value = mock_client
+
+    class MockFunctionCall:
+        def __init__(self, name, args):
+            self.name = name
+            self.args = args
+
+    class MockCandidate:
+        def __init__(self, content):
+            self.content = content
+
+    mock_fc = MockFunctionCall(
+        "get_books_by_author", {"question": "زوردۇن سابىر نېمە يازغان؟"}
+    )
+    mock_resp_1 = MagicMock()
+    mock_resp_1.function_calls = [mock_fc]
+    mock_resp_1.candidates = [
+        MockCandidate(content=types.Content(role="model", parts=[]))
+    ]
+    mock_resp_1.text = None
+
+    mock_resp_2 = MagicMock()
+    mock_resp_2.function_calls = []
+    mock_resp_2.candidates = [
+        MockCandidate(
+            content=types.Content(role="model", parts=[types.Part.from_text(text="{}")])
+        )
+    ]
+    mock_resp_2.text = '{"intent": "passage", "is_current_page_query": false, "is_volume_shift": false, "target_volume": null, "needs_rewrite": false, "rewritten_question": null, "catalog_subtype": null, "dictionary_subtype": null, "dictionary_term": null, "quran_surah": null, "quran_ayah": null, "quran_query": null, "is_composite": false, "sub_questions": null}'
+
+    mock_generate_content.side_effect = [mock_resp_1, mock_resp_2]
+
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        assert tool_name == "get_books_by_author"
+        return {
+            "ok": True,
+            "books": [
+                {
+                    "id": "book-222",
+                    "title": "ئانا يۇرت",
+                    "author": "زوردۇن سابىر",
+                    "volume": 1,
+                }
+            ],
+            "found_count": 1,
+        }
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        result = await handler._llm_analyze_query("زوردۇن سابىر نېمە يازغان؟", mock_ctx)
+
+    assert result["has_author"] is True
+    assert result["has_title"] is False
+    assert len(result["matched_author_books"]) == 1
+    assert result["matched_author_books"][0]["id"] == "book-222"
+    # Tools are disabled for the turn after the first tool-call round, so a
+    # well-behaved response only ever costs 2 round trips.
+    assert mock_generate_content.call_count == 2
+
+
+@pytest.mark.asyncio
+@patch("app.llm.models._get_text_client")
+async def test_llm_analyze_query_bounded_loop_raises_on_repeated_tool_calls(
+    mock_get_client, mock_ctx
+):
+    """Guards the fix for unbounded tool-call loops: even if the model keeps
+    emitting function calls (ignoring that tools were disabled), the loop
+    must give up after a small, fixed number of turns instead of hammering
+    the LLM API indefinitely."""
+    from google.genai import types
+    from app.services.rag.agent.deterministic_handler import DeterministicRAGHandler
+
+    handler = DeterministicRAGHandler()
+
+    mock_client = MagicMock()
+    mock_generate_content = AsyncMock()
+    mock_client.aio.models.generate_content = mock_generate_content
+    mock_get_client.return_value = mock_client
+
+    class MockFunctionCall:
+        def __init__(self, name, args):
+            self.name = name
+            self.args = args
+
+    class MockCandidate:
+        def __init__(self, content):
+            self.content = content
+
+    def _looping_response():
+        mock_fc = MockFunctionCall("find_books_by_title", {"question": "ئانا يۇرت"})
+        resp = MagicMock()
+        resp.function_calls = [mock_fc]
+        resp.candidates = [MockCandidate(content=types.Content(role="model", parts=[]))]
+        resp.text = None
+        return resp
+
+    mock_generate_content.side_effect = [_looping_response() for _ in range(5)]
+
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        return {"ok": True, "books": [], "found_count": 0}
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        with pytest.raises(ValueError, match="Too many tool call iterations"):
+            await handler._llm_analyze_query("ئانا يۇرت كىتابى بارمۇ؟", mock_ctx)
+
+    # Bounded at 3 turns regardless of how long the model would keep looping.
+    assert mock_generate_content.call_count == 3

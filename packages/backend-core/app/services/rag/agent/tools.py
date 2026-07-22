@@ -396,6 +396,7 @@ async def search_quran(
     tool_context: ToolContext = None,
 ) -> dict:
     """Retrieve or search Quran surahs and verses (ayahs) using surah number, ayah number, or text keywords.
+    Also returns Surah metadata such as the total verse count and translation names.
 
     Call this when the user asks about a Quran surah, ayah/verse, or translation, or wants
     to search for a phrase within the Quran (e.g. "what is surah 1?", "read ayah 1:2",
@@ -749,6 +750,84 @@ async def _run_find_books_by_title(args: dict, ctx: QueryContext) -> List[dict]:
         question, ctx.session, categories=ctx.character_categories or None
     )
     result = books or []
+
+    # Filter out single-word false positive matches if the query is a multi-word search
+    if result and len(result) == 1 and len(result[0]["title"].split()) == 1:
+        q_words = [w for w in question.strip().split() if len(w) >= 3]
+        if len(q_words) >= 3:
+            result = []
+
+    # Fallback to custom fuzzy keyword matching if strict title in question matching returned nothing
+    if not result:
+        from sqlalchemy import select
+        from app.db.models import Book
+        from app.services.rag.utils import (
+            normalize_uyghur,
+            fuzzy_token_similar,
+            PUNCTUATION_STRIP_CHARS,
+        )
+
+        try:
+            stmt = select(Book.id, Book.title, Book.author, Book.volume).where(
+                Book.status != "error"
+            )
+            if ctx.character_categories:
+                from sqlalchemy import text as sa_text
+
+                stmt = stmt.where(
+                    sa_text("categories && CAST(:cats AS text[])").bindparams(
+                        cats=ctx.character_categories
+                    )
+                )
+            db_res = await ctx.session.execute(stmt)
+            books_list = [
+                {"id": str(r[0]), "title": r[1], "author": r[2], "volume": r[3]}
+                for r in db_res.fetchall()
+            ]
+
+            q_words = [
+                normalize_uyghur(w).strip(PUNCTUATION_STRIP_CHARS)
+                for w in question.strip().split()
+            ]
+            q_words = [w for w in q_words if w and len(w) >= 3]
+            if q_words:
+                matched = []
+                for b in books_list:
+                    title_norm = normalize_uyghur(b["title"].strip())
+                    author_norm = (
+                        normalize_uyghur(b["author"].strip()) if b.get("author") else ""
+                    )
+                    match_all = True
+                    for qw in q_words:
+                        word_found = False
+                        for tw in title_norm.split() + author_norm.split():
+                            tw_clean = tw.strip(PUNCTUATION_STRIP_CHARS)
+                            alt = (
+                                tw_clean[:-1] + "ی" if tw_clean.endswith("ە") else None
+                            )
+                            if tw_clean.startswith(qw) or (
+                                alt is not None and alt.startswith(qw)
+                            ):
+                                word_found = True
+                                break
+                            if fuzzy_token_similar(qw, tw_clean, threshold=0.85):
+                                word_found = True
+                                break
+                        if not word_found:
+                            match_all = False
+                            break
+                    if match_all:
+                        matched.append(b)
+                if matched:
+                    result = matched
+        except Exception as exc:
+            log_json(
+                logger,
+                logging.WARNING,
+                "Fuzzy keyword search fallback failed",
+                error=str(exc),
+            )
+
     ctx._title_cache[question] = result
     log_json(
         logger,
@@ -1274,7 +1353,7 @@ async def _run_lookup_synonyms(args: dict, ctx: QueryContext) -> dict:
 async def _run_search_quran(args: dict, ctx: QueryContext) -> dict:
     from app.db import session as db_session
     from app.db.models import Quran
-    from sqlalchemy import select, or_
+    from sqlalchemy import select, or_, func
 
     surah = args.get("surah")
     ayah = args.get("ayah")
@@ -1339,6 +1418,38 @@ async def _run_search_quran(args: dict, ctx: QueryContext) -> dict:
         else:
             entries = []
 
+        # Fetch Surah Metadata (names and total verses/ayahs)
+        unique_surahs = list({entry.surah for entry in entries})
+        if surah is not None and surah not in unique_surahs:
+            unique_surahs.append(surah)
+
+        surah_metadata = {}
+        if unique_surahs:
+            meta_stmt = (
+                select(
+                    Quran.surah,
+                    func.max(Quran.ayah).label("total_ayahs"),
+                    Quran.surah_name_ug,
+                    Quran.surah_name_en,
+                    Quran.surah_name_ar,
+                )
+                .where(Quran.surah.in_(unique_surahs))
+                .group_by(
+                    Quran.surah,
+                    Quran.surah_name_ug,
+                    Quran.surah_name_en,
+                    Quran.surah_name_ar,
+                )
+            )
+            meta_res = await session.execute(meta_stmt)
+            for row in meta_res.all():
+                surah_metadata[row.surah] = {
+                    "total_ayahs": row.total_ayahs,
+                    "name_ug": row.surah_name_ug,
+                    "name_en": row.surah_name_en,
+                    "name_ar": row.surah_name_ar,
+                }
+
     formatted_entries = []
     context_parts = []
     for entry in entries:
@@ -1362,11 +1473,32 @@ async def _run_search_quran(args: dict, ctx: QueryContext) -> dict:
             f"English Translation: {entry.text_en}"
         )
 
-    context = (
-        "\n\n---\n\n".join(context_parts)
-        if context_parts
-        else "No Quranic verses found matching criteria."
-    )
+    # Format and prepend Surah Metadata to RAG context
+    metadata_parts = []
+    for s_num, meta in sorted(surah_metadata.items()):
+        metadata_parts.append(
+            f"[Quran Surah Metadata - Surah {s_num}: {meta['name_ug']} ({meta['name_en']})]\n"
+            f"Total Verses (Ayahs): {meta['total_ayahs']}\n"
+            f"Arabic Name: {meta['name_ar']}"
+        )
+
+    metadata_header = "\n\n".join(metadata_parts)
+    if metadata_header:
+        if context_parts:
+            context = (
+                metadata_header + "\n\n---\n\n" + "\n\n---\n\n".join(context_parts)
+            )
+        else:
+            context = (
+                metadata_header
+                + "\n\n---\n\nNo Quranic verses found matching criteria."
+            )
+    else:
+        context = (
+            "\n\n---\n\n".join(context_parts)
+            if context_parts
+            else "No Quranic verses found matching criteria."
+        )
 
     log_json(
         logger,
@@ -1377,4 +1509,8 @@ async def _run_search_quran(args: dict, ctx: QueryContext) -> dict:
         q=q[:60] if q else None,
         count=len(formatted_entries),
     )
-    return {"context": context, "entries": formatted_entries}
+    return {
+        "context": context,
+        "entries": formatted_entries,
+        "surah_metadata": {str(k): v for k, v in surah_metadata.items()},
+    }

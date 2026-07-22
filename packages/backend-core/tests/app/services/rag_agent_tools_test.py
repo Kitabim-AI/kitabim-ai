@@ -200,3 +200,72 @@ async def test_get_book_author_no_fallback_in_global_mode():
 
     assert result["title"] is None
     assert result["author"] is None
+
+
+@pytest.mark.asyncio
+async def test_search_quran_returns_surah_metadata():
+    from app.services.rag.agent.tools import _run_search_quran
+
+    ctx = MagicMock()
+
+    # Mock Quran row
+    fake_verse = MagicMock()
+    fake_verse.surah = 2
+    fake_verse.surah_name_ug = "بەقەرە"
+    fake_verse.surah_name_en = "Al-Baqara"
+    fake_verse.surah_name_ar = "البقرة"
+    fake_verse.ayah = 1
+    fake_verse.text_ar = "الم"
+    fake_verse.text_ug = "ئەلىف، لام، مىم"
+    fake_verse.text_en = "Alif, Lam, Meem"
+
+    # Mock SQL execution results
+    # 1. Main query for verses
+    mock_verses_result = MagicMock()
+    mock_verses_result.scalars.return_value.all.return_value = [fake_verse]
+
+    # 2. Metadata query (max ayah and names)
+    mock_meta_row = MagicMock()
+    mock_meta_row.surah = 2
+    mock_meta_row.total_ayahs = 286
+    mock_meta_row.surah_name_ug = "بەقەرە"
+    mock_meta_row.surah_name_en = "Al-Baqara"
+    mock_meta_row.surah_name_ar = "البقرة"
+
+    mock_meta_result = MagicMock()
+    mock_meta_result.all.return_value = [mock_meta_row]
+
+    # Mock session
+    session = AsyncMock()
+    # First execute call is for verses, second execute call is for metadata
+    session.execute.side_effect = [mock_verses_result, mock_meta_result]
+
+    # Mock async context manager for db_session.async_session_factory
+    mock_factory = MagicMock()
+    mock_factory.return_value.__aenter__.return_value = session
+
+    with patch("app.db.session.async_session_factory", mock_factory):
+        result = await _run_search_quran({"surah": 2, "ayah": 1}, ctx)
+
+    # Check return fields
+    assert "entries" in result
+    assert "context" in result
+    assert "surah_metadata" in result
+
+    # Check entries
+    assert len(result["entries"]) == 1
+    assert result["entries"][0]["surah"] == 2
+    assert result["entries"][0]["ayah"] == 1
+
+    # Check surah_metadata dictionary
+    assert "2" in result["surah_metadata"]
+    assert result["surah_metadata"]["2"]["total_ayahs"] == 286
+    assert result["surah_metadata"]["2"]["name_ug"] == "بەقەرە"
+
+    # Check context text structure (should include metadata block)
+    assert "[Quran Surah Metadata - Surah 2: بەقەرە (Al-Baqara)]" in result["context"]
+    assert "Total Verses (Ayahs): 286" in result["context"]
+    assert (
+        "[Source: Holy Quran, Surah: 2 - بەقەرە (Al-Baqara), Ayah: 1]"
+        in result["context"]
+    )

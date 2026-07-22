@@ -34,6 +34,19 @@ def test_select_route_catalog():
     assert _select_route("catalog", {}) == "catalog"
 
 
+def test_select_route_named_title_takes_precedence_over_catalog():
+    # A resolved title (e.g. "do you have book X?") routes to named_title
+    # even when the query was classified as a catalog-style question —
+    # the direct title match is more specific than the generic catalog flow.
+    signals = {"has_title": True}
+    assert _select_route("catalog", signals) == "named_title"
+
+
+def test_select_route_catalog_without_title():
+    signals = {"has_title": False}
+    assert _select_route("catalog", signals) == "catalog"
+
+
 def test_select_route_named_title_takes_precedence_over_author():
     signals = {"has_title": True, "has_author": True}
     assert _select_route("passage", signals) == "named_title"
