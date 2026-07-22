@@ -27,14 +27,6 @@ from app.services.rag.agent.llm_routed_handler import (
     _populate_ctx_from_observations,
 )
 
-if TYPE_CHECKING:
-    from app.services.rag.agent.graph_router import RunnerServices
-
-logger = logging.getLogger("app.rag.agent.deterministic_handler")
-
-# Punctuation boundaries for pronouns
-_PUNCT = "«»،؟!()[]{}\"''"
-
 from app.services.rag.keywords import (
     UYGHUR_PRONOUN_TOKENS,
     VOLUME_SHIFT_KEYWORDS,
@@ -42,6 +34,14 @@ from app.services.rag.keywords import (
     CATALOG_BOOKS_QUERIES,
     PAGE_QUERY_PATTERNS,
 )
+
+if TYPE_CHECKING:
+    from app.services.rag.agent.graph_router import RunnerServices
+
+logger = logging.getLogger("app.rag.agent.deterministic_handler")
+
+# Punctuation boundaries for pronouns
+_PUNCT = "«»،؟!()[]{}\"''"
 
 
 def _cap_summary_book_ids(book_ids: list, books: list, cap: int = 5) -> list[str]:
@@ -1554,6 +1554,11 @@ Return ONLY valid JSON matching this schema:
             else:
                 sub_signals = await self.extract_signals(sub_q, ctx)
                 sub_signals["needs_rewrite"] = False
+                if (
+                    len(sub_questions) == 1
+                    and signals_orig.get("top_intent") == "current_page"
+                ):
+                    sub_signals["top_intent"] = "current_page"
                 if "intent" in sub_signals:
                     llm_calls_delta += 1
 

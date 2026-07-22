@@ -120,8 +120,8 @@ app/services/rag/
     ├── config.py               # AGENT_MAX_STEPS, grading thresholds, context-switch score threshold
     ├── tools.py                  # 19 ADK-callable tool functions + dispatch-with-retry
     ├── adk_agent.py                 # build_rag_agent() — constructs the ADK Agent + tool list
-    ├── deterministic_handler.py       # DeterministicRAGHandler — signal extraction, intent classification, 9 fixed paths
-    ├── graph_router.py                  # google.adk.workflow.Workflow graph selecting one of the 9 paths
+    ├── deterministic_handler.py       # DeterministicRAGHandler — signal extraction, intent classification, 10 fixed paths
+    ├── graph_router.py                  # google.adk.workflow.Workflow graph selecting one of the 10 paths
     └── llm_routed_handler.py              # LLMRoutedRAGHandler — decomposition, context injection, InMemoryRunner ReAct loop
 ```
 
@@ -257,8 +257,8 @@ PDF rendering uses `pdf.js` loaded from a CDN `<script>` tag at runtime (`pdfSer
 | `packages/backend-core/app/llm/models.py` | `ProtectedLLM`/`GeminiEmbeddings` clients wrapping `google-genai`, with per-call-type `CircuitBreaker`s and `RedisRateLimiter`. |
 | `packages/backend-core/app/services/rag_service.py` | Facade that resolves model names + config from `system_configs`, builds `QueryContext`, and dispatches to `HandlerRegistry`. |
 | `packages/backend-core/app/services/rag/registry.py` | `HandlerRegistry` — ordered `can_handle()` dispatch between `DeterministicRAGHandler` and `LLMRoutedRAGHandler`. |
-| `packages/backend-core/app/services/rag/agent/deterministic_handler.py` | `DeterministicRAGHandler` — signal extraction, intent classification, and the 9 fixed retrieval paths. |
-| `packages/backend-core/app/services/rag/agent/graph_router.py` | `google.adk.workflow.Workflow` graph that selects and runs one of the 9 paths above. |
+| `packages/backend-core/app/services/rag/agent/deterministic_handler.py` | `DeterministicRAGHandler` — signal extraction, intent classification, and the 10 fixed retrieval paths. |
+| `packages/backend-core/app/services/rag/agent/graph_router.py` | `google.adk.workflow.Workflow` graph that selects and runs one of the 10 paths above. |
 | `packages/backend-core/app/services/rag/agent/llm_routed_handler.py` | `LLMRoutedRAGHandler` — decomposition, context injection, and the ADK `InMemoryRunner` ReAct loop. |
 | `packages/backend-core/app/services/rag/agent/tools.py` | The 19 ADK-callable tool functions shared by both RAG handlers. |
 | `services/backend/main.py` | FastAPI app factory — router registration, CORS, rate limiting, `/health`. |

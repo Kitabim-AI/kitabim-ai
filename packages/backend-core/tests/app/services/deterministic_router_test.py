@@ -1305,3 +1305,79 @@ async def test_llm_analyze_query_bounded_loop_raises_on_repeated_tool_calls(
 
     # Bounded at 3 turns regardless of how long the model would keep looping.
     assert mock_generate_content.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_current_page_query_with_rewrite_preserves_intent(mock_ctx):
+    handler = DeterministicRAGHandler()
+    mock_ctx.current_page = 85
+    mock_ctx.book_id = "book-123"
+    mock_ctx.is_global = False
+    mock_ctx.book.title = "تەكلىماكان ئوغلى"
+    mock_ctx.book.volume = 1
+    mock_ctx.history = [{"role": "user", "text": "Some history"}]
+
+    original_question = "بۇ بەتتە قانداق ۋەقە سۆزلەنگەن؟"
+    rewritten_question = "«تەكلىماكان ئوغلى» رومانىنىڭ 85-بېتىدە قانداق ۋەقە سۆزلەنگەن؟"
+
+    # We mock _llm_analyze_query to simulate the rewrite flow
+    calls = []
+
+    async def mock_analyze(question, ctx):
+        calls.append(question)
+        if question == original_question:
+            return {
+                "is_current_page_query": True,
+                "is_volume_shift": False,
+                "target_volume": None,
+                "needs_rewrite": True,
+                "rewritten_question": rewritten_question,
+                "catalog_subtype": None,
+                "dictionary_subtype": None,
+                "dictionary_term": None,
+                "quran_surah": None,
+                "quran_ayah": None,
+                "quran_query": None,
+                "intent": "passage",
+                "is_composite": False,
+                "sub_questions": None,
+            }
+        else:  # question == rewritten_question
+            return {
+                "is_current_page_query": False,  # LLM loses current page context in rewritten form
+                "is_volume_shift": False,
+                "target_volume": None,
+                "needs_rewrite": False,
+                "rewritten_question": None,
+                "catalog_subtype": None,
+                "dictionary_subtype": None,
+                "dictionary_term": None,
+                "quran_surah": None,
+                "quran_ayah": None,
+                "quran_query": None,
+                "intent": "passage",
+                "is_composite": False,
+                "sub_questions": None,
+            }
+
+    handler._llm_analyze_query = mock_analyze
+
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        if tool_name == "get_current_page":
+            return {"ok": True, "context": "Page 85 content"}
+        return {"ok": True}
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        observations = []
+        events = []
+        async for ev in handler._execute_workflow_stream(
+            mock_ctx, original_question, observations
+        ):
+            events.append(ev)
+
+        tools_called = [o["tool"] for o in observations]
+        assert "get_current_page" in tools_called
+        assert "search_chunks" not in tools_called

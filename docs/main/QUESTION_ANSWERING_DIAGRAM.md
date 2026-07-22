@@ -23,8 +23,9 @@ flowchart TD
 
     %% Deterministic Router Flow
     subgraph DetRouter ["DeterministicRAGHandler Flow"]
-        H_DET --> S1_DB["DB Metadata Check<br/>(Fuzzy Title & Author)"]
-        S1_DB --> S1_LLM["[LLM] Unified Query Analyzer<br/>(Extract intent, signals, & rewrite)<br/>emits: planning / rewrite_query"]
+        H_DET --> S1_LLM["[LLM] Unified Query Analyzer<br/>(Extract intent, signals, & rewrite;<br/>calls find_books_by_title / get_books_by_author<br/>as tools to resolve has_title/has_author)<br/>emits: planning / rewrite_query"]
+        S1_LLM -.->|on LLM failure| S1_DB["Fallback: DB Metadata Check<br/>(Fuzzy Title & Author)"]
+        S1_DB -.-> S4
         S1_LLM --> S4["Stage 4: Execution Router<br/>(ADK Workflow — 10 fixed path nodes)"]
         S4 --> T_DET["Execute Path Tool<br/>emits: tool_call<br/>tool_result"]
         T_DET -->|Return observations| S4
@@ -84,7 +85,7 @@ flowchart LR
 
 ## LLMRoutedRAGHandler Prompt Decision Tree
 
-This diagram illustrates the agent's internal decision tree for tool selection, governed entirely by `AGENT_SYSTEM_PROMPT` in `packages/backend-core/app/services/rag/agent/prompts.py`. The step order below mirrors `DeterministicRAGHandler`'s route precedence (current page → Quran → dictionary → catalog → content) so both handlers resolve ambiguous questions the same way.
+This diagram illustrates the agent's internal decision tree for tool selection, governed entirely by `AGENT_SYSTEM_PROMPT` in `packages/backend-core/app/services/rag/agent/prompts.py`. The step order below (current page → Quran → dictionary → catalog → content) mostly mirrors `DeterministicRAGHandler`'s route precedence, with one known divergence — see the note under Step 5.
 
 ```mermaid
 flowchart TD
@@ -202,7 +203,7 @@ flowchart TD
   * **When to Call**: Pronoun or topic-shift clitic present, AND `[Context]` explicitly shows `Chat history: Available`.
   * **When NOT to Call**: No chat history present, or if the pronoun's antecedent is already named in the same turn (e.g., *"Yunus Khan is who? How many children did he have?"*).
   * **Post-Rewrite**: If the rewritten question resolves to a book title, the agent MUST immediately invoke `find_books_by_title` rather than reusing stale context IDs.
-* **Priority order (Steps 2–5)**: current-page questions are checked first, then Quran, then dictionary, then catalog — this matches `DeterministicRAGHandler`'s `_select_route()` precedence exactly, so an ambiguous question resolves the same way regardless of which handler processes it.
+* **Priority order (Steps 2–5)**: current-page questions are checked first, then Quran, then dictionary, then catalog. This matches `DeterministicRAGHandler`'s `_select_route()` precedence for current-page/Quran/dictionary, but **diverges on catalog vs. named title**: `_select_route()` now checks `has_title` before `intent == "catalog"` (a resolved title match wins even on catalog-shaped questions like "who wrote «X»"), while this prompt still checks catalog (Step 5) before content/title resolution (Step 6). A "who wrote «X»" question can therefore route to `get_book_author` here but to `find_books_by_title` → `get_book_summary`/`search_chunks` under the deterministic router — same underlying data, different tool path.
 * **Separation of Sources (Steps 3 & 4)**:
   * Quran queries (Step 3) are strictly routed to `search_quran` and terminate immediately.
   * Dictionary definitions, translations, name checks, proverb and synonym lookups (Step 4) run their respective dictionary tools and stop immediately unless a book-level usage is explicitly queried.
@@ -219,7 +220,7 @@ flowchart TD
 |------|------|-------|---------------------|
 | `rewrite_query` | Utility | `QueryRewriter` | Question has pronouns or follow-up markers ("چۇ" clitic) and chat history exists. |
 | `get_current_page` | Content | `PagesRepository` | Raw text of the page the user is currently reading (in-reader mode). |
-| `search_quran` | Content | Quran verse table | Surah/ayah lookup or free-text search within the Quran — a source separate from the book library. |
+| `search_quran` | Content | Quran verse table | Surah/ayah lookup or free-text search within the Quran — a source separate from the book library. Also returns surah metadata (verse count, Uyghur/English/Arabic names). |
 | `lookup_uyghur_word` | Dictionary | Dictionary repository | Uyghur word definition lookup. |
 | `lookup_history_term` | Dictionary | Dictionary repository | Historical term/person/event/place lookup. |
 | `translate_english_to_uyghur` | Dictionary | Dictionary repository | English → Uyghur translation. |
