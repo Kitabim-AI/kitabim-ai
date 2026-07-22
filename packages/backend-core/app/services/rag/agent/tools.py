@@ -1006,7 +1006,7 @@ def _format_dictionary_context(source_label: str, entries: list[dict]) -> str:
             blocks.append(
                 "[Dictionary Source: Synonyms Dictionary, "
                 f"Word: {entry.get('word', '')}]\n"
-                f"Synonyms of \"{entry.get('word', '')}\": {synonyms_list}"
+                f'Synonyms of "{entry.get("word", "")}": {synonyms_list}'
             )
     return "\n\n---\n\n".join(blocks)
 
@@ -1334,7 +1334,7 @@ async def _run_lookup_synonyms(args: dict, ctx: QueryContext) -> dict:
                 synonyms_list = "، ".join(e["synonyms"]) if e["synonyms"] else ""
                 context_parts.append(
                     f"[Dictionary Source: Synonyms Dictionary, Word: {e['word']}]\n"
-                    f"Synonyms of \"{e['word']}\": {synonyms_list}"
+                    f'Synonyms of "{e["word"]}": {synonyms_list}'
                 )
             context = "\n\n---\n\n".join(context_parts)
         else:

@@ -18,11 +18,14 @@ Cron schedule:
   maintenance_scanner  daily at 3AM — cleanup old processed events/logs
 """
 
+import functools
+import logging
 from arq.connections import RedisSettings
 from arq.cron import cron
 
 from app.core.config import settings
 from app.queue import worker_startup, worker_shutdown
+from app.utils.observability import track_request_id, log_json
 from scanners.gcs_discovery_scanner import run_gcs_discovery_scanner
 from scanners.pipeline_driver import run_pipeline_driver
 from scanners.ocr_scanner import run_ocr_scanner
@@ -35,6 +38,9 @@ from scanners.event_dispatcher import run_event_dispatcher
 from scanners.maintenance_scanner import run_maintenance_scanner
 from scanners.auto_correct_scanner import run_auto_correct_scanner
 from scanners.batch_ocr_poller_scanner import run_batch_ocr_poller_scanner
+from scanners.batch_embedding_poller_scanner import (
+    run_batch_embedding_poller_scanner,
+)
 from jobs.ocr_job import ocr_job
 from jobs.chunking_job import chunking_job
 from jobs.embedding_job import embedding_job
@@ -69,6 +75,7 @@ class WorkerSettings:
         cron(run_batch_ocr_poller_scanner),
         cron(run_chunking_scanner),
         cron(run_embedding_scanner),
+        cron(run_batch_embedding_poller_scanner),
         cron(run_spell_check_scanner),
         cron(run_stale_watchdog, minute={0, 30}),
         cron(
@@ -85,10 +92,6 @@ class WorkerSettings:
 
 
 # Wrap all worker job functions with track_request_id to support request_id context propagation
-import functools
-import logging
-from app.utils.observability import track_request_id, log_json
-
 WorkerSettings.functions = [track_request_id(f) for f in WorkerSettings.functions]
 
 

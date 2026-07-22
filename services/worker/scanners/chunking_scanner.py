@@ -3,6 +3,11 @@ Chunking Scanner — claims idle chunking pages and dispatches one ChunkingJob.
 
 Pages from any book can be grouped together since chunking only needs the
 text already stored in the database.
+
+When spell_check is enabled, a page must also have spell_check_milestone in
+('succeeded', 'failed') before it's eligible — spell check can rewrite
+page.text via auto-correct rules, and chunking on text that's about to be
+corrected would build chunks from stale content with no re-chunk trigger.
 Runs every 1 minute.
 """
 
@@ -27,6 +32,9 @@ async def run_chunking_scanner(ctx) -> None:
     async with db_session.async_session_factory() as session:
         config_repo = SystemConfigsRepository(session)
         page_limit = int(await config_repo.get_value("scanner_page_limit", "100"))
+        spell_check_enabled = (
+            await config_repo.get_value("spell_check_enabled", "false")
+        ) == "true"
 
         # Atomically claim idle chunking pages across all books.
         # Note: we do NOT filter by book status. auto_correct_service resets
@@ -35,14 +43,22 @@ async def run_chunking_scanner(ctx) -> None:
         # those pages permanently stuck at idle.
         from app.db.models import Book
 
+        where_conditions = [
+            Page.ocr_milestone == "succeeded",
+            Page.chunking_milestone == "idle",
+            ~Book.status.in_(["error"]),
+        ]
+        if spell_check_enabled:
+            # Wait for spell check to finish (or fail) on this page first —
+            # see module docstring for why order matters here.
+            where_conditions.append(
+                Page.spell_check_milestone.in_(["succeeded", "failed"])
+            )
+
         id_stmt = (
             select(Page.id)
             .join(Book, Page.book_id == Book.id)
-            .where(
-                Page.ocr_milestone == "succeeded",
-                Page.chunking_milestone == "idle",
-                ~Book.status.in_(["error"]),
-            )
+            .where(*where_conditions)
             .with_for_update(skip_locked=True)
             .limit(page_limit)
         )

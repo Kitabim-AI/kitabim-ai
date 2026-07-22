@@ -133,6 +133,26 @@ async def seed_system_configs(session: AsyncSession):
             "value": "15",
             "description": "Timeout in seconds for Gemini vector embedding API calls.",
         },
+        {
+            "key": "gemini_batch_embedding_enabled",
+            "value": "false",
+            "description": "Globally enable/disable Gemini Batch API embedding processing. Set to 'true' to activate.",
+        },
+        {
+            "key": "gemini_batch_embedding_timeout_hours",
+            "value": "24",
+            "description": "Timeout threshold in hours after which a pending/running batch embedding job is marked stale and retried.",
+        },
+        {
+            "key": "gemini_batch_embedding_max_chunks_per_job",
+            "value": "100",
+            "description": "Maximum number of chunks packaged into a single Gemini Batch API embedding submission. Sized for the Tier 1 batch enqueued-tokens budget (500K) assuming several concurrent jobs — raise if the Gemini API key is upgraded to a higher tier.",
+        },
+        {
+            "key": "gemini_batch_embedding_max_retry_count",
+            "value": "3",
+            "description": "Per-chunk retry ceiling before a failing chunk is skipped during batch embedding ingestion.",
+        },
     ]
 
     for item in defaults:

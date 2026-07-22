@@ -12,6 +12,7 @@ from sqlalchemy import select, update, func
 
 from app.db import session as db_session
 from app.db.models import Book, Page, PipelineEvent
+from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.services.book_milestone_service import BookMilestoneService
 from app.utils.observability import log_json
 
@@ -85,8 +86,23 @@ async def run_event_dispatcher(ctx) -> None:
         if not events:
             return
 
+        config_repo = SystemConfigsRepository(session)
+        spell_check_enabled = (
+            await config_repo.get_value("spell_check_enabled", "false")
+        ) == "true"
+
+        # When spell check is enabled, chunking must wait for it to finish (or
+        # fail) on a page rather than firing straight off OCR — spell check can
+        # rewrite page.text via auto-correct rules, and chunking on text that's
+        # about to change would build chunks from stale content. Mirrors the
+        # gating condition in chunking_scanner.
+        chunking_trigger_types = (
+            ("spell_check_succeeded", "spell_check_failed")
+            if spell_check_enabled
+            else ("ocr_succeeded",)
+        )
         chunking_candidates = [
-            e.page_id for e in events if e.event_type == "ocr_succeeded"
+            e.page_id for e in events if e.event_type in chunking_trigger_types
         ]
         embedding_candidates = [
             e.page_id for e in events if e.event_type == "chunking_succeeded"

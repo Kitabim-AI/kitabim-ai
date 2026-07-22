@@ -275,7 +275,68 @@ class BatchOCRJob(Base):
     __table_args__ = (
         CheckConstraint(
             "status IN ('submitting', 'submitted', 'running', 'succeeded', 'failed', 'cancelled')",
-            name="batch_ocr_jobs_status_check",
+            name="check_batch_ocr_jobs_status",
+        ),
+    )
+
+
+class BatchEmbeddingJob(Base):
+    """Batch Embedding Job model tracking Gemini Batch API embedding requests"""
+
+    __tablename__ = "batch_embedding_jobs"
+
+    id: Mapped[str] = mapped_column(
+        String(64),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    gemini_batch_id: Mapped[Optional[str]] = mapped_column(
+        String(255), unique=True, nullable=True
+    )
+    book_ids: Mapped[List[str]] = mapped_column(ARRAY(String(64)), nullable=False)
+    page_ids: Mapped[List[int]] = mapped_column(ARRAY(Integer), nullable=False)
+    chunk_ids: Mapped[List[int]] = mapped_column(ARRAY(Integer), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default="submitting",
+        server_default="submitting",
+        index=True,
+        nullable=False,
+    )
+
+    gcs_input_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    gcs_output_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    total_chunks: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    processed_chunks: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        onupdate=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('submitting', 'submitted', 'running', 'succeeded', 'failed', 'cancelled')",
+            name="check_batch_embedding_jobs_status",
         ),
     )
 
