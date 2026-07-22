@@ -87,7 +87,14 @@ async def submit_batch_ocr_job(
                         ]
                     }
                 ],
-                "generation_config": {"temperature": 0.0},
+                "generation_config": {
+                    "temperature": 0.0,
+                    # OCR is pure transcription, not a reasoning task — without
+                    # this, the model can burn its entire output budget on
+                    # hidden "thinking" and return finishReason=STOP with zero
+                    # actual output tokens (silent, no error surfaced).
+                    "thinking_config": {"thinking_budget": 0},
+                },
             },
         }
         jsonl_lines.append(json.dumps(request_entry))

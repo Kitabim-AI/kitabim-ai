@@ -269,6 +269,7 @@ async def test_generate_text_with_image_timeout_propagation(
     assert config.http_options.timeout == 150000
     assert config.system_instruction == "prompt"
     assert "prompt" not in kwargs["contents"]
+    assert config.thinking_config.thinking_budget == 0
 
 
 @pytest.mark.asyncio

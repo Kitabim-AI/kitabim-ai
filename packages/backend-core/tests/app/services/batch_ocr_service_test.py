@@ -63,6 +63,15 @@ async def test_submit_batch_ocr_job():
             model="gemini-3.5-flash", src="files/abc123"
         )
 
+        jsonl_content = mock_storage.upload_bytes.call_args.args[0]
+        request_line = json.loads(jsonl_content.decode("utf-8").splitlines()[0])
+        assert (
+            request_line["request"]["generation_config"]["thinking_config"][
+                "thinking_budget"
+            ]
+            == 0
+        )
+
 
 @pytest.mark.asyncio
 async def test_submit_batch_ocr_job_submission_failure():
