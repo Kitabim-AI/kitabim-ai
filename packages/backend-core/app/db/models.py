@@ -214,6 +214,72 @@ class Page(Base):
     )
 
 
+class BatchOCRJob(Base):
+    """Batch OCR Job model tracking Gemini Batch API requests"""
+
+    __tablename__ = "batch_ocr_jobs"
+
+    id: Mapped[str] = mapped_column(
+        String(64),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    gemini_batch_id: Mapped[Optional[str]] = mapped_column(
+        String(255), unique=True, nullable=True
+    )
+    book_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("books.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    page_ids: Mapped[List[int]] = mapped_column(ARRAY(Integer), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default="submitting",
+        server_default="submitting",
+        index=True,
+        nullable=False,
+    )
+
+    gcs_input_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    gcs_output_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    total_pages: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    processed_pages: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        onupdate=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    # Relationships
+    book: Mapped["Book"] = relationship("Book")
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('submitting', 'submitted', 'running', 'succeeded', 'failed', 'cancelled')",
+            name="batch_ocr_jobs_status_check",
+        ),
+    )
+
+
 class Chunk(Base):
     """Chunk model for RAG with semantic embeddings"""
 

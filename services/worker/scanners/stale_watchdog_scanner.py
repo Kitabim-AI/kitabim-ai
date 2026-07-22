@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import update, func, select
 
 from app.db import session as db_session
-from app.db.models import Book, Page
+from app.db.models import Book, Page, BatchOCRJob
 from app.services.book_milestone_service import BookMilestoneService
 from app.utils.observability import log_json
 from app.utils.circuit_breaker import get_redis
@@ -31,6 +31,19 @@ async def run_stale_watchdog(ctx) -> None:
 
     async with db_session.async_session_factory() as session:
         from sqlalchemy import or_, case
+
+        # Pages locked by an in-flight Gemini Batch OCR job can legitimately stay
+        # "in_progress" for up to gemini_batch_ocr_timeout_hours (default 24h) —
+        # the batch poller's own timeout handles their recovery, so exempt them
+        # here to avoid the two timeout mechanisms fighting each other.
+        batch_result = await session.execute(
+            select(BatchOCRJob.page_ids).where(
+                BatchOCRJob.status.in_(["submitting", "submitted", "running"])
+            )
+        )
+        active_batch_page_ids = {
+            pid for (page_ids,) in batch_result.fetchall() for pid in page_ids
+        }
 
         # Build conditions and update values dynamically based on feature flags
         where_conditions = [
@@ -69,6 +82,9 @@ async def run_stale_watchdog(ctx) -> None:
 
         stale_page_ids = []
         for pid, book_id, worker_id, claimed_at in rows:
+            if pid in active_batch_page_ids:
+                continue
+
             c_at = claimed_at
             if c_at and c_at.tzinfo is None:
                 c_at = c_at.replace(tzinfo=timezone.utc)

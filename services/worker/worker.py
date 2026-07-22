@@ -34,6 +34,7 @@ from scanners.summary_scanner import run_summary_scanner
 from scanners.event_dispatcher import run_event_dispatcher
 from scanners.maintenance_scanner import run_maintenance_scanner
 from scanners.auto_correct_scanner import run_auto_correct_scanner
+from scanners.batch_ocr_poller_scanner import run_batch_ocr_poller_scanner
 from jobs.ocr_job import ocr_job
 from jobs.chunking_job import chunking_job
 from jobs.embedding_job import embedding_job
@@ -65,6 +66,7 @@ class WorkerSettings:
         ),
         cron(run_pipeline_driver, run_at_startup=True),
         cron(run_ocr_scanner),
+        cron(run_batch_ocr_poller_scanner),
         cron(run_chunking_scanner),
         cron(run_embedding_scanner),
         cron(run_spell_check_scanner),

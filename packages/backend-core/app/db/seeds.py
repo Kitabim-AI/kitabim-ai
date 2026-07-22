@@ -29,6 +29,21 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Gemini model used for OCR page processing.",
         },
         {
+            "key": "gemini_batch_ocr_enabled",
+            "value": "false",
+            "description": "Globally enable/disable Gemini Batch API for OCR page processing. Set to 'true' to use Batch API (50% cost discount) or 'false' for online real-time OCR.",
+        },
+        {
+            "key": "gemini_batch_ocr_batch_size",
+            "value": "50",
+            "description": "Maximum number of pages bundled into a single Gemini Batch API job.",
+        },
+        {
+            "key": "gemini_batch_ocr_timeout_hours",
+            "value": "24",
+            "description": "Hours after which a pending/running Gemini Batch API OCR job is considered timed out and marked stale for retry.",
+        },
+        {
             "key": "gemini_embedding_model",
             "value": "gemini-embedding-2",
             "description": "Gemini model used for generating text embeddings (vector search).",
