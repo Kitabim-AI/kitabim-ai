@@ -536,7 +536,8 @@ async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
     # answer's book IDs verbatim and the similarity scores are weak (different
     # topic), rediscover relevant books via the summary index and re-search within them.
     if (
-        book_ids
+        ctx.is_global
+        and book_ids
         and ctx.context_book_ids
         and set(book_ids) == {str(x) for x in ctx.context_book_ids}
     ):

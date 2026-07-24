@@ -107,7 +107,6 @@ _FALLBACK_ROUTES = {
     "named_title",
     "named_author",
     "volume_shift",
-    "in_reader_only",
     "context_books",
     DEFAULT_ROUTE,
 }

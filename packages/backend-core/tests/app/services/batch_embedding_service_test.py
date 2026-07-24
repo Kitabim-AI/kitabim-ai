@@ -3,6 +3,8 @@ import pytest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from google.genai import types
+
 from app.db.models import BatchEmbeddingJob, Chunk
 from app.services.batch_embedding_service import (
     submit_batch_embedding_job,
@@ -85,7 +87,8 @@ async def test_submit_batch_embedding_job_success():
         mock_storage.upload_bytes.assert_called_once()
         mock_genai_client.files.upload.assert_called_once()
         mock_genai_client.batches.create_embeddings.assert_called_once_with(
-            model="gemini-embedding-2", src="files/embed_file_123"
+            model="gemini-embedding-2",
+            src=types.EmbeddingsBatchJobSource(file_name="files/embed_file_123"),
         )
 
         jsonl_content = mock_storage.upload_bytes.call_args.args[0]
@@ -423,7 +426,8 @@ async def test_submit_batch_embedding_job_page_boundary_packing():
         mock_storage.get_gs_uri.return_value = "gs://bucket/inputs/job.jsonl"
 
         mock_genai_client = MagicMock()
-        mock_uploaded_file = MagicMock(name="files/f123")
+        mock_uploaded_file = MagicMock()
+        mock_uploaded_file.name = "files/f123"
         mock_genai_client.files.upload.return_value = mock_uploaded_file
         mock_genai_client.batches.create_embeddings.return_value = MagicMock(
             name="batches/b123"

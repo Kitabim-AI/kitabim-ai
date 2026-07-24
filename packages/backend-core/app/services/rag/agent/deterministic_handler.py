@@ -137,7 +137,9 @@ class DeterministicRAGHandler(QueryHandler):
         Uses a single structured JSON response to classify query properties,
         using tool calls to resolve book titles/authors dynamically.
         """
-        in_reader = ctx.current_page is not None
+        in_reader = (ctx.current_page is not None) or (
+            not ctx.is_global and bool(ctx.book_id)
+        )
         current_page = ctx.current_page
         has_history = len(ctx.history) > 0
         history_str = ctx.chat_history_str if has_history else "None"
@@ -354,7 +356,9 @@ Dictionary subtype rules:
 
     async def extract_signals(self, question: str, ctx: QueryContext) -> dict:
         """Stage 1: Signal Extractor — database metadata lookups combined with structured LLM query analysis."""
-        in_reader = ctx.current_page is not None
+        in_reader = (ctx.current_page is not None) or (
+            not ctx.is_global and bool(ctx.book_id)
+        )
         has_current_book = ctx.book_id is not None and not ctx.is_global
         has_context_books = len(ctx.context_book_ids) > 0
         is_global = ctx.is_global
@@ -641,7 +645,9 @@ Return ONLY valid JSON matching this schema:
         )
         has_author = bool(matched_author_books)
 
-        in_reader = ctx.current_page is not None
+        in_reader = (ctx.current_page is not None) or (
+            not ctx.is_global and bool(ctx.book_id)
+        )
         has_current_book = ctx.book_id is not None and not ctx.is_global
         has_context_books = len(ctx.context_book_ids) > 0
         is_global = ctx.is_global
@@ -1209,9 +1215,21 @@ Return ONLY valid JSON matching this schema:
     ) -> AsyncIterator[dict]:
         result_holder = {}
         current_book_id = ctx.book_id
+        if current_book_id and (intent == "summary" or intent == "identity"):
+            async for ev in self._run_tool_and_yield(
+                "get_book_summary",
+                {"book_ids": [current_book_id]},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
         async for ev in self._run_tool_and_yield(
             "search_chunks",
-            {"query": question, "book_ids": [current_book_id]},
+            {
+                "query": question,
+                "book_ids": [current_book_id] if current_book_id else None,
+            },
             ctx,
             observations,
             result_holder,

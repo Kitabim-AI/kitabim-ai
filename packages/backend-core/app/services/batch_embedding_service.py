@@ -173,7 +173,7 @@ async def submit_batch_embedding_job(
             )
             batch_job = client.batches.create_embeddings(
                 model=model,
-                src=uploaded_file.name,
+                src=types.EmbeddingsBatchJobSource(file_name=uploaded_file.name),
             )
             gemini_batch_id = batch_job.name
             log_json(

@@ -28,6 +28,8 @@ def mock_ctx():
     ctx.book.volume = 1
     ctx.agent_model = "test-model"
     ctx.user_id = "test-user"
+    ctx.enriched_question = None
+    ctx.question = "test question"
     return ctx
 
 
@@ -1381,3 +1383,75 @@ async def test_current_page_query_with_rewrite_preserves_intent(mock_ctx):
         tools_called = [o["tool"] for o in observations]
         assert "get_current_page" in tools_called
         assert "search_chunks" not in tools_called
+
+
+@pytest.mark.asyncio
+async def test_reader_summary_question_stays_in_reader_book(mock_ctx):
+    handler = DeterministicRAGHandler()
+    mock_ctx.current_page = None
+    mock_ctx.book_id = "book-123"
+    mock_ctx.is_global = False
+
+    question = "بۇ كىتابنىڭ ئاساسى مەزمۇنى نىمە؟"
+
+    async def mock_analyze(q, ctx):
+        return {
+            "is_current_page_query": False,
+            "is_volume_shift": False,
+            "target_volume": None,
+            "needs_rewrite": False,
+            "rewritten_question": None,
+            "catalog_subtype": None,
+            "dictionary_subtype": None,
+            "dictionary_term": None,
+            "quran_surah": None,
+            "quran_ayah": None,
+            "quran_query": None,
+            "intent": "summary",
+            "is_composite": False,
+            "sub_questions": None,
+            "has_title": False,
+            "has_author": False,
+            "matched_books": [],
+            "matched_author_books": [],
+        }
+
+    handler._llm_analyze_query = mock_analyze
+
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        if tool_name == "get_book_summary":
+            return {
+                "ok": True,
+                "summaries": [
+                    {"book_id": "book-123", "summary": "Summary of book-123"}
+                ],
+            }
+        if tool_name == "search_chunks":
+            return {
+                "ok": True,
+                "chunks": [{"text": "chunk 1", "score": 0.3}],
+            }  # Low score
+        if tool_name == "search_books_by_summary":
+            return {"ok": True, "book_ids": ["other-1", "other-2"]}
+        return {"ok": True}
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        observations = []
+        events = []
+        async for ev in handler._execute_workflow_stream(
+            mock_ctx, question, observations
+        ):
+            events.append(ev)
+
+        tools_called = [o["tool"] for o in observations]
+        assert "get_book_summary" in tools_called
+        assert "search_chunks" in tools_called
+        assert "search_books_by_summary" not in tools_called
+
+        # Check search_chunks arguments
+        chunk_obs = [o for o in observations if o["tool"] == "search_chunks"]
+        for obs in chunk_obs:
+            assert obs["args"].get("book_ids") == ["book-123"]
