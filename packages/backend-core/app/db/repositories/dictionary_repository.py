@@ -27,6 +27,24 @@ def _sql_normalize_uyghur(column):
     return normalized
 
 
+def _build_fuzzy_term_where(column, norm_term: str):
+    words = [w for w in norm_term.split() if len(w) > 1]
+    norm_col = _sql_normalize_uyghur(column)
+    if len(words) > 1:
+        main_word = words[0]
+        return (
+            norm_col.ilike(f"%{norm_term}%")
+            | (
+                norm_col.ilike(f"%{main_word}%")
+                & (func.similarity(norm_col, norm_term) > 0.4)
+            )
+            | (func.similarity(norm_col, norm_term) >= 0.65)
+        )
+    return norm_col.ilike(f"%{norm_term}%") | (
+        func.similarity(norm_col, norm_term) > 0.4
+    )
+
+
 class DictionaryRepository:
     """Read-only lookup helpers across language dictionary tables."""
 
@@ -67,13 +85,7 @@ class DictionaryRepository:
                     _sql_normalize_uyghur(Dictionary.word), norm_term
                 ).label("score"),
             )
-            .where(
-                _sql_normalize_uyghur(Dictionary.word).ilike(f"%{norm_term}%")
-                | (
-                    func.similarity(_sql_normalize_uyghur(Dictionary.word), norm_term)
-                    > 0.3
-                )
-            )
+            .where(_build_fuzzy_term_where(Dictionary.word, norm_term))
             .order_by(
                 func.similarity(
                     _sql_normalize_uyghur(Dictionary.word), norm_term
@@ -121,15 +133,7 @@ class DictionaryRepository:
                     _sql_normalize_uyghur(HistoryDictionary.term), norm_term
                 ).label("score"),
             )
-            .where(
-                _sql_normalize_uyghur(HistoryDictionary.term).ilike(f"%{norm_term}%")
-                | (
-                    func.similarity(
-                        _sql_normalize_uyghur(HistoryDictionary.term), norm_term
-                    )
-                    > 0.3
-                )
-            )
+            .where(_build_fuzzy_term_where(HistoryDictionary.term, norm_term))
             .order_by(
                 func.similarity(
                     _sql_normalize_uyghur(HistoryDictionary.term), norm_term
@@ -244,15 +248,7 @@ class DictionaryRepository:
                     _sql_normalize_uyghur(NamesDictionary.name), norm_name
                 ).label("score"),
             )
-            .where(
-                _sql_normalize_uyghur(NamesDictionary.name).ilike(f"%{norm_name}%")
-                | (
-                    func.similarity(
-                        _sql_normalize_uyghur(NamesDictionary.name), norm_name
-                    )
-                    > 0.3
-                )
-            )
+            .where(_build_fuzzy_term_where(NamesDictionary.name, norm_name))
             .order_by(
                 func.similarity(
                     _sql_normalize_uyghur(NamesDictionary.name), norm_name
@@ -301,13 +297,7 @@ class DictionaryRepository:
                     "score"
                 ),
             )
-            .where(
-                _sql_normalize_uyghur(Synonym.word).ilike(f"%{norm_query}%")
-                | (
-                    func.similarity(_sql_normalize_uyghur(Synonym.word), norm_query)
-                    > 0.3
-                )
-            )
+            .where(_build_fuzzy_term_where(Synonym.word, norm_query))
             .order_by(
                 func.similarity(_sql_normalize_uyghur(Synonym.word), norm_query).desc(),
                 func.length(Synonym.word),

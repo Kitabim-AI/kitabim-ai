@@ -36,3 +36,13 @@ async def test_lookup_name_queries_db_for_regular_names():
     assert len(res) == 1
     assert res[0]["name"] == "ئۆمەر"
     session.execute.assert_called_once()
+
+
+def test_build_fuzzy_term_where_multi_word():
+    from app.db.models import HistoryDictionary
+    from app.db.repositories.dictionary_repository import _build_fuzzy_term_where
+
+    clause = _build_fuzzy_term_where(HistoryDictionary.term, "قوقان خانلىقى")
+    clause_str = str(clause.compile(compile_kwargs={"literal_binds": True}))
+    assert "قوقان خانلىقى" in clause_str
+    assert "قوقان" in clause_str

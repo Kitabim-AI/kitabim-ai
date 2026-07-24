@@ -219,16 +219,16 @@ Return ONLY valid JSON matching this schema:
 
 Intents:
 - catalog     : asking about book metadata, authors of books, book listings, or what books exist in the library
-- dictionary  : asking for word meanings, dictionary definitions, spelling validity, names, synonyms, historical vocabulary explanations, or English-to-Uyghur translation
+- dictionary  : asking for word meanings, dictionary definitions, spelling validity, names, synonyms, historical vocabulary headword explanations, or English-to-Uyghur translation
 - identity    : asking who/what a person or character IS (biography, role, background)
 - summary     : asking about the plot, themes, or main characters of a book
 - relationship: asking about connections, lineages, family trees, or how X and Y relate
-- passage     : asking for specific events, facts, quotes, or details — including "tell me about X's actions"
+- passage     : asking for specific events, facts, quotes, details, timelines, dates, or historical events/origins (e.g., "when and how was X founded?", "why did X happen?", "tell me about X's history")
 - quran       : asking about Quran surahs, verses (ayahs), translations, or searching for specific verses/phrases in the Quran (e.g., "what is surah 1?", "read ayah 1:2", "فاتىھە سۈرىسى", "ئاللاھنىڭ ئىسمى بىلەن باشلايمەن قايسى سۈرىدە بار؟")
 
 Dictionary subtype rules:
 - "uyghur_definition": Uyghur word meaning or definition ("X دېگەن نېمە؟", "X مەنىسى نېمە؟")
-- "history_term": historical person, event, place, or concept lookup, especially when no book title is named
+- "history_term": historical entity/person/place lookup for direct headword definition (e.g. "X كىم؟", "X نېمە؟"). Do NOT use "dictionary" for complex historical questions asking about events, origins, timelines, dates, or causes (e.g. "when/how was X founded?", "why did X happen?") — classify those as "passage".
 - "english_uyghur": user asks for the Uyghur translation/equivalent of an English word or phrase
 - "spelling": user asks whether a Uyghur spelling is correct or valid
 - "names": Uyghur person name lookup, or listing/asking about names starting with a specific letter/alphabet (e.g. "ب ھەرىپىدىن باشلانغان كىشى ئىسىملىرى", "ئالىم دېگەن ئىسىم"). For requests listing names starting with a letter, extract the target letter (e.g., "ب") as the dictionary_term.
