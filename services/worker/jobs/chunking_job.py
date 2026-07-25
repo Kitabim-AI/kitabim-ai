@@ -32,7 +32,7 @@ async def chunking_job(ctx, page_ids: List[int]) -> None:
     from app.utils.circuit_breaker import get_redis
 
     redis_client = ctx.get("redis") or get_redis()
-    lock_manager = MultiPageLock(redis_client, page_ids)
+    lock_manager = MultiPageLock(redis_client, page_ids, prefix="chunking")
     locked_page_ids = await lock_manager.__aenter__()
 
     try:
