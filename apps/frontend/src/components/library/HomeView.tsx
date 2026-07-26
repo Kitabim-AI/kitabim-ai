@@ -5,7 +5,9 @@ import { useI18n } from '../../i18n/I18nContext';
 import { PersistenceService } from '../../services/persistenceService';
 import { ProverbDisplay } from '../common/ProverbDisplay';
 import { QuestionRotator } from '../common/QuestionRotator';
+import { VoiceInputButton } from '../common/VoiceInputButton';
 import { BookCard } from './BookCard';
+
 
 interface KeyDef {
   latin: string;
@@ -321,8 +323,8 @@ export const HomeView: React.FC = () => {
           <input
             ref={searchInputRef}
             type="text"
-            className={`w-full pr-12 md:pr-16 py-4 sm:py-5 bg-white/60 dark:bg-slate-900/60 backdrop-blur-2xl border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-[32px] text-base sm:text-lg font-normal text-[#1a1a1a] dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-500 outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] focus:ring-[12px] focus:ring-[#0369a1]/5 dark:focus:ring-[#38bdf8]/5 transition-all shadow-xl uyghur-text md:pl-28 ${
-              localSearch ? 'pl-14' : 'pl-6'
+            className={`w-full pr-12 md:pr-16 py-4 sm:py-5 bg-white/60 dark:bg-slate-900/60 backdrop-blur-2xl border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-[32px] text-base sm:text-lg font-normal text-[#1a1a1a] dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-500 outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] focus:ring-[12px] focus:ring-[#0369a1]/5 dark:focus:ring-[#38bdf8]/5 transition-all shadow-xl uyghur-text ${
+              localSearch ? 'pl-28 sm:pl-32 md:pl-44' : 'pl-16 sm:pl-20 md:pl-32'
             }`}
             placeholder={t('home.searchOrChatPlaceholder')}
             value={localSearch}
@@ -330,20 +332,28 @@ export const HomeView: React.FC = () => {
             onKeyDown={(e) => { if (e.key === 'Enter') handleSearchSubmit(); }}
             dir="rtl"
           />
-          <div className="absolute inset-y-0 left-0 pl-4 sm:pl-6 flex items-center gap-0.5 z-10" dir="ltr">
+          <div className="absolute inset-y-0 left-0 pl-3.5 sm:pl-5 flex items-center gap-1 sm:gap-1.5 z-10" dir="ltr">
             {localSearch && (
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => { setLocalSearch(''); setSearchQuery(''); }}
-                className="w-9 h-9 rounded-full flex items-center justify-center text-[#94a3b8] hover:text-[#0369a1] hover:bg-slate-100/50 transition-colors"
+                className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-[#94a3b8] hover:text-[#0369a1] hover:bg-slate-100/50 transition-colors"
                 title="Clear"
               >
                 <X size={20} className="sm:w-[22px] sm:h-[22px]" strokeWidth={3} />
               </button>
             )}
 
+            <VoiceInputButton
+              onTranscribed={(text) => {
+                setLocalSearch((prev) => (prev ? `${prev} ${text}` : text));
+              }}
+              size="md"
+            />
+
             {/* Keyboard layout toggle icon, hidden on mobile */}
+
             <button
               type="button"
               onMouseDown={(e) => e.preventDefault()}

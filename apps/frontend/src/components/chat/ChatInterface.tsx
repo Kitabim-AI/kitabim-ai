@@ -21,7 +21,9 @@ import {
   X,
 } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
+import { VoiceInputButton } from '../common/VoiceInputButton';
 import { CHARACTERS, DEFAULT_CHARACTER_ID } from '../../constants/characters';
+
 import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../hooks/useAuth';
 import { AgentStep } from '../../hooks/useChat';
@@ -426,20 +428,29 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                       onKeyDown={(e) => e.key === 'Enter' && !isChatting && !usageStatus?.hasReachedLimit && onSendMessage()}
                       onFocus={(e) => { const el = e.target; setTimeout(() => el?.scrollIntoView({ block: 'nearest' }), 300); }}
                       ref={inputRef}
-                      className="w-full bg-transparent border-none py-2.5 sm:py-3.5 pl-[60px] sm:pl-[72px] pr-4 sm:pr-6 font-normal text-[#1a1a1a] dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-500 outline-none uyghur-text"
+                      className="w-full bg-transparent border-none py-2.5 sm:py-3.5 pl-[108px] sm:pl-[120px] pr-4 sm:pr-6 font-normal text-[#1a1a1a] dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-500 outline-none uyghur-text"
                       style={{ fontSize: `${chatFontSize}px`, lineHeight: 'normal' }}
                       dir="rtl"
                       disabled={usageStatus?.hasReachedLimit}
                       maxLength={500}
                     />
-                    <button
-                      onClick={onSendMessage}
-                      data-testid="send-button"
-                      disabled={isChatting || !chatInput.trim() || usageStatus?.hasReachedLimit}
-                      className="absolute left-3.5 sm:left-5 top-1/2 -translate-y-1/2 flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl sm:rounded-2xl shadow-lg shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10 hover:scale-105 active:scale-90 transition-all disabled:opacity-30"
-                    >
-                      <Send size={18} strokeWidth={2.5} className="sm:w-5 sm:h-5" />
-                    </button>
+                    <div className="absolute left-3.5 sm:left-5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                      <VoiceInputButton
+                        onTranscribed={(text) => {
+                          setChatInput(chatInput ? `${chatInput} ${text}` : text);
+                        }}
+                        size="md"
+                      />
+                      <button
+                        onClick={onSendMessage}
+                        data-testid="send-button"
+                        disabled={isChatting || !chatInput.trim() || usageStatus?.hasReachedLimit}
+                        className="flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl sm:rounded-2xl shadow-lg shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10 hover:scale-105 active:scale-90 transition-all disabled:opacity-30"
+                      >
+                        <Send size={18} strokeWidth={2.5} className="sm:w-5 sm:h-5" />
+                      </button>
+                    </div>
+
                   </>
                 )}
               </div>
@@ -860,20 +871,30 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     onKeyDown={(e) => e.key === 'Enter' && !isChatting && !usageStatus?.hasReachedLimit && onSendMessage()}
                     onFocus={(e) => { const el = e.target; setTimeout(() => el?.scrollIntoView({ block: 'nearest' }), 300); }}
                     ref={inputRef}
-                    className="w-full bg-transparent border-none py-1.5 sm:py-2 pl-12 sm:pl-14 pr-3 sm:pr-4 font-normal text-[#1a1a1a] dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-500 outline-none uyghur-text"
+                    className="w-full bg-transparent border-none py-1.5 sm:py-2 pl-[90px] sm:pl-[104px] pr-3 sm:pr-4 font-normal text-[#1a1a1a] dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-500 outline-none uyghur-text"
                     style={{ fontSize: `${chatFontSize}px`, lineHeight: 'normal' }}
                     dir="rtl"
                     disabled={usageStatus?.hasReachedLimit}
                     maxLength={500}
                   />
-                  <button
-                    onClick={onSendMessage}
-                    data-testid="send-button"
-                    disabled={isChatting || !chatInput.trim() || usageStatus?.hasReachedLimit}
-                    className="absolute left-2 sm:left-2.5 top-1/2 -translate-y-1/2 flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl sm:rounded-2xl shadow-lg shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10 hover:scale-105 active:scale-90 transition-all disabled:opacity-30"
-                  >
-                    <Send size={16} strokeWidth={2.5} className="sm:w-4 sm:h-4" />
-                  </button>
+                  <div className="absolute left-2 sm:left-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                    <VoiceInputButton
+                      onTranscribed={(text) => {
+                        setChatInput(chatInput ? `${chatInput} ${text}` : text);
+                      }}
+                      size="sm"
+                    />
+
+                    <button
+                      onClick={onSendMessage}
+                      data-testid="send-button"
+                      disabled={isChatting || !chatInput.trim() || usageStatus?.hasReachedLimit}
+                      className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl sm:rounded-2xl shadow-lg shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10 hover:scale-105 active:scale-90 transition-all disabled:opacity-30"
+                    >
+                      <Send size={16} strokeWidth={2.5} className="sm:w-4 sm:h-4" />
+                    </button>
+                  </div>
+
                 </>
               )}
             </div>

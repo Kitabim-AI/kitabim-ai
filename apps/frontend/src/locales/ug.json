@@ -929,5 +929,14 @@
     "allAyahs": "ھەممە ئايەت",
     "searchKeyword": "ھالقىلىق سۆز بويىچە ئىزدەش...",
     "searchBtn": "ئىزدەش"
+  },
+  "voice": {
+    "inputTitle": "ئاۋازلىق كىرگۈزۈش",
+    "startRecording": "ئاۋازلىق كىرگۈزۈشنى باشلاش",
+    "stopRecording": "ئاۋاز كىرگۈزۈشنى توختىتىش",
+    "stopAndTranscribe": "توختىتىش ۋە تېكىستكە ئايلاندۇرۇش",
+    "transcribing": "تونۇۋاتىدۇ...",
+    "notRecognized": "ئاۋاز تونۇلمىدى",
+    "unavailable": "ئاۋاز تونۇش مەغلۇپ بولدى"
   }
 }

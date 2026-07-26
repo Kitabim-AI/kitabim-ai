@@ -909,5 +909,14 @@
     "allAyahs": "All Ayahs",
     "searchKeyword": "Search by keyword...",
     "searchBtn": "Search"
+  },
+  "voice": {
+    "inputTitle": "Voice to Text",
+    "startRecording": "Start voice recording",
+    "stopRecording": "Stop recording",
+    "stopAndTranscribe": "Stop & Transcribe",
+    "transcribing": "Transcribing...",
+    "notRecognized": "Speech not recognized",
+    "unavailable": "Speech recognition unavailable"
   }
 }

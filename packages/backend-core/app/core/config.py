@@ -217,6 +217,22 @@ class Settings:
     llm_provider: str = os.getenv("LLM_PROVIDER", "gemini")
     vector_store_provider: str = os.getenv("VECTOR_STORE_PROVIDER", "pgvector")
 
+    # Uyghur ASR (voice-to-text)
+    asr_model_path: str = os.getenv(
+        "ASR_MODEL_PATH", "/app/packages/data/models/uyghur_asr.onnx"
+    )
+    asr_model_url: str = os.getenv(
+        "ASR_MODEL_URL",
+        "https://github.com/gheyret/uyghurasr_python/releases/download/tunji/uyghur_asr.onnx",
+    )
+    asr_model_sha256: str = os.getenv(
+        "ASR_MODEL_SHA256",
+        "b9b053af61a1f1056672a58ab458ff52dccc2ea5664763937297d148eff80904",
+    )
+    asr_max_upload_bytes: int = int(
+        os.getenv("ASR_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024))
+    )
+
     def __post_init__(self) -> None:
         # Compute jwt_secrets dict once on startup
         secrets_map = {}

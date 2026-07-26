@@ -33,7 +33,9 @@ from api.endpoints import (
     questions_router,
     proverbs_router,
     quran_router,
+    asr_router,
 )
+
 from app.core.config import settings
 from app.db.session import init_db, close_db  # SQLAlchemy session management
 from app.core.i18n import I18n, set_current_lang, t
@@ -160,6 +162,42 @@ async def lifespan(app: FastAPI):
 
     listener_task = asyncio.create_task(redis_pubsub_listener())
 
+    # Preload & warm up Uyghur ASR ONNX model and LLM/RAG resources in background thread on startup
+    try:
+        from app.services.asr_service import UyghurASRService
+        from app.services.rag.llm_resources import llm_resources
+
+        def _preload_services():
+            try:
+                service = UyghurASRService()
+                service.warmup()
+            except Exception as err:
+                log_json(
+                    logger,
+                    logging.WARNING,
+                    "Uyghur ASR startup preloading failed",
+                    error=str(err),
+                )
+
+            try:
+                llm_resources.warmup()
+            except Exception as err:
+                log_json(
+                    logger,
+                    logging.WARNING,
+                    "LLM resources startup preloading failed",
+                    error=str(err),
+                )
+
+        asyncio.get_running_loop().run_in_executor(None, _preload_services)
+    except Exception as exc:
+        log_json(
+            logger,
+            logging.WARNING,
+            "Services preloading initialization failed",
+            error=str(exc),
+        )
+
     yield
 
     # Cancel listener task on shutdown
@@ -234,9 +272,9 @@ async def add_security_headers(request: Request, call_next):
     # warnings in Safari 17+. Modern browsers use CSP for this purpose.
     # response.headers["X-XSS-Protection"] = "1; mode=block" (REMOVED)
 
-    # Permissions-Policy to restrict sensitive features
+    # Permissions-Policy to restrict sensitive features (microphone=(self) allows audio recording)
     response.headers["Permissions-Policy"] = (
-        "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+        "camera=(), microphone=(self), geolocation=(), interest-cohort=()"
     )
 
     if settings.environment == "production":
@@ -475,6 +513,7 @@ app.include_router(cache_router.router, prefix="/api/cache", tags=["cache"])
 app.include_router(questions_router.router, prefix="/api/questions", tags=["questions"])
 app.include_router(proverbs_router.router, prefix="/api", tags=["proverbs"])
 app.include_router(quran_router.router, prefix="/api", tags=["quran"])
+app.include_router(asr_router.router, prefix="/api/asr", tags=["asr"])
 
 
 @app.get("/api/config")

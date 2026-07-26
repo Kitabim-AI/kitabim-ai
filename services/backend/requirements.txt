@@ -30,3 +30,10 @@ python-docx>=1.1.0
 redis[hiredis]>=5.0.0
 tenacity>=8.2.0
 neo4j
+onnxruntime>=1.16.0
+onnx>=1.14.0
+librosa>=0.10.1
+soundfile>=0.12.1
+pydub>=0.25.1
+
+

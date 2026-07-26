@@ -52,7 +52,15 @@
       "gemini_api_key_missing": "Gemini API key not configured",
       "invalid_base64_image": "Invalid base64 image: {error}",
       "ocr_failed": "OCR failed: {error}"
-    }
+    },
+    "asr_read_failed": "Could not read the uploaded audio file.",
+    "asr_invalid_base64": "Invalid base64 audio encoding.",
+    "asr_missing_audio": "Provide either an audio file or audioBase64 string.",
+    "asr_audio_empty": "Audio data is empty or too short.",
+    "asr_audio_too_large": "Audio file size exceeds the allowed limit.",
+    "asr_invalid_audio_type": "Unsupported audio file type.",
+    "asr_service_unavailable": "Voice transcription is temporarily unavailable. Please try again in a moment.",
+    "asr_transcription_failed": "Voice transcription failed. Please try again."
   },
   "messages": {
     "logged_out": "Logged out successfully",

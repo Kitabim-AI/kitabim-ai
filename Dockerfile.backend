@@ -26,7 +26,7 @@ WORKDIR /app
 # Install runtime dependencies
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   --mount=type=cache,target=/var/lib/apt,sharing=locked \
-  apt-get update && apt-get install -y curl
+  apt-get update && apt-get install -y curl ffmpeg libsndfile1
 
 # Copy installed packages from builder
 COPY --from=builder /root/.local /root/.local
@@ -34,6 +34,14 @@ ENV PATH=/root/.local/bin:$PATH
 
 # Copy shared backend-core package
 COPY packages/backend-core /app/packages/backend-core
+
+# Pre-download Uyghur ASR ONNX model (~266MB) into Docker image to avoid runtime download.
+# Checksum is verified against the pinned SHA256 so a moved/compromised release asset fails the build.
+ARG ASR_MODEL_URL=https://github.com/gheyret/uyghurasr_python/releases/download/tunji/uyghur_asr.onnx
+ARG ASR_MODEL_SHA256=b9b053af61a1f1056672a58ab458ff52dccc2ea5664763937297d148eff80904
+RUN mkdir -p /app/packages/data/models && \
+    curl -L -o /app/packages/data/models/uyghur_asr.onnx "$ASR_MODEL_URL" && \
+    echo "${ASR_MODEL_SHA256}  /app/packages/data/models/uyghur_asr.onnx" | sha256sum -c -
 
 # Copy backend service code
 COPY services/backend /app/services/backend

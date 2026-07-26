@@ -41,6 +41,35 @@ class LLMResources:
             )
         return self._rewrite_chains[model_name]
 
+    def warmup(
+        self,
+        default_model: str = "gemini-2.5-flash",
+        embedding_model: str = "text-embedding-004",
+    ) -> None:
+        """Pre-instantiate LLM chains and embedding providers at server boot time."""
+        import logging
+        from app.utils.observability import log_json
+
+        logger = logging.getLogger("app.rag.llm_resources")
+        try:
+            self.get_embeddings(embedding_model)
+            self.get_rag_chain(default_model)
+            self.get_rewrite_chain(default_model)
+            log_json(
+                logger,
+                logging.INFO,
+                "LLM resources warmed up successfully",
+                default_model=default_model,
+                embedding_model=embedding_model,
+            )
+        except Exception as e:
+            log_json(
+                logger,
+                logging.WARNING,
+                "LLM resources warmup encountered notice (will load on demand)",
+                error=str(e),
+            )
+
 
 # Module-level singleton — shared across all RAGService instances and workers.
 llm_resources = LLMResources()
