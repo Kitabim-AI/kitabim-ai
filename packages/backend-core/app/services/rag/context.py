@@ -3,11 +3,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from contextvars import ContextVar
 from typing import TYPE_CHECKING, List, Optional
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
     from app.db.models import Book
+
+_current_query_context: ContextVar[Optional[QueryContext]] = ContextVar(
+    "current_query_context", default=None
+)
+
+
+def set_current_query_context(ctx: QueryContext) -> None:
+    _current_query_context.set(ctx)
+
+
+def get_current_query_context() -> Optional[QueryContext]:
+    return _current_query_context.get()
 
 
 @dataclass

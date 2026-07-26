@@ -143,7 +143,7 @@ export const AgentThinkingSteps: React.FC<AgentThinkingStepsProps> = ({ steps, f
   return (
     <div
       className={`bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 border border-[#0369a1]/10 dark:border-[#38bdf8]/10 shadow-sm flex flex-col w-full ${
-        compact ? 'gap-1 px-3 py-2.5 rounded-2xl rounded-tl-none' : 'gap-1.5 px-5 py-4 rounded-[28px] rounded-tl-none'
+        compact ? 'gap-1 px-3 py-2.5 rounded-2xl' : 'gap-1.5 px-5 py-4 rounded-[28px]'
       }`}
     >
       {steps.map(step => {

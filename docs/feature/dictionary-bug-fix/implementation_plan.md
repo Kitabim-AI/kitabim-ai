@@ -19,7 +19,7 @@
 ### Task 1: Update Dictionary Similarity Thresholds
 
 **Files:**
-- Modify: [dictionary_repository.py](../../packages/backend-core/app/db/repositories/dictionary_repository.py)
+- Modify: [dictionary_repository.py](../../../packages/backend-core/app/db/repositories/dictionary_repository.py)
 
 - [ ] **Step 1: Write a failing test for noisy similarity matches**
 - [ ] **Step 2: Update the thresholds in `DictionaryRepository`**
@@ -30,7 +30,7 @@
 ### Task 2: Implement Book Chunk Fallback in Deterministic RAG Handler
 
 **Files:**
-- Modify: [deterministic_handler.py](../../packages/backend-core/app/services/rag/agent/deterministic_handler.py)
+- Modify: [deterministic_handler.py](../../../packages/backend-core/app/services/rag/agent/deterministic_handler.py)
 
 - [ ] **Step 1: Modify the execution logic in `execute_path`**
 - [ ] **Step 2: Add test cases to verify the fallback logic**

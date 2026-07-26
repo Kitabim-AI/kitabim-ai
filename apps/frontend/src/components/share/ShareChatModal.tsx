@@ -100,13 +100,13 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({ question, answer
 
           {/* Question bubble */}
           {question && (
-            <div className="bg-white dark:bg-slate-950 border border-[#0369a1]/10 dark:border-slate-800 rounded-2xl rounded-tr-none px-4 py-2.5 text-sm text-[#1a1a1a] dark:text-slate-100 font-normal uyghur-text leading-relaxed line-clamp-3">
+            <div className="bg-white dark:bg-slate-950 border border-[#0369a1]/10 dark:border-slate-800 rounded-2xl px-4 py-2.5 text-sm text-[#1a1a1a] dark:text-slate-100 font-normal uyghur-text leading-relaxed line-clamp-3">
               {question}
             </div>
           )}
 
           {/* Answer bubble */}
-          <div className="bg-[#0369a1] dark:bg-[#38bdf8] rounded-2xl rounded-tl-none px-4 py-2.5 text-sm text-white dark:text-slate-950 font-normal uyghur-text leading-relaxed w-full">
+          <div className="bg-[#0369a1] dark:bg-[#38bdf8] rounded-2xl px-4 py-2.5 text-sm text-white dark:text-slate-950 font-normal uyghur-text leading-relaxed w-full">
             {previewAnswer}
           </div>
         </div>

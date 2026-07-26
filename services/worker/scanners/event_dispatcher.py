@@ -8,13 +8,64 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update, func
 
 from app.db import session as db_session
-from app.db.models import PipelineEvent
+from app.db.models import Book, Page, PipelineEvent
+from app.db.repositories.system_configs_repository import SystemConfigsRepository
+from app.services.book_milestone_service import BookMilestoneService
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.event_dispatcher")
+
+
+async def _claim_candidate_pages(
+    session, ctx, candidate_page_ids, milestone_column, step: str
+):
+    """
+    Atomically claims the subset of candidate pages still idle for `step`,
+    mirroring the *_scanner claim pattern (SKIP LOCKED + milestone flip to
+    in_progress). Without this claim, this reactive dispatch and the
+    corresponding scanner's own poll cycle can both enqueue a job for the
+    same page — the redis lock inside the job resolves the race safely, but
+    every loser is a wasted job invocation.
+    """
+    if not candidate_page_ids:
+        return []
+
+    id_stmt = (
+        select(Page.id, Page.book_id)
+        .join(Book, Page.book_id == Book.id)
+        .where(
+            Page.id.in_(candidate_page_ids),
+            milestone_column == "idle",
+            ~Book.status.in_(["error"]),
+        )
+        .with_for_update(skip_locked=True)
+    )
+    rows = (await session.execute(id_stmt)).fetchall()
+    page_ids = [row[0] for row in rows]
+    if not page_ids:
+        return []
+
+    book_ids = list({row[1] for row in rows})
+
+    await session.execute(
+        update(Page)
+        .where(Page.id.in_(page_ids))
+        .values(
+            **{milestone_column.key: "in_progress"},
+            worker_id=ctx.get("worker_id", "unknown"),
+            claimed_at=func.now(),
+            last_updated=func.now(),
+        )
+    )
+    for book_id in book_ids:
+        await BookMilestoneService.update_book_milestone_for_step(
+            session, book_id, step
+        )
+
+    return page_ids
 
 
 async def run_event_dispatcher(ctx) -> None:
@@ -35,52 +86,57 @@ async def run_event_dispatcher(ctx) -> None:
         if not events:
             return
 
-        processed_ids = []
-        enqueued = 0
+        config_repo = SystemConfigsRepository(session)
+        spell_check_enabled = (
+            await config_repo.get_value("spell_check_enabled", "false")
+        ) == "true"
 
-        for event in events:
-            try:
-                # Logic to determine next job
-                if event.event_type == "ocr_succeeded":
-                    # OCR success -> Trigger Chunking
-                    # Note: We group pages by book to reduce jobs if needed,
-                    # but for immediate dispatch, single page jobs are fine.
-                    await redis.enqueue_job("chunking_job", page_ids=[event.page_id])
-                    enqueued += 1
+        # When spell check is enabled, chunking must wait for it to finish (or
+        # fail) on a page rather than firing straight off OCR — spell check can
+        # rewrite page.text via auto-correct rules, and chunking on text that's
+        # about to change would build chunks from stale content. Mirrors the
+        # gating condition in chunking_scanner.
+        chunking_trigger_types = (
+            ("spell_check_succeeded", "spell_check_failed")
+            if spell_check_enabled
+            else ("ocr_succeeded",)
+        )
+        chunking_candidates = [
+            e.page_id for e in events if e.event_type in chunking_trigger_types
+        ]
+        embedding_candidates = [
+            e.page_id for e in events if e.event_type == "chunking_succeeded"
+        ]
 
-                elif event.event_type == "chunking_succeeded":
-                    # Chunking success -> Trigger Embedding
-                    await redis.enqueue_job("embedding_job", page_ids=[event.page_id])
-                    enqueued += 1
+        chunking_page_ids = await _claim_candidate_pages(
+            session, ctx, chunking_candidates, Page.chunking_milestone, "chunking"
+        )
+        embedding_page_ids = await _claim_candidate_pages(
+            session, ctx, embedding_candidates, Page.embedding_milestone, "embedding"
+        )
 
-                elif event.event_type == "embedding_succeeded":
-                    # Embedding success -> Nothing to trigger (Driver handles book ready)
-                    pass
+        processed_ids = [event.id for event in events]
+        await session.execute(
+            update(PipelineEvent)
+            .where(PipelineEvent.id.in_(processed_ids))
+            .values(processed=True)
+        )
+        await session.commit()
 
-                processed_ids.append(event.id)
+    enqueued = 0
+    if chunking_page_ids:
+        await redis.enqueue_job("chunking_job", page_ids=chunking_page_ids)
+        enqueued += 1
+    if embedding_page_ids:
+        await redis.enqueue_job("embedding_job", page_ids=embedding_page_ids)
+        enqueued += 1
 
-            except Exception as exc:
-                log_json(
-                    logger,
-                    logging.ERROR,
-                    "event dispatcher: failed to handle event",
-                    event_id=event.id,
-                    error=str(exc),
-                )
-
-        if processed_ids:
-            await session.execute(
-                update(PipelineEvent)
-                .where(PipelineEvent.id.in_(processed_ids))
-                .values(processed=True)
-            )
-            await session.commit()
-
-        if enqueued:
-            log_json(
-                logger,
-                logging.INFO,
-                "event dispatcher run complete",
-                events_processed=len(processed_ids),
-                jobs_enqueued=enqueued,
-            )
+    log_json(
+        logger,
+        logging.INFO,
+        "event dispatcher run complete",
+        events_processed=len(processed_ids),
+        chunking_pages_claimed=len(chunking_page_ids),
+        embedding_pages_claimed=len(embedding_page_ids),
+        jobs_enqueued=enqueued,
+    )

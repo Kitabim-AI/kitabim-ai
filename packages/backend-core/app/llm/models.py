@@ -351,6 +351,11 @@ async def generate_text_with_image(
     config = types.GenerateContentConfig(
         temperature=0.0,
         system_instruction=prompt,
+        # OCR is pure transcription, not a reasoning task — without this, the
+        # model can burn its entire output budget on hidden "thinking" and
+        # return finishReason=STOP with zero actual output tokens (silent,
+        # no error surfaced).
+        thinking_config=types.ThinkingConfig(thinking_budget=0),
     )
     effective_timeout = timeout or await get_system_config_timeout(
         "gemini_ocr_timeout", _OCR_INVOKE_TIMEOUT

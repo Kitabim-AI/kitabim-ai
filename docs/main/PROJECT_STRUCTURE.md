@@ -68,10 +68,13 @@ packages/backend-core/app/
 │   ├── prompts.py             # Base prompt templates
 │   └── providers.py           # LLM/storage provider protocols
 ├── db/
-│   ├── models.py               # SQLAlchemy ORM models (21 tables)
+│   ├── models.py               # SQLAlchemy ORM models (25 tables)
 │   ├── session.py               # Async engine/session factory, init/close hooks
 │   ├── seeds.py                   # Default system_configs seeding
-│   └── repositories/               # One repository per table, incl. graph_repository.py (Neo4j)
+│   └── repositories/               # 17 repository modules, ~one per table, incl. graph_repository.py (Neo4j)
+│                                      and conversation_repository.py (Conversation/ConversationMessage);
+│                                      batch_ocr_jobs/batch_embedding_jobs/pipeline_events are queried inline
+│                                      from their owning service instead of through a dedicated repository
 ├── llm/
 │   ├── models.py                # GeminiLLM/ProtectedLLM client, CircuitBreaker wiring, RedisRateLimiter
 │   └── chains.py                  # TextChain/StructuredChain .ainvoke()/.astream() wrappers
@@ -81,16 +84,19 @@ packages/backend-core/app/
 ├── services/
 │   ├── cache_service.py           # Redis caching wrapper (circuit-breaker protected)
 │   ├── rag_service.py               # RAGService facade — builds QueryContext, dispatches via registry
-│   ├── ocr_service.py                 # OCR image → text extraction
-│   ├── chunking_service.py              # Text cleaning + chunk splitting
-│   ├── knowledge_graph_service.py         # Entity/relation extraction orchestration
-│   ├── spell_check_service.py               # Dictionary-based spell-check
-│   ├── auto_correct_service.py                # Bulk OCR auto-correction rule application
-│   ├── book_milestone_service.py               # Milestone transition helpers
-│   ├── storage_service.py                        # GCS / local filesystem storage abstraction
-│   ├── pdf_service.py, docx_service.py              # PDF/DOCX parsing helpers
+│   ├── ocr_service.py                 # OCR image → text extraction (interactive Gemini Vision)
+│   ├── batch_ocr_service.py             # Gemini Batch API OCR submission + result polling (feature-flagged)
+│   ├── chunking_service.py                # Text cleaning + chunk splitting
+│   ├── batch_embedding_service.py           # Gemini Batch API embedding submission + result polling (feature-flagged)
+│   ├── knowledge_graph_service.py             # Entity/relation extraction orchestration
+│   ├── spell_check_service.py                   # Dictionary-based spell-check
+│   ├── auto_correct_service.py                    # Bulk OCR auto-correction rule application
+│   ├── book_milestone_service.py                   # Milestone transition helpers
+│   ├── storage_service.py                            # GCS / local filesystem storage abstraction
+│   ├── pdf_service.py, docx_service.py                  # PDF/DOCX parsing helpers
 │   ├── token_service.py, user_service.py, chat_limit_service.py
-│   └── rag/                                          # RAG sub-package (see below)
+│   ├── rag/                                              # RAG sub-package — HandlerRegistry-dispatched handlers (see below)
+│   └── chat/                                               # ADK-native ChatOrchestrator — persisted-conversation chat pipeline (see below)
 ├── utils/
 │   ├── circuit_breaker.py     # Generic Redis-backed CircuitBreaker
 │   ├── rate_limiter.py          # RedisRateLimiter
@@ -120,12 +126,25 @@ app/services/rag/
     ├── config.py               # AGENT_MAX_STEPS, grading thresholds, context-switch score threshold
     ├── tools.py                  # 19 ADK-callable tool functions + dispatch-with-retry
     ├── adk_agent.py                 # build_rag_agent() — constructs the ADK Agent + tool list
-    ├── deterministic_handler.py       # DeterministicRAGHandler — signal extraction, intent classification, 9 fixed paths
-    ├── graph_router.py                  # google.adk.workflow.Workflow graph selecting one of the 9 paths
+    ├── deterministic_handler.py       # DeterministicRAGHandler — signal extraction, intent classification, 10 fixed paths
+    ├── graph_router.py                  # google.adk.workflow.Workflow graph selecting one of the 10 paths
     └── llm_routed_handler.py              # LLMRoutedRAGHandler — decomposition, context injection, InMemoryRunner ReAct loop
 ```
 
-`HandlerRegistry` (`registry.py`) is built with `DeterministicRAGHandler` first and `LLMRoutedRAGHandler` last as the always-matching fallback. Which one actually runs a given request is controlled by the `use_deterministic_router` system config — `false` by default, so `LLMRoutedRAGHandler` is the handler that answers most chat traffic today.
+`HandlerRegistry` (`registry.py`) is built with `DeterministicRAGHandler` first and `LLMRoutedRAGHandler` last as the always-matching fallback. Which one actually runs a given request is controlled by the `use_deterministic_router` system config — `false` by default, so `LLMRoutedRAGHandler` is the handler that answers most chat traffic that goes through this registry. However, whether a chat request reaches this registry at all is a separate decision — see `services/chat/` below.
+
+### `services/chat/` — persisted-conversation chat pipeline
+```
+app/services/chat/
+├── context.py            # ChatRequestDTO (adds conversation_id), ToolDependencies
+├── history.py              # Formats ConversationMessage rows into LLM-readable history text
+├── answer_prompts.py          # build_answer_instructions() — a separate fork of answer_builder.py's citation prompt
+├── answer_agent.py               # build_answer_agent() — tools-less ADK Agent for answer synthesis
+├── retrieval_agent.py               # build_retrieval_agent() — reuses AGENT_SYSTEM_PROMPT + all 19 tools from rag/agent/
+└── orchestrator.py                     # ChatOrchestrator — the pipeline itself, see below
+```
+
+`ChatOrchestrator` does **not** go through `HandlerRegistry` or `RAGService` — it runs its own two-agent pipeline (retrieval agent → grading → answer agent) directly on an ADK `Runner`, persists every turn to `conversations`/`conversation_messages` via `ConversationRepository`, and is what backs the frontend's conversation-history sidebar. The streaming chat endpoint (`services/backend/api/endpoints/chat_router.py`) routes a request here whenever the `use_adk_chat_v2` system config is `true` (seeded on) or the request carries a `conversationId`; otherwise it falls through to `RAGService`/`HandlerRegistry` above, which has no conversation persistence. It reuses the `rag/agent/` tool implementations, system prompt, and grading helpers, but has its own copy of the answer-synthesis citation prompt (`answer_prompts.py`) rather than sharing `rag/answer_builder.py`.
 
 ---
 
@@ -159,29 +178,31 @@ services/worker/
 ├── worker.py                # ARQ WorkerSettings entrypoint (arq worker.WorkerSettings)
 ├── manual_scan.py             # CLI to trigger a scanner pass on demand
 ├── jobs/                        # Per-unit-of-work executors (7)
-│   ├── ocr_job.py                  # Renders a page, calls Gemini Vision, writes text
+│   ├── ocr_job.py                  # Renders a page, calls Gemini Vision (or submits a batch_ocr_job if gemini_batch_ocr_enabled)
 │   ├── chunking_job.py               # Cleans text, writes chunk rows
-│   ├── embedding_job.py                # Vectorizes chunks
+│   ├── embedding_job.py                # Vectorizes chunks (synchronous path; batch path is submitted inline by embedding_scanner)
 │   ├── spell_check_job.py                # Flags likely OCR errors per page
 │   ├── auto_correct_job.py                 # Applies bulk auto-correction rules
 │   ├── summary_job.py                        # Generates + embeds a book summary
 │   └── knowledge_graph_job.py                  # Extracts entities/relations, writes to Neo4j
-└── scanners/                             # Periodic pollers + the event-driven dispatcher (12)
+└── scanners/                             # Periodic pollers + the event-driven dispatcher (14)
     ├── ocr_scanner.py                        # Leases idle pages, enqueues ocr_job
-    ├── chunking_scanner.py                     # Leases OCR'd pages, enqueues chunking_job
-    ├── embedding_scanner.py                      # Leases chunked pages, enqueues embedding_job
-    ├── spell_check_scanner.py                      # Leases indexed pages, enqueues spell_check_job
-    ├── auto_correct_scanner.py                       # Enqueues auto_correct_job
-    ├── summary_scanner.py                              # Leases ready books, enqueues summary_job
-    ├── graph_scanner.py                                  # Leases ready books, enqueues knowledge_graph_job (implemented but NOT wired into WorkerSettings.cron_jobs — see WORKER_DESIGN.md)
-    ├── event_dispatcher.py                                 # Reacts to pipeline_events for immediate next-step triggering
-    ├── gcs_discovery_scanner.py                              # Discovers books uploaded directly to GCS
-    ├── pipeline_driver.py                                      # Coordinates scanner scheduling
-    ├── stale_watchdog_scanner.py                                 # Recovers pages stuck mid-processing
-    └── maintenance_scanner.py                                      # Cleans up processed pipeline_events
+    ├── batch_ocr_poller_scanner.py              # Polls in-flight batch_ocr_jobs, ingests results when Gemini finishes
+    ├── chunking_scanner.py                        # Leases OCR'd pages, enqueues chunking_job
+    ├── embedding_scanner.py                         # Leases chunked pages; dispatches embedding_job, or submits a batch_embedding_job inline if gemini_batch_embedding_enabled
+    ├── batch_embedding_poller_scanner.py               # Polls in-flight batch_embedding_jobs, writes vectors back when Gemini finishes
+    ├── spell_check_scanner.py                            # Leases indexed pages, enqueues spell_check_job
+    ├── auto_correct_scanner.py                             # Enqueues auto_correct_job
+    ├── summary_scanner.py                                    # Leases ready books, enqueues summary_job
+    ├── graph_scanner.py                                        # Leases ready books, enqueues knowledge_graph_job (implemented but NOT wired into WorkerSettings.cron_jobs — see WORKER_DESIGN.md)
+    ├── event_dispatcher.py                                       # Reacts to pipeline_events for immediate next-step triggering
+    ├── gcs_discovery_scanner.py                                    # Discovers books uploaded directly to GCS
+    ├── pipeline_driver.py                                            # Coordinates scanner scheduling
+    ├── stale_watchdog_scanner.py                                       # Recovers pages stuck mid-processing
+    └── maintenance_scanner.py                                            # Cleans up processed pipeline_events
 ```
 
-Each scanner uses a fresh `async with async_session_factory()` per page/batch it processes — no session is held or shared across pages within a run.
+13 of these 14 scanners are wired into `WorkerSettings.cron_jobs` — `graph_scanner.py` is the one exception (see [WORKER_DESIGN.md](WORKER_DESIGN.md)). Each scanner uses a fresh `async with async_session_factory()` per page/batch it processes — no session is held or shared across pages within a run. `ocr_job`, `chunking_job`, `embedding_job`, and `spell_check_job` additionally take a Redis `MultiPageLock` (namespaced per stage via a `prefix` argument) around their claimed page IDs as a second line of defense against double-processing.
 
 ---
 
@@ -190,8 +211,16 @@ Each scanner uses a fresh `async with async_session_factory()` per page/batch it
 ```
 apps/frontend/src/
 ├── components/       # admin/ auth/ chat/ common/ graph/ layout/ library/ pages/ reader/ share/ spell-check/ ui/
+│                        chat/: AgentThinkingSteps, ChatInterface, ReferenceModal
+│                        share/: ShareModal (whole-book share), ShareChatModal (single Q&A share — implemented,
+│                                 backed by a working `/api/share/qa` endpoint, but not currently rendered from
+│                                 any component; there is no "share this answer" entry point in the chat UI today)
 ├── hooks/               # useAuth, useBooks, useBookActions, useChat, usePendingCorrections, useSpellCheck, useUyghurInput (7)
 ├── services/              # authService, contactService, geminiService, pdfService, persistenceService, userService (6)
+│                             geminiService.ts is legacy-named — despite the name, it calls the Kitabim backend
+│                             (/api/chat/*, /api/ai/ocr/), never Gemini directly; it owns chatWithBookStream()
+│                             (the SSE transport) and the conversation CRUD calls (getUserConversations,
+│                             getConversationMessages, deleteConversation, createConversation)
 ├── context/                 # React context providers
 ├── constants/                  # Static config
 ├── i18n/, locales/               # Frontend translations
@@ -235,7 +264,7 @@ PDF rendering uses `pdf.js` loaded from a CDN `<script>` tag at runtime (`pdfSer
 1. **Upload** → backend saves the PDF to GCS, creates `books`/`pages` rows with `pending` milestones.
 2. **OCR → Chunking → Embedding → Spell-check** run as an event-driven pipeline: each worker scanner leases `idle` pages, the matching job processes them, and the event dispatcher enqueues the next step immediately when a milestone succeeds (see `SYSTEM_DESIGN.md` §6A for the full sequence).
 3. **Book ready** → summary and (if enabled) knowledge-graph extraction run concurrently.
-4. **Chat** → `RAGService.answer_question(_stream)` builds a `QueryContext` (resolves character/persona, loads model names from `system_configs`, loads the book if any) and dispatches it through `HandlerRegistry` to whichever handler's `can_handle()` matches, then records telemetry to `rag_evaluations`.
+4. **Chat** → the streaming endpoint routes each request to one of two independent pipelines: `ChatOrchestrator` (persisted conversation history, gated by the `use_adk_chat_v2` config or a `conversationId` on the request) or `RAGService.answer_question(_stream)`, which builds a `QueryContext` and dispatches through `HandlerRegistry` to whichever handler's `can_handle()` matches (no conversation persistence). Both record telemetry to `rag_evaluations`; only `ChatOrchestrator` also writes to `conversations`/`conversation_messages`.
 
 ---
 
@@ -252,13 +281,16 @@ PDF rendering uses `pdf.js` loaded from a CDN `<script>` tag at runtime (`pdfSer
 | File | Purpose |
 |------|---------|
 | `packages/backend-core/app/core/config.py` | Env-backed `Settings` dataclass. Deliberately holds no AI model names — those live only in `system_configs`. |
-| `packages/backend-core/app/db/models.py` | All 21 SQLAlchemy ORM table definitions. |
+| `packages/backend-core/app/db/models.py` | All 25 SQLAlchemy ORM table definitions. |
+| `packages/backend-core/app/db/repositories/conversation_repository.py` | `ConversationRepository` — CRUD + soft-delete for `conversations`/`conversation_messages`, used only by `ChatOrchestrator`. |
+| `packages/backend-core/app/services/chat/orchestrator.py` | `ChatOrchestrator` — the ADK-native, conversation-persisting chat pipeline; bypasses `HandlerRegistry` entirely. |
+| `packages/backend-core/app/services/batch_ocr_service.py` / `batch_embedding_service.py` | Gemini Batch API submission + polling for OCR and embeddings, feature-flagged off by default. |
 | `packages/backend-core/app/db/seeds.py` | Default `system_configs` rows, including default model names and router toggles. |
 | `packages/backend-core/app/llm/models.py` | `ProtectedLLM`/`GeminiEmbeddings` clients wrapping `google-genai`, with per-call-type `CircuitBreaker`s and `RedisRateLimiter`. |
 | `packages/backend-core/app/services/rag_service.py` | Facade that resolves model names + config from `system_configs`, builds `QueryContext`, and dispatches to `HandlerRegistry`. |
 | `packages/backend-core/app/services/rag/registry.py` | `HandlerRegistry` — ordered `can_handle()` dispatch between `DeterministicRAGHandler` and `LLMRoutedRAGHandler`. |
-| `packages/backend-core/app/services/rag/agent/deterministic_handler.py` | `DeterministicRAGHandler` — signal extraction, intent classification, and the 9 fixed retrieval paths. |
-| `packages/backend-core/app/services/rag/agent/graph_router.py` | `google.adk.workflow.Workflow` graph that selects and runs one of the 9 paths above. |
+| `packages/backend-core/app/services/rag/agent/deterministic_handler.py` | `DeterministicRAGHandler` — signal extraction, intent classification, and the 10 fixed retrieval paths. |
+| `packages/backend-core/app/services/rag/agent/graph_router.py` | `google.adk.workflow.Workflow` graph that selects and runs one of the 10 paths above. |
 | `packages/backend-core/app/services/rag/agent/llm_routed_handler.py` | `LLMRoutedRAGHandler` — decomposition, context injection, and the ADK `InMemoryRunner` ReAct loop. |
 | `packages/backend-core/app/services/rag/agent/tools.py` | The 19 ADK-callable tool functions shared by both RAG handlers. |
 | `services/backend/main.py` | FastAPI app factory — router registration, CORS, rate limiting, `/health`. |

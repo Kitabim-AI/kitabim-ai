@@ -5,17 +5,17 @@ This walkthrough describes the changes implemented to address the production RAG
 ## Changes Made
 
 ### 1. Dictionary Repository
-Updated all fuzzy/similarity trigram filters in [dictionary_repository.py](../../packages/backend-core/app/db/repositories/dictionary_repository.py) to raise the similarity score threshold from `> 0.2` to `> 0.4`.
+Updated all fuzzy/similarity trigram filters in [dictionary_repository.py](../../../packages/backend-core/app/db/repositories/dictionary_repository.py) to raise the similarity score threshold from `> 0.2` to `> 0.4`.
 - This filters out low-similarity suffix/prefix matches (e.g. matching all events ending with `"ۋەقەسى"` (event) like `"كامېدا ۋەقەسى"`, `"رېم ۋەقەسى"`, etc. for a query about `"كەربەلا ۋەقەسى"`).
 - Typo matching (e.g. `"كەربىلا ۋەقەسى"`) and variations (e.g. `"كەربەلا ۋەقە"`) still match successfully with similarity scores > 0.66.
 
 ### 2. Deterministic RAG Agent
-Updated `DeterministicRAGHandler.execute_path` in [deterministic_handler.py](../../packages/backend-core/app/services/rag/agent/deterministic_handler.py):
+Updated `DeterministicRAGHandler.execute_path` in [deterministic_handler.py](../../../packages/backend-core/app/services/rag/agent/deterministic_handler.py):
 - Modified the `intent == "dictionary"` path to check if any dictionary entries were found after executing the selected dictionary tools.
 - If no results are found (e.g., `total_found == 0`), it falls back to a global book chunk query via `search_chunks(query, book_ids=None)`. This ensures that even if a historical term/concept isn't in our history dictionary tables, the agent will look it up in library books (e.g., finding the page detailing the "Karbala event" in "‎⁨ئىسلام تارىخى").
 
 ### 3. Tests
-Added `test_execute_path_dictionary_history_to_chunks_fallback` to [deterministic_router_test.py](../../packages/backend-core/tests/app/services/deterministic_router_test.py) to verify that if dictionary lookups return 0 matches, the execution router correctly delegates to `search_chunks`.
+Added `test_execute_path_dictionary_history_to_chunks_fallback` to [deterministic_router_test.py](../../../packages/backend-core/tests/app/services/deterministic_router_test.py) to verify that if dictionary lookups return 0 matches, the execution router correctly delegates to `search_chunks`.
 
 ---
 

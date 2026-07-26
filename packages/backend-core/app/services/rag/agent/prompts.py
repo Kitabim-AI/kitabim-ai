@@ -78,6 +78,7 @@ _STEP_6_CONTENT = (
     "   c. If the question explicitly names an author → call get_books_by_author, extract "
     "the book IDs from the result, and call search_chunks with those book IDs.\n"
     "   d. If no title/author is explicitly named, but [Context] provides a current book_id:\n"
+    "      - If the question asks for the plot, themes, summary, or main content of the current book (e.g. 'بۇ كىتاب نېمە توغرىسىدا؟', 'بۇ كىتابنىڭ ئاساسى مەزمۇنى نېمە؟', 'this book summary') → call get_book_summary with [current_book_id] directly. Skip book discovery tools entirely.\n"
     "      - If the question asks about a DIFFERENT volume of the current book (e.g. mentions 'next volume', "
     "'previous volume', a numbered volume like '2-توم', 'كەيىنكى توم', 'ئالدىنقى توم', 'ئىككىنچى توم'), "
     "call get_sister_volumes with the current book_id. Then call search_chunks with the relevant sister "

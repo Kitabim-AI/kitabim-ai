@@ -83,3 +83,5 @@ data/
 /scripts/
 gcloud.txt
 .coverage
+
+.adk/

@@ -66,7 +66,7 @@ if [ "$COMPONENT" = "all" ]; then
     exists=$(psql "postgresql://kitabim:kitabim@127.0.0.1:5432/kitabim-ai" -tAc "SELECT 1 FROM schema_migrations WHERE version = '$version';" 2>/dev/null)
     if [ "$exists" != "1" ]; then
       echo "  → Applying: $version"
-      if psql "postgresql://kitabim:kitabim@127.0.0.1:5432/kitabim-ai" < "$f"; then
+      if psql "postgresql://kitabim:kitabim@127.0.0.1:5432/kitabim-ai" -v ON_ERROR_STOP=1 < "$f"; then
         psql "postgresql://kitabim:kitabim@127.0.0.1:5432/kitabim-ai" -c "INSERT INTO schema_migrations (version) VALUES ('$version');" >/dev/null 2>&1
       else
         echo "❌ Error applying migration $version"

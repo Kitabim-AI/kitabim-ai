@@ -27,14 +27,6 @@ from app.services.rag.agent.llm_routed_handler import (
     _populate_ctx_from_observations,
 )
 
-if TYPE_CHECKING:
-    from app.services.rag.agent.graph_router import RunnerServices
-
-logger = logging.getLogger("app.rag.agent.deterministic_handler")
-
-# Punctuation boundaries for pronouns
-_PUNCT = "«»،؟!()[]{}\"''"
-
 from app.services.rag.keywords import (
     UYGHUR_PRONOUN_TOKENS,
     VOLUME_SHIFT_KEYWORDS,
@@ -42,6 +34,14 @@ from app.services.rag.keywords import (
     CATALOG_BOOKS_QUERIES,
     PAGE_QUERY_PATTERNS,
 )
+
+if TYPE_CHECKING:
+    from app.services.rag.agent.graph_router import RunnerServices
+
+logger = logging.getLogger("app.rag.agent.deterministic_handler")
+
+# Punctuation boundaries for pronouns
+_PUNCT = "«»،؟!()[]{}\"''"
 
 
 def _cap_summary_book_ids(book_ids: list, books: list, cap: int = 5) -> list[str]:
@@ -134,12 +134,35 @@ class DeterministicRAGHandler(QueryHandler):
     async def _llm_analyze_query(self, question: str, ctx: QueryContext) -> dict:
         """Stage 1.5: Query Signal & Intent Extractor LLM Call.
 
-        Uses a single structured JSON response to classify query properties.
+        Uses a single structured JSON response to classify query properties,
+        using tool calls to resolve book titles/authors dynamically.
         """
-        in_reader = ctx.current_page is not None
+        in_reader = (ctx.current_page is not None) or (
+            not ctx.is_global and bool(ctx.book_id)
+        )
         current_page = ctx.current_page
         has_history = len(ctx.history) > 0
         history_str = ctx.chat_history_str if has_history else "None"
+
+        async def find_books_by_title(question: str) -> dict:
+            """Find books matching a title mentioned in the question.
+
+            Args:
+                question: The user's query containing the book title.
+            """
+            return await _dispatch_tool_with_retry(
+                "find_books_by_title", {"question": question}, ctx
+            )
+
+        async def get_books_by_author(question: str) -> dict:
+            """Find books written by an author mentioned in the question.
+
+            Args:
+                question: The user's query containing the author's name.
+            """
+            return await _dispatch_tool_with_retry(
+                "get_books_by_author", {"question": question}, ctx
+            )
 
         prompt = f"""Analyze this Uyghur/English query in the context of a RAG book reading assistant.
 
@@ -152,9 +175,21 @@ Chat History:
 
 Query: {question}
 
+Database Tools:
+You have access to tools to query the book database:
+- `find_books_by_title(question)`: Call this if the query mentions a specific book title or title keyword to check if the book exists in the library.
+- `get_books_by_author(question)`: Call this if the query mentions a specific author to check what books by this author exist in the library.
+
+Before returning the final JSON, call these tools if the user is asking about specific books or authors, so you can determine the catalog signals accurately.
+
+Important Guidelines for Tool Use:
+- If a tool call (e.g., `find_books_by_title` or `get_books_by_author`) returns no books or empty results (e.g., `books: []` or `found_count: 0`), do NOT call the tools again with the same or similar arguments.
+- Once you have called a tool and successfully found one or more matching books or authors (i.e., `books` is not empty, `found_count > 0`), do NOT keep calling tools to search for other variations of the same name or title. Stop calling tools immediately and output the final JSON response.
+- If you cannot find any matching books/authors via tools, stop calling tools and immediately return the final JSON classification with the best available signals. Do not get stuck in an execution loop.
+
 Return ONLY valid JSON matching this schema:
 {{
-  "is_current_page_query": boolean, // True if the user asks about the page/text they are currently looking at (e.g. "what is on this page", "read this page", "بۇ بەتتە نېمە بار")
+  "is_current_page_query": boolean, // True ONLY if the user explicitly asks about the current page/text they are looking at (e.g. "what is on this page", "read this page", "بۇ بەتتە نېمە بار"). MUST be false if asking about the book as a whole (e.g. "مەن ھازىر ئوقۇۋاتقان كىتابنىڭ ئاساسىي مەزمۇنى نېمە؟", "this book", "currently reading book").
   "is_volume_shift": boolean,       // True if the user wants to go to another volume (e.g. "next volume", "previous volume", "ئالدىنقى توم", "2-توم")
   "target_volume": integer | null,  // The volume number to shift to if specified (e.g. 2, 3), else null
   "needs_rewrite": boolean,         // True ONLY if the query has unresolved pronouns/coreferences or implicit references (ellipsis) referring to prior chat history. MUST be false if the query is fully self-contained, or if there is no chat history.
@@ -184,16 +219,16 @@ Return ONLY valid JSON matching this schema:
 
 Intents:
 - catalog     : asking about book metadata, authors of books, book listings, or what books exist in the library
-- dictionary  : asking for word meanings, dictionary definitions, spelling validity, names, synonyms, historical vocabulary explanations, or English-to-Uyghur translation
+- dictionary  : asking for word meanings, dictionary definitions, spelling validity, names, synonyms, historical vocabulary headword explanations, or English-to-Uyghur translation
 - identity    : asking who/what a person or character IS (biography, role, background)
 - summary     : asking about the plot, themes, or main characters of a book
 - relationship: asking about connections, lineages, family trees, or how X and Y relate
-- passage     : asking for specific events, facts, quotes, or details — including "tell me about X's actions"
+- passage     : asking for specific events, facts, quotes, details, timelines, dates, or historical events/origins (e.g., "when and how was X founded?", "why did X happen?", "tell me about X's history")
 - quran       : asking about Quran surahs, verses (ayahs), translations, or searching for specific verses/phrases in the Quran (e.g., "what is surah 1?", "read ayah 1:2", "فاتىھە سۈرىسى", "ئاللاھنىڭ ئىسمى بىلەن باشلايمەن قايسى سۈرىدە بار؟")
 
 Dictionary subtype rules:
 - "uyghur_definition": Uyghur word meaning or definition ("X دېگەن نېمە؟", "X مەنىسى نېمە؟")
-- "history_term": historical person, event, place, or concept lookup, especially when no book title is named
+- "history_term": historical entity/person/place lookup for direct headword definition (e.g. "X كىم؟", "X نېمە؟"). Do NOT use "dictionary" for complex historical questions asking about events, origins, timelines, dates, or causes (e.g. "when/how was X founded?", "why did X happen?") — classify those as "passage".
 - "english_uyghur": user asks for the Uyghur translation/equivalent of an English word or phrase
 - "spelling": user asks whether a Uyghur spelling is correct or valid
 - "names": Uyghur person name lookup, or listing/asking about names starting with a specific letter/alphabet (e.g. "ب ھەرىپىدىن باشلانغان كىشى ئىسىملىرى", "ئالىم دېگەن ئىسىم"). For requests listing names starting with a letter, extract the target letter (e.g., "ب") as the dictionary_term.
@@ -201,15 +236,115 @@ Dictionary subtype rules:
 - "synonyms": user asks for synonyms of a Uyghur word, words with the same or similar meaning, or a list of synonym-dictionary headwords starting with a letter (e.g. "مەنىداش سۆز", "X نىڭ مەنىداش سۆزى نېمە؟", "ئوخشاش مەنىلىك سۆزلەر", "synonym for X")
 - "general": dictionary-style query where the exact source is unclear
 """
-        llm = build_text_llm(ctx.agent_model)
-        res_text = await llm.ainvoke(
-            prompt,
-            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        from app.llm.models import _get_text_client
+
+        client = _get_text_client()
+        model = (
+            ctx.agent_model.replace("models/", "", 1)
+            if ctx.agent_model.startswith("models/")
+            else ctx.agent_model
         )
+
+        contents = [
+            types.Content(role="user", parts=[types.Part.from_text(text=prompt)])
+        ]
+
+        matched_books = []
+        matched_author_books = []
+        has_title = False
+        has_author = False
+
+        config = types.GenerateContentConfig(
+            temperature=0.0,
+            tools=[find_books_by_title, get_books_by_author],
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                disable=True
+            ),
+        )
+
+        tools_invoked = False
+
+        for _ in range(3):
+            # One round of tool calls is all we allow: after the model has had a
+            # chance to resolve titles/authors, force the final JSON on the next
+            # turn instead of trusting prompt-level "stop calling tools" guidance.
+            if tools_invoked and config.tools is not None:
+                config.tools = None
+                config.response_mime_type = "application/json"
+
+            res_obj = await client.aio.models.generate_content(
+                model=model,
+                contents=contents,
+                config=config,
+            )
+
+            # Add model response to history
+            if res_obj.candidates and res_obj.candidates[0].content:
+                contents.append(res_obj.candidates[0].content)
+
+            # Check for function calls
+            if res_obj.function_calls:
+                tools_invoked = True
+                parts = []
+                for call in res_obj.function_calls:
+                    name = call.name
+                    args = call.args or {}
+                    # Execute tool
+                    if name == "find_books_by_title":
+                        tool_res = await find_books_by_title(**args)
+                        if tool_res.get("ok"):
+                            books = tool_res.get("books", [])
+                            matched_books.extend(books)
+                            if books:
+                                has_title = True
+                    elif name == "get_books_by_author":
+                        tool_res = await get_books_by_author(**args)
+                        if tool_res.get("ok"):
+                            books = tool_res.get("books", [])
+                            matched_author_books.extend(books)
+                            if books:
+                                has_author = True
+                    else:
+                        tool_res = {"ok": False, "error": f"Unknown tool: {name}"}
+
+                    parts.append(
+                        types.Part.from_function_response(name=name, response=tool_res)
+                    )
+                contents.append(types.Content(role="user", parts=parts))
+            else:
+                # No more function calls, parse final text response
+                res_text = res_obj.text or ""
+                break
+        else:
+            raise ValueError("Too many tool call iterations in query analysis")
+
         m = re.search(r"\{.*\}", res_text, re.DOTALL)
         if m:
             repaired_json = repair_json_unescaped_quotes(m.group())
             result = json.loads(repaired_json)
+
+            # Deduplicate books by ID
+            seen_books = set()
+            deduped_books = []
+            for b in matched_books:
+                bid = b.get("id")
+                if bid not in seen_books:
+                    seen_books.add(bid)
+                    deduped_books.append(b)
+
+            seen_author_books = set()
+            deduped_author_books = []
+            for b in matched_author_books:
+                bid = b.get("id")
+                if bid not in seen_author_books:
+                    seen_author_books.add(bid)
+                    deduped_author_books.append(b)
+
+            result["has_title"] = has_title
+            result["has_author"] = has_author
+            result["matched_books"] = deduped_books
+            result["matched_author_books"] = deduped_author_books
+
             log_json(
                 logger,
                 logging.INFO,
@@ -221,26 +356,14 @@ Dictionary subtype rules:
 
     async def extract_signals(self, question: str, ctx: QueryContext) -> dict:
         """Stage 1: Signal Extractor — database metadata lookups combined with structured LLM query analysis."""
-        # 1. DB-based metadata checks (fast & deterministic)
-        has_title = False
-        matched_books = await find_books_by_title_in_db(question, ctx)
-        if matched_books:
-            has_title = True
-
-        has_author = False
-        books_repo = BooksRepository(ctx.session)
-        matched_author_books = await books_repo.find_books_by_author_in_question(
-            question, categories=ctx.character_categories or None
+        in_reader = (ctx.current_page is not None) or (
+            not ctx.is_global and bool(ctx.book_id)
         )
-        if matched_author_books:
-            has_author = True
-
-        in_reader = ctx.current_page is not None
         has_current_book = ctx.book_id is not None and not ctx.is_global
         has_context_books = len(ctx.context_book_ids) > 0
         is_global = ctx.is_global
 
-        # 2. LLM query analysis (intent & signals) with keyword fallback fallback
+        # 1. LLM query analysis (intent & signals) with keyword fallback fallback
         try:
             llm_res = await self._llm_analyze_query(question, ctx)
             is_current_page_query = llm_res.get("is_current_page_query", False)
@@ -257,7 +380,22 @@ Dictionary subtype rules:
             intent = llm_res.get("intent", "passage")
             is_composite = llm_res.get("is_composite", False)
             sub_questions = llm_res.get("sub_questions")
+
+            # Extract the database query results captured during tool calling!
+            has_title = llm_res.get("has_title", False)
+            has_author = llm_res.get("has_author", False)
+            matched_books = llm_res.get("matched_books", [])
+            matched_author_books = llm_res.get("matched_author_books", [])
         except Exception as exc:
+            # Run DB queries as a fallback when LLM fails
+            matched_books = await find_books_by_title_in_db(question, ctx)
+            has_title = bool(matched_books)
+            books_repo = BooksRepository(ctx.session)
+            matched_author_books = await books_repo.find_books_by_author_in_question(
+                question, categories=ctx.character_categories or None
+            )
+            has_author = bool(matched_author_books)
+
             rewritten_question = None
             is_composite = False
             sub_questions = None
@@ -507,7 +645,9 @@ Return ONLY valid JSON matching this schema:
         )
         has_author = bool(matched_author_books)
 
-        in_reader = ctx.current_page is not None
+        in_reader = (ctx.current_page is not None) or (
+            not ctx.is_global and bool(ctx.book_id)
+        )
         has_current_book = ctx.book_id is not None and not ctx.is_global
         has_context_books = len(ctx.context_book_ids) > 0
         is_global = ctx.is_global
@@ -833,33 +973,39 @@ Return ONLY valid JSON matching this schema:
             else []
         )
 
-        # Check if we already ran find_books_by_title and got the same book IDs in this request
-        prev_title_call = next(
-            (
-                obs
-                for obs in observations
-                if obs.get("tool") == "find_books_by_title"
-                and set(str(bid) for bid in obs.get("result", {}).get("book_ids", []))
-                == set(matched_book_ids)
-            ),
-            None,
-        )
-
-        if prev_title_call:
-            title_res = prev_title_call["result"]
-            result_holder["result"] = title_res
-            book_ids = title_res.get("book_ids", [])
+        if matched_book_ids:
+            book_ids = matched_book_ids
+            title_res = {"ok": True, "book_ids": book_ids, "books": matched_books}
         else:
-            async for ev in self._run_tool_and_yield(
-                "find_books_by_title",
-                {"question": question},
-                ctx,
-                observations,
-                result_holder,
-            ):
-                yield ev
-            title_res = result_holder["result"]
-            book_ids = title_res.get("book_ids", [])
+            # Check if we already ran find_books_by_title and got the same book IDs in this request
+            prev_title_call = next(
+                (
+                    obs
+                    for obs in observations
+                    if obs.get("tool") == "find_books_by_title"
+                    and set(
+                        str(bid) for bid in obs.get("result", {}).get("book_ids", [])
+                    )
+                    == set(matched_book_ids)
+                ),
+                None,
+            )
+
+            if prev_title_call:
+                title_res = prev_title_call["result"]
+                result_holder["result"] = title_res
+                book_ids = title_res.get("book_ids", [])
+            else:
+                async for ev in self._run_tool_and_yield(
+                    "find_books_by_title",
+                    {"question": question},
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
+                title_res = result_holder["result"]
+                book_ids = title_res.get("book_ids", [])
 
         summary_book_ids = _cap_summary_book_ids(book_ids, title_res.get("books", []))
 
@@ -944,40 +1090,63 @@ Return ONLY valid JSON matching this schema:
         result_holder = {}
         matched_author_books = signals.get("matched_author_books", [])
         matched_author_book_ids = (
-            [str(b.id) for b in matched_author_books]
+            [
+                str(b.id) if hasattr(b, "id") else str(b["id"])
+                for b in matched_author_books
+            ]
             if isinstance(matched_author_books, list)
             else []
         )
 
-        # Check if we already ran get_books_by_author and got the same book IDs in this request
-        prev_author_call = next(
-            (
-                obs
-                for obs in observations
-                if obs.get("tool") == "get_books_by_author"
-                and set(str(b["id"]) for b in obs.get("result", {}).get("books", []))
-                == set(matched_author_book_ids)
-            ),
-            None,
-        )
-
-        if prev_author_call:
-            author_res = prev_author_call["result"]
+        if matched_author_book_ids:
+            author_book_ids = matched_author_book_ids
+            # Convert DB models to standard dict structure if needed
+            books_list = []
+            for b in matched_author_books:
+                if hasattr(b, "id"):
+                    books_list.append(
+                        {
+                            "id": str(b.id),
+                            "title": getattr(b, "title", ""),
+                            "author": getattr(b, "author", ""),
+                        }
+                    )
+                else:
+                    books_list.append(b)
+            author_res = {"ok": True, "books": books_list}
             result_holder["result"] = author_res
-            books_list = author_res.get("books", [])
-            author_book_ids = [b["id"] for b in books_list]
         else:
-            async for ev in self._run_tool_and_yield(
-                "get_books_by_author",
-                {"question": question},
-                ctx,
-                observations,
-                result_holder,
-            ):
-                yield ev
-            author_res = result_holder["result"]
-            books_list = author_res.get("books", [])
-            author_book_ids = [b["id"] for b in books_list]
+            # Check if we already ran get_books_by_author and got the same book IDs in this request
+            prev_author_call = next(
+                (
+                    obs
+                    for obs in observations
+                    if obs.get("tool") == "get_books_by_author"
+                    and set(
+                        str(b["id"]) for b in obs.get("result", {}).get("books", [])
+                    )
+                    == set(matched_author_book_ids)
+                ),
+                None,
+            )
+
+            if prev_author_call:
+                author_res = prev_author_call["result"]
+                result_holder["result"] = author_res
+                books_list = author_res.get("books", [])
+                author_book_ids = [b["id"] for b in books_list]
+            else:
+                async for ev in self._run_tool_and_yield(
+                    "get_books_by_author",
+                    {"question": question},
+                    ctx,
+                    observations,
+                    result_holder,
+                ):
+                    yield ev
+                author_res = result_holder["result"]
+                books_list = author_res.get("books", [])
+                author_book_ids = [b["id"] for b in books_list]
         async for ev in self._run_tool_and_yield(
             "search_chunks",
             {"query": question, "book_ids": author_book_ids},
@@ -1046,9 +1215,21 @@ Return ONLY valid JSON matching this schema:
     ) -> AsyncIterator[dict]:
         result_holder = {}
         current_book_id = ctx.book_id
+        if current_book_id and (intent == "summary" or intent == "identity"):
+            async for ev in self._run_tool_and_yield(
+                "get_book_summary",
+                {"book_ids": [current_book_id]},
+                ctx,
+                observations,
+                result_holder,
+            ):
+                yield ev
         async for ev in self._run_tool_and_yield(
             "search_chunks",
-            {"query": question, "book_ids": [current_book_id]},
+            {
+                "query": question,
+                "book_ids": [current_book_id] if current_book_id else None,
+            },
             ctx,
             observations,
             result_holder,
@@ -1391,6 +1572,11 @@ Return ONLY valid JSON matching this schema:
             else:
                 sub_signals = await self.extract_signals(sub_q, ctx)
                 sub_signals["needs_rewrite"] = False
+                if (
+                    len(sub_questions) == 1
+                    and signals_orig.get("top_intent") == "current_page"
+                ):
+                    sub_signals["top_intent"] = "current_page"
                 if "intent" in sub_signals:
                     llm_calls_delta += 1
 
@@ -1808,21 +1994,11 @@ def _extract_dictionary_term(question: str) -> str:
 
 
 async def find_books_by_title_in_db(question: str, ctx: QueryContext) -> list[dict]:
-    """Helper to synchronously trigger title checks by invoking find_books_by_title_in_question."""
-    from app.services.rag.retrieval import find_books_by_title_in_question
-
-    if not hasattr(ctx, "_title_cache"):
-        ctx._title_cache = {}
-    if question in ctx._title_cache:
-        return ctx._title_cache[question]
+    """Helper to synchronously trigger title checks by invoking _run_find_books_by_title."""
+    from app.services.rag.agent.tools import _run_find_books_by_title
 
     try:
-        books = await find_books_by_title_in_question(
-            question, ctx.session, categories=ctx.character_categories or None
-        )
-        result = books or []
-        ctx._title_cache[question] = result
-        return result
+        return await _run_find_books_by_title({"question": question}, ctx)
     except Exception as exc:
         log_json(
             logger,

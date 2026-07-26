@@ -1,14 +1,19 @@
 import logging
 import json
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
+from app.db.repositories.conversation_repository import ConversationRepository
+from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.db.session import get_session
 from app.models.schemas import ChatRequest, ChatResponse, ChatUsageStatus
 from app.models.user import User
+from app.services.chat.context import ChatRequestDTO
+from app.services.chat.orchestrator import ChatOrchestrator
 from app.services.rag_service import get_rag_service, RAGService
 from app.services.chat_limit_service import chat_limit_service
 from app.utils.errors import record_book_error
@@ -99,6 +104,7 @@ async def chat_with_book_api(
 @router.post("/stream")
 async def chat_with_book_stream(
     req: ChatRequest,
+    request: Request,
     current_user: User = Depends(require_reader),
     session: AsyncSession = Depends(get_session),
     rag_service: RAGService = Depends(get_rag_service),
@@ -132,12 +138,56 @@ async def chat_with_book_stream(
 
     async def event_generator():
         try:
+            config_repo = SystemConfigsRepository(session)
+            config_value = await config_repo.get_value("use_adk_chat_v2")
+            use_v2 = (config_value == "true") or bool(req.conversation_id)
+
+            if use_v2:
+                adk_session_service = getattr(
+                    request.app.state, "adk_session_service", None
+                )
+                orchestrator = ChatOrchestrator(session_service=adk_session_service)
+
+                is_global = req.is_global or req.book_id == "global"
+                dto = ChatRequestDTO(
+                    question=req.question,
+                    user_id=current_user.id,
+                    book_id=req.book_id,
+                    is_global=is_global,
+                    current_page=req.current_page,
+                    character_id=req.character_id,
+                    conversation_id=req.conversation_id,
+                    context_book_ids=req.context_book_ids,
+                )
+
+                async for event in orchestrator.stream_response(dto, session):
+                    if isinstance(event, dict):
+                        if event.get("type") == "chunk":
+                            yield f"data: {json.dumps({'chunk': event['text']})}\n\n"
+                        elif event.get("type") == "done":
+                            await chat_limit_service.increment_usage(
+                                current_user, session
+                            )
+                            updated_usage = (
+                                await chat_limit_service.get_user_usage_status(
+                                    current_user, session
+                                )
+                            )
+                            done_payload = {
+                                "done": True,
+                                "usage": updated_usage,
+                                "conversationId": event.get("conversation_id"),
+                                "contextBookIds": event.get("used_book_ids", []),
+                                "evalId": event.get("eval_id"),
+                            }
+                            yield f"data: {json.dumps(done_payload)}\n\n"
+                        else:
+                            yield f"data: {json.dumps(event)}\n\n"
+                return
+
             accumulated_response = ""
             stream_meta: dict = {}
             # Stream events from RAG service.
-            # str   → raw text token from fast handlers; wrap as {"chunk": str}
-            # dict  → typed event from graph handler; pass through as-is,
-            #         except {"type": "chunk", "text": ...} which also feeds accumulator
             async for event in rag_service.answer_question_stream(
                 req, session, user_id=current_user.id, metadata_out=stream_meta
             ):
@@ -147,15 +197,11 @@ async def chat_with_book_stream(
                 elif isinstance(event, dict):
                     if event.get("type") == "chunk":
                         accumulated_response += event.get("text", "")
-                        # Keep frontend-compatible {"chunk": text} format for answer tokens
                         yield f"data: {json.dumps({'chunk': event['text']})}\n\n"
                     elif event.get("type") == "answer_start":
-                        # A new answer generation cycle is starting.
-                        # Reset the accumulator so the citation fixer only sees the final answer.
                         accumulated_response = ""
                         yield f"data: {json.dumps(event)}\n\n"
                     else:
-                        # Status events (planning, tool_call, tool_result, grading, etc.)
                         yield f"data: {json.dumps(event)}\n\n"
 
             # After streaming completes, apply citation fixer and send fixed version if needed
@@ -283,3 +329,125 @@ async def get_recent_questions(
     repo = RAGEvaluationsRepository(session)
     questions = await repo.get_recent_standalone_questions(limit=limit)
     return {"questions": questions}
+
+
+# ---------------------------------------------------------------------------
+# Conversation endpoints
+# ---------------------------------------------------------------------------
+
+
+class CreateConversationRequest(BaseModel):
+    book_id: Optional[str] = None
+    is_global: bool = False
+    title: Optional[str] = None
+
+
+@router.post("/conversations")
+async def create_conversation_endpoint(
+    req: CreateConversationRequest,
+    current_user: User = Depends(require_reader),
+    session: AsyncSession = Depends(get_session),
+):
+    """Create a new conversation session"""
+
+    repo = ConversationRepository(session)
+    conv = await repo.create_conversation(
+        user_id=current_user.id,
+        book_id=req.book_id,
+        is_global=req.is_global,
+        title=req.title,
+    )
+    return {
+        "id": conv.id,
+        "userId": conv.user_id,
+        "bookId": conv.book_id,
+        "bookTitle": conv.book.title if conv.book else None,
+        "isGlobal": conv.is_global,
+        "title": conv.title,
+        "createdAt": conv.created_at.isoformat(),
+        "updatedAt": conv.updated_at.isoformat(),
+    }
+
+
+@router.get("/conversations")
+async def list_conversations_endpoint(
+    limit: int = 50,
+    offset: int = 0,
+    book_id: Optional[str] = None,
+    is_global: Optional[bool] = None,
+    current_user: User = Depends(require_reader),
+    session: AsyncSession = Depends(get_session),
+):
+    """List current user's conversations"""
+
+    repo = ConversationRepository(session)
+    conversations = await repo.list_user_conversations(
+        current_user.id,
+        limit=limit,
+        offset=offset,
+        book_id=book_id,
+        is_global=is_global,
+    )
+    return {
+        "conversations": [
+            {
+                "id": c.id,
+                "userId": c.user_id,
+                "bookId": c.book_id,
+                "bookTitle": c.book.title if c.book else None,
+                "isGlobal": c.is_global,
+                "title": c.title,
+                "createdAt": c.created_at.isoformat(),
+                "updatedAt": c.updated_at.isoformat(),
+            }
+            for c in conversations
+        ]
+    }
+
+
+@router.get("/conversations/{conversation_id}/messages")
+async def list_conversation_messages_endpoint(
+    conversation_id: str,
+    limit: int = 100,
+    current_user: User = Depends(require_reader),
+    session: AsyncSession = Depends(get_session),
+):
+    """Get message history for a conversation"""
+
+    repo = ConversationRepository(session)
+    conv = await repo.get_conversation(conversation_id)
+    if conv is None or conv.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail=t("errors.conversation_not_found"))
+
+    messages = await repo.get_conversation_messages(conversation_id, limit=limit)
+    return {
+        "messages": [
+            {
+                "id": m.id,
+                "conversationId": m.conversation_id,
+                "role": m.role,
+                "content": m.content,
+                "agentSteps": m.agent_steps,
+                "usedBookIds": m.used_book_ids,
+                "currentPage": m.current_page,
+                "evalId": m.eval_id,
+                "createdAt": m.created_at.isoformat(),
+            }
+            for m in messages
+        ]
+    }
+
+
+@router.delete("/conversations/{conversation_id}")
+async def delete_conversation_endpoint(
+    conversation_id: str,
+    current_user: User = Depends(require_reader),
+    session: AsyncSession = Depends(get_session),
+):
+    """Delete a conversation by ID"""
+
+    repo = ConversationRepository(session)
+    deleted = await repo.delete_conversation(conversation_id, current_user.id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=t("errors.conversation_not_found"))
+    return {"ok": True, "id": conversation_id}

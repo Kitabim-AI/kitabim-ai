@@ -175,12 +175,15 @@ async def test_deterministic_evaluation(eval_dataset_file):
                 await session.rollback()
 
     # Patch the tokenizer and generator so we execute cleanly in Uyghur against real Postgres.
-    with patch(
-        "rouge_score.tokenize.tokenize",
-        side_effect=custom_tokenize,
-    ), patch(
-        "google.adk.evaluation.evaluation_generator.EvaluationGenerator._generate_inferences_from_root_agent",
-        side_effect=run_deterministic_qa,
+    with (
+        patch(
+            "rouge_score.tokenize.tokenize",
+            side_effect=custom_tokenize,
+        ),
+        patch(
+            "google.adk.evaluation.evaluation_generator.EvaluationGenerator._generate_inferences_from_root_agent",
+            side_effect=run_deterministic_qa,
+        ),
     ):
         await AgentEvaluator.evaluate(
             agent_module="app.services.rag.agent",

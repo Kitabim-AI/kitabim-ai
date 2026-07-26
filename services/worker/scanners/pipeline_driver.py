@@ -140,6 +140,7 @@ async def run_pipeline_driver(ctx) -> None:
         # Scanners now look for their own work based on dependencies:
         # - OCR: ocr_milestone == 'idle'
         # - Chunking: ocr_milestone == 'succeeded' AND chunking_milestone == 'idle'
+        #             AND (spell_check disabled OR spell_check_milestone in succeeded/failed)
         # - Embedding: chunking_milestone == 'succeeded' AND embedding_milestone == 'idle'
         ocr_promoted = 0
         chunk_promoted = 0

@@ -108,8 +108,10 @@ class ChatRequest(BaseModel):
         alias_generator=to_camel, populate_by_name=True, from_attributes=True
     )
 
-    book_id: str  # API: bookId
+    book_id: Optional[str] = None  # API: bookId
     question: str
+    is_global: bool = False  # API: isGlobal
+    conversation_id: Optional[str] = None  # API: conversationId
     history: List[dict] = []
     current_page: Optional[int] = None  # API: currentPage
     character_id: Optional[str] = None  # API: characterId

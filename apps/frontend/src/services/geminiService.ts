@@ -1,7 +1,9 @@
 
+import { Conversation, ConversationMessage } from '@shared/types';
 import { authFetch } from './authService';
 
 const API_BASE = '/api';
+
 
 export const extractUyghurText = async (base64Image: string, retries = 5): Promise<string> => {
   for (let attempt = 0; attempt < retries; attempt++) {
@@ -77,28 +79,49 @@ export const chatWithBook = async (
   }
 };
 
+export interface ChatStreamParams {
+  question: string;
+  bookId: string;
+  currentPage?: number;
+  history: { role: string; text: string }[];
+  characterId?: string;
+  contextBookIds?: string[];
+  conversationId?: string;
+  signal?: AbortSignal;
+}
+
+export interface ChatStreamCallbacks {
+  onChunk: (chunk: string) => void;
+  onComplete: () => void;
+  onError: (error: string) => void;
+  onCorrection?: (correctedText: string) => void;
+  onUsageUpdate?: (usage: any) => void;
+  onContextBookIds?: (bookIds: string[]) => void;
+  onAgentEvent?: (event: Record<string, any>) => void;
+  onEvalId?: (evalId: number) => void;
+  onConversationId?: (convId: string) => void;
+}
+
 export const chatWithBookStream = async (
-  question: string,
-  bookId: string,
-  currentPage: number | undefined,
-  history: { role: string; text: string }[],
-  onChunk: (chunk: string) => void,
-  onComplete: () => void,
-  onError: (error: string) => void,
-  signal?: AbortSignal,
-  characterId?: string,
-  onCorrection?: (correctedText: string) => void,
-  onUsageUpdate?: (usage: any) => void,
-  contextBookIds?: string[],
-  onContextBookIds?: (bookIds: string[]) => void,
-  onAgentEvent?: (event: Record<string, any>) => void,
-  onEvalId?: (evalId: number) => void,
+  params: ChatStreamParams,
+  callbacks: ChatStreamCallbacks,
 ): Promise<void> => {
+  const { question, bookId, currentPage, history, characterId, contextBookIds, conversationId, signal } = params;
+  const { onChunk, onComplete, onError, onCorrection, onUsageUpdate, onContextBookIds, onAgentEvent, onEvalId, onConversationId } = callbacks;
+
   try {
     const response = await authFetch(`${API_BASE}/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bookId, question, currentPage, history, character_id: characterId, contextBookIds: contextBookIds ?? [] }),
+      body: JSON.stringify({
+        bookId,
+        question,
+        currentPage,
+        history,
+        character_id: characterId,
+        contextBookIds: contextBookIds ?? [],
+        conversationId,
+      }),
       signal,
     });
 
@@ -174,6 +197,9 @@ export const chatWithBookStream = async (
               if (onEvalId && typeof data.evalId === 'number') {
                 onEvalId(data.evalId);
               }
+              if (onConversationId && data.conversationId) {
+                onConversationId(data.conversationId);
+              }
               onComplete();
               return;
             }
@@ -218,3 +244,74 @@ export const submitChatFeedback = async (
     return false;
   }
 };
+
+export const getUserConversations = async (
+  limit = 50,
+  offset = 0,
+  bookId?: string,
+  isGlobal?: boolean,
+): Promise<Conversation[]> => {
+  try {
+    let url = `${API_BASE}/chat/conversations?limit=${limit}&offset=${offset}`;
+    if (bookId) {
+      url += `&book_id=${encodeURIComponent(bookId)}`;
+    }
+    if (isGlobal !== undefined) {
+      url += `&is_global=${isGlobal}`;
+    }
+    const response = await authFetch(url);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.conversations || [];
+  } catch (err) {
+    console.error('Fetch Conversations Error:', err);
+    return [];
+  }
+};
+
+export const getConversationMessages = async (
+  conversationId: string,
+  limit = 100,
+): Promise<ConversationMessage[]> => {
+  try {
+    const response = await authFetch(`${API_BASE}/chat/conversations/${conversationId}/messages?limit=${limit}`);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.messages || [];
+  } catch (err) {
+    console.error('Fetch Conversation Messages Error:', err);
+    return [];
+  }
+};
+
+export const createConversation = async (
+  bookId?: string,
+  isGlobal = false,
+  title?: string,
+): Promise<Conversation | null> => {
+  try {
+    const response = await authFetch(`${API_BASE}/chat/conversations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ book_id: bookId, is_global: isGlobal, title }),
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (err) {
+    console.error('Create Conversation Error:', err);
+    return null;
+  }
+};
+
+export const deleteConversation = async (conversationId: string): Promise<boolean> => {
+  try {
+    const response = await authFetch(`${API_BASE}/chat/conversations/${conversationId}`, {
+      method: 'DELETE',
+    });
+    return response.ok;
+  } catch (err) {
+    console.error('Delete Conversation Error:', err);
+    return false;
+  }
+};
+

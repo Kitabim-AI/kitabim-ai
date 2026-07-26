@@ -28,6 +28,8 @@ def mock_ctx():
     ctx.book.volume = 1
     ctx.agent_model = "test-model"
     ctx.user_id = "test-user"
+    ctx.enriched_question = None
+    ctx.question = "test question"
     return ctx
 
 
@@ -1106,3 +1108,350 @@ async def test_execute_path_catalog_books_by_fallback(mock_ctx):
         "search_books_by_summary",
         "search_chunks",
     ]
+
+
+@pytest.mark.asyncio
+@patch("app.llm.models._get_text_client")
+async def test_llm_analyze_query_tool_calling(mock_get_client, mock_ctx):
+    from google.genai import types
+    from app.services.rag.agent.deterministic_handler import DeterministicRAGHandler
+
+    handler = DeterministicRAGHandler()
+
+    mock_client = MagicMock()
+    mock_generate_content = AsyncMock()
+    mock_client.aio.models.generate_content = mock_generate_content
+    mock_get_client.return_value = mock_client
+
+    # Create mock response 1: tool call
+    class MockFunctionCall:
+        def __init__(self, name, args):
+            self.name = name
+            self.args = args
+
+    class MockCandidate:
+        def __init__(self, content):
+            self.content = content
+
+    mock_fc = MockFunctionCall("find_books_by_title", {"question": "ئانا يۇرت"})
+    mock_resp_1 = MagicMock()
+    mock_resp_1.function_calls = [mock_fc]
+    mock_resp_1.candidates = [
+        MockCandidate(content=types.Content(role="model", parts=[]))
+    ]
+    mock_resp_1.text = None
+
+    # Create mock response 2: final JSON text response
+    mock_resp_2 = MagicMock()
+    mock_resp_2.function_calls = []
+    mock_resp_2.candidates = [
+        MockCandidate(
+            content=types.Content(role="model", parts=[types.Part.from_text(text="{}")])
+        )
+    ]
+    mock_resp_2.text = '{"intent": "passage", "is_current_page_query": false, "is_volume_shift": false, "target_volume": null, "needs_rewrite": false, "rewritten_question": null, "catalog_subtype": null, "dictionary_subtype": null, "dictionary_term": null, "quran_surah": null, "quran_ayah": null, "quran_query": null, "is_composite": false, "sub_questions": null}'
+
+    mock_generate_content.side_effect = [mock_resp_1, mock_resp_2]
+
+    # Mock _dispatch_tool_with_retry
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        assert tool_name == "find_books_by_title"
+        assert tool_args == {"question": "ئانا يۇرت"}
+        return {
+            "ok": True,
+            "books": [
+                {
+                    "id": "book-111",
+                    "title": "ئانا يۇرت",
+                    "author": "زوردۇن سابىر",
+                    "volume": 1,
+                }
+            ],
+            "found_count": 1,
+        }
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        result = await handler._llm_analyze_query("ئانا يۇرت كىتابى بارمۇ؟", mock_ctx)
+
+    assert result["intent"] == "passage"
+    assert result["has_title"] is True
+    assert result["has_author"] is False
+    assert len(result["matched_books"]) == 1
+    assert result["matched_books"][0]["id"] == "book-111"
+    assert mock_generate_content.call_count == 2
+
+
+@pytest.mark.asyncio
+@patch("app.llm.models._get_text_client")
+async def test_llm_analyze_query_author_tool_calling(mock_get_client, mock_ctx):
+    from google.genai import types
+    from app.services.rag.agent.deterministic_handler import DeterministicRAGHandler
+
+    handler = DeterministicRAGHandler()
+
+    mock_client = MagicMock()
+    mock_generate_content = AsyncMock()
+    mock_client.aio.models.generate_content = mock_generate_content
+    mock_get_client.return_value = mock_client
+
+    class MockFunctionCall:
+        def __init__(self, name, args):
+            self.name = name
+            self.args = args
+
+    class MockCandidate:
+        def __init__(self, content):
+            self.content = content
+
+    mock_fc = MockFunctionCall(
+        "get_books_by_author", {"question": "زوردۇن سابىر نېمە يازغان؟"}
+    )
+    mock_resp_1 = MagicMock()
+    mock_resp_1.function_calls = [mock_fc]
+    mock_resp_1.candidates = [
+        MockCandidate(content=types.Content(role="model", parts=[]))
+    ]
+    mock_resp_1.text = None
+
+    mock_resp_2 = MagicMock()
+    mock_resp_2.function_calls = []
+    mock_resp_2.candidates = [
+        MockCandidate(
+            content=types.Content(role="model", parts=[types.Part.from_text(text="{}")])
+        )
+    ]
+    mock_resp_2.text = '{"intent": "passage", "is_current_page_query": false, "is_volume_shift": false, "target_volume": null, "needs_rewrite": false, "rewritten_question": null, "catalog_subtype": null, "dictionary_subtype": null, "dictionary_term": null, "quran_surah": null, "quran_ayah": null, "quran_query": null, "is_composite": false, "sub_questions": null}'
+
+    mock_generate_content.side_effect = [mock_resp_1, mock_resp_2]
+
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        assert tool_name == "get_books_by_author"
+        return {
+            "ok": True,
+            "books": [
+                {
+                    "id": "book-222",
+                    "title": "ئانا يۇرت",
+                    "author": "زوردۇن سابىر",
+                    "volume": 1,
+                }
+            ],
+            "found_count": 1,
+        }
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        result = await handler._llm_analyze_query("زوردۇن سابىر نېمە يازغان؟", mock_ctx)
+
+    assert result["has_author"] is True
+    assert result["has_title"] is False
+    assert len(result["matched_author_books"]) == 1
+    assert result["matched_author_books"][0]["id"] == "book-222"
+    # Tools are disabled for the turn after the first tool-call round, so a
+    # well-behaved response only ever costs 2 round trips.
+    assert mock_generate_content.call_count == 2
+
+
+@pytest.mark.asyncio
+@patch("app.llm.models._get_text_client")
+async def test_llm_analyze_query_bounded_loop_raises_on_repeated_tool_calls(
+    mock_get_client, mock_ctx
+):
+    """Guards the fix for unbounded tool-call loops: even if the model keeps
+    emitting function calls (ignoring that tools were disabled), the loop
+    must give up after a small, fixed number of turns instead of hammering
+    the LLM API indefinitely."""
+    from google.genai import types
+    from app.services.rag.agent.deterministic_handler import DeterministicRAGHandler
+
+    handler = DeterministicRAGHandler()
+
+    mock_client = MagicMock()
+    mock_generate_content = AsyncMock()
+    mock_client.aio.models.generate_content = mock_generate_content
+    mock_get_client.return_value = mock_client
+
+    class MockFunctionCall:
+        def __init__(self, name, args):
+            self.name = name
+            self.args = args
+
+    class MockCandidate:
+        def __init__(self, content):
+            self.content = content
+
+    def _looping_response():
+        mock_fc = MockFunctionCall("find_books_by_title", {"question": "ئانا يۇرت"})
+        resp = MagicMock()
+        resp.function_calls = [mock_fc]
+        resp.candidates = [MockCandidate(content=types.Content(role="model", parts=[]))]
+        resp.text = None
+        return resp
+
+    mock_generate_content.side_effect = [_looping_response() for _ in range(5)]
+
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        return {"ok": True, "books": [], "found_count": 0}
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        with pytest.raises(ValueError, match="Too many tool call iterations"):
+            await handler._llm_analyze_query("ئانا يۇرت كىتابى بارمۇ؟", mock_ctx)
+
+    # Bounded at 3 turns regardless of how long the model would keep looping.
+    assert mock_generate_content.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_current_page_query_with_rewrite_preserves_intent(mock_ctx):
+    handler = DeterministicRAGHandler()
+    mock_ctx.current_page = 85
+    mock_ctx.book_id = "book-123"
+    mock_ctx.is_global = False
+    mock_ctx.book.title = "تەكلىماكان ئوغلى"
+    mock_ctx.book.volume = 1
+    mock_ctx.history = [{"role": "user", "text": "Some history"}]
+
+    original_question = "بۇ بەتتە قانداق ۋەقە سۆزلەنگەن؟"
+    rewritten_question = "«تەكلىماكان ئوغلى» رومانىنىڭ 85-بېتىدە قانداق ۋەقە سۆزلەنگەن؟"
+
+    # We mock _llm_analyze_query to simulate the rewrite flow
+    calls = []
+
+    async def mock_analyze(question, ctx):
+        calls.append(question)
+        if question == original_question:
+            return {
+                "is_current_page_query": True,
+                "is_volume_shift": False,
+                "target_volume": None,
+                "needs_rewrite": True,
+                "rewritten_question": rewritten_question,
+                "catalog_subtype": None,
+                "dictionary_subtype": None,
+                "dictionary_term": None,
+                "quran_surah": None,
+                "quran_ayah": None,
+                "quran_query": None,
+                "intent": "passage",
+                "is_composite": False,
+                "sub_questions": None,
+            }
+        else:  # question == rewritten_question
+            return {
+                "is_current_page_query": False,  # LLM loses current page context in rewritten form
+                "is_volume_shift": False,
+                "target_volume": None,
+                "needs_rewrite": False,
+                "rewritten_question": None,
+                "catalog_subtype": None,
+                "dictionary_subtype": None,
+                "dictionary_term": None,
+                "quran_surah": None,
+                "quran_ayah": None,
+                "quran_query": None,
+                "intent": "passage",
+                "is_composite": False,
+                "sub_questions": None,
+            }
+
+    handler._llm_analyze_query = mock_analyze
+
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        if tool_name == "get_current_page":
+            return {"ok": True, "context": "Page 85 content"}
+        return {"ok": True}
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        observations = []
+        events = []
+        async for ev in handler._execute_workflow_stream(
+            mock_ctx, original_question, observations
+        ):
+            events.append(ev)
+
+        tools_called = [o["tool"] for o in observations]
+        assert "get_current_page" in tools_called
+        assert "search_chunks" not in tools_called
+
+
+@pytest.mark.asyncio
+async def test_reader_summary_question_stays_in_reader_book(mock_ctx):
+    handler = DeterministicRAGHandler()
+    mock_ctx.current_page = None
+    mock_ctx.book_id = "book-123"
+    mock_ctx.is_global = False
+
+    question = "بۇ كىتابنىڭ ئاساسى مەزمۇنى نىمە؟"
+
+    async def mock_analyze(q, ctx):
+        return {
+            "is_current_page_query": False,
+            "is_volume_shift": False,
+            "target_volume": None,
+            "needs_rewrite": False,
+            "rewritten_question": None,
+            "catalog_subtype": None,
+            "dictionary_subtype": None,
+            "dictionary_term": None,
+            "quran_surah": None,
+            "quran_ayah": None,
+            "quran_query": None,
+            "intent": "summary",
+            "is_composite": False,
+            "sub_questions": None,
+            "has_title": False,
+            "has_author": False,
+            "matched_books": [],
+            "matched_author_books": [],
+        }
+
+    handler._llm_analyze_query = mock_analyze
+
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        if tool_name == "get_book_summary":
+            return {
+                "ok": True,
+                "summaries": [
+                    {"book_id": "book-123", "summary": "Summary of book-123"}
+                ],
+            }
+        if tool_name == "search_chunks":
+            return {
+                "ok": True,
+                "chunks": [{"text": "chunk 1", "score": 0.3}],
+            }  # Low score
+        if tool_name == "search_books_by_summary":
+            return {"ok": True, "book_ids": ["other-1", "other-2"]}
+        return {"ok": True}
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        observations = []
+        events = []
+        async for ev in handler._execute_workflow_stream(
+            mock_ctx, question, observations
+        ):
+            events.append(ev)
+
+        tools_called = [o["tool"] for o in observations]
+        assert "get_book_summary" in tools_called
+        assert "search_chunks" in tools_called
+        assert "search_books_by_summary" not in tools_called
+
+        # Check search_chunks arguments
+        chunk_obs = [o for o in observations if o["tool"] == "search_chunks"]
+        for obs in chunk_obs:
+            assert obs["args"].get("book_ids") == ["book-123"]

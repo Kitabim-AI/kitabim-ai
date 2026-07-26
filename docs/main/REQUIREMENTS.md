@@ -367,7 +367,7 @@ When chatting within a book reader:
 - If the user asks about "this volume," the assistant limits its search to the current volume in a multi-volume work.
 
 **REQ-CHAT-005: Conversation History**
-The chat maintains a history of previous messages within the session. The AI uses conversation history to understand follow-up questions and provide contextually relevant answers.
+For signed-in users, the chat persists conversations server-side rather than only within the current browser session: each conversation is saved with an auto-generated title (from the book being discussed, or the first question asked), can be resumed, browsed in a history list, and deleted. The AI uses the conversation's message history to understand follow-up questions and provide contextually relevant answers.
 
 **REQ-CHAT-006: Semantic Search**
 The assistant uses AI-powered semantic search to find relevant content, combining meaning-based (embedding) search with keyword-based matching, for both conceptually relevant and terminologically precise results.
@@ -621,7 +621,7 @@ The Global Chat Assistant must narrow the search space to relevant books, catego
 The system should target a total response latency of under **5 seconds** for typical AI chat questions, even with a library of 2,000 books. This includes time for routing, retrieval, and final answer generation.
 
 **REQ-SCALE-005: Bulk Processing Efficiency**
-The backend processing pipeline (OCR and Indexing) must support horizontally scalable workers. The system must be capable of processing a batch of 100 new books simultaneously without degrading the performance of the front-facing reading and chat applications.
+The backend processing pipeline (OCR and Indexing) must support horizontally scalable workers. The system must be capable of processing a batch of 100 new books simultaneously without degrading the performance of the front-facing reading and chat applications. For very high ingestion volumes, OCR and embedding generation can each be switched to an asynchronous batch-processing mode (submit-then-poll against the AI provider's batch API) as a lower-cost alternative to real-time processing, at the cost of added latency per page.
 
 **REQ-SCALE-006: Semantic Caching**
 The system includes a Redis-backed caching layer that caches answers to frequently asked or semantically similar questions, as well as intermediate query embeddings and similarity search results. This reduces operational costs and provides near-instantaneous responses for common queries.

@@ -9,12 +9,12 @@ To resolve this, we will update the search behavior so that when the RAG system 
 
 ## Proposed Changes
 
-### 1. [packages/backend-core/app/services/rag/utils.py](file:///Users/Omarjan/Projects/kitabim-ai/packages/backend-core/app/services/rag/utils.py)
+### 1. [utils.py](../../../../packages/backend-core/app/services/rag/utils.py)
 Introduce a utility helper `is_islam_or_quran_query(question: str) -> bool` to perform substring checks on a comprehensive set of unambiguous Islamic terms in both Uyghur and English:
 - **Uyghur**: `"قۇرئان"`, `"سۈرە"`, `"ئايەت"`, `"ئاللاھ"`, `"خۇدا"`, `"پەرۋەردىگار"`, `"پەيغەمبەر"`, `"مۇھەممەد"`, `"ئىسلام"`, `"مۇسۇلمان"`, `"ناماز"`, `"روزا"`, `"زاكات"`, `"ھەج"`, `"ھەدىس"`, `"شەرىئەت"`
 - **English**: `"quran"`, `"koran"`, `"surah"`, `"ayah"`, `"verse"`, `"allah"`, `"prophet"`, `"muhammad"`, `"islam"`, `"muslim"`, `"ramadan"`, `"hadith"`, `"sharia"`
 
-### 2. [packages/backend-core/app/services/rag/retrieval.py](file:///Users/Omarjan/Projects/kitabim-ai/packages/backend-core/app/services/rag/retrieval.py)
+### 2. [retrieval.py](../../../../packages/backend-core/app/services/rag/retrieval.py)
 Modify `vector_search` to:
 - Run `is_islam_or_quran_query` on `ctx.question` and/or `ctx.enriched_question`.
 - If true, run a vector similarity query on the `quran` table using `ctx.session` and the computed `query_vector`:
@@ -43,10 +43,10 @@ Modify `vector_search` to:
   - `score`: `row.similarity`
 - Merge the mapped Quran results with book chunk results, sort by similarity score descending, and slice to the requested `limit`.
 
-### 3. [packages/backend-core/app/services/rag/agent/handler.py](file:///Users/Omarjan/Projects/kitabim-ai/packages/backend-core/app/services/rag/agent/handler.py)
+### 3. [base_handler.py](../../../../packages/backend-core/app/services/rag/base_handler.py)
 Update `_grade_context` to pass through the specific metadata keys for the Quran: `surah`, `ayah`, and `surah_name_en`.
 
-### 4. [packages/backend-core/app/services/rag/answer_builder.py](file:///Users/Omarjan/Projects/kitabim-ai/packages/backend-core/app/services/rag/answer_builder.py)
+### 4. [answer_builder.py](../../../../packages/backend-core/app/services/rag/answer_builder.py)
 Modify `format_document` to detect `book_id == "quran"` and render the exact expected citation header:
 `[Source: Holy Quran, Surah: {title} ({surah_name_en}), Ayah: {ayah}]`
 

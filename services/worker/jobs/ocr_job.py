@@ -18,6 +18,7 @@ from app.core.config import settings
 from app.db import session as db_session
 from app.db.models import Book, Page, PipelineEvent
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
+from app.services.batch_ocr_service import submit_batch_ocr_job
 from app.services.ocr_service import ocr_page_with_gemini
 from app.utils.text import is_toc_page
 from app.services.storage_service import storage
@@ -41,7 +42,7 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
     from app.utils.circuit_breaker import get_redis
 
     redis_client = ctx.get("redis") or get_redis()
-    lock_manager = MultiPageLock(redis_client, page_ids)
+    lock_manager = MultiPageLock(redis_client, page_ids, prefix="ocr")
     locked_page_ids = await lock_manager.__aenter__()
 
     try:
@@ -84,6 +85,13 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
                 "ocr_max_retry_count", "3"
             )
             ocr_max_retry_count = int(ocr_max_retry_count_str)
+            batch_ocr_enabled_str = await config_repo.get_value(
+                "gemini_batch_ocr_enabled", "false"
+            )
+            batch_ocr_enabled = batch_ocr_enabled_str.lower() in ("true", "1", "yes")
+            batch_ocr_batch_size = int(
+                await config_repo.get_value("gemini_batch_ocr_batch_size", "50")
+            )
 
         # Mark book's active step
         async with db_session.async_session_factory() as session:
@@ -169,6 +177,65 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
                 select(Page).where(Page.id.in_(locked_page_ids))
             )
             pages = list(result.scalars().all())
+
+        if batch_ocr_enabled:
+            log_json(
+                logger,
+                logging.INFO,
+                "Delegating OCR job to Gemini Batch API",
+                book_id=book_id,
+                page_count=len(pages),
+            )
+            try:
+                for i in range(0, len(pages), batch_ocr_batch_size):
+                    chunk = pages[i : i + batch_ocr_batch_size]
+                    try:
+                        async with db_session.async_session_factory() as session:
+                            await submit_batch_ocr_job(
+                                session, book_id, chunk, doc, gemini_ocr_model
+                            )
+                    except Exception as exc:
+                        log_json(
+                            logger,
+                            logging.ERROR,
+                            "Batch OCR submission failed",
+                            book_id=book_id,
+                            error=str(exc),
+                        )
+                        async with db_session.async_session_factory() as session:
+                            error_msg = str(exc)[:500]
+                            await session.execute(
+                                update(Page)
+                                .where(Page.id.in_([p.id for p in chunk]))
+                                .values(
+                                    ocr_milestone="failed",
+                                    retry_count=Page.retry_count + 1,
+                                    error=error_msg,
+                                    last_updated=func.now(),
+                                )
+                            )
+                            for p in chunk:
+                                session.add(
+                                    PipelineEvent(
+                                        page_id=p.id,
+                                        event_type="ocr_failed",
+                                        payload=make_pipeline_event_payload(
+                                            extra_fields={
+                                                "error": error_msg,
+                                                "batch": True,
+                                            }
+                                        ),
+                                    )
+                                )
+                            await session.commit()
+                        async with db_session.async_session_factory() as session:
+                            await BookMilestoneService.update_book_milestone_for_step(
+                                session, book_id, "ocr"
+                            )
+                            await session.commit()
+            finally:
+                doc.close()
+            return
 
         sem = asyncio.Semaphore(max_parallel_pages)
 

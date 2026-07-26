@@ -27,12 +27,12 @@ Currently, the Quran page features a merged search/surah input dropdown. The use
   - Triggering a global search resets the active Surah and Ayah dropdown values to clear/empty.
   - Clearing the global search restores the default surah view (Surah 1, all ayahs).
 - **Aesthetic**:
-  - Styled to match the premium "user role dropdown" in [UserManagementPanel.tsx](file:///Users/Omarjan/Projects/kitabim-ai/apps/frontend/src/components/admin/users/UserManagementPanel.tsx).
+  - Styled to match the premium "user role dropdown" in [UserManagementPanel.tsx](../../../../apps/frontend/src/components/admin/users/UserManagementPanel.tsx).
   - Interactive states (focus, hover), dark mode support, and smooth transition animations.
 
 ## Proposed Changes
 
-### [MODIFY] [QuranView.tsx](file:///Users/Omarjan/Projects/kitabim-ai/apps/frontend/src/components/pages/QuranView.tsx)
+### [MODIFY] [QuranView.tsx](../../../../apps/frontend/src/components/pages/QuranView.tsx)
 - Reorganize layout container to implement responsive desktop/mobile placement.
 - Replace the single search/dropdown input with three distinct components:
   1. **Surah Combobox**: Styled input + dropdown list wrapper.

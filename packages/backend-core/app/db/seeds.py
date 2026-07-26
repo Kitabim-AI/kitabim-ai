@@ -29,6 +29,21 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Gemini model used for OCR page processing.",
         },
         {
+            "key": "gemini_batch_ocr_enabled",
+            "value": "false",
+            "description": "Globally enable/disable Gemini Batch API for OCR page processing. Set to 'true' to use Batch API (50% cost discount) or 'false' for online real-time OCR.",
+        },
+        {
+            "key": "gemini_batch_ocr_batch_size",
+            "value": "50",
+            "description": "Maximum number of pages bundled into a single Gemini Batch API job.",
+        },
+        {
+            "key": "gemini_batch_ocr_timeout_hours",
+            "value": "24",
+            "description": "Hours after which a pending/running Gemini Batch API OCR job is considered timed out and marked stale for retry.",
+        },
+        {
             "key": "gemini_embedding_model",
             "value": "gemini-embedding-2",
             "description": "Gemini model used for generating text embeddings (vector search).",
@@ -117,6 +132,26 @@ async def seed_system_configs(session: AsyncSession):
             "key": "gemini_embed_timeout",
             "value": "15",
             "description": "Timeout in seconds for Gemini vector embedding API calls.",
+        },
+        {
+            "key": "gemini_batch_embedding_enabled",
+            "value": "false",
+            "description": "Globally enable/disable Gemini Batch API embedding processing. Set to 'true' to activate.",
+        },
+        {
+            "key": "gemini_batch_embedding_timeout_hours",
+            "value": "24",
+            "description": "Timeout threshold in hours after which a pending/running batch embedding job is marked stale and retried.",
+        },
+        {
+            "key": "gemini_batch_embedding_max_chunks_per_job",
+            "value": "100",
+            "description": "Maximum number of chunks packaged into a single Gemini Batch API embedding submission. Sized for the Tier 1 batch enqueued-tokens budget (500K) assuming several concurrent jobs — raise if the Gemini API key is upgraded to a higher tier.",
+        },
+        {
+            "key": "gemini_batch_embedding_max_retry_count",
+            "value": "3",
+            "description": "Per-chunk retry ceiling before a failing chunk is skipped during batch embedding ingestion.",
         },
     ]
 

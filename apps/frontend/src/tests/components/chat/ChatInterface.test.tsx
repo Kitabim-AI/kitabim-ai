@@ -234,3 +234,153 @@ test('ChatInterface shows book helper message when empty', () => {
 
   expect(screen.getByText('chat.bookAssistantWelcome')).toBeInTheDocument();
 });
+
+test('ChatInterface triggers setModal when delete conversation button is clicked', () => {
+  const setModal = vi.fn();
+  const onDeleteConversation = vi.fn();
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue({ fontSize: 18, setModal } as any);
+  const ref = { current: document.createElement('div') };
+
+  const conversations = [
+    { id: 'conv-1', userId: 'user-1', title: 'Test Conv', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), isGlobal: true }
+  ];
+
+  renderChat(
+    <ChatInterface
+      type="global"
+      totalReady={1}
+      chatMessages={[]}
+      chatInput=""
+      setChatInput={vi.fn()}
+      onSendMessage={vi.fn()}
+      isChatting={false}
+      chatContainerRef={ref}
+      conversations={conversations}
+      onDeleteConversation={onDeleteConversation}
+    />
+  );
+
+  const deleteBtn = screen.getByTitle('chat.deleteConversation');
+  fireEvent.click(deleteBtn);
+
+  expect(setModal).toHaveBeenCalledWith(
+    expect.objectContaining({
+      isOpen: true,
+      title: 'chat.deleteConversation',
+      message: 'chat.confirmDeleteConversation',
+      type: 'confirm',
+      destructive: true,
+    })
+  );
+
+  // Execute onConfirm callback
+  const modalConfig = setModal.mock.calls[0][0];
+  modalConfig.onConfirm();
+  expect(onDeleteConversation).toHaveBeenCalledWith('conv-1');
+});
+
+test('ChatInterface focuses input when onStartNewChat button is clicked', async () => {
+  vi.useFakeTimers();
+  const ref = { current: document.createElement('div') };
+  const onStartNewChat = vi.fn();
+  renderChat(
+    <ChatInterface
+      type="global"
+      totalReady={1}
+      chatMessages={[]}
+      chatInput=""
+      setChatInput={vi.fn()}
+      onSendMessage={vi.fn()}
+      isChatting={false}
+      chatContainerRef={ref}
+      onStartNewChat={onStartNewChat}
+    />
+  );
+
+  const newChatBtn = screen.getByTitle('chat.newChat');
+  const input = screen.getByRole('textbox');
+  const focusSpy = vi.spyOn(input, 'focus');
+
+  fireEvent.click(newChatBtn);
+  expect(onStartNewChat).toHaveBeenCalledTimes(1);
+
+  vi.advanceTimersByTime(100);
+  expect(focusSpy).toHaveBeenCalled();
+  vi.useRealTimers();
+});
+
+test('ChatInterface closes history card on mobile view when new chat button is clicked', () => {
+  Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 500 });
+  const ref = { current: document.createElement('div') };
+  const onStartNewChat = vi.fn();
+  renderChat(
+    <ChatInterface
+      type="global"
+      totalReady={1}
+      chatMessages={[]}
+      chatInput=""
+      setChatInput={vi.fn()}
+      onSendMessage={vi.fn()}
+      isChatting={false}
+      chatContainerRef={ref}
+      onStartNewChat={onStartNewChat}
+    />
+  );
+
+  // Open history on mobile first
+  const openHistoryBtns = screen.getAllByTitle('chat.historyTitle');
+  fireEvent.click(openHistoryBtns[0]);
+  expect(screen.getByText('chat.historyTitle')).toBeInTheDocument();
+
+  // Click new chat button inside history header
+  const newChatBtns = screen.getAllByTitle('chat.newChat');
+  fireEvent.click(newChatBtns[0]);
+
+  expect(onStartNewChat).toHaveBeenCalledTimes(1);
+  // History title should no longer be visible because history card is closed on mobile
+  expect(screen.queryByText('chat.historyTitle')).not.toBeInTheDocument();
+});
+
+test('ChatInterface renders delete button in reader mode when conversationId is present and triggers modal', () => {
+  const setModal = vi.fn();
+  const onDeleteConversation = vi.fn();
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue({ fontSize: 18, setModal } as any);
+  const ref = { current: document.createElement('div') };
+
+  renderChat(
+    <ChatInterface
+      type="book"
+      bookId="book-1"
+      conversationId="conv-reader-1"
+      chatMessages={[{ role: 'user', text: 'Hello' }]}
+      chatInput=""
+      setChatInput={vi.fn()}
+      onSendMessage={vi.fn()}
+      isChatting={false}
+      chatContainerRef={ref}
+      onDeleteConversation={onDeleteConversation}
+    />
+  );
+
+  const deleteBtn = screen.getByTitle('chat.deleteConversation');
+  expect(deleteBtn).toBeInTheDocument();
+  fireEvent.click(deleteBtn);
+
+  expect(setModal).toHaveBeenCalledWith(
+    expect.objectContaining({
+      isOpen: true,
+      title: 'chat.deleteConversation',
+      message: 'chat.confirmDeleteConversation',
+      type: 'confirm',
+      destructive: true,
+    })
+  );
+
+  // Execute onConfirm callback
+  const modalConfig = setModal.mock.calls[0][0];
+  modalConfig.onConfirm();
+  expect(onDeleteConversation).toHaveBeenCalledWith('conv-reader-1');
+});
+
+
+
