@@ -24,46 +24,45 @@ Uyghur literature, history, and culture exist almost entirely in physical form. 
 
 ## Knowledge Base Agent — Agentic RAG with Google ADK
 
-The query assistant interface runs an **agentic loop built on Google ADK** as the primary fallback handler for all questions. Before running the agent, a lightweight preprocessing pipeline determines intent and decomposes compound queries.
+The query assistant interface runs an **agentic loop built on Google ADK**. The system supports two execution pathways: **`ChatOrchestrator`** (ADK-native two-agent pipeline with persisted conversation history) and **`RAGService` / `HandlerRegistry`** (gated between `DeterministicRAGHandler` and `LLMRoutedRAGHandler`).
 
 ```mermaid
-graph TD
-    START([START]) --> Intent[Intent Detection]
-    Intent --> Decompose[Query Decomposition]
-    Decompose --> ContextInj[Context Injection]
-    ContextInj --> ADKLoop[Google ADK ReAct Loop]
-    ADKLoop -->|Call Tools| ExecuteTool[Execute Tool]
-    ExecuteTool -->|Tool Observations| ADKLoop
-    ADKLoop -->|Finish Loop / Max Steps| PostProcess[Post-Processing]
-    PostProcess --> ExtractIDs[Extract Used Book IDs]
-    ExtractIDs --> ContextGrade[Context Grading]
-    ContextGrade --> GenerateAnswer[Answer Synthesis]
-    GenerateAnswer --> END([END])
+flowchart TD
+    Q(["User Question + Context"]) --> ROUTE{"Has conversationId or<br/>use_adk_chat_v2?"}
+
+    ROUTE -- Yes (Default for Stream) --> ORCH["ChatOrchestrator Pipeline<br/>(Persisted Conversation History)"]
+    ORCH --> RET_AGENT["[LLM] Retrieval Agent<br/>(Google ADK + 19 Tools)"]
+    RET_AGENT --> GRADE_ORCH["Context Grading"]
+    GRADE_ORCH --> ANS_AGENT["[LLM] Answer Agent<br/>(Streaming Synthesis + Citations)"]
+    ANS_AGENT --> SAVE["Persist Turn & Return"]
+
+    ROUTE -- No --> REG["RAGService / HandlerRegistry"]
+    REG --> DET_CHECK{"use_deterministic_router?"}
+    DET_CHECK -- Yes --> DET["DeterministicRAGHandler<br/>(ADK Workflow Graph)"]
+    DET_CHECK -- No --> LLM_RAG["LLMRoutedRAGHandler<br/>(ADK ReAct Loop + 19 Tools)"]
+    DET --> GRADE_REG["Context Grading & Synthesis"]
+    LLM_RAG --> GRADE_REG
+    GRADE_REG --> RETURN["Return Answer"]
 ```
 
 **How Agentic RAG works:**
 
-1. **Preprocessing Pipeline (Intent & Decomposition)**
-   - **Intent detection** — detects page-specific questions, metadata queries, and general content search.
-   - **Query Decomposition** — for queries containing multiple questions, a cheap LLM call splits them into up to 4 self-contained sub-questions so the agent can retrieve relevant context for all of them.
+1. **Preprocessing & Signal Extraction**
+   - **Intent detection** — classifies page-specific questions, metadata queries, dictionary lookups, scripture questions, and content search.
+   - **Query Decomposition** — for queries containing multiple questions, an LLM call splits them into up to 4 self-contained sub-questions so context is retrieved for each.
+   - **Co-reference Resolution** — resolves Uyghur pronouns and follow-up markers using conversation history (`rewrite_query`).
 
-2. **Context Injection** — before the first LLM call, the agent's query is enriched with a `[Context]` block including the current book ID (if reading), previously-referenced book IDs from the conversation history, and category filters. This helps the agent skip the book-discovery step.
+2. **Context Injection** — before the first tool call, the query is enriched with a `[Context]` block including the current book ID (if reading in reader mode), previously-referenced book IDs from conversation history, and category filters.
 
-3. **Google ADK Agentic ReAct Loop** — the stateless agent executes a reasoning loop using an `InMemoryRunner`, choosing from 11 specialized retrieval and metadata tools:
-   - `search_chunks` — pgvector similarity search over indexed passages in PostgreSQL (L1 + L2 cache).
-   - `query_knowledge_graph` — **GraphRAG Tool**: extracts entity terms from the query, then queries **Neo4j** for a 1-hop subgraph of entity connections.
-   - `search_books_by_summary` — embedding search over AI-generated book summaries, used to locate books covering a topic (L3 cache).
-   - `find_books_by_title` — resolve a book title to internal IDs, titles, authors, and volumes.
-   - `get_book_summary` — fetch the full semantic summary for specific books (used to identify characters/persons).
-   - `get_current_page` — retrieve raw text of the page currently open in the reader.
-   - `rewrite_query` — resolve pronouns and follow-up markers ("چۇ" clitic) via LLM rewrite (L0 cache).
-   - `get_sister_volumes` — retrieve other volumes of the same series as a given book.
-   - `get_book_author` / `get_books_by_author` — catalog metadata lookups.
-   - `search_catalog` — library browsing and general listing queries.
+3. **Google ADK Reasoning & Tool Execution** — the agent executes a reasoning loop using Google ADK (`google-adk`), choosing from **19 specialized retrieval, catalog, dictionary, and Quran tools**:
+   - **Content Retrieval**: `search_chunks` (pgvector similarity search), `search_books_by_summary` (summary embedding search), `find_books_by_title`, `get_book_summary`, `get_current_page` (reader page text), `rewrite_query`, `get_sister_volumes`.
+   - **Catalog & Metadata**: `get_book_author`, `get_books_by_author`, `search_catalog`.
+   - **Dictionary & Language**: `lookup_uyghur_word`, `lookup_history_term`, `translate_english_to_uyghur`, `check_word_spelling`, `lookup_uyghur_name`, `search_language_sources`, `lookup_proverbs`, `lookup_synonyms`.
+   - **Scripture**: `search_quran` (Surah/Ayah vector search and translation lookup).
 
 4. **Post-Processing (Grading & Synthesis)**
-   - **Deduplication and Grading** — merges retrieved passages and structures them. A relative score-based grading filter filters out low-relevance information.
-   - **Answer Synthesis** — generates a streaming response with inline citations pointing to the source books, volumes, and page numbers.
+   - **Deduplication and Grading** — merges retrieved passages and filters low-relevance chunks using relative score thresholds.
+   - **Answer Synthesis** — generates a streaming response with inline citations pointing to source books, volumes, and page numbers.
 
 ---
 
