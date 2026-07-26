@@ -25,7 +25,7 @@
 
 - [ ] **Step 1: Apply spacing changes to Navbar.tsx**
 
-  In [Navbar.tsx](file:///Users/Omarjan/Projects/kitabim-ai/apps/frontend/src/components/layout/Navbar.tsx), perform the following contiguous edits:
+  In [Navbar.tsx](../../../apps/frontend/src/components/layout/Navbar.tsx), perform the following contiguous edits:
 
   - Update line 37:
     ```diff

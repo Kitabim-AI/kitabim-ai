@@ -72,7 +72,7 @@ Two independent chat pipelines exist today: `ChatOrchestrator` (`packages/backen
 
 - [Project root README](../../README.md)
 - [FastAPI docs](https://fastapi.tiangolo.com/)
-- [Google ADK docs](https://github.com/google/google-adk)
-- [Google GenAI SDK docs](https://github.com/googleapis/google-genai)
+- [Google ADK docs](https://github.com/google/adk-python)
+- [Google GenAI SDK docs](https://github.com/googleapis/python-genai)
 - [Gemini API docs](https://ai.google.dev/gemini-api/docs)
 - [pgvector docs](https://github.com/pgvector/pgvector)
