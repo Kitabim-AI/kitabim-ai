@@ -22,7 +22,6 @@ The backend API and worker are two separate deployable services that share one P
 
 **Non-Goals (current)**
 - Multi-tenant billing.
-- Use of the Gemini Batch API (the real-time/interactive API is used throughout for lower latency).
 - Automated offline RAG metrics scoring (e.g. Ragas) — telemetry is recorded for manual/human review only.
 
 ## 3) Architecture (High-Level)
@@ -31,7 +30,7 @@ The backend API and worker are two separate deployable services that share one P
 
 - **Backend API (`services/backend`)**
   - FastAPI application (Python 3.13) built on `packages/backend-core`.
-  - Handles auth (JWT + OAuth), book/page CRUD, uploads, RAG chat (sync + SSE streaming), dictionary/proverb/Quran lookups, and admin/stats endpoints.
+  - Handles auth (JWT + OAuth), book/page CRUD, uploads, RAG chat (sync + SSE streaming), persisted chat conversation history, dictionary/proverb/Quran lookups, and admin/stats endpoints.
   - Enqueues pipeline jobs to Redis/ARQ; does not run any pipeline processing itself.
   - Uses PostgreSQL (via SQLAlchemy 2.0 async + asyncpg) for metadata, pgvector for embeddings.
   - Talks to Neo4j (Bolt protocol) for knowledge-graph reads.
@@ -49,8 +48,9 @@ The backend API and worker are two separate deployable services that share one P
   - Reader UI with real-time book/page milestone polling, curation/spell-check workspace, admin dashboard, and streaming chat UI (renders `planning`, `decompose`, `tool_call`, `grading`, and `chunk` SSE events as they arrive).
 
 - **Gemini Infrastructure**
-  - Interactive (non-batch) API for OCR, embeddings, chat, summarization, and entity extraction.
-  - File API for transient image uploads during OCR (cleaned up after processing).
+  - Interactive (real-time) API for OCR, embeddings, chat, summarization, and entity extraction — the default path for all of these.
+  - Gemini **Batch API** as an optional, feature-flagged alternative for OCR (`gemini_batch_ocr_enabled`) and embedding (`gemini_batch_embedding_enabled`) generation, for lower-cost high-volume ingestion at the expense of latency (async submit + poll instead of an immediate response).
+  - File API for transient image uploads during interactive OCR, and for uploading batch-job JSONL input files.
 
 - **Google Cloud Storage (GCS)**
   - Private bucket for original PDFs (source of truth).
@@ -92,7 +92,7 @@ PostgreSQL itself is **not** containerized in local dev — it runs standalone o
 
 ## 5) Data Model
 
-### PostgreSQL (21 tables)
+### PostgreSQL (25 tables)
 
 **`books`**
 - `status`: `pending`, `ocr_processing`, `ocr_done`, `indexing`, `ready`, `error`.
@@ -115,14 +115,20 @@ PostgreSQL itself is **not** containerized in local dev — it runs standalone o
 **`book_summaries`**
 - One LLM-generated summary + `pgvector(3072)` embedding per ready book, used for hierarchical/topic-level book discovery ahead of chunk-level search.
 
+**`batch_ocr_jobs` / `batch_embedding_jobs`**
+- One row per Gemini Batch API submission (`gemini_batch_id`, `status` — `submitting | submitted | running | succeeded | failed | cancelled`, GCS input/output URIs, page/book/chunk ID arrays). Written by `batch_ocr_service.py`/`batch_embedding_service.py` when the corresponding `gemini_batch_*_enabled` system config is on, and updated by the two dedicated poller scanners as Gemini's batch job progresses. Only exist when batch mode has been used at least once — both flags default to `false`.
+
+**`conversations` / `conversation_messages`**
+- Persisted, resumable chat history: one `conversations` row per chat thread (`user_id`, optional `book_id`, `is_global`, `title` auto-derived from the book or first question, soft-deleted via `deleted_at`), and one `conversation_messages` row per turn (`role` — `user`/`model`, `content`, `agent_steps`/`used_book_ids` JSONB, optional `eval_id` linking to `rag_evaluations`). Backed by `ConversationRepository`; only populated for requests served by `ChatOrchestrator` (see §6B).
+
 **Dictionary & reference tables**: `dictionary`, `words`, `synonyms`, `history_dictionary`, `names_dictionary`, `english_uyghur_dictionary`, `proverbs`, `quran` — power the RAG handlers' dedicated dictionary/Quran lookup tools independent of book content.
 
 **Curation tables**: `page_spell_issues`, `auto_correct_rules` — per-page spell-check findings and reusable OCR auto-correction rules.
 
-**Platform tables**: `users` (role: `admin` | `editor` | `reader`), `refresh_tokens`, `user_chat_usage` (daily chat-quota tracking), `rag_evaluations` (per-request RAG telemetry), `system_configs` (runtime-tunable settings, see below), `contact_submissions`.
+**Platform tables**: `users` (role: `admin` | `editor` | `reader`), `refresh_tokens`, `user_chat_usage` (daily chat-quota tracking), `rag_evaluations` (per-request RAG telemetry, now optionally linked to a `conversation_id`), `system_configs` (runtime-tunable settings, see below), `contact_submissions`.
 
 ### `system_configs` — runtime configuration
-A key/value table (seeded with defaults, editable via the admin dashboard) that drives model selection and pipeline tuning without a redeploy — including `gemini_chat_model`, `gemini_ocr_model`, `gemini_embedding_model`, `gemini_kg_extraction_model`, `gemini_agent_loop_model` (optional override, otherwise falls back to `gemini_chat_model`), `use_deterministic_router`, `knowledge_graph_enabled`, `agent_max_steps`, `agent_enough_chunks`, and various batch-size/timeout/retention knobs.
+A key/value table (seeded with defaults, editable via the admin dashboard) that drives model selection and pipeline tuning without a redeploy — including `gemini_chat_model`, `gemini_ocr_model`, `gemini_embedding_model`, `gemini_kg_extraction_model`, `gemini_agent_loop_model` (optional override, otherwise falls back to `gemini_chat_model`), `use_deterministic_router`, `use_adk_chat_v2` (routes streaming chat to `ChatOrchestrator`, see §6B — seeded `true`), `knowledge_graph_enabled`, `gemini_batch_ocr_enabled` / `gemini_batch_embedding_enabled` (default `false`), `agent_max_steps`, `agent_enough_chunks`, and various batch-size/timeout/retention knobs.
 
 ### Neo4j (Knowledge Graph)
 Stores only entities and their relationships extracted from book chunks — no `Book`, `Author`, or `Chunk` nodes live in the graph; those stay in PostgreSQL.
@@ -139,16 +145,26 @@ Knowledge-graph extraction and ingestion are gated by the `knowledge_graph_enabl
 
 ### A) PDF Processing Workflow (event-driven pipeline)
 1. **Upload**: user uploads a PDF via the backend, which stores it in the private GCS bucket and creates `book`/`page` rows.
-2. **OCR**: the OCR scanner leases `idle` pages, the OCR job renders each page to an image and calls Gemini Vision (via `google-genai`) using the `gemini_ocr_model` config. Text is written to `pages.text` and `ocr_milestone` set to `succeeded`.
+2. **OCR**: the OCR scanner leases `idle` pages, the OCR job renders each page to an image and calls Gemini Vision (via `google-genai`) using the `gemini_ocr_model` config. Text is written to `pages.text` and `ocr_milestone` set to `succeeded`. If `gemini_batch_ocr_enabled` is on, the job instead submits the claimed pages as a Gemini Batch API job (`batch_ocr_jobs` row) and returns immediately; a dedicated poller scanner picks up the result asynchronously (see [WORKER_DESIGN.md](WORKER_DESIGN.md)).
 3. **Chunking**: triggered by the pipeline-event dispatcher immediately after OCR succeeds. The chunking job cleans OCR text and writes overlapping `chunks` rows; `chunking_milestone` → `succeeded`.
-4. **Embedding**: the embedding job vectorizes each chunk with `gemini_embedding_model` and stores it in `chunks.embedding`; `embedding_milestone` → `succeeded`.
+4. **Embedding**: the embedding job vectorizes each chunk with `gemini_embedding_model` and stores it in `chunks.embedding`; `embedding_milestone` → `succeeded`. If `gemini_batch_embedding_enabled` is on, the embedding scanner instead submits chunks as a Gemini Batch API job (`batch_embedding_jobs` row); a dedicated poller scanner writes vectors back once the batch completes.
 5. **Spell-check**: an independent milestone — the spell-check job flags likely OCR errors per page against the dictionary and auto-correct rules; `spell_check_milestone` → `succeeded`.
 6. **Finalization**: once every page has reached its terminal milestones for the pipeline steps, the book's `status` becomes `ready`.
 7. **Summary ingestion**: once `ready`, the summary scanner enqueues `summary_job`, generating the book's summary embedding. Knowledge-graph extraction (`knowledge_graph_job`, entity/relationship upsert into Neo4j via `google-genai` structured extraction) is feature-flagged off by default (`knowledge_graph_enabled=false`) and, even when enabled, its scanner (`graph_scanner`) is not currently wired into the worker's cron schedule — see [WORKER_DESIGN.md](WORKER_DESIGN.md#cron-schedule). Today it only runs via the manual admin "Reprocess Graph" action.
 8. A staleness watchdog scanner and a maintenance scanner run continuously to recover stuck pages and clean up processed pipeline events.
 
 ### B) RAG Chat
-Every chat request is dispatched through `HandlerRegistry` (`packages/backend-core/app/services/rag/registry.py`), which tries handlers in order and picks the first whose `can_handle()` returns true:
+
+Two independent chat pipelines currently coexist, selected per-request by the streaming endpoint (`POST /api/chat/stream`):
+
+- **`RAGService` / `HandlerRegistry`** (below) — the original pipeline. No conversation persistence. Always used by the non-streaming `POST /api/chat/` endpoint, and used by the streaming endpoint whenever neither the `use_adk_chat_v2` config nor a `conversationId` is present on the request.
+- **`ChatOrchestrator`** (§C below) — a newer, ADK-native two-agent pipeline with persisted conversation history. Used by the streaming endpoint whenever `use_adk_chat_v2` is `true` (seeded on by default) or the request carries a `conversationId`.
+
+Both pipelines share the same 19 tools, the same `AGENT_SYSTEM_PROMPT`, and (for signal extraction) the same `DeterministicRAGHandler._llm_analyze_query()`.
+
+#### B.1) `RAGService` / `HandlerRegistry`
+
+Every request routed here is dispatched through `HandlerRegistry` (`packages/backend-core/app/services/rag/registry.py`), which tries handlers in order and picks the first whose `can_handle()` returns true:
 
 1. **`DeterministicRAGHandler`** (`services/rag/agent/deterministic_handler.py`) — matches when the `use_deterministic_router` system config is `true` (disabled by default).
    - **Signal extraction**: a single structured Gemini call (with a keyword-based fallback if it fails) classifies intent (`catalog`, `dictionary`, `identity`, `summary`, `relationship`, `passage`, `quran`), detects composite/multi-part questions, pronoun-coreference needs, and volume-shift requests, alongside pure-Python DB lookups for title/author matches.
@@ -167,12 +183,27 @@ Every chat request is dispatched through `HandlerRegistry` (`packages/backend-co
 - **Answer synthesis**: the graded context and question are sent to `gemini_chat_model` to stream a Uyghur-language markdown answer with inline `ref:book_id:page` citations (or `ref:quran:surah:ayah` for Quranic sources).
 - **Telemetry**: request metadata, tool-execution traces, and user thumbs-up/down feedback are written to `rag_evaluations` when the `rag_eval_enabled` system config is on.
 
+#### C) `ChatOrchestrator` — persisted conversations
+
+`ChatOrchestrator` (`packages/backend-core/app/services/chat/orchestrator.py`) is a second, parallel RAG pipeline that does not go through `HandlerRegistry` or either `QueryHandler` at all. Per request it:
+
+1. Gets-or-creates a `conversations` row (`ConversationRepository`), deriving a title from the current book or the first ~40 characters of the question.
+2. Loads the last 6 messages of that conversation as pre-processing context, and runs `DeterministicRAGHandler._llm_analyze_query()` for fast signal extraction (unconditionally — independent of the `use_deterministic_router` config, which only gates the old handler's own routing).
+3. Builds a **retrieval agent** (`chat/retrieval_agent.py`) — the same `AGENT_SYSTEM_PROMPT` and 19 tools as `LLMRoutedRAGHandler` — and runs it via an ADK `Runner` backed by a persistent `DatabaseSessionService` (wired in `services/backend/main.py`), streaming `tool_call`/`tool_result`/`agent_thinking` events.
+4. Grades the collected context with the same `_grade_context`/`_extract_used_book_ids` functions the old pipeline uses.
+5. Builds a separate, tools-less **answer agent** (`chat/answer_agent.py`) to stream the final answer, using its own citation-instruction prompt (`chat/answer_prompts.py` — a parallel implementation of `answer_builder.py`'s instructions, not a shared call).
+6. Persists both the user and model messages via `ConversationRepository.save_turn()`, links the `rag_evaluations` row it also writes to the conversation, and emits a `done` event carrying `conversationId`.
+
+This is the only path that reads/writes `conversations`/`conversation_messages` — `RAGService` remains entirely conversation-unaware. The REST endpoints `POST/GET /api/chat/conversations`, `GET /api/chat/conversations/{id}/messages`, and `DELETE /api/chat/conversations/{id}` (all under `require_reader` auth) back the frontend's conversation-history sidebar (list, resume, delete).
+
 ## 7) Gemini Integration Strategy
 - **`google-genai` SDK** — used for every direct (non-agentic) AI call: the File API for OCR image uploads, OCR text extraction, book summarization, structured knowledge-graph entity/relation extraction (Pydantic schemas), embedding generation, and the deterministic router's signal-extraction/intent-classification/query-rewrite/decomposition calls.
 - **Google ADK (`google-adk`)** — used for both RAG handlers' tool orchestration: a free-form ReAct `Agent` + `InMemoryRunner` for `LLMRoutedRAGHandler`, and a declarative `Workflow` graph (fixed nodes/edges, no LLM-driven branching) for `DeterministicRAGHandler`'s path selection. Both share the same 19-tool registry.
 
 ## 8) Reliability & Observability
 - **Idempotency**: jobs use deterministic keys (e.g. `ocr_{book_id}_{page_number}`) so retries and concurrent workers converge on the same result.
+- **Per-page locking**: `ocr_job`, `chunking_job`, `embedding_job`, and `spell_check_job` each wrap their claimed page IDs in a `MultiPageLock` (Redis `SET NX`, namespaced per pipeline stage) so the same page can't be double-processed even if a scanner double-claims it.
+- **Batch job resilience**: `batch_ocr_jobs`/`batch_embedding_jobs` poller scanners enforce a wall-clock timeout (`gemini_batch_*_timeout_hours`, default 24h) and a retry budget (`gemini_batch_*_max_retry_count`, default 3) per job, falling back to marking affected pages failed rather than blocking indefinitely.
 - **Cleanup**: transient Gemini File API uploads are deleted after each OCR call.
 - **Circuit breakers**: independent breakers protect Redis and each class of Gemini call (text, OCR, embedding) so an outage in one degrades gracefully instead of cascading.
 - **Caching**: Redis caches books, category lists, system configs, RAG query/embedding/rewrite/summary-search results, and stats, each with its own TTL.

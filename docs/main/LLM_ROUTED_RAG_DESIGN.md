@@ -10,6 +10,8 @@ Both RAG handlers run on Google ADK — `DeterministicRAGHandler` executes a fix
 
 `packages/backend-core/app/services/rag/agent/llm_routed_handler.py` implements `LLMRoutedRAGHandler`. Its `can_handle()` always returns `True`, so `HandlerRegistry` (`packages/backend-core/app/services/rag/registry.py`) uses it as the fallback whenever `DeterministicRAGHandler.can_handle()` returns `False` — i.e. whenever the `use_deterministic_router` system config is `false`. That config defaults to `false`, so `LLMRoutedRAGHandler` is the default active handler for all chat traffic unless an administrator opts a deployment into the deterministic router.
 
+This is one of two consumers of the shared tool/prompt layer — `ChatOrchestrator` (`packages/backend-core/app/services/chat/orchestrator.py`) builds its own retrieval agent (`chat/retrieval_agent.py`) from the exact same `AGENT_SYSTEM_PROMPT` and 19 tools described here, but runs it through a persistent `DatabaseSessionService`-backed `Runner` instead of `InMemoryRunner`, and pairs it with a separate answer agent rather than `answer_builder.py`. See [SYSTEM_DESIGN.md §6B](SYSTEM_DESIGN.md) and [QUESTION_ANSWERING_DIAGRAM.md](QUESTION_ANSWERING_DIAGRAM.md#chatorchestrator-pipeline) for how the two pipelines relate.
+
 The assistant is built as a stateless Google ADK `Agent`, run via `InMemoryRunner` for each chat request. The workflow is split into:
 1. **Pre-processing steps**: query decomposition (LLM-based question splitting) and lightweight intent detection for the initial `planning` UI event.
 2. **Core Agent Loop**: an ADK-driven ReAct loop managing multi-step reasoning and automated tool execution, governed by `AGENT_SYSTEM_PROMPT` (`prompts.py`).

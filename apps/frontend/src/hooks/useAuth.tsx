@@ -3,7 +3,7 @@
  */
 
 import { ReactNode, createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { AuthService, User, clearAccessToken, getAccessToken, recoverSessionToken, refreshAccessToken, setAccessToken } from '../services/authService';
+import { AuthService, User, clearAccessToken, getAccessToken, initAppConfig, recoverSessionToken, refreshAccessToken, setAccessToken } from '../services/authService';
 
 interface AuthState {
   user: User | null;
@@ -34,6 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Check for existing session on mount
   useEffect(() => {
     const initAuth = async () => {
+      await initAppConfig();
       // 1. Mobile OAuth redirect flow: token arrives as URL param (?access_token=...)
       const params = new URLSearchParams(window.location.search);
       const tokenFromUrl = params.get('access_token');

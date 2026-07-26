@@ -19,9 +19,11 @@ Kitabim.ai is a monorepo platform for OCR digitization, editorial curation, and 
 
 | Document | Contents |
 |----------|----------|
-| [QUESTION_ANSWERING_DIAGRAM.md](QUESTION_ANSWERING_DIAGRAM.md) | Visual pipeline diagrams for both RAG handlers, tool reference |
+| [QUESTION_ANSWERING_DIAGRAM.md](QUESTION_ANSWERING_DIAGRAM.md) | Visual pipeline diagrams for both the `ChatOrchestrator` (persisted conversations) and `HandlerRegistry` (`DeterministicRAGHandler`/`LLMRoutedRAGHandler`) pipelines, tool reference |
 | [LLM_ROUTED_RAG_DESIGN.md](LLM_ROUTED_RAG_DESIGN.md) | `LLMRoutedRAGHandler` — Google ADK ReAct loop, 19 tools, grading, caching |
 | [RAG_DETERMINISTIC_ROUTER_DESIGN.md](RAG_DETERMINISTIC_ROUTER_DESIGN.md) | `DeterministicRAGHandler` — fixed Python routing over an ADK `Workflow` graph |
+
+Two independent chat pipelines exist today: `ChatOrchestrator` (`packages/backend-core/app/services/chat/`) persists conversation history and is the default for the streaming endpoint; `RAGService`/`HandlerRegistry` (the two docs above) has no conversation persistence and is used otherwise. See [SYSTEM_DESIGN.md §6B](SYSTEM_DESIGN.md) for how the two relate.
 
 ### Other
 

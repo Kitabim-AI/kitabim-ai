@@ -46,7 +46,7 @@ if ($Component -eq "all") {
         if ($exists -ne "1") {
             Write-Host "  -> Applying: $version"
             $content = Get-Content $_.FullName -Raw
-            $content | docker compose exec -T postgres psql -U kitabim -d kitabim-ai
+            $content | docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U kitabim -d kitabim-ai
             
             # Record migration as successfully applied
             "INSERT INTO schema_migrations (version) VALUES ('$version');" | docker compose exec -T postgres psql -U kitabim -d kitabim-ai | Out-Null

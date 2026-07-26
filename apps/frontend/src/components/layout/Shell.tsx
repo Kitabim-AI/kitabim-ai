@@ -34,7 +34,7 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
         </div>
 
         {view !== 'reader' && view !== 'admin' && view !== 'join-us' && view !== 'graph' && view !== 'dictionary' && view !== 'quran' && (
-          <footer className={`border-t border-[#0369a1]/10 dark:border-[#38bdf8]/10 pt-4 ${['global-chat', 'spell-check'].includes(view) ? 'hidden sm:flex' : 'flex'} flex-col sm:flex-row sm:flex-wrap lg:grid lg:grid-cols-3 items-center justify-center sm:justify-around lg:justify-items-stretch gap-4 w-full px-4 sm:px-2 ${['global-chat', 'spell-check'].includes(view) ? 'mb-2 mt-4 lg:max-w-5xl lg:mx-auto' : 'mb-6 mt-8'}`} dir="rtl">
+          <footer className={`border-t border-[#0369a1]/10 dark:border-[#38bdf8]/10 pt-4 ${['global-chat', 'spell-check'].includes(view) ? 'hidden sm:flex' : 'flex'} flex-col sm:flex-row sm:flex-wrap lg:grid lg:grid-cols-3 items-center justify-center sm:justify-around lg:justify-items-stretch gap-4 w-full px-4 sm:px-2 ${view === 'global-chat' ? 'mb-2 mt-4 lg:max-w-7xl lg:mx-auto' : view === 'spell-check' ? 'mb-2 mt-4 lg:max-w-5xl lg:mx-auto' : 'mb-6 mt-8'}`} dir="rtl">
             {/* Right Column (Copyright) */}
             <div className="w-full sm:w-auto text-center lg:text-right whitespace-nowrap">
               <p className="text-xs text-slate-400 font-normal uyghur-text">

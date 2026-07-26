@@ -13,7 +13,7 @@ import httpx
 from sqlalchemy.exc import DBAPIError, OperationalError
 from google.adk.tools import ToolContext
 
-from app.services.rag.context import QueryContext
+from app.services.rag.context import QueryContext, get_current_query_context
 from app.services.rag.keywords import CURRENT_BOOK_KEYWORDS
 from app.services.rag.retrieval import (
     embed_query,
@@ -41,7 +41,15 @@ async def _execute_and_record_tool(
             f"ADK ToolContext is required but was None for tool '{tool_name}'"
         )
 
-    ctx: QueryContext = tool_context.state["query_context"]
+    ctx: QueryContext | None = (
+        tool_context.state.get("query_context") if tool_context.state else None
+    ) or get_current_query_context()
+
+    if ctx is None:
+        raise KeyError(
+            f"QueryContext missing from tool_context.state and ContextVar for tool '{tool_name}'"
+        )
+
     try:
         res = await _dispatch_tool_with_retry(tool_name, tool_args, ctx)
     except Exception as exc:
@@ -525,6 +533,8 @@ async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
     book_ids: Optional[List[str]] = (
         [str(bid) for bid in book_ids_arg] if book_ids_arg is not None else None
     )
+    if book_ids is None and not ctx.is_global and ctx.book_id:
+        book_ids = [ctx.book_id]
 
     query_vector = await embed_query(query, ctx)
     if not query_vector:
@@ -582,6 +592,8 @@ async def _run_search_books_by_summary(args: dict, ctx: QueryContext) -> List[st
 
     query = args.get("query", "")
     char_book_ids: Optional[List[str]] = args.get("book_ids")
+    if char_book_ids is None and not ctx.is_global and ctx.book_id:
+        char_book_ids = [ctx.book_id]
 
     query_vector = await embed_query(query, ctx)
     if not query_vector:
@@ -609,8 +621,12 @@ async def _run_search_books_by_summary(args: dict, ctx: QueryContext) -> List[st
 async def _run_get_book_summary(args: dict, ctx: QueryContext) -> dict:
     from app.db.repositories.book_summaries_repository import BookSummariesRepository
     from app.db.repositories.books_repository import BooksRepository
+    from app.db.repositories.pages_repository import PagesRepository
 
     book_ids = args.get("book_ids") or []
+    if not book_ids and not ctx.is_global and ctx.book_id:
+        book_ids = [ctx.book_id]
+
     if not book_ids:
         return {"context": "No book IDs provided.", "summaries": []}
 
@@ -630,6 +646,39 @@ async def _run_get_book_summary(args: dict, ctx: QueryContext) -> dict:
     summaries = await repo.get_summaries_for_books(expanded_ids)
 
     if not summaries:
+        # Fallback: if no precomputed summary exists in DB, attempt to fetch first pages/intro excerpt
+        pages_repo = PagesRepository(ctx.session)
+        fallback_lines = []
+        for bid in expanded_ids:
+            book_obj = await books_repo.get(bid)
+            if not book_obj:
+                continue
+            first_pages = await pages_repo.find_first_pages_with_text(bid, limit=5)
+            page_text = "\n".join([p.text for p in first_pages if p.text])
+            if page_text:
+                header_parts = [
+                    f"BookID: {bid}",
+                    f"Book: {book_obj.title or 'Unknown'}",
+                ]
+                if book_obj.author:
+                    header_parts.append(f"Author: {book_obj.author}")
+                if book_obj.volume is not None:
+                    header_parts.append(f"Volume: {book_obj.volume}")
+                header_parts.append("INTRO EXCERPT")
+                fallback_lines.append(
+                    f"[{', '.join(header_parts)}]\n{page_text[:2000]}"
+                )
+
+        if fallback_lines:
+            context_text = "\n\n".join(fallback_lines)
+            log_json(
+                logger,
+                logging.INFO,
+                "Agent tool get_book_summary (intro fallback)",
+                count=len(fallback_lines),
+            )
+            return {"context": context_text, "summaries": []}
+
         log_json(logger, logging.INFO, "Agent tool get_book_summary", count=0)
         return {
             "context": "No summaries found for the provided book IDs.",
@@ -656,6 +705,9 @@ async def _run_get_sister_volumes(args: dict, ctx: QueryContext) -> dict:
     from app.db.repositories.books_repository import BooksRepository
 
     book_id = args.get("book_id", "")
+    if not book_id and not ctx.is_global and ctx.book_id:
+        book_id = ctx.book_id
+
     if not book_id:
         return {"context": "No book_id provided.", "book_ids": []}
 

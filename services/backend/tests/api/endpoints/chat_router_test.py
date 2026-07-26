@@ -90,20 +90,51 @@ async def test_chat_stream_endpoint_uses_injected_rag_service():
     mock_rag_service = MagicMock()
     mock_rag_service.answer_question_stream = mock_stream_chunks
 
-    with patch("api.endpoints.chat_router.chat_limit_service", mock_limit_service):
+    chunks = []
+    with (
+        patch("api.endpoints.chat_router.chat_limit_service", mock_limit_service),
+        patch(
+            "app.db.repositories.system_configs_repository.SystemConfigsRepository.get_value",
+            AsyncMock(return_value=None),
+        ),
+    ):
         response = await chat_with_book_stream(
             req=req,
+            request=MagicMock(),
             current_user=mock_user,
             session=mock_session,
             rag_service=mock_rag_service,
         )
 
-    # Read events from response body
-    chunks = []
-    async for item in response.body_iterator:
-        chunks.append(item)
+        # Read events from response body
+        async for item in response.body_iterator:
+            chunks.append(item)
 
     assert len(chunks) > 0
     # The first event is the first yielded chunk formatted as SSE
     assert f"data: {json.dumps({'chunk': 'بىرىنچى'})}\n\n" in chunks
     assert f"data: {json.dumps({'chunk': 'ئىككىنچى'})}\n\n" in chunks
+
+
+@pytest.mark.asyncio
+async def test_delete_conversation_endpoint_calls_repository_soft_delete():
+    setup_paths()
+    from api.endpoints.chat_router import delete_conversation_endpoint
+    from app.models.user import User
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock(spec=User)
+    mock_user.id = "user-123"
+
+    with patch(
+        "app.db.repositories.conversation_repository.ConversationRepository.delete_conversation",
+        AsyncMock(return_value=True),
+    ) as mock_delete:
+        res = await delete_conversation_endpoint(
+            conversation_id="conv-456",
+            current_user=mock_user,
+            session=mock_session,
+        )
+
+    assert res == {"ok": True, "id": "conv-456"}
+    mock_delete.assert_called_once_with("conv-456", "user-123")

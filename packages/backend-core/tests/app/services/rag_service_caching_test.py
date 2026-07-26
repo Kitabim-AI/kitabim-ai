@@ -48,6 +48,36 @@ async def test_embed_query_hits_cache(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_embed_query_handles_none_embeddings(monkeypatch):
+    mock_cache = AsyncMock()
+    mock_cache.get = AsyncMock(return_value=None)
+    monkeypatch.setattr("app.services.rag.retrieval.cache_service", mock_cache)
+
+    ctx = MagicMock()
+    ctx.embeddings = None
+
+    vector = await embed_query("hello", ctx)
+    assert vector == []
+
+
+@pytest.mark.asyncio
+async def test_embed_query_handles_embedding_exception(monkeypatch):
+    mock_cache = AsyncMock()
+    mock_cache.get = AsyncMock(return_value=None)
+    mock_embeddings = AsyncMock()
+    mock_embeddings.aembed_query = AsyncMock(
+        side_effect=Exception("API rate limit exceeded")
+    )
+    monkeypatch.setattr("app.services.rag.retrieval.cache_service", mock_cache)
+
+    ctx = MagicMock()
+    ctx.embeddings = mock_embeddings
+
+    vector = await embed_query("hello", ctx)
+    assert vector == []
+
+
+@pytest.mark.asyncio
 async def test_vector_search_respects_cached_empty_results(monkeypatch):
     mock_cache = AsyncMock()
     # Cache returns an EMPTY LIST (hit), not None (miss)

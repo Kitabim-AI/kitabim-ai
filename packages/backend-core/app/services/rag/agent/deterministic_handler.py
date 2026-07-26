@@ -189,7 +189,7 @@ Important Guidelines for Tool Use:
 
 Return ONLY valid JSON matching this schema:
 {{
-  "is_current_page_query": boolean, // True if the user asks about the page/text they are currently looking at (e.g. "what is on this page", "read this page", "بۇ بەتتە نېمە بار")
+  "is_current_page_query": boolean, // True ONLY if the user explicitly asks about the current page/text they are looking at (e.g. "what is on this page", "read this page", "بۇ بەتتە نېمە بار"). MUST be false if asking about the book as a whole (e.g. "مەن ھازىر ئوقۇۋاتقان كىتابنىڭ ئاساسىي مەزمۇنى نېمە؟", "this book", "currently reading book").
   "is_volume_shift": boolean,       // True if the user wants to go to another volume (e.g. "next volume", "previous volume", "ئالدىنقى توم", "2-توم")
   "target_volume": integer | null,  // The volume number to shift to if specified (e.g. 2, 3), else null
   "needs_rewrite": boolean,         // True ONLY if the query has unresolved pronouns/coreferences or implicit references (ellipsis) referring to prior chat history. MUST be false if the query is fully self-contained, or if there is no chat history.
@@ -255,7 +255,6 @@ Dictionary subtype rules:
         has_author = False
 
         config = types.GenerateContentConfig(
-            response_mime_type="application/json",
             temperature=0.0,
             tools=[find_books_by_title, get_books_by_author],
             automatic_function_calling=types.AutomaticFunctionCallingConfig(
@@ -271,6 +270,7 @@ Dictionary subtype rules:
             # turn instead of trusting prompt-level "stop calling tools" guidance.
             if tools_invoked and config.tools is not None:
                 config.tools = None
+                config.response_mime_type = "application/json"
 
             res_obj = await client.aio.models.generate_content(
                 model=model,

@@ -30,13 +30,16 @@ def setup_paths():
         sys.path.insert(0, p)
 
 
-# system_configs are read in this exact order by RAGService._build_context()
+# system_configs are read in this exact order: first the chat_router's own
+# "use_adk_chat_v2" feature-flag check (returning "false" keeps this test on
+# the legacy RAGService path), then by RAGService._build_context()
 # (chat/embedding/agent model, agent_max_steps, agent_enough_chunks,
 # use_deterministic_router) and then once more by _record_eval()
 # (rag_eval_enabled). use_deterministic_router="true" routes to
 # DeterministicRAGHandler instead of LLMRoutedRAGHandler; rag_eval_enabled="false"
 # short-circuits eval recording (no extra DB calls).
 _CONFIG_VALUES = [
+    "false",
     "chat-model",
     "emb-model",
     "agent-model",
@@ -123,6 +126,7 @@ async def test_chat_stream_with_deterministic_router_surfaces_tool_events():
 
         response = await chat_with_book_stream(
             req=req,
+            request=MagicMock(),
             current_user=mock_user,
             session=mock_session,
             rag_service=RAGService(),

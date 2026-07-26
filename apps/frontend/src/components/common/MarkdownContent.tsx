@@ -184,7 +184,7 @@ const isBlockStart = (line: string) =>
   isHr(line) || isHeading(line) || isQuote(line) || isOrderedList(line) || isUnorderedList(line) || isTocLine(line) || isTableRow(line);
 
 export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, className, style, onReferenceClick }) => {
-  const normalized = (content || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const normalized = (content || '').replace(/\\n/g, '\n').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const lines = normalized
     .split('\n')
     .map(line => line.replace(/\[(Header|Footer)\]/g, '').trim())

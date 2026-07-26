@@ -31,6 +31,24 @@ class PagesRepository(BaseRepository[Page]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def find_first_pages_with_text(
+        self, book_id: str, limit: int = 5
+    ) -> List[Page]:
+        """Find the first pages of a book that contain non-empty text content."""
+        stmt = (
+            select(Page)
+            .where(
+                Page.book_id == book_id,
+                Page.text.is_not(None),
+                Page.text != "",
+                func.length(func.trim(Page.text)) > 10,
+            )
+            .order_by(Page.page_number)
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def find_one(self, book_id: str, page_number: int) -> Optional[Page]:
         """Find a specific page by book ID and page number"""
         stmt = select(Page).where(

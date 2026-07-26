@@ -1,8 +1,16 @@
-import { Book, Message } from '@shared/types';
+import { Book, Conversation, Message } from '@shared/types';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DEFAULT_CHARACTER_ID } from '../constants/characters';
 import { useI18n } from '../i18n/I18nContext';
-import { chatWithBookStream, getChatUsage, submitChatFeedback } from '../services/geminiService';
+import {
+  chatWithBookStream,
+  deleteConversation,
+  getChatUsage,
+  getConversationMessages,
+  getUserConversations,
+  submitChatFeedback,
+} from '../services/geminiService';
+import { useNotification } from '../context/NotificationContext';
 import { useAuth } from './useAuth';
 
 export interface AgentStep {
@@ -18,6 +26,7 @@ export interface AgentStep {
 
 export const useChat = (view: string, selectedBook: Book | null, currentPage: number | null) => {
   const { isAuthenticated } = useAuth();
+  const { addNotification } = useNotification();
   const { t } = useI18n();
   const [selectedCharacterId, setSelectedCharacterId] = useState<string>(DEFAULT_CHARACTER_ID);
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
@@ -31,8 +40,23 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
   const [usageStatus, setUsageStatus] = useState<{ usage: number, limit: number | null, hasReachedLimit: boolean } | null>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const [conversationId, setConversationId] = useState<string | undefined>(undefined);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [isLoadingConversations, setIsLoadingConversations] = useState(false);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const contextBookIdsRef = useRef<string[]>([]);
   const pendingEvalIdRef = useRef<number | null>(null);
+
+  const fetchConversations = useCallback(async () => {
+    if (!isAuthenticated) {
+      setConversations([]);
+      return;
+    }
+    setIsLoadingConversations(true);
+    const list = await getUserConversations(50, 0);
+    setConversations(list);
+    setIsLoadingConversations(false);
+  }, [isAuthenticated]);
 
   const handleAgentEvent = useCallback((event: Record<string, any>) => {
     const { type } = event;
@@ -102,14 +126,17 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     scrollToBottom();
   }, [chatMessages, isChatting, view, streamingMessage, agentSteps]);
 
-  // Fetch usage status once when in a chat-capable view
+  // Fetch usage status and conversation history when entering a chat view
   useEffect(() => {
     if (isAuthenticated && (view === 'global-chat' || view === 'reader')) {
       getChatUsage().then(setUsageStatus);
     } else if (!isAuthenticated) {
       setUsageStatus(null);
     }
-  }, [isAuthenticated, view]);
+    if (view === 'global-chat') {
+      fetchConversations();
+    }
+  }, [isAuthenticated, view, fetchConversations]);
 
   const abortOngoingChat = () => {
     if (abortControllerRef.current) {
@@ -124,14 +151,40 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     setAgentSteps([]);
   };
 
-  // Terminate chat if context changes (view or book switches)
+  // Terminate chat if context changes (view or book switches) & auto-load book conversation in reader
   useEffect(() => {
     abortOngoingChat();
-    // Also clear messages if we switch major views (e.g. from global to reader)
-    if (view !== 'reader') {
+    setConversationId(undefined);
+
+    if (view === 'reader' && selectedBook?.id && isAuthenticated) {
+      setIsLoadingMessages(true);
+      getUserConversations(1, 0, selectedBook.id)
+        .then(async list => {
+          if (list.length > 0) {
+            const latestConv = list[0];
+            setConversationId(latestConv.id);
+            const msgs = await getConversationMessages(latestConv.id);
+            const formatted: Message[] = msgs.map(m => ({
+              role: m.role,
+              text: m.content,
+              evalId: m.evalId ?? undefined,
+            }));
+            setChatMessages(formatted);
+          } else {
+            clearChat();
+          }
+        })
+        .catch(err => {
+          console.error('Failed to auto-load book conversation history:', err);
+          clearChat();
+        })
+        .finally(() => {
+          setIsLoadingMessages(false);
+        });
+    } else if (view !== 'reader') {
       clearChat();
     }
-  }, [view, selectedBook?.id]);
+  }, [view, selectedBook?.id, isAuthenticated]);
 
   // Clean up on unmount
   useEffect(() => {
@@ -141,6 +194,47 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
       }
     };
   }, []);
+
+  const selectConversation = async (convId: string) => {
+    if (convId === conversationId) return;
+    abortOngoingChat();
+    setIsLoadingMessages(true);
+    setConversationId(convId);
+    try {
+      const msgs = await getConversationMessages(convId);
+      const formatted: Message[] = msgs.map(m => ({
+        role: m.role,
+        text: m.content,
+        evalId: m.evalId ?? undefined,
+      }));
+      setChatMessages(formatted);
+    } finally {
+      setIsLoadingMessages(false);
+    }
+  };
+
+  const startNewChat = () => {
+    abortOngoingChat();
+    setConversationId(undefined);
+    clearChat();
+  };
+
+  const deleteConversationHandler = async (convId: string) => {
+    try {
+      const success = await deleteConversation(convId);
+      if (success) {
+        setConversations(prev => prev.filter(c => c.id !== convId));
+        if (conversationId === convId) {
+          startNewChat();
+        }
+        addNotification(t('chat.deleteSuccess'), 'success');
+      } else {
+        addNotification(t('chat.deleteError'), 'error');
+      }
+    } catch {
+      addNotification(t('chat.deleteError'), 'error');
+    }
+  };
 
   const handleSendMessage = async () => {
     if (!chatInput.trim()) return;
@@ -184,9 +278,6 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     setStreamingMessage('');
     setStreamingPartialResult(false);
     hasToolFailureRef.current = false;
-    // Seed with an active "thinking" step immediately so the bubble is already
-    // at AgentThinkingSteps size before the first real event arrives — prevents
-    // the small-TypingCarousel → large-steps resize jitter.
     setAgentSteps([{ id: 'initial-think', type: 'thinking', status: 'active' }]);
 
     try {
@@ -194,61 +285,59 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
       const historyToSend = [...chatMessages, userMsg];
 
       await chatWithBookStream(
-        userMsg.text,
-        bookId,
-        view === 'reader' ? (currentPage || undefined) : undefined,
-        historyToSend,
-        // onChunk
-        (chunk: string) => {
-          streamingMessageRef.current += chunk;
-          setStreamingMessage(prev => prev + chunk);
+        {
+          question: userMsg.text,
+          bookId,
+          currentPage: view === 'reader' ? (currentPage || undefined) : undefined,
+          history: historyToSend,
+          characterId: selectedCharacterId,
+          contextBookIds: view === 'global-chat' ? contextBookIdsRef.current : [],
+          conversationId,
+          signal: controller.signal,
         },
-        // onComplete
-        () => {
-          const finalMessage = streamingMessageRef.current;
-          const evalId = pendingEvalIdRef.current ?? undefined;
-          pendingEvalIdRef.current = null;
-          setChatMessages(prev => [...prev, {
-            role: 'model',
-            text: finalMessage,
-            characterId: selectedCharacterId,
-            evalId,
-            partialResult: hasToolFailureRef.current
-          }]);
-          streamingMessageRef.current = '';
-          setStreamingMessage('');
-          setIsChatting(false);
-          setStreamingPartialResult(false);
-          hasToolFailureRef.current = false;
+        {
+          onChunk: (chunk: string) => {
+            streamingMessageRef.current += chunk;
+            setStreamingMessage(prev => prev + chunk);
+          },
+          onComplete: () => {
+            const finalMessage = streamingMessageRef.current;
+            const evalId = pendingEvalIdRef.current ?? undefined;
+            pendingEvalIdRef.current = null;
+            setChatMessages(prev => [...prev, {
+              role: 'model',
+              text: finalMessage,
+              characterId: selectedCharacterId,
+              evalId,
+              partialResult: hasToolFailureRef.current
+            }]);
+            streamingMessageRef.current = '';
+            setStreamingMessage('');
+            setIsChatting(false);
+            setStreamingPartialResult(false);
+            hasToolFailureRef.current = false;
+            fetchConversations();
+          },
+          onError: (error: string) => {
+            if (controller.signal.aborted) return;
+            setChatMessages(prev => [...prev, { role: 'model', text: error, characterId: selectedCharacterId }]);
+            setStreamingMessage('');
+            setIsChatting(false);
+            setStreamingPartialResult(false);
+            hasToolFailureRef.current = false;
+          },
+          onCorrection: (correctedText: string) => {
+            setStreamingMessage(correctedText);
+            streamingMessageRef.current = correctedText;
+          },
+          onUsageUpdate: (usage: any) => {
+            setUsageStatus(usage);
+          },
+          onContextBookIds: view === 'global-chat' ? (ids: string[]) => { contextBookIdsRef.current = ids; } : undefined,
+          onAgentEvent: handleAgentEvent,
+          onEvalId: (evalId: number) => { pendingEvalIdRef.current = evalId; },
+          onConversationId: (convId: string) => { setConversationId(convId); },
         },
-        // onError
-        (error: string) => {
-          if (controller.signal.aborted) return;
-          setChatMessages(prev => [...prev, { role: 'model', text: error, characterId: selectedCharacterId }]);
-          setStreamingMessage('');
-          setIsChatting(false);
-          setStreamingPartialResult(false);
-          hasToolFailureRef.current = false;
-        },
-        controller.signal,
-        selectedCharacterId,
-        // onCorrection
-        (correctedText: string) => {
-          setStreamingMessage(correctedText);
-          streamingMessageRef.current = correctedText;
-        },
-        // onUsageUpdate
-        (usage: any) => {
-          setUsageStatus(usage);
-        },
-        // contextBookIds — carry forward the book context from the previous response
-        view === 'global-chat' ? contextBookIdsRef.current : [],
-        // onContextBookIds — store new context for the next request
-        view === 'global-chat' ? (ids: string[]) => { contextBookIdsRef.current = ids; } : undefined,
-        // onAgentEvent — live agent step events
-        handleAgentEvent,
-        // onEvalId — capture eval id from done event
-        (evalId: number) => { pendingEvalIdRef.current = evalId; },
       );
     } catch (err: any) {
       if (err.name === 'AbortError') return;
@@ -274,7 +363,6 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
   const submitFeedback = async (messageIndex: number, feedback: 'positive' | 'negative') => {
     const msg = chatMessages[messageIndex];
     if (!msg || msg.role !== 'model' || !msg.evalId) return;
-    // Optimistically update UI state
     setChatMessages(prev =>
       prev.map((m, i) => i === messageIndex ? { ...m, feedback } : m)
     );
@@ -297,5 +385,14 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     selectedCharacterId,
     setSelectedCharacterId,
     submitFeedback,
+    conversationId,
+    conversations,
+    isLoadingConversations,
+    isLoadingMessages,
+    selectConversation,
+    startNewChat,
+    deleteConversation: deleteConversationHandler,
+    fetchConversations,
   };
 };
+

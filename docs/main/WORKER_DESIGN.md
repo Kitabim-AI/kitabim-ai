@@ -12,9 +12,10 @@ Key characteristics:
 - **States** — `idle | in_progress | succeeded | failed`, one per step, per page.
 - **Mandatory pipeline** — `ocr → chunking → embedding` is sequential; embedding is the terminal mandatory step.
 - **Spell check** — an independent quality layer. It only depends on OCR being done, runs in parallel with chunking/embedding, and does not block book readiness.
-- **Knowledge graph extraction and spell check are feature-flagged** — see [Feature Flags](#feature-flags).
+- **Knowledge graph extraction, spell check, and Gemini Batch API mode for OCR/embedding are all feature-flagged** — see [Feature Flags](#feature-flags).
 - **Transactional Outbox** — the `pipeline_events` table records a row for every milestone transition, written in the same DB transaction as the result. The Event Dispatcher polls this table and immediately enqueues the next job, so most pages move `ocr → chunking → embedding` inside seconds rather than waiting for the next 1-minute scanner tick.
-- **Per-page distributed locking** — `ocr_job`, `chunking_job`, `embedding_job`, and `spell_check_job` each wrap their claimed page IDs in a `MultiPageLock` (Redis `SET NX` per page, 1‑hour expiry) before processing, so the same page can never be worked on by two job instances concurrently even if a scanner double-claims it.
+- **Per-page distributed locking** — `ocr_job`, `chunking_job`, `embedding_job`, and `spell_check_job` each wrap their claimed page IDs in a `MultiPageLock` (Redis `SET NX` per page, 1‑hour expiry, keyed as `lock:{prefix}:{page_id}` with each stage passing its own `prefix` — e.g. `ocr`, `chunking` — so the same page can be locked independently per pipeline stage) before processing, so the same page can never be worked on by two job instances concurrently even if a scanner double-claims it.
+- **Optional Gemini Batch API mode** — OCR and embedding generation can each independently run through the Gemini Batch API instead of the interactive API (`gemini_batch_ocr_enabled` / `gemini_batch_embedding_enabled`, both `false` by default), trading latency (async submit + poll) for lower cost on high-volume ingestion. See [Batch OCR & Batch Embedding](#batch-ocr--batch-embedding).
 
 ## Goals
 
@@ -33,6 +34,8 @@ Several pipeline stages are gated by boolean flags in `system_configs` (checked 
 | `spell_check_enabled` | `true` | `spell_check_scanner` — returns immediately if not `"true"` |
 | `auto_correct_enabled` | `true` | `auto_correct_scanner` — returns immediately if not `"true"` |
 | `knowledge_graph_enabled` | `false` | `graph_scanner` and `knowledge_graph_job` — both no-op (and reset `graph_milestone` back to `idle`) if not `"true"` |
+| `gemini_batch_ocr_enabled` | `false` | `ocr_job` — submits a `batch_ocr_jobs` row via the Gemini Batch API instead of OCR'ing inline when `"true"` |
+| `gemini_batch_embedding_enabled` | `false` | `embedding_scanner` — submits a `batch_embedding_jobs` row via the Gemini Batch API instead of dispatching `embedding_job` when `"true"` |
 
 > **Knowledge graph extraction is off by default in a fresh environment.** It must be explicitly enabled via `system_configs` before `graph_scanner` or the "Reprocess Graph" admin action will do anything.
 
@@ -67,8 +70,11 @@ worker/
     gcs_discovery_scanner.py   ← lists GCS uploads/, registers new books in DB
     pipeline_driver.py         ← state machine: initializes pages, resets retryable failures, marks book ready/error, enqueues summary_job
     ocr_scanner.py             ← claims idle ocr pages (grouped by book), dispatches OcrJob per book
+    batch_ocr_poller_scanner.py ← polls in-flight batch_ocr_jobs, ingests results (feature-flagged path)
     chunking_scanner.py        ← claims idle chunking pages across all books, dispatches one ChunkingJob
     embedding_scanner.py       ← claims idle embedding pages across all books, dispatches one EmbeddingJob
+                                  (or submits a batch_embedding_job inline if gemini_batch_embedding_enabled)
+    batch_embedding_poller_scanner.py ← polls in-flight batch_embedding_jobs, writes vectors back (feature-flagged path)
     spell_check_scanner.py     ← claims idle spell_check pages, dispatches SpellCheckJob (feature-flagged)
     event_dispatcher.py        ← polls the outbox, immediately dispatches the next job
     auto_correct_scanner.py    ← finds pages with auto-correctable spell issues, dispatches AutoCorrectJob in batches (feature-flagged)
@@ -84,10 +90,12 @@ worker/
     auto_correct_job.py        ← applies auto-correction rules to open spell issues
     summary_job.py             ← generates a semantic book summary + embedding for RAG routing
     knowledge_graph_job.py     ← extracts entities/relationships and indexes them in Neo4j
-  worker.py                    ← ARQ WorkerSettings: registers the 7 jobs and 11 of the 12 scanners as cron jobs
+  worker.py                    ← ARQ WorkerSettings: registers the 7 jobs and 13 of the 14 scanners as cron jobs
 ```
 
-**Job and scanner count:** 7 job functions are registered in `WorkerSettings.functions`. 12 scanner modules exist under `services/worker/scanners/`, but only **11** are wired into `WorkerSettings.cron_jobs` in `worker.py` — `graph_scanner.py` is fully implemented and tested but is **not currently scheduled** (see [Cron Schedule](#cron-schedule)).
+**Job and scanner count:** 7 job functions are registered in `WorkerSettings.functions`. 14 scanner modules exist under `services/worker/scanners/` (including the two batch-API poller scanners), but only **13** are wired into `WorkerSettings.cron_jobs` in `worker.py` — `graph_scanner.py` is fully implemented and tested but is **not currently scheduled** (see [Cron Schedule](#cron-schedule)).
+
+Batch OCR/embedding submission itself is **not** a separate ARQ job — it happens inline inside `ocr_job.py` and `embedding_scanner.py` respectively, gated by the feature flags above (see [Batch OCR & Batch Embedding](#batch-ocr--batch-embedding)).
 
 ## Component Responsibilities
 
@@ -166,6 +174,10 @@ A book can be `ready` and searchable while its spell check is still running in t
 **OcrJob(book_id, page_ids):**
 
 ```
+0. If gemini_batch_ocr_enabled='true': skip steps 1-4 below entirely and
+   instead call submit_batch_ocr_service.submit_batch_ocr_job() to render
+   the claimed pages, upload a JSONL batch request, and create a
+   batch_ocr_jobs row; batch_ocr_poller_scanner takes over from there.
 1. Acquire a MultiPageLock for the claimed page IDs; skip any page whose lock
    couldn't be acquired.
 2. Fetch gemini_ocr_model (system_configs, no fallback — required) and
@@ -252,6 +264,18 @@ A book can be `ready` and searchable while its spell check is still running in t
 
 Only `Entity` nodes and `Entity -[:RELATED_TO]-> Entity` edges are stored in Neo4j — there are no `Book`/`Chunk` nodes; chunk text stays in Postgres.
 
+### Batch OCR & Batch Embedding
+
+Both feature-flagged off by default; when enabled they replace the interactive-API call for their step with an async Gemini Batch API submit-then-poll cycle. Each has a symmetric shape: a submit function (called inline from the normal job/scanner), a `batch_*_jobs` tracking table, and a dedicated poller scanner.
+
+**Submission — `batch_ocr_service.submit_batch_ocr_job(book_id, page_ids)`:** renders each claimed page to a JPEG (PyMuPDF), builds a JSONL dataset embedding the image + OCR prompt per page, uploads it to GCS (audit copy) and to the Gemini Files API, then calls `client.batches.create(model=..., src=uploaded_file.name)`. Creates a `batch_ocr_jobs` row (`status='submitting'`→`'submitted'`) recording the `gemini_batch_id`, page IDs, and GCS URIs. Pages are chunked into sub-batches of `gemini_batch_ocr_batch_size` (default 50).
+
+**Submission — `batch_embedding_service.submit_batch_embedding_job(session, page_ids)`:** loads all not-yet-embedded chunks for the claimed pages (skips immediately, marking pages succeeded, if none exist); groups chunks by page and slices into sub-batches of `gemini_batch_embedding_max_chunks_per_job` (default 100); builds a JSONL dataset of `{"custom_id": "chunk_<id>", "request": {...}}` entries, uploads it, and calls `client.batches.create_embeddings(...)`. Creates one `batch_embedding_jobs` row per sub-batch.
+
+**Polling — `batch_ocr_poller_scanner` / `batch_embedding_poller_scanner`:** each run queries all `batch_*_jobs` rows with `status IN ('submitting','submitted','running')`, checks a wall-clock timeout (`gemini_batch_*_timeout_hours`, default 24h — marks pages failed if exceeded), then calls `client.batches.get(name=job.gemini_batch_id)` to poll Gemini. On `RUNNING`, just updates local status. On `SUCCEEDED`, downloads the result JSONL (via the Files API or the GCS output URI), writes OCR text / embedding vectors back to `pages`/`chunks`, and sets the corresponding milestone `succeeded`. On per-item failure, retries up to `gemini_batch_*_max_retry_count` (default 3) before marking that page failed (or, for embeddings, succeeded-with-partial-embeddings to avoid indefinitely blocking the page). On `FAILED`/`CANCELLED`, marks all pages in the job failed.
+
+Both poller scanners run every 1 minute (see [Cron Schedule](#cron-schedule)) regardless of whether either feature flag is on — they simply find no in-flight rows to process when batch mode has never been used.
+
 ### StaleWatchdog
 
 Recovers pages (and books) stuck `in_progress` after a worker crash or restart. Unlike a flat timeout, it cross-references active worker heartbeats in Redis (`worker:heartbeat:*`) to reset stuck work faster when the owning worker is confirmed dead:
@@ -304,8 +328,10 @@ Authoritative source: `WorkerSettings.cron_jobs` in `services/worker/worker.py`.
 | `gcs_discovery_scanner` | Every 5 min | List GCS bucket, register new books |
 | `pipeline_driver` | Every 1 min (+ at startup) | Initialize, reset retryable failures, mark ready/error, enqueue summary jobs |
 | `ocr_scanner` | Every 1 min | Groups claimed pages by book |
+| `batch_ocr_poller_scanner` | Every 1 min | Polls in-flight `batch_ocr_jobs` (no-op unless `gemini_batch_ocr_enabled` has been used) |
 | `chunking_scanner` | Every 1 min | Cross-book |
 | `embedding_scanner` | Every 1 min | Cross-book |
+| `batch_embedding_poller_scanner` | Every 1 min | Polls in-flight `batch_embedding_jobs` (no-op unless `gemini_batch_embedding_enabled` has been used) |
 | `spell_check_scanner` | Every 1 min | Cross-book; no-op unless `spell_check_enabled` |
 | `event_dispatcher` | Every 1 min (+ at startup) | Reactive low-latency progression via the outbox |
 | `stale_watchdog` | Minute 0 and 30 (i.e. every 30 min) | Worker-heartbeat-aware reset |
@@ -338,7 +364,7 @@ flowchart TD
     EXHAUSTED["chunking/embedding failed<br/>retry_count >= max<br/>(book-wide status=error)"]
 
     OCR_IDLE -->|OcrScanner: claim| OCR_IP
-    OCR_IP -->|Gemini call succeeds, or retries exhausted (soft-skip)| OCR_OK
+    OCR_IP -->|"Gemini call succeeds, or retries exhausted (soft-skip)"| OCR_OK
     OCR_IP -->|PDF download failed| OCR_FAIL
     OCR_FAIL -->|retry_count < max: PipelineDriver reset| OCR_IDLE
     OCR_FAIL -->|retry_count >= max| EXHAUSTED
@@ -417,6 +443,12 @@ All batch sizes, concurrency limits, and model names below are `system_configs` 
 | `kg_chunk_batch_size` | `5` | `knowledge_graph_job` — chunks combined per LLM call |
 | `kg_max_parallel_chunks` | `5` | `knowledge_graph_job` — concurrent batch LLM calls |
 | `maintenance_retention_days` | `7` | `maintenance_scanner` — processed-event retention |
+| `gemini_batch_ocr_enabled` | `false` | `ocr_job` — routes OCR through the Gemini Batch API instead of inline |
+| `gemini_batch_ocr_batch_size` | `50` | `ocr_job` — pages per submitted batch-OCR sub-job |
+| `gemini_batch_embedding_enabled` | `false` | `embedding_scanner` — routes embedding through the Gemini Batch API instead of `embedding_job` |
+| `gemini_batch_embedding_max_chunks_per_job` | `100` | `batch_embedding_service` — chunks per submitted batch-embedding sub-job |
+| `gemini_batch_ocr_timeout_hours` / `gemini_batch_embedding_timeout_hours` | `24` | Poller scanners — wall-clock timeout before marking a stuck batch job's pages failed |
+| `gemini_batch_ocr_max_retry_count` / `gemini_batch_embedding_max_retry_count` | `3` | Poller scanners — per-item retry budget before giving up on that page |
 | `MAX_PARALLEL_SPELL_CHECK` (env) | `6` | `spell_check_job` — pages spell-checked concurrently |
 | `MAX_CONCURRENT_SPELL_CHECK_BOOKS` (env) | `3` | `spell_check_scanner` — books actively spell-checked at once |
 | `MAX_PARALLEL_AUTO_CORRECT` (env) | `10` | `auto_correct_job` — pages corrected concurrently |

@@ -8,11 +8,28 @@ vi.mock('@/src/services/geminiService', () => ({
   chatWithBook: vi.fn(),
   chatWithBookStream: vi.fn(),
   getChatUsage: vi.fn(),
+  getUserConversations: vi.fn(() => Promise.resolve([])),
+  getConversationMessages: vi.fn(() => Promise.resolve([])),
+  deleteConversation: vi.fn(() => Promise.resolve(true)),
 }));
 
 vi.mock('@/src/hooks/useAuth', () => ({
   useAuth: vi.fn(() => ({
     isAuthenticated: true,
+  })),
+}));
+
+vi.mock('../context/NotificationContext', () => ({
+  useNotification: vi.fn(() => ({
+    addNotification: vi.fn(),
+    removeNotification: vi.fn(),
+  })),
+}));
+
+vi.mock('@/src/context/NotificationContext', () => ({
+  useNotification: vi.fn(() => ({
+    addNotification: vi.fn(),
+    removeNotification: vi.fn(),
   })),
 }));
 
@@ -37,18 +54,20 @@ beforeEach(() => {
 });
 
 test('useChat handles sending message', async () => {
-  vi.mocked(chatWithBookStream).mockImplementation(
-    async (_question, _bookId, _page, _history, onChunk, onComplete) => {
-      onChunk('AI ');
-      onChunk('Response');
-      onComplete();
-    }
-  );
+  vi.mocked(chatWithBookStream).mockImplementation(async (_params, callbacks) => {
+    callbacks.onChunk('AI ');
+    callbacks.onChunk('Response');
+    callbacks.onComplete();
+  });
 
   const { result } = renderHook(() => useChat('reader', mockBook, 1));
 
+  await waitFor(() => {
+    expect(result.current.isLoadingMessages).toBe(false);
+  });
+
   act(() => {
-    result.current.setChatInput('Hello');
+    result.current.setChatInput('سالام');
   });
 
   await act(async () => {
@@ -59,27 +78,25 @@ test('useChat handles sending message', async () => {
     expect(result.current.chatMessages).toHaveLength(2);
   });
 
-  expect(result.current.chatMessages[0].text).toBe('Hello');
+  expect(result.current.chatMessages[0].text).toBe('سالام');
   expect(result.current.chatMessages[1].text).toBe('AI Response');
   expect(chatWithBookStream).toHaveBeenCalled();
-  const args = vi.mocked(chatWithBookStream).mock.calls[0];
-  expect(args[0]).toBe('Hello');
-  expect(args[1]).toBe('1');
-  expect(args[2]).toBe(1);
+  const [params] = vi.mocked(chatWithBookStream).mock.calls[0];
+  expect(params.question).toBe('سالام');
+  expect(params.bookId).toBe('1');
+  expect(params.currentPage).toBe(1);
 });
 
 test('useChat handles global chat', async () => {
-  vi.mocked(chatWithBookStream).mockImplementation(
-    async (_question, _bookId, _page, _history, onChunk, onComplete) => {
-      onChunk('Global Answer');
-      onComplete();
-    }
-  );
+  vi.mocked(chatWithBookStream).mockImplementation(async (_params, callbacks) => {
+    callbacks.onChunk('Global Answer');
+    callbacks.onComplete();
+  });
 
   const { result } = renderHook(() => useChat('global-chat', null, null));
 
   act(() => {
-    result.current.setChatInput('Global query');
+    result.current.setChatInput('دۇنيادىكى سوئال');
   });
 
   await act(async () => {
@@ -91,23 +108,25 @@ test('useChat handles global chat', async () => {
   });
 
   expect(chatWithBookStream).toHaveBeenCalled();
-  const globalArgs = vi.mocked(chatWithBookStream).mock.calls[0];
-  expect(globalArgs[0]).toBe('Global query');
-  expect(globalArgs[1]).toBe('global');
-  expect(globalArgs[2]).toBeUndefined();
+  const [globalParams] = vi.mocked(chatWithBookStream).mock.calls[0];
+  expect(globalParams.question).toBe('دۇنيادىكى سوئال');
+  expect(globalParams.bookId).toBe('global');
+  expect(globalParams.currentPage).toBeUndefined();
 });
 
 test('useChat handles error state', async () => {
-  vi.mocked(chatWithBookStream).mockImplementation(
-    async (_question, _bookId, _page, _history, _onChunk, _onComplete, onError) => {
-      onError('كەچۈرۈڭ، جاۋاب بېرەلمىدىم.');
-    }
-  );
+  vi.mocked(chatWithBookStream).mockImplementation(async (_params, callbacks) => {
+    callbacks.onError('كەچۈرۈڭ، جاۋاب بېرەلمىدىم.');
+  });
 
   const { result } = renderHook(() => useChat('reader', mockBook, 1));
 
+  await waitFor(() => {
+    expect(result.current.isLoadingMessages).toBe(false);
+  });
+
   act(() => {
-    result.current.setChatInput('Fail me');
+    result.current.setChatInput('سالام');
   });
 
   await act(async () => {
@@ -115,6 +134,59 @@ test('useChat handles error state', async () => {
   });
 
   await waitFor(() => {
-    expect(result.current.chatMessages.at(-1)?.text).toContain('جاۋاب بېرەلمىدىم');
+    expect(result.current.chatMessages.at(-1)?.text).toBe('كەچۈرۈڭ، جاۋاب بېرەلمىدىم.');
   });
+});
+
+test('useChat carries the server-assigned conversationId to the next message and resets it on book switch', async () => {
+  vi.mocked(chatWithBookStream).mockImplementation(async (_params, callbacks) => {
+    callbacks.onConversationId?.('conv-123');
+    callbacks.onChunk('Answer');
+    callbacks.onComplete();
+  });
+
+  const { result, rerender } = renderHook(
+    ({ book }) => useChat('reader', book, 1),
+    { initialProps: { book: mockBook } }
+  );
+
+  act(() => {
+    result.current.setChatInput('بىرىنچى سوئال');
+  });
+  await act(async () => {
+    await result.current.handleSendMessage();
+  });
+
+  await waitFor(() => {
+    expect(vi.mocked(chatWithBookStream)).toHaveBeenCalledTimes(1);
+  });
+
+  act(() => {
+    result.current.setChatInput('ئىككىنچى سوئال');
+  });
+  await act(async () => {
+    await result.current.handleSendMessage();
+  });
+
+  await waitFor(() => {
+    expect(vi.mocked(chatWithBookStream)).toHaveBeenCalledTimes(2);
+  });
+  const [secondParams] = vi.mocked(chatWithBookStream).mock.calls[1];
+  expect(secondParams.conversationId).toBe('conv-123');
+
+  const otherBook: Book = { ...mockBook, id: '2' };
+  rerender({ book: otherBook });
+
+  act(() => {
+    result.current.setChatInput('ئۈچىنچى سوئال');
+  });
+  await act(async () => {
+    await result.current.handleSendMessage();
+  });
+
+  await waitFor(() => {
+    expect(vi.mocked(chatWithBookStream)).toHaveBeenCalledTimes(3);
+  });
+  const [thirdParams] = vi.mocked(chatWithBookStream).mock.calls[2];
+  expect(thirdParams.conversationId).toBeUndefined();
 });

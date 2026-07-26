@@ -2,7 +2,9 @@
 
 `DeterministicRAGHandler` (`packages/backend-core/app/services/rag/agent/deterministic_handler.py`) is one of two RAG query handlers in the system. It replaces LLM-driven ADK ReAct tool-call sequencing (used by `LLMRoutedRAGHandler`, see `LLM_ROUTED_RAG_DESIGN.md`) with a deterministic Python decision tree built on extracted signals and conditional LLM intent classification.
 
-Handler selection is controlled by the `use_deterministic_router` system config (default `false`): `HandlerRegistry` tries `DeterministicRAGHandler` first, and falls back to `LLMRoutedRAGHandler` (which always matches) otherwise. Toggling the config routes all chat traffic to one handler or the other without a deploy.
+Handler selection is controlled by the `use_deterministic_router` system config (default `false`): `HandlerRegistry` tries `DeterministicRAGHandler` first, and falls back to `LLMRoutedRAGHandler` (which always matches) otherwise. Toggling the config routes all chat traffic to one handler or the other without a deploy — but only for requests dispatched through `HandlerRegistry` in the first place (see [SYSTEM_DESIGN.md §6B](SYSTEM_DESIGN.md) for the full routing picture).
+
+Separately, `ChatOrchestrator` (`packages/backend-core/app/services/chat/orchestrator.py`, [QUESTION_ANSWERING_DIAGRAM.md](QUESTION_ANSWERING_DIAGRAM.md#chatorchestrator-pipeline)) calls this handler's `_llm_analyze_query()` directly as a plain signal-extraction utility on every request it serves, regardless of `use_deterministic_router` — that flag only controls whether `DeterministicRAGHandler` runs as a full handler on the `HandlerRegistry` path; it does not gate `ChatOrchestrator`'s use of the same signal extractor.
 
 ---
 

@@ -366,9 +366,9 @@ export const QuranView: React.FC = () => {
       )}
 
       {/* Page Title Header */}
-      <div className="flex items-center gap-3 md:gap-4 border-b border-[#0369a1]/10 dark:border-[#38bdf8]/10 pb-4">
-        <div className="p-3 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 rounded-2xl text-[#0369a1] dark:text-[#38bdf8]">
-          <BookOpen size={24} strokeWidth={2.5} />
+      <div className="flex items-center gap-3 md:gap-4 border-b border-[#0369a1]/10 dark:border-[#38bdf8]/10 pb-4 group">
+        <div className="p-2 md:p-3 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl shadow-lg shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10 icon-shake">
+          <BookOpen size={20} className="md:w-6 md:h-6" strokeWidth={2.5} />
         </div>
         <div>
           <h1 className="text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100 uyghur-text">

@@ -53,7 +53,15 @@ async def embed_query(query: str, ctx: "QueryContext") -> List[float]:
     try:
         vector = await cache_service.get(emb_cache_key)
         if not vector:
-            vector = await ctx.embeddings.aembed_query(query)
+            embeddings = getattr(ctx, "embeddings", None)
+            if not embeddings:
+                log_json(
+                    logger,
+                    logging.WARNING,
+                    "No embeddings provider configured on QueryContext",
+                )
+                return []
+            vector = await embeddings.aembed_query(query)
             if vector:
                 await cache_service.set(
                     emb_cache_key, vector, ttl=settings.cache_ttl_rag_query
@@ -63,7 +71,7 @@ async def embed_query(query: str, ctx: "QueryContext") -> List[float]:
         return vector or []
     except Exception as exc:
         log_json(logger, logging.WARNING, "Embedding failed", error=str(exc))
-        raise
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +161,39 @@ async def vector_search(
                     limit=settings.rag_top_k,
                     threshold=settings.rag_score_threshold,
                 )
+
+            if not similar_chunks and book_ids:
+                # If vector search with strict threshold returns 0 chunks for a scoped book query
+                # (e.g. meta/summary questions where generic query vectors score low against body text),
+                # retry without threshold to guarantee top matching chunks for that book are retrieved.
+                if len(sorted_book_ids) > 1:
+                    per_book_limit = max(settings.rag_top_k // len(sorted_book_ids), 3)
+                    per_book_results = await asyncio.gather(
+                        *[
+                            chunks_repo.similarity_search(
+                                query_embedding=effective_vector,
+                                book_ids=[bid],
+                                categories=ctx.character_categories or None,
+                                limit=per_book_limit,
+                                threshold=0.0,
+                            )
+                            for bid in sorted_book_ids
+                        ]
+                    )
+                    similar_chunks = [
+                        chunk for chunks in per_book_results for chunk in chunks
+                    ]
+                    similar_chunks.sort(
+                        key=lambda c: c.get("similarity", 0.0), reverse=True
+                    )
+                else:
+                    similar_chunks = await chunks_repo.similarity_search(
+                        query_embedding=effective_vector,
+                        book_ids=book_ids,
+                        categories=ctx.character_categories or None,
+                        limit=settings.rag_top_k,
+                        threshold=0.0,
+                    )
             top_results = [
                 {
                     "text": chunk.get("text", ""),
@@ -205,6 +246,7 @@ async def vector_search(
                             or_(Page.is_toc.is_not(True), Page.id.is_(None)),
                         )
                         .order_by(Chunk.page_number.asc(), Chunk.chunk_index.asc())
+                        .limit(1000)
                     )
                     db_res = await ctx.session.execute(stmt)
                     all_chunks = db_res.fetchall()

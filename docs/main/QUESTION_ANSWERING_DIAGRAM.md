@@ -1,10 +1,40 @@
 # Question Answering Pipeline Diagram
 
-Visual representation of the RAG question answering pipeline, covering both `DeterministicRAGHandler` and `LLMRoutedRAGHandler`. Which one handles a given request is decided per-request by `HandlerRegistry` based on the `use_deterministic_router` system config (default `false`, so `LLMRoutedRAGHandler` is the default active handler).
+Two independent chat pipelines exist today, chosen per-request by the streaming endpoint (`POST /api/chat/stream`):
+
+- **`ChatOrchestrator`** — an ADK-native two-agent pipeline with persisted conversation history. Used whenever the `use_adk_chat_v2` system config is `true` (seeded on by default) or the request carries a `conversationId`. See [ChatOrchestrator Pipeline](#chatorchestrator-pipeline) below.
+- **`RAGService` / `HandlerRegistry`** — the original pipeline, with no conversation persistence. Used for the non-streaming `POST /api/chat/` endpoint always, and for `/stream` whenever neither condition above is met. Dispatches to one of `DeterministicRAGHandler` or `LLMRoutedRAGHandler` based on the `use_deterministic_router` system config (default `false`, so `LLMRoutedRAGHandler` is the default handler on this path). Diagrammed in [Full Pipeline](#full-pipeline) below.
+
+Both pipelines share the same 19 tools (`rag/agent/tools.py`), the same `AGENT_SYSTEM_PROMPT`, and the same context-grading helpers — they differ in orchestration and in whether they persist conversation history.
 
 ---
 
-## Full Pipeline
+## ChatOrchestrator Pipeline
+
+```mermaid
+flowchart TD
+    Q(["User Question<br/>+ conversationId? + book/page context"]) --> GETCONV["Get-or-create conversations row<br/>(ConversationRepository)<br/>derive title from book or question"]
+    GETCONV --> HIST["Load last 6 messages<br/>(ConversationRepository.get_recent_messages)"]
+    HIST --> SIGNAL["[LLM] DeterministicRAGHandler._llm_analyze_query()<br/>signal extraction (always runs here,<br/>independent of use_deterministic_router)"]
+    SIGNAL --> RETRIEVAL["Retrieval Agent (chat/retrieval_agent.py)<br/>same AGENT_SYSTEM_PROMPT + 19 tools as LLMRoutedRAGHandler<br/>ADK Runner + persistent DatabaseSessionService<br/>emits: tool_call / tool_result / agent_thinking"]
+    RETRIEVAL --> GRADE["Context Grading<br/>_grade_context / _extract_used_book_ids<br/>(same helpers as HandlerRegistry path)"]
+    GRADE --> ANSWER["Answer Agent (chat/answer_agent.py)<br/>tools-less ADK Agent, own citation prompt<br/>(chat/answer_prompts.py — a fork of answer_builder.py)<br/>emits: chunk × N"]
+    ANSWER --> SAVE["Persist turn<br/>ConversationRepository.save_turn()<br/>write rag_evaluations.conversation_id"]
+    SAVE --> DONE(["done event:<br/>conversationId, contextBookIds, evalId"])
+
+    classDef process fill:#d4f1f4,stroke:#189ab4,stroke-width:1px
+    classDef llm fill:#fef08a,stroke:#ca8a04,stroke-width:2px
+    classDef db fill:#f3f4f6,stroke:#4b5563,stroke-width:1px
+
+    class GETCONV,HIST,GRADE,SAVE db
+    class SIGNAL,RETRIEVAL,ANSWER llm
+```
+
+Unlike the `HandlerRegistry` path, this pipeline never touches `DeterministicRAGHandler.execute_path()`/`graph_router.py` or `LLMRoutedRAGHandler`'s own agent loop — it builds its own retrieval/answer agents directly. The only piece of `DeterministicRAGHandler` it reuses is the signal-extraction function itself, called as a plain utility.
+
+---
+
+## Full Pipeline (`RAGService` / `HandlerRegistry` path)
 
 ```mermaid
 flowchart TD
@@ -70,6 +100,8 @@ flowchart TD
 ---
 
 ## Handler Routing Reference
+
+Routing within the `RAGService` / `HandlerRegistry` path only — this diagram doesn't apply when the request is routed to `ChatOrchestrator` instead (see above).
 
 ```mermaid
 flowchart LR
