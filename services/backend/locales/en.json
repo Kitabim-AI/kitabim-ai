@@ -16,6 +16,7 @@
     "user_not_found_inactive": "User not found or inactive",
     "refresh_token_expired": "Refresh token has expired",
     "book_not_found": "Book not found",
+    "conversation_not_found": "Conversation not found",
     "page_not_found": "Page not found",
     "cover_not_found": "Cover image not found",
     "unauthorized_access": "Unauthorized access",
@@ -55,7 +56,8 @@
   },
   "messages": {
     "logged_out": "Logged out successfully",
-    "corrections_applied": "Corrections applied successfully. Embeddings will be regenerated."
+    "corrections_applied": "Corrections applied successfully. Embeddings will be regenerated.",
+    "new_conversation_title": "New conversation"
   },
   "rag": {
     "identity_intro": "I am {name}.",

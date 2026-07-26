@@ -130,7 +130,7 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
   const isContentLoading = loading || pageLoading;
 
   const modalContent = (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-4 md:p-8" dir="rtl" lang="ug">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-4 md:p-8 pt-[max(0.5rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))]" dir="rtl" lang="ug">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-slate-900/60 backdrop-blur-xl animate-fade-in transition-all duration-500"
@@ -138,36 +138,36 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
       />
 
       {/* Modal Container */}
-      <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-2xl rounded-[24px] sm:rounded-[32px] md:rounded-[40px] shadow-[0_32px_128px_rgba(0,0,0,0.3)] w-full max-w-4xl max-h-[95vh] sm:max-h-[90vh] relative z-10 overflow-hidden animate-scale-up border border-white/40 dark:border-slate-800/40 flex flex-col">
+      <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl rounded-[20px] sm:rounded-[32px] md:rounded-[40px] shadow-[0_32px_128px_rgba(0,0,0,0.3)] w-full max-w-4xl max-h-[calc(100dvh-1.5rem)] sm:max-h-[90vh] relative z-10 overflow-hidden animate-scale-up border border-white/40 dark:border-slate-800/40 flex flex-col">
 
         {/* Header */}
-        <div className="p-4 pb-3 sm:p-6 sm:pb-4 md:p-8 md:pb-6 border-b border-slate-100 dark:border-slate-800 flex items-start justify-between bg-white/50 dark:bg-slate-900/50">
-          <div className="flex items-center gap-3 sm:gap-4 md:gap-6">
-            <div className="p-2.5 sm:p-3 md:p-4 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-2xl sm:rounded-[24px] shadow-xl shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10 shrink-0">
-              <BookOpen size={20} strokeWidth={2.5} className="sm:hidden" />
+        <div className="p-3.5 pb-2.5 sm:p-6 sm:pb-4 md:p-8 md:pb-6 border-b border-slate-100 dark:border-slate-800 flex items-start justify-between bg-white/50 dark:bg-slate-900/50 shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-4 md:gap-6 min-w-0">
+            <div className="p-2 sm:p-3 md:p-4 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl sm:rounded-[24px] shadow-xl shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10 shrink-0">
+              <BookOpen size={18} strokeWidth={2.5} className="sm:hidden" />
               <BookOpen size={28} strokeWidth={2.5} className="hidden sm:block" />
             </div>
-            <div>
-              <h3 className="text-xl sm:text-2xl font-normal text-[#1a1a1a] dark:text-slate-100 mb-2 leading-tight flex items-center flex-wrap gap-2 text-right">
+            <div className="min-w-0">
+              <h3 className="text-lg sm:text-2xl font-normal text-[#1a1a1a] dark:text-slate-100 mb-1 sm:mb-2 leading-tight flex items-center flex-wrap gap-2 text-right">
                 {loading ? t('common.loading') : (
                   <>
-                    <span>{bookData?.title || t('chat.referenceTitle')}</span>
+                    <span className="truncate">{bookData?.title || t('chat.referenceTitle')}</span>
                     {bookData?.author && (
-                      <span className="text-base sm:text-lg text-slate-400 dark:text-slate-500 font-normal">
+                      <span className="text-sm sm:text-lg text-slate-400 dark:text-slate-500 font-normal">
                         ({bookData.author})
                       </span>
                     )}
                   </>
                 )}
               </h3>
-              <div className="flex items-center gap-4 text-[#94a3b8] dark:text-slate-500 text-sm font-normal uppercase tracking-wider">
+              <div className="flex items-center gap-2 sm:gap-4 text-[#94a3b8] dark:text-slate-500 text-xs sm:text-sm font-normal uppercase tracking-wider">
                 {isSummaryMode && (
-                  <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8]">
+                  <span className="flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8]">
                     {t('chat.bookSummary')}
                   </span>
                 )}
                 {bookData?.volume && (
-                  <span className="flex items-center gap-1.5 px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-full text-xs">
+                  <span className="flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-full text-xs">
                     {t('book.volume', { volume: bookData.volume })}
                   </span>
                 )}
@@ -176,7 +176,7 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-2 sm:p-3 hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-300 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 rounded-2xl transition-all active:scale-95 group shrink-0"
+            className="p-1.5 sm:p-3 hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-300 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 rounded-xl sm:rounded-2xl transition-all active:scale-95 group shrink-0"
           >
             <X size={20} strokeWidth={3} className="sm:hidden" />
             <X size={28} strokeWidth={3} className="hidden sm:block" />
@@ -184,7 +184,7 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
         </div>
 
         {/* Content Area */}
-        <div className="flex-grow overflow-y-auto p-4 sm:p-6 md:p-10 custom-scrollbar bg-[#f8fafc]/30 dark:bg-slate-950/40">
+        <div className="flex-1 min-h-0 overflow-y-auto p-3.5 sm:p-6 md:p-10 custom-scrollbar bg-[#f8fafc]/30 dark:bg-slate-950/40">
           {isContentLoading ? (
             <div className="h-64 flex flex-col items-center justify-center gap-6 opacity-40">
               <Loader2 size={48} className="animate-spin text-[#0369a1] dark:text-[#38bdf8]" />
@@ -278,7 +278,7 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-4 px-4 sm:p-4 sm:px-6 md:p-6 md:px-10 bg-white/50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+        <div className="p-3 px-3.5 sm:p-4 sm:px-6 md:p-6 md:px-10 bg-white/50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3 sm:gap-6 text-xs text-slate-400 dark:text-slate-500 font-normal">
             <div className="flex items-center gap-2">
               <Clock size={14} />

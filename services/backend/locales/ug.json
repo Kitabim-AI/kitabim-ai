@@ -16,6 +16,7 @@
     "user_not_found_inactive": "ئىشلەتكۈچى تېپىلمىدى ياكى ئاكتىپ ئەمەس",
     "refresh_token_expired": "يېڭىلاش توكېنىنىڭ ۋاقتى ئۆتكەن",
     "book_not_found": "كىتاب تېپىلمىدى",
+    "conversation_not_found": "سۆھبەت تېپىلمىدى",
     "page_not_found": "بەت تېپىلمىدى",
     "cover_not_found": "مۇقاۋا رەسىمى تېپىلمىدى",
     "unauthorized_access": "كىرىش ھوقۇقى يوق",
@@ -55,7 +56,8 @@
   },
   "messages": {
     "logged_out": "مۇۋەپپەقىيەتلىك چېكىندىڭىز",
-    "corrections_applied": "تۈزىتىشلەر مۇۋەپپەقىيەتلىك قوللىنىلدى. كىتاب قايتا بىر تەرەپ قىلىنىدۇ."
+    "corrections_applied": "تۈزىتىشلەر مۇۋەپپەقىيەتلىك قوللىنىلدى. كىتاب قايتا بىر تەرەپ قىلىنىدۇ.",
+    "new_conversation_title": "يېڭى سۆھبەت"
   },
   "rag": {
     "identity_intro": "مەن {name}.",

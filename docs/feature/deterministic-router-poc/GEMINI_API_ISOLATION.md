@@ -18,7 +18,7 @@ To guarantee that background processing **never degrades the user experience**, 
 
 ## Architectural Isolation Mechanisms
 
-The isolation is implemented in [models.py](file:///Users/Omarjan/Projects/kitabim-ai/packages/backend-core/app/llm/models.py) using three layers of defense:
+The isolation is implemented in [models.py](../../../packages/backend-core/app/llm/models.py) using three layers of defense:
 
 ```mermaid
 graph TD

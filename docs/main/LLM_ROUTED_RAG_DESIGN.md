@@ -10,6 +10,8 @@ Both RAG handlers run on Google ADK — `DeterministicRAGHandler` executes a fix
 
 `packages/backend-core/app/services/rag/agent/llm_routed_handler.py` implements `LLMRoutedRAGHandler`. Its `can_handle()` always returns `True`, so `HandlerRegistry` (`packages/backend-core/app/services/rag/registry.py`) uses it as the fallback whenever `DeterministicRAGHandler.can_handle()` returns `False` — i.e. whenever the `use_deterministic_router` system config is `false`. That config defaults to `false`, so `LLMRoutedRAGHandler` is the default active handler for all chat traffic unless an administrator opts a deployment into the deterministic router.
 
+This is one of two consumers of the shared tool/prompt layer — `ChatOrchestrator` (`packages/backend-core/app/services/chat/orchestrator.py`) builds its own retrieval agent (`chat/retrieval_agent.py`) from the exact same `AGENT_SYSTEM_PROMPT` and 19 tools described here, but runs it through a persistent `DatabaseSessionService`-backed `Runner` instead of `InMemoryRunner`, and pairs it with a separate answer agent rather than `answer_builder.py`. See [SYSTEM_DESIGN.md §6B](SYSTEM_DESIGN.md) and [QUESTION_ANSWERING_DIAGRAM.md](QUESTION_ANSWERING_DIAGRAM.md#chatorchestrator-pipeline) for how the two pipelines relate.
+
 The assistant is built as a stateless Google ADK `Agent`, run via `InMemoryRunner` for each chat request. The workflow is split into:
 1. **Pre-processing steps**: query decomposition (LLM-based question splitting) and lightweight intent detection for the initial `planning` UI event.
 2. **Core Agent Loop**: an ADK-driven ReAct loop managing multi-step reasoning and automated tool execution, governed by `AGENT_SYSTEM_PROMPT` (`prompts.py`).
@@ -26,8 +28,8 @@ Registered in `adk_agent.py::build_rag_agent()`. All tool functions live in `too
 | Tool | Wraps | Cache | Description |
 |------|-------|-------|-------------|
 | `search_chunks` | `ChunksRepository.similarity_search` (pgvector) | L1 (embed) + L2 (results) | Vector-search passages; primary retrieval tool. |
-| `search_books_by_summary` | `BookSummariesRepository` summary vector search | L3 | Find which books cover a topic when book scope is unknown. |
-| `find_books_by_title` | `BooksRepository` title match | — | Resolve a book title mentioned in the question to internal book IDs. |
+| `search_books_by_summary` | `BookSummariesRepository` summary vector search | none (see caching note below) | Find which books cover a topic when book scope is unknown. |
+| `find_books_by_title` | `BooksRepository` title match | — | Resolve a book title mentioned in the question to internal book IDs. Includes a false-positive guard for lone single-word matches and a fuzzy-keyword fallback when strict matching finds nothing — see "Retrieval Refinements" in `RAG_DETERMINISTIC_ROUTER_DESIGN.md`. |
 | `get_book_summary` | `BookSummariesRepository` | — | Fetch full semantic summary text for specific books (plot/character/theme queries). |
 | `get_current_page` | `PagesRepository` | — | Raw text of the page currently open in the reader (callable only in single-book reader mode). |
 | `get_sister_volumes` | `BooksRepository.find_sister_volumes` | — | Retrieves other volumes of the same series as a given `book_id`. |
@@ -58,7 +60,7 @@ Registered in `adk_agent.py::build_rag_agent()`. All tool functions live in `too
 
 | Tool | Description |
 |------|-------------|
-| `search_quran` | Surah/ayah lookup or free-text search within the Quran (a source separate from the book library). |
+| `search_quran` | Surah/ayah lookup or free-text search within the Quran (a source separate from the book library). Also returns Surah metadata (total ayah count, Uyghur/Arabic/English surah names) for every surah touched by the results, prepended to the tool's context output. |
 
 ### Tool Execution Context
 Each tool function retrieves the active `QueryContext` from `tool_context.state["query_context"]`. Results of tool executions are appended to `tool_context.state["observations"]` to enable downstream context aggregation and grading.
@@ -128,7 +130,7 @@ Events flow from the handler to the `/api/chat/stream` endpoint, translating ADK
 
 ---
 
-## Caching (4 Levels)
+## Caching (3 Active Levels)
 
 All caching leverages Redis to avoid redundant LLM and database queries:
 
@@ -137,7 +139,8 @@ All caching leverages Redis to avoid redundant LLM and database queries:
 | **L0** | `KEY_RAG_REWRITE` | `rewrite_query` tool | Deduplicate pronoun and follow-up query rewrites |
 | **L1** | `KEY_RAG_EMBEDDING` | First embedding call in query | Reuse query embeddings across multiple tools |
 | **L2** | `KEY_RAG_SEARCH_SINGLE/MULTI` | `search_chunks` tool | Cache pgvector similarity search results |
-| **L3** | `KEY_RAG_SUMMARY_SEARCH` | `search_books_by_summary` tool | Cache summary search results for topic discovery |
+
+`KEY_RAG_SUMMARY_SEARCH` (an "L3" cache key) is defined in `cache_config.py` but currently unused — `BookSummariesRepository.summary_search()` (backing `search_books_by_summary`) does not read or write it, so summary searches are not cached.
 
 ---
 
@@ -145,7 +148,7 @@ All caching leverages Redis to avoid redundant LLM and database queries:
 
 `ctx.agent_model` is resolved per-request in `rag_service.py::_build_context()` from the `gemini_agent_loop_model` system config, falling back to `gemini_chat_model` if unset (it is unset by default, so the agent loop currently runs on the same model as chat answer generation — `gemini-3.1-flash-lite` by default). Both are DB-driven via `SystemConfigsRepository`, hot-reloadable without a deploy.
 
-Loop bounds (`agent_max_steps` = 6, `agent_enough_chunks` = 8) are also system configs, read into `QueryContext` per request.
+The `agent_max_steps` (default 6) and `agent_enough_chunks` (default 8) system configs are also read into `QueryContext` per request, but are currently **not consumed** anywhere in the ReAct loop or its tools — they are dead config as of this writing. The actual step limit is a hardcoded instruction baked into `AGENT_SYSTEM_PROMPT` (`prompts.py`'s `_HARD_LIMITS`): "at most 6 tool calls total (10 with `[Sub-questions]`)" — a soft, LLM-followed limit, not a Python-enforced one.
 
 ---
 

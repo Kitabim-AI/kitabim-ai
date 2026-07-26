@@ -57,3 +57,37 @@ export interface Message {
   /** Whether the message is a degraded/partial response due to a tool failure */
   partialResult?: boolean;
 }
+
+export interface Conversation {
+  id: string;
+  userId: string;
+  bookId?: string | null;
+  bookTitle?: string | null;
+  isGlobal: boolean;
+  title?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConversationMessage {
+  id: string;
+  conversationId: string;
+  role: 'user' | 'model';
+  content: string;
+  agentSteps?: Record<string, unknown> | null;
+  usedBookIds?: string[] | Record<string, unknown> | null;
+  currentPage?: number | null;
+  evalId?: number | null;
+  createdAt: string;
+}
+
+export interface ChatRequest {
+  question: string;
+  bookId?: string;
+  isGlobal?: boolean;
+  history?: Message[];
+  currentPage?: number;
+  characterId?: string;
+  conversationId?: string;
+}
+

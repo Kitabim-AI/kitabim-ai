@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from typing import List, Optional
 from uuid import uuid4
@@ -14,6 +15,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -210,6 +212,133 @@ class Page(Base):
         CheckConstraint(
             "status IN ('pending', 'ocr_processing', 'ocr_done', 'chunked', 'indexing', 'indexed', 'error')",
             name="pages_status_check",
+        ),
+    )
+
+
+class BatchOCRJob(Base):
+    """Batch OCR Job model tracking Gemini Batch API requests"""
+
+    __tablename__ = "batch_ocr_jobs"
+
+    id: Mapped[str] = mapped_column(
+        String(64),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    gemini_batch_id: Mapped[Optional[str]] = mapped_column(
+        String(255), unique=True, nullable=True
+    )
+    book_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("books.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    page_ids: Mapped[List[int]] = mapped_column(ARRAY(Integer), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default="submitting",
+        server_default="submitting",
+        index=True,
+        nullable=False,
+    )
+
+    gcs_input_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    gcs_output_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    total_pages: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    processed_pages: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        onupdate=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    # Relationships
+    book: Mapped["Book"] = relationship("Book")
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('submitting', 'submitted', 'running', 'succeeded', 'failed', 'cancelled')",
+            name="check_batch_ocr_jobs_status",
+        ),
+    )
+
+
+class BatchEmbeddingJob(Base):
+    """Batch Embedding Job model tracking Gemini Batch API embedding requests"""
+
+    __tablename__ = "batch_embedding_jobs"
+
+    id: Mapped[str] = mapped_column(
+        String(64),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    gemini_batch_id: Mapped[Optional[str]] = mapped_column(
+        String(255), unique=True, nullable=True
+    )
+    book_ids: Mapped[List[str]] = mapped_column(ARRAY(String(64)), nullable=False)
+    page_ids: Mapped[List[int]] = mapped_column(ARRAY(Integer), nullable=False)
+    chunk_ids: Mapped[List[int]] = mapped_column(ARRAY(Integer), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default="submitting",
+        server_default="submitting",
+        index=True,
+        nullable=False,
+    )
+
+    gcs_input_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    gcs_output_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    total_chunks: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    processed_chunks: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        onupdate=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('submitting', 'submitted', 'running', 'succeeded', 'failed', 'cancelled')",
+            name="check_batch_embedding_jobs_status",
         ),
     )
 
@@ -456,6 +585,14 @@ class RAGEvaluation(Base):
 
     # User feedback ('positive' = 👍, 'negative' = 👎, None = no feedback yet)
     user_feedback: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+
+    # Multi-turn session tracking
+    conversation_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("conversations.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
 
     # True when this question opened a new conversation (history was empty)
     is_first_turn: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -758,6 +895,76 @@ class PipelineEvent(Base):
     payload: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON blob
     processed: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+
+class Conversation(Base):
+    """Conversation session for multi-turn chat persistence"""
+
+    __tablename__ = "conversations"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    book_id: Mapped[Optional[str]] = mapped_column(
+        String(64),
+        ForeignKey("books.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    book: Mapped[Optional["Book"]] = relationship("Book", lazy="selectin")
+    is_global: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    title: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class ConversationMessage(Base):
+    """Message turns inside a conversation"""
+
+    __tablename__ = "conversation_messages"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    conversation_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    role: Mapped[str] = mapped_column(String(10), nullable=False)  # 'user' | 'model'
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    agent_steps: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    used_book_ids: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    current_page: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    eval_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("rag_evaluations.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

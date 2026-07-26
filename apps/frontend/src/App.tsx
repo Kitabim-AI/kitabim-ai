@@ -14,6 +14,7 @@ import { useAuth, useIsEditor } from './hooks/useAuth';
 import { useUyghurInput } from './hooks/useUyghurInput';
 import { PersistenceService } from './services/persistenceService';
 import { GraphView } from './components/graph/GraphView';
+import { NotificationProvider } from './context/NotificationContext';
 import DictionaryView from './components/pages/DictionaryView';
 import QuranView from './components/pages/QuranView';
 
@@ -126,6 +127,13 @@ const AppContent: React.FC = () => {
           selectedCharacterId={chat.selectedCharacterId}
           setSelectedCharacterId={chat.setSelectedCharacterId}
           submitFeedback={chat.submitFeedback}
+          conversationId={chat.conversationId}
+          conversations={chat.conversations}
+          isLoadingConversations={chat.isLoadingConversations}
+          isLoadingMessages={chat.isLoadingMessages}
+          onSelectConversation={chat.selectConversation}
+          onStartNewChat={chat.startNewChat}
+          onDeleteConversation={chat.deleteConversation}
         />
       )}
       {view === 'join-us' && <JoinUsView />}
@@ -138,9 +146,11 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => {
   return (
     <ThemeProvider>
-      <AppProvider>
-        <AppContent />
-      </AppProvider>
+      <NotificationProvider>
+        <AppProvider>
+          <AppContent />
+        </AppProvider>
+      </NotificationProvider>
     </ThemeProvider>
   );
 };

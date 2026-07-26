@@ -1,0 +1,351 @@
+"""ChatOrchestrator — ADK-native chat orchestrator replacing RAGService and legacy handlers"""
+
+from __future__ import annotations
+
+import logging
+import time
+from typing import Any, AsyncIterator, Optional, Union
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from google.adk.runners import InMemoryRunner, Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
+
+from app.core.characters import CHARACTERS, DEFAULT_CHARACTER_ID
+from app.core.config import settings
+from app.db.models import Conversation
+from app.db.repositories.books_repository import BooksRepository
+from app.db.repositories.conversation_repository import ConversationRepository
+from app.db.repositories.rag_evaluations_repository import RAGEvaluationsRepository
+from app.db.repositories.system_configs_repository import SystemConfigsRepository
+from app.services.rag.llm_resources import llm_resources
+from app.services.chat.answer_agent import build_answer_agent
+from app.services.chat.context import ChatRequestDTO
+from app.services.chat.history import format_history_for_analysis
+from app.services.chat.retrieval_agent import build_retrieval_agent
+from app.services.rag.agent.deterministic_handler import DeterministicRAGHandler
+from app.services.rag.agent.llm_routed_handler import (
+    _build_human_message,
+    _extract_used_book_ids,
+    _grade_context,
+)
+from app.services.rag.context import QueryContext, set_current_query_context
+from app.utils.citation_fixer import fix_malformed_citations
+
+
+logger = logging.getLogger("app.services.chat.orchestrator")
+
+
+class ChatOrchestrator:
+    """Orchestrator managing two-agent ADK execution pipeline and session persistence"""
+
+    def __init__(
+        self,
+        session_service: Optional[Any] = None,
+        conversation_repo: Optional[ConversationRepository] = None,
+    ):
+        self.session_service = session_service
+        self.conversation_repo = conversation_repo
+
+    async def stream_response(
+        self,
+        request_dto: ChatRequestDTO,
+        db_session: AsyncSession,
+        model_name: str = "gemini-2.5-flash",
+    ) -> AsyncIterator[Union[str, dict]]:
+        """Execute two-agent ADK pipeline and stream SSE events to client"""
+        start_time = time.time()
+        conv_repo = self.conversation_repo or ConversationRepository(db_session)
+
+        # 0. Conversation Get-or-Create
+        conv_id = request_dto.conversation_id
+        is_first_turn = False
+        conversation: Optional[Conversation] = None
+
+        if conv_id:
+            conversation = await conv_repo.get_conversation(conv_id)
+
+        cleaned_q = " ".join(request_dto.question.strip().split())
+        question_title = cleaned_q[:37] + "..." if len(cleaned_q) > 40 else cleaned_q
+
+        if conversation is None:
+            conversation = await conv_repo.create_conversation(
+                user_id=request_dto.user_id,
+                book_id=request_dto.book_id if not request_dto.is_global else None,
+                is_global=request_dto.is_global,
+                title=question_title or None,
+            )
+            conv_id = conversation.id
+            is_first_turn = True
+        elif conversation.title in [
+            None,
+            "",
+            "يېڭى سۆھبەت",
+            "New Conversation",
+            "سۆھبەت",
+        ]:
+            await conv_repo.update_title(conv_id, question_title)
+
+        # Fetch recent turns for pre-processing analysis context
+        history_msgs = await conv_repo.get_recent_messages(conv_id, limit=6)
+        history_str = format_history_for_analysis(history_msgs)
+        history_dicts = [
+            {"role": msg.role, "text": msg.content} for msg in history_msgs
+        ]
+
+        char_id = request_dto.character_id or DEFAULT_CHARACTER_ID
+        character = CHARACTERS.get(char_id)
+        persona_prompt = character.persona_prompt if character else None
+        character_categories = character.categories if character else []
+
+        book = None
+        if not request_dto.is_global and request_dto.book_id:
+            books_repo = BooksRepository(db_session)
+            book = await books_repo.get(request_dto.book_id)
+
+        configs_repo = SystemConfigsRepository(db_session)
+        embedding_model = await configs_repo.get_value(
+            "gemini_embedding_model"
+        ) or getattr(settings, "gemini_embedding_model", "text-embedding-004")
+        embeddings = llm_resources.get_embeddings(embedding_model)
+
+        # 1. Build QueryContext for tool backward-compatibility & pre-processing
+        ctx = QueryContext(
+            question=request_dto.question,
+            book_id=request_dto.book_id if not request_dto.is_global else None,
+            is_global=request_dto.is_global,
+            user_id=request_dto.user_id,
+            current_page=request_dto.current_page,
+            character_id=char_id,
+            session=db_session,
+            history=history_dicts,
+            book=book,
+            persona_prompt=persona_prompt,
+            character_categories=character_categories,
+            chat_history_str=history_str,
+            rag_chain=llm_resources.get_rag_chain(model_name),
+            rewrite_chain=llm_resources.get_rewrite_chain(model_name),
+            embeddings=embeddings,
+            start_ts=time.monotonic(),
+            agent_model=model_name,
+        )
+        set_current_query_context(ctx)
+
+        # 2. Fast signal pre-processing via DeterministicRAGHandler
+
+        deterministic_handler = DeterministicRAGHandler()
+        signals = await deterministic_handler._llm_analyze_query(
+            request_dto.question, ctx
+        )
+
+        intent = signals.get("intent", "open")
+        yield {"type": "planning", "intent": intent}
+
+        # Enforce Reader Mode scope limit if not global; otherwise carry forward
+        # the prior turn's book IDs so _build_human_message can surface them.
+        if not request_dto.is_global and request_dto.book_id:
+            ctx.context_book_ids = [request_dto.book_id]
+        elif request_dto.is_global and request_dto.context_book_ids:
+            ctx.context_book_ids = request_dto.context_book_ids
+
+        # 3. Retrieval Agent Execution
+        retrieval_agent = build_retrieval_agent(
+            model=model_name,
+            intent_signals=signals,
+        )
+
+        # Runner configuration
+        if self.session_service:
+            runner = Runner(
+                agent=retrieval_agent,
+                app_name="kitabim-retrieval",
+                session_service=self.session_service,
+                auto_create_session=True,
+            )
+            adk_session = await self.session_service.get_session(
+                app_name="kitabim-retrieval",
+                user_id=request_dto.user_id,
+                session_id=conv_id,
+            )
+            if adk_session is None:
+                adk_session = await self.session_service.create_session(
+                    app_name="kitabim-retrieval",
+                    user_id=request_dto.user_id,
+                    session_id=conv_id,
+                )
+        else:
+            session_service = InMemorySessionService()
+            adk_session = await session_service.create_session(
+                app_name="kitabim-retrieval",
+                user_id=request_dto.user_id,
+                session_id=conv_id,
+            )
+            runner = Runner(
+                agent=retrieval_agent,
+                app_name="kitabim-retrieval",
+                session_service=session_service,
+                auto_create_session=True,
+            )
+
+        adk_session.state["query_context"] = ctx
+        adk_session.state["observations"] = []
+
+        # AGENT_SYSTEM_PROMPT's routing rules (current book_id, current_page,
+        # chat history availability, prior response book IDs) all key off an
+        # explicit [Context] block in the user turn — without it the retrieval
+        # agent can't tell it's in reader mode and falls back to book-discovery
+        # tools it doesn't need.
+        retrieval_content = types.Content(
+            role="user",
+            parts=[
+                types.Part.from_text(
+                    text=_build_human_message(ctx, request_dto.question)
+                )
+            ],
+        )
+        content = types.Content(
+            role="user", parts=[types.Part.from_text(text=request_dto.question)]
+        )
+
+        observations: list[dict] = []
+        pending_calls: dict[str, str] = {}
+
+        async for event in runner.run_async(
+            user_id=request_dto.user_id,
+            session_id=conv_id,
+            new_message=retrieval_content,
+        ):
+            if not event.partial and event.content and event.content.parts:
+                for part in event.content.parts:
+                    if part.function_call:
+                        call_id = (
+                            getattr(part.function_call, "id", None)
+                            or part.function_call.name
+                        )
+                        pending_calls[call_id] = part.function_call.name
+                        yield {
+                            "type": "tool_call",
+                            "tool": part.function_call.name,
+                            "name": part.function_call.name,
+                        }
+                    elif part.text:
+                        yield {"type": "agent_thinking", "text": part.text}
+
+            function_responses = event.get_function_responses()
+            if function_responses:
+                for fr in function_responses:
+                    response_data = fr.response or {}
+                    call_id = getattr(fr, "id", None) or fr.name
+                    tool_name = pending_calls.pop(call_id, fr.name)
+                    observations.append(
+                        {
+                            "tool": tool_name,
+                            "result": response_data,
+                        }
+                    )
+                    found = (
+                        response_data.get("found_count", 0)
+                        if isinstance(response_data, dict)
+                        else 0
+                    )
+                    yield {
+                        "type": "tool_result",
+                        "tool": tool_name,
+                        "found": found,
+                    }
+
+        # 4. Context Grading
+        used_book_ids = _extract_used_book_ids(observations)
+        graded_context, before_count, after_count = _grade_context(observations)
+        if before_count > 0:
+            yield {"type": "grading", "before": before_count, "after": after_count}
+
+        # 5. Answer Agent Execution
+        yield {"type": "answer_start"}
+        answer_agent = build_answer_agent(
+            model=model_name,
+            graded_context=graded_context,
+            persona_prompt=ctx.persona_prompt,
+            is_global=request_dto.is_global,
+            has_categories=bool(ctx.character_categories),
+        )
+
+        if self.session_service:
+            answer_runner = Runner(
+                agent=answer_agent,
+                app_name="kitabim-answer",
+                session_service=self.session_service,
+                auto_create_session=True,
+            )
+        else:
+            answer_runner = InMemoryRunner(
+                agent=answer_agent,
+                app_name="kitabim-answer",
+            )
+
+        accumulated_text = ""
+        async for event in answer_runner.run_async(
+            user_id=request_dto.user_id,
+            session_id=conv_id,
+            new_message=content,
+        ):
+            if event.content and event.content.parts:
+                for part in event.content.parts:
+                    if part.text:
+                        accumulated_text += part.text
+                        yield {"type": "chunk", "text": part.text}
+
+        yield {"type": "answer_end"}
+
+        # 6. Safety Fix & Persistence
+        fixed_text = fix_malformed_citations(accumulated_text)
+        latency_ms = int((time.time() - start_time) * 1000)
+
+        eval_repo = RAGEvaluationsRepository(db_session)
+        eval_record = await eval_repo.create_evaluation(
+            book_id=request_dto.book_id if not request_dto.is_global else None,
+            is_global=request_dto.is_global,
+            question=request_dto.question,
+            current_page=request_dto.current_page,
+            retrieved_count=len(observations),
+            context_chars=len(graded_context),
+            scores=[1.0] * len(observations),
+            category_filter=request_dto.context_book_ids or [],
+            latency_ms=latency_ms,
+            answer_chars=len(fixed_text),
+            user_id=request_dto.user_id,
+            agent_steps=len(observations),
+            tools_called=[obs["tool"] for obs in observations],
+            eval_status="completed",
+            answer=fixed_text,
+            retrieved_context=graded_context,
+            is_first_turn=is_first_turn,
+        )
+        eval_id = eval_record.id
+
+        # Update evaluation with conversation_id link
+        eval_record.conversation_id = conv_id
+        await db_session.flush()
+        await db_session.commit()
+
+        # Save turn to ConversationRepository
+        await conv_repo.save_turn(
+            conversation_id=conv_id,
+            question=request_dto.question,
+            answer=fixed_text,
+            used_book_ids=used_book_ids,
+            eval_id=eval_id,
+            current_page=request_dto.current_page,
+            agent_steps={
+                "llm_calls": len(observations),
+                "tools": [obs["tool"] for obs in observations],
+            },
+        )
+        await db_session.commit()
+
+        yield {
+            "type": "done",
+            "eval_id": eval_id,
+            "conversation_id": conv_id,
+            "used_book_ids": used_book_ids,
+        }

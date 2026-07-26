@@ -40,6 +40,22 @@ def normalize_uyghur_spelling(text: str) -> str:
     return re.sub(r"\u06cc{2,}", "\u06cc", normalized)
 
 
+# Punctuation commonly wrapping Uyghur words/titles that must be stripped
+# before word-level matching (quotes, brackets, sentence punctuation).
+PUNCTUATION_STRIP_CHARS = "«»،؟!()[]{}\"''"
+
+
+def fuzzy_token_similar(a: str, b: str, threshold: float = 0.85) -> bool:
+    """True if two normalized words are near-identical (spelling-tolerant match).
+
+    Both words must be at least 4 characters — shorter words produce too many
+    false positives under edit-distance similarity.
+    """
+    return (
+        len(a) >= 4 and len(b) >= 4 and SequenceMatcher(None, a, b).ratio() >= threshold
+    )
+
+
 def entity_matches_question(entity: str, question: str) -> bool:
     """Return True if an author name or book title is referenced in the question.
 
@@ -58,7 +74,49 @@ def entity_matches_question(entity: str, question: str) -> bool:
     if len(entity_words) == 1 and len(entity_words[0]) < 4:
         return False
     _PUNCT = "«»،؟!()[]{}\"''"
-    q_words = [normalize_uyghur(w).strip(_PUNCT) for w in question.strip().split()]
+    norm_q = normalize_uyghur(question)
+    q_words = [w.strip(_PUNCT) for w in norm_q.strip().split()]
+
+    # Structural rule for single-word titles in multi-word questions (>= 3 words):
+    # Single-word titles are matched if:
+    # 1. Enclosed in quotes (e.g. «ھايات»), OR
+    # 2. Positioned at sentence start (subject position), OR
+    # 3. Followed by a title indicator (e.g. كىتابى, ناملىق, رومانى) or topic postposition (e.g. ھەققىدە, توغرىسىدا)
+    if len(q_words) >= 3 and len(entity_words) == 1:
+        e_word = entity_words[0]
+        is_quoted = f"«{e_word}»" in norm_q or f'"{e_word}"' in norm_q
+        if not is_quoted:
+            is_sentence_start = q_words[0].startswith(e_word) or (
+                e_word.endswith("ە") and q_words[0].startswith(e_word[:-1] + "ی")
+            )
+            if not is_sentence_start:
+                valid_followers = (
+                    "كىتاب",
+                    "ناملىق",
+                    "رومان",
+                    "ئەسەر",
+                    "داستان",
+                    "ھېكايە",
+                    "پوۋېست",
+                    "ژۇرنال",
+                    "ھەققىدە",
+                    "تۆغرىسىدا",
+                    "توغرىسىدا",
+                    "بىلەن",
+                    "ئۈستىدە",
+                    "دەپ",
+                )
+                followed_by_indicator = False
+                for idx, w in enumerate(q_words[:-1]):
+                    if w.startswith(e_word) or (
+                        e_word.endswith("ە") and w.startswith(e_word[:-1] + "ی")
+                    ):
+                        next_w = q_words[idx + 1]
+                        if any(next_w.startswith(ind) for ind in valid_followers):
+                            followed_by_indicator = True
+                            break
+                if not followed_by_indicator:
+                    return False
 
     def _word_matches(e_word: str) -> bool:
         alt = e_word[:-1] + "ی" if e_word.endswith("ە") else None

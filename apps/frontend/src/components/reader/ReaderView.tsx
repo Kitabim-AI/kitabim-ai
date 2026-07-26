@@ -6,7 +6,6 @@ import {
   Edit3,
   Loader2,
   Maximize2, Minimize2,
-  PanelLeftClose,
   PanelLeftOpen,
   Save,
   Share2,
@@ -414,20 +413,10 @@ export const ReaderView: React.FC = () => {
             <Minimize2 size={20} />
           </button>
         )}
-        {/* Floating restore-chat button — desktop collapsed mode only */}
-        {isSidebarCollapsed && !isFullscreen && (
-          <button
-            onClick={() => setIsSidebarCollapsed(false)}
-            className="hidden xl:flex absolute top-1/2 -translate-y-1/2 left-4 z-20 p-2.5 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm text-[#0369a1] dark:text-[#38bdf8] hover:bg-white dark:hover:bg-slate-800 rounded-2xl shadow-lg border border-[#0369a1]/10 dark:border-[#38bdf8]/10 transition-all"
-            title={t('reader.showChat')}
-          >
-            <PanelLeftOpen size={20} />
-          </button>
-        )}
         {/* Header Ribbon */}
         <div className={`px-3 sm:px-6 py-2 sm:py-4 border-b border-[#0369a1]/10 dark:border-[#38bdf8]/10 flex flex-row items-center justify-between gap-1 sm:gap-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm ${isFullscreen ? 'hidden' : ''}`}>
           <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-shrink">
-            <div className="hidden sm:flex p-2 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl shadow-lg shrink-0">
+            <div className="flex items-center justify-center min-w-[40px] min-h-[40px] w-10 h-10 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl shadow-lg shrink-0">
               <BookOpen size={20} />
             </div>
             <div className="min-w-0 flex flex-col justify-center">
@@ -454,25 +443,24 @@ export const ReaderView: React.FC = () => {
               <div className="flex items-center gap-1 sm:gap-2">
                 {!isEditing ? (
                   <>
-                    {selectedBook.fileType === 'pdf' && (
-                      <button
-                        onClick={handleDownload}
-                        disabled={isDownloading}
-                        className="flex items-center gap-2 px-2 sm:px-4 py-2 min-h-[36px] sm:min-h-[44px] bg-white dark:bg-slate-800 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] text-xs sm:text-sm rounded-xl sm:rounded-2xl hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 transition-all font-bold disabled:opacity-50"
-                        title={t('common.download')}
-                      >
-                        {isDownloading ? (
-                          <Loader2 size={14} className="animate-spin sm:w-4 sm:h-4" />
-                        ) : (
-                          <Download size={14} className="sm:w-4 sm:h-4" />
-                        )}
-                        <span className="hidden sm:inline">{t('common.download')}</span>
-                      </button>
-                    )}
                     <button onClick={handleEnterGlobalEdit} className="flex items-center gap-2 px-2 sm:px-4 py-2 min-h-[36px] sm:min-h-[44px] bg-[#0369a1] text-white text-xs sm:text-sm rounded-xl sm:rounded-2xl hover:bg-[#0284c7] transition-all">
                       <Edit3 size={14} className="sm:w-4 sm:h-4" />
                       <span className="hidden sm:inline">{t('reader.editBook')}</span>
                     </button>
+                    {selectedBook.fileType === 'pdf' && (
+                      <button
+                        onClick={handleDownload}
+                        disabled={isDownloading}
+                        className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 disabled:opacity-50"
+                        title={t('common.download')}
+                      >
+                        {isDownloading ? (
+                          <Loader2 size={18} className="animate-spin sm:w-5 sm:h-5" />
+                        ) : (
+                          <Download size={18} className="sm:w-5 sm:h-5" />
+                        )}
+                      </button>
+                    )}
                   </>
                 ) : (
                   <button onClick={handleSaveCorrections} className="flex items-center gap-2 px-2 sm:px-4 py-2 min-h-[36px] sm:min-h-[44px] bg-[#0369a1] text-white text-xs sm:text-sm rounded-xl sm:rounded-2xl hover:bg-[#0284c7] transition-all">
@@ -539,13 +527,6 @@ export const ReaderView: React.FC = () => {
               title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
             >
               {isFullscreen ? <Minimize2 size={18} className="sm:w-5 sm:h-5" /> : <Maximize2 size={18} className="sm:w-5 sm:h-5" />}
-            </button>
-            <button
-              onClick={() => setIsSidebarCollapsed(prev => !prev)}
-              className="hidden xl:flex items-center justify-center p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10"
-              title={isSidebarCollapsed ? t('reader.showChat') : t('reader.hideChat')}
-            >
-              {isSidebarCollapsed ? <PanelLeftOpen size={18} className="sm:w-5 sm:h-5" /> : <PanelLeftClose size={18} className="sm:w-5 sm:h-5" />}
             </button>
             <button
               onClick={() => isEditing ? setIsEditing(false) : (editingPageNum !== null ? setEditingPageNum(null) : onClose())}
@@ -629,14 +610,14 @@ export const ReaderView: React.FC = () => {
       </div>
 
       {/* Sidebar Area */}
-      <div className={`w-full xl:w-[500px] 2xl:w-[600px] flex-col gap-4 xl:gap-6 min-h-0 ${isFullscreen ? 'hidden' : mobileTab === 'chat' ? 'flex flex-grow' : isSidebarCollapsed ? 'hidden' : 'hidden xl:flex'}`}>
+      <div className={`w-full ${isSidebarCollapsed ? 'xl:w-16' : 'xl:w-[500px] 2xl:w-[600px]'} flex-col gap-4 xl:gap-6 min-h-0 transition-all duration-300 ${isFullscreen ? 'hidden' : mobileTab === 'chat' ? 'flex flex-grow' : 'hidden xl:flex'}`}>
         <GlassPanel className={`flex-1 min-h-0 flex flex-col ${mobileTab === 'chat' ? 'rounded-[24px] border' : 'rounded-none xl:rounded-[32px] border'} shadow-xl border-[#0369a1]/10 overflow-hidden`}>
           {/* Chat tab header — mobile only, mirrors reader header without edit button */}
           {mobileTab === 'chat' && (
             <div className="xl:hidden flex-shrink-0 px-3 sm:px-6 py-2 sm:py-4 border-b border-[#0369a1]/10 dark:border-[#38bdf8]/10 flex flex-row items-center justify-between gap-1 sm:gap-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm mb-0">
               {/* Book title — left in RTL */}
               <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-shrink">
-                <div className="hidden sm:flex p-2 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl shadow-lg shrink-0">
+                <div className="hidden sm:flex items-center justify-center min-w-[40px] min-h-[40px] bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl shadow-lg shrink-0">
                   <BookOpen size={20} />
                 </div>
                 <div className="min-w-0 flex flex-col justify-center">
@@ -657,10 +638,10 @@ export const ReaderView: React.FC = () => {
                   <button
                     onClick={handleDownload}
                     disabled={isDownloading}
-                    className="flex items-center gap-2 px-2 sm:px-4 py-2 min-h-[36px] sm:min-h-[44px] bg-white dark:bg-slate-800 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] text-xs sm:text-sm rounded-xl sm:rounded-2xl hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 transition-all font-bold disabled:opacity-50"
+                    className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 disabled:opacity-50"
+                    title={t('common.download')}
                   >
-                    {isDownloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-                    <span className="hidden sm:inline">{t('common.download')}</span>
+                    {isDownloading ? <Loader2 size={18} /> : <Download size={18} />}
                   </button>
                 )}
                 <button
@@ -683,28 +664,48 @@ export const ReaderView: React.FC = () => {
             </div>
           )}
           {/* Panel content */}
-          <div className="flex-1 min-h-0 p-3 sm:p-4 xl:p-6 overflow-hidden flex flex-col">
-            {(!isFullscreen && (mobileTab === 'chat' || !isSidebarCollapsed)) && (
-              <ChatInterface
-                type="book"
-                bookId={selectedBook.id}
-                bookTitle={selectedBook.title ?? undefined}
-                bookAuthor={selectedBook.author ?? undefined}
-                chatMessages={chat.chatMessages}
-                chatInput={chat.chatInput}
-                setChatInput={chat.setChatInput}
-                onSendMessage={chat.handleSendMessage}
-                isChatting={chat.isChatting}
-                streamingMessage={chat.streamingMessage}
-                streamingPartialResult={chat.streamingPartialResult}
-                agentSteps={chat.agentSteps}
-                currentPage={currentPage}
-                usageStatus={chat.usageStatus}
-                chatContainerRef={chat.chatContainerRef}
-                submitFeedback={chat.submitFeedback}
-              />
-            )}
-          </div>
+          {isSidebarCollapsed && mobileTab !== 'chat' ? (
+            <div className="hidden xl:flex flex-col items-center w-full gap-3 py-4">
+              <button
+                onClick={() => setIsSidebarCollapsed(false)}
+                className="flex items-center justify-center p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10"
+                title={t('reader.showChat')}
+              >
+                <PanelLeftOpen size={18} className="sm:w-5 sm:h-5" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+              {!isFullscreen && (
+                <ChatInterface
+                  type="book"
+                  bookId={selectedBook.id}
+                  bookTitle={selectedBook.title ?? undefined}
+                  bookAuthor={selectedBook.author ?? undefined}
+                  chatMessages={chat.chatMessages}
+                  chatInput={chat.chatInput}
+                  setChatInput={chat.setChatInput}
+                  onSendMessage={chat.handleSendMessage}
+                  isChatting={chat.isChatting}
+                  streamingMessage={chat.streamingMessage}
+                  streamingPartialResult={chat.streamingPartialResult}
+                  agentSteps={chat.agentSteps}
+                  currentPage={currentPage}
+                  usageStatus={chat.usageStatus}
+                  chatContainerRef={chat.chatContainerRef}
+                  submitFeedback={chat.submitFeedback}
+                  conversationId={chat.conversationId}
+                  conversations={chat.conversations}
+                  isLoadingConversations={chat.isLoadingConversations}
+                  isLoadingMessages={chat.isLoadingMessages}
+                  onSelectConversation={chat.selectConversation}
+                  onStartNewChat={chat.startNewChat}
+                  onDeleteConversation={chat.deleteConversationHandler}
+                  onHideChat={() => setIsSidebarCollapsed(true)}
+                />
+              )}
+            </div>
+          )}
         </GlassPanel>
       </div>
 

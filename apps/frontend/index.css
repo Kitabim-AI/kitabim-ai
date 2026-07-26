@@ -287,7 +287,7 @@ body::after {
 .arabic-text *,
 .uyghur-text .arabic-text,
 .uyghur-text .arabic-text * {
-  font-family: "Adobe Arabic", serif !important;
+  font-family: "KFGQPC Uthmanic Script HAFS", "Adobe Arabic", serif !important;
   font-variant-ligatures: common-ligatures contextual !important;
   font-feature-settings: "kern" 1, "liga" 1, "calt" 1, "ccmp" 1 !important;
   letter-spacing: 0 !important;

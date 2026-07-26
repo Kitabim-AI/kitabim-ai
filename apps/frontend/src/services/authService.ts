@@ -6,17 +6,26 @@ const SESSION_TOKEN_KEY = 'kitabim_access_token_session';
 
 // App ID fetched from /api/config at startup — never hardcoded or baked into the bundle.
 let _appClientId = '';
+let _configPromise: Promise<void> | null = null;
 
 export async function initAppConfig(): Promise<void> {
-  try {
-    const res = await fetch('/api/config');
-    if (res.ok) {
-      const data = await res.json();
-      _appClientId = data.appId ?? '';
-    }
-  } catch {
-    // Non-fatal — requests will be sent without the app ID header
+  if (_appClientId) return;
+  if (!_configPromise) {
+    _configPromise = (async () => {
+      try {
+        const res = await fetch('/api/config');
+        if (res.ok) {
+          const data = await res.json();
+          _appClientId = data.appId ?? '';
+        }
+      } catch {
+        // Non-fatal — requests will be sent without the app ID header
+      } finally {
+        _configPromise = null;
+      }
+    })();
   }
+  return _configPromise;
 }
 
 // Access token lives in memory only — never persisted to localStorage.
@@ -95,6 +104,9 @@ export async function authFetch(
   url: string,
   options: RequestInit = {}
 ): Promise<Response> {
+  if (!_appClientId) {
+    await initAppConfig();
+  }
   const token = getAccessToken();
 
   const headers = new Headers(options.headers);

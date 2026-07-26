@@ -42,6 +42,44 @@ async def test_find_books_by_title_subset_filtering():
 
 
 @pytest.mark.asyncio
+async def test_find_books_by_title_quoted_multiple_titles():
+    """A question quoting several titles («A» and «B» and «C») must resolve
+    all of them, not just the first one the dict-iteration order happens to
+    match first."""
+    session = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.fetchall.return_value = [
+        ("b1", "ئانا يۇرت", "Author A", 1),
+        ("b2", "بالىلىق خاتىرىلىرى", "Author B", None),
+        ("b3", "باشقا كىتاب", "Author C", None),
+    ]
+    session.execute.return_value = mock_result
+
+    question = "«ئانا يۇرت» بىلەن «بالىلىق خاتىرىلىرى» نى سېلىشتۇرۇپ بەر"
+    res = await find_books_by_title_in_question(question, session)
+
+    assert res is not None
+    matched_ids = {r["id"] for r in res}
+    assert matched_ids == {"b1", "b2"}
+    assert "b3" not in matched_ids
+
+
+@pytest.mark.asyncio
+async def test_find_books_by_title_quoted_no_match_returns_none():
+    session = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.fetchall.return_value = [
+        ("b1", "ئانا يۇرت", "Author A", 1),
+    ]
+    session.execute.return_value = mock_result
+
+    question = "«يوق كىتاب» توغرىسىدا ئېيتىپ بەر"
+    res = await find_books_by_title_in_question(question, session)
+
+    assert res is None
+
+
+@pytest.mark.asyncio
 async def test_find_books_by_title_orders_by_volume():
     session = AsyncMock()
     mock_result = MagicMock()

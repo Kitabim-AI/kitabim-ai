@@ -27,6 +27,9 @@ async def run_embedding_scanner(ctx) -> None:
     async with db_session.async_session_factory() as session:
         config_repo = SystemConfigsRepository(session)
         page_limit = int(await config_repo.get_value("scanner_page_limit", "100"))
+        batch_enabled = (
+            await config_repo.get_value("gemini_batch_embedding_enabled", "false")
+        ).lower() == "true"
 
         # Atomically claim idle embedding pages across all books.
         # Note: we do NOT filter by book status. auto_correct_service resets
@@ -69,5 +72,25 @@ async def run_embedding_scanner(ctx) -> None:
             )
         await session.commit()
 
-    await redis.enqueue_job("embedding_job", page_ids=page_ids)
-    log_json(logger, logging.INFO, "embedding job dispatched", page_count=len(page_ids))
+    if batch_enabled:
+        from app.services.batch_embedding_service import (
+            submit_batch_embedding_job,
+        )
+
+        async with db_session.async_session_factory() as submit_session:
+            await submit_batch_embedding_job(submit_session, page_ids)
+
+        log_json(
+            logger,
+            logging.INFO,
+            "batch embedding job submitted",
+            page_count=len(page_ids),
+        )
+    else:
+        await redis.enqueue_job("embedding_job", page_ids=page_ids)
+        log_json(
+            logger,
+            logging.INFO,
+            "embedding job dispatched",
+            page_count=len(page_ids),
+        )

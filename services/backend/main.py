@@ -135,6 +135,26 @@ async def lifespan(app: FastAPI):
         logger = logging.getLogger("app.startup")
         log_json(logger, logging.ERROR, "System config seeding failed", error=str(exc))
 
+    # Initialize ADK DatabaseSessionService for conversation persistence
+    try:
+        from google.adk.sessions import DatabaseSessionService
+        from app.db.session import engine
+
+        adk_session_service = DatabaseSessionService(db_engine=engine)
+        await adk_session_service.prepare_tables()
+        app.state.adk_session_service = adk_session_service
+        log_json(
+            logger, logging.INFO, "ADK DatabaseSessionService initialized successfully"
+        )
+    except Exception as exc:
+        log_json(
+            logger,
+            logging.WARNING,
+            "ADK DatabaseSessionService initialization skipped/failed",
+            error=str(exc),
+        )
+        app.state.adk_session_service = None
+
     # Start Redis Pub/Sub background listener task
     import asyncio
 

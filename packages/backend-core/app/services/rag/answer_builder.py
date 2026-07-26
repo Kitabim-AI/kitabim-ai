@@ -49,7 +49,7 @@ def build_instructions(
             f"If the answer is NOT in the context, respond with exactly: {t('errors.chat_no_answer')}",
             (
                 "Format your response in markdown:\n"
-                "   - Use double newlines (\\n\\n) to separate paragraphs for better readability\n"
+                "   - Separate paragraphs with double newlines for better readability\n"
                 "   - Use **bold** for emphasis on key terms\n"
                 "   - Use bullet points (- ) for lists when appropriate"
             ),
@@ -92,7 +92,7 @@ def build_instructions(
         ),
         (
             "Format your response in markdown:\n"
-            "   - Use double newlines (\\n\\n) to separate paragraphs for better readability\n"
+            "   - Separate paragraphs with double newlines for better readability\n"
             "   - Use **bold** for emphasis on key terms or important information\n"
             "   - Use bullet points (- ) for lists when presenting multiple items\n"
             "   - Use > for direct quotations from the source text"

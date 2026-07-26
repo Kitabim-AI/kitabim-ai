@@ -107,7 +107,6 @@ _FALLBACK_ROUTES = {
     "named_title",
     "named_author",
     "volume_shift",
-    "in_reader_only",
     "context_books",
     DEFAULT_ROUTE,
 }
@@ -146,10 +145,10 @@ def _select_route(intent: str, signals: dict) -> str:
         return "quran"
     if intent == "dictionary":
         return "dictionary"
-    if intent == "catalog":
-        return "catalog"
     if signals.get("has_title"):
         return "named_title"
+    if intent == "catalog":
+        return "catalog"
     if signals.get("has_author") and not signals.get("has_title"):
         return "named_author"
     if signals.get("is_volume_shift") and (

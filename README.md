@@ -1,6 +1,6 @@
 # Kitabim.AI
 
-**Kitabim.AI** is the definitive intelligent knowledge base for Uyghur literature, history, and culture — semantically indexing every book published in the Uyghur language and making that knowledge explorable through AI-powered conversation.
+**Kitabim.AI** is the definitive intelligent knowledge base for Uyghur literature, history, and culture — semantically indexing books published in the Uyghur language and making that knowledge explorable through AI-powered conversation.
 
 ---
 
@@ -8,7 +8,7 @@
 
 Uyghur is spoken by millions yet remains severely underrepresented in the digital world. Kitabim.AI is building the most comprehensive and authentic Uyghur-language knowledge base ever assembled, targeting the complete corpus of Uyghur-language publications across literature, history, poetry, science, and culture.
 
-**Target:** every book published in Uyghur — the complete written record of a civilization.
+**Target:** books published in Uyghur — the complete written record of a civilization.
 
 This is not a search index or a catalogue. It is a living, queryable knowledge base where the entire body of Uyghur written knowledge can be explored through natural-language conversation.
 
@@ -146,5 +146,4 @@ All architectural and design documents are located under the `docs/` directory.
 | [docs/main/PROJECT_STRUCTURE.md](docs/main/PROJECT_STRUCTURE.md) | Full directory structure, service responsibilities, configuration reference |
 | [docs/main/REQUIREMENTS.md](docs/main/REQUIREMENTS.md) | Business requirements and user role permission matrix |
 | [docs/main/UI_CSS_STANDARD.md](docs/main/UI_CSS_STANDARD.md) | Frontend CSS and Tailwind conventions |
-| [docs/main/SECURITY_AUDIT.md](docs/main/SECURITY_AUDIT.md) | Security controls and audit findings |
 | [docs/main/openapi.json](docs/main/openapi.json) | OpenAPI 3.0 spec for the REST API |
