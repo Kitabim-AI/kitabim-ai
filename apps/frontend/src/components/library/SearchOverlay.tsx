@@ -3,6 +3,7 @@ import React from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { useBooks } from '../../hooks/useBooks';
 import { useI18n } from '../../i18n/I18nContext';
+import { VoiceInputButton } from '../common/VoiceInputButton';
 import { BookCard } from './BookCard';
 
 export const SearchOverlay: React.FC = () => {
@@ -106,7 +107,7 @@ export const SearchOverlay: React.FC = () => {
               <Search size={22} className="md:w-6 md:h-6" strokeWidth={2.5} />
             </div>
 
-            <div className="flex-grow relative group min-w-0">
+            <div className="flex-grow relative group min-w-0 flex items-center gap-2">
               <input
                 ref={inputRef}
                 type="text"
@@ -114,7 +115,24 @@ export const SearchOverlay: React.FC = () => {
                 value={globalSearchQuery}
                 onChange={(e) => setGlobalSearchQuery(e.target.value)}
                 placeholder={t('home.searchPlaceholder')}
-                className="w-full bg-transparent text-lg md:text-2xl font-normal text-[#1a1a1a] dark:text-slate-100 outline-none placeholder:text-slate-300 dark:placeholder:text-slate-600 uyghur-text truncate"
+                className="w-full bg-transparent text-lg md:text-2xl font-normal text-[#1a1a1a] dark:text-slate-100 outline-none placeholder:text-slate-300 dark:placeholder:text-slate-600 uyghur-text truncate pr-1"
+              />
+              {globalSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setGlobalSearchQuery('')}
+                  className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors flex-shrink-0"
+                  title="Clear"
+                >
+                  <X size={20} />
+                </button>
+              )}
+              <VoiceInputButton
+                onTranscribed={(text) => {
+                  setGlobalSearchQuery((prev) => (prev ? `${prev} ${text}` : text));
+                }}
+                size="md"
+                className="flex-shrink-0"
               />
               <div className="absolute -bottom-1 left-0 right-0 h-0.5 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 group-focus-within:bg-[#0369a1] dark:group-focus-within:bg-[#38bdf8] transition-all rounded-full" />
             </div>

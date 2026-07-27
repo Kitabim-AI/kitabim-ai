@@ -46,6 +46,22 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const contextBookIdsRef = useRef<string[]>([]);
   const pendingEvalIdRef = useRef<number | null>(null);
+  const streamUpdateTimerRef = useRef<number | null>(null);
+
+  const scheduleStreamingUpdate = useCallback(() => {
+    if (streamUpdateTimerRef.current !== null) return;
+    streamUpdateTimerRef.current = requestAnimationFrame(() => {
+      setStreamingMessage(streamingMessageRef.current);
+      streamUpdateTimerRef.current = null;
+    });
+  }, []);
+
+  const cancelStreamingUpdate = useCallback(() => {
+    if (streamUpdateTimerRef.current !== null) {
+      cancelAnimationFrame(streamUpdateTimerRef.current);
+      streamUpdateTimerRef.current = null;
+    }
+  }, []);
 
   const fetchConversations = useCallback(async () => {
     if (!isAuthenticated) {
@@ -116,15 +132,22 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     });
   }, []);
 
-  const scrollToBottom = () => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+  const scrollToBottom = useCallback((onlyIfNearBottom = true) => {
+    const el = chatContainerRef.current;
+    if (!el) return;
+    if (onlyIfNearBottom) {
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (distanceFromBottom > 140) return;
     }
-  };
+    el.scrollTop = el.scrollHeight;
+  }, []);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [chatMessages, isChatting, view, streamingMessage, agentSteps]);
+    // Force scroll during thinking phase (when isChatting is true but streamingMessage hasn't started yet),
+    // or when chatMessages/view changes, so user question and thinking steps are always scrolled into view.
+    const isThinkingPhase = isChatting && !streamingMessage;
+    scrollToBottom(!isThinkingPhase);
+  }, [chatMessages, isChatting, view, streamingMessage, agentSteps, scrollToBottom]);
 
   // Fetch usage status and conversation history when entering a chat view
   useEffect(() => {
@@ -298,9 +321,10 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
         {
           onChunk: (chunk: string) => {
             streamingMessageRef.current += chunk;
-            setStreamingMessage(prev => prev + chunk);
+            scheduleStreamingUpdate();
           },
           onComplete: () => {
+            cancelStreamingUpdate();
             const finalMessage = streamingMessageRef.current;
             const evalId = pendingEvalIdRef.current ?? undefined;
             pendingEvalIdRef.current = null;
@@ -319,16 +343,18 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
             fetchConversations();
           },
           onError: (error: string) => {
+            cancelStreamingUpdate();
             if (controller.signal.aborted) return;
             setChatMessages(prev => [...prev, { role: 'model', text: error, characterId: selectedCharacterId }]);
+            streamingMessageRef.current = '';
             setStreamingMessage('');
             setIsChatting(false);
             setStreamingPartialResult(false);
             hasToolFailureRef.current = false;
           },
           onCorrection: (correctedText: string) => {
-            setStreamingMessage(correctedText);
             streamingMessageRef.current = correctedText;
+            setStreamingMessage(correctedText);
           },
           onUsageUpdate: (usage: any) => {
             setUsageStatus(usage);
@@ -340,9 +366,11 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
         },
       );
     } catch (err: any) {
+      cancelStreamingUpdate();
       if (err.name === 'AbortError') return;
 
       setChatMessages(prev => [...prev, { role: 'model', text: "كەچۈرۈڭ، جاۋاب بېرەلمىدىم.", characterId: selectedCharacterId }]);
+      streamingMessageRef.current = '';
       setStreamingMessage('');
       setIsChatting(false);
       setStreamingPartialResult(false);
