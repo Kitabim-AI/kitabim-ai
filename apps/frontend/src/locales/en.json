@@ -274,6 +274,7 @@
     "rulesLabel": "Auto-Correction",
     "dictionaryLabel": "Dictionary",
     "systemConfigLabel": "System Config",
+    "searchPlaceholder": "Search by book title, author, or category...",
     "stats": {
       "title": "System Statistics",
       "totalBooks": "Total Books",

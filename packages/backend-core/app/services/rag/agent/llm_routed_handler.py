@@ -322,8 +322,13 @@ class LLMRoutedRAGHandler(QueryHandler):
         inline_observations: list[dict] = []
         pending_calls: dict[str, str] = {}  # call_id → tool_name
 
+        from google.adk.agents.run_config import RunConfig, StreamingMode
+
         async for event in runner.run_async(
-            user_id=session.user_id, session_id=session.id, new_message=content
+            user_id=session.user_id,
+            session_id=session.id,
+            new_message=content,
+            run_config=RunConfig(streaming_mode=StreamingMode.SSE),
         ):
             # 1. Yield tool calls (only on final non-partial events to prevent duplicates)
             if not event.partial and event.content and event.content.parts:

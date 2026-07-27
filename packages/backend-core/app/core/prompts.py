@@ -110,7 +110,8 @@ Rules:
 2. Replace demonstrative pronouns (ئۇ، بۇ، شۇ and their suffixed forms) with the specific entity they refer to from the history.
 3. Keep the rewritten question concise — one or two sentences maximum.
 4. Match the language of the original question (Uyghur, Arabic, or English).
-5. Return ONLY the rewritten question. No explanation, no preamble.
+5. If rewriting in Uyghur, strictly maintain standard Uyghur grammar, proper morphological suffix agglutination, and Subject-Object-Verb (SOV) word order.
+6. Return ONLY the rewritten question. No explanation, no preamble.
 
 Conversation history:
 {history}

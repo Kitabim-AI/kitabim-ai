@@ -7,6 +7,7 @@ import time
 from typing import Any, AsyncIterator, Optional, Union
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.runners import InMemoryRunner, Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
@@ -104,6 +105,11 @@ class ChatOrchestrator:
             book = await books_repo.get(request_dto.book_id)
 
         configs_repo = SystemConfigsRepository(db_session)
+        chat_model = await configs_repo.get_value("gemini_chat_model") or model_name
+        agent_model = (
+            await configs_repo.get_value("gemini_agent_loop_model") or chat_model
+        )
+
         embedding_model = await configs_repo.get_value(
             "gemini_embedding_model"
         ) or getattr(settings, "gemini_embedding_model", "text-embedding-004")
@@ -123,11 +129,11 @@ class ChatOrchestrator:
             persona_prompt=persona_prompt,
             character_categories=character_categories,
             chat_history_str=history_str,
-            rag_chain=llm_resources.get_rag_chain(model_name),
-            rewrite_chain=llm_resources.get_rewrite_chain(model_name),
+            rag_chain=llm_resources.get_rag_chain(chat_model),
+            rewrite_chain=llm_resources.get_rewrite_chain(agent_model),
             embeddings=embeddings,
             start_ts=time.monotonic(),
-            agent_model=model_name,
+            agent_model=agent_model,
         )
         set_current_query_context(ctx)
 
@@ -150,7 +156,7 @@ class ChatOrchestrator:
 
         # 3. Retrieval Agent Execution
         retrieval_agent = build_retrieval_agent(
-            model=model_name,
+            model=agent_model,
             intent_signals=signals,
         )
 
@@ -214,6 +220,7 @@ class ChatOrchestrator:
             user_id=request_dto.user_id,
             session_id=conv_id,
             new_message=retrieval_content,
+            run_config=RunConfig(streaming_mode=StreamingMode.SSE),
         ):
             if not event.partial and event.content and event.content.parts:
                 for part in event.content.parts:
@@ -263,7 +270,7 @@ class ChatOrchestrator:
         # 5. Answer Agent Execution
         yield {"type": "answer_start"}
         answer_agent = build_answer_agent(
-            model=model_name,
+            model=chat_model,
             graded_context=graded_context,
             persona_prompt=ctx.persona_prompt,
             is_global=request_dto.is_global,
@@ -288,12 +295,20 @@ class ChatOrchestrator:
             user_id=request_dto.user_id,
             session_id=conv_id,
             new_message=content,
+            run_config=RunConfig(streaming_mode=StreamingMode.SSE),
         ):
-            if event.content and event.content.parts:
+            if event.partial and event.content and event.content.parts:
                 for part in event.content.parts:
                     if part.text:
                         accumulated_text += part.text
                         yield {"type": "chunk", "text": part.text}
+            elif not event.partial and event.content and event.content.parts:
+                # Fallback if no partial events were emitted
+                if not accumulated_text:
+                    for part in event.content.parts:
+                        if part.text:
+                            accumulated_text += part.text
+                            yield {"type": "chunk", "text": part.text}
 
         yield {"type": "answer_end"}
 

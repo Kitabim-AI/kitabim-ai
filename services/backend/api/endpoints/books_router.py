@@ -379,6 +379,10 @@ async def get_books(
                         BookDB.author.ilike(f"%{w}%"),
                         BookDB.title.ilike(f"%{w_alt}%"),
                         BookDB.author.ilike(f"%{w_alt}%"),
+                        func.array_to_string(BookDB.categories, ",").ilike(f"%{w}%"),
+                        func.array_to_string(BookDB.categories, ",").ilike(
+                            f"%{w_alt}%"
+                        ),
                     )
                     word_conditions.append(search_filter)
                 if word_conditions:

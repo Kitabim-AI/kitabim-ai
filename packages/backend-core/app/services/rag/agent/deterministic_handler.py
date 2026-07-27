@@ -193,7 +193,7 @@ Return ONLY valid JSON matching this schema:
   "is_volume_shift": boolean,       // True if the user wants to go to another volume (e.g. "next volume", "previous volume", "ئالدىنقى توم", "2-توم")
   "target_volume": integer | null,  // The volume number to shift to if specified (e.g. 2, 3), else null
   "needs_rewrite": boolean,         // True ONLY if the query has unresolved pronouns/coreferences or implicit references (ellipsis) referring to prior chat history. MUST be false if the query is fully self-contained, or if there is no chat history.
-  "rewritten_question": string | null, // If needs_rewrite is true, rewrite the question to resolve all pronouns/references using chat history to make it self-contained in Uyghur/English. If needs_rewrite is false, return null.
+  "rewritten_question": string | null, // If needs_rewrite is true, rewrite the question to resolve all pronouns/references using chat history to make it self-contained in standard Uyghur/English (strictly maintaining Uyghur SOV word order and suffix grammar). If needs_rewrite is false, return null.
   "catalog_subtype": "author_of" | "books_by" | "general" | null, // Use "author_of" if asking who wrote a book, "books_by" if asking what books an author wrote, "general" for other catalog/library-wide queries (like "what books do you have"), or null if this is NOT a catalog query.
   "dictionary_subtype": "uyghur_definition" | "history_term" | "english_uyghur" | "spelling" | "names" | "proverbs" | "synonyms" | "general" | null, // Use only when intent is "dictionary".
   "dictionary_term": string | null, // The exact word/term/name/English phrase to look up when intent is "dictionary".
@@ -203,7 +203,7 @@ Return ONLY valid JSON matching this schema:
   "intent": "catalog" | "dictionary" | "identity" | "summary" | "relationship" | "passage" | "quran",
   "is_composite": boolean,          // True if the query contains multiple distinct questions or requests that should be handled separately (e.g. "Who wrote X and what is it about?").
   "sub_questions": Array<{{         // If is_composite is true, return each sub-question with its own signals. If is_composite is false, return null.
-    "question": string,             // Self-contained sub-question text (pronouns resolved using history)
+    "question": string,             // Self-contained sub-question text (pronouns resolved using history, in standard Uyghur SOV grammar)
     "intent": "catalog" | "dictionary" | "identity" | "summary" | "relationship" | "passage" | "quran",
     "is_current_page_query": boolean,
     "is_volume_shift": boolean,

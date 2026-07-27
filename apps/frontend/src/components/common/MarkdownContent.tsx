@@ -183,7 +183,7 @@ const isTableSeparator = (line: string) => /^\s*\|[\s|:=-]+\|?\s*$/.test(line);
 const isBlockStart = (line: string) =>
   isHr(line) || isHeading(line) || isQuote(line) || isOrderedList(line) || isUnorderedList(line) || isTocLine(line) || isTableRow(line);
 
-export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, className, style, onReferenceClick }) => {
+export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ content, className, style, onReferenceClick }) => {
   const normalized = (content || '').replace(/\\n/g, '\n').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const lines = normalized
     .split('\n')
@@ -388,4 +388,4 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
       {blocks}
     </div>
   );
-};
+});

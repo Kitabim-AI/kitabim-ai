@@ -84,6 +84,9 @@ class BooksRepository(BaseRepository[Book]):
                     search_filter = or_(
                         Book.title.ilike(f"%{title_part}%"),
                         Book.author.ilike(f"%{title_part}%"),
+                        func.array_to_string(Book.categories, ",").ilike(
+                            f"%{title_part}%"
+                        ),
                     )
                     conditions.append(search_filter)
                     conditions.append(Book.volume == volume_num)
@@ -93,14 +96,20 @@ class BooksRepository(BaseRepository[Book]):
                         or_(
                             Book.title.ilike(f"%{search_query}%"),
                             Book.author.ilike(f"%{search_query}%"),
+                            func.array_to_string(Book.categories, ",").ilike(
+                                f"%{search_query}%"
+                            ),
                         )
                     )
             else:
-                # Full-text search across title and author
+                # Full-text search across title, author, and category
                 conditions.append(
                     or_(
                         Book.title.ilike(f"%{search_query}%"),
                         Book.author.ilike(f"%{search_query}%"),
+                        func.array_to_string(Book.categories, ",").ilike(
+                            f"%{search_query}%"
+                        ),
                     )
                 )
 
