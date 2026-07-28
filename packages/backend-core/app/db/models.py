@@ -11,6 +11,7 @@ from sqlalchemy import (
     ARRAY,
     Boolean,
     CheckConstraint,
+    Computed,
     DateTime,
     Float,
     ForeignKey,
@@ -23,6 +24,7 @@ from sqlalchemy import (
     text,
     Date,
 )
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 
@@ -361,6 +363,14 @@ class Chunk(Base):
     text: Mapped[str] = mapped_column(Text, nullable=False)
     embedding: Mapped[Optional[List[float]]] = mapped_column(
         Vector(3072),  # pgvector type
+        nullable=True,
+    )
+    # Server-computed (GENERATED ALWAYS AS ... STORED, migration 074) — read-only
+    # from the ORM's perspective. 'simple' config, not 'english': content is
+    # substantially Uyghur-language and 'simple' avoids English-specific stemming.
+    text_search: Mapped[Optional[str]] = mapped_column(
+        TSVECTOR,
+        Computed("to_tsvector('simple', text)", persisted=True),
         nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(

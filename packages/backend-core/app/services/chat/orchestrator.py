@@ -30,6 +30,7 @@ from app.services.rag.agent.llm_routed_handler import (
     _extract_used_book_ids,
     _grade_context,
 )
+from app.services.rag.agent.reranker import rerank_context
 from app.services.rag.context import QueryContext, set_current_query_context
 from app.utils.citation_fixer import fix_malformed_citations
 from app.utils.observability import log_json
@@ -264,7 +265,29 @@ class ChatOrchestrator:
 
         # 4. Context Grading
         used_book_ids = _extract_used_book_ids(observations)
-        graded_context, before_count, after_count = _grade_context(observations)
+        reranker_enabled = (
+            await configs_repo.get_value("rag_reranker_enabled", "true")
+        ).lower() == "true"
+
+        if reranker_enabled:
+            try:
+                reranker_model = await configs_repo.get_value(
+                    "gemini_reranker_model", "gemini-3.1-flash-lite"
+                )
+                graded_context, before_count, after_count = await rerank_context(
+                    request_dto.question, observations, reranker_model
+                )
+            except Exception as exc:
+                log_json(
+                    logger,
+                    logging.WARNING,
+                    "reranker failed, falling back to _grade_context",
+                    error=str(exc),
+                )
+                graded_context, before_count, after_count = _grade_context(observations)
+        else:
+            graded_context, before_count, after_count = _grade_context(observations)
+
         if before_count > 0:
             yield {"type": "grading", "before": before_count, "after": after_count}
 

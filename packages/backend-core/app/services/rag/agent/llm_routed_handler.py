@@ -38,7 +38,7 @@ Rules:
 - Return a JSON array of question strings (no other text).
 - At most {max_q} questions.
 - Each question must be self-contained — include any implicit subject from context if needed.
-- Keep the original language (Uyghur, English, or mixed).
+- Maintain standard Uyghur (Arabic script) for each extracted question.
 - If there is only one question return a single-element array.
 - IMPORTANT: If all questions concern the same entity, book, character, or event (e.g. "what is X? what is its purpose?"), they are a compound question — return a single-element array containing the full original message unchanged.
 - Only split when the questions are clearly about different topics or entities.

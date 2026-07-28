@@ -101,7 +101,7 @@ RAG_PROMPT_TEMPLATE = """
 Question: {question}
 """
 
-RAG_JUDGE_PROMPT = """You are an impartial judge evaluating the quality of an answer produced by a RAG (retrieval-augmented generation) chat system for an Uyghur digital library. The Question, Answer, and Retrieved Context may be in Uyghur, Arabic, or English.
+RAG_JUDGE_PROMPT = """You are an impartial judge evaluating the quality of an answer produced by a RAG (retrieval-augmented generation) chat system for an Uyghur digital library. The Question, Answer, and Retrieved Context will be in Uyghur.
 
 Score the answer on three independent dimensions, each from 0.0 (worst) to 1.0 (best):
 
@@ -119,6 +119,17 @@ Answer: {answer}
 Return ONLY valid JSON matching this exact schema. Do NOT explain your reasoning, do NOT add markdown formatting or commentary — output the JSON object and nothing else:
 {{"faithfulness": <float 0.0-1.0>, "answer_relevance": <float 0.0-1.0>, "context_precision": <float 0.0-1.0>}}"""
 
+RAG_RERANK_PROMPT = """You are a search relevance ranker for a RAG (retrieval-augmented generation) chat system over an Uyghur digital library. The Question and each candidate passage will be in Uyghur.
+
+Given the Question and a numbered list of candidate passages, select the passages that are actually relevant to answering the Question, ordered from most to least relevant. Omit passages that are not relevant — you do not need to include every number, and if none are relevant return an empty list.
+
+Question: {question}
+
+Candidates:
+{candidates}
+
+Return ONLY a JSON array of the relevant candidate numbers in relevance order, most relevant first, e.g. [3, 1, 5]. Do NOT explain your reasoning, do NOT add markdown formatting or commentary — output the JSON array and nothing else."""
+
 QUERY_REWRITE_PROMPT = """You are a query reformulation assistant for an Uyghur digital library.
 
 Given the conversation history and a follow-up question, rewrite the follow-up into a single standalone question that contains all the context needed to search the library — without relying on pronouns or implicit references from previous turns.
@@ -127,7 +138,7 @@ Rules:
 1. If the question is already self-contained and does not depend on prior turns, return it EXACTLY as written.
 2. Replace demonstrative pronouns (ئۇ، بۇ، شۇ and their suffixed forms) with the specific entity they refer to from the history.
 3. Keep the rewritten question concise — one or two sentences maximum.
-4. Match the language of the original question (Uyghur, Arabic, or English).
+4. Maintain standard Uyghur (Arabic script) for the rewritten question.
 5. If rewriting in Uyghur, strictly maintain standard Uyghur grammar, proper morphological suffix agglutination, and Subject-Object-Verb (SOV) word order.
 6. Return ONLY the rewritten question. No explanation, no preamble.
 

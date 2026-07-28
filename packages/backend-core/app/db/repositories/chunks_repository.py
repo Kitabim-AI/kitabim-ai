@@ -219,6 +219,119 @@ class ChunksRepository(BaseRepository[Chunk]):
             for row in rows
         ]
 
+    async def keyword_search(
+        self,
+        query_text: str,
+        book_ids: Optional[List[str]] = None,
+        categories: Optional[List[str]] = None,
+        limit: int = 12,
+    ) -> List[dict]:
+        """
+        Postgres full-text keyword search over `chunks.text_search`
+        (a generated tsvector column, migration 074).
+
+        Uses the 'simple' text search config — matching the column's
+        generation expression — deliberately not 'english', since book
+        content is substantially Uyghur-language and 'english' stemming
+        rules don't meaningfully apply.
+
+        Mirrors similarity_search's two-branch (scoped/unscoped) shape and
+        dict keys (plus a `rank` score in place of `similarity`) so results
+        from both legs can be fused by (book_id, page_number, chunk_index).
+        """
+        cat_filter = (
+            "AND b.categories && CAST(:categories AS text[])" if categories else ""
+        )
+
+        if book_ids is not None:
+            if not book_ids:
+                return []
+            query = text(f"""
+                WITH keyword_matches AS (
+                    SELECT
+                        c.book_id,
+                        c.page_number,
+                        c.chunk_index,
+                        c.text,
+                        ts_rank(c.text_search, plainto_tsquery('simple', :query_text)) AS rank
+                    FROM chunks c
+                    WHERE c.book_id = ANY(:book_ids)
+                      AND c.text_search @@ plainto_tsquery('simple', :query_text)
+                )
+                SELECT
+                    km.book_id,
+                    km.page_number,
+                    km.chunk_index,
+                    km.text,
+                    b.title,
+                    b.volume,
+                    b.author,
+                    km.rank
+                FROM keyword_matches km
+                JOIN books b ON km.book_id = b.id
+                LEFT JOIN pages p ON km.book_id = p.book_id AND km.page_number = p.page_number
+                WHERE (p.is_toc IS NOT TRUE OR p.id IS NULL)
+                  {cat_filter}
+                ORDER BY km.rank DESC
+                LIMIT :limit
+            """)
+            params = {
+                "query_text": query_text,
+                "book_ids": [str(bid) for bid in book_ids],
+                "limit": limit,
+            }
+            if categories:
+                params["categories"] = categories
+        else:
+            query = text(f"""
+                WITH keyword_matches AS (
+                    SELECT
+                        c.book_id,
+                        c.page_number,
+                        c.chunk_index,
+                        c.text,
+                        ts_rank(c.text_search, plainto_tsquery('simple', :query_text)) AS rank
+                    FROM chunks c
+                    WHERE c.text_search @@ plainto_tsquery('simple', :query_text)
+                )
+                SELECT
+                    km.book_id,
+                    km.page_number,
+                    km.chunk_index,
+                    km.text,
+                    b.title,
+                    b.volume,
+                    b.author,
+                    km.rank
+                FROM keyword_matches km
+                JOIN books b ON km.book_id = b.id
+                LEFT JOIN pages p ON km.book_id = p.book_id AND km.page_number = p.page_number
+                WHERE (p.is_toc IS NOT TRUE OR p.id IS NULL)
+                  {cat_filter}
+                ORDER BY km.rank DESC
+                LIMIT :limit
+            """)
+            params = {"query_text": query_text, "limit": limit}
+            if categories:
+                params["categories"] = categories
+
+        result = await self.session.execute(query, params)
+        rows = result.fetchall()
+
+        return [
+            {
+                "book_id": str(row.book_id),
+                "page_number": row.page_number,
+                "chunk_index": row.chunk_index,
+                "text": row.text,
+                "title": row.title,
+                "volume": row.volume,
+                "author": row.author,
+                "rank": float(row.rank),
+            }
+            for row in rows
+        ]
+
 
 def get_chunks_repository(session: AsyncSession) -> ChunksRepository:
     """Factory function for dependency injection"""

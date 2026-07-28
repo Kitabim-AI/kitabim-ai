@@ -79,6 +79,96 @@ async def embed_query(query: str, ctx: "QueryContext") -> List[float]:
 # ---------------------------------------------------------------------------
 
 
+def _fuse_rrf(
+    vector_results: List[dict], keyword_results: List[dict], limit: int
+) -> List[dict]:
+    """Reciprocal Rank Fusion: score(chunk) = sum(1 / (RRF_K + rank)) across
+    the rankers where the chunk appears, identified by
+    (book_id, page_number, chunk_index). A chunk in only one ranker's results
+    still gets a score from that one term. The RRF score is used only to
+    order/truncate the fused list — it is NOT written back into a returned
+    dict's `similarity` field. RRF scores (~0.01-0.03 for RRF_K=60) and
+    cosine similarity (~0-1) aren't on a comparable scale, and several
+    downstream consumers (e.g. CONTEXT_SWITCH_SCORE_THRESHOLD in
+    agent/tools.py and deterministic_handler.py) compare `similarity`/`score`
+    against an absolute threshold calibrated for genuine cosine similarity —
+    overwriting it with an RRF value made those checks permanently read
+    "weak match" whenever hybrid search was on. Each returned dict keeps
+    whichever original score field its source leg gave it: `similarity` for
+    a vector hit, nothing (no genuine similarity) for a keyword-only hit."""
+    from app.services.rag.agent.config import RRF_K
+
+    def key_of(c: dict) -> tuple:
+        return (c.get("book_id"), c.get("page_number"), c.get("chunk_index"))
+
+    scores: dict = {}
+    docs: dict = {}
+    for rank, c in enumerate(vector_results, start=1):
+        k = key_of(c)
+        scores[k] = scores.get(k, 0.0) + 1.0 / (RRF_K + rank)
+        docs.setdefault(k, c)
+    for rank, c in enumerate(keyword_results, start=1):
+        k = key_of(c)
+        scores[k] = scores.get(k, 0.0) + 1.0 / (RRF_K + rank)
+        docs.setdefault(k, c)
+
+    ordered_keys = sorted(scores.keys(), key=lambda k: scores[k], reverse=True)[:limit]
+    return [dict(docs[k]) for k in ordered_keys]
+
+
+async def _search_chunks(
+    chunks_repo,
+    query_embedding: List[float],
+    query_text: str,
+    book_ids: Optional[List[str]],
+    categories: Optional[List[str]],
+    limit: int,
+    threshold: float,
+    hybrid_enabled: bool,
+) -> List[dict]:
+    """Vector search, plus — when hybrid_enabled — a parallel Postgres
+    keyword search over the same scope, fused via Reciprocal Rank Fusion.
+    Falls back to vector-only results if the keyword leg errors (e.g. a
+    malformed tsquery from unusual input) — equivalent to hybrid search being
+    off for that one call, not a whole-turn failure."""
+    vector_results = await chunks_repo.similarity_search(
+        query_embedding=query_embedding,
+        book_ids=book_ids,
+        categories=categories,
+        limit=limit,
+        threshold=threshold,
+    )
+    if not hybrid_enabled:
+        return vector_results
+
+    try:
+        keyword_results = await chunks_repo.keyword_search(
+            query_text=query_text,
+            book_ids=book_ids,
+            categories=categories,
+            limit=limit,
+        )
+    except Exception as exc:
+        log_json(
+            logger,
+            logging.WARNING,
+            "Keyword search leg failed, falling back to vector-only for this call",
+            error=str(exc),
+        )
+        return vector_results
+
+    fused = _fuse_rrf(vector_results, keyword_results, limit=limit)
+    log_json(
+        logger,
+        logging.INFO,
+        "Hybrid search fused vector + keyword results",
+        vector_hits=len(vector_results),
+        keyword_hits=len(keyword_results),
+        fused_count=len(fused),
+    )
+    return fused
+
+
 async def vector_search(
     ctx: "QueryContext",
     book_ids: Optional[List[str]],
@@ -98,8 +188,16 @@ async def vector_search(
         return []
 
     from app.core.providers import get_vector_store
+    from app.db.repositories.system_configs_repository import SystemConfigsRepository
 
     chunks_repo = get_vector_store(ctx.session)
+
+    hybrid_enabled = (
+        await SystemConfigsRepository(ctx.session).get_value(
+            "rag_hybrid_search_enabled", "true"
+        )
+    ).lower() == "true"
+    keyword_query_text = ctx.enriched_question or ctx.question
 
     emb_hash = hashlib.md5(str(effective_vector).encode()).hexdigest()
     sorted_book_ids = sorted(book_ids) if book_ids else []
@@ -137,12 +235,15 @@ async def vector_search(
                 per_book_limit = max(settings.rag_top_k // len(sorted_book_ids), 3)
                 per_book_results = await asyncio.gather(
                     *[
-                        chunks_repo.similarity_search(
+                        _search_chunks(
+                            chunks_repo,
                             query_embedding=effective_vector,
+                            query_text=keyword_query_text,
                             book_ids=[bid],
                             categories=ctx.character_categories or None,
                             limit=per_book_limit,
                             threshold=settings.rag_score_threshold,
+                            hybrid_enabled=hybrid_enabled,
                         )
                         for bid in sorted_book_ids
                     ]
@@ -154,28 +255,36 @@ async def vector_search(
                     key=lambda c: c.get("similarity", 0.0), reverse=True
                 )
             else:
-                similar_chunks = await chunks_repo.similarity_search(
+                similar_chunks = await _search_chunks(
+                    chunks_repo,
                     query_embedding=effective_vector,
+                    query_text=keyword_query_text,
                     book_ids=book_ids,
                     categories=ctx.character_categories or None,
                     limit=settings.rag_top_k,
                     threshold=settings.rag_score_threshold,
+                    hybrid_enabled=hybrid_enabled,
                 )
 
-            if not similar_chunks and book_ids:
-                # If vector search with strict threshold returns 0 chunks for a scoped book query
-                # (e.g. meta/summary questions where generic query vectors score low against body text),
-                # retry without threshold to guarantee top matching chunks for that book are retrieved.
+            if not similar_chunks:
+                # If vector search with strict threshold returns 0 chunks (e.g. meta/summary
+                # questions, or a cold-start global query whose phrasing doesn't score above
+                # threshold against body text), retry without threshold to guarantee the top
+                # matching chunks are retrieved instead of an empty turn. Applies to both
+                # book-scoped and global (book_ids=None) searches.
                 if len(sorted_book_ids) > 1:
                     per_book_limit = max(settings.rag_top_k // len(sorted_book_ids), 3)
                     per_book_results = await asyncio.gather(
                         *[
-                            chunks_repo.similarity_search(
+                            _search_chunks(
+                                chunks_repo,
                                 query_embedding=effective_vector,
+                                query_text=keyword_query_text,
                                 book_ids=[bid],
                                 categories=ctx.character_categories or None,
                                 limit=per_book_limit,
                                 threshold=0.0,
+                                hybrid_enabled=hybrid_enabled,
                             )
                             for bid in sorted_book_ids
                         ]
@@ -187,12 +296,15 @@ async def vector_search(
                         key=lambda c: c.get("similarity", 0.0), reverse=True
                     )
                 else:
-                    similar_chunks = await chunks_repo.similarity_search(
+                    similar_chunks = await _search_chunks(
+                        chunks_repo,
                         query_embedding=effective_vector,
+                        query_text=keyword_query_text,
                         book_ids=book_ids,
                         categories=ctx.character_categories or None,
                         limit=settings.rag_top_k,
                         threshold=0.0,
+                        hybrid_enabled=hybrid_enabled,
                     )
             top_results = [
                 {

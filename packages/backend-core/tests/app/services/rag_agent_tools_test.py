@@ -482,10 +482,17 @@ async def test_vector_search_falls_back_to_threshold_zero_when_scoped_search_ret
         ],
     ]
 
+    mock_config_repo = AsyncMock()
+    mock_config_repo.get_value = AsyncMock(return_value="false")
+
     with (
         patch("app.core.providers.get_vector_store", return_value=chunks_repo_mock),
         patch("app.services.cache_service.cache_service.get", return_value=None),
         patch("app.services.cache_service.cache_service.set", return_value=None),
+        patch(
+            "app.db.repositories.system_configs_repository.SystemConfigsRepository",
+            return_value=mock_config_repo,
+        ),
     ):
         results = await vector_search(ctx, book_ids=["book-scoped-1"])
 

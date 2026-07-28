@@ -164,7 +164,7 @@ class DeterministicRAGHandler(QueryHandler):
                 "get_books_by_author", {"question": question}, ctx
             )
 
-        prompt = f"""Analyze this Uyghur/English query in the context of a RAG book reading assistant.
+        prompt = f"""Analyze this query in the context of an Uyghur book reading assistant.
 
 Context:
 - In Reader (Active Book Context): {in_reader} (Page: {current_page})
@@ -193,7 +193,7 @@ Return ONLY valid JSON matching this schema:
   "is_volume_shift": boolean,       // True if the user wants to go to another volume (e.g. "next volume", "previous volume", "ئالدىنقى توم", "2-توم")
   "target_volume": integer | null,  // The volume number to shift to if specified (e.g. 2, 3), else null
   "needs_rewrite": boolean,         // True ONLY if the query has unresolved pronouns/coreferences or implicit references (ellipsis) referring to prior chat history. MUST be false if the query is fully self-contained, or if there is no chat history.
-  "rewritten_question": string | null, // If needs_rewrite is true, rewrite the question to resolve all pronouns/references using chat history to make it self-contained in standard Uyghur/English (strictly maintaining Uyghur SOV word order and suffix grammar). If needs_rewrite is false, return null.
+  "rewritten_question": string | null, // If needs_rewrite is true, rewrite the question to resolve all pronouns/references using chat history to make it self-contained in standard Uyghur (strictly maintaining Uyghur SOV word order and suffix grammar). If needs_rewrite is false, return null.
   "catalog_subtype": "author_of" | "books_by" | "general" | null, // Use "author_of" if asking who wrote a book, "books_by" if asking what books an author wrote, "general" for other catalog/library-wide queries (like "what books do you have"), or null if this is NOT a catalog query.
   "dictionary_subtype": "uyghur_definition" | "history_term" | "english_uyghur" | "spelling" | "names" | "proverbs" | "synonyms" | "general" | null, // Use only when intent is "dictionary".
   "dictionary_term": string | null, // The exact word/term/name/English phrase to look up when intent is "dictionary".
@@ -565,7 +565,7 @@ Dictionary subtype rules:
 
         signals_summary = f"has_title={has_title}, has_context_books={has_context_books}, is_global={is_global}"
 
-        prompt = f"""Classify this Uyghur/English question into ONE intent.
+        prompt = f"""Classify this question into ONE intent.
 
 Intents:
 - catalog     : asking about book metadata, authors of books, book listings, or what books exist in the library (e.g., who wrote X, list X's books, do you have book Y)
