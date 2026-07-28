@@ -33,17 +33,16 @@ Three reference-free metrics, each a single LLM-judge call over data already cap
 
 ### Judge module
 
-New file `packages/backend-core/app/services/rag/judge.py` with three async functions:
+New file `packages/backend-core/app/services/rag/judge.py` with a single async function:
 
 ```python
-async def score_faithfulness(question: str, answer: str, context: str) -> float
-async def score_answer_relevance(question: str, answer: str) -> float
-async def score_context_precision(question: str, context: str) -> float
+async def score_answer(question: str, answer: str, context: str) -> JudgeScores
+# JudgeScores: faithfulness, answer_relevance, context_precision (each 0.0-1.0)
 ```
 
-Each issues one Gemini call with a dedicated judge prompt (custom-written, not the `ragas` library — avoids pulling in its LangChain-flavored integration assumptions, and fits the existing prompt-authoring conventions in this codebase). The model is resolved via `SystemConfigsRepository.get_value("gemini_judge_model", "<default>")`, consistent with how `gemini_chat_model`/`gemini_embedding_model` are resolved elsewhere. Each call requests structured JSON output with a `score` field clamped to `0.0`–`1.0`. Exact prompt wording is an implementation detail to be authored via `/prompt-engineer` conventions when this spec is implemented — not finalized here.
+This issues **one** Gemini call per turn (not three) with a single combined judge prompt that reasons about all three metrics together and returns structured JSON: `{"faithfulness": .., "answer_relevance": .., "context_precision": ..}`. Chosen over three separate calls to keep eval overhead to 1 extra LLM call/turn instead of 3, given every turn is scored with no sampling — the trade-off (a somewhat more complex combined prompt vs. three focused single-metric prompts) was accepted deliberately for cost. Custom-written prompt, not the `ragas` library (avoids its LangChain-flavored integration assumptions and fits existing prompt-authoring conventions here). The model is resolved via `SystemConfigsRepository.get_value("gemini_judge_model", "<default>")`, consistent with how `gemini_chat_model`/`gemini_embedding_model` are resolved elsewhere. Each of the three scores in the response is clamped to `0.0`–`1.0` after parsing. Exact prompt wording is an implementation detail to be authored via `/prompt-engineer` conventions when this spec is implemented — not finalized here.
 
-Edge case: if `retrieved_context` is empty (the agent surfaced zero chunks), `context_precision_score` is `0.0` by definition (no chunks to be precise about — this is a real, meaningful signal, not an error to skip). `faithfulness_score` is still computed normally against empty context, which should correctly score low for any answer that isn't a "no answer found" response.
+Edge case: if `retrieved_context` is empty (the agent surfaced zero chunks), `score_answer` is still called with `context=""` rather than skipped — the prompt instructs the judge that an empty context means `context_precision` is trivially `0.0`, and `faithfulness` should score low for any answer that isn't a "no answer found" response. Handling this inside the single combined prompt (rather than special-casing it in code) keeps the one-call design intact.
 
 ### Worker job
 
@@ -53,9 +52,9 @@ New file `services/worker/jobs/rag_eval_job.py`:
 async def rag_eval_job(ctx, eval_id: int) -> None
 ```
 
-Steps: `log_json` start → open `async_session_factory()` → fetch the row via `RAGEvaluationsRepository(session).get(eval_id)` → run the three judge calls concurrently (`asyncio.gather`) → `update_one(eval_id, faithfulness_score=.., answer_relevance_score=.., context_precision_score=.., eval_status="completed")` → commit.
+Steps: `log_json` start → open `async_session_factory()` → fetch the row via `RAGEvaluationsRepository(session).get(eval_id)` → call `score_answer(question, answer, context)` (single LLM call) → `update_one(eval_id, faithfulness_score=.., answer_relevance_score=.., context_precision_score=.., eval_status="completed")` → commit.
 
-On any exception from the judge calls (timeout, malformed JSON, rate limit): catch it, `log_json` at error level, `update_one(eval_id, eval_status="failed")`, commit, and **do not re-raise**. This is a deliberate single-attempt policy — arq's default retry behavior isn't used here, since a quality-scoring job that keeps retrying against a consistently-failing judge call just adds noise. A `"failed"` row is a visible, queryable signal on its own.
+On any exception from the judge call (timeout, malformed JSON, rate limit): catch it, `log_json` at error level, `update_one(eval_id, eval_status="failed")`, commit, and **do not re-raise**. This is a deliberate single-attempt policy — arq's default retry behavior isn't used here, since a quality-scoring job that keeps retrying against a consistently-failing judge call just adds noise. A `"failed"` row is a visible, queryable signal on its own.
 
 Register `rag_eval_job` in `WorkerSettings.functions` (`services/worker/worker.py`).
 
@@ -91,8 +90,8 @@ Every turn is scored (no sampling) — this is the simplest starting point; revi
 
 ### Testing
 
-- `judge.py` unit tests: mock the LLM call, verify score parsing/clamping to `[0.0, 1.0]`, verify behavior on malformed judge output.
-- `rag_eval_job` test: mock the three judge functions; assert `update_one` is called with the expected fields on success, and `eval_status="failed"` (no re-raise) when a judge call raises.
+- `judge.py` unit tests: mock the LLM call, verify all three scores parse/clamp to `[0.0, 1.0]`, verify behavior on malformed judge output.
+- `rag_eval_job` test: mock `score_answer`; assert `update_one` is called with the expected fields on success, and `eval_status="failed"` (no re-raise) when the judge call raises.
 - `stats_router_test.py`: extend with seeded `rag_evaluations` rows asserting `avg_faithfulness`/`avg_answer_relevance`/`avg_context_precision` reflect the seeded scores.
 - No new frontend test suite for `StatsPanel.tsx` — manual verification that the third card renders correctly once real data flows through is sufficient for this small, consistent addition.
 
