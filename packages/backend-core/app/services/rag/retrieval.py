@@ -192,11 +192,15 @@ async def vector_search(
 
     chunks_repo = get_vector_store(ctx.session)
 
+    configs_repo = SystemConfigsRepository(ctx.session)
     hybrid_enabled = (
-        await SystemConfigsRepository(ctx.session).get_value(
-            "rag_hybrid_search_enabled", "true"
-        )
+        await configs_repo.get_value("rag_hybrid_search_enabled", "true")
     ).lower() == "true"
+    rag_top_k_str = await configs_repo.get_value("rag_top_k", str(settings.rag_top_k))
+    try:
+        rag_top_k = int(rag_top_k_str)
+    except ValueError:
+        rag_top_k = settings.rag_top_k
     keyword_query_text = ctx.enriched_question or ctx.question
 
     emb_hash = hashlib.md5(str(effective_vector).encode()).hexdigest()
@@ -232,7 +236,7 @@ async def vector_search(
                 # highest can crowd out the others entirely. Guarantee each
                 # named book a minimum slice instead of letting a single
                 # embedding-similarity ranking decide.
-                per_book_limit = max(settings.rag_top_k // len(sorted_book_ids), 3)
+                per_book_limit = max(rag_top_k // len(sorted_book_ids), 3)
                 per_book_results = await asyncio.gather(
                     *[
                         _search_chunks(
@@ -261,7 +265,7 @@ async def vector_search(
                     query_text=keyword_query_text,
                     book_ids=book_ids,
                     categories=ctx.character_categories or None,
-                    limit=settings.rag_top_k,
+                    limit=rag_top_k,
                     threshold=settings.rag_score_threshold,
                     hybrid_enabled=hybrid_enabled,
                 )
@@ -273,7 +277,7 @@ async def vector_search(
                 # matching chunks are retrieved instead of an empty turn. Applies to both
                 # book-scoped and global (book_ids=None) searches.
                 if len(sorted_book_ids) > 1:
-                    per_book_limit = max(settings.rag_top_k // len(sorted_book_ids), 3)
+                    per_book_limit = max(rag_top_k // len(sorted_book_ids), 3)
                     per_book_results = await asyncio.gather(
                         *[
                             _search_chunks(
@@ -302,7 +306,7 @@ async def vector_search(
                         query_text=keyword_query_text,
                         book_ids=book_ids,
                         categories=ctx.character_categories or None,
-                        limit=settings.rag_top_k,
+                        limit=rag_top_k,
                         threshold=0.0,
                         hybrid_enabled=hybrid_enabled,
                     )
@@ -409,7 +413,7 @@ async def vector_search(
                                 "author": mc["row"][6] or None,
                                 "book_id": mc["row"][0],
                             }
-                            for mc in matched_chunks[: settings.rag_top_k]
+                            for mc in matched_chunks[:rag_top_k]
                         ]
                         used_fallback = bool(top_results)
                 except Exception as exc:
@@ -443,7 +447,7 @@ async def vector_search(
                 """)
                 res = await ctx.session.execute(
                     quran_query,
-                    {"embedding": embedding_str, "limit": settings.rag_top_k},
+                    {"embedding": embedding_str, "limit": rag_top_k},
                 )
                 rows = res.fetchall()
 
@@ -470,7 +474,7 @@ async def vector_search(
                 # Merge, sort globally by score, and limit
                 top_results = top_results + quran_results
                 top_results.sort(key=lambda x: x["score"], reverse=True)
-                top_results = top_results[: settings.rag_top_k]
+                top_results = top_results[:rag_top_k]
 
             # Never cache fuzzy-fallback results under the same key real vector
             # search hits use — once real embeddings are backfilled, a stale

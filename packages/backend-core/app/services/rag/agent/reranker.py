@@ -88,7 +88,10 @@ def _join_context(metadata_parts: list[str], chunk_parts: list[str]) -> str:
 
 
 async def rerank_context(
-    question: str, observations: list[dict], model: str
+    question: str,
+    observations: list[dict],
+    model: str,
+    max_chunks: int | None = None,
 ) -> tuple[str, int, int]:
     """Drop-in replacement for _grade_context(observations) — same
     (graded_context, before_count, after_count) return shape. Raises on any
@@ -166,7 +169,8 @@ async def rerank_context(
         ]:
             ordered_docs.append(d)
 
-    graded = ordered_docs[:AGENT_MAX_CONTEXT_CHUNKS]
+    limit = max_chunks if max_chunks is not None else AGENT_MAX_CONTEXT_CHUNKS
+    graded = ordered_docs[:limit]
     log_json(
         logger,
         logging.INFO,

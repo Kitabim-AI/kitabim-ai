@@ -117,12 +117,16 @@ def _build_human_message(ctx: QueryContext, question: str) -> str:
     return "[Context]\n" + "\n".join(lines) + "\n\n[Question]\n" + question
 
 
-def _grade_context(observations: list[dict]) -> tuple[str, int, int]:
+def _grade_context(
+    observations: list[dict], max_chunks: int | None = None
+) -> tuple[str, int, int]:
     from app.services.rag.agent.config import (
         AGENT_MAX_CONTEXT_CHUNKS,
         GRADE_RELATIVE_THRESHOLD,
         MIN_CHUNKS_AFTER_GRADING,
     )
+
+    limit = max_chunks if max_chunks is not None else AGENT_MAX_CONTEXT_CHUNKS
     from app.services.rag.answer_builder import format_document, Document
 
     # Build metadata context from any tool returning a "context" key
@@ -199,7 +203,7 @@ def _grade_context(observations: list[dict]) -> tuple[str, int, int]:
     if all_graded_documents:
         # Sort the globally aggregated list so the highest overall scoring context comes first
         all_graded_documents.sort(key=lambda d: d.metadata["score"], reverse=True)
-        graded = all_graded_documents[:AGENT_MAX_CONTEXT_CHUNKS]
+        graded = all_graded_documents[:limit]
         log_json(
             logger,
             logging.INFO,

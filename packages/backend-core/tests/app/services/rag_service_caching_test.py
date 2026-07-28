@@ -234,7 +234,15 @@ async def test_vector_search_multi_book_guarantees_per_book_quota(monkeypatch):
     ) as mock_config_cls:
         mock_repo = mock_cls.return_value
         mock_repo.similarity_search = AsyncMock(side_effect=fake_similarity_search)
-        mock_config_cls.return_value.get_value = AsyncMock(return_value="false")
+
+        async def mock_get_value(key, default=""):
+            if key == "rag_top_k":
+                return "25"
+            if key == "rag_hybrid_search_enabled":
+                return "false"
+            return default
+
+        mock_config_cls.return_value.get_value = AsyncMock(side_effect=mock_get_value)
 
         results = await vector_search(ctx, book_ids=["b1", "b2", "b3"])
 

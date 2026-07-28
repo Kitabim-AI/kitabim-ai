@@ -3,7 +3,9 @@
 # ── ReAct loop ────────────────────────────────────────────────────────────────
 AGENT_MAX_STEPS = 6  # maximum ReAct iterations per round
 AGENT_ENOUGH_CHUNKS = 8  # early-exit: stop once this many chunks are collected
-AGENT_MAX_CONTEXT_CHUNKS = 25  # hard cap on chunks passed to the answer LLM
+AGENT_MAX_CONTEXT_CHUNKS = (
+    25  # default fallback cap; primary source is system_configs 'rag_top_k'
+)
 
 # ── Context grading (grade_context node) ─────────────────────────────────────
 GRADE_RELATIVE_THRESHOLD = 0.85  # keep chunks scoring >= top_score × this value

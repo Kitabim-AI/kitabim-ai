@@ -178,6 +178,11 @@ async def seed_system_configs(session: AsyncSession):
             "value": "true",
             "description": "Globally enable/disable the Postgres full-text keyword search leg fused with vector search (Reciprocal Rank Fusion). Set to 'false' for vector-only retrieval, identical to pre-hybrid-search behavior.",
         },
+        {
+            "key": "rag_top_k",
+            "value": "25",
+            "description": "Maximum number of top chunks retrieved during vector/hybrid search and retained for answer context synthesis.",
+        },
     ]
 
     for item in defaults:

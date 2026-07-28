@@ -268,6 +268,10 @@ class ChatOrchestrator:
         reranker_enabled = (
             await configs_repo.get_value("rag_reranker_enabled", "true")
         ).lower() == "true"
+        try:
+            rag_top_k = int(await configs_repo.get_value("rag_top_k", "25"))
+        except ValueError:
+            rag_top_k = 25
 
         if reranker_enabled:
             try:
@@ -275,7 +279,10 @@ class ChatOrchestrator:
                     "gemini_reranker_model", "gemini-3.1-flash-lite"
                 )
                 graded_context, before_count, after_count = await rerank_context(
-                    request_dto.question, observations, reranker_model
+                    request_dto.question,
+                    observations,
+                    reranker_model,
+                    max_chunks=rag_top_k,
                 )
             except Exception as exc:
                 log_json(
@@ -284,9 +291,13 @@ class ChatOrchestrator:
                     "reranker failed, falling back to _grade_context",
                     error=str(exc),
                 )
-                graded_context, before_count, after_count = _grade_context(observations)
+                graded_context, before_count, after_count = _grade_context(
+                    observations, max_chunks=rag_top_k
+                )
         else:
-            graded_context, before_count, after_count = _grade_context(observations)
+            graded_context, before_count, after_count = _grade_context(
+                observations, max_chunks=rag_top_k
+            )
 
         if before_count > 0:
             yield {"type": "grading", "before": before_count, "after": after_count}
