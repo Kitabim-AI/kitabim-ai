@@ -588,6 +588,45 @@ async def test_execute_path_relationship_never_calls_knowledge_graph(mock_ctx):
 
 
 @pytest.mark.asyncio
+async def test_execute_path_open_relationship_searches_all_summary_books(mock_ctx):
+    """Production incident: search_books_by_summary can return up to 20 books,
+    but _path_open only passed the top 5 to search_chunks. A relevant book
+    that ranked 6th-20th by book-level summary similarity (a coarser signal
+    than chunk-level similarity — exactly what happens for a person or topic
+    covered only in one passage of an otherwise-unrelated book) was silently
+    excluded from chunk search entirely, regardless of what hybrid search or
+    reranking did downstream, because the correct book was never searched at
+    all. All summary-discovered books must be passed through."""
+    handler = DeterministicRAGHandler()
+    observations = []
+    many_book_ids = [f"book-{i}" for i in range(20)]
+
+    async def mock_dispatch(tool_name, tool_args, ctx):
+        if tool_name == "search_books_by_summary":
+            return {"ok": True, "book_ids": many_book_ids, "found_count": 20}
+        return {"ok": True, "chunks": [], "found_count": 0}
+
+    with patch(
+        "app.services.rag.agent.deterministic_handler._dispatch_tool_with_retry",
+        side_effect=mock_dispatch,
+    ):
+        async for _ in handler.execute_path(
+            "relationship",
+            {},
+            "ئابدۇقادىر داموللام ئاياللارنى ئوقۇتۇشقا قانداق قارايتتى؟",
+            mock_ctx,
+            observations,
+        ):
+            pass
+
+    search_chunks_obs = [o for o in observations if o["tool"] == "search_chunks"]
+    # First search_chunks call is _path_open's own relationship-branch call —
+    # a second call from _run_universal_fallback (widening to global scope
+    # since the mock returns no chunks) is expected and not under test here.
+    assert search_chunks_obs[0]["args"]["book_ids"] == many_book_ids
+
+
+@pytest.mark.asyncio
 async def test_execute_path_dictionary_translation(mock_ctx):
     handler = DeterministicRAGHandler()
     observations = []
