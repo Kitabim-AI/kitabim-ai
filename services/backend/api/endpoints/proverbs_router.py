@@ -6,13 +6,16 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
 from app.db.models import Proverb
+from auth.dependencies import require_editor
+from app.models.user import User
+from app.services.cache_service import cache_service
 
 router = APIRouter()
 
@@ -31,6 +34,12 @@ class ProverbEntryOut(BaseModel):
     page_number: Optional[int] = None
 
     model_config = {"from_attributes": True}
+
+
+class ProverbUpdate(BaseModel):
+    text: Optional[str] = None
+    volume: Optional[int] = None
+    page_number: Optional[int] = None
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -88,3 +97,34 @@ async def list_proverbs_entries(
     stmt = stmt.offset(skip).limit(limit)
     res = await session.execute(stmt)
     return res.scalars().all()
+
+
+@router.put("/proverbs/{proverb_id}", response_model=ProverbEntryOut)
+async def update_proverb(
+    proverb_id: int,
+    body: ProverbUpdate,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_editor),
+):
+    """Update a proverb (Admin / Editor only)."""
+    stmt = select(Proverb).where(Proverb.id == proverb_id)
+    res = await session.execute(stmt)
+    proverb = res.scalar_one_or_none()
+    if not proverb:
+        raise HTTPException(status_code=404, detail="Proverb not found")
+
+    if body.text is not None:
+        proverb.text = body.text.strip()
+    if body.volume is not None:
+        proverb.volume = body.volume
+    if body.page_number is not None:
+        proverb.page_number = body.page_number
+
+    await session.commit()
+    await session.refresh(proverb)
+
+    # Invalidate Redis proverbs cache
+    await cache_service.delete_pattern("proverb:*")
+    await cache_service.delete_pattern("proverbs:*")
+
+    return proverb
