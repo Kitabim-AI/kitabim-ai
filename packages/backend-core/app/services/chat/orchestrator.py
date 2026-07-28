@@ -32,6 +32,7 @@ from app.services.rag.agent.llm_routed_handler import (
 )
 from app.services.rag.context import QueryContext, set_current_query_context
 from app.utils.citation_fixer import fix_malformed_citations
+from app.utils.observability import log_json
 
 
 logger = logging.getLogger("app.services.chat.orchestrator")
@@ -316,6 +317,10 @@ class ChatOrchestrator:
         fixed_text = fix_malformed_citations(accumulated_text)
         latency_ms = int((time.time() - start_time) * 1000)
 
+        judge_scoring_enabled = (
+            await configs_repo.get_value("rag_judge_scoring_enabled", "true")
+        ).lower() == "true"
+
         eval_repo = RAGEvaluationsRepository(db_session)
         eval_record = await eval_repo.create_evaluation(
             book_id=request_dto.book_id if not request_dto.is_global else None,
@@ -331,7 +336,7 @@ class ChatOrchestrator:
             user_id=request_dto.user_id,
             agent_steps=len(observations),
             tools_called=[obs["tool"] for obs in observations],
-            eval_status="completed",
+            eval_status="queued" if judge_scoring_enabled else "skipped",
             answer=fixed_text,
             retrieved_context=graded_context,
             is_first_turn=is_first_turn,
@@ -342,6 +347,28 @@ class ChatOrchestrator:
         eval_record.conversation_id = conv_id
         await db_session.flush()
         await db_session.commit()
+
+        if judge_scoring_enabled:
+            try:
+                import arq
+
+                redis_pool = await arq.create_pool(
+                    arq.connections.RedisSettings.from_dsn(settings.redis_url)
+                )
+                try:
+                    await redis_pool.enqueue_job(
+                        "rag_eval_job", eval_id=eval_id, _job_id=f"rag_eval:{eval_id}"
+                    )
+                finally:
+                    await redis_pool.aclose()
+            except Exception as exc:
+                log_json(
+                    logger,
+                    logging.ERROR,
+                    "failed to enqueue rag_eval_job",
+                    eval_id=eval_id,
+                    error=str(exc),
+                )
 
         # Save turn to ConversationRepository
         await conv_repo.save_turn(

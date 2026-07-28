@@ -48,6 +48,7 @@ from jobs.spell_check_job import spell_check_job
 from jobs.summary_job import summary_job
 from jobs.auto_correct_job import auto_correct_job
 from jobs.knowledge_graph_job import knowledge_graph_job
+from jobs.rag_eval_job import rag_eval_job
 
 
 class WorkerSettings:
@@ -61,6 +62,7 @@ class WorkerSettings:
         summary_job,
         auto_correct_job,
         knowledge_graph_job,
+        rag_eval_job,
     ]
 
     # Build cron jobs list conditionally based on feature flags

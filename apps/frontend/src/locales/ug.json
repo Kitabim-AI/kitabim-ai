@@ -297,6 +297,8 @@
       "avgFaithfulnessNoData": "ئوتتۇرىچە ئىشەنچلىك قىممىتى — ھېسابلانمىدى",
       "avgAnswerRelevance": "ئوتتۇرىچە مۇناسىۋەتلىك قىممىتى",
       "avgAnswerRelevanceNoData": "ئوتتۇرىچە مۇناسىۋەتلىك قىممىتى — ھېسابلانمىدى",
+      "avgContextPrecision": "ئوتتۇرىچە ئېنىقلىق قىممىتى",
+      "avgContextPrecisionNoData": "ئوتتۇرىچە ئېنىقلىق قىممىتى — ھېسابلانمىدى",
       "ragStatsUnavailable": "RAG ستاتىستىكىسى تېپىلمىدى ({{status}})"
     },
     "contacts": {
@@ -332,12 +334,18 @@
       "colQuestion": "سوئال",
       "colScope": "دائىرىسى",
       "colFeedback": "ئىنكاس",
+      "colEvalQuality": "باھالاش سۈپىتى",
       "colDate": "ۋاقتى",
       "colShowOnHome": "ئاشكارلاش",
       "scopeGlobal": "ئومۇمى",
       "scopeBook": "كىتاب",
       "showOnHome": "ئاشكارلاش",
       "hideFromHome": "يوشۇرۇش",
+      "evalFaithfulness": "ئىشەنچلىكلىكى",
+      "evalAnswerRelevance": "مۇناسىۋەتلىكلىكى",
+      "evalContextPrecision": "ئېنىقلىقى",
+      "evalQueued": "باھالانماقتا…",
+      "evalFailed": "باھالاش مەغلۇپ بولدى",
       "empty": "تېخى سوئال يوق",
       "error": "سوئاللارنى ئىزدەشتە خاتالىق كۆرۈلدى"
     },

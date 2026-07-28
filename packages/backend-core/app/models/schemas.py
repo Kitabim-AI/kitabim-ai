@@ -202,6 +202,10 @@ class RagQuestionAdmin(BaseModel):
     show_on_homepage: bool
     user_feedback: Optional[str] = None
     ts: datetime
+    eval_status: str
+    faithfulness_score: Optional[float] = None
+    answer_relevance_score: Optional[float] = None
+    context_precision_score: Optional[float] = None
 
 
 class RagQuestionsPage(BaseModel):

@@ -295,6 +295,8 @@
       "avgFaithfulnessNoData": "Avg Faithfulness — no data yet",
       "avgAnswerRelevance": "Avg Answer Relevance",
       "avgAnswerRelevanceNoData": "Avg Answer Relevance — no data yet",
+      "avgContextPrecision": "Avg Context Precision",
+      "avgContextPrecisionNoData": "Avg Context Precision — no data yet",
       "ragStatsUnavailable": "RAG stats unavailable ({{status}})"
     },
     "contacts": {
@@ -330,12 +332,18 @@
       "colQuestion": "Question",
       "colScope": "Scope",
       "colFeedback": "Feedback",
+      "colEvalQuality": "Eval Quality",
       "colDate": "Date",
       "colShowOnHome": "Show on Home",
       "scopeGlobal": "Global",
       "scopeBook": "Book",
       "showOnHome": "Show on home page",
       "hideFromHome": "Hide from home page",
+      "evalFaithfulness": "Faithfulness",
+      "evalAnswerRelevance": "Answer Relevance",
+      "evalContextPrecision": "Context Precision",
+      "evalQueued": "Scoring…",
+      "evalFailed": "Eval failed",
       "empty": "No questions yet",
       "error": "Failed to load questions"
     },

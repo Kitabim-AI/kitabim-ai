@@ -18,6 +18,10 @@ interface RagQuestion {
   showOnHomepage: boolean;
   userFeedback: string | null;
   ts: string;
+  evalStatus: string;
+  faithfulnessScore: number | null;
+  answerRelevanceScore: number | null;
+  contextPrecisionScore: number | null;
 }
 
 interface QuestionsPage {
@@ -220,11 +224,12 @@ export function AdminQuestions() {
             <table className="w-full text-right lg:min-w-[900px]" dir="rtl">
               <thead>
                 <tr className="bg-[#0369a1]/5 dark:bg-[#38bdf8]/5 border-b border-[#0369a1]/10 dark:border-slate-800 text-[12px] md:text-[14px] lg:text-[16px] font-normal text-[#0369a1] dark:text-[#38bdf8] uppercase">
-                  <th className="px-3 md:px-6 py-3 md:py-5 text-right font-normal w-[80%] lg:w-[50%]">{t('admin.questions.colQuestion')}</th>
-                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal w-[15%]">{t('admin.questions.colScope')}</th>
-                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal w-[12%]">{t('admin.questions.colFeedback')}</th>
-                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal w-[18%]">{t('admin.questions.colDate')}</th>
-                  <th className="px-3 md:px-6 py-3 md:py-5 text-left font-normal w-[20%] lg:w-[10%]">{t('admin.questions.colShowOnHome')}</th>
+                  <th className="px-3 md:px-6 py-3 md:py-5 text-right font-normal w-[80%] lg:w-[40%]">{t('admin.questions.colQuestion')}</th>
+                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal w-[12%]">{t('admin.questions.colScope')}</th>
+                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal w-[10%]">{t('admin.questions.colFeedback')}</th>
+                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal w-[16%]">{t('admin.questions.colEvalQuality')}</th>
+                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal w-[15%]">{t('admin.questions.colDate')}</th>
+                  <th className="px-3 md:px-6 py-3 md:py-5 text-left font-normal w-[20%] lg:w-[7%]">{t('admin.questions.colShowOnHome')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#75C5F0]/5 dark:divide-slate-800/30">
@@ -268,6 +273,43 @@ export function AdminQuestions() {
                         <span title="Positive" className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/50 shadow-sm">👍</span>
                       ) : q.userFeedback === 'negative' ? (
                         <span title="Negative" className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-50 dark:bg-red-950/30 text-red-650 dark:text-red-400 border border-red-100 dark:border-red-900/50 shadow-sm">👎</span>
+                      ) : (
+                        <span className="text-slate-300 dark:text-slate-650">—</span>
+                      )}
+                    </td>
+
+                    {/* Eval quality */}
+                    <td className="hidden lg:table-cell px-3 md:px-6 py-4 md:py-6 text-center">
+                      {q.evalStatus === 'completed' ? (
+                        <div className="flex items-center justify-center gap-1 flex-wrap" dir="ltr">
+                          <span
+                            title={t('admin.questions.evalFaithfulness')}
+                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] md:text-[11px] font-medium bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/50"
+                          >
+                            {Math.round((q.faithfulnessScore ?? 0) * 100)}%
+                          </span>
+                          <span
+                            title={t('admin.questions.evalAnswerRelevance')}
+                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] md:text-[11px] font-medium bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border border-blue-100 dark:border-blue-900/50"
+                          >
+                            {Math.round((q.answerRelevanceScore ?? 0) * 100)}%
+                          </span>
+                          <span
+                            title={t('admin.questions.evalContextPrecision')}
+                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] md:text-[11px] font-medium bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-400 border border-violet-100 dark:border-violet-900/50"
+                          >
+                            {Math.round((q.contextPrecisionScore ?? 0) * 100)}%
+                          </span>
+                        </div>
+                      ) : q.evalStatus === 'queued' ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400">
+                          <Loader size={11} className="animate-spin" />
+                          {t('admin.questions.evalQueued')}
+                        </span>
+                      ) : q.evalStatus === 'failed' ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-50 dark:bg-red-950/30 text-red-650 dark:text-red-400 border border-red-100 dark:border-red-900/50">
+                          {t('admin.questions.evalFailed')}
+                        </span>
                       ) : (
                         <span className="text-slate-300 dark:text-slate-650">—</span>
                       )}

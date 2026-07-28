@@ -71,7 +71,9 @@ Read via `SystemConfigsRepository(db_session).get_value("rag_judge_scoring_enabl
 
 `orchestrator.py` (~line 319): read the feature flag once. Then, instead of the current hardcoded `eval_status="completed"`:
 
-- **If enabled:** create the row with `eval_status="pending"`. Immediately after the existing `db_session.commit()` (~line 343), enqueue the scoring job:
+**Status value correction (found during implementation):** `rag_evaluations.eval_status` already has a `CHECK` constraint from migration `044_eval_status_constraint_and_config_seed.sql`: `eval_status IN ('queued', 'skipped', 'completed', 'failed')`. That migration's own comment says it added `'queued'` anticipating exactly this kind of in-flight state — `'pending'` was never a valid value and violates the constraint (`CheckViolationError` observed against a live turn). The in-flight state this spec creates is `"queued"`, not `"pending"` — every mention of `"pending"` elsewhere in this document refers to the same `"queued"` value; the code and tests use `"queued"`.
+
+- **If enabled:** create the row with `eval_status="queued"`. Immediately after the existing `db_session.commit()` (~line 343), enqueue the scoring job:
 
   ```python
   redis_pool = await arq.create_pool(arq.connections.RedisSettings.from_dsn(settings.redis_url))
@@ -83,7 +85,7 @@ Read via `SystemConfigsRepository(db_session).get_value("rag_judge_scoring_enabl
       await redis_pool.aclose()
   ```
 
-  Wrapped in try/except with `log_json` on failure. An enqueue failure must never affect the chat response already streamed to the user — the row simply stays `"pending"` (see Error handling).
+  Wrapped in try/except with `log_json` on failure. An enqueue failure must never affect the chat response already streamed to the user — the row simply stays `"queued"` (see Error handling).
 
 - **If disabled:** create the row with `eval_status="skipped"` and skip the enqueue call entirely. No worker involvement at all when the feature is off.
 
@@ -101,8 +103,8 @@ One new migration: seed `('rag_judge_scoring_enabled', 'true')` into `system_con
 
 ### Error handling
 
-- **Judge call fails** → job marks the row `"failed"`, logged, no retry. Queryable and distinguishable from `"completed"`/`"pending"`/`"skipped"`.
-- **Enqueue fails** (e.g. Redis unavailable) → caught in the orchestrator, logged, chat response unaffected. The row stays `"pending"` indefinitely with no automatic recovery — accepted limitation of choosing per-turn enqueue over a periodic sweep; a Redis outage broad enough to break enqueueing is already a bigger operational problem elsewhere.
+- **Judge call fails** → job marks the row `"failed"`, logged, no retry. Queryable and distinguishable from `"completed"`/`"queued"`/`"skipped"`.
+- **Enqueue fails** (e.g. Redis unavailable) → caught in the orchestrator, logged, chat response unaffected. The row stays `"queued"` indefinitely with no automatic recovery — accepted limitation of choosing per-turn enqueue over a periodic sweep; a Redis outage broad enough to break enqueueing is already a bigger operational problem elsewhere.
 - **Empty `retrieved_context`** → not an error; `context_precision_score=0.0` is the correct, meaningful value.
 - **`rag_judge_scoring_enabled` missing from system_configs** (e.g. migration not yet run in some environment) → `get_value` falls back to its `"true"` default argument, same defensive pattern used elsewhere in the codebase for config lookups with a default.
 
@@ -110,7 +112,7 @@ One new migration: seed `('rag_judge_scoring_enabled', 'true')` into `system_con
 
 - `judge.py` unit tests: mock the LLM call, verify all three scores parse/clamp to `[0.0, 1.0]`, verify behavior on malformed judge output.
 - `rag_eval_job` test: mock `score_answer`; assert `update_one` is called with the expected fields on success, and `eval_status="failed"` (no re-raise) when the judge call raises.
-- Orchestrator test: with `rag_judge_scoring_enabled="false"`, assert the row is created with `eval_status="skipped"` and `enqueue_job` is never called; with it `"true"` (or unset), assert `eval_status="pending"` and `enqueue_job` is called once with the right `eval_id`.
+- Orchestrator test: with `rag_judge_scoring_enabled="false"`, assert the row is created with `eval_status="skipped"` and `enqueue_job` is never called; with it `"true"` (or unset), assert `eval_status="queued"` and `enqueue_job` is called once with the right `eval_id`.
 - `stats_router_test.py`: extend with seeded `rag_evaluations` rows asserting `avg_faithfulness`/`avg_answer_relevance`/`avg_context_precision` reflect the seeded scores.
 - No new frontend test suite for `StatsPanel.tsx` — manual verification that the third card renders correctly once real data flows through is sufficient for this small, consistent addition.
 
@@ -119,6 +121,6 @@ One new migration: seed `('rag_judge_scoring_enabled', 'true')` into `system_con
 - Computing `context_recall_score` — no ground truth exists for live traffic; would require a separately curated golden set.
 - Sampling/throttling judge calls — every turn is scored for now.
 - Retry/backoff/dead-letter handling for failed judge jobs beyond a single attempt + logged failure.
-- Recovering `"pending"` rows if the enqueue call itself fails (no sweep/backfill job).
+- Recovering `"queued"` rows if the enqueue call itself fails (no sweep/backfill job).
 - Retrieval quality changes (reranking, hybrid search) — a separate follow-on spec, designed next, that will use this scoring pipeline as its before/after baseline.
 - Finalized judge prompt wording — written during implementation, not in this design doc.

@@ -101,6 +101,24 @@ RAG_PROMPT_TEMPLATE = """
 Question: {question}
 """
 
+RAG_JUDGE_PROMPT = """You are an impartial judge evaluating the quality of an answer produced by a RAG (retrieval-augmented generation) chat system for an Uyghur digital library. The Question, Answer, and Retrieved Context may be in Uyghur, Arabic, or English.
+
+Score the answer on three independent dimensions, each from 0.0 (worst) to 1.0 (best):
+
+1. faithfulness: Is every claim in the Answer supported by the Retrieved Context? An answer that states facts not present in the context, or contradicts the context, scores low. An answer that correctly states no relevant information was found (when the Retrieved Context is empty or irrelevant) scores high.
+2. answer_relevance: Does the Answer actually address the Question? An answer that is grounded but off-topic, incomplete, or evasive scores low.
+3. context_precision: Are the chunks in Retrieved Context relevant to the Question, independent of how the Answer used them? If Retrieved Context is empty, context_precision must be 0.0.
+
+Question: {question}
+
+Retrieved Context:
+{context}
+
+Answer: {answer}
+
+Return ONLY valid JSON matching this exact schema. Do NOT explain your reasoning, do NOT add markdown formatting or commentary — output the JSON object and nothing else:
+{{"faithfulness": <float 0.0-1.0>, "answer_relevance": <float 0.0-1.0>, "context_precision": <float 0.0-1.0>}}"""
+
 QUERY_REWRITE_PROMPT = """You are a query reformulation assistant for an Uyghur digital library.
 
 Given the conversation history and a follow-up question, rewrite the follow-up into a single standalone question that contains all the context needed to search the library — without relying on pronouns or implicit references from previous turns.

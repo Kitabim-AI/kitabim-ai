@@ -37,6 +37,7 @@ interface RAGQualityStats {
   graded_evaluations: number;
   avg_faithfulness: number | null;
   avg_answer_relevance: number | null;
+  avg_context_precision: number | null;
 }
 
 // ---- Styling helpers ----
@@ -454,6 +455,26 @@ export const StatsPanel: React.FC = () => {
             ) : (
               <div className="p-4 bg-slate-50 dark:bg-slate-900/40 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl shadow-sm">
                 <span className="text-sm text-slate-500 dark:text-slate-400">{t('admin.stats.avgAnswerRelevanceNoData') || 'Avg Answer Relevance — no data yet'}</span>
+              </div>
+            )}
+
+            {/* Context Precision */}
+            {ragQuality?.avg_context_precision != null ? (
+              <div className="p-4 bg-violet-50 dark:bg-violet-950/20 border-2 border-violet-200 dark:border-violet-900/30 rounded-xl shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="flex items-center gap-1.5 text-sm font-medium text-violet-700 dark:text-violet-400">
+                    <CheckCircle size={14} />
+                    {t('admin.stats.avgContextPrecision') || 'Avg Context Precision'}
+                  </span>
+                  <span className="text-2xl font-bold text-violet-700 dark:text-violet-450">{(ragQuality.avg_context_precision * 100).toFixed(1)}%</span>
+                </div>
+                <div className="w-full bg-white/60 dark:bg-slate-950/60 rounded-full h-1.5 overflow-hidden">
+                  <div className="bg-violet-500 dark:bg-violet-500 h-full rounded-full transition-all duration-700" style={{ width: `${ragQuality.avg_context_precision * 100}%` }} />
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 bg-slate-50 dark:bg-slate-900/40 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl shadow-sm">
+                <span className="text-sm text-slate-500 dark:text-slate-400">{t('admin.stats.avgContextPrecisionNoData') || 'Avg Context Precision — no data yet'}</span>
               </div>
             )}
           </div>
