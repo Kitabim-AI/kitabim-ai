@@ -61,6 +61,8 @@ def _pool_and_dedup(observations: list[dict]) -> tuple[list[Document], int]:
                         "page": c.get("page"),
                         "book_id": c.get("book_id"),
                         "score": c.get("score", 0.0),
+                        "rrf_score": c.get("rrf_score", 0.0),
+                        "rank": c.get("rank"),
                         "surah_name_en": c.get("surah_name_en"),
                         "surah": c.get("surah"),
                         "ayah": c.get("ayah"),
@@ -106,7 +108,12 @@ async def rerank_context(
     candidates = docs
     if len(candidates) > RERANK_MAX_INPUT_CHUNKS:
         candidates = sorted(
-            candidates, key=lambda d: d.metadata["score"], reverse=True
+            candidates,
+            key=lambda d: (
+                d.metadata.get("rrf_score", 0.0),
+                d.metadata.get("score", 0.0),
+            ),
+            reverse=True,
         )[:RERANK_MAX_INPUT_CHUNKS]
 
     numbered = "\n\n".join(
@@ -164,13 +171,19 @@ async def rerank_context(
         # a strict "none relevant" LLM verdict shouldn't unilaterally veto
         # everything the answer-generation LLM could still use — fill up to
         # the floor with the next-best original-score candidates instead.
-        for d in sorted(candidates, key=lambda d: d.metadata["score"], reverse=True)[
-            :MIN_CHUNKS_AFTER_GRADING
-        ]:
+        for d in sorted(
+            candidates,
+            key=lambda d: (
+                d.metadata.get("rrf_score", 0.0),
+                d.metadata.get("score", 0.0),
+            ),
+            reverse=True,
+        )[:MIN_CHUNKS_AFTER_GRADING]:
             ordered_docs.append(d)
 
     limit = max_chunks if max_chunks is not None else AGENT_MAX_CONTEXT_CHUNKS
     graded = ordered_docs[:limit]
+
     log_json(
         logger,
         logging.INFO,

@@ -268,10 +268,13 @@ class ChatOrchestrator:
         reranker_enabled = (
             await configs_repo.get_value("rag_reranker_enabled", "true")
         ).lower() == "true"
+        rag_top_k_str = await configs_repo.get_value(
+            "rag_top_k", str(settings.rag_top_k)
+        )
         try:
-            rag_top_k = int(await configs_repo.get_value("rag_top_k", "25"))
+            rag_top_k = int(rag_top_k_str)
         except ValueError:
-            rag_top_k = 25
+            rag_top_k = settings.rag_top_k
 
         if reranker_enabled:
             try:
@@ -301,6 +304,10 @@ class ChatOrchestrator:
 
         if before_count > 0:
             yield {"type": "grading", "before": before_count, "after": after_count}
+
+        logger.info(
+            f"[Orchestrator] Feeding graded context ({after_count} chunks out of {before_count} candidates) to Answer Agent for question: {request_dto.question!r}"
+        )
 
         # 5. Answer Agent Execution
         yield {"type": "answer_start"}

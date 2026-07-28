@@ -113,7 +113,12 @@ def _fuse_rrf(
         docs.setdefault(k, c)
 
     ordered_keys = sorted(scores.keys(), key=lambda k: scores[k], reverse=True)[:limit]
-    return [dict(docs[k]) for k in ordered_keys]
+    fused_docs = []
+    for k in ordered_keys:
+        doc = dict(docs[k])
+        doc["rrf_score"] = scores[k]
+        fused_docs.append(doc)
+    return fused_docs
 
 
 async def _search_chunks(
@@ -256,7 +261,8 @@ async def vector_search(
                     chunk for chunks in per_book_results for chunk in chunks
                 ]
                 similar_chunks.sort(
-                    key=lambda c: c.get("similarity", 0.0), reverse=True
+                    key=lambda c: (c.get("rrf_score", 0.0), c.get("similarity", 0.0)),
+                    reverse=True,
                 )
             else:
                 similar_chunks = await _search_chunks(
@@ -297,7 +303,11 @@ async def vector_search(
                         chunk for chunks in per_book_results for chunk in chunks
                     ]
                     similar_chunks.sort(
-                        key=lambda c: c.get("similarity", 0.0), reverse=True
+                        key=lambda c: (
+                            c.get("rrf_score", 0.0),
+                            c.get("similarity", 0.0),
+                        ),
+                        reverse=True,
                     )
                 else:
                     similar_chunks = await _search_chunks(
@@ -314,6 +324,8 @@ async def vector_search(
                 {
                     "text": chunk.get("text", ""),
                     "score": chunk.get("similarity", 0.0),
+                    "rrf_score": chunk.get("rrf_score", 0.0),
+                    "rank": chunk.get("rank"),
                     "page": chunk.get("page_number"),
                     "title": chunk.get("title") or "Unknown",
                     "volume": chunk.get("volume"),

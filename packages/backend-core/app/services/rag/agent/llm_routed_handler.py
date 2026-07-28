@@ -170,6 +170,8 @@ def _grade_context(
                     "page": c.get("page"),
                     "book_id": c.get("book_id"),
                     "score": c.get("score", 0.0),
+                    "rrf_score": c.get("rrf_score", 0.0),
+                    "rank": c.get("rank"),
                     "surah_name_en": c.get("surah_name_en"),
                     "surah": c.get("surah"),
                     "ayah": c.get("ayah"),
@@ -179,12 +181,23 @@ def _grade_context(
         ]
 
         # Grade this specific search call's results
-        search_docs.sort(key=lambda d: d.metadata["score"], reverse=True)
-        top_score = search_docs[0].metadata["score"]
+        search_docs.sort(
+            key=lambda d: (
+                d.metadata.get("rrf_score", 0.0),
+                d.metadata.get("score", 0.0),
+            ),
+            reverse=True,
+        )
+        top_score = max((d.metadata["score"] for d in search_docs), default=0.0)
         score_floor = top_score * GRADE_RELATIVE_THRESHOLD
 
+        # Keep docs meeting relative score floor, OR keyword-only hits with positive rrf_score / keyword rank
         graded_search_docs = [
-            d for d in search_docs if d.metadata["score"] >= score_floor
+            d
+            for d in search_docs
+            if d.metadata["score"] >= score_floor
+            or d.metadata.get("rrf_score", 0.0) > 0.0
+            or d.metadata.get("rank") is not None
         ]
 
         # Fallback to keep minimum chunks for this specific search if drop is steep
@@ -201,9 +214,16 @@ def _grade_context(
 
     # Final global sort and limit cap
     if all_graded_documents:
-        # Sort the globally aggregated list so the highest overall scoring context comes first
-        all_graded_documents.sort(key=lambda d: d.metadata["score"], reverse=True)
+        # Sort the globally aggregated list so highest overall scoring context comes first
+        all_graded_documents.sort(
+            key=lambda d: (
+                d.metadata.get("rrf_score", 0.0),
+                d.metadata.get("score", 0.0),
+            ),
+            reverse=True,
+        )
         graded = all_graded_documents[:limit]
+
         log_json(
             logger,
             logging.INFO,
