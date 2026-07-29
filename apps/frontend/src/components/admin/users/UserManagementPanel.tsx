@@ -449,8 +449,8 @@ export function UserManagementPanel() {
 
       {/* Search and Filters Bar */}
       <div className="flex flex-col-reverse md:flex-row gap-3 md:gap-4">
-        <div className="relative flex-1 lg:flex-none lg:w-[30%] group">
-          <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-[#0369a1] dark:text-[#38bdf8] transition-colors">
+        <div className="relative flex-1 lg:flex-none lg:w-[30%] group" dir="ltr">
+          <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-[#0369a1] dark:text-[#38bdf8] transition-colors">
             <Search size={18} strokeWidth={3} />
           </div>
           <input
@@ -459,12 +459,14 @@ export function UserManagementPanel() {
             onChange={(e) => setSearchQuery(e.target.value)}
             ref={inputRef}
             placeholder={t('admin.users.searchPlaceholder') || "ئابونتلارنى ئىزدەش (نامى ياكى ئېلخەت)..."}
-            className="w-full pr-12 pl-12 py-2.5 md:py-3 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl text-[#1a1a1a] dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all uyghur-text shadow-sm text-base"
+            dir="ltr"
+            lang="en"
+            className="w-full pl-12 pr-12 py-2.5 md:py-3 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl text-[#1a1a1a] dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all shadow-sm text-base text-left"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute inset-y-0 left-4 flex items-center text-[#94a3b8] hover:text-[#0369a1] dark:hover:text-[#38bdf8] transition-colors active:scale-95"
+              className="absolute inset-y-0 right-4 flex items-center text-[#94a3b8] hover:text-[#0369a1] dark:hover:text-[#38bdf8] transition-colors active:scale-95"
             >
               <X size={16} strokeWidth={3} />
             </button>
