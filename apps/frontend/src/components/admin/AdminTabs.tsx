@@ -50,11 +50,11 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
   const tabs: Tab[] = [
     { id: 'books', label: t('admin.booksLabel'), icon: <TableOfContents size={18} /> },
     { id: 'users', label: t('admin.usersLabel'), icon: <Users size={18} />, adminOnly: true },
+    { id: 'questions', label: t('admin.questionsLabel'), icon: <MessageSquare size={18} />, adminOnly: true },
     { id: 'rules', label: t('admin.rulesLabel') || 'Auto-Correction', icon: <Sparkles size={18} />, adminOnly: false },
     { id: 'stats', label: t('admin.statsLabel') || 'Statistics', icon: <BarChart3 size={18} />, adminOnly: true },
-    { id: 'config', label: t('admin.configLabel'), icon: <Settings size={18} />, adminOnly: true },
-    { id: 'questions', label: t('admin.questionsLabel'), icon: <MessageSquare size={18} />, adminOnly: true },
     { id: 'contacts', label: t('admin.contactsLabel'), icon: <Mail size={18} />, adminOnly: true },
+    { id: 'config', label: t('admin.configLabel'), icon: <Settings size={18} />, adminOnly: true },
   ];
 
   const visibleTabs = tabs.filter((tab) => !tab.adminOnly || isAdmin);

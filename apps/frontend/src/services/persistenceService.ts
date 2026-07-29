@@ -259,9 +259,11 @@ export const PersistenceService = {
     }
   },
 
-  async reprocessGraph(bookId: string): Promise<void> {
+  async reprocessGraph(bookId: string, scope: 'fiction' | 'nonfiction'): Promise<void> {
     const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/graph`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scope }),
     });
     if (!response.ok) {
       if (response.status === 403) {
@@ -409,7 +411,7 @@ export const PersistenceService = {
     }
   },
 
-  async getRecentQuestions(limit: number = 10): Promise<string[]> {
+  async getRecentQuestions(limit: number = 20): Promise<string[]> {
     try {
       const response = await authFetch(`${API_BASE}/chat/recent-questions?limit=${limit}`);
       if (!response.ok) throw new Error("Failed to fetch recent questions");

@@ -245,8 +245,13 @@ async def run_path_selection_workflow(
     )
     content = types.Content(role="user", parts=[types.Part.from_text(text=question)])
 
+    from google.adk.agents.run_config import RunConfig, StreamingMode
+
     async for event in runner.run_async(
-        user_id=session.user_id, session_id=session.id, new_message=content
+        user_id=session.user_id,
+        session_id=session.id,
+        new_message=content,
+        run_config=RunConfig(streaming_mode=StreamingMode.SSE),
     ):
         progress = decode_progress_event(event)
         if progress is not None:

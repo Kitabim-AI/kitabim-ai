@@ -7,6 +7,7 @@ import time
 from typing import Any, AsyncIterator, Optional, Union
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.runners import InMemoryRunner, Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
@@ -29,11 +30,23 @@ from app.services.rag.agent.llm_routed_handler import (
     _extract_used_book_ids,
     _grade_context,
 )
+from app.services.rag.agent.reranker import rerank_context
 from app.services.rag.context import QueryContext, set_current_query_context
 from app.utils.citation_fixer import fix_malformed_citations
+from app.utils.observability import log_json
 
 
 logger = logging.getLogger("app.services.chat.orchestrator")
+
+
+def _extract_effective_question(question: str, observations: list[dict]) -> str:
+    """Extract standalone rewritten question from observations if rewrite_query was called."""
+    for obs in observations:
+        if obs.get("tool") == "rewrite_query":
+            res = obs.get("result", {})
+            if isinstance(res, dict) and res.get("rewritten_question"):
+                return res["rewritten_question"]
+    return question
 
 
 class ChatOrchestrator:
@@ -104,6 +117,11 @@ class ChatOrchestrator:
             book = await books_repo.get(request_dto.book_id)
 
         configs_repo = SystemConfigsRepository(db_session)
+        chat_model = await configs_repo.get_value("gemini_chat_model") or model_name
+        agent_model = (
+            await configs_repo.get_value("gemini_agent_loop_model") or chat_model
+        )
+
         embedding_model = await configs_repo.get_value(
             "gemini_embedding_model"
         ) or getattr(settings, "gemini_embedding_model", "text-embedding-004")
@@ -123,11 +141,11 @@ class ChatOrchestrator:
             persona_prompt=persona_prompt,
             character_categories=character_categories,
             chat_history_str=history_str,
-            rag_chain=llm_resources.get_rag_chain(model_name),
-            rewrite_chain=llm_resources.get_rewrite_chain(model_name),
+            rag_chain=llm_resources.get_rag_chain(chat_model),
+            rewrite_chain=llm_resources.get_rewrite_chain(agent_model),
             embeddings=embeddings,
             start_ts=time.monotonic(),
-            agent_model=model_name,
+            agent_model=agent_model,
         )
         set_current_query_context(ctx)
 
@@ -150,7 +168,7 @@ class ChatOrchestrator:
 
         # 3. Retrieval Agent Execution
         retrieval_agent = build_retrieval_agent(
-            model=model_name,
+            model=agent_model,
             intent_signals=signals,
         )
 
@@ -214,6 +232,7 @@ class ChatOrchestrator:
             user_id=request_dto.user_id,
             session_id=conv_id,
             new_message=retrieval_content,
+            run_config=RunConfig(streaming_mode=StreamingMode.SSE),
         ):
             if not event.partial and event.content and event.content.parts:
                 for part in event.content.parts:
@@ -256,14 +275,57 @@ class ChatOrchestrator:
 
         # 4. Context Grading
         used_book_ids = _extract_used_book_ids(observations)
-        graded_context, before_count, after_count = _grade_context(observations)
+        reranker_enabled = (
+            await configs_repo.get_value("rag_reranker_enabled", "true")
+        ).lower() == "true"
+        rag_top_k_str = await configs_repo.get_value(
+            "rag_top_k", str(settings.rag_top_k)
+        )
+        try:
+            rag_top_k = int(rag_top_k_str)
+        except ValueError:
+            rag_top_k = settings.rag_top_k
+
+        if reranker_enabled:
+            try:
+                reranker_model = await configs_repo.get_value(
+                    "gemini_reranker_model", "gemini-3.1-flash-lite"
+                )
+                effective_question = _extract_effective_question(
+                    request_dto.question, observations
+                )
+                graded_context, before_count, after_count = await rerank_context(
+                    effective_question,
+                    observations,
+                    reranker_model,
+                    max_chunks=rag_top_k,
+                )
+            except Exception as exc:
+                log_json(
+                    logger,
+                    logging.WARNING,
+                    "reranker failed, falling back to _grade_context",
+                    error=str(exc),
+                )
+                graded_context, before_count, after_count = _grade_context(
+                    observations, max_chunks=rag_top_k
+                )
+        else:
+            graded_context, before_count, after_count = _grade_context(
+                observations, max_chunks=rag_top_k
+            )
+
         if before_count > 0:
             yield {"type": "grading", "before": before_count, "after": after_count}
+
+        logger.info(
+            f"[Orchestrator] Feeding graded context ({after_count} chunks out of {before_count} candidates) to Answer Agent for question: {request_dto.question!r}"
+        )
 
         # 5. Answer Agent Execution
         yield {"type": "answer_start"}
         answer_agent = build_answer_agent(
-            model=model_name,
+            model=chat_model,
             graded_context=graded_context,
             persona_prompt=ctx.persona_prompt,
             is_global=request_dto.is_global,
@@ -288,18 +350,30 @@ class ChatOrchestrator:
             user_id=request_dto.user_id,
             session_id=conv_id,
             new_message=content,
+            run_config=RunConfig(streaming_mode=StreamingMode.SSE),
         ):
-            if event.content and event.content.parts:
+            if event.partial and event.content and event.content.parts:
                 for part in event.content.parts:
                     if part.text:
                         accumulated_text += part.text
                         yield {"type": "chunk", "text": part.text}
+            elif not event.partial and event.content and event.content.parts:
+                # Fallback if no partial events were emitted
+                if not accumulated_text:
+                    for part in event.content.parts:
+                        if part.text:
+                            accumulated_text += part.text
+                            yield {"type": "chunk", "text": part.text}
 
         yield {"type": "answer_end"}
 
         # 6. Safety Fix & Persistence
         fixed_text = fix_malformed_citations(accumulated_text)
         latency_ms = int((time.time() - start_time) * 1000)
+
+        judge_scoring_enabled = (
+            await configs_repo.get_value("rag_judge_scoring_enabled", "true")
+        ).lower() == "true"
 
         eval_repo = RAGEvaluationsRepository(db_session)
         eval_record = await eval_repo.create_evaluation(
@@ -316,7 +390,7 @@ class ChatOrchestrator:
             user_id=request_dto.user_id,
             agent_steps=len(observations),
             tools_called=[obs["tool"] for obs in observations],
-            eval_status="completed",
+            eval_status="queued" if judge_scoring_enabled else "skipped",
             answer=fixed_text,
             retrieved_context=graded_context,
             is_first_turn=is_first_turn,
@@ -327,6 +401,28 @@ class ChatOrchestrator:
         eval_record.conversation_id = conv_id
         await db_session.flush()
         await db_session.commit()
+
+        if judge_scoring_enabled:
+            try:
+                import arq
+
+                redis_pool = await arq.create_pool(
+                    arq.connections.RedisSettings.from_dsn(settings.redis_url)
+                )
+                try:
+                    await redis_pool.enqueue_job(
+                        "rag_eval_job", eval_id=eval_id, _job_id=f"rag_eval:{eval_id}"
+                    )
+                finally:
+                    await redis_pool.aclose()
+            except Exception as exc:
+                log_json(
+                    logger,
+                    logging.ERROR,
+                    "failed to enqueue rag_eval_job",
+                    eval_id=eval_id,
+                    error=str(exc),
+                )
 
         # Save turn to ConversationRepository
         await conv_repo.save_turn(

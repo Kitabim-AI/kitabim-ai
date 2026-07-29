@@ -3,10 +3,21 @@ Knowledge Graph Job — extracts entities/relations from book chunks and indexes
 
 Chunks are grouped into batches before being sent to the LLM. This reduces the number of API
 calls (one per batch instead of one per chunk) and gives the model cross-chunk context so it
-can resolve coreferences (e.g. 'the Khan' → 'Genghis Khan') across nearby text.
+can resolve coreferences (e.g. 'the Khan' → 'Genghis Khan') across nearby text — but only
+*within* one batch's single LLM call. The LLM expresses that coreference resolution by reusing
+the same `local_id` for the same person across entities in one response; it does NOT attempt to
+deduplicate an entity across different batches or across books. Identity is assigned here in
+Python (`id = uuid4()`) purely by extraction position — there is no dedup at write time.
+Cross-batch/cross-book duplicates (including within the same book) are entirely the job of the
+global resolution pass (`graph_resolution_job`), which has strictly more context than a single
+chunk-batch LLM call ever could.
 
 Only Entity nodes and Entity→Entity RELATED_TO edges are stored in Neo4j.
 Chunk nodes are not stored — chunk text lives in Postgres and is retrieved via vector search.
+
+`scope` ("fiction" | "nonfiction") is a required parameter, supplied by the admin at the moment
+they trigger `POST /{book_id}/reprocess/graph` — see design v2 §3 for why no automatic
+classification is needed.
 
 Batch size and concurrency are both configurable via system_configs:
   kg_chunk_batch_size     — chunks per LLM call (default 10, ~5 000 chars per call)
@@ -17,7 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
+import uuid
 
 from sqlalchemy import select, update
 
@@ -25,12 +36,14 @@ from app.core.config import settings
 from app.db import session as db_session
 from app.db.models import Book, Chunk
 from app.db.repositories.graph_repository import GraphRepository
+from app.db.repositories.graph_resolution_repository import (
+    GraphResolutionQueueRepository,
+)
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.services.knowledge_graph_service import (
     KnowledgeExtraction,
     parse_and_clean_json_from_exception,
     EntityType,
-    NameResolutionResponse,
 )
 from app.utils.observability import log_json
 
@@ -39,14 +52,31 @@ from google.genai import types
 
 logger = logging.getLogger("app.worker.knowledge_graph_job")
 
+VALID_SCOPES = {"fiction", "nonfiction"}
+
 
 def hijri_to_gregorian(year_hijri: int) -> int:
     """Convert a Hijri year to an approximate Gregorian year (±1 year accuracy)."""
     return round(year_hijri - (year_hijri / 33.7) + 622)
 
 
-async def knowledge_graph_job(ctx, book_id: str) -> None:
-    log_json(logger, logging.INFO, "knowledge graph job started", book_id=book_id)
+def _chunk_ref(book_id: str, chunk: Chunk) -> str:
+    return f"{book_id}:{chunk.page_number}:{chunk.chunk_index}"
+
+
+async def knowledge_graph_job(ctx, book_id: str, scope: str) -> None:
+    log_json(
+        logger,
+        logging.INFO,
+        "knowledge graph job started",
+        book_id=book_id,
+        scope=scope,
+    )
+
+    if scope not in VALID_SCOPES:
+        raise ValueError(
+            f"knowledge_graph_job: invalid scope '{scope}', expected one of {VALID_SCOPES}"
+        )
 
     try:
         # 1. Fetch settings from PostgreSQL
@@ -90,30 +120,6 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                     book_id=book_id,
                 )
                 return
-
-            # Load fictional categories and determine if this book is fictional
-            fictional_categories_val = await config_repo.get_value(
-                "fictional_categories",
-                "رومان, تارىخىي رومان, بالىلار رومانى, ساتىرىك رومان, پەلسەپىۋىي رومان, پوۋېست, پوۋېستلار, تارىخىي پوۋېست, ھېكايىلەر, تارىخىي ھېكايىلەر, بالىلار ھېكايىلېرى, چۆچەكلەر, قىسسە, تارىخىي قىسسە, داستان, داستانلار, تارىخىي داستان, رىۋايەتلەر, مەسەللەر, لەتىپىلەر, يۇمۇرلار, شېئىرلار, سەھنە ئەسەرلېرى, كىنو سېنارىيىلىرى, fiction, novel, story, drama, poetry, fairytale, fable, play",
-            )
-            fictional_cats = [
-                c.strip().lower()
-                for c in fictional_categories_val.split(",")
-                if c.strip()
-            ]
-            book_cats = [
-                c.strip().lower() for c in (book.categories or []) if c.strip()
-            ]
-            is_fictional = any(c in fictional_cats for c in book_cats)
-            log_json(
-                logger,
-                logging.INFO,
-                "book classification determined",
-                book_id=book_id,
-                title=book.title,
-                categories=book.categories,
-                is_fictional=is_fictional,
-            )
 
             # Fetch all chunks ordered so batches are contiguous pages of text
             result = await session.execute(
@@ -162,7 +168,8 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
             # 5. Group consecutive chunks into batches and process concurrently.
             #    Sending N chunks per call instead of 1:
             #      - cuts LLM calls by chunk_batch_size×
-            #      - lets the model resolve coreferences across chunk boundaries
+            #      - lets the model resolve coreferences across chunk boundaries (within
+            #        this one call only — see module docstring)
             batches = [
                 chunks[i : i + chunk_batch_size]
                 for i in range(0, len(chunks), chunk_batch_size)
@@ -187,16 +194,35 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                         "You are an expert historical analyst and librarian. Read the following text chunks "
                         "from a book and extract key entities (persons, locations, events, eras, organizations, concepts) "
                         "and the directed relationships between them across ALL chunks. Resolve coreferences "
-                        "(e.g. 'the Khan', 'he', 'the ruler') to their canonical entity names.\n\n"
+                        "(e.g. 'the Khan', 'he', 'the ruler') to the same entity's local_id.\n\n"
+                        "Entity Identity Guideline:\n"
+                        "- Assign each distinct entity a unique local_id (e.g. 'e1', 'e2') within this response. "
+                        "Reuse the same local_id for every mention of the same entity in this text.\n"
+                        "- If two mentions could refer to different people who happen to share a name (different "
+                        "roles, no stated family/era connection), emit them as SEPARATE entity objects, each with "
+                        "its own local_id. Do not force them together. When in doubt, keep them separate — a "
+                        "global resolution pass, not this step, makes the final same/different call.\n"
+                        "- Relations reference entities by local_id, not by name.\n\n"
                         "Language Guideline:\n"
                         "- Extract all entity names (persons, locations, events, etc.) strictly in their original "
                         "Uyghur Perso-Arabic script as they appear in the text. Do NOT translate or transliterate "
                         "names to English or Latin characters (e.g., use 'نۇھ' instead of 'Nuh', and 'ياپەس' instead of 'Yafes').\n"
                         "- Relation types must be in English, ALL_CAPS, underscore-separated "
-                        "(e.g. SON_OF, CONQUERED, ALLIED_WITH, FOUGHT_IN). Never use Uyghur or other languages for relation types.\n\n"
+                        "(e.g. SON_OF, DAUGHTER_OF, FATHER_OF, MOTHER_OF, BROTHER_OF, UNCLE_OF, GRANDSON_OF, "
+                        "SPOUSE_OF, CONQUERED, RULED, SUCCEEDED, STUDIED_UNDER, BORN_IN, DIED_IN). Never use Uyghur or other languages for relation types.\n"
+                        "- Always enforce precise directed edge semantics:\n"
+                        "  * Son -> [SON_OF] -> Father/Mother\n"
+                        "  * Daughter -> [DAUGHTER_OF] -> Father/Mother\n"
+                        "  * Father -> [FATHER_OF] -> Son/Daughter\n"
+                        "  * Mother -> [MOTHER_OF] -> Son/Daughter\n"
+                        "  * Brother -> [BROTHER_OF] -> Sibling\n"
+                        "  * Nephew -> [NEPHEW_OF] -> Uncle\n"
+                        "  * Uncle -> [UNCLE_OF] -> Nephew\n"
+                        "  * Person -> [CHILD_OF] -> Parent (only if gender is unspecified)\n"
+                        "- In Uyghur historical texts: 'ئوغلى' = SON_OF, 'قىزى' = DAUGHTER_OF, 'ئاتىسى'/'فەدەر' = FATHER_OF, 'ئانىسى' = MOTHER_OF, 'ئىنىسى'/'ئاكىسى' = BROTHER_OF, 'تاغىسى'/'ئاممىسى' = UNCLE_OF, 'نەۋرىسى' = GRANDSON_OF.\n\n"
                         "Important Kinship/Relationship Guideline:\n"
                         "- In Uyghur historical texts, terms of endearment or lineage like 'قوزىچىسى' or 'نەۋرىسى' "
-                        "refer to a grandchild (e.g., GRANDSON_OF or GRANDCHILD_OF), NOT a direct child (e.g., SON_OF).\n"
+                        "refer to a grandchild (e.g., GRANDSON_OF or GRANDCHILD_OF), NOT a direct child (e.g., CHILD_OF).\n"
                         "- Verify and extract the exact kinship relationship using this rule.\n\n"
                         "Military/Political Guideline:\n"
                         "- Extract explicit military and political actions as directed relationship edges, not just as event nodes.\n"
@@ -209,7 +235,7 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
                         "- Do NOT set both year_hijri and century_gregorian on the same entity/relation.\n"
                         "- Do NOT embed years or centuries inside entity names — store the name cleanly (e.g. 'ئىسان بۇغاخاننىڭ ۋاپاتى', not 'ئىسان بۇغاخاننىڭ ۋاپاتى (ھىجرىيە 866-يىلى)').\n\n"
                         "Context Summary Guideline:\n"
-                        "- For every extracted entity, especially Person entities, provide a brief `context_summary` from the text (e.g., 'son of Ibrahim, ruler of Kashgar', 'general under Abdurashid Khan') to help resolve potential duplicates later.\n\n"
+                        "- For every extracted entity, especially Person entities, provide a brief `context_summary` from the text (e.g., 'son of Ibrahim, ruler of Kashgar', 'general under Abdurashid Khan') to help the global resolution pass later.\n\n"
                         f"Text Chunks:\n{combined_text}"
                     )
 
@@ -257,290 +283,89 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
             tasks = [extract_batch(batch) for batch in batches]
             results = await asyncio.gather(*tasks)
 
-            # 6. Accumulate all entities and relations across all batches, perform
-            #    entity resolution on duplicate names, and then write to Neo4j.
-            entity_occurrences = []
-            relation_occurrences = []
+            # 6. Assign identity by extraction position (id = uuid4()) — no cross-batch
+            #    dedup here; that is entirely the global resolution pass's job.
+            all_entities: list[dict] = []
+            all_relations: list[dict] = []
+            queue_rows: list[dict] = []
+            fiction_book_id = str(book_id) if scope == "fiction" else None
 
             for batch_idx, (batch, extraction) in enumerate(results):
                 if not extraction:
                     continue
 
-                # Map entity name -> entity object in this extraction batch
-                batch_entities_map = {
-                    e.name.strip(): e for e in extraction.entities if e.name
-                }
+                chunk_refs = [_chunk_ref(book_id, c) for c in batch if c.text]
 
-                added_names_in_batch = set()
-
-                def add_entity_occurrence(
-                    name: str, fallback_type: EntityType | str | None = None
-                ):
-                    name_stripped = name.strip()
-                    if not name_stripped or name_stripped in added_names_in_batch:
-                        return
-                    added_names_in_batch.add(name_stripped)
-
-                    ent = batch_entities_map.get(name_stripped)
-                    if ent:
-                        entity_occurrences.append(
-                            {
-                                "batch_idx": batch_idx,
-                                "name": name_stripped,
-                                "type": ent.type,
-                                "subtype": ent.subtype,
-                                "year_hijri": ent.year_hijri,
-                                "century_gregorian": ent.century_gregorian,
-                                "context_summary": ent.context_summary,
-                            }
-                        )
-                    else:
-                        entity_occurrences.append(
-                            {
-                                "batch_idx": batch_idx,
-                                "name": name_stripped,
-                                "type": fallback_type or EntityType.CONCEPT,
-                                "subtype": "Auto-extracted from relation",
-                                "year_hijri": None,
-                                "century_gregorian": None,
-                                "context_summary": None,
-                            }
-                        )
-
-                # Add all explicit entities
+                local_id_map: dict[str, str] = {}
                 for ent in extraction.entities:
-                    if ent.name:
-                        add_entity_occurrence(ent.name)
+                    name = ent.name.strip() if ent.name else ""
+                    if not name or not ent.local_id:
+                        continue
+                    entity_id = str(uuid.uuid4())
+                    local_id_map[ent.local_id] = entity_id
 
-                # Add all relations and capture implicit entities
+                    etype = (
+                        ent.type.value
+                        if isinstance(ent.type, EntityType)
+                        else (ent.type or EntityType.OTHER.value)
+                    )
+                    entity_data: dict = {
+                        "id": entity_id,
+                        "canonical_name": name,
+                        "aliases": [name],
+                        "type": etype,
+                        "subtype": ent.subtype,
+                        "scope": scope,
+                        "book_id": fiction_book_id,
+                        "resolution_status": "unresolved",
+                    }
+                    if ent.year_hijri:
+                        entity_data["year_hijri"] = ent.year_hijri
+                        entity_data["year_gregorian"] = hijri_to_gregorian(
+                            ent.year_hijri
+                        )
+                    elif ent.century_gregorian:
+                        entity_data["century_gregorian"] = ent.century_gregorian
+                    all_entities.append(entity_data)
+                    queue_rows.append(
+                        {
+                            "entity_id": entity_id,
+                            "scope": scope,
+                            "book_id": fiction_book_id,
+                            "sort_year": entity_data.get("year_hijri"),
+                        }
+                    )
+
                 for rel in extraction.relations:
-                    src = rel.source_entity.strip() if rel.source_entity else ""
-                    tgt = rel.target_entity.strip() if rel.target_entity else ""
+                    src_local = rel.source_entity
+                    tgt_local = rel.target_entity
                     rtype = rel.relation_type.strip() if rel.relation_type else ""
-                    if not src or not tgt or not rtype:
+                    if not src_local or not tgt_local or not rtype:
+                        continue
+                    src_id = local_id_map.get(src_local)
+                    tgt_id = local_id_map.get(tgt_local)
+                    if not src_id or not tgt_id:
+                        # Relation references a local_id the LLM didn't also emit as an
+                        # entity in this same response — nothing to resolve it to.
                         continue
 
-                    src_type = (
-                        batch_entities_map.get(src).type
-                        if batch_entities_map.get(src)
-                        else None
-                    )
-                    tgt_type = (
-                        batch_entities_map.get(tgt).type
-                        if batch_entities_map.get(tgt)
-                        else None
-                    )
-
-                    add_entity_occurrence(src, fallback_type=src_type)
-                    add_entity_occurrence(tgt, fallback_type=tgt_type)
-
-                    relation_occurrences.append(
-                        {
-                            "batch_idx": batch_idx,
-                            "source_name": src,
-                            "rel_type": rtype,
-                            "target_name": tgt,
-                            "year_hijri": rel.year_hijri,
-                            "century_gregorian": rel.century_gregorian,
-                        }
-                    )
-
-            # Gather local relationships for each Person occurrence to provide context to the resolver
-            person_occurrences = []
-            for idx, occ in enumerate(entity_occurrences):
-                etype = occ["type"]
-                is_person = False
-                if isinstance(etype, EntityType) and etype == EntityType.PERSON:
-                    is_person = True
-                elif isinstance(etype, str) and etype.strip().lower() == "person":
-                    is_person = True
-
-                if is_person:
-                    person_occurrences.append((idx, occ))
-
-            for global_idx, occ in person_occurrences:
-                b_idx = occ["batch_idx"]
-                raw_name = occ["name"]
-
-                related_info = []
-                for rel in relation_occurrences:
-                    if rel["batch_idx"] == b_idx:
-                        if rel["source_name"] == raw_name:
-                            related_info.append(
-                                f"{rel['rel_type']} -> {rel['target_name']}"
-                            )
-                        elif rel["target_name"] == raw_name:
-                            related_info.append(
-                                f"{rel['source_name']} -> {rel['rel_type']}"
-                            )
-                occ["relationships"] = related_info
-
-            # Run global person name resolution if we have multiple person occurrences
-            if len(person_occurrences) > 1:
-                occurrences_data = []
-                for global_idx, occ in person_occurrences:
-                    occurrences_data.append(
-                        {
-                            "occurrence_index": len(occurrences_data),
-                            "name": occ["name"],
-                            "subtype": occ["subtype"],
-                            "year_hijri": occ["year_hijri"],
-                            "century_gregorian": occ["century_gregorian"],
-                            "context_summary": occ["context_summary"],
-                            "relationships": occ.get("relationships", []),
-                        }
-                    )
-
-                items_str = ""
-                for occ in occurrences_data:
-                    items_str += f"Occurrence index: {occ['occurrence_index']}\n"
-                    items_str += f"  Name: {occ['name']}\n"
-                    if occ.get("subtype"):
-                        items_str += f"  Subtype: {occ['subtype']}\n"
-                    if occ.get("year_hijri"):
-                        items_str += f"  Hijri Year: {occ['year_hijri']}\n"
-                    if occ.get("century_gregorian"):
-                        items_str += (
-                            f"  Gregorian Century: {occ['century_gregorian']}\n"
+                    relation_data: dict = {
+                        "source_id": src_id,
+                        "target_id": tgt_id,
+                        "rel_type": rtype,
+                        "book_id": str(book_id),
+                        "chunk_refs": chunk_refs,
+                    }
+                    if rtype == "CHILD_OF" and rel.parent_role:
+                        relation_data["parent_role"] = rel.parent_role
+                    if rel.year_hijri:
+                        relation_data["year_hijri"] = rel.year_hijri
+                        relation_data["year_gregorian"] = hijri_to_gregorian(
+                            rel.year_hijri
                         )
-                    if occ.get("context_summary"):
-                        items_str += f"  Context: {occ['context_summary']}\n"
-                    if occ.get("relationships"):
-                        items_str += (
-                            f"  Relationships: {', '.join(occ['relationships'])}\n"
-                        )
-                    items_str += "\n"
-
-                prompt = (
-                    "You are an expert historical analyst and librarian. We have extracted a list of person name occurrences "
-                    "from different parts/chunks of a book. Some occurrences represent the exact same person, some represent "
-                    "different people with the exact same name, and some represent the same person but with variation in names/titles "
-                    "(e.g., 'بابۇر' and 'بابۇر پادىشاھ').\n\n"
-                    "Your task is to analyze these occurrences and group them into distinct real-world individuals, resolving "
-                    "their names to a canonical standard form.\n\n"
-                    "Rules:\n"
-                    "1. If multiple occurrences represent the same individual, resolve them to the exact same canonical name. For example, "
-                    "if occurrence A has name 'بابۇر پادىشاھ' and occurrence B has name 'بابۇر', and they represent the same person, resolve "
-                    "both to the cleaner canonical name 'بابۇر'.\n"
-                    "2. If occurrences represent different individuals with the exact same name (or very similar names), append Roman numerals "
-                    "to their names to distinguish them (e.g. 'ئابدۇللاھ I', 'ئابدۇللاھ II', 'ئابدۇللاھ III'). Order them chronologically "
-                    "(using their Hijri year/century) or by order of appearance. Start numbering from I.\n"
-                    "3. If there is only one distinct person matching a name group across all occurrences, do NOT append any Roman numeral to that name.\n"
-                    "4. Keep the original script/language of the name exactly, and append a space followed by the Roman numeral (ASCII letters: I, II, III, IV, etc.).\n\n"
-                    f"Occurrences to analyze:\n{items_str}"
-                )
-
-                try:
-                    response = await client.aio.models.generate_content(
-                        model=chat_model,
-                        contents=prompt,
-                        config=types.GenerateContentConfig(
-                            response_mime_type="application/json",
-                            response_schema=NameResolutionResponse,
-                            temperature=0.0,
-                        ),
-                    )
-                    raw_text = response.text
-                    resolution = NameResolutionResponse.model_validate_json(raw_text)
-                    for res in resolution.resolutions:
-                        local_idx = res.occurrence_index
-                        if 0 <= local_idx < len(person_occurrences):
-                            global_idx = person_occurrences[local_idx][0]
-                            entity_occurrences[global_idx]["resolved_name"] = (
-                                res.resolved_name.strip()
-                            )
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to run global person resolution: {e}. Keeping original names."
-                    )
-
-            # Create a lookup mapping from (batch_idx, raw_name) to the final resolved name
-            name_resolution_map = {}
-            for occ in entity_occurrences:
-                batch_idx = occ["batch_idx"]
-                raw_name = occ["name"]
-                resolved_name = occ.get("resolved_name", raw_name)
-                name_resolution_map[(batch_idx, raw_name)] = resolved_name
-
-            name_type_map = {}
-            for occ in entity_occurrences:
-                name_type_map[(occ["batch_idx"], occ["name"])] = occ["type"]
-
-            base_title = re.sub(r"[\s-]+\d+\s*$", "", book.title or "").strip()
-
-            def get_display_name(name: str, etype: EntityType | str | None) -> str:
-                if not name:
-                    return ""
-                is_person = False
-                if isinstance(etype, EntityType) and etype == EntityType.PERSON:
-                    is_person = True
-                elif isinstance(etype, str) and etype.strip().lower() == "person":
-                    is_person = True
-
-                if is_fictional and is_person:
-                    return f"{name} ({base_title})"
-                return name
-
-            seen_entity_names = set()
-            all_entities = []
-            for occ in entity_occurrences:
-                batch_idx = occ["batch_idx"]
-                raw_name = occ["name"]
-                resolved_name = name_resolution_map.get((batch_idx, raw_name), raw_name)
-                display_name = get_display_name(resolved_name, occ["type"])
-
-                if display_name in seen_entity_names:
-                    continue
-                seen_entity_names.add(display_name)
-                etype = occ["type"]
-                entity_data: dict = {
-                    "name": display_name,
-                    "type": etype.value
-                    if isinstance(etype, EntityType)
-                    else (etype if etype else EntityType.OTHER.value),
-                    "subtype": occ["subtype"],
-                }
-                if occ["year_hijri"]:
-                    entity_data["year_hijri"] = occ["year_hijri"]
-                    entity_data["year_gregorian"] = hijri_to_gregorian(
-                        occ["year_hijri"]
-                    )
-                elif occ["century_gregorian"]:
-                    entity_data["century_gregorian"] = occ["century_gregorian"]
-                all_entities.append(entity_data)
-
-            all_relations = []
-            for rel in relation_occurrences:
-                batch_idx = rel["batch_idx"]
-                src_raw = rel["source_name"]
-                tgt_raw = rel["target_name"]
-
-                src_type = name_type_map.get((batch_idx, src_raw))
-                tgt_type = name_type_map.get((batch_idx, tgt_raw))
-
-                src_resolved = name_resolution_map.get((batch_idx, src_raw), src_raw)
-                tgt_resolved = name_resolution_map.get((batch_idx, tgt_raw), tgt_raw)
-
-                src_display = get_display_name(src_resolved, src_type)
-                tgt_display = get_display_name(tgt_resolved, tgt_type)
-
-                if not src_display or not tgt_display or not rel["rel_type"]:
-                    continue
-
-                relation_data: dict = {
-                    "source_name": src_display,
-                    "rel_type": rel["rel_type"],
-                    "target_name": tgt_display,
-                    "book_id": str(book_id),
-                }
-                if rel["year_hijri"]:
-                    relation_data["year_hijri"] = rel["year_hijri"]
-                    relation_data["year_gregorian"] = hijri_to_gregorian(
-                        rel["year_hijri"]
-                    )
-                elif rel["century_gregorian"]:
-                    relation_data["century_gregorian"] = rel["century_gregorian"]
-                all_relations.append(relation_data)
+                    elif rel.century_gregorian:
+                        relation_data["century_gregorian"] = rel.century_gregorian
+                    all_relations.append(relation_data)
 
             # Single bulk write: 2 Neo4j round-trips for the entire book
             save_errors = 0
@@ -570,6 +395,14 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
         finally:
             await graph_repo.close()
 
+        # 7. Enqueue every newly created entity into the global resolution queue —
+        #    both scopes get queued (fiction resolves within its book, non-fiction
+        #    across the library — same queue, same job, parameterized by scope).
+        if queue_rows and save_errors == 0:
+            async with db_session.async_session_factory() as session:
+                queue_repo = GraphResolutionQueueRepository(session)
+                await queue_repo.bulk_enqueue(queue_rows)
+
         # Update database status — 'partial' if any batch saves failed, 'complete' otherwise
         final_milestone = "partial" if save_errors > 0 else "complete"
         if save_errors > 0:
@@ -594,6 +427,7 @@ async def knowledge_graph_job(ctx, book_id: str) -> None:
             logging.INFO,
             "knowledge graph job completed",
             book_id=book_id,
+            scope=scope,
             chunk_count=len(chunks),
             batch_count=len(batches),
             batch_size=chunk_batch_size,

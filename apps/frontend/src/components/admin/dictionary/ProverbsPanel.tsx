@@ -1,17 +1,16 @@
-/**
- * Proverbs Panel - Editor/Admin tool to view proverbs (Read-Only)
- */
-
 import {
   AlertCircle,
+  Edit2,
   Hash,
   Loader2,
   RefreshCw,
+  Save,
   Search,
   X
 } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../../i18n/I18nContext';
+import { useIsEditor } from '../../../hooks/useAuth';
 import { authFetch } from '../../../services/authService';
 import { UYGHUR_ALPHABET } from '../../../utils/uyghurAlphabet';
 
@@ -24,12 +23,22 @@ interface ProverbEntry {
 
 export const ProverbsPanel: React.FC = () => {
   const { t } = useI18n();
+  const isEditor = useIsEditor();
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState<ProverbEntry[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [stats, setStats] = useState<{ total_entries: number } | null>(null);
   const [letterGroups] = useState<string[]>(UYGHUR_ALPHABET);
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
+
+  // Inline Edit state
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState<{ text: string; volume: string; page_number: string }>({
+    text: '',
+    volume: '',
+    page_number: '',
+  });
+  const [isSaving, setIsSaving] = useState(false);
 
   // Infinite Scroll State
   const [allEntries, setAllEntries] = useState<ProverbEntry[]>([]);
@@ -120,6 +129,50 @@ export const ProverbsPanel: React.FC = () => {
     setHasMore(true);
     fetchStats(group);
     fetchAllEntries(0, true, group);
+  };
+
+  const handleEditRow = (entry: ProverbEntry) => {
+    setEditingId(entry.id);
+    setEditForm({
+      text: entry.text,
+      volume: entry.volume != null ? String(entry.volume) : '',
+      page_number: entry.page_number != null ? String(entry.page_number) : '',
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+  };
+
+  const handleSaveRow = async (entry: ProverbEntry) => {
+    if (!editForm.text.trim()) return;
+    setIsSaving(true);
+    try {
+      const body = {
+        text: editForm.text.trim(),
+        volume: editForm.volume !== '' ? Number(editForm.volume) : null,
+        page_number: editForm.page_number !== '' ? Number(editForm.page_number) : null,
+      };
+      const resp = await authFetch(`/api/proverbs/${entry.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (resp.ok) {
+        const updated: ProverbEntry = await resp.json();
+        setAllEntries(prev => prev.map(e => (e.id === updated.id ? updated : e)));
+        setSuggestions(prev => prev.map(e => (e.id === updated.id ? updated : e)));
+        setEditingId(null);
+      } else {
+        const err = await resp.json();
+        alert(err.detail || 'Failed to update proverb');
+      }
+    } catch (e: any) {
+      console.error('Failed to update proverb', e);
+      alert(e.message || 'Error saving proverb');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Infinite Scroll Observer
@@ -239,27 +292,98 @@ export const ProverbsPanel: React.FC = () => {
           <div className="space-y-3">
             <div className="glass-panel rounded-[32px] p-2 overflow-hidden shadow-xl animate-fade-in border border-[#0369a1]/5 dark:border-[#38bdf8]/10">
               <div className="grid grid-cols-1 gap-1">
-                  {activeEntries.map((entry) => (
-                    <div 
-                      key={entry.id} 
-                      className={`
-                        flex items-start justify-between px-4 md:px-6 py-4 md:py-5 rounded-2xl transition-all group hover:bg-slate-50/50 dark:hover:bg-slate-800/30
-                      `}
-                    >
-                      <div className="flex-1 min-w-0 pr-2">
-                        <div className="flex items-center gap-3">
-                          <span className="uyghur-text text-[16px] md:text-xl font-normal text-slate-800 dark:text-slate-100 italic leading-relaxed">
-                             {entry.text}
-                          </span>
-                        </div>
-                        {(entry.volume != null || entry.page_number != null) && (
-                          <p className="uyghur-text text-[11px] md:text-[12px] text-slate-400 dark:text-slate-500 font-bold mt-1.5 opacity-80">
-                             {t('admin.proverbs.volumeAndPage', { volume: entry.volume ?? '-', page: entry.page_number ?? '-' })}
-                          </p>
+                  {activeEntries.map((entry) => {
+                    const isEditingThis = entry.id === editingId;
+                    return (
+                      <div 
+                        key={entry.id} 
+                        className={`
+                          flex items-start justify-between px-4 md:px-6 py-4 md:py-5 rounded-2xl transition-all group hover:bg-slate-50/50 dark:hover:bg-slate-800/30 gap-4
+                        `}
+                      >
+                        {isEditingThis ? (
+                          <div className="flex-1 min-w-0 pr-2 space-y-3">
+                            <div>
+                              <textarea
+                                rows={2}
+                                value={editForm.text}
+                                onChange={(e) => setEditForm(prev => ({ ...prev, text: e.target.value }))}
+                                className="w-full px-4 py-2.5 text-[16px] md:text-xl border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 outline-none uyghur-text resize-y font-normal"
+                                placeholder={t('admin.proverbs.searchPlaceholder')}
+                              />
+                            </div>
+                            <div className="flex flex-wrap items-center gap-3">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-bold text-slate-400 dark:text-slate-500">توم:</span>
+                                <input
+                                  type="number"
+                                  value={editForm.volume}
+                                  onChange={(e) => setEditForm(prev => ({ ...prev, volume: e.target.value }))}
+                                  className="w-20 px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 outline-none"
+                                  placeholder="1"
+                                />
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-bold text-slate-400 dark:text-slate-500">بەت:</span>
+                                <input
+                                  type="number"
+                                  value={editForm.page_number}
+                                  onChange={(e) => setEditForm(prev => ({ ...prev, page_number: e.target.value }))}
+                                  className="w-20 px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 outline-none"
+                                  placeholder="1"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex-1 min-w-0 pr-2">
+                            <div className="flex items-center gap-3">
+                              <span className="uyghur-text text-[16px] md:text-xl font-normal text-slate-800 dark:text-slate-100 italic leading-relaxed">
+                                 {entry.text}
+                              </span>
+                            </div>
+                            {(entry.volume != null || entry.page_number != null) && (
+                              <p className="uyghur-text text-[11px] md:text-[12px] text-slate-400 dark:text-slate-500 font-bold mt-1.5 opacity-80">
+                                 {t('admin.proverbs.volumeAndPage', { volume: entry.volume ?? '-', page: entry.page_number ?? '-' })}
+                              </p>
+                            )}
+                          </div>
                         )}
+
+                        <div className="flex items-center justify-end gap-2 shrink-0">
+                          {isEditingThis ? (
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleSaveRow(entry)}
+                                disabled={isSaving || !editForm.text.trim()}
+                                className="p-2.5 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl hover:bg-[#0369a1]/90 dark:hover:bg-[#38bdf8]/90 transition-all shadow-lg shadow-[#0369a1]/10 dark:shadow-[#38bdf8]/10 disabled:opacity-50"
+                                title={t('common.save')}
+                              >
+                                {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                              </button>
+                              <button
+                                onClick={handleCancelEdit}
+                                className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-90 transition-all"
+                                title={t('common.cancel')}
+                              >
+                                <X size={20} />
+                              </button>
+                            </div>
+                          ) : (
+                            isEditor && (
+                              <button
+                                onClick={() => handleEditRow(entry)}
+                                className="p-2 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-xl transition-all"
+                                title={t('common.edit')}
+                              >
+                                <Edit2 size={18} />
+                              </button>
+                            )
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
               </div>
             </div>
 

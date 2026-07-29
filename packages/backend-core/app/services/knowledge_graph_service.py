@@ -73,6 +73,14 @@ class EntityType(str, Enum):
 
 
 class ExtractedEntity(BaseModel):
+    local_id: str = Field(
+        ...,
+        description="Unique key for this entity within this response, e.g. 'e1'. Referenced by relations. "
+        "If two mentions could refer to different people who happen to share a name (different roles, "
+        "no stated family/era connection), emit them as separate entity objects, each with its own "
+        "local_id and context_summary — do not force them together. A global resolution pass, not this "
+        "extraction step, makes the final same/different call.",
+    )
     name: Optional[str] = Field(
         None,
         description="The standard name of the person, place, event, era or concept — do NOT embed years in the name",
@@ -86,7 +94,7 @@ class ExtractedEntity(BaseModel):
     )
     year_hijri: Optional[int] = Field(
         None,
-        description="Hijri year associated with this entity (e.g. birth, death, founding). Only for Event or Era entities. Use only when a specific Hijri year is stated.",
+        description="For Person: birth year. For Event/Era: the event/era year. Use only when a specific Hijri year is stated.",
     )
     century_gregorian: Optional[int] = Field(
         None,
@@ -94,7 +102,8 @@ class ExtractedEntity(BaseModel):
     )
     context_summary: Optional[str] = Field(
         None,
-        description="Brief context summary or description of the entity from the text (e.g. 'son of Ibrahim, governor of Kashgar') to help resolve duplicates.",
+        description="Brief context to help the global resolution pass — role, era, key relationships "
+        "(e.g. 'son of Ibrahim, governor of Kashgar').",
     )
 
 
@@ -102,12 +111,24 @@ class ExtractedEntity(BaseModel):
 
 
 class ExtractedRelation(BaseModel):
-    source_entity: Optional[str] = Field(None, description="Name of the source entity")
+    source_entity: Optional[str] = Field(
+        None,
+        description="local_id of the source entity (see ExtractedEntity.local_id), not its name",
+    )
     relation_type: Optional[str] = Field(
         None,
-        description="The type of relationship (e.g., LIVED_IN, PART_OF, INFLUENCED, BORN_IN, SON_OF)",
+        description="The specific directed relationship type in UPPER_SNAKE_CASE (e.g. SON_OF, DAUGHTER_OF, "
+        "FATHER_OF, MOTHER_OF, BROTHER_OF, SISTER_OF, UNCLE_OF, GRANDSON_OF, SPOUSE_OF, BORN_IN, DIED_IN, "
+        "LIVED_IN, CONQUERED, RULED, GOVERNED, SUCCEEDED, STUDIED_UNDER).",
     )
-    target_entity: Optional[str] = Field(None, description="Name of the target entity")
+    target_entity: Optional[str] = Field(
+        None,
+        description="local_id of the target entity (see ExtractedEntity.local_id), not its name",
+    )
+    parent_role: Optional[str] = Field(
+        None,
+        description="'father' or 'mother' — only set when relation_type is CHILD_OF",
+    )
     year_hijri: Optional[int] = Field(
         None,
         description="Hijri year when this relationship occurred. Use only when a specific Hijri year is stated.",
@@ -125,25 +146,6 @@ class KnowledgeExtraction(BaseModel):
     relations: List[ExtractedRelation] = Field(
         default_factory=list,
         description="List of directed relationships between the found entities",
-    )
-
-
-# ── Entity Resolution Models ──────────────────────────────────────────────────
-
-
-class EntityOccurrenceResolution(BaseModel):
-    occurrence_index: int = Field(
-        ..., description="The index of the occurrence in the input list"
-    )
-    resolved_name: str = Field(
-        ...,
-        description="The resolved name for this occurrence. If it represents a distinct person from others with the same base name, append a Roman numeral. If it is the same person, use the same name.",
-    )
-
-
-class NameResolutionResponse(BaseModel):
-    resolutions: List[EntityOccurrenceResolution] = Field(
-        ..., description="Resolutions for each occurrence of the name"
     )
 
 
@@ -240,10 +242,11 @@ def parse_and_clean_json_from_exception(
         cleaned_entities = []
         for item in data["entities"]:
             if isinstance(item, dict):
-                # An entity needs name and type
+                # An entity needs local_id (required by the schema), name, and type
+                local_id = item.get("local_id")
                 name = item.get("name")
                 etype = item.get("type")
-                if name and etype:
+                if local_id and name and etype:
                     cleaned_entities.append(item)
         data["entities"] = cleaned_entities
 

@@ -184,6 +184,7 @@ class RAGQualityStats(BaseModel):
     thumbs_down_count: int
     avg_faithfulness: float | None = None
     avg_answer_relevance: float | None = None
+    avg_context_precision: float | None = None
 
 
 @router.get("/rag", response_model=RAGQualityStats)
@@ -203,6 +204,13 @@ async def get_rag_quality_stats(
             func.count().label("total"),
             func.count(case((is_positive, 1))).label("thumbs_up"),
             func.count(case((is_negative, 1))).label("thumbs_down"),
+            func.avg(RAGEvaluation.faithfulness_score).label("avg_faithfulness"),
+            func.avg(RAGEvaluation.answer_relevance_score).label(
+                "avg_answer_relevance"
+            ),
+            func.avg(RAGEvaluation.context_precision_score).label(
+                "avg_context_precision"
+            ),
         ).select_from(RAGEvaluation)
     )
     row = result.fetchone()
@@ -217,8 +225,15 @@ async def get_rag_quality_stats(
         "graded_evaluations": graded,
         "thumbs_up_count": thumbs_up,
         "thumbs_down_count": thumbs_down,
-        "avg_faithfulness": None,
-        "avg_answer_relevance": None,
+        "avg_faithfulness": float(row.avg_faithfulness)
+        if row and row.avg_faithfulness is not None
+        else None,
+        "avg_answer_relevance": float(row.avg_answer_relevance)
+        if row and row.avg_answer_relevance is not None
+        else None,
+        "avg_context_precision": float(row.avg_context_precision)
+        if row and row.avg_context_precision is not None
+        else None,
     }
 
 

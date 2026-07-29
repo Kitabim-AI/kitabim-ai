@@ -44,11 +44,15 @@ This file provides guidance for automated agents working in this repo.
 - Frontend: http://localhost:30080 | Backend: http://localhost:30800
 - **CRITICAL LOCAL RULE**: Do not rely on local dev servers (like `npm run dev`) for final change application. You MUST always use Docker Compose to ensure changes are reflected.
 
-## Production Deployment
+## Production Deployment & Data Safety
 - **CRITICAL PRODUCTION RULE**: Use the automated deployment script for all production releases. This ensures the correct architecture (linux/amd64), registry tagging, and VM sync.
 - Run: `./deploy/gcp/scripts/deploy.sh [IMAGE_TAG]` from the repository root.
 - The script handles building, pushing, and remote deployment commands.
 - GCP infra: Compute Engine VM + Cloud Storage + Nginx reverse proxy (`deploy/gcp/nginx/`).
+- **DATA SAFETY RULES**:
+  1. Never run `docker system prune --volumes` or any prune flag that deletes persistent storage volumes in production or local environments.
+  2. Never stop or remove stateful database containers (`neo4j`, `postgres`, `redis`) during routine application code deployments.
+  3. Never execute destructive graph data reset operations (`scripts/reset_graph_data.py`) without explicit user permission (`--confirm-reset-all-graph-data`).
 
 ## File Management & Tooling
 - **SCRIPTS**: Operational, diagnostic, and testing scripts MUST be placed in `scripts/`. Local deployment/rebuild scripts MUST be in `deploy/local/`. Never create ad-hoc scripts in the root or service folders.

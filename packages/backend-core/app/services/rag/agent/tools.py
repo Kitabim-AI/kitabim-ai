@@ -18,6 +18,7 @@ from app.services.rag.keywords import CURRENT_BOOK_KEYWORDS
 from app.services.rag.retrieval import (
     embed_query,
     find_books_by_title_in_question,
+    graph_entity_lookup,
     vector_search,
 )
 from app.services.rag.utils import normalize_uyghur
@@ -574,6 +575,16 @@ async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
                         "Context-switch re-search succeeded",
                         new_books=len(new_book_ids),
                     )
+
+    # Knowledge-graph entity lookup (design v2 §6) — pure cache read + Neo4j fact
+    # fetch, no LLM call. Rides this same search_chunks call rather than adding a
+    # second retrieval round-trip; on no match this is a no-op.
+    try:
+        graph_results = await graph_entity_lookup(query)
+        if graph_results:
+            results = [*results, *graph_results]
+    except Exception as exc:
+        log_json(logger, logging.WARNING, "graph entity lookup failed", error=str(exc))
 
     log_json(
         logger,
@@ -1406,6 +1417,8 @@ async def _run_lookup_synonyms(args: dict, ctx: QueryContext) -> dict:
 async def _run_search_quran(args: dict, ctx: QueryContext) -> dict:
     from app.db import session as db_session
     from app.db.models import Quran
+    from app.core.config import settings
+    from app.db.repositories.system_configs_repository import SystemConfigsRepository
     from sqlalchemy import select, or_, func
 
     surah = args.get("surah")
@@ -1417,10 +1430,19 @@ async def _run_search_quran(args: dict, ctx: QueryContext) -> dict:
             stmt = select(Quran).where(Quran.surah == surah)
             if ayah is not None:
                 stmt = stmt.where(Quran.ayah == ayah)
-            stmt = stmt.order_by(Quran.ayah.asc()).limit(30)
+            stmt = stmt.order_by(Quran.ayah.asc())
             res = await session.execute(stmt)
             entries = list(res.scalars().all())
         elif q:
+            configs_repo = SystemConfigsRepository(session)
+            rag_top_k_str = await configs_repo.get_value(
+                "rag_top_k", str(settings.rag_top_k)
+            )
+            try:
+                rag_top_k = int(rag_top_k_str)
+            except (ValueError, TypeError):
+                rag_top_k = settings.rag_top_k
+
             # Try semantic vector search first
             query_vector = None
             try:
@@ -1446,7 +1468,7 @@ async def _run_search_quran(args: dict, ctx: QueryContext) -> dict:
                     LIMIT :limit
                 """)
                 res = await session.execute(
-                    stmt, {"embedding": embedding_str, "limit": 15}
+                    stmt, {"embedding": embedding_str, "limit": rag_top_k}
                 )
                 entries = res.fetchall()
             else:
@@ -1464,7 +1486,7 @@ async def _run_search_quran(args: dict, ctx: QueryContext) -> dict:
                         )
                     )
                     .order_by(Quran.surah.asc(), Quran.ayah.asc())
-                    .limit(10)
+                    .limit(rag_top_k)
                 )
                 res = await session.execute(stmt)
                 entries = list(res.scalars().all())

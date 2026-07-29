@@ -168,6 +168,8 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
         self, limit: int = 20, offset: int = 0, query: Optional[str] = None
     ) -> tuple[List[RAGEvaluation], int]:
         """Return all questions descending by ts, with total count for pagination."""
+        from app.db.models import User
+
         count_stmt = select(func.count()).select_from(RAGEvaluation)
         if query:
             count_stmt = count_stmt.where(RAGEvaluation.question.ilike(f"%{query}%"))
@@ -175,7 +177,8 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
         total = count_result.scalar_one()
 
         stmt = (
-            select(RAGEvaluation)
+            select(RAGEvaluation, User.display_name, User.email)
+            .outerjoin(User, RAGEvaluation.user_id == User.id)
             .order_by(RAGEvaluation.ts.desc())
             .limit(limit)
             .offset(offset)
@@ -183,7 +186,11 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
         if query:
             stmt = stmt.where(RAGEvaluation.question.ilike(f"%{query}%"))
         result = await self.session.execute(stmt)
-        return list(result.scalars().all()), total
+        items: List[RAGEvaluation] = []
+        for eval_row, display_name, email in result.all():
+            eval_row.user_display_name = display_name or email  # type: ignore[attr-defined]
+            items.append(eval_row)
+        return items, total
 
     async def toggle_show_on_homepage(
         self, eval_id: int, value: bool

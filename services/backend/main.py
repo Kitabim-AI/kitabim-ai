@@ -33,6 +33,7 @@ from api.endpoints import (
     questions_router,
     proverbs_router,
     quran_router,
+    graph_admin_router,
 )
 from app.core.config import settings
 from app.db.session import init_db, close_db  # SQLAlchemy session management
@@ -475,6 +476,9 @@ app.include_router(cache_router.router, prefix="/api/cache", tags=["cache"])
 app.include_router(questions_router.router, prefix="/api/questions", tags=["questions"])
 app.include_router(proverbs_router.router, prefix="/api", tags=["proverbs"])
 app.include_router(quran_router.router, prefix="/api", tags=["quran"])
+app.include_router(
+    graph_admin_router.router, prefix="/api/admin/graph", tags=["graph-admin"]
+)
 
 
 @app.get("/api/config")

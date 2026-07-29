@@ -32,6 +32,33 @@ flowchart TD
 
 Unlike the `HandlerRegistry` path, this pipeline never touches `DeterministicRAGHandler.execute_path()`/`graph_router.py` or `LLMRoutedRAGHandler`'s own agent loop — it builds its own retrieval/answer agents directly. The only piece of `DeterministicRAGHandler` it reuses is the signal-extraction function itself, called as a plain utility.
 
+### Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Frontend as Frontend SPA (useChat)
+    participant Router as chat_router.py (/api/chat/stream)
+    participant Orch as ChatOrchestrator
+    participant RetrAgent as KitabimRetrievalAgent (ADK)
+    participant AnsAgent as KitabimAnswerAgent (ADK)
+    participant DB as PostgreSQL (conversations)
+
+    User->>Frontend: Submit question
+    Frontend->>Router: POST /api/chat/stream {question, conversationId, ...}
+    Router->>Orch: stream_response(dto, session)
+    Orch->>DB: Get or create conversation record
+    Orch->>RetrAgent: runner.run_async(RunConfig(SSE))
+    RetrAgent-->>Orch: Yield tool calls & results (search_chunks, etc.)
+    Orch-->>Frontend: Stream SSE events: tool_call, tool_result, grading
+    Orch->>AnsAgent: answer_runner.run_async(RunConfig(SSE))
+    AnsAgent-->>Orch: Stream partial text chunks
+    Orch-->>Frontend: Stream SSE events: data: {"chunk": "..."}
+    Orch->>DB: Persist turn (user + model messages, eval link)
+    Orch-->>Frontend: Stream SSE event: data: {"done": true, ...}
+```
+
 ---
 
 ## Full Pipeline (`RAGService` / `HandlerRegistry` path)

@@ -101,6 +101,54 @@ RAG_PROMPT_TEMPLATE = """
 Question: {question}
 """
 
+RAG_JUDGE_PROMPT = """You are an impartial judge evaluating the quality of an answer produced by a RAG (retrieval-augmented generation) chat system for an Uyghur digital library. The Question, Answer, and Retrieved Context will be in Uyghur.
+
+Score the answer on three independent dimensions, each from 0.0 (worst) to 1.0 (best):
+
+1. faithfulness: Is every claim in the Answer supported by the Retrieved Context? An answer that states facts not present in the context, or contradicts the context, scores low. An answer that correctly states no relevant information was found (when the Retrieved Context is empty or irrelevant) scores high.
+2. answer_relevance: Does the Answer actually address the Question? An answer that is grounded but off-topic, incomplete, or evasive scores low.
+3. context_precision: Are the chunks in Retrieved Context relevant to the Question, independent of how the Answer used them? If Retrieved Context is empty, context_precision must be 0.0.
+
+Question: {question}
+
+Retrieved Context:
+{context}
+
+Answer: {answer}
+
+Return ONLY valid JSON matching this exact schema. Do NOT explain your reasoning, do NOT add markdown formatting or commentary — output the JSON object and nothing else:
+{{"faithfulness": <float 0.0-1.0>, "answer_relevance": <float 0.0-1.0>, "context_precision": <float 0.0-1.0>}}"""
+
+RAG_RERANK_PROMPT = """You are a search relevance ranker for a RAG (retrieval-augmented generation) chat system over an Uyghur digital library. The Question and each candidate passage will be in Uyghur.
+
+Given the Question and a numbered list of candidate passages, select the passages that are actually relevant to answering the Question, ordered from most to least relevant. Omit passages that are not relevant — you do not need to include every number, and if none are relevant return an empty list.
+
+Question: {question}
+
+Candidates:
+{candidates}
+
+Return ONLY a JSON array of the relevant candidate numbers in relevance order, most relevant first, e.g. [3, 1, 5]. Do NOT explain your reasoning, do NOT add markdown formatting or commentary — output the JSON array and nothing else."""
+
+ENTITY_RESOLUTION_JUDGE_PROMPT = """You are an expert historical analyst resolving duplicate entities in a knowledge graph extracted from Uyghur-language books. Entity names and facts below may be in Uyghur (Arabic script) or English.
+
+You are given two entity records, "Entity A" and "Entity B", that a fuzzy name match flagged as possibly referring to the same real-world person, place, event, era, or organization. Automated hard-constraint and similarity checks were inconclusive — decide whether they are the SAME entity or DIFFERENT entities.
+
+Entity A:
+{entity_a}
+
+Entity B:
+{entity_b}
+
+Rules:
+1. Prefer precision over recall — when genuinely uncertain, answer "unsure" rather than guessing "same". A wrong merge is harder to detect later than a missed one.
+2. Two entities with the same name but different roles, eras, or family connections (based on the facts/neighbors given) are DIFFERENT.
+3. Matching resolved facts (same parent, same birthplace, overlapping relationship neighbors) are strong evidence of "same".
+4. Conflicting resolved facts (different parent, different birthplace, disjoint lifespans) are strong evidence of "different" — but if the given facts are simply silent (missing) rather than conflicting, that alone is not evidence of "different".
+
+Return ONLY valid JSON matching this exact schema. Do NOT explain your reasoning outside the JSON, do NOT add markdown formatting or commentary — output the JSON object and nothing else:
+{{"verdict": "same" | "different" | "unsure", "confidence": <float 0.0-1.0>, "reasoning": "<brief reasoning, logged for admin review, not shown to end users>"}}"""
+
 QUERY_REWRITE_PROMPT = """You are a query reformulation assistant for an Uyghur digital library.
 
 Given the conversation history and a follow-up question, rewrite the follow-up into a single standalone question that contains all the context needed to search the library — without relying on pronouns or implicit references from previous turns.
@@ -109,8 +157,9 @@ Rules:
 1. If the question is already self-contained and does not depend on prior turns, return it EXACTLY as written.
 2. Replace demonstrative pronouns (ئۇ، بۇ، شۇ and their suffixed forms) with the specific entity they refer to from the history.
 3. Keep the rewritten question concise — one or two sentences maximum.
-4. Match the language of the original question (Uyghur, Arabic, or English).
-5. Return ONLY the rewritten question. No explanation, no preamble.
+4. Maintain standard Uyghur (Arabic script) for the rewritten question.
+5. If rewriting in Uyghur, strictly maintain standard Uyghur grammar, proper morphological suffix agglutination, and Subject-Object-Verb (SOV) word order.
+6. Return ONLY the rewritten question. No explanation, no preamble.
 
 Conversation history:
 {history}

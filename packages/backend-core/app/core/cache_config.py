@@ -27,3 +27,6 @@ KEY_CONFIG = "config:{key}"
 KEY_CHAT_USAGE = "chat:usage:{user_id}:{date}"
 KEY_RAG_REWRITE = "rag:rewrite:{hash}"
 KEY_OCR_FREQUENT_CORRECTIONS = "ocr:frequent_corrections"
+# Pre-computed by entity_resolution_service after every merge/split/unmerge and resolution
+# batch — query time is a lookup, never a live disambiguation call (design v2 §6).
+KEY_GRAPH_ALIAS_LOOKUP = "graph:alias:{alias}"
