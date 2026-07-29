@@ -11,6 +11,7 @@
     "noData": "مەلۇمات يوق",
     "save": "ساقلاش",
     "confirm": "جەزملەش",
+    "dismiss": "تاقاش",
     "ok": "بىلدىم",
     "cancel": "بىكار قىلىش",
     "delete": "ئۆچۈرۈش",
@@ -894,6 +895,16 @@
     "all": "ھەممىسى",
     "tabDetails": "تەپسىلاتى",
     "tabFilters": "سۈزگۈچلەر",
+    "tabReviews": "تەكشۈرۈش",
+    "clear": "ھېچقايسىسى",
+    "source": "مەنبە",
+    "sourceDocument": "ئەسلىي مەنبە",
+    "viewSourceChunk": "ئەسلىي مەنبە تېكىستىنى كۆرۈش",
+    "centerOnGraph": "گرافتىن كۆرۈش",
+    "legend": "تۈر كۆرسەتكۈچى",
+    "chunkDetailInfo": "{{page}}-بەت · {{chunk}}-پارچە",
+    "prevReference": "ئالدىنقى مەنبە",
+    "nextReference": "كېيىنكى مەنبە",
     "nodePanel": {
       "title": "سۆزلۈك تەپسىلاتى",
       "name": "نامى",
@@ -902,7 +913,18 @@
       "connections": "ئالاقىسى بار سۆزلۈكلەر",
       "yearHijri": "ھىجرىيە يىلى",
       "yearGregorian": "مىلادىيە يىلى",
-      "centuryGregorian": "مىلادىيە ئەسىرى"
+      "centuryGregorian": "مىلادىيە ئەسىرى",
+      "instructions": "بىلىم خەرىتىسىدىكى كۇنۇپكىلارنى چېكىپ، سۆزلۈكنىڭ تەپسىلاتى ۋە ئۆز-ئارا مۇناسىۋەتلىرىنى كۆرۈڭ."
+    },
+    "types": {
+      "person": "شەخس",
+      "location": "ئورۇن",
+      "organization": "تەشكىلات",
+      "event": "ۋەقە",
+      "historicalEra": "تارىخىي دەۋر",
+      "concept": "ئۇقۇم",
+      "other": "باشقىلار",
+      "book": "ئەسەر"
     },
     "admin": {
       "deleteRelationshipTitle": "مۇناسىۋەتنى ئۆچۈرۈش",
@@ -922,7 +944,24 @@
       "renameCancel": "بىكار قىلىش",
       "renameConfirm": "ئۆزگەرتىش",
       "renameSuccess": "سۆزلۈك نامى ئۆزگەرتىلدى.",
-      "renameError": "نامىنى ئۆزگەرتەلمىدى."
+      "renameError": "نامىنى ئۆزگەرتەلمىدى.",
+      "splitStart": "بۇ مۇناسىۋەتتىن ئايرىش...",
+      "splitTitle": "سۆزلۈكنى ئايرىش",
+      "splitMessage": "«{{name}}» نى «{{other}}» بىلەن بولغان مۇناسىۋىتىنى چېگرا قىلىپ ئىككى ئايرىم سۆزلۈككە ئايرامسىز؟ ئېنىق تەۋە بولمىغان مۇناسىۋەتلەر قولدا تەكشۈرۈش ئۈچۈن ئەسلى سۆزلۈكتە قالىدۇ.",
+      "splitConfirm": "ئايرىش",
+      "splitSuccess": "سۆزلۈك ئايرىلدى.",
+      "splitNoop": "زىددىيەتلىك توپ تېپىلمىدى — ھېچنېمە ئايرىلمىدى.",
+      "splitError": "سۆزلۈكنى ئايرىيالمىدى.",
+      "undoMergeMessage": "«{{remove}}» «{{keep}}» گە بىرلەشتۈرۈلدى.",
+      "undoMergeButton": "ئەسلىگە قايتۇرۇش",
+      "undoMergeSuccess": "بىرلەشتۈرۈش ئەسلىگە قايتۇرۇلدى.",
+      "undoMergeError": "ئەسلىگە قايتۇرالمىدى.",
+      "reviewsLoadError": "تەكشۈرۈش تىزىملىكىنى يۈكلىيەلمىدى.",
+      "reviewApprove": "بىرلەشتۈر",
+      "reviewReject": "رەت قىل",
+      "reviewApproved": "تەستىقلاندى.",
+      "reviewRejected": "رەت قىلىندى.",
+      "reviewActionError": "قارارنى خاتىرىلىيەلمىدى."
     }
   },
   "quran": {
@@ -938,6 +977,10 @@
     "selectAyah": "ئايەت تاللاڭ",
     "allAyahs": "ھەممە ئايەت",
     "searchKeyword": "ھالقىلىق سۆز بويىچە ئىزدەش...",
-    "searchBtn": "ئىزدەش"
+    "searchBtn": "ئىزدەش",
+    "noSurahFound": "ماس كېلىدىغان سۈرە تېپىلمىدى",
+    "noAyahFound": "ماس كېلىدىغان ئايەت تېپىلمىدى",
+    "ayahItem": "{{count}}-ئايەت",
+    "surahItem": "{{number}}. {{name}} سۈرىسى"
   }
 }

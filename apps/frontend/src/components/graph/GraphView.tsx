@@ -7,7 +7,8 @@ import { useAppContext } from '../../context/AppContext';
 import { useNotification } from '../../context/NotificationContext';
 import { useIsAdmin } from '../../hooks/useAuth';
 import { authFetch } from '../../services/authService';
-import { Search, Loader2, ZoomIn, ZoomOut, Maximize, Minimize, Maximize2, Network, BookOpen, MapPin, User, Calendar, HelpCircle, X, SlidersHorizontal, Building, Clock, Lightbulb, ChevronDown, Trash2, GitMerge, Edit3 } from 'lucide-react';
+import { Search, Loader2, ZoomIn, ZoomOut, Maximize, Minimize, Maximize2, Network, BookOpen, MapPin, User, Calendar, HelpCircle, X, SlidersHorizontal, Building, Clock, Lightbulb, ChevronDown, ChevronLeft, ChevronRight, Trash2, GitMerge, Edit3, GitBranch, Undo2, Check } from 'lucide-react';
+
 
 interface GraphNode {
   id: string;
@@ -22,13 +23,31 @@ interface GraphNode {
 }
 
 interface GraphLink {
+  id: string;
   source: any;
   target: any;
   label: string;
+  book_id?: string;
+  chunk_refs?: string[];
   year_hijri?: number;
   year_gregorian?: number;
   century_gregorian?: number;
 }
+
+
+interface ReviewItem {
+  id: number;
+  entityAId: string;
+  entityBId: string;
+  entityAName?: string;
+  entityBName?: string;
+  scope: string;
+  evidence: Record<string, any>;
+  suggestedAction: string;
+  status: string;
+  createdAt: string;
+}
+
 
 interface GraphData {
   nodes: GraphNode[];
@@ -51,6 +70,15 @@ const formatCentury = (century: number, lang: string) => {
   return `${century}${suffix(century)} Century`;
 };
 
+// react-force-graph mutates link.source/link.target into a node object reference once its
+// simulation initializes — and sets it to `null` (not undefined) if the node it pointed to no
+// longer exists (e.g. filtered out, or a stale link surviving a refetch). `typeof null ===
+// 'object'` is true, so a naive `typeof x === 'object' ? x.id : x` check throws on null.
+const resolveEndpointId = (endpoint: any): string | undefined => {
+  if (endpoint === null || endpoint === undefined) return undefined;
+  return typeof endpoint === 'object' ? endpoint.id : endpoint;
+};
+
 const formatYear = (year: number, type: 'hijri' | 'gregorian', lang: string) => {
   if (lang === 'ug') {
     return type === 'hijri' ? `${year}-يىلى (ھ)` : `${year}-يىلى (م)`;
@@ -68,7 +96,7 @@ export const GraphView: React.FC = () => {
   const [rawGraphData, setRawGraphData] = useState<GraphData>({ nodes: [], links: [] });
   const [selectedNodeTypes, setSelectedNodeTypes] = useState<string[]>([]);
   const [selectedEdgeTypes, setSelectedEdgeTypes] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<'details' | 'filters'>('filters');
+  const [activeTab, setActiveTab] = useState<'details' | 'filters' | 'reviews'>('filters');
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
@@ -81,6 +109,13 @@ export const GraphView: React.FC = () => {
   const [renameValue, setRenameValue] = useState('');
   const [renameSubmitting, setRenameSubmitting] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
+  const [lastMerge, setLastMerge] = useState<{ mergeLogId: number; keepLabel: string; removeLabel: string } | null>(null);
+  const [undoSubmitting, setUndoSubmitting] = useState(false);
+  const [splitTarget, setSplitTarget] = useState<{ edgeId: string; label: string } | null>(null);
+  const [splitSubmitting, setSplitSubmitting] = useState(false);
+  const [reviews, setReviews] = useState<ReviewItem[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [reviewActionId, setReviewActionId] = useState<number | null>(null);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [showLegend, setShowLegend] = useState(window.innerWidth >= 768);
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -88,12 +123,63 @@ export const GraphView: React.FC = () => {
   const fgRef = useRef<any>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
 
+  const [activeChunkRef, setActiveChunkRef] = useState<string | null>(null);
+  const [connChunkRefs, setConnChunkRefs] = useState<string[]>([]);
+  const [chunkDetailData, setChunkDetailData] = useState<{ id: number; bookId: string; bookTitle: string; pageNumber: number; chunkIndex: number; text: string } | null>(null);
+  const [chunkLoading, setChunkLoading] = useState(false);
+
+  const activeChunkIndex = useMemo(() => {
+    if (!activeChunkRef || connChunkRefs.length === 0) return 0;
+    const idx = connChunkRefs.indexOf(activeChunkRef);
+    return idx >= 0 ? idx : 0;
+  }, [activeChunkRef, connChunkRefs]);
+
+  useEffect(() => {
+    if (!activeChunkRef) {
+      setChunkDetailData(null);
+      return;
+    }
+    const loadChunk = async () => {
+      setChunkLoading(true);
+      try {
+        const res = await authFetch(`/api/books/graph/chunk?ref=${encodeURIComponent(activeChunkRef)}`);
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        setChunkDetailData(data);
+      } catch (err) {
+        console.error('Failed to load chunk detail', err);
+      } finally {
+        setChunkLoading(false);
+      }
+    };
+    loadChunk();
+  }, [activeChunkRef]);
+
+  // Keyboard navigation for chunk modal (Left / Right arrow keys)
+  useEffect(() => {
+    if (!activeChunkRef || connChunkRefs.length <= 1) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') {
+        if (activeChunkIndex < connChunkRefs.length - 1) {
+          setActiveChunkRef(connChunkRefs[activeChunkIndex + 1]);
+        }
+      } else if (e.key === 'ArrowRight') {
+        if (activeChunkIndex > 0) {
+          setActiveChunkRef(connChunkRefs[activeChunkIndex - 1]);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeChunkRef, activeChunkIndex, connChunkRefs]);
+
   // Automatically switch tab to Details when a node is selected
   useEffect(() => {
     if (selectedNode) {
       setActiveTab('details');
     }
   }, [selectedNode]);
+
 
   // Load graph data
   const fetchGraphData = async (query = '') => {
@@ -133,8 +219,10 @@ export const GraphView: React.FC = () => {
       const uniqueEdgeTypes = Array.from(new Set(graphData.links.map(link => link.label || 'RELATED_TO')));
       setSelectedNodeTypes(uniqueNodeTypes);
       setSelectedEdgeTypes(uniqueEdgeTypes);
+      return coloredNodes;
     } catch (e) {
       console.error('Failed to load graph data', e);
+      return [];
     } finally {
       setLoading(false);
     }
@@ -143,6 +231,45 @@ export const GraphView: React.FC = () => {
   useEffect(() => {
     fetchGraphData();
   }, []);
+
+  const navigateToEntity = async (entityId: string, entityName?: string) => {
+    const normName = entityName ? entityName.trim().toLowerCase() : '';
+    
+    let targetNode = rawGraphData.nodes.find(
+      n => n.id === entityId || (normName && n.label.trim().toLowerCase() === normName) || n.id === entityName
+    );
+
+    if (!targetNode) {
+      const term = entityName || entityId;
+      setSearchQuery(term);
+      const loadedNodes = await fetchGraphData(term);
+      if (loadedNodes && loadedNodes.length > 0) {
+        targetNode = loadedNodes.find(
+          n => n.id === entityId || (normName && n.label.trim().toLowerCase() === normName) || n.id === entityName
+        ) || loadedNodes[0];
+      }
+    }
+
+    if (targetNode) {
+      if (targetNode.type && !selectedNodeTypes.includes(targetNode.type)) {
+        setSelectedNodeTypes(prev => Array.from(new Set([...prev, targetNode.type])));
+      }
+
+      setSelectedNode(targetNode);
+      setActiveTab('details');
+
+      setTimeout(() => {
+        if (fgRef.current) {
+          if (targetNode.x !== undefined && targetNode.y !== undefined) {
+            fgRef.current.centerAt(targetNode.x, targetNode.y, 800);
+            fgRef.current.zoom(2.5, 800);
+          } else {
+            fgRef.current.zoomToFit(400);
+          }
+        }
+      }, 100);
+    }
+  };
 
   // Extract all unique available node and edge types from raw data
   const availableNodeTypes = useMemo(() => {
@@ -167,8 +294,9 @@ export const GraphView: React.FC = () => {
         return false;
       }
 
-      const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-      const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+      const sourceId = resolveEndpointId(link.source);
+      const targetId = resolveEndpointId(link.target);
+      if (sourceId === undefined || targetId === undefined) return false;
       return filteredNodeIds.has(sourceId) && filteredNodeIds.has(targetId);
     });
 
@@ -202,14 +330,14 @@ export const GraphView: React.FC = () => {
 
   const getLocalizedNodeType = (type: string) => {
     const tVal = type.toLowerCase();
-    if (tVal.includes('person') || tVal.includes('character') || tVal.includes('شەخس')) return language === 'ug' ? 'شەخس' : 'Person';
-    if (tVal.includes('place') || tVal.includes('location') || tVal.includes('يەر')) return language === 'ug' ? 'ئورۇن' : 'Location';
-    if (tVal.includes('org') || tVal.includes('group') || tVal.includes('تەشكىلات')) return language === 'ug' ? 'تەشكىلات' : 'Organization';
-    if (tVal.includes('event') || tVal.includes('ۋەقە')) return language === 'ug' ? 'ۋەقە' : 'Event';
-    if (tVal.includes('historicalera') || tVal.includes('era') || tVal.includes('دەۋر')) return language === 'ug' ? 'تارىخىي دەۋر' : 'Historical Era';
-    if (tVal.includes('concept') || tVal.includes('ئۇقۇم')) return language === 'ug' ? 'ئۇقۇم' : 'Concept';
-    if (tVal.includes('other') || tVal.includes('باشقىلار')) return language === 'ug' ? 'باشقىلار' : 'Other';
-    if (tVal.includes('book') || tVal.includes('ئەسەر')) return language === 'ug' ? 'ئەسەر' : 'Book';
+    if (tVal.includes('person') || tVal.includes('character') || tVal.includes('شەخس')) return t('graph.types.person');
+    if (tVal.includes('place') || tVal.includes('location') || tVal.includes('يەر')) return t('graph.types.location');
+    if (tVal.includes('org') || tVal.includes('group') || tVal.includes('تەشكىلات')) return t('graph.types.organization');
+    if (tVal.includes('event') || tVal.includes('ۋەقە')) return t('graph.types.event');
+    if (tVal.includes('historicalera') || tVal.includes('era') || tVal.includes('دەۋر')) return t('graph.types.historicalEra');
+    if (tVal.includes('concept') || tVal.includes('ئۇقۇم')) return t('graph.types.concept');
+    if (tVal.includes('other') || tVal.includes('باشقىلار')) return t('graph.types.other');
+    if (tVal.includes('book') || tVal.includes('ئەسەر')) return t('graph.types.book');
     return type;
   };
 
@@ -305,7 +433,7 @@ export const GraphView: React.FC = () => {
                       className={`text-[9px] font-semibold hover:underline transition-colors ${isDark ? 'text-rose-400 hover:text-rose-300' : 'text-rose-600 hover:text-rose-500'
                         }`}
                     >
-                      {language === 'ug' ? 'ھېچقايسىسى' : 'Clear'}
+                      {t('graph.clear')}
                     </button>
                     <span className={`text-[10px] font-medium tabular-nums shrink-0 ml-1.5 ${activeNodeCount < totalNodeTypes
                         ? isDark ? 'text-amber-500' : 'text-amber-600'
@@ -365,7 +493,7 @@ export const GraphView: React.FC = () => {
                       className={`text-[9px] font-semibold hover:underline transition-colors ${isDark ? 'text-rose-400 hover:text-rose-300' : 'text-rose-600 hover:text-rose-500'
                         }`}
                     >
-                      {language === 'ug' ? 'ھېچقايسىسى' : 'Clear'}
+                      {t('graph.clear')}
                     </button>
                     <span className={`text-[10px] font-medium tabular-nums shrink-0 ml-1.5 ${activeEdgeCount < totalEdgeTypes
                         ? isDark ? 'text-amber-500' : 'text-amber-600'
@@ -480,18 +608,19 @@ export const GraphView: React.FC = () => {
     }
     const connections = filteredData.links.filter(
       link =>
-        (typeof link.source === 'object' ? link.source.id : link.source) === selectedNode.id ||
-        (typeof link.target === 'object' ? link.target.id : link.target) === selectedNode.id
+        resolveEndpointId(link.source) === selectedNode.id ||
+        resolveEndpointId(link.target) === selectedNode.id
     ).map(link => {
-      const isSource = (typeof link.source === 'object' ? link.source.id : link.source) === selectedNode.id;
-      const targetNodeId = isSource
-        ? (typeof link.target === 'object' ? link.target.id : link.target)
-        : (typeof link.source === 'object' ? link.source.id : link.source);
+      const isSource = resolveEndpointId(link.source) === selectedNode.id;
+      const targetNodeId = isSource ? resolveEndpointId(link.target) : resolveEndpointId(link.source);
       const targetNode = filteredData.nodes.find(n => n.id === targetNodeId);
       return {
+        id: link.id,
         label: link.label,
         direction: isSource ? 'outgoing' : 'incoming',
         node: targetNode || { id: targetNodeId, label: targetNodeId, type: 'Unknown' },
+        book_id: link.book_id,
+        chunk_refs: link.chunk_refs || [],
         year_hijri: link.year_hijri,
         year_gregorian: link.year_gregorian,
         century_gregorian: link.century_gregorian,
@@ -502,9 +631,8 @@ export const GraphView: React.FC = () => {
 
   const handleDeleteRelationship = (conn: any) => {
     if (!selectedNode) return;
-    const isOutgoing = conn.direction === 'outgoing';
-    const sourceName = isOutgoing ? selectedNode.id : conn.node.id;
-    const targetName = isOutgoing ? conn.node.id : selectedNode.id;
+    const sourceName = conn.direction === 'outgoing' ? selectedNode.label : conn.node.label;
+    const targetName = conn.direction === 'outgoing' ? conn.node.label : selectedNode.label;
     const relType = conn.label;
 
     setModal({
@@ -519,7 +647,7 @@ export const GraphView: React.FC = () => {
           const res = await authFetch('/api/books/graph/relationship/delete', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sourceName, targetName, relType }),
+            body: JSON.stringify({ edgeId: conn.id }),
           });
           if (!res.ok) {
             const body = await res.json().catch(() => ({}));
@@ -550,20 +678,44 @@ export const GraphView: React.FC = () => {
       const res = await authFetch('/api/books/graph/merge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keepName: keepNode.id, removeName: removeNode.id }),
+        body: JSON.stringify({ keepId: keepNode.id, removeId: removeNode.id }),
       });
+      const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
         throw new Error(body.detail || t('graph.admin.mergeError'));
       }
       setMergePair(null);
       addNotification(t('graph.admin.mergeSuccess'), 'success');
+      if (body.mergeLogId != null) {
+        setLastMerge({ mergeLogId: body.mergeLogId, keepLabel: keepNode.label, removeLabel: removeNode.label });
+      }
       await fetchGraphData(searchQuery);
       setSelectedNode(keepNode);
     } catch (err: any) {
       setMergeError(err.message || t('graph.admin.mergeError'));
     } finally {
       setMergeSubmitting(false);
+    }
+  };
+
+  const handleUndoLastMerge = async () => {
+    if (!lastMerge) return;
+    setUndoSubmitting(true);
+    try {
+      const res = await authFetch(`/api/admin/graph/merge-log/${lastMerge.mergeLogId}/unmerge`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || t('graph.admin.undoMergeError'));
+      }
+      addNotification(t('graph.admin.undoMergeSuccess'), 'success');
+      setLastMerge(null);
+      await fetchGraphData(searchQuery);
+    } catch (err: any) {
+      addNotification(err.message || t('graph.admin.undoMergeError'), 'error');
+    } finally {
+      setUndoSubmitting(false);
     }
   };
 
@@ -575,7 +727,7 @@ export const GraphView: React.FC = () => {
       const res = await authFetch('/api/books/graph/entity/rename', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ oldName: selectedNode.id, newName: renameValue.trim() }),
+        body: JSON.stringify({ entityId: selectedNode.id, newName: renameValue.trim() }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -583,15 +735,84 @@ export const GraphView: React.FC = () => {
       }
       addNotification(t('graph.admin.renameSuccess'), 'success');
       setIsRenameModalOpen(false);
-      
-      const updatedNode = { ...selectedNode, id: renameValue.trim(), label: renameValue.trim() };
+
+      const updatedNode = { ...selectedNode, label: renameValue.trim() };
       setSelectedNode(updatedNode);
-      
+
       await fetchGraphData(searchQuery);
     } catch (err: any) {
       setRenameError(err.message || t('graph.admin.renameError'));
     } finally {
       setRenameSubmitting(false);
+    }
+  };
+
+  const handleConfirmSplit = () => {
+    if (!selectedNode || !splitTarget) return;
+    setSplitSubmitting(true);
+    authFetch(`/api/admin/graph/entities/${selectedNode.id}/split`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ splitPointEdgeId: splitTarget.edgeId }),
+    })
+      .then(async (res) => {
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.detail || t('graph.admin.splitError'));
+        addNotification(
+          body.newEntityId ? t('graph.admin.splitSuccess') : t('graph.admin.splitNoop'),
+          body.newEntityId ? 'success' : 'info'
+        );
+        setSplitTarget(null);
+        setSelectedNode(null);
+        await fetchGraphData(searchQuery);
+      })
+      .catch((err: any) => addNotification(err.message || t('graph.admin.splitError'), 'error'))
+      .finally(() => setSplitSubmitting(false));
+  };
+
+  const fetchReviews = async () => {
+    setReviewsLoading(true);
+    try {
+      const res = await authFetch('/api/admin/graph/review-queue?limit=50');
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setReviews(data.items || []);
+    } catch {
+      addNotification(t('graph.admin.reviewsLoadError'), 'error');
+    } finally {
+      setReviewsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'reviews' && isAdmin) {
+      fetchReviews();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  const handleReviewDecision = async (reviewId: number, decision: 'approve' | 'reject') => {
+    setReviewActionId(reviewId);
+    try {
+      const res = await authFetch(`/api/admin/graph/review-queue/${reviewId}/${decision}`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || t('graph.admin.reviewActionError'));
+      }
+      addNotification(
+        decision === 'approve' ? t('graph.admin.reviewApproved') : t('graph.admin.reviewRejected'),
+        'success'
+      );
+      setReviews(prev => prev.filter(r => r.id !== reviewId));
+      if (decision === 'approve') {
+        await fetchGraphData(searchQuery);
+      }
+    } catch (err: any) {
+      addNotification(err.message || t('graph.admin.reviewActionError'), 'error');
+    } finally {
+      setReviewActionId(null);
     }
   };
 
@@ -711,7 +932,7 @@ export const GraphView: React.FC = () => {
         )}
 
         <h4 className={`text-sm font-bold mb-3 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{t('graph.nodePanel.connections')}</h4>
-        <div className="flex-grow overflow-y-auto pr-1 space-y-2.5 custom-scrollbar">
+        <div className="flex-grow overflow-y-auto space-y-3 custom-scrollbar">
           {nodeConnections.length === 0 ? (
             <p className="text-slate-400 text-xs italic text-center py-4">{t('common.noData')}</p>
           ) : (
@@ -719,7 +940,7 @@ export const GraphView: React.FC = () => {
               <div
                 key={idx}
                 onClick={() => setSelectedNode(conn.node)}
-                className={`flex flex-col p-3 border rounded-xl cursor-pointer transition-all duration-200 ${isDark
+                className={`flex flex-col p-2.5 border rounded-xl cursor-pointer transition-all duration-200 ${isDark
                     ? 'border-slate-800/80 bg-slate-950/40 hover:bg-slate-950/80 hover:border-slate-700'
                     : 'border-slate-100 bg-slate-50 hover:bg-slate-100 hover:border-slate-300'
                   }`}
@@ -727,10 +948,39 @@ export const GraphView: React.FC = () => {
                 <div className="flex justify-between items-center mb-1">
                   <span className={`text-xs font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{conn.node.label}</span>
                   <div className="flex items-center gap-1.5">
+                    {conn.chunk_refs && conn.chunk_refs.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConnChunkRefs(conn.chunk_refs);
+                          setActiveChunkRef(conn.chunk_refs[0]);
+                        }}
+                        title={t('graph.viewSourceChunk')}
+                        className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-lg border transition-all active:scale-95 ${
+                          isDark
+                            ? 'text-sky-400 bg-sky-950/40 border-sky-800/50 hover:bg-sky-900/60'
+                            : 'text-sky-700 bg-sky-50 border-sky-200 hover:bg-sky-100'
+                        }`}
+                      >
+                        <BookOpen size={11} />
+                        <span>{t('graph.source')}</span>
+                      </button>
+                    )}
                     <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded ${isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-200 text-slate-600'
                       }`}>
                       {conn.direction === 'outgoing' ? '←' : '→'} {conn.label}
                     </span>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setSplitTarget({ edgeId: conn.id, label: conn.node.label }); }}
+                        title={t('graph.admin.splitStart')}
+                        className="p-1 text-slate-400 hover:text-amber-500 rounded-md transition-all active:scale-95"
+                      >
+                        <GitBranch size={12} />
+                      </button>
+                    )}
                     {isAdmin && (
                       <button
                         type="button"
@@ -783,8 +1033,104 @@ export const GraphView: React.FC = () => {
           {t('graph.nodePanel.title')}
         </h3>
         <p className="text-xs max-w-[200px] leading-relaxed font-normal text-slate-500">
-          بىلىم خەرىتىسىدىكى كۇنۇپكىلارنى چېكىپ، سۆزلۈكنىڭ تەپسىلاتى ۋە ئۆز-ئارا مۇناسىۋەتلىرىنى كۆرۈڭ.
+          {t('graph.nodePanel.instructions')}
         </p>
+      </div>
+    );
+  };
+
+  // Review Queue Panel Content Renderer — gray-zone entity-resolution outcomes
+  // awaiting an admin decision (design v2 §4.1/§5).
+  const renderReviewsPanelContent = (isDark: boolean) => {
+    return (
+      <div className="h-full flex flex-col min-h-0 text-right animate-fade-in">
+        <div className={`flex items-center justify-between border-b pb-4 mb-4 ${isDark ? 'border-slate-800' : 'border-slate-100'}`}>
+          <button
+            onClick={fetchReviews}
+            disabled={reviewsLoading}
+            className={`text-xs border rounded-lg px-2 py-1 transition-all active:scale-95 font-normal disabled:opacity-50 ${isDark ? 'text-slate-400 hover:text-slate-200 border-slate-700 hover:border-slate-600 bg-slate-950/20' : 'text-slate-400 hover:text-slate-600 border-slate-200 hover:border-slate-300'
+              }`}
+          >
+            {reviewsLoading ? <Loader2 size={12} className="animate-spin" /> : (t('common.refresh') || 'Refresh')}
+          </button>
+          <h3 className={`text-lg font-bold ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>
+            {t('graph.tabReviews') || 'Reviews'}
+          </h3>
+        </div>
+
+        <div className="flex-grow overflow-y-auto pr-1 space-y-2.5 custom-scrollbar">
+          {reviewsLoading && reviews.length === 0 ? (
+            <div className="flex justify-center py-8"><Loader2 size={20} className="animate-spin text-slate-400" /></div>
+          ) : reviews.length === 0 ? (
+            <p className="text-slate-400 text-xs italic text-center py-4">{t('common.noData')}</p>
+          ) : (
+            reviews.map((review) => {
+              const nameA = review.entityAName || review.evidence?.entity_a_name || review.entityAId;
+              const nameB = review.entityBName || review.evidence?.entity_b_name || review.entityBId;
+              return (
+                <div
+                  key={review.id}
+                  className={`flex flex-col gap-2 p-3 border rounded-xl ${isDark
+                      ? 'border-slate-800/80 bg-slate-950/40'
+                      : 'border-slate-100 bg-slate-50'
+                    }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded ${isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-200 text-slate-600'}`}>
+                      {review.suggestedAction} · {review.scope}
+                    </span>
+                    <span className="text-[10px] text-slate-400">#{review.id}</span>
+                  </div>
+                  <div className={`text-xs font-semibold text-right flex items-center justify-end gap-1.5 flex-wrap ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
+                    <button
+                      type="button"
+                      onClick={() => navigateToEntity(review.entityAId, review.entityAName || review.evidence?.entity_a_name)}
+                      className="hover:text-sky-500 hover:underline transition-all font-bold text-sky-600 dark:text-sky-400 active:scale-95 text-sm"
+                      title={t('graph.centerOnGraph')}
+                    >
+                      {nameA}
+                    </button>
+                    <span className="text-slate-400 font-normal px-1">↔</span>
+                    <button
+                      type="button"
+                      onClick={() => navigateToEntity(review.entityBId, review.entityBName || review.evidence?.entity_b_name)}
+                      className="hover:text-sky-500 hover:underline transition-all font-bold text-sky-600 dark:text-sky-400 active:scale-95 text-sm"
+                      title={t('graph.centerOnGraph')}
+                    >
+                      {nameB}
+                    </button>
+                  </div>
+                  {review.evidence?.reasoning && (
+                    <div className={`p-2.5 rounded-lg border text-xs leading-relaxed text-left font-normal ${isDark ? 'bg-slate-900/70 border-slate-800/80 text-slate-300' : 'bg-slate-100/80 border-slate-200/80 text-slate-700'}`} dir="ltr">
+                      {review.evidence.reasoning}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 mt-1">
+
+                  <button
+                    type="button"
+                    onClick={() => handleReviewDecision(review.id, 'approve')}
+                    disabled={reviewActionId === review.id}
+                    className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold rounded-lg px-2 py-1.5 border border-emerald-500/40 text-emerald-500 hover:bg-emerald-500/10 transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    {reviewActionId === review.id ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                    {t('graph.admin.reviewApprove') || 'Approve'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleReviewDecision(review.id, 'reject')}
+                    disabled={reviewActionId === review.id}
+                    className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold rounded-lg px-2 py-1.5 border border-red-500/40 text-red-500 hover:bg-red-500/10 transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    <X size={12} />
+                    {t('graph.admin.reviewReject') || 'Reject'}
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
+        </div>
       </div>
     );
   };
@@ -925,10 +1271,29 @@ export const GraphView: React.FC = () => {
                   <span className="w-1.5 h-1.5 rounded-full bg-[#0369a1] dark:bg-[#38bdf8] shrink-0" />
                 )}
               </button>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('reviews')}
+                  className={`flex-grow flex items-center justify-center gap-1.5 py-2 text-xs font-semibold rounded-lg transition-all duration-200 active:scale-95 ${activeTab === 'reviews'
+                      ? 'bg-white dark:bg-slate-800 text-[#0369a1] dark:text-[#38bdf8] shadow-sm'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                >
+                  {t('graph.tabReviews') || 'Reviews'}
+                  {reviews.length > 0 && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                  )}
+                </button>
+              )}
             </div>
 
             {activeTab === 'filters' ? (
               renderFilters(isThemeDark, true)
+            ) : activeTab === 'reviews' ? (
+              <div className="flex-grow border border-[#0369a1]/10 dark:border-[#38bdf8]/10 bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-md flex flex-col min-h-0">
+                {renderReviewsPanelContent(isThemeDark)}
+              </div>
             ) : (
               <div className="flex-grow border border-[#0369a1]/10 dark:border-[#38bdf8]/10 bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-md flex flex-col min-h-0">
                 {renderDetailsPanelContent(isThemeDark)}
@@ -1138,7 +1503,7 @@ export const GraphView: React.FC = () => {
             >
               <div className="flex items-center gap-1.5 font-bold text-slate-200">
                 <HelpCircle size={13} />
-                <span>{language === 'ug' ? 'تۈر كۆرسەتكۈچى' : 'Legend'}</span>
+                <span>{t('graph.legend')}</span>
               </div>
               <ChevronDown
                 size={13}
@@ -1150,31 +1515,31 @@ export const GraphView: React.FC = () => {
               <div className="flex flex-col gap-2.5 mt-1.5 animate-fade-in">
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-                  <span>Person (شەخس)</span>
+                  <span>{getLocalizedNodeType('person')}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-sky-400" />
-                  <span>Location (ئورۇن)</span>
+                  <span>{getLocalizedNodeType('location')}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
-                  <span>Organization (تەشكىلات)</span>
+                  <span>{getLocalizedNodeType('organization')}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-rose-400" />
-                  <span>Event (ۋەقە)</span>
+                  <span>{getLocalizedNodeType('event')}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-purple-400" />
-                  <span>Historical Era (تارىخىي دەۋر)</span>
+                  <span>{getLocalizedNodeType('historicalera')}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-indigo-400" />
-                  <span>Concept (ئۇقۇم)</span>
+                  <span>{getLocalizedNodeType('concept')}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-slate-400" />
-                  <span>Other (باشقىلار)</span>
+                  <span>{getLocalizedNodeType('other')}</span>
                 </div>
               </div>
             )}
@@ -1330,6 +1695,193 @@ export const GraphView: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {splitTarget && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[210] flex items-center justify-center p-4 animate-fade-in">
+          <div className="flex flex-col gap-4 bg-slate-900/95 backdrop-blur-xl border border-amber-400/30 rounded-2xl p-5 shadow-lg max-w-sm w-full text-right">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-2.5">
+              <button
+                type="button"
+                onClick={() => setSplitTarget(null)}
+                className="text-slate-400 hover:text-slate-200 transition-all"
+              >
+                <X size={16} />
+              </button>
+              <span className="text-sm font-bold text-slate-100">{t('graph.admin.splitTitle')}</span>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              {t('graph.admin.splitMessage', { name: selectedNode?.label, other: splitTarget.label })}
+            </p>
+            <div className="flex items-center gap-2 mt-2">
+              <button
+                type="button"
+                onClick={() => setSplitTarget(null)}
+                disabled={splitSubmitting}
+                className="flex-1 text-xs text-slate-300 border border-slate-700 hover:border-slate-600 rounded-xl px-3 py-2 transition-all active:scale-95 disabled:opacity-50 font-semibold"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSplit}
+                disabled={splitSubmitting}
+                className="flex-1 text-xs text-white bg-amber-500 hover:bg-amber-600 rounded-xl px-3 py-2 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5 font-semibold"
+              >
+                {splitSubmitting && <Loader2 size={12} className="animate-spin" />}
+                {t('graph.admin.splitConfirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeChunkRef && createPortal(
+        <div className="fixed inset-0 z-[220] flex items-center justify-center p-4 sm:p-6" dir="rtl">
+          <div
+            className="absolute inset-0 bg-slate-950/60 backdrop-blur-md animate-fade-in"
+            onClick={() => setActiveChunkRef(null)}
+          />
+          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-xl relative z-10 overflow-hidden border border-slate-200 dark:border-slate-800 flex flex-col max-h-[85vh] animate-fade-in">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-950/50">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="p-2.5 bg-sky-500/10 text-sky-600 dark:text-sky-400 rounded-2xl shrink-0">
+                  <BookOpen size={20} strokeWidth={2.5} />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 truncate">
+                    {chunkDetailData?.bookTitle || t('graph.sourceDocument')}
+                  </h3>
+                  {chunkDetailData && (
+                    <p className="text-xs text-slate-400 mt-0.5" dir="ltr">
+                      {t('graph.chunkDetailInfo', { page: chunkDetailData.pageNumber, chunk: chunkDetailData.chunkIndex })}
+                    </p>
+                  )}
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-2 shrink-0">
+                {connChunkRefs.length > 1 && (
+                  <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/80" dir="ltr">
+                    <button
+                      type="button"
+                      onClick={() => activeChunkIndex > 0 && setActiveChunkRef(connChunkRefs[activeChunkIndex - 1])}
+                      disabled={activeChunkIndex === 0}
+                      title={t('graph.prevReference')}
+                      className="p-1 text-slate-600 dark:text-slate-300 hover:text-sky-500 disabled:opacity-30 disabled:hover:text-slate-600 rounded-lg transition-all"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 px-1.5 min-w-[3rem] text-center select-none">
+                      {activeChunkIndex + 1} / {connChunkRefs.length}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => activeChunkIndex < connChunkRefs.length - 1 && setActiveChunkRef(connChunkRefs[activeChunkIndex + 1])}
+                      disabled={activeChunkIndex >= connChunkRefs.length - 1}
+                      title={t('graph.nextReference')}
+                      className="p-1 text-slate-600 dark:text-slate-300 hover:text-sky-500 disabled:opacity-30 disabled:hover:text-slate-600 rounded-lg transition-all"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                )}
+                <button
+                  onClick={() => setActiveChunkRef(null)}
+                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto flex-grow custom-scrollbar">
+              {chunkLoading ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-3 text-slate-400">
+                  <Loader2 size={32} className="animate-spin text-sky-500" />
+                  <span className="text-xs font-medium">{t('common.loading') || 'Loading...'}</span>
+                </div>
+              ) : chunkDetailData ? (
+                <div className="space-y-4">
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800/80">
+                    <p className="text-sm sm:text-base leading-relaxed text-slate-700 dark:text-slate-200 uyghur-text whitespace-pre-wrap">
+                      {chunkDetailData.text}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-center text-slate-400 italic py-8">{t('common.noData')}</p>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50 flex items-center justify-between">
+              <button
+                onClick={() => setActiveChunkRef(null)}
+                className="px-5 py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-xl transition-all"
+              >
+                {t('common.close') || 'Close'}
+              </button>
+
+              {connChunkRefs.length > 1 && (
+                <div className="flex items-center gap-2" dir="ltr">
+                  <button
+                    type="button"
+                    onClick={() => activeChunkIndex > 0 && setActiveChunkRef(connChunkRefs[activeChunkIndex - 1])}
+                    disabled={activeChunkIndex === 0}
+                    className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-xl transition-all flex items-center gap-1 active:scale-95"
+                  >
+                    <ChevronLeft size={14} />
+                    <span>{t('common.previous')}</span>
+                  </button>
+                  <span className="text-xs font-semibold text-slate-400 px-1 select-none">
+                    {activeChunkIndex + 1} / {connChunkRefs.length}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => activeChunkIndex < connChunkRefs.length - 1 && setActiveChunkRef(connChunkRefs[activeChunkIndex + 1])}
+                    disabled={activeChunkIndex >= connChunkRefs.length - 1}
+                    className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-xl transition-all flex items-center gap-1 active:scale-95"
+                  >
+                    <span>{t('common.next')}</span>
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {lastMerge && createPortal(
+        <div className="fixed bottom-4 left-0 right-0 z-[210] px-4 animate-fade-in">
+          <div className="mx-auto flex items-center justify-between gap-3 bg-slate-900/90 backdrop-blur-xl border border-emerald-400/30 rounded-2xl px-4 py-2.5 shadow-lg max-w-md w-full">
+            <Undo2 size={16} className="text-emerald-400 shrink-0" />
+            <span className="text-xs text-slate-200 font-medium flex-1">
+              {t('graph.admin.undoMergeMessage', { keep: lastMerge.keepLabel, remove: lastMerge.removeLabel })}
+            </span>
+            <button
+              type="button"
+              onClick={handleUndoLastMerge}
+              disabled={undoSubmitting}
+              className="text-xs text-emerald-300 hover:text-emerald-200 border border-emerald-700 hover:border-emerald-600 rounded-lg px-2 py-1 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-1"
+            >
+              {undoSubmitting && <Loader2 size={12} className="animate-spin" />}
+              {t('graph.admin.undoMergeButton')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setLastMerge(null)}
+              className="text-xs text-slate-400 hover:text-slate-200 border border-slate-700 hover:border-slate-600 rounded-lg px-2 py-1 transition-all active:scale-95"
+            >
+              {t('common.dismiss') || t('common.cancel')}
+            </button>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

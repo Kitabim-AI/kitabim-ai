@@ -130,6 +130,25 @@ Candidates:
 
 Return ONLY a JSON array of the relevant candidate numbers in relevance order, most relevant first, e.g. [3, 1, 5]. Do NOT explain your reasoning, do NOT add markdown formatting or commentary — output the JSON array and nothing else."""
 
+ENTITY_RESOLUTION_JUDGE_PROMPT = """You are an expert historical analyst resolving duplicate entities in a knowledge graph extracted from Uyghur-language books. Entity names and facts below may be in Uyghur (Arabic script) or English.
+
+You are given two entity records, "Entity A" and "Entity B", that a fuzzy name match flagged as possibly referring to the same real-world person, place, event, era, or organization. Automated hard-constraint and similarity checks were inconclusive — decide whether they are the SAME entity or DIFFERENT entities.
+
+Entity A:
+{entity_a}
+
+Entity B:
+{entity_b}
+
+Rules:
+1. Prefer precision over recall — when genuinely uncertain, answer "unsure" rather than guessing "same". A wrong merge is harder to detect later than a missed one.
+2. Two entities with the same name but different roles, eras, or family connections (based on the facts/neighbors given) are DIFFERENT.
+3. Matching resolved facts (same parent, same birthplace, overlapping relationship neighbors) are strong evidence of "same".
+4. Conflicting resolved facts (different parent, different birthplace, disjoint lifespans) are strong evidence of "different" — but if the given facts are simply silent (missing) rather than conflicting, that alone is not evidence of "different".
+
+Return ONLY valid JSON matching this exact schema. Do NOT explain your reasoning outside the JSON, do NOT add markdown formatting or commentary — output the JSON object and nothing else:
+{{"verdict": "same" | "different" | "unsure", "confidence": <float 0.0-1.0>, "reasoning": "<brief reasoning, logged for admin review, not shown to end users>"}}"""
+
 QUERY_REWRITE_PROMPT = """You are a query reformulation assistant for an Uyghur digital library.
 
 Given the conversation history and a follow-up question, rewrite the follow-up into a single standalone question that contains all the context needed to search the library — without relying on pronouns or implicit references from previous turns.

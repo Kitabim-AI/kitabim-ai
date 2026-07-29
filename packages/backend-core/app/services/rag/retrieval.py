@@ -512,6 +512,95 @@ async def vector_search(
 
 
 # ---------------------------------------------------------------------------
+# Knowledge-graph entity lookup (design v2 §6)
+# ---------------------------------------------------------------------------
+
+
+async def graph_entity_lookup(question: str) -> List[dict]:
+    """Query-time knowledge-graph lookup — a pure Redis cache read (populated by
+    `entity_resolution_service` after every merge/split/unmerge/resolution outcome)
+    plus a Neo4j fact fetch. No LLM call is made here.
+
+    Returns [] on no match — callers fall back to the existing hybrid text search
+    unchanged. On a match, returns chunk-shaped dicts (`text`/`score`/`page`/`title`/
+    `book_id`) so the rest of the RAG pipeline (grading, Document conversion,
+    citations) handles them exactly like any other retrieved chunk.
+
+    Genuine ambiguity (multiple entities behind the same alias, e.g. two historical
+    figures who share a name) is intentionally NOT resolved here — facts from every
+    match are returned, each tagged with its own citation, and the existing per-turn
+    RAG answer LLM call disambiguates using the user's question wording, exactly as
+    it already does for any other set of retrieved chunks — zero extra latency.
+
+    Candidate phrase extraction is a plain whitespace/punctuation split (single words
+    and adjacent-word bigrams) — Uyghur's agglutinative suffixes mean a word typed
+    with a case/possessive suffix attached won't exact-match a bare cached alias;
+    this is a known limitation of this first pass, not a silent failure.
+    """
+    from app.core import cache_config
+    from app.services.cache_service import cache_service
+    from app.services.rag.utils import normalize_uyghur, PUNCTUATION_STRIP_CHARS
+    from app.services.entity_resolution_service import normalize_alias
+    from app.db.repositories.graph_repository import GraphRepository
+
+    words = [
+        w.strip(PUNCTUATION_STRIP_CHARS) for w in normalize_uyghur(question).split()
+    ]
+    words = [w for w in words if len(w) >= 3]
+    candidates = list(
+        dict.fromkeys([*words, *(f"{a} {b}" for a, b in zip(words, words[1:]))])
+    )
+    if not candidates:
+        return []
+
+    matched_ids: set = set()
+    try:
+        for candidate in candidates:
+            key = cache_config.KEY_GRAPH_ALIAS_LOOKUP.format(
+                alias=normalize_alias(candidate)
+            )
+            ids = await cache_service.get(key)
+            if ids:
+                matched_ids.update(ids)
+    except Exception as exc:
+        log_json(
+            logger, logging.WARNING, "graph alias cache lookup failed", error=str(exc)
+        )
+        return []
+
+    if not matched_ids:
+        return []
+
+    graph_repo = GraphRepository()
+    results: List[dict] = []
+    for entity_id in matched_ids:
+        try:
+            facts = await graph_repo.get_entity_facts_for_citation(entity_id)
+        except Exception as exc:
+            log_json(
+                logger,
+                logging.WARNING,
+                "graph entity fact fetch failed for a matched id",
+                entity_id=entity_id,
+                error=str(exc),
+            )
+            continue
+        for fact in facts:
+            results.append(
+                {
+                    "text": fact["text"],
+                    "score": 0.9,
+                    "page": fact.get("page"),
+                    "title": "Knowledge Graph",
+                    "volume": None,
+                    "author": None,
+                    "book_id": fact.get("book_id") or "knowledge_graph",
+                }
+            )
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Title lookup
 # ---------------------------------------------------------------------------
 

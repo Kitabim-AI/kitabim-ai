@@ -11,6 +11,7 @@
     "noData": "No data available",
     "save": "Save",
     "confirm": "Confirm",
+    "dismiss": "Dismiss",
     "cancel": "Cancel",
     "delete": "Delete",
     "edit": "Edit",
@@ -874,6 +875,16 @@
     "all": "All",
     "tabDetails": "Details",
     "tabFilters": "Filters",
+    "tabReviews": "Reviews",
+    "clear": "Clear",
+    "source": "Source",
+    "sourceDocument": "Source Document",
+    "viewSourceChunk": "View Source Chunk",
+    "centerOnGraph": "Center on graph",
+    "legend": "Legend",
+    "chunkDetailInfo": "Page {{page}} · Chunk {{chunk}}",
+    "prevReference": "Previous Reference",
+    "nextReference": "Next Reference",
     "nodePanel": {
       "title": "Entity Details",
       "name": "Name",
@@ -882,7 +893,18 @@
       "connections": "Connections",
       "yearHijri": "Hijri Year",
       "yearGregorian": "Gregorian Year",
-      "centuryGregorian": "Gregorian Century"
+      "centuryGregorian": "Gregorian Century",
+      "instructions": "Click on nodes in the knowledge graph to view entity details and relationships."
+    },
+    "types": {
+      "person": "Person",
+      "location": "Location",
+      "organization": "Organization",
+      "event": "Event",
+      "historicalEra": "Historical Era",
+      "concept": "Concept",
+      "other": "Other",
+      "book": "Book"
     },
     "admin": {
       "deleteRelationshipTitle": "Delete Relationship",
@@ -902,7 +924,24 @@
       "renameCancel": "Cancel",
       "renameConfirm": "Rename",
       "renameSuccess": "Entity renamed.",
-      "renameError": "Failed to rename entity."
+      "renameError": "Failed to rename entity.",
+      "splitStart": "Split at this relationship...",
+      "splitTitle": "Split Entity",
+      "splitMessage": "Split \"{{name}}\" into two separate entities, using its relationship with \"{{other}}\" as the dividing line? Relationships that don't clearly belong to either side will stay on the original entity for manual review.",
+      "splitConfirm": "Split",
+      "splitSuccess": "Entity split.",
+      "splitNoop": "No conflicting cluster found — nothing was split.",
+      "splitError": "Failed to split entity.",
+      "undoMergeMessage": "Merged \"{{remove}}\" into \"{{keep}}\".",
+      "undoMergeButton": "Undo",
+      "undoMergeSuccess": "Merge undone.",
+      "undoMergeError": "Failed to undo merge.",
+      "reviewsLoadError": "Failed to load the review queue.",
+      "reviewApprove": "Approve",
+      "reviewReject": "Reject",
+      "reviewApproved": "Review approved.",
+      "reviewRejected": "Review rejected.",
+      "reviewActionError": "Failed to record review decision."
     }
   },
   "quran": {
@@ -918,6 +957,10 @@
     "selectAyah": "Select Ayah",
     "allAyahs": "All Ayahs",
     "searchKeyword": "Search by keyword...",
-    "searchBtn": "Search"
+    "searchBtn": "Search",
+    "noSurahFound": "No matching surah found",
+    "noAyahFound": "No matching ayah found",
+    "ayahItem": "Ayah {{count}}",
+    "surahItem": "Surah {{number}}. {{name}}"
   }
 }

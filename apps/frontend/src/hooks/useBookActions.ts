@@ -468,7 +468,7 @@ export const useBookActions = (
     });
   };
 
-  const handleReprocessStep = (bookId: string, step: ReprocessStep) => {
+  const handleReprocessStep = (bookId: string, step: ReprocessStep, graphScope?: 'fiction' | 'nonfiction') => {
     const titles: Record<string, string> = {
       [REPROCESS_STEP.OCR]: t('modal.reprocessOcr.title') || 'OCR نى قايتا ئىشلەش',
       [REPROCESS_STEP.CHUNKING]: t('modal.reprocessChunking.title') || 'پارچىلاشنى قايتا ئىشلەش',
@@ -496,7 +496,7 @@ export const useBookActions = (
             case REPROCESS_STEP.CHUNKING: await PersistenceService.reprocessChunking(bookId); break;
             case REPROCESS_STEP.EMBEDDING: await PersistenceService.reprocessEmbedding(bookId); break;
 case REPROCESS_STEP.SPELL_CHECK: await PersistenceService.reprocessSpellCheck(bookId); break;
-            case REPROCESS_STEP.GRAPH: await PersistenceService.reprocessGraph(bookId); break;
+            case REPROCESS_STEP.GRAPH: await PersistenceService.reprocessGraph(bookId, graphScope ?? 'nonfiction'); break;
             case REPROCESS_STEP.SUMMARY: await PersistenceService.reprocessSummary(bookId); break;
           }
           await refreshLibrary();

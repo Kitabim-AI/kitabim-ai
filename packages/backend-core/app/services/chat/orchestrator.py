@@ -39,6 +39,16 @@ from app.utils.observability import log_json
 logger = logging.getLogger("app.services.chat.orchestrator")
 
 
+def _extract_effective_question(question: str, observations: list[dict]) -> str:
+    """Extract standalone rewritten question from observations if rewrite_query was called."""
+    for obs in observations:
+        if obs.get("tool") == "rewrite_query":
+            res = obs.get("result", {})
+            if isinstance(res, dict) and res.get("rewritten_question"):
+                return res["rewritten_question"]
+    return question
+
+
 class ChatOrchestrator:
     """Orchestrator managing two-agent ADK execution pipeline and session persistence"""
 
@@ -281,8 +291,11 @@ class ChatOrchestrator:
                 reranker_model = await configs_repo.get_value(
                     "gemini_reranker_model", "gemini-3.1-flash-lite"
                 )
+                effective_question = _extract_effective_question(
+                    request_dto.question, observations
+                )
                 graded_context, before_count, after_count = await rerank_context(
-                    request_dto.question,
+                    effective_question,
                     observations,
                     reranker_model,
                     max_chunks=rag_top_k,

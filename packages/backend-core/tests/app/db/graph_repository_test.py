@@ -12,13 +12,18 @@ async def cleanup_graph_driver():
     await GraphRepository.close_driver()
 
 
+def _mock_driver_session(mock_session):
+    mock_driver = MagicMock()
+    mock_driver.close = AsyncMock()
+    mock_driver.session.return_value = mock_session
+    return mock_driver
+
+
 @pytest.mark.asyncio
 async def test_graph_repository_init_constraints():
     mock_session = AsyncMock()
     mock_session.__aenter__.return_value = mock_session
-    mock_driver = MagicMock()
-    mock_driver.close = AsyncMock()
-    mock_driver.session.return_value = mock_session
+    mock_driver = _mock_driver_session(mock_session)
 
     with patch(
         "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
@@ -27,7 +32,13 @@ async def test_graph_repository_init_constraints():
         repo = GraphRepository()
         await repo.init_constraints()
 
-        assert mock_session.run.call_count == 1
+        # DROP entity_name_unique, CREATE entity_id_unique, 2 entity btree indexes, 1 fulltext index, 4 relationship indexes
+        assert mock_session.run.call_count == 9
+        statements = [c[0][0] for c in mock_session.run.call_args_list]
+        assert any("DROP CONSTRAINT entity_name_unique" in s for s in statements)
+        assert any("CREATE CONSTRAINT entity_id_unique" in s for s in statements)
+        assert any("CREATE FULLTEXT INDEX entity_search_idx" in s for s in statements)
+
         await GraphRepository.close_driver()
         assert mock_driver.close.called
 
@@ -39,8 +50,7 @@ async def test_graph_repository_query_subgraph():
     mock_session = AsyncMock()
     mock_session.__aenter__.return_value = mock_session
     mock_session.run.return_value = mock_result
-    mock_driver = MagicMock()
-    mock_driver.session.return_value = mock_session
+    mock_driver = _mock_driver_session(mock_session)
 
     with patch(
         "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
@@ -52,7 +62,7 @@ async def test_graph_repository_query_subgraph():
         assert mock_session.run.called
         call_args = mock_session.run.call_args[0]
         call_kwargs = mock_session.run.call_args[1]
-        assert "e.name IN $entity_names" in call_args[0]
+        assert "e.canonical_name IN $entity_names" in call_args[0]
         assert (
             "any(alt IN COALESCE(e.aliases, []) WHERE alt IN $entity_names)"
             in call_args[0]
@@ -64,333 +74,463 @@ async def test_graph_repository_query_subgraph():
 
 
 @pytest.mark.asyncio
-async def test_graph_repository_query_subgraph_with_book_ids():
-    mock_result = AsyncMock()
-    mock_result.data.return_value = [{"source": "A", "rel": "KNOWS", "target": "B"}]
+async def test_graph_repository_upsert_entities_bulk():
     mock_session = AsyncMock()
     mock_session.__aenter__.return_value = mock_session
-    mock_session.run.return_value = mock_result
-    mock_driver = MagicMock()
-    mock_driver.session.return_value = mock_session
+    mock_driver = _mock_driver_session(mock_session)
 
     with patch(
         "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
         return_value=mock_driver,
     ):
         repo = GraphRepository()
-        records = await repo.query_subgraph(["A", "B"], book_ids=["bid-1", "bid-2"])
-
-        assert mock_session.run.called
-        call_args = mock_session.run.call_args[0]
-        call_kwargs = mock_session.run.call_args[1]
-        assert "e.name IN $entity_names" in call_args[0]
-        assert (
-            "any(alt IN COALESCE(e.aliases, []) WHERE alt IN $entity_names)"
-            in call_args[0]
-        )
-        assert "r.book_id IN $book_ids" in call_args[0]
-        assert call_kwargs["entity_names"] == ["A", "B"]
-        assert call_kwargs["book_ids"] == ["bid-1", "bid-2"]
-        assert records == [{"source": "A", "rel": "KNOWS", "target": "B"}]
-
-
-@pytest.mark.asyncio
-async def test_graph_repository_bulk_ops():
-    mock_session = AsyncMock()
-    mock_session.__aenter__.return_value = mock_session
-    mock_driver = MagicMock()
-    mock_driver.session.return_value = mock_session
-
-    with patch(
-        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
-        return_value=mock_driver,
-    ):
-        repo = GraphRepository()
-
-        # 1. Test upsert_entities_bulk
-        entities = [{"name": "E1", "type": "Person", "subtype": None}]
-        await repo.upsert_entities_bulk(entities)
-        assert mock_session.run.called
-        call_args = mock_session.run.call_args[0]
-        call_kwargs = mock_session.run.call_args[1]
-        assert "UNWIND $entities_data" in call_args[0]
-        expected_entities = [
+        entities = [
             {
-                "name": "E1",
+                "id": "uuid-1",
+                "canonical_name": "E1",
+                "aliases": ["E1"],
                 "type": "Person",
                 "subtype": None,
-                "year_hijri": None,
-                "year_gregorian": None,
-                "century_gregorian": None,
-            }
-        ]
-        assert call_kwargs["entities_data"] == expected_entities
-
-        # 2. Test connect_entities_bulk
-        relations = [{"source_name": "E1", "rel_type": "KNOWS", "target_name": "E2"}]
-        await repo.connect_entities_bulk(relations)
-        assert mock_session.run.called
-        call_args = mock_session.run.call_args[0]
-        call_kwargs = mock_session.run.call_args[1]
-        assert "UNWIND $relations_data" in call_args[0]
-        expected_relations = [
-            {
-                "source_name": "E1",
-                "rel_type": "KNOWS",
-                "target_name": "E2",
+                "scope": "nonfiction",
                 "book_id": None,
+            }
+        ]
+        await repo.upsert_entities_bulk(entities)
+
+        assert mock_session.run.called
+        call_args = mock_session.run.call_args[0]
+        call_kwargs = mock_session.run.call_args[1]
+        assert "MERGE (e:Entity {id: e_data.id})" in call_args[0]
+        assert call_kwargs["entities_data"][0]["id"] == "uuid-1"
+        assert call_kwargs["entities_data"][0]["canonical_name"] == "E1"
+        assert call_kwargs["entities_data"][0]["resolution_status"] == "unresolved"
+
+
+@pytest.mark.asyncio
+async def test_graph_repository_connect_entities_bulk_unions_chunk_refs():
+    """A re-run must union chunk_refs with what's already on the edge, not overwrite it."""
+    mock_read_result = AsyncMock()
+    mock_read_result.data.return_value = [
+        {
+            "source_id": "s1",
+            "rel_type": "SON_OF",
+            "target_id": "t1",
+            "book_id": "book-1",
+            "chunk_refs": ["book-1:1:0"],
+        }
+    ]
+    mock_session = AsyncMock()
+    mock_session.__aenter__.return_value = mock_session
+    mock_session.run.side_effect = [mock_read_result, AsyncMock()]
+    mock_driver = _mock_driver_session(mock_session)
+
+    with patch(
+        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
+        return_value=mock_driver,
+    ):
+        repo = GraphRepository()
+        relations = [
+            {
+                "source_id": "s1",
+                "rel_type": "SON_OF",
+                "target_id": "t1",
+                "book_id": "book-1",
+                "chunk_refs": ["book-1:2:0"],
+            }
+        ]
+        await repo.connect_entities_bulk(relations)
+
+        assert mock_session.run.call_count == 2
+        write_kwargs = mock_session.run.call_args_list[1][1]
+        normalized = write_kwargs["relations_data"][0]
+        assert normalized["chunk_refs"] == ["book-1:2:0"]
+        assert set(normalized["merged_chunk_refs"]) == {"book-1:1:0", "book-1:2:0"}
+
+
+@pytest.mark.asyncio
+async def test_graph_repository_connect_entities_bulk_no_existing_edge():
+    mock_read_result = AsyncMock()
+    mock_read_result.data.return_value = []
+    mock_session = AsyncMock()
+    mock_session.__aenter__.return_value = mock_session
+    mock_session.run.side_effect = [mock_read_result, AsyncMock()]
+    mock_driver = _mock_driver_session(mock_session)
+
+    with patch(
+        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
+        return_value=mock_driver,
+    ):
+        repo = GraphRepository()
+        relations = [
+            {
+                "source_id": "s1",
+                "rel_type": "SON_OF",
+                "target_id": "t1",
+                "book_id": "book-1",
+                "chunk_refs": ["book-1:1:0"],
+            }
+        ]
+        await repo.connect_entities_bulk(relations)
+
+        write_kwargs = mock_session.run.call_args_list[1][1]
+        normalized = write_kwargs["relations_data"][0]
+        assert normalized["merged_chunk_refs"] == ["book-1:1:0"]
+        assert normalized["edge_id"]  # a fresh edge id was generated
+
+
+@pytest.mark.asyncio
+async def test_graph_repository_merge_entities_by_id_redirects_edges_and_deletes():
+    mock_session = AsyncMock()
+    mock_session.__aenter__.return_value = mock_session
+    mock_driver = _mock_driver_session(mock_session)
+
+    with patch(
+        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
+        return_value=mock_driver,
+    ):
+        repo = GraphRepository()
+        with patch.object(
+            repo, "connect_entities_bulk", new=AsyncMock()
+        ) as mock_connect:
+            edges = [
+                {
+                    "id": "edge-1",
+                    "rel_type": "SON_OF",
+                    "direction": "out",
+                    "other_endpoint_id": "other-1",
+                    "book_id": "book-1",
+                    "chunk_refs": ["book-1:1:0"],
+                },
+                {
+                    "id": "edge-2",
+                    "rel_type": "RULED",
+                    "direction": "in",
+                    "other_endpoint_id": "other-2",
+                    "book_id": "book-1",
+                    "chunk_refs": [],
+                },
+            ]
+            await repo.merge_entities_by_id("keep-1", "remove-1", ["Alias1"], edges)
+
+            redirected = mock_connect.call_args[0][0]
+            assert {
+                "source_id": "keep-1",
+                "target_id": "other-1",
+                "rel_type": "SON_OF",
+                "book_id": "book-1",
+                "edge_id": "edge-1",
+                "chunk_refs": ["book-1:1:0"],
                 "year_hijri": None,
                 "year_gregorian": None,
                 "century_gregorian": None,
-            }
-        ]
-        assert call_kwargs["relations_data"] == expected_relations
+            } in redirected
+            assert {
+                "source_id": "other-2",
+                "target_id": "keep-1",
+                "rel_type": "RULED",
+                "book_id": "book-1",
+                "edge_id": "edge-2",
+                "chunk_refs": [],
+                "year_hijri": None,
+                "year_gregorian": None,
+                "century_gregorian": None,
+            } in redirected
+
+            # aliases SET + DETACH DELETE on the removed node
+            assert mock_session.run.call_count == 2
+            alias_call = mock_session.run.call_args_list[0]
+            assert alias_call[1]["aliases"] == ["Alias1"]
+            delete_call = mock_session.run.call_args_list[1]
+            assert "DETACH DELETE remove" in delete_call[0][0]
+            assert delete_call[1]["remove_id"] == "remove-1"
 
 
 @pytest.mark.asyncio
-async def test_graph_repository_merge_entities_success():
-    mock_result_check = AsyncMock()
-    mock_result_check.data.return_value = [
-        {"name": "KeepName", "aliases": ["AltKeep"]},
-        {"name": "RemoveName", "aliases": ["AltRemove"]},
-    ]
-
+async def test_graph_repository_rename_entity_folds_old_name_into_aliases():
     mock_session = AsyncMock()
     mock_session.__aenter__.return_value = mock_session
-    mock_session.run.side_effect = [
-        mock_result_check,
-        AsyncMock(),
-    ]  # First checks, second merges
-
-    mock_driver = MagicMock()
-    mock_driver.session.return_value = mock_session
+    mock_driver = _mock_driver_session(mock_session)
 
     with patch(
         "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
         return_value=mock_driver,
     ):
         repo = GraphRepository()
-        success = await repo.merge_entities("KeepName", "RemoveName")
-        assert success is True
-        assert mock_session.run.call_count == 2
+        with patch.object(
+            repo,
+            "get_entity_by_id",
+            new=AsyncMock(
+                return_value={"id": "e1", "canonical_name": "OldName", "aliases": []}
+            ),
+        ):
+            success = await repo.rename_entity("e1", "NewName")
+            assert success is True
 
-        # Verify the second call received the combined, deduplicated aliases
-        second_call_kwargs = mock_session.run.call_args_list[1][1]
-        assert "combined_aliases" in second_call_kwargs
-        assert second_call_kwargs["combined_aliases"] == [
-            "AltKeep",
-            "RemoveName",
-            "AltRemove",
-        ]
-
-
-@pytest.mark.asyncio
-async def test_graph_repository_merge_entities_missing():
-    mock_result_check = AsyncMock()
-    mock_result_check.data.return_value = [{"name": "KeepName"}]  # Missing RemoveName
-
-    mock_session = AsyncMock()
-    mock_session.__aenter__.return_value = mock_session
-    mock_session.run.return_value = mock_result_check
-
-    mock_driver = MagicMock()
-    mock_driver.session.return_value = mock_session
-
-    with patch(
-        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
-        return_value=mock_driver,
-    ):
-        repo = GraphRepository()
-        with pytest.raises(ValueError) as excinfo:
-            await repo.merge_entities("KeepName", "RemoveName")
-        assert "Duplicate entity to remove 'RemoveName' does not exist." in str(
-            excinfo.value
-        )
+            call_kwargs = mock_session.run.call_args[1]
+            assert call_kwargs["id"] == "e1"
+            assert call_kwargs["new_name"] == "NewName"
+            assert "OldName" in call_kwargs["aliases"]
 
 
 @pytest.mark.asyncio
-async def test_graph_repository_query_paths_empty():
+async def test_graph_repository_rename_entity_missing_raises():
     mock_driver = MagicMock()
     with patch(
         "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
         return_value=mock_driver,
     ):
         repo = GraphRepository()
-        # Less than 2 entity names should return empty list directly without querying DB
-        records = await repo.query_paths(["A"])
-        assert records == []
-        assert not mock_driver.session.called
+        with patch.object(repo, "get_entity_by_id", new=AsyncMock(return_value=None)):
+            with pytest.raises(ValueError):
+                await repo.rename_entity("missing-id", "NewName")
 
 
 @pytest.mark.asyncio
-async def test_graph_repository_query_paths_success():
+async def test_graph_repository_delete_relationship_by_id_success():
     mock_result = AsyncMock()
-    mock_result.data.return_value = [{"source": "A", "rel": "SON_OF", "target": "B"}]
+    mock_result.data.return_value = [{"deleted": 1}]
     mock_session = AsyncMock()
     mock_session.__aenter__.return_value = mock_session
     mock_session.run.return_value = mock_result
-    mock_driver = MagicMock()
-    mock_driver.session.return_value = mock_session
+    mock_driver = _mock_driver_session(mock_session)
 
     with patch(
         "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
         return_value=mock_driver,
     ):
         repo = GraphRepository()
-        records = await repo.query_paths(
-            ["A", "B"], book_ids=["bid-1"], familial_only=True
-        )
-
-        assert mock_session.run.called
-        call_args = mock_session.run.call_args[0]
-        call_kwargs = mock_session.run.call_args[1]
-        assert "MATCH p = (a:Entity)-[r:RELATED_TO*1..4]-(b:Entity)" in call_args[0]
-        assert (
-            "all(rel in relationships(p) WHERE rel.type IN $familial_rels)"
-            in call_args[0]
-        )
-        assert call_kwargs["entity_names"] == ["A", "B"]
-        assert call_kwargs["book_ids"] == ["bid-1"]
-        assert "familial_rels" in call_kwargs
-        assert records == [{"source": "A", "rel": "SON_OF", "target": "B"}]
-
-
-@pytest.mark.asyncio
-async def test_graph_repository_delete_relationship_success():
-    mock_result = AsyncMock()
-    mock_result.data.return_value = [{"deleted": 2}]
-    mock_session = AsyncMock()
-    mock_session.__aenter__.return_value = mock_session
-    mock_session.run.return_value = mock_result
-    mock_driver = MagicMock()
-    mock_driver.session.return_value = mock_session
-
-    with patch(
-        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
-        return_value=mock_driver,
-    ):
-        repo = GraphRepository()
-        success = await repo.delete_relationship("A", "B", "SON_OF")
-
+        success = await repo.delete_relationship_by_id("edge-1")
         assert success is True
-        assert mock_session.run.called
-        call_args = mock_session.run.call_args[0]
-        call_kwargs = mock_session.run.call_args[1]
-        assert "DELETE r" in call_args[0]
-        assert "RELATED_TO {type: $rel_type}" in call_args[0]
-        assert call_kwargs["source_name"] == "A"
-        assert call_kwargs["target_name"] == "B"
-        assert call_kwargs["rel_type"] == "SON_OF"
+        assert mock_session.run.call_args[1]["id"] == "edge-1"
 
 
 @pytest.mark.asyncio
-async def test_graph_repository_delete_relationship_not_found():
+async def test_graph_repository_delete_relationship_by_id_not_found():
     mock_result = AsyncMock()
     mock_result.data.return_value = [{"deleted": 0}]
     mock_session = AsyncMock()
     mock_session.__aenter__.return_value = mock_session
     mock_session.run.return_value = mock_result
-    mock_driver = MagicMock()
-    mock_driver.session.return_value = mock_session
+    mock_driver = _mock_driver_session(mock_session)
 
     with patch(
         "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
         return_value=mock_driver,
     ):
         repo = GraphRepository()
-        with pytest.raises(ValueError) as excinfo:
-            await repo.delete_relationship("A", "B", "SON_OF")
-        assert "No 'SON_OF' relationship found between 'A' and 'B'." in str(
-            excinfo.value
-        )
+        with pytest.raises(ValueError):
+            await repo.delete_relationship_by_id("missing-edge")
+
+
+def test_graph_repository_connected_components_groups_by_shared_book_and_endpoint():
+    edges = [
+        {"id": "e1", "book_id": "book-a", "other_endpoint_id": "p1"},
+        {"id": "e2", "book_id": "book-a", "other_endpoint_id": "p2"},
+        {"id": "e3", "book_id": "book-b", "other_endpoint_id": "p3"},
+    ]
+    components = GraphRepository._connected_components(edges)
+    # e1/e2 share book-a -> same component; e3 is isolated
+    assert components["e1"] == components["e2"]
+    assert components["e3"] != components["e1"]
 
 
 @pytest.mark.asyncio
-async def test_graph_repository_rename_entity_success():
-    mock_result_check = AsyncMock()
-    mock_result_check.data.return_value = [{"name": "OldName"}]
+async def test_graph_repository_split_entities_partitions_and_flags_unclustered():
+    mock_driver = MagicMock()
+    with patch(
+        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
+        return_value=mock_driver,
+    ):
+        repo = GraphRepository()
 
+        original = {
+            "id": "orig-1",
+            "canonical_name": "Ambiguous",
+            "type": "Person",
+            "scope": "nonfiction",
+            "book_id": None,
+        }
+        all_edges = [
+            {
+                "id": "split-edge",
+                "rel_type": "CHILD_OF",
+                "direction": "out",
+                "other_endpoint_id": "father-a",
+                "book_id": "book-1",
+                "chunk_refs": [],
+            },
+            {
+                "id": "conflict-edge",
+                "rel_type": "CHILD_OF",
+                "direction": "out",
+                "other_endpoint_id": "father-b",
+                "book_id": "book-2",
+                "chunk_refs": [],
+            },
+            {
+                "id": "isolated-edge",
+                "rel_type": "RULED",
+                "direction": "out",
+                "other_endpoint_id": "somewhere",
+                "book_id": "book-3",
+                "chunk_refs": [],
+            },
+        ]
+        with (
+            patch.object(
+                repo, "get_entity_by_id", new=AsyncMock(return_value=original)
+            ),
+            patch.object(
+                repo, "get_entity_edges_snapshot", new=AsyncMock(return_value=all_edges)
+            ),
+            patch.object(repo, "upsert_entities_bulk", new=AsyncMock()) as mock_upsert,
+            patch.object(
+                repo, "connect_entities_bulk", new=AsyncMock()
+            ) as mock_connect,
+            patch.object(
+                repo, "delete_relationships_by_ids", new=AsyncMock()
+            ) as mock_delete_edges,
+        ):
+            result = await repo.split_entities("orig-1", "split-edge")
+
+            # The new node gets only its own canonical_name as an alias (not the original's full list)
+            new_entity = mock_upsert.call_args[0][0][0]
+            assert new_entity["aliases"] == ["Ambiguous"]
+
+            # The conflicting edge moved to the new entity; the isolated edge is flagged, not moved.
+            assert result["moved_edge_ids"] == ["conflict-edge"]
+            assert result["unclustered_edge_ids"] == ["isolated-edge"]
+            assert result["new_entity_id"] == new_entity["id"]
+            mock_delete_edges.assert_called_once_with(["conflict-edge"])
+            mock_connect.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_graph_repository_split_entities_missing_edge_raises():
+    mock_driver = MagicMock()
+    with patch(
+        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
+        return_value=mock_driver,
+    ):
+        repo = GraphRepository()
+        with (
+            patch.object(
+                repo,
+                "get_entity_by_id",
+                new=AsyncMock(return_value={"id": "e1", "canonical_name": "X"}),
+            ),
+            patch.object(
+                repo, "get_entity_edges_snapshot", new=AsyncMock(return_value=[])
+            ),
+        ):
+            with pytest.raises(ValueError):
+                await repo.split_entities("e1", "nonexistent-edge")
+
+
+@pytest.mark.asyncio
+async def test_graph_repository_restore_entity_from_snapshot_repoints_matching_edges():
     mock_session = AsyncMock()
     mock_session.__aenter__.return_value = mock_session
+    # find_result for edge-1 (found) then no more find calls for edge-2 (missing)
+    found_result = AsyncMock()
+    found_result.single.return_value = {"chunk_refs": []}
+    missing_result = AsyncMock()
+    missing_result.single.return_value = None
+
     mock_session.run.side_effect = [
-        mock_result_check,
-        AsyncMock(),
+        None,  # CREATE (e:Entity)
+        found_result,  # find edge-1
+        None,  # delete edge-1
+        None,  # recreate edge-1
     ]
-
-    mock_driver = MagicMock()
-    mock_driver.session.return_value = mock_session
+    mock_driver = _mock_driver_session(mock_session)
 
     with patch(
         "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
         return_value=mock_driver,
     ):
         repo = GraphRepository()
-        success = await repo.rename_entity("OldName", "NewName")
-        assert success is True
-        assert mock_session.run.call_count == 2
-
-        second_call_args = mock_session.run.call_args_list[1][0]
-        second_call_kwargs = mock_session.run.call_args_list[1][1]
-        assert "SET e.name = $new" in second_call_args[0]
-        assert second_call_kwargs["old"] == "OldName"
-        assert second_call_kwargs["new"] == "NewName"
+        snapshot = {"id": "restored-1", "canonical_name": "Restored"}
+        edges = [
+            {
+                "id": "edge-1",
+                "rel_type": "SON_OF",
+                "direction": "out",
+                "other_endpoint_id": "p1",
+                "book_id": "b1",
+                "chunk_refs": [],
+            },
+        ]
+        unrecoverable = await repo.restore_entity_from_snapshot(snapshot, edges)
+        assert unrecoverable == []
+        assert mock_session.run.call_count == 4
 
 
 @pytest.mark.asyncio
-async def test_graph_repository_rename_entity_missing():
-    mock_result_check = AsyncMock()
-    mock_result_check.data.return_value = []
-
+async def test_graph_repository_restore_entity_from_snapshot_reports_unrecoverable():
     mock_session = AsyncMock()
     mock_session.__aenter__.return_value = mock_session
-    mock_session.run.return_value = mock_result_check
-
-    mock_driver = MagicMock()
-    mock_driver.session.return_value = mock_session
+    missing_result = AsyncMock()
+    missing_result.single.return_value = None
+    mock_session.run.side_effect = [None, missing_result]
+    mock_driver = _mock_driver_session(mock_session)
 
     with patch(
         "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
         return_value=mock_driver,
     ):
         repo = GraphRepository()
-        with pytest.raises(ValueError) as excinfo:
-            await repo.rename_entity("OldName", "NewName")
-        assert "Entity to rename 'OldName' does not exist." in str(excinfo.value)
+        snapshot = {"id": "restored-1", "canonical_name": "Restored"}
+        edges = [
+            {
+                "id": "collided-edge",
+                "rel_type": "SON_OF",
+                "direction": "out",
+                "other_endpoint_id": "p1",
+                "book_id": "b1",
+                "chunk_refs": [],
+            },
+        ]
+        unrecoverable = await repo.restore_entity_from_snapshot(snapshot, edges)
+        assert unrecoverable == ["collided-edge"]
 
 
 @pytest.mark.asyncio
-async def test_graph_repository_rename_entity_already_exists():
-    mock_result_check = AsyncMock()
-    mock_result_check.data.return_value = [
-        {"name": "OldName"},
-        {"name": "NewName"},
-    ]
-
+async def test_graph_repository_find_resolution_candidates_queries_fulltext_index():
+    mock_result = AsyncMock()
+    mock_result.data.return_value = [{"id": "cand-1", "canonical_name": "Similar Name"}]
     mock_session = AsyncMock()
     mock_session.__aenter__.return_value = mock_session
-    mock_session.run.return_value = mock_result_check
-
-    mock_driver = MagicMock()
-    mock_driver.session.return_value = mock_session
+    mock_session.run.return_value = mock_result
+    mock_driver = _mock_driver_session(mock_session)
 
     with patch(
         "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
         return_value=mock_driver,
     ):
         repo = GraphRepository()
-        with pytest.raises(ValueError) as excinfo:
-            await repo.rename_entity("OldName", "NewName")
-        assert "An entity with the name 'NewName' already exists." in str(excinfo.value)
+        candidates = await repo.find_resolution_candidates(
+            entity_id="e1",
+            canonical_name="Some Name",
+            aliases=["Alt Name"],
+            scope="nonfiction",
+        )
+        assert candidates == [{"id": "cand-1", "canonical_name": "Similar Name"}]
+        call_kwargs = mock_session.run.call_args[1]
+        assert set(call_kwargs["terms"]) == {"Some Name", "Alt Name"}
+        assert call_kwargs["entity_id"] == "e1"
 
 
 @pytest.mark.asyncio
-async def test_graph_repository_rename_entity_identical():
+async def test_graph_repository_find_resolution_candidates_no_terms_returns_empty():
     mock_driver = MagicMock()
     with patch(
         "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
         return_value=mock_driver,
     ):
         repo = GraphRepository()
-        success = await repo.rename_entity("SameName", "SameName")
-        assert success is True
+        candidates = await repo.find_resolution_candidates(
+            entity_id="e1", canonical_name="", aliases=None, scope="nonfiction"
+        )
+        assert candidates == []
         assert not mock_driver.session.called
