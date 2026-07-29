@@ -330,6 +330,7 @@
       "searchPlaceholder": "Search questions...",
       "total": "{{count}} questions total",
       "colQuestion": "Question",
+      "colUser": "User",
       "colScope": "Scope",
       "colFeedback": "Feedback",
       "colEvalQuality": "Eval Quality",

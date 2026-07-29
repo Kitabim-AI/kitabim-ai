@@ -409,7 +409,7 @@ export const PersistenceService = {
     }
   },
 
-  async getRecentQuestions(limit: number = 10): Promise<string[]> {
+  async getRecentQuestions(limit: number = 20): Promise<string[]> {
     try {
       const response = await authFetch(`${API_BASE}/chat/recent-questions?limit=${limit}`);
       if (!response.ok) throw new Error("Failed to fetch recent questions");

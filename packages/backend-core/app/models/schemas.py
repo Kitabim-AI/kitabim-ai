@@ -198,6 +198,7 @@ class RagQuestionAdmin(BaseModel):
     is_global: bool
     book_id: Optional[str] = None
     user_id: Optional[str] = None
+    user_display_name: Optional[str] = None
     is_first_turn: bool
     show_on_homepage: bool
     user_feedback: Optional[str] = None
