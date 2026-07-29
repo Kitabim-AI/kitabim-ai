@@ -854,15 +854,14 @@ export const GraphView: React.FC = () => {
   const renderDetailsPanelContent = (isDark: boolean) => {
     return selectedNode ? (
       <div className="h-full flex flex-col min-h-0 text-right animate-fade-in">
-        <div className={`flex items-center justify-between border-b pb-4 mb-4 ${isDark ? 'border-slate-800' : 'border-slate-100'}`}>
+        <div className={`flex items-center justify-start border-b pb-3 mb-4 ${isDark ? 'border-slate-800' : 'border-slate-100'}`}>
           <button
             onClick={() => setSelectedNode(null)}
-            className={`text-xs border rounded-lg px-2 py-1 transition-all active:scale-95 font-normal ${isDark ? 'text-slate-400 hover:text-slate-200 border-slate-700 hover:border-slate-600 bg-slate-950/20' : 'text-slate-400 hover:text-slate-600 border-slate-200 hover:border-slate-300'
+            className={`text-xs border rounded-lg px-2.5 py-1 transition-all active:scale-95 font-normal ${isDark ? 'text-slate-400 hover:text-slate-200 border-slate-700 hover:border-slate-600 bg-slate-950/20' : 'text-slate-400 hover:text-slate-600 border-slate-200 hover:border-slate-300'
               }`}
           >
             {t('common.clear')}
           </button>
-          <h3 className={`text-lg font-bold ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>{t('graph.nodePanel.title')}</h3>
         </div>
 
         <div className="mb-6 space-y-3">
@@ -1044,18 +1043,15 @@ export const GraphView: React.FC = () => {
   const renderReviewsPanelContent = (isDark: boolean) => {
     return (
       <div className="h-full flex flex-col min-h-0 text-right animate-fade-in">
-        <div className={`flex items-center justify-between border-b pb-4 mb-4 ${isDark ? 'border-slate-800' : 'border-slate-100'}`}>
+        <div className={`flex items-center justify-start border-b pb-3 mb-4 ${isDark ? 'border-slate-800' : 'border-slate-100'}`}>
           <button
             onClick={fetchReviews}
             disabled={reviewsLoading}
-            className={`text-xs border rounded-lg px-2 py-1 transition-all active:scale-95 font-normal disabled:opacity-50 ${isDark ? 'text-slate-400 hover:text-slate-200 border-slate-700 hover:border-slate-600 bg-slate-950/20' : 'text-slate-400 hover:text-slate-600 border-slate-200 hover:border-slate-300'
+            className={`text-xs border rounded-lg px-2.5 py-1 transition-all active:scale-95 font-normal disabled:opacity-50 ${isDark ? 'text-slate-400 hover:text-slate-200 border-slate-700 hover:border-slate-600 bg-slate-950/20' : 'text-slate-400 hover:text-slate-600 border-slate-200 hover:border-slate-300'
               }`}
           >
             {reviewsLoading ? <Loader2 size={12} className="animate-spin" /> : (t('common.refresh') || 'Refresh')}
           </button>
-          <h3 className={`text-lg font-bold ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>
-            {t('graph.tabReviews') || 'Reviews'}
-          </h3>
         </div>
 
         <div className="flex-grow overflow-y-auto pr-1 space-y-2.5 custom-scrollbar">
