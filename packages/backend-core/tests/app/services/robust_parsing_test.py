@@ -11,11 +11,11 @@ def test_parse_and_clean_knowledge_extraction_success():
     error_message = (
         "Failed to parse KnowledgeExtraction from completion {\n"
         '  "entities": [\n'
-        '    {"name": "Nuh", "type": "Person", "subtype": "Prophet"},\n'
-        '    {"name": "Yafes", "type": "Person", "subtype": "Son of Nuh"}\n'
+        '    {"local_id": "e1", "name": "Nuh", "type": "Person", "subtype": "Prophet"},\n'
+        '    {"local_id": "e2", "name": "Yafes", "type": "Person", "subtype": "Son of Nuh"}\n'
         "  ],\n"
         '  "relations": [\n'
-        '    {"source_entity": "Yafes", "relation_type": "SON_OF", "target_entity": "Nuh"},\n'
+        '    {"source_entity": "e2", "relation_type": "SON_OF", "target_entity": "e1"},\n'
         "    {}\n"
         "  ]\n"
         "}. Got: 3 validation errors for KnowledgeExtraction\n"
@@ -34,17 +34,17 @@ def test_parse_and_clean_knowledge_extraction_success():
 
     # The empty dict in relations should have been filtered out, leaving exactly 1 valid relation
     assert len(parsed.relations) == 1
-    assert parsed.relations[0].source_entity == "Yafes"
+    assert parsed.relations[0].source_entity == "e2"
     assert parsed.relations[0].relation_type == "SON_OF"
-    assert parsed.relations[0].target_entity == "Nuh"
+    assert parsed.relations[0].target_entity == "e1"
 
 
 def test_parse_and_clean_global_metadata_success():
     error_message = (
         "Failed to parse GlobalMetadataExtraction from completion {\n"
         '  "entities": [\n'
-        '    {"name": "Moghul", "type": "Person", "subtype": "Son of Alanje"},\n'
-        '    {"name": "", "type": "Person"}\n'  # empty name
+        '    {"local_id": "e1", "name": "Moghul", "type": "Person", "subtype": "Son of Alanje"},\n'
+        '    {"local_id": "e2", "name": "", "type": "Person"}\n'  # empty name
         "  ],\n"
         '  "relations": [\n'
         '    {"source": "Book Title", "relation": "HAS_CHARACTER", "target": "Moghul", "target_type": "Person"},\n'
@@ -108,9 +108,9 @@ def test_entity_type_normalization_variations():
     error_message = (
         "Failed to parse KnowledgeExtraction from completion {\n"
         '  "entities": [\n'
-        '    {"name": "Nuh", "type": "person", "subtype": "Prophet"},\n'
-        '    {"name": "Yafes", "type": "historical era", "subtype": "Era Setting"},\n'
-        '    {"name": "Kashgar", "type": "cities"}\n'
+        '    {"local_id": "e1", "name": "Nuh", "type": "person", "subtype": "Prophet"},\n'
+        '    {"local_id": "e2", "name": "Yafes", "type": "historical era", "subtype": "Era Setting"},\n'
+        '    {"local_id": "e3", "name": "Kashgar", "type": "cities"}\n'
         "  ],\n"
         '  "relations": []\n'
         "}. Got: validation errors..."
@@ -128,9 +128,13 @@ def test_optional_fields_parsing():
     # Test that KnowledgeExtraction validates successfully when fields are omitted or None
     raw_data = {
         "entities": [
-            {"name": "Nuh"},  # type is missing (None)
-            {"type": "Person"},  # name is missing (None)
-            {"name": "Yafes", "type": None},  # type is explicitly None
+            {"local_id": "e1", "name": "Nuh"},  # type is missing (None)
+            {"local_id": "e2", "type": "Person"},  # name is missing (None)
+            {
+                "local_id": "e3",
+                "name": "Yafes",
+                "type": None,
+            },  # type is explicitly None
         ],
         "relations": [
             {"source_entity": "Yafes"},  # relation_type and target_entity are missing

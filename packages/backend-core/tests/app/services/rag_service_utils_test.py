@@ -200,7 +200,7 @@ def test_build_instructions_dynamic_numbering():
 
     # They should be strictly sequential starting at 1
     assert numbers == list(range(1, len(numbers) + 1))
-    assert len(numbers) == 12
+    assert len(numbers) == 13
 
     # Check key contents
     assert "Markdown structural characters" in instr_permissive
@@ -222,9 +222,9 @@ def test_build_instructions_dynamic_numbering():
     ]
     numbers_strict = [int(line.split(".")[0]) for line in numbered_lines_strict]
 
-    # They should be strictly sequential starting at 1 (8 rules in strict mode)
+    # They should be strictly sequential starting at 1 (9 rules in strict mode)
     assert numbers_strict == list(range(1, len(numbers_strict) + 1))
-    assert len(numbers_strict) == 8
+    assert len(numbers_strict) == 9
 
     assert "Markdown structural characters" in instr_strict
     assert (

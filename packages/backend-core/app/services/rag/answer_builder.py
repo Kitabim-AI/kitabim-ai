@@ -42,6 +42,7 @@ def build_instructions(
     if strict_no_answer:
         instructions = [
             "Primary Goal: Answer the user's question ONLY based on the provided context.",
+            "Context & Data Language: The provided context documents (books, dictionary entries, Quran verses, historical vocabulary) and user questions are in standard Uyghur (Arabic script).",
             (
                 "Chat History: Review the chat history to understand follow-up questions, references to previous topics, and conversational context. "
                 "If the user asks 'what about...', 'tell me more', or uses pronouns like 'it', 'that', or 'this', refer to the chat history to understand what they're asking about."
@@ -58,9 +59,11 @@ def build_instructions(
                 "(e.g., **مەنبە:** [ئانا يۇرت (زوردۇن سابىر)، Page: N](ref:book_id:page_number)). Keep the book ID ONLY in the URL parenthesis, not the text label."
             ),
             _MULTI_VOLUME_INSTRUCTION,
-            "Respond ONLY in professional Uyghur (Arabic script).",
+            "Respond ONLY in professional, grammatically standard Uyghur (Arabic script, ئۆلچەملىك ئەدەبىي ئۇيغۇر تىلى).",
             (
-                "STRICT RULE: Output ONLY Uyghur text. Do not include English words, translations, or explanations in other languages. "
+                "STRICT GRAMMAR & SYNTAX DIRECTIVES: Output ONLY Uyghur text. Do not include English words, translations, or explanations in other languages. "
+                "Follow standard Uyghur Subject-Object-Verb (SOV) word order. Use proper morphological agglutination (correct case suffixes -نىڭ, -نى, -غا/-گە, -دا/-دە, -دىن/-دىن, possessives, and verb tenses). "
+                "Avoid literal English/Chinese syntax calques, machine-translated phrasing, or unnatural passive constructions. "
                 "Markdown structural characters (e.g., **, -, >, #) are permitted as formatting; only content words and text must be in Uyghur."
             ),
         ]
@@ -86,6 +89,7 @@ def build_instructions(
 
     instructions = [
         "Primary Goal: Answer the user's question based on the provided context.",
+        "Context & Data Language: The provided context documents (books, dictionary entries, Quran verses, historical vocabulary) and user questions are in standard Uyghur (Arabic script).",
         (
             "Chat History: Review the chat history to understand follow-up questions, references to previous topics, and conversational context. "
             "If the user asks 'what about...', 'tell me more', or uses pronouns like 'it', 'that', or 'this', refer to the chat history to understand what they're asking about."
@@ -124,9 +128,11 @@ def build_instructions(
             "**Citations must be placed immediately after the relevant sentence or paragraph they support. NEVER group all citations at the end of your response.**"
         ),
         inst_7,
-        "Respond ONLY in professional Uyghur (Arabic script).",
+        "Respond ONLY in professional, grammatically standard Uyghur (Arabic script, ئۆلچەملىك ئەدەبىي ئۇيغۇر تىلى).",
         (
-            "STRICT RULE: Output ONLY Uyghur text. Do not include English explanations or mixed-language sentences. Maintain purely Uyghur syntax and vocabulary. "
+            "STRICT GRAMMAR & SYNTAX DIRECTIVES: Output ONLY Uyghur text. Do not include English explanations or mixed-language sentences. "
+            "Follow standard Uyghur Subject-Object-Verb (SOV) word order. Use proper morphological agglutination (correct case suffixes -نىڭ, -نى, -غا/-گە, -دا/-دە, -دىن/-دىن, possessives, and verb tenses). "
+            "Avoid literal English/Chinese syntax calques, machine-translated phrasing, or unnatural passive constructions. Maintain purely Uyghur syntax and vocabulary. "
             "Exception: when answering an English-Uyghur dictionary question, you may repeat the user's English source word or phrase exactly as a term label. "
             "Markdown structural characters (e.g., **, -, >, #) are permitted as formatting; only content words and text must be in Uyghur."
         ),

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import unicodedata
+import uuid
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 from neo4j import AsyncGraphDatabase
@@ -13,12 +14,18 @@ from app.core.config import settings
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.db.repositories.graph")
+logging.getLogger("neo4j.notifications").setLevel(logging.ERROR)
 
 
 class GraphRepository:
     """Repository for interacting with Neo4j using the async Neo4j driver.
 
-    Allows mapping and querying entity-relationship networks of books.
+    Entities are keyed by a stable ``id`` (uuid) assigned once at extraction —
+    never by name, since two distinct real-world entities can share a name
+    (see knowledge-graph-entity-resolution-design-v2.md). ``canonical_name``/
+    ``aliases`` are display-only; dedup across duplicate names is entirely the
+    job of the global resolution pass (`entity_resolution_service`), not of
+    any MERGE performed here.
     """
 
     _driver = None
@@ -80,25 +87,37 @@ class GraphRepository:
     async def init_constraints(self) -> None:
         """Initialize uniqueness constraints and indexes in Neo4j.
 
-        Ensures MERGE commands perform efficiently without duplicate nodes.
+        `entity_name_unique` is dropped (two entities can now legitimately share a
+        name) in favor of `entity_id_unique` on the stable `id` assigned at
+        extraction. `entity_search_idx` is a native full-text index (no APOC
+        plugin is installed in either compose file) used by the resolution
+        pass's fuzzy candidate lookup; the plain B-tree indexes remain for
+        exact-match reads elsewhere (e.g. the admin search in GraphView.tsx).
         """
-        # Neo4j 5 uses FOR ... REQUIRE ... IS UNIQUE syntax
-        constraints = [
-            "CREATE CONSTRAINT entity_name_unique IF NOT EXISTS FOR (e:Entity) REQUIRE e.name IS UNIQUE;",
+        statements = [
+            "DROP CONSTRAINT entity_name_unique IF EXISTS;",
+            "CREATE CONSTRAINT entity_id_unique IF NOT EXISTS FOR (e:Entity) REQUIRE e.id IS UNIQUE;",
+            "CREATE INDEX entity_canonical_name_idx IF NOT EXISTS FOR (e:Entity) ON (e.canonical_name);",
+            "CREATE INDEX entity_aliases_idx IF NOT EXISTS FOR (e:Entity) ON (e.aliases);",
+            "CREATE FULLTEXT INDEX entity_search_idx IF NOT EXISTS FOR (e:Entity) ON EACH [e.canonical_name, e.aliases];",
+            "CREATE INDEX rel_book_id_idx IF NOT EXISTS FOR ()-[r:RELATED_TO]-() ON (r.book_id);",
+            "CREATE INDEX rel_rel_type_idx IF NOT EXISTS FOR ()-[r:RELATED_TO]-() ON (r.rel_type);",
+            "CREATE INDEX rel_id_idx IF NOT EXISTS FOR ()-[r:RELATED_TO]-() ON (r.id);",
+            "CREATE INDEX rel_chunk_refs_idx IF NOT EXISTS FOR ()-[r:RELATED_TO]-() ON (r.chunk_refs);",
         ]
         async with self._driver.session() as session:
-            for constraint in constraints:
+            for statement in statements:
                 try:
-                    await session.run(constraint)
+                    await session.run(statement)
                 except ClientError as exc:
-                    # Neo4j raises ClientError when a constraint already exists
+                    # Neo4j raises ClientError when a constraint/index already exists
                     # (IF NOT EXISTS is not always honoured). Let real connection errors
                     # (ServiceUnavailable, AuthError) propagate so the caller knows
                     # the graph DB is unreachable.
                     log_json(
                         logger,
                         logging.DEBUG,
-                        "constraint already exists or schema warning",
+                        "constraint/index already exists or schema warning",
                         detail=str(exc),
                     )
 
@@ -116,67 +135,153 @@ class GraphRepository:
             records = await result.data()
             return [r["book_id"] for r in records]
 
+    async def set_resolution_status(self, entity_id: str, status: str) -> None:
+        """Marks an Entity's resolution_status ('unresolved'|'resolving'|'resolved') —
+        drives candidate-selection exclusion of in-flight nodes (§4 step 1)."""
+        async with self._driver.session() as session:
+            await session.run(
+                "MATCH (e:Entity {id: $id}) SET e.resolution_status = $status",
+                id=entity_id,
+                status=status,
+            )
+
+    async def get_children_via_child_of(self, entity_id: str) -> List[str]:
+        """Returns ids of entities with a CHILD_OF edge pointing to `entity_id` as parent —
+        the re-propagation candidates after a merge/split touching `entity_id` (§4 step 4)."""
+        query = "MATCH (child:Entity)-[:CHILD_OF]->(parent:Entity {id: $id}) RETURN DISTINCT child.id AS id"
+        async with self._driver.session() as session:
+            result = await session.run(query, id=entity_id)
+            records = await result.data()
+        return [r["id"] for r in records]
+
+    # ------------------------------------------------------------------
+    # Bulk write (extraction)
+    # ------------------------------------------------------------------
+
     async def upsert_entities_bulk(self, entities: List[Dict[str, Any]]) -> None:
-        """Create or update Entity nodes in bulk."""
+        """Create Entity nodes in bulk, keyed purely by `id` (never by name).
+
+        Every entity dict must include a fresh `id` (uuid4, assigned by the
+        caller at extraction time) — there is no dedup at write time; dedup is
+        entirely the global resolution pass's job.
+        """
         if not entities:
             return
         normalized = [
             {
-                "name": unicodedata.normalize("NFC", e["name"])
-                if e.get("name")
+                "id": e["id"],
+                "canonical_name": unicodedata.normalize("NFC", e["canonical_name"])
+                if e.get("canonical_name")
                 else None,
+                "aliases": [
+                    unicodedata.normalize("NFC", a)
+                    for a in (e.get("aliases") or [])
+                    if a
+                ],
                 "type": e.get("type"),
                 "subtype": e.get("subtype"),
+                "scope": e.get("scope"),
+                "book_id": e.get("book_id"),
                 "year_hijri": e.get("year_hijri"),
                 "year_gregorian": e.get("year_gregorian"),
                 "century_gregorian": e.get("century_gregorian"),
+                "resolution_status": e.get("resolution_status", "unresolved"),
             }
             for e in entities
         ]
         query = """
         UNWIND $entities_data AS e_data
-        MERGE (e:Entity {name: e_data.name})
-        SET e.type = e_data.type,
+        MERGE (e:Entity {id: e_data.id})
+        SET e.canonical_name = e_data.canonical_name,
+            e.aliases = e_data.aliases,
+            e.type = e_data.type,
             e.subtype = e_data.subtype,
-            e.year_hijri = COALESCE(e_data.year_hijri, e.year_hijri),
-            e.year_gregorian = COALESCE(e_data.year_gregorian, e.year_gregorian),
-            e.century_gregorian = COALESCE(e_data.century_gregorian, e.century_gregorian)
+            e.scope = e_data.scope,
+            e.book_id = e_data.book_id,
+            e.year_hijri = e_data.year_hijri,
+            e.year_gregorian = e_data.year_gregorian,
+            e.century_gregorian = e_data.century_gregorian,
+            e.resolution_status = e_data.resolution_status
         """
         async with self._driver.session() as session:
             await session.run(query, entities_data=normalized)
 
     async def connect_entities_bulk(self, relations: List[Dict[str, Any]]) -> None:
-        """Create RELATED_TO relationships between Entities in bulk.
+        """Create/merge RELATED_TO relationships between Entities in bulk, by id.
 
-        Each relation dict must include book_id so edges from different books
-        are stored as separate edges and never overwrite each other.
+        MERGE key is `{rel_type, book_id}` between the two endpoint ids (not
+        `{book_id}` alone) so two distinct facts about the same pair in the same
+        book never collide. `chunk_refs` must accumulate across re-runs rather
+        than being overwritten — since no APOC plugin is installed, the union is
+        computed in Python via a read-before-write: existing `chunk_refs` for the
+        batch's keys are fetched first, unioned with the new batch's refs, then
+        sent as the already-merged value in the same UNWIND write. `id`/year
+        fields are `ON CREATE`-only so a re-run never regenerates an edge's id or
+        clobbers its original year fields.
         """
         if not relations:
             return
-        normalized = [
+
+        keys = [
             {
-                "source_name": r.get("source_name"),
-                "rel_type": r.get("rel_type"),
-                "target_name": r.get("target_name"),
+                "source_id": r["source_id"],
+                "rel_type": r["rel_type"],
+                "target_id": r["target_id"],
                 "book_id": r.get("book_id"),
-                "year_hijri": r.get("year_hijri"),
-                "year_gregorian": r.get("year_gregorian"),
-                "century_gregorian": r.get("century_gregorian"),
             }
             for r in relations
         ]
-        query = """
-        UNWIND $relations_data AS rel
-        MATCH (s:Entity {name: rel.source_name})
-        MATCH (t:Entity {name: rel.target_name})
-        MERGE (s)-[r:RELATED_TO {book_id: rel.book_id}]->(t)
-        SET r.type = rel.rel_type,
-            r.year_hijri = rel.year_hijri,
-            r.year_gregorian = rel.year_gregorian,
-            r.century_gregorian = rel.century_gregorian
+        read_query = """
+        UNWIND $keys AS k
+        MATCH (s:Entity {id: k.source_id})-[rel:RELATED_TO {rel_type: k.rel_type, book_id: k.book_id}]->(t:Entity {id: k.target_id})
+        RETURN k.source_id AS source_id, k.rel_type AS rel_type, k.target_id AS target_id, k.book_id AS book_id, rel.chunk_refs AS chunk_refs
         """
         async with self._driver.session() as session:
-            await session.run(query, relations_data=normalized)
+            result = await session.run(read_query, keys=keys)
+            existing_records = await result.data()
+
+        existing_refs: Dict[tuple, List[str]] = {}
+        for rec in existing_records:
+            key = (rec["source_id"], rec["rel_type"], rec["target_id"], rec["book_id"])
+            existing_refs[key] = rec.get("chunk_refs") or []
+
+        normalized = []
+        for r in relations:
+            key = (r["source_id"], r["rel_type"], r["target_id"], r.get("book_id"))
+            new_refs = list(r.get("chunk_refs") or [])
+            merged_refs = list(dict.fromkeys(existing_refs.get(key, []) + new_refs))
+            normalized.append(
+                {
+                    "source_id": r["source_id"],
+                    "rel_type": r["rel_type"],
+                    "target_id": r["target_id"],
+                    "book_id": r.get("book_id"),
+                    "edge_id": r.get("edge_id") or str(uuid.uuid4()),
+                    "chunk_refs": new_refs,
+                    "merged_chunk_refs": merged_refs,
+                    "year_hijri": r.get("year_hijri"),
+                    "year_gregorian": r.get("year_gregorian"),
+                    "century_gregorian": r.get("century_gregorian"),
+                    # CHILD_OF-only; null/ignored for every other rel_type.
+                    "parent_role": r.get("parent_role"),
+                }
+            )
+
+        write_query = """
+        UNWIND $relations_data AS rel
+        MATCH (s:Entity {id: rel.source_id})
+        MATCH (t:Entity {id: rel.target_id})
+        MERGE (s)-[r:RELATED_TO {rel_type: rel.rel_type, book_id: rel.book_id}]->(t)
+        ON CREATE SET r.id = rel.edge_id,
+                      r.chunk_refs = rel.chunk_refs,
+                      r.year_hijri = rel.year_hijri,
+                      r.year_gregorian = rel.year_gregorian,
+                      r.century_gregorian = rel.century_gregorian,
+                      r.parent_role = rel.parent_role
+        ON MATCH SET r.chunk_refs = rel.merged_chunk_refs
+        """
+        async with self._driver.session() as session:
+            await session.run(write_query, relations_data=normalized)
 
     async def delete_book_graph(self, book_id: str) -> None:
         """Delete all graph data for a book, then remove any orphaned Entity nodes.
@@ -194,38 +299,528 @@ class GraphRepository:
                 "MATCH (e:Entity) WHERE NOT (e)-[:RELATED_TO]-() AND NOT ()-[:RELATED_TO]->(e) DELETE e"
             )
 
-    async def delete_relationship(
-        self, source_name: str, target_name: str, rel_type: str
-    ) -> bool:
-        """Delete every RELATED_TO edge of a given type between two entities.
+    # ------------------------------------------------------------------
+    # Reads used by the resolution pass / admin
+    # ------------------------------------------------------------------
 
-        Matches on (source_name, target_name, rel_type) and removes all matching
-        edges, including duplicates from different books (book_id is not part of
-        the match). Raises ValueError if no matching edge exists.
-        """
-        source_norm = unicodedata.normalize("NFC", source_name)
-        target_norm = unicodedata.normalize("NFC", target_name)
+    async def get_entity_by_id(self, entity_id: str) -> Optional[Dict[str, Any]]:
+        """Return an Entity node's properties, or None if it no longer exists."""
+        query = "MATCH (e:Entity {id: $id}) RETURN e AS entity"
+        async with self._driver.session() as session:
+            result = await session.run(query, id=entity_id)
+            record = await result.single()
+        if not record:
+            return None
+        return dict(record["entity"])
 
+    async def get_entity_names_by_ids(self, entity_ids: List[str]) -> Dict[str, str]:
+        """Return a mapping of entity_id -> canonical_name for a list of UUIDs."""
+        if not entity_ids:
+            return {}
         query = """
-        MATCH (a:Entity {name: $source_name})-[r:RELATED_TO {type: $rel_type}]->(b:Entity {name: $target_name})
-        DELETE r
-        RETURN count(r) AS deleted
+        MATCH (e:Entity)
+        WHERE e.id IN $ids
+        RETURN e.id AS id, coalesce(e.canonical_name, e.name, e.label, head(e.aliases)) AS name
+        """
+        async with self._driver.session() as session:
+            result = await session.run(query, ids=entity_ids)
+            records = await result.data()
+        return {r["id"]: r["name"] for r in records if r.get("id") and r.get("name")}
+
+    async def get_entity_facts(self, entity_id: str) -> Dict[str, Any]:
+        """Return the canonical functional facts (CHILD_OF/BORN_IN/DIED_IN) + a sample
+        of relationship neighbors for `entity_id`, used for hard-constraint checks and
+        as gray-zone LLM judge input (design v2 §4 step 2, §4.1)."""
+        query = """
+        MATCH (e:Entity {id: $id})
+        OPTIONAL MATCH (e)-[co:CHILD_OF]->(parent:Entity)
+        OPTIONAL MATCH (e)-[bi:BORN_IN]->(loc:Entity)
+        OPTIONAL MATCH (e)-[di:DIED_IN]->(era:Entity)
+        OPTIONAL MATCH (e)-[nb:RELATED_TO]-(neighbor:Entity)
+        RETURN
+            [p IN collect(DISTINCT {parent_id: parent.id, parent_name: parent.canonical_name, parent_role: co.parent_role}) WHERE p.parent_id IS NOT NULL] AS child_of,
+            [b IN collect(DISTINCT {location_id: loc.id, location_name: loc.canonical_name}) WHERE b.location_id IS NOT NULL] AS born_in,
+            [d IN collect(DISTINCT {era_id: era.id, era_name: era.canonical_name, year_hijri: di.year_hijri, year_gregorian: di.year_gregorian}) WHERE d.era_id IS NOT NULL] AS died_in,
+            [n IN collect(DISTINCT {neighbor_id: neighbor.id, neighbor_name: neighbor.canonical_name, rel_type: nb.rel_type}) WHERE n.neighbor_id IS NOT NULL] AS neighbors
+        """
+        async with self._driver.session() as session:
+            result = await session.run(query, id=entity_id)
+            record = await result.single()
+        if not record:
+            return {"child_of": [], "born_in": [], "died_in": [], "neighbors": []}
+        return {
+            "child_of": [c for c in record["child_of"] if c is not None],
+            "born_in": [b for b in record["born_in"] if b is not None],
+            "died_in": [d for d in record["died_in"] if d is not None],
+            "neighbors": [n for n in record["neighbors"] if n is not None][:20],
+        }
+
+    async def get_entity_facts_for_citation(
+        self, entity_id: str
+    ) -> List[Dict[str, Any]]:
+        """Returns this entity's facts as flat, citable rows for query-time RAG use
+        (design v2 §6): each RELATED_TO edge becomes one fact sentence, tagged with the
+        book_id/page of its first supporting `chunk_ref` so it carries a citation like
+        any other retrieved chunk. Returns a bare name/type fact if the entity has no
+        edges at all, so a matched entity is never dropped silently.
+        """
+        query = """
+        MATCH (e:Entity {id: $id})
+        OPTIONAL MATCH (e)-[r:RELATED_TO]-(other:Entity)
+        RETURN e.canonical_name AS entity_name, e.type AS entity_type,
+               collect(CASE WHEN r IS NULL THEN NULL ELSE {
+                   rel_type: r.rel_type, book_id: r.book_id, chunk_refs: r.chunk_refs,
+                   other_name: other.canonical_name, is_outgoing: startNode(r).id = $id
+               } END) AS facts
+        """
+        async with self._driver.session() as session:
+            result = await session.run(query, id=entity_id)
+            record = await result.single()
+        if not record:
+            return []
+
+        entity_name = record["entity_name"]
+        rows: List[Dict[str, Any]] = []
+        for f in record["facts"]:
+            if f is None:
+                continue
+            chunk_refs = f.get("chunk_refs") or []
+            book_id = f.get("book_id")
+            page = None
+            if chunk_refs:
+                parts = str(chunk_refs[0]).split(":")
+                if len(parts) == 3:
+                    book_id = book_id or parts[0]
+                    try:
+                        page = int(parts[1])
+                    except ValueError:
+                        page = None
+            other_name = f.get("other_name") or ""
+            if f.get("is_outgoing"):
+                text = f"{entity_name} {f['rel_type']} {other_name}".strip()
+            else:
+                text = f"{other_name} {f['rel_type']} {entity_name}".strip()
+            rows.append({"text": text, "book_id": book_id, "page": page})
+
+        if not rows:
+            rows.append(
+                {
+                    "text": f"{entity_name} ({record['entity_type']})",
+                    "book_id": None,
+                    "page": None,
+                }
+            )
+        return rows
+
+    async def find_resolution_candidates(
+        self,
+        entity_id: str,
+        canonical_name: str,
+        aliases: Optional[List[str]],
+        scope: str,
+        book_id: Optional[str] = None,
+        edit_distance: int = 2,
+        limit: int = 20,
+    ) -> List[Dict[str, Any]]:
+        """Fuzzy-match other Entity nodes whose canonical_name/aliases resemble this
+        entity's — the candidate-selection step of the global resolution pass (§4
+        step 1). Uses the native full-text index (Lucene fuzzy operator) since Cypher
+        has no trigram operator and no APOC plugin is installed. Restricted to the
+        same `scope`, and additionally to the same `book_id` for fiction.
+        """
+        terms = list(
+            dict.fromkeys([t for t in [canonical_name, *(aliases or [])] if t])
+        )
+        if not terms:
+            return []
+        query = """
+        UNWIND $terms AS term
+        CALL db.index.fulltext.queryNodes("entity_search_idx", term + "~" + $edit_distance) YIELD node, score
+        WHERE node.id <> $entity_id
+          AND node.scope = $scope
+          AND coalesce(node.resolution_status, 'unresolved') <> 'resolving'
+          AND ($book_id IS NULL OR node.book_id = $book_id)
+        WITH node, max(score) AS best_score
+        RETURN node.id AS id, node.canonical_name AS canonical_name, node.aliases AS aliases,
+               node.type AS type, node.subtype AS subtype, node.scope AS scope, node.book_id AS book_id,
+               node.year_hijri AS year_hijri, node.year_gregorian AS year_gregorian,
+               node.century_gregorian AS century_gregorian, best_score AS score
+        ORDER BY best_score DESC
+        LIMIT $limit
         """
         async with self._driver.session() as session:
             result = await session.run(
                 query,
-                source_name=source_norm,
-                target_name=target_norm,
-                rel_type=rel_type,
+                terms=terms,
+                entity_id=entity_id,
+                scope=scope,
+                book_id=book_id,
+                edit_distance=str(edit_distance),
+                limit=limit,
             )
-            records = await result.data()
+            return await result.data()
 
+    async def get_entity_edges_snapshot(self, entity_id: str) -> List[Dict[str, Any]]:
+        """Return every RELATED_TO edge touching `entity_id`, in either direction,
+        each tagged with its `direction` ('out'|'in') and the other endpoint's id —
+        used both for merge-log snapshots and for split's connected-component input.
+        """
+        query = """
+        MATCH (e:Entity {id: $id})
+        OPTIONAL MATCH (e)-[r_out:RELATED_TO]->(other_out:Entity)
+        WITH e, [item IN collect({
+            id: r_out.id, rel_type: r_out.rel_type, direction: 'out',
+            other_endpoint_id: other_out.id, book_id: r_out.book_id,
+            chunk_refs: r_out.chunk_refs, year_hijri: r_out.year_hijri,
+            year_gregorian: r_out.year_gregorian, century_gregorian: r_out.century_gregorian
+        }) WHERE item.id IS NOT NULL] AS out_edges
+        OPTIONAL MATCH (other_in:Entity)-[r_in:RELATED_TO]->(e)
+        RETURN out_edges, [item IN collect({
+            id: r_in.id, rel_type: r_in.rel_type, direction: 'in',
+            other_endpoint_id: other_in.id, book_id: r_in.book_id,
+            chunk_refs: r_in.chunk_refs, year_hijri: r_in.year_hijri,
+            year_gregorian: r_in.year_gregorian, century_gregorian: r_in.century_gregorian
+        }) WHERE item.id IS NOT NULL] AS in_edges
+        """
+        async with self._driver.session() as session:
+            result = await session.run(query, id=entity_id)
+            record = await result.single()
+        if not record:
+            return []
+        edges = [e for e in record["out_edges"] if e is not None]
+        edges += [e for e in record["in_edges"] if e is not None]
+        return edges
+
+    async def delete_relationships_by_ids(self, edge_ids: List[str]) -> None:
+        if not edge_ids:
+            return
+        query = "MATCH ()-[r:RELATED_TO]->() WHERE r.id IN $ids DELETE r"
+        async with self._driver.session() as session:
+            await session.run(query, ids=edge_ids)
+
+    # ------------------------------------------------------------------
+    # Manual / automated control: merge / split / unmerge (id-keyed, §5)
+    # ------------------------------------------------------------------
+
+    async def merge_entities_by_id(
+        self,
+        keep_id: str,
+        remove_id: str,
+        combined_aliases: List[str],
+        edges_to_redirect: List[Dict[str, Any]],
+    ) -> None:
+        """Pure Neo4j merge — the caller (entity_resolution_service) is responsible
+        for snapshotting `remove_id`'s node + edges to `graph_merge_log` in Postgres
+        BEFORE calling this, since the snapshot must reflect state immediately prior
+        to deletion.
+
+        Redirected edges are re-created from `keep_id`'s perspective and written via
+        `connect_entities_bulk`, reusing its existing chunk_refs-union semantics so a
+        pre-existing edge on `keep` with the same (rel_type, other_endpoint) absorbs
+        the redirected edge's chunk_refs instead of creating a duplicate.
+        """
+        redirected = []
+        for e in edges_to_redirect:
+            other_id = e.get("other_endpoint_id")
+            if not other_id:
+                continue
+            if e["direction"] == "out":
+                source_id, target_id = keep_id, other_id
+            else:
+                source_id, target_id = other_id, keep_id
+            redirected.append(
+                {
+                    "source_id": source_id,
+                    "target_id": target_id,
+                    "rel_type": e["rel_type"],
+                    "book_id": e.get("book_id"),
+                    "edge_id": e.get("id"),
+                    "chunk_refs": e.get("chunk_refs") or [],
+                    "year_hijri": e.get("year_hijri"),
+                    "year_gregorian": e.get("year_gregorian"),
+                    "century_gregorian": e.get("century_gregorian"),
+                }
+            )
+        if redirected:
+            await self.connect_entities_bulk(redirected)
+
+        async with self._driver.session() as session:
+            await session.run(
+                "MATCH (keep:Entity {id: $keep_id}) SET keep.aliases = $aliases",
+                keep_id=keep_id,
+                aliases=combined_aliases,
+            )
+            await session.run(
+                "MATCH (remove:Entity {id: $remove_id}) DETACH DELETE remove",
+                remove_id=remove_id,
+            )
+
+    @staticmethod
+    def _connected_components(edges: List[Dict[str, Any]]) -> Dict[str, str]:
+        """Union-Find over edges, grouping two edges together when they share a
+        `book_id` (same provenance) or the same `other_endpoint_id`. Returns
+        edge_id -> component root id."""
+        parent: Dict[str, str] = {e["id"]: e["id"] for e in edges if e.get("id")}
+
+        def find(x: str) -> str:
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        def union(a: str, b: str) -> None:
+            ra, rb = find(a), find(b)
+            if ra != rb:
+                parent[ra] = rb
+
+        group_of_book: Dict[tuple, str] = {}
+        group_of_endpoint: Dict[tuple, str] = {}
+        for e in edges:
+            eid = e.get("id")
+            if not eid:
+                continue
+            if e.get("book_id"):
+                key = ("book", e["book_id"])
+                if key in group_of_book:
+                    union(eid, group_of_book[key])
+                else:
+                    group_of_book[key] = eid
+            if e.get("other_endpoint_id"):
+                key = ("endpoint", e["other_endpoint_id"])
+                if key in group_of_endpoint:
+                    union(eid, group_of_endpoint[key])
+                else:
+                    group_of_endpoint[key] = eid
+        return {eid: find(eid) for eid in parent}
+
+    async def split_entities(
+        self, entity_id: str, split_point_edge_id: str
+    ) -> Dict[str, Any]:
+        """Partitions `entity_id`'s edges into two clusters via connected-component
+        analysis (design v2 §5). The split-point edge's cluster stays on the
+        original node; the cluster containing the conflicting evidence (same
+        rel_type as the split-point edge, different endpoint) is redirected to a
+        newly created node. Edges that don't cluster cleanly with either anchor are
+        left on the original node and returned as `unclustered_edge_ids` for manual
+        admin reassignment — never silently dropped or guessed.
+
+        The new node starts with `aliases: [canonical_name]` only (not the original
+        node's full alias list) — otherwise it looks identical by name/alias to the
+        very candidate-selection query that would immediately re-flag it as a merge
+        candidate, undoing the split on the next resolution pass.
+        """
+        original = await self.get_entity_by_id(entity_id)
+        if not original:
+            raise ValueError(f"Entity '{entity_id}' does not exist.")
+
+        all_edges = await self.get_entity_edges_snapshot(entity_id)
+        split_edge = next(
+            (e for e in all_edges if e.get("id") == split_point_edge_id), None
+        )
+        if not split_edge:
+            raise ValueError(
+                f"Edge '{split_point_edge_id}' not found on entity '{entity_id}'."
+            )
+        remaining = [e for e in all_edges if e.get("id") != split_point_edge_id]
+
+        components = self._connected_components(remaining)
+
+        cluster_a_root = None
+        for e in remaining:
+            if e.get("id") and (
+                e.get("book_id") == split_edge.get("book_id")
+                or e.get("other_endpoint_id") == split_edge.get("other_endpoint_id")
+            ):
+                cluster_a_root = components.get(e["id"])
+                break
+
+        # The contradicting cluster: same rel_type as the split edge, different endpoint.
+        conflicting_roots = {
+            components[e["id"]]
+            for e in remaining
+            if e.get("id")
+            and e.get("rel_type") == split_edge.get("rel_type")
+            and e.get("other_endpoint_id") != split_edge.get("other_endpoint_id")
+            and components.get(e["id"]) != cluster_a_root
+        }
+        cluster_b_root = None
+        if conflicting_roots:
+            counts = {
+                root: sum(1 for v in components.values() if v == root)
+                for root in conflicting_roots
+            }
+            cluster_b_root = max(counts, key=counts.get)
+
+        cluster_b_edges = (
+            [
+                e
+                for e in remaining
+                if e.get("id") and components[e["id"]] == cluster_b_root
+            ]
+            if cluster_b_root
+            else []
+        )
+        unclustered_edges = [
+            e
+            for e in remaining
+            if e.get("id")
+            and components[e["id"]] not in (cluster_a_root, cluster_b_root)
+        ]
+
+        new_entity_id = str(uuid.uuid4())
+        new_entity = {
+            "id": new_entity_id,
+            "canonical_name": original.get("canonical_name"),
+            "aliases": [original.get("canonical_name")]
+            if original.get("canonical_name")
+            else [],
+            "type": original.get("type"),
+            "subtype": original.get("subtype"),
+            "scope": original.get("scope"),
+            "book_id": original.get("book_id"),
+            "resolution_status": "unresolved",
+        }
+        await self.upsert_entities_bulk([new_entity])
+
+        redirected = []
+        for e in cluster_b_edges:
+            other_id = e.get("other_endpoint_id")
+            if not other_id:
+                continue
+            if e["direction"] == "out":
+                source_id, target_id = new_entity_id, other_id
+            else:
+                source_id, target_id = other_id, new_entity_id
+            redirected.append(
+                {
+                    "source_id": source_id,
+                    "target_id": target_id,
+                    "rel_type": e["rel_type"],
+                    "book_id": e.get("book_id"),
+                    "chunk_refs": e.get("chunk_refs") or [],
+                    "year_hijri": e.get("year_hijri"),
+                    "year_gregorian": e.get("year_gregorian"),
+                    "century_gregorian": e.get("century_gregorian"),
+                }
+            )
+        if redirected:
+            await self.connect_entities_bulk(redirected)
+            await self.delete_relationships_by_ids(
+                [e["id"] for e in cluster_b_edges if e.get("id")]
+            )
+
+        return {
+            "new_entity_id": new_entity_id if cluster_b_edges else None,
+            "moved_edge_ids": [e["id"] for e in cluster_b_edges if e.get("id")],
+            "unclustered_edge_ids": [e["id"] for e in unclustered_edges if e.get("id")],
+        }
+
+    async def restore_entity_from_snapshot(
+        self, snapshot: Dict[str, Any], edges: List[Dict[str, Any]]
+    ) -> List[str]:
+        """Recreates a merged-away entity node from `graph_merge_log` and re-points
+        its original edges (matched by their stable edge `id`) back onto it.
+
+        Edges whose id no longer exists as a distinct edge (absorbed into a
+        pre-existing edge on the surviving node during the merge, per the chunk_refs
+        collision case) cannot be re-pointed — their ids are returned so the caller
+        can record which citations weren't recoverable (design v2 §5 unmerge review
+        note: a known, accepted gap, not a bug to silently paper over).
+        """
+        async with self._driver.session() as session:
+            await session.run("CREATE (e:Entity) SET e = $props", props=snapshot)
+
+        unrecoverable: List[str] = []
+        for e in edges:
+            edge_id = e.get("id")
+            other_id = e.get("other_endpoint_id")
+            if not edge_id or not other_id:
+                if edge_id:
+                    unrecoverable.append(edge_id)
+                continue
+
+            async with self._driver.session() as session:
+                find_result = await session.run(
+                    "MATCH ()-[r:RELATED_TO {id: $id}]-() RETURN r.chunk_refs AS chunk_refs",
+                    id=edge_id,
+                )
+                found = await find_result.single()
+            if not found:
+                unrecoverable.append(edge_id)
+                continue
+
+            async with self._driver.session() as session:
+                await session.run(
+                    "MATCH ()-[r:RELATED_TO {id: $id}]-() DELETE r", id=edge_id
+                )
+
+            if e["direction"] == "out":
+                source_id, target_id = snapshot["id"], other_id
+            else:
+                source_id, target_id = other_id, snapshot["id"]
+
+            async with self._driver.session() as session:
+                await session.run(
+                    """
+                    MATCH (s:Entity {id: $source_id}), (t:Entity {id: $target_id})
+                    CREATE (s)-[r:RELATED_TO {
+                        id: $edge_id, rel_type: $rel_type, book_id: $book_id,
+                        chunk_refs: $chunk_refs, year_hijri: $year_hijri,
+                        year_gregorian: $year_gregorian, century_gregorian: $century_gregorian
+                    }]->(t)
+                    """,
+                    source_id=source_id,
+                    target_id=target_id,
+                    edge_id=edge_id,
+                    rel_type=e.get("rel_type"),
+                    book_id=e.get("book_id"),
+                    chunk_refs=e.get("chunk_refs") or [],
+                    year_hijri=e.get("year_hijri"),
+                    year_gregorian=e.get("year_gregorian"),
+                    century_gregorian=e.get("century_gregorian"),
+                )
+        return unrecoverable
+
+    async def rename_entity(self, entity_id: str, new_name: str) -> bool:
+        """Rename an entity by id (canonical_name is display-only; ids never change).
+
+        The old canonical_name is folded into aliases so existing citations/lookups
+        by the previous spelling keep resolving.
+        """
+        new_norm = unicodedata.normalize("NFC", new_name)
+        entity = await self.get_entity_by_id(entity_id)
+        if not entity:
+            raise ValueError(f"Entity '{entity_id}' does not exist.")
+
+        old_name = entity.get("canonical_name")
+        aliases = list(entity.get("aliases") or [])
+        if old_name and old_name not in aliases:
+            aliases.append(old_name)
+        aliases = [a for a in dict.fromkeys(aliases) if a != new_norm]
+
+        query = "MATCH (e:Entity {id: $id}) SET e.canonical_name = $new_name, e.aliases = $aliases"
+        async with self._driver.session() as session:
+            await session.run(query, id=entity_id, new_name=new_norm, aliases=aliases)
+        return True
+
+    async def delete_relationship_by_id(self, edge_id: str) -> bool:
+        """Delete a single RELATED_TO edge by its stable id. Raises ValueError if missing."""
+        query = """
+        MATCH ()-[r:RELATED_TO {id: $id}]-()
+        DELETE r
+        RETURN count(r) AS deleted
+        """
+        async with self._driver.session() as session:
+            result = await session.run(query, id=edge_id)
+            records = await result.data()
         deleted = records[0]["deleted"] if records else 0
         if deleted == 0:
-            raise ValueError(
-                f"No '{rel_type}' relationship found between '{source_name}' and '{target_name}'."
-            )
+            raise ValueError(f"No relationship found with id '{edge_id}'.")
         return True
+
+    # ------------------------------------------------------------------
+    # Reads used by RAG / public visualization
+    # ------------------------------------------------------------------
 
     async def query_subgraph(
         self, entity_names: List[str], book_ids: Optional[List[str]] = None
@@ -239,13 +834,14 @@ class GraphRepository:
         query = """
         MATCH (e:Entity)-[r:RELATED_TO]->(n:Entity)
         WHERE (
-            e.name IN $entity_names 
-            OR n.name IN $entity_names
+            e.canonical_name IN $entity_names
+            OR n.canonical_name IN $entity_names
             OR any(alt IN COALESCE(e.aliases, []) WHERE alt IN $entity_names)
             OR any(alt IN COALESCE(n.aliases, []) WHERE alt IN $entity_names)
         )
           AND ($book_ids IS NULL OR r.book_id IN $book_ids)
-        RETURN e.name AS source, e.type AS source_type, r.type AS rel, n.name AS target, n.type AS target_type
+        RETURN e.id AS source_id, e.canonical_name AS source, e.type AS source_type,
+               r.rel_type AS rel, n.id AS target_id, n.canonical_name AS target, n.type AS target_type
         LIMIT 30
         """
         async with self._driver.session() as session:
@@ -291,21 +887,22 @@ class GraphRepository:
         ]
 
         rel_filter = (
-            "all(rel in relationships(p) WHERE rel.type IN $familial_rels)"
+            "all(rel in relationships(p) WHERE rel.rel_type IN $familial_rels)"
             if familial_only
             else "true"
         )
 
         query = f"""
         MATCH p = (a:Entity)-[r:RELATED_TO*1..4]-(b:Entity)
-        WHERE (a.name IN $entity_names OR any(alt IN COALESCE(a.aliases, []) WHERE alt IN $entity_names))
-          AND (b.name IN $entity_names OR any(alt IN COALESCE(b.aliases, []) WHERE alt IN $entity_names))
-          AND a.name < b.name
+        WHERE (a.canonical_name IN $entity_names OR any(alt IN COALESCE(a.aliases, []) WHERE alt IN $entity_names))
+          AND (b.canonical_name IN $entity_names OR any(alt IN COALESCE(b.aliases, []) WHERE alt IN $entity_names))
+          AND a.id < b.id
           AND {rel_filter}
           AND ($book_ids IS NULL OR all(rel in relationships(p) WHERE rel.book_id IN $book_ids))
         UNWIND relationships(p) AS rel
         WITH startNode(rel) AS s, endNode(rel) AS t, rel
-        RETURN DISTINCT s.name AS source, s.type AS source_type, rel.type AS rel, t.name AS target, t.type AS target_type
+        RETURN DISTINCT s.canonical_name AS source, s.type AS source_type, rel.rel_type AS rel,
+               t.canonical_name AS target, t.type AS target_type
         LIMIT 40
         """
 
@@ -318,138 +915,3 @@ class GraphRepository:
             )
             records = await result.data()
             return records
-
-    async def merge_entities(self, keep_name: str, remove_name: str) -> bool:
-        """Merge a duplicate entity node into a target entity node in Neo4j.
-
-        Normalizes properties, moves all relationships, and deletes the duplicate.
-        Returns True if successful, raises ValueError if keep_name or remove_name is not found.
-        """
-        keep_norm = unicodedata.normalize("NFC", keep_name)
-        remove_norm = unicodedata.normalize("NFC", remove_name)
-
-        # First, check if both entities exist
-        check_query = """
-        MATCH (e:Entity)
-        WHERE e.name IN [$keep, $remove]
-        RETURN e.name AS name, e.aliases AS aliases
-        """
-        async with self._driver.session() as session:
-            result = await session.run(check_query, keep=keep_norm, remove=remove_norm)
-            records = await result.data()
-
-        found = {r["name"] for r in records}
-        if keep_norm not in found:
-            raise ValueError(f"Target entity to keep '{keep_name}' does not exist.")
-        if remove_norm not in found:
-            raise ValueError(
-                f"Duplicate entity to remove '{remove_name}' does not exist."
-            )
-
-        # Extract current aliases and combine/deduplicate them in Python
-        keep_aliases = []
-        remove_aliases = []
-        for r in records:
-            if r["name"] == keep_norm:
-                keep_aliases = r.get("aliases") or []
-            elif r["name"] == remove_norm:
-                remove_aliases = r.get("aliases") or []
-
-        combined_aliases = list(
-            dict.fromkeys(
-                [
-                    a
-                    for a in keep_aliases + [remove_norm] + remove_aliases
-                    if a and a != keep_norm
-                ]
-            )
-        )
-
-        # Perform the merge Cypher statement in a session transaction
-        merge_query = """
-        MATCH (keep:Entity {name: $keep})
-        MATCH (remove:Entity {name: $remove})
-
-        // Copy properties to keep node if not already present
-        SET keep.type = COALESCE(keep.type, remove.type),
-            keep.subtype = COALESCE(keep.subtype, remove.subtype),
-            keep.year_hijri = COALESCE(keep.year_hijri, remove.year_hijri),
-            keep.year_gregorian = COALESCE(keep.year_gregorian, remove.year_gregorian),
-            keep.century_gregorian = COALESCE(keep.century_gregorian, remove.century_gregorian),
-            keep.aliases = $combined_aliases
-
-        WITH keep, remove
- 
-        // Migrate outgoing relationships
-        OPTIONAL MATCH (remove)-[r_out:RELATED_TO]->(target:Entity)
-        FOREACH (ignored IN case when r_out is not null then [1] else [] end |
-            MERGE (keep)-[new_out:RELATED_TO {book_id: r_out.book_id}]->(target)
-            SET new_out.type = COALESCE(new_out.type, r_out.type),
-                new_out.year_hijri = COALESCE(new_out.year_hijri, r_out.year_hijri),
-                new_out.year_gregorian = COALESCE(new_out.year_gregorian, r_out.year_gregorian),
-                new_out.century_gregorian = COALESCE(new_out.century_gregorian, r_out.century_gregorian)
-        )
-        WITH keep, remove, r_out
-        DELETE r_out
- 
-        WITH keep, remove
- 
-        // Migrate incoming relationships
-        OPTIONAL MATCH (source:Entity)-[r_inc:RELATED_TO]->(remove)
-        FOREACH (ignored IN case when r_inc is not null then [1] else [] end |
-            MERGE (source)-[new_inc:RELATED_TO {book_id: r_inc.book_id}]->(keep)
-            SET new_inc.type = COALESCE(new_inc.type, r_inc.type),
-                new_inc.year_hijri = COALESCE(new_inc.year_hijri, r_inc.year_hijri),
-                new_inc.year_gregorian = COALESCE(new_inc.year_gregorian, r_inc.year_gregorian),
-                new_inc.century_gregorian = COALESCE(new_inc.century_gregorian, r_inc.century_gregorian)
-        )
-        WITH keep, remove, r_inc
-        DELETE r_inc
- 
-        WITH remove
-        DELETE remove
-        """
-        async with self._driver.session() as session:
-            await session.run(
-                merge_query,
-                keep=keep_norm,
-                remove=remove_norm,
-                combined_aliases=combined_aliases,
-            )
-        return True
-
-    async def rename_entity(self, old_name: str, new_name: str) -> bool:
-        """Rename an entity node in Neo4j.
-
-        Normalizes the names, updates the name property, and returns True if successful.
-        Raises ValueError if the new name already exists or old name is not found.
-        """
-        old_norm = unicodedata.normalize("NFC", old_name)
-        new_norm = unicodedata.normalize("NFC", new_name)
-
-        if old_norm == new_norm:
-            return True
-
-        # Check if the old name exists, and if the new name already exists
-        check_query = """
-        MATCH (e:Entity)
-        WHERE e.name IN [$old, $new]
-        RETURN e.name AS name
-        """
-        async with self._driver.session() as session:
-            result = await session.run(check_query, old=old_norm, new=new_norm)
-            records = await result.data()
-
-        found = {r["name"] for r in records}
-        if old_norm not in found:
-            raise ValueError(f"Entity to rename '{old_name}' does not exist.")
-        if new_norm in found:
-            raise ValueError(f"An entity with the name '{new_name}' already exists.")
-
-        rename_query = """
-        MATCH (e:Entity {name: $old})
-        SET e.name = $new
-        """
-        async with self._driver.session() as session:
-            await session.run(rename_query, old=old_norm, new=new_norm)
-        return True

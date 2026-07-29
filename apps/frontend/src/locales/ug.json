@@ -11,6 +11,7 @@
     "noData": "مەلۇمات يوق",
     "save": "ساقلاش",
     "confirm": "جەزملەش",
+    "dismiss": "تاقاش",
     "ok": "بىلدىم",
     "cancel": "بىكار قىلىش",
     "delete": "ئۆچۈرۈش",
@@ -117,7 +118,7 @@
     "pressEnterToChat": "Enter كونۇپكىسىنى بېسىپ زېرەكچاق بىلەن سۆھبىتىڭىزنى باشلاڭ ",
     "pressReturnToChat": "Return كونۇپكىسىنى بېسىپ زېرەكچاق بىلەن سۆھبىتىڭىزنى باشلاڭ",
     "tapToChat": "زېرەكچاق سىنبەلگىسىنى چېكىپ سۆھبىتىڭىزنى باشلاڭ",
-    "recentQuestions": "يېقىنقى سوئاللار",
+    "recentQuestions": "ئەڭ يېڭى جاۋاب بېرىلگەن سۇئاللار",
     "keyboardMapTooltip": "ئۇيغۇرچە كۇنۇپكا تاختىسى خەرىتىسىنى كۆرسىتىش",
     "keyboardMapTitle": "ئۇيغۇرچە كۇنۇپكا تاختىسى خەرىتىسى",
     "keyboardMapSubtitle": "فىزىكىلىق كۇنۇپكا تاختىسىدىن پايدىلىنىڭ ياكى ئېكراندىكى كۇنۇپكىلارنى چېكىپ كىرگۈزۈڭ. Ctrl+K نى بېسىپ كىرگۈزۈش ھالىتىنى ئالماشتۇرۇڭ.",
@@ -275,6 +276,7 @@
     "questionsLabel": "سوئاللار",
     "rulesLabel": "ئاپتوماتىك تۈزىتىش",
     "dictionaryLabel": "لۇغەت",
+    "searchPlaceholder": "كىتاب نامى، ئاپتورى ياكى تۈرى بويىچە ئىزدەش...",
     "stats": {
       "title": "كىتابىم ستاتىستىكىسى",
       "subtitle": "تامار - تامار كۆل بولار",
@@ -296,6 +298,8 @@
       "avgFaithfulnessNoData": "ئوتتۇرىچە ئىشەنچلىك قىممىتى — ھېسابلانمىدى",
       "avgAnswerRelevance": "ئوتتۇرىچە مۇناسىۋەتلىك قىممىتى",
       "avgAnswerRelevanceNoData": "ئوتتۇرىچە مۇناسىۋەتلىك قىممىتى — ھېسابلانمىدى",
+      "avgContextPrecision": "ئوتتۇرىچە ئېنىقلىق قىممىتى",
+      "avgContextPrecisionNoData": "ئوتتۇرىچە ئېنىقلىق قىممىتى — ھېسابلانمىدى",
       "ragStatsUnavailable": "RAG ستاتىستىكىسى تېپىلمىدى ({{status}})"
     },
     "contacts": {
@@ -329,14 +333,21 @@
       "searchPlaceholder": "سوئال ئىزدەش...",
       "total": "جەمئىي {{count}} سوئال",
       "colQuestion": "سوئال",
+      "colUser": "ئابونت",
       "colScope": "دائىرىسى",
       "colFeedback": "ئىنكاس",
+      "colEvalQuality": "جاۋاب سۈپىتى",
       "colDate": "ۋاقتى",
       "colShowOnHome": "ئاشكارلاش",
       "scopeGlobal": "ئومۇمى",
       "scopeBook": "كىتاب",
       "showOnHome": "ئاشكارلاش",
       "hideFromHome": "يوشۇرۇش",
+      "evalFaithfulness": "ئىشەنچلىكلىكى",
+      "evalAnswerRelevance": "مۇناسىۋەتلىكلىكى",
+      "evalContextPrecision": "ئېنىقلىقى",
+      "evalQueued": "باھالانماقتا…",
+      "evalFailed": "باھالاش مەغلۇپ بولدى",
       "empty": "تېخى سوئال يوق",
       "error": "سوئاللارنى ئىزدەشتە خاتالىق كۆرۈلدى"
     },
@@ -884,6 +895,16 @@
     "all": "ھەممىسى",
     "tabDetails": "تەپسىلاتى",
     "tabFilters": "سۈزگۈچلەر",
+    "tabReviews": "تەكشۈرۈش",
+    "clear": "ھېچقايسىسى",
+    "source": "مەنبە",
+    "sourceDocument": "ئەسلىي مەنبە",
+    "viewSourceChunk": "ئەسلىي مەنبە تېكىستىنى كۆرۈش",
+    "centerOnGraph": "گرافتىن كۆرۈش",
+    "legend": "تۈر كۆرسەتكۈچى",
+    "chunkDetailInfo": "{{page}}-بەت · {{chunk}}-پارچە",
+    "prevReference": "ئالدىنقى مەنبە",
+    "nextReference": "كېيىنكى مەنبە",
     "nodePanel": {
       "title": "سۆزلۈك تەپسىلاتى",
       "name": "نامى",
@@ -892,7 +913,18 @@
       "connections": "ئالاقىسى بار سۆزلۈكلەر",
       "yearHijri": "ھىجرىيە يىلى",
       "yearGregorian": "مىلادىيە يىلى",
-      "centuryGregorian": "مىلادىيە ئەسىرى"
+      "centuryGregorian": "مىلادىيە ئەسىرى",
+      "instructions": "بىلىم خەرىتىسىدىكى كۇنۇپكىلارنى چېكىپ، سۆزلۈكنىڭ تەپسىلاتى ۋە ئۆز-ئارا مۇناسىۋەتلىرىنى كۆرۈڭ."
+    },
+    "types": {
+      "person": "شەخس",
+      "location": "ئورۇن",
+      "organization": "تەشكىلات",
+      "event": "ۋەقە",
+      "historicalEra": "تارىخىي دەۋر",
+      "concept": "ئۇقۇم",
+      "other": "باشقىلار",
+      "book": "ئەسەر"
     },
     "admin": {
       "deleteRelationshipTitle": "مۇناسىۋەتنى ئۆچۈرۈش",
@@ -912,7 +944,24 @@
       "renameCancel": "بىكار قىلىش",
       "renameConfirm": "ئۆزگەرتىش",
       "renameSuccess": "سۆزلۈك نامى ئۆزگەرتىلدى.",
-      "renameError": "نامىنى ئۆزگەرتەلمىدى."
+      "renameError": "نامىنى ئۆزگەرتەلمىدى.",
+      "splitStart": "بۇ مۇناسىۋەتتىن ئايرىش...",
+      "splitTitle": "سۆزلۈكنى ئايرىش",
+      "splitMessage": "«{{name}}» نى «{{other}}» بىلەن بولغان مۇناسىۋىتىنى چېگرا قىلىپ ئىككى ئايرىم سۆزلۈككە ئايرامسىز؟ ئېنىق تەۋە بولمىغان مۇناسىۋەتلەر قولدا تەكشۈرۈش ئۈچۈن ئەسلى سۆزلۈكتە قالىدۇ.",
+      "splitConfirm": "ئايرىش",
+      "splitSuccess": "سۆزلۈك ئايرىلدى.",
+      "splitNoop": "زىددىيەتلىك توپ تېپىلمىدى — ھېچنېمە ئايرىلمىدى.",
+      "splitError": "سۆزلۈكنى ئايرىيالمىدى.",
+      "undoMergeMessage": "«{{remove}}» «{{keep}}» گە بىرلەشتۈرۈلدى.",
+      "undoMergeButton": "ئەسلىگە قايتۇرۇش",
+      "undoMergeSuccess": "بىرلەشتۈرۈش ئەسلىگە قايتۇرۇلدى.",
+      "undoMergeError": "ئەسلىگە قايتۇرالمىدى.",
+      "reviewsLoadError": "تەكشۈرۈش تىزىملىكىنى يۈكلىيەلمىدى.",
+      "reviewApprove": "بىرلەشتۈر",
+      "reviewReject": "رەت قىل",
+      "reviewApproved": "تەستىقلاندى.",
+      "reviewRejected": "رەت قىلىندى.",
+      "reviewActionError": "قارارنى خاتىرىلىيەلمىدى."
     }
   },
   "quran": {
@@ -928,6 +977,10 @@
     "selectAyah": "ئايەت تاللاڭ",
     "allAyahs": "ھەممە ئايەت",
     "searchKeyword": "ھالقىلىق سۆز بويىچە ئىزدەش...",
-    "searchBtn": "ئىزدەش"
+    "searchBtn": "ئىزدەش",
+    "noSurahFound": "ماس كېلىدىغان سۈرە تېپىلمىدى",
+    "noAyahFound": "ماس كېلىدىغان ئايەت تېپىلمىدى",
+    "ayahItem": "{{count}}-ئايەت",
+    "surahItem": "{{number}}. {{name}} سۈرىسى"
   }
 }

@@ -38,7 +38,7 @@ Rules:
 - Return a JSON array of question strings (no other text).
 - At most {max_q} questions.
 - Each question must be self-contained — include any implicit subject from context if needed.
-- Keep the original language (Uyghur, English, or mixed).
+- Maintain standard Uyghur (Arabic script) for each extracted question.
 - If there is only one question return a single-element array.
 - IMPORTANT: If all questions concern the same entity, book, character, or event (e.g. "what is X? what is its purpose?"), they are a compound question — return a single-element array containing the full original message unchanged.
 - Only split when the questions are clearly about different topics or entities.
@@ -117,12 +117,16 @@ def _build_human_message(ctx: QueryContext, question: str) -> str:
     return "[Context]\n" + "\n".join(lines) + "\n\n[Question]\n" + question
 
 
-def _grade_context(observations: list[dict]) -> tuple[str, int, int]:
+def _grade_context(
+    observations: list[dict], max_chunks: int | None = None
+) -> tuple[str, int, int]:
     from app.services.rag.agent.config import (
         AGENT_MAX_CONTEXT_CHUNKS,
         GRADE_RELATIVE_THRESHOLD,
         MIN_CHUNKS_AFTER_GRADING,
     )
+
+    limit = max_chunks if max_chunks is not None else AGENT_MAX_CONTEXT_CHUNKS
     from app.services.rag.answer_builder import format_document, Document
 
     # Build metadata context from any tool returning a "context" key
@@ -166,6 +170,8 @@ def _grade_context(observations: list[dict]) -> tuple[str, int, int]:
                     "page": c.get("page"),
                     "book_id": c.get("book_id"),
                     "score": c.get("score", 0.0),
+                    "rrf_score": c.get("rrf_score", 0.0),
+                    "rank": c.get("rank"),
                     "surah_name_en": c.get("surah_name_en"),
                     "surah": c.get("surah"),
                     "ayah": c.get("ayah"),
@@ -175,12 +181,23 @@ def _grade_context(observations: list[dict]) -> tuple[str, int, int]:
         ]
 
         # Grade this specific search call's results
-        search_docs.sort(key=lambda d: d.metadata["score"], reverse=True)
-        top_score = search_docs[0].metadata["score"]
+        search_docs.sort(
+            key=lambda d: (
+                d.metadata.get("rrf_score", 0.0),
+                d.metadata.get("score", 0.0),
+            ),
+            reverse=True,
+        )
+        top_score = max((d.metadata["score"] for d in search_docs), default=0.0)
         score_floor = top_score * GRADE_RELATIVE_THRESHOLD
 
+        # Keep docs meeting relative score floor, OR keyword-only hits with positive rrf_score / keyword rank
         graded_search_docs = [
-            d for d in search_docs if d.metadata["score"] >= score_floor
+            d
+            for d in search_docs
+            if d.metadata["score"] >= score_floor
+            or d.metadata.get("rrf_score", 0.0) > 0.0
+            or d.metadata.get("rank") is not None
         ]
 
         # Fallback to keep minimum chunks for this specific search if drop is steep
@@ -197,9 +214,16 @@ def _grade_context(observations: list[dict]) -> tuple[str, int, int]:
 
     # Final global sort and limit cap
     if all_graded_documents:
-        # Sort the globally aggregated list so the highest overall scoring context comes first
-        all_graded_documents.sort(key=lambda d: d.metadata["score"], reverse=True)
-        graded = all_graded_documents[:AGENT_MAX_CONTEXT_CHUNKS]
+        # Sort the globally aggregated list so highest overall scoring context comes first
+        all_graded_documents.sort(
+            key=lambda d: (
+                d.metadata.get("rrf_score", 0.0),
+                d.metadata.get("score", 0.0),
+            ),
+            reverse=True,
+        )
+        graded = all_graded_documents[:limit]
+
         log_json(
             logger,
             logging.INFO,
@@ -322,8 +346,13 @@ class LLMRoutedRAGHandler(QueryHandler):
         inline_observations: list[dict] = []
         pending_calls: dict[str, str] = {}  # call_id → tool_name
 
+        from google.adk.agents.run_config import RunConfig, StreamingMode
+
         async for event in runner.run_async(
-            user_id=session.user_id, session_id=session.id, new_message=content
+            user_id=session.user_id,
+            session_id=session.id,
+            new_message=content,
+            run_config=RunConfig(streaming_mode=StreamingMode.SSE),
         ):
             # 1. Yield tool calls (only on final non-partial events to prevent duplicates)
             if not event.partial and event.content and event.content.parts:

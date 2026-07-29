@@ -153,6 +153,36 @@ async def seed_system_configs(session: AsyncSession):
             "value": "3",
             "description": "Per-chunk retry ceiling before a failing chunk is skipped during batch embedding ingestion.",
         },
+        {
+            "key": "rag_judge_scoring_enabled",
+            "value": "true",
+            "description": "Globally enable/disable async LLM-judge scoring (faithfulness/answer_relevance/context_precision) of RAG chat turns. Set to 'false' to skip scoring and worker dispatch entirely.",
+        },
+        {
+            "key": "gemini_judge_model",
+            "value": "gemini-3.1-flash-lite",
+            "description": "Gemini model used for the RAG answer-quality judge (faithfulness/answer_relevance/context_precision scoring).",
+        },
+        {
+            "key": "rag_reranker_enabled",
+            "value": "true",
+            "description": "Globally enable/disable LLM-based reranking of retrieved chunks. Adds one Gemini call to the live chat request path. Set to 'false' to fall back to the relative-score grading heuristic (_grade_context) with zero behavior change.",
+        },
+        {
+            "key": "gemini_reranker_model",
+            "value": "gemini-3.1-flash-lite",
+            "description": "Gemini model used for LLM-based reranking of retrieved chunks.",
+        },
+        {
+            "key": "rag_hybrid_search_enabled",
+            "value": "true",
+            "description": "Globally enable/disable the Postgres full-text keyword search leg fused with vector search (Reciprocal Rank Fusion). Set to 'false' for vector-only retrieval, identical to pre-hybrid-search behavior.",
+        },
+        {
+            "key": "rag_top_k",
+            "value": "25",
+            "description": "Maximum number of top chunks retrieved during vector/hybrid search and retained for answer context synthesis.",
+        },
     ]
 
     for item in defaults:

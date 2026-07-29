@@ -313,10 +313,10 @@ export const QuranView: React.FC = () => {
     nextDisabled = activeAyah >= verses.length;
     
     prevLabel = activeAyah > 1 
-      ? (language === 'ug' ? `${activeAyah - 1}-ئايەت` : `Ayah ${activeAyah - 1}`)
+      ? t('quran.ayahItem', { count: activeAyah - 1 })
       : (t('common.previous') || 'ئالدىنقى');
     nextLabel = activeAyah < verses.length
-      ? (language === 'ug' ? `${activeAyah + 1}-ئايەت` : `Ayah ${activeAyah + 1}`)
+      ? t('quran.ayahItem', { count: activeAyah + 1 })
       : (t('common.next') || 'كېيىنكى');
       
     handlePrevClick = () => {
@@ -454,12 +454,12 @@ export const QuranView: React.FC = () => {
                           : 'text-slate-700 dark:text-slate-300'
                       }`}
                     >
-                      <span>{surah.surah}. {surah.surah_name_ug} سۈرىسى</span>
+                      <span>{t('quran.surahItem', { number: surah.surah, name: language === 'ug' ? surah.surah_name_ug : surah.surah_name_en })}</span>
                     </button>
                   ))
                 ) : (
                   <div className="px-4 py-3 text-sm text-slate-400 dark:text-slate-500 text-center uyghur-text">
-                    ماس كېلىدىغان سۈرە تېپىلمىدى
+                    {t('quran.noSurahFound')}
                   </div>
                 )}
               </div>
@@ -511,12 +511,12 @@ export const QuranView: React.FC = () => {
                           : 'text-slate-700 dark:text-slate-300'
                       }`}
                     >
-                      <span>{ayahNum} - ئايەت</span>
+                      <span>{t('quran.ayahItem', { count: ayahNum })}</span>
                     </button>
                   ))
                 ) : (
                   <div className="px-4 py-3 text-sm text-slate-400 dark:text-slate-500 text-center uyghur-text">
-                    ماس كېلىدىغان ئايەت تېپىلمىدى
+                    {t('quran.noAyahFound')}
                   </div>
                 )}
               </div>

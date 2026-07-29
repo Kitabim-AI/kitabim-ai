@@ -118,6 +118,86 @@ async def test_similarity_search_with_book_ids():
     assert len(results) == 1
 
 
+@pytest.mark.asyncio
+async def test_keyword_search_unscoped():
+    session = AsyncMock()
+    repo = ChunksRepository(session)
+
+    mock_row = MagicMock()
+    mock_row.book_id = "b1"
+    mock_row.page_number = 1
+    mock_row.text = "result"
+    mock_row.rank = 0.045
+    mock_row.title = "Book 1"
+    mock_row.volume = 1
+    mock_row.author = "Author"
+
+    mock_res = MagicMock()
+    mock_res.fetchall.return_value = [mock_row]
+    session.execute.return_value = mock_res
+
+    results = await repo.keyword_search("سوئال", limit=5)
+
+    assert len(results) == 1
+    assert results[0]["text"] == "result"
+    assert results[0]["rank"] == 0.045
+    # book_ids/threshold aren't part of keyword_search's query params
+    call_args = session.execute.await_args
+    assert call_args.args[1]["query_text"] == "سوئال"
+    assert call_args.args[1]["limit"] == 5
+
+
+@pytest.mark.asyncio
+async def test_keyword_search_with_book_ids():
+    session = AsyncMock()
+    repo = ChunksRepository(session)
+
+    mock_row = MagicMock()
+    mock_row.book_id = "b1"
+    mock_row.page_number = 1
+    mock_row.text = "result"
+    mock_row.rank = 0.02
+    mock_row.title = "Book 1"
+    mock_row.volume = 1
+    mock_row.author = "Author"
+
+    mock_res = MagicMock()
+    mock_res.fetchall.return_value = [mock_row]
+    session.execute.return_value = mock_res
+
+    results = await repo.keyword_search("سوئال", book_ids=["b1"], limit=5)
+
+    assert len(results) == 1
+    call_args = session.execute.await_args
+    assert call_args.args[1]["book_ids"] == ["b1"]
+
+
+@pytest.mark.asyncio
+async def test_keyword_search_empty_book_ids_fast_exit():
+    session = AsyncMock()
+    repo = ChunksRepository(session)
+
+    results = await repo.keyword_search("سوئال", book_ids=[])
+
+    assert results == []
+    session.execute.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_keyword_search_with_categories():
+    session = AsyncMock()
+    repo = ChunksRepository(session)
+
+    mock_res = MagicMock()
+    mock_res.fetchall.return_value = []
+    session.execute.return_value = mock_res
+
+    await repo.keyword_search("سوئال", categories=["history"])
+
+    call_args = session.execute.await_args
+    assert call_args.args[1]["categories"] == ["history"]
+
+
 def test_get_chunks_repository():
     from app.db.repositories.chunks_repository import get_chunks_repository
 

@@ -1,4 +1,4 @@
-import { BookOpen, Check, FileSearch, FileText, Filter, Layers, Library, Loader2, Network, RefreshCw, Search, SplitSquareHorizontal, User, Users } from 'lucide-react';
+import { BookOpen, Check, CheckCircle2, FileSearch, FileText, Filter, Layers, Library, Loader2, Network, RefreshCw, Search, SplitSquareHorizontal, User, Users } from 'lucide-react';
 import React from 'react';
 import { AgentStep } from '../../hooks/useChat';
 import { useI18n } from '../../i18n/I18nContext';
@@ -133,9 +133,10 @@ interface AgentThinkingStepsProps {
   steps: AgentStep[];
   fontSize?: number;
   compact?: boolean;
+  className?: string;
 }
 
-export const AgentThinkingSteps: React.FC<AgentThinkingStepsProps> = ({ steps, fontSize, compact = false }) => {
+export const AgentThinkingSteps: React.FC<AgentThinkingStepsProps> = React.memo(({ steps, fontSize, compact = false, className = '' }) => {
   const { t } = useI18n();
   const isAdmin = useIsAdmin();
   const textSize = fontSize ? Math.max(fontSize - 2, 11) : 12;
@@ -143,11 +144,12 @@ export const AgentThinkingSteps: React.FC<AgentThinkingStepsProps> = ({ steps, f
   return (
     <div
       className={`bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 border border-[#0369a1]/10 dark:border-[#38bdf8]/10 shadow-sm flex flex-col w-full ${
-        compact ? 'gap-1 px-3 py-2.5 rounded-2xl' : 'gap-1.5 px-5 py-4 rounded-[28px]'
-      }`}
+        compact ? 'gap-1 px-3 py-2.5 rounded-2xl rounded-tl-none' : 'gap-1.5 px-5 py-4 rounded-[28px] rounded-tl-none'
+      } ${className}`}
     >
       {steps.map(step => {
         const isActive = step.status === 'active';
+        const isDone = step.status === 'done';
         const label = getStepLabel(step, t);
         const sublabel = getStepSublabel(step, t, steps);
 
@@ -155,23 +157,28 @@ export const AgentThinkingSteps: React.FC<AgentThinkingStepsProps> = ({ steps, f
           <div
             key={step.id}
             dir="rtl"
-            className={`flex items-center gap-2 uyghur-text transition-opacity duration-300 ${isActive ? 'opacity-100' : 'opacity-50'}`}
+            className={`flex items-center gap-2 uyghur-text transition-opacity duration-300 ${
+              isActive ? 'opacity-100' : 'opacity-50'
+            }`}
+            style={{ fontSize: `${textSize}px` }}
           >
-            <span
-              className={`shrink-0 w-4 h-4 rounded-full flex items-center justify-center ${
-                isActive ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950' : 'bg-[#0369a1]/20 dark:bg-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8]'
-              }`}
-            >
-              {stepIcon(step)}
-            </span>
-            <span className="text-[#0369a1] dark:text-[#38bdf8] font-normal uyghur-text" style={{ fontSize: `${textSize}px` }}>
+            {isActive ? (
+              <Loader2 size={13} className="animate-spin text-[#0369a1] dark:text-[#38bdf8] shrink-0" />
+            ) : isDone ? (
+              <CheckCircle2 size={13} className="text-[#0369a1] dark:text-[#38bdf8] shrink-0" />
+            ) : (
+              <span className="w-3 h-3 rounded-full border border-current shrink-0" />
+            )}
+
+            <span className="text-[#0369a1] dark:text-[#38bdf8] font-normal uyghur-text">
               {label}{isActive ? '...' : ''}
-              {sublabel && <span className="opacity-60 mx-1 uyghur-text">— {sublabel}</span>}
+              {sublabel && <span className="opacity-80 mx-1 uyghur-text">— {sublabel}</span>}
             </span>
-            {isAdmin && step.type === 'tool' && step.tool && (
+
+            {isAdmin && step.tool && (
               <span
-                className="font-mono text-[9px] px-1 py-0.5 rounded bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1]/70 dark:text-[#38bdf8]/70 shrink-0 ltr"
                 dir="ltr"
+                className="font-mono text-[9px] px-1 py-0.5 rounded bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1]/70 dark:text-[#38bdf8]/70 shrink-0 select-all"
               >
                 {step.tool}
               </span>
@@ -181,4 +188,4 @@ export const AgentThinkingSteps: React.FC<AgentThinkingStepsProps> = ({ steps, f
       })}
     </div>
   );
-};
+});

@@ -482,10 +482,17 @@ async def test_vector_search_falls_back_to_threshold_zero_when_scoped_search_ret
         ],
     ]
 
+    mock_config_repo = AsyncMock()
+    mock_config_repo.get_value = AsyncMock(return_value="false")
+
     with (
         patch("app.core.providers.get_vector_store", return_value=chunks_repo_mock),
         patch("app.services.cache_service.cache_service.get", return_value=None),
         patch("app.services.cache_service.cache_service.set", return_value=None),
+        patch(
+            "app.db.repositories.system_configs_repository.SystemConfigsRepository",
+            return_value=mock_config_repo,
+        ),
     ):
         results = await vector_search(ctx, book_ids=["book-scoped-1"])
 
@@ -495,3 +502,41 @@ async def test_vector_search_falls_back_to_threshold_zero_when_scoped_search_ret
     # Verify second call used threshold=0.0
     second_call_kwargs = chunks_repo_mock.similarity_search.call_args_list[1].kwargs
     assert second_call_kwargs["threshold"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_search_quran_uses_rag_top_k():
+    from app.services.rag.agent.tools import _run_search_quran
+
+    ctx = MagicMock()
+
+    mock_verses_result = MagicMock()
+    mock_verses_result.scalars.return_value.all.return_value = []
+
+    mock_meta_result = MagicMock()
+    mock_meta_result.all.return_value = []
+
+    session = AsyncMock()
+    session.execute.side_effect = [mock_verses_result, mock_meta_result]
+
+    mock_factory = MagicMock()
+    mock_factory.return_value.__aenter__.return_value = session
+
+    mock_config_repo = AsyncMock()
+    mock_config_repo.get_value = AsyncMock(return_value="15")
+
+    with (
+        patch("app.db.session.async_session_factory", mock_factory),
+        patch(
+            "app.db.repositories.system_configs_repository.SystemConfigsRepository",
+            return_value=mock_config_repo,
+        ),
+        patch(
+            "app.services.rag.retrieval.embed_query",
+            side_effect=Exception("No embed in test"),
+        ),
+    ):
+        await _run_search_quran({"q": "ئاللاھ"}, ctx)
+
+    # Check that system_configs_repository was queried for rag_top_k
+    mock_config_repo.get_value.assert_called_with("rag_top_k", "25")

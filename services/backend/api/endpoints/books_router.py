@@ -379,6 +379,10 @@ async def get_books(
                         BookDB.author.ilike(f"%{w}%"),
                         BookDB.title.ilike(f"%{w_alt}%"),
                         BookDB.author.ilike(f"%{w_alt}%"),
+                        func.array_to_string(BookDB.categories, ",").ilike(f"%{w}%"),
+                        func.array_to_string(BookDB.categories, ",").ilike(
+                            f"%{w_alt}%"
+                        ),
                     )
                     word_conditions.append(search_filter)
                 if word_conditions:
@@ -905,12 +909,12 @@ async def get_global_graph(
         # Case insensitive filter by entity name
         query = """
         MATCH (s:Entity)-[r:RELATED_TO]->(t:Entity)
-        WHERE toLower(s.name) CONTAINS toLower($q) OR toLower(t.name) CONTAINS toLower($q)
-        RETURN s.name AS source_name, s.type AS source_type, 
+        WHERE toLower(s.canonical_name) CONTAINS toLower($q) OR toLower(t.canonical_name) CONTAINS toLower($q)
+        RETURN s.id AS source_id, s.canonical_name AS source_name, s.type AS source_type,
                s.year_hijri AS source_year_hijri, s.year_gregorian AS source_year_gregorian, s.century_gregorian AS source_century_gregorian,
-               r.type AS rel_type, 
+               r.id AS rel_id, r.rel_type AS rel_type, r.book_id AS rel_book_id, r.chunk_refs AS rel_chunk_refs,
                r.year_hijri AS rel_year_hijri, r.year_gregorian AS rel_year_gregorian, r.century_gregorian AS rel_century_gregorian,
-               t.name AS target_name, t.type AS target_type,
+               t.id AS target_id, t.canonical_name AS target_name, t.type AS target_type,
                t.year_hijri AS target_year_hijri, t.year_gregorian AS target_year_gregorian, t.century_gregorian AS target_century_gregorian
         LIMIT 150
         """
@@ -918,11 +922,11 @@ async def get_global_graph(
     else:
         query = """
         MATCH (s:Entity)-[r:RELATED_TO]->(t:Entity)
-        RETURN s.name AS source_name, s.type AS source_type, 
+        RETURN s.id AS source_id, s.canonical_name AS source_name, s.type AS source_type,
                s.year_hijri AS source_year_hijri, s.year_gregorian AS source_year_gregorian, s.century_gregorian AS source_century_gregorian,
-               r.type AS rel_type, 
+               r.id AS rel_id, r.rel_type AS rel_type, r.book_id AS rel_book_id, r.chunk_refs AS rel_chunk_refs,
                r.year_hijri AS rel_year_hijri, r.year_gregorian AS rel_year_gregorian, r.century_gregorian AS rel_century_gregorian,
-               t.name AS target_name, t.type AS target_type,
+               t.id AS target_id, t.canonical_name AS target_name, t.type AS target_type,
                t.year_hijri AS target_year_hijri, t.year_gregorian AS target_year_gregorian, t.century_gregorian AS target_century_gregorian
         LIMIT 150
         """
@@ -942,16 +946,16 @@ async def get_global_graph(
     links = []
 
     for rec in records:
-        src = rec["source_name"]
-        tgt = rec["target_name"]
+        src_id = rec["source_id"]
+        tgt_id = rec["target_id"]
 
         # Add source node if new
-        if src not in nodes_seen:
-            nodes_seen.add(src)
+        if src_id not in nodes_seen:
+            nodes_seen.add(src_id)
             nodes.append(
                 {
-                    "id": src,
-                    "label": src,
+                    "id": src_id,
+                    "label": rec["source_name"],
                     "type": rec["source_type"],
                     "year_hijri": rec.get("source_year_hijri"),
                     "year_gregorian": rec.get("source_year_gregorian"),
@@ -960,12 +964,12 @@ async def get_global_graph(
             )
 
         # Add target node if new
-        if tgt not in nodes_seen:
-            nodes_seen.add(tgt)
+        if tgt_id not in nodes_seen:
+            nodes_seen.add(tgt_id)
             nodes.append(
                 {
-                    "id": tgt,
-                    "label": tgt,
+                    "id": tgt_id,
+                    "label": rec["target_name"],
                     "type": rec["target_type"],
                     "year_hijri": rec.get("target_year_hijri"),
                     "year_gregorian": rec.get("target_year_gregorian"),
@@ -976,9 +980,12 @@ async def get_global_graph(
         # Add relationship
         links.append(
             {
-                "source": src,
-                "target": tgt,
+                "id": rec["rel_id"],
+                "source": src_id,
+                "target": tgt_id,
                 "label": rec["rel_type"],
+                "book_id": rec.get("rel_book_id"),
+                "chunk_refs": rec.get("rel_chunk_refs") or [],
                 "year_hijri": rec.get("rel_year_hijri"),
                 "year_gregorian": rec.get("rel_year_gregorian"),
                 "century_gregorian": rec.get("rel_century_gregorian"),
@@ -988,14 +995,78 @@ async def get_global_graph(
     return {"nodes": nodes, "links": links}
 
 
-from pydantic import BaseModel, ConfigDict
+@router.get("/graph/chunk")
+async def get_graph_chunk_detail(
+    ref: str = Query(
+        ..., description="Chunk ref string (e.g. book_id:page:chunk_index or chunk_id)"
+    ),
+    session: AsyncSession = Depends(get_session),
+):
+    """Retrieve original text and metadata for a chunk referenced by a graph edge."""
+    from app.db.models import Chunk, Book
+    from sqlalchemy import select
+
+    parts = ref.split(":")
+    stmt = None
+
+    if len(parts) >= 3:
+        # Format: book_id:page_number:chunk_index
+        book_id, page_num_str, chunk_idx_str = parts[0], parts[1], parts[2]
+        try:
+            page_num = int(page_num_str)
+            chunk_idx = int(chunk_idx_str)
+            stmt = (
+                select(Chunk, Book.title.label("book_title"))
+                .outerjoin(Book, Chunk.book_id == Book.id)
+                .where(
+                    Chunk.book_id == book_id,
+                    Chunk.page_number == page_num,
+                    Chunk.chunk_index == chunk_idx,
+                )
+            )
+        except ValueError:
+            pass
+
+    if stmt is None:
+        # Fallback to chunk.id numeric if ref is an int or book_id:chunk_id
+        chunk_id_str = parts[-1]
+        try:
+            chunk_id = int(chunk_id_str)
+            stmt = (
+                select(Chunk, Book.title.label("book_title"))
+                .outerjoin(Book, Chunk.book_id == Book.id)
+                .where(Chunk.id == chunk_id)
+            )
+        except ValueError:
+            pass
+
+    if stmt is None:
+        raise HTTPException(status_code=400, detail="Invalid chunk reference format")
+
+    result = await session.execute(stmt)
+    row = result.first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Chunk not found")
+
+    chunk, book_title = row[0], row[1]
+    return {
+        "id": chunk.id,
+        "bookId": chunk.book_id,
+        "bookTitle": book_title or chunk.book_id,
+        "pageNumber": chunk.page_number,
+        "chunkIndex": chunk.chunk_index,
+        "text": chunk.text,
+    }
+
+
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class MergeEntitiesRequest(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
-    keep_name: str
-    remove_name: str
+    keep_id: str
+    remove_id: str
 
 
 @router.post("/graph/merge")
@@ -1004,32 +1075,44 @@ async def merge_graph_entities(
     current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
-    """Merge two knowledge graph entities (admin only)."""
+    """Merge two knowledge graph entities by id (admin only)."""
     from app.db.repositories.graph_repository import GraphRepository
+    from app.services.entity_resolution_service import execute_merge
 
     graph_repo = GraphRepository()
     try:
-        await graph_repo.merge_entities(request.keep_name, request.remove_name)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        merge_log_id = await execute_merge(
+            session,
+            graph_repo,
+            keep_id=request.keep_id,
+            remove_id=request.remove_id,
+            performed_by=current_user.email,
+        )
     except Exception as exc:
         logger.error(f"Failed to merge entities: {exc}")
         raise HTTPException(
             status_code=500, detail="Internal server error during entity merge."
         )
+    finally:
+        await graph_repo.close()
+
+    if merge_log_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Entity '{request.keep_id}' or '{request.remove_id}' does not exist.",
+        )
 
     return {
         "status": "success",
-        "message": f"Merged entity '{request.remove_name}' into '{request.keep_name}'",
+        "message": f"Merged entity '{request.remove_id}' into '{request.keep_id}'",
+        "mergeLogId": merge_log_id,
     }
 
 
 class DeleteRelationshipRequest(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
-    source_name: str
-    target_name: str
-    rel_type: str
+    edge_id: str
 
 
 @router.post("/graph/relationship/delete")
@@ -1038,14 +1121,12 @@ async def delete_graph_relationship(
     current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
-    """Delete a relationship between two knowledge graph entities (admin only)."""
+    """Delete a relationship between two knowledge graph entities by edge id (admin only)."""
     from app.db.repositories.graph_repository import GraphRepository
 
     graph_repo = GraphRepository()
     try:
-        await graph_repo.delete_relationship(
-            request.source_name, request.target_name, request.rel_type
-        )
+        await graph_repo.delete_relationship_by_id(request.edge_id)
     except ValueError:
         raise HTTPException(status_code=400, detail=t("errors.relationship_not_found"))
     except Exception as exc:
@@ -1057,14 +1138,14 @@ async def delete_graph_relationship(
 
     return {
         "status": "success",
-        "message": f"Deleted relationship '{request.rel_type}' between '{request.source_name}' and '{request.target_name}'",
+        "message": f"Deleted relationship '{request.edge_id}'",
     }
 
 
 class RenameEntityRequest(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
-    old_name: str
+    entity_id: str
     new_name: str
 
 
@@ -1074,12 +1155,18 @@ async def rename_graph_entity(
     current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
-    """Rename a knowledge graph entity (admin only)."""
+    """Rename a knowledge graph entity by id (admin only).
+
+    The previous canonical_name is folded into aliases (see GraphRepository.rename_entity)
+    so existing citations/lookups by the old spelling keep resolving.
+    """
     from app.db.repositories.graph_repository import GraphRepository
+    from app.services.entity_resolution_service import update_alias_cache
 
     graph_repo = GraphRepository()
     try:
-        await graph_repo.rename_entity(request.old_name, request.new_name)
+        await graph_repo.rename_entity(request.entity_id, request.new_name)
+        await update_alias_cache(graph_repo, request.entity_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -1090,7 +1177,7 @@ async def rename_graph_entity(
 
     return {
         "status": "success",
-        "message": f"Renamed entity '{request.old_name}' to '{request.new_name}'",
+        "message": f"Renamed entity '{request.entity_id}' to '{request.new_name}'",
     }
 
 
@@ -1760,15 +1847,31 @@ async def reprocess_spell_check(
     }
 
 
+class ReprocessGraphRequest(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    scope: str
+
+    @field_validator("scope")
+    @classmethod
+    def validate_scope(cls, v: str) -> str:
+        if v not in ("fiction", "nonfiction"):
+            raise ValueError("scope must be 'fiction' or 'nonfiction'")
+        return v
+
+
 @router.post("/{book_id}/reprocess/graph")
 async def reprocess_graph(
     book_id: str,
+    request: ReprocessGraphRequest,
     current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
     """Manually trigger/reprocess Knowledge Graph extraction for a book.
 
     This queues the `knowledge_graph_job` to extract entities and relations in Neo4j.
+    `scope` ("fiction" | "nonfiction") is required — the admin already knows which,
+    since they're the one choosing to extract this specific book (design v2 §3).
     """
     books_repo = BooksRepository(session)
     book = await books_repo.get(book_id)
@@ -1801,6 +1904,7 @@ async def reprocess_graph(
             await redis_pool.enqueue_job(
                 "knowledge_graph_job",
                 book_id=book_id,
+                scope=request.scope,
                 _job_id=f"knowledge_graph:{book_id}",
             )
         finally:

@@ -93,13 +93,77 @@ async def test_vector_search_respects_cached_empty_results(monkeypatch):
 
     with patch(
         "app.db.repositories.chunks_repository.ChunksRepository"
-    ) as mock_chunks_repo_cls:
+    ) as mock_chunks_repo_cls, patch(
+        "app.db.repositories.system_configs_repository.SystemConfigsRepository"
+    ) as mock_config_cls:
         mock_chunks_repo = mock_chunks_repo_cls.return_value
+        mock_config_cls.return_value.get_value = AsyncMock(return_value="false")
         results = await vector_search(ctx, book_ids=["b1"])
         assert results == []
 
         # similarity_search should not have been called
         mock_chunks_repo.similarity_search.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_vector_search_global_empty_results_retries_without_threshold(
+    monkeypatch,
+):
+    """Book-scoped searches already retry at threshold=0.0 when the first pass
+    returns nothing (e.g. meta/summary questions scoring low against body
+    text). A cold-start global question (no book_ids — the first turn of a
+    new conversation, before any book has been discovered) hit the same
+    "generic query vector scores below threshold" failure mode but had no
+    retry at all, since the retry was gated on `book_ids` being truthy. This
+    produced empty-context turns for well-covered topics whenever the exact
+    phrasing didn't score above RAG_SCORE_THRESHOLD on the first pass."""
+    mock_cache = AsyncMock()
+    mock_cache.get = AsyncMock(return_value=None)
+    mock_cache.set = AsyncMock()
+    monkeypatch.setattr("app.services.rag.retrieval.cache_service", mock_cache)
+
+    ctx = MagicMock()
+    ctx.session = MagicMock()
+    ctx.query_vector = [0.1, 0.2]
+    ctx.character_categories = []
+    ctx.is_global = True
+    ctx.question = "who was X?"
+    ctx.enriched_question = None
+
+    calls = []
+
+    async def fake_similarity_search(
+        query_embedding, book_ids, categories, limit, threshold
+    ):
+        calls.append(threshold)
+        if threshold > 0.0:
+            return []
+        return [
+            {
+                "book_id": "b1",
+                "text": "b1 text",
+                "similarity": 0.1,
+                "page_number": 1,
+                "title": "Book A",
+                "volume": None,
+                "author": "Author A",
+            }
+        ]
+
+    with patch(
+        "app.db.repositories.chunks_repository.ChunksRepository"
+    ) as mock_cls, patch(
+        "app.db.repositories.system_configs_repository.SystemConfigsRepository"
+    ) as mock_config_cls:
+        mock_repo = mock_cls.return_value
+        mock_repo.similarity_search = AsyncMock(side_effect=fake_similarity_search)
+        mock_config_cls.return_value.get_value = AsyncMock(return_value="false")
+
+        results = await vector_search(ctx, book_ids=None)
+
+    assert calls == [pytest.approx(0.50), 0.0]
+    assert len(results) == 1
+    assert results[0]["book_id"] == "b1"
 
 
 @pytest.mark.asyncio
@@ -163,9 +227,22 @@ async def test_vector_search_multi_book_guarantees_per_book_quota(monkeypatch):
         assert limit == 8  # rag_top_k(25) // 3 books
         return book_results[book_ids[0]]
 
-    with patch("app.db.repositories.chunks_repository.ChunksRepository") as mock_cls:
+    with patch(
+        "app.db.repositories.chunks_repository.ChunksRepository"
+    ) as mock_cls, patch(
+        "app.db.repositories.system_configs_repository.SystemConfigsRepository"
+    ) as mock_config_cls:
         mock_repo = mock_cls.return_value
         mock_repo.similarity_search = AsyncMock(side_effect=fake_similarity_search)
+
+        async def mock_get_value(key, default=""):
+            if key == "rag_top_k":
+                return "25"
+            if key == "rag_hybrid_search_enabled":
+                return "false"
+            return default
+
+        mock_config_cls.return_value.get_value = AsyncMock(side_effect=mock_get_value)
 
         results = await vector_search(ctx, book_ids=["b1", "b2", "b3"])
 

@@ -11,6 +11,7 @@ from sqlalchemy import (
     ARRAY,
     Boolean,
     CheckConstraint,
+    Computed,
     DateTime,
     Float,
     ForeignKey,
@@ -23,6 +24,8 @@ from sqlalchemy import (
     text,
     Date,
 )
+from sqlalchemy.dialects.postgresql import TSVECTOR
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 
@@ -361,6 +364,14 @@ class Chunk(Base):
     text: Mapped[str] = mapped_column(Text, nullable=False)
     embedding: Mapped[Optional[List[float]]] = mapped_column(
         Vector(3072),  # pgvector type
+        nullable=True,
+    )
+    # Server-computed (GENERATED ALWAYS AS ... STORED, migration 074) — read-only
+    # from the ORM's perspective. 'simple' config, not 'english': content is
+    # substantially Uyghur-language and 'simple' avoids English-specific stemming.
+    text_search: Mapped[Optional[str]] = mapped_column(
+        TSVECTOR,
+        Computed("to_tsvector('simple', text)", persisted=True),
         nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -971,4 +982,125 @@ class ConversationMessage(Base):
         default=func.now(),
         server_default=func.now(),
         nullable=False,
+    )
+
+
+class GraphResolutionQueue(Base):
+    """Coordinates claiming of Neo4j Entity nodes for the global resolution pass.
+
+    Postgres owns queue state (FOR UPDATE SKIP LOCKED); Neo4j owns the entity data
+    itself. See knowledge-graph-entity-resolution-design-v2.md §2/§4.
+    """
+
+    __tablename__ = "graph_resolution_queue"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    entity_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=False, unique=True
+    )
+    scope: Mapped[str] = mapped_column(String(20), nullable=False)
+    book_id: Mapped[Optional[str]] = mapped_column(
+        String(64), ForeignKey("books.id", ondelete="CASCADE"), nullable=True
+    )
+    sort_year: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(20), default="idle", server_default="idle", index=True, nullable=False
+    )
+    pass_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    last_updated: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "scope IN ('fiction', 'nonfiction')",
+            name="graph_resolution_queue_scope_check",
+        ),
+        CheckConstraint(
+            "status IN ('idle', 'in_progress', 'succeeded', 'failed', 'needs_review')",
+            name="graph_resolution_queue_status_check",
+        ),
+    )
+
+
+class GraphResolutionReview(Base):
+    """Admin review queue for gray-zone / ambiguous entity-resolution outcomes."""
+
+    __tablename__ = "graph_resolution_reviews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    entity_a_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=False
+    )
+    entity_b_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=False
+    )
+    scope: Mapped[str] = mapped_column(String(20), nullable=False)
+    evidence: Mapped[dict] = mapped_column(JSON, nullable=False)
+    suggested_action: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default="pending",
+        server_default="pending",
+        index=True,
+        nullable=False,
+    )
+    reviewed_by: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "scope IN ('fiction', 'nonfiction')",
+            name="graph_resolution_reviews_scope_check",
+        ),
+        CheckConstraint(
+            "suggested_action IN ('merge', 'split', 'unsure')",
+            name="graph_resolution_reviews_suggested_action_check",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'approved', 'rejected')",
+            name="graph_resolution_reviews_status_check",
+        ),
+    )
+
+
+class GraphMergeLog(Base):
+    """Pre-merge snapshot of the removed Entity node + its edges, enabling unmerge."""
+
+    __tablename__ = "graph_merge_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    kept_entity_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=False
+    )
+    removed_entity_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=False, index=True
+    )
+    removed_entity_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    removed_edges_snapshot: Mapped[list] = mapped_column(JSON, nullable=False)
+    performed_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    performed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+    reverted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )

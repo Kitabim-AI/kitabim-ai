@@ -164,7 +164,7 @@ class DeterministicRAGHandler(QueryHandler):
                 "get_books_by_author", {"question": question}, ctx
             )
 
-        prompt = f"""Analyze this Uyghur/English query in the context of a RAG book reading assistant.
+        prompt = f"""Analyze this query in the context of an Uyghur book reading assistant.
 
 Context:
 - In Reader (Active Book Context): {in_reader} (Page: {current_page})
@@ -193,7 +193,7 @@ Return ONLY valid JSON matching this schema:
   "is_volume_shift": boolean,       // True if the user wants to go to another volume (e.g. "next volume", "previous volume", "ئالدىنقى توم", "2-توم")
   "target_volume": integer | null,  // The volume number to shift to if specified (e.g. 2, 3), else null
   "needs_rewrite": boolean,         // True ONLY if the query has unresolved pronouns/coreferences or implicit references (ellipsis) referring to prior chat history. MUST be false if the query is fully self-contained, or if there is no chat history.
-  "rewritten_question": string | null, // If needs_rewrite is true, rewrite the question to resolve all pronouns/references using chat history to make it self-contained in Uyghur/English. If needs_rewrite is false, return null.
+  "rewritten_question": string | null, // If needs_rewrite is true, rewrite the question to resolve all pronouns/references using chat history to make it self-contained in standard Uyghur (strictly maintaining Uyghur SOV word order and suffix grammar). If needs_rewrite is false, return null.
   "catalog_subtype": "author_of" | "books_by" | "general" | null, // Use "author_of" if asking who wrote a book, "books_by" if asking what books an author wrote, "general" for other catalog/library-wide queries (like "what books do you have"), or null if this is NOT a catalog query.
   "dictionary_subtype": "uyghur_definition" | "history_term" | "english_uyghur" | "spelling" | "names" | "proverbs" | "synonyms" | "general" | null, // Use only when intent is "dictionary".
   "dictionary_term": string | null, // The exact word/term/name/English phrase to look up when intent is "dictionary".
@@ -203,7 +203,7 @@ Return ONLY valid JSON matching this schema:
   "intent": "catalog" | "dictionary" | "identity" | "summary" | "relationship" | "passage" | "quran",
   "is_composite": boolean,          // True if the query contains multiple distinct questions or requests that should be handled separately (e.g. "Who wrote X and what is it about?").
   "sub_questions": Array<{{         // If is_composite is true, return each sub-question with its own signals. If is_composite is false, return null.
-    "question": string,             // Self-contained sub-question text (pronouns resolved using history)
+    "question": string,             // Self-contained sub-question text (pronouns resolved using history, in standard Uyghur SOV grammar)
     "intent": "catalog" | "dictionary" | "identity" | "summary" | "relationship" | "passage" | "quran",
     "is_current_page_query": boolean,
     "is_volume_shift": boolean,
@@ -565,7 +565,7 @@ Dictionary subtype rules:
 
         signals_summary = f"has_title={has_title}, has_context_books={has_context_books}, is_global={is_global}"
 
-        prompt = f"""Classify this Uyghur/English question into ONE intent.
+        prompt = f"""Classify this question into ONE intent.
 
 Intents:
 - catalog     : asking about book metadata, authors of books, book listings, or what books exist in the library (e.g., who wrote X, list X's books, do you have book Y)
@@ -1332,12 +1332,14 @@ Return ONLY valid JSON matching this schema:
         observations: list,
     ) -> AsyncIterator[dict]:
         # intent routing for global searches
-        # search_books_by_summary returns up to 20 books; passing all 20 to search_chunks
-        # spreads RAG_TOP_K=25 slots across too many books (~1-2 per book), diluting the
-        # specific passage that may only appear in 1 book. Focus on top 5 to concentrate
-        # chunk slots. The universal fallback widens to global scope if results are thin.
+        # search_books_by_summary returns up to 20 books; all of them are passed to
+        # search_chunks. vector_search already gives each book its own quota
+        # (max(rag_top_k // len(book_ids), 3)), so a book-level cutoff here isn't
+        # needed to avoid dilution — it was silently dropping books that ranked
+        # 6th-20th by the coarser book-summary signal even when the correct passage
+        # lived in one of them. The universal fallback widens to global scope if
+        # results are thin regardless.
         result_holder = {}
-        _TOP_BOOKS_FOR_CHUNK_SEARCH = 5
         if intent == "identity":
             async for ev in self._run_tool_and_yield(
                 "search_books_by_summary",
@@ -1359,7 +1361,7 @@ Return ONLY valid JSON matching this schema:
                 yield ev
             async for ev in self._run_tool_and_yield(
                 "search_chunks",
-                {"query": question, "book_ids": top_ids[:_TOP_BOOKS_FOR_CHUNK_SEARCH]},
+                {"query": question, "book_ids": top_ids},
                 ctx,
                 observations,
                 result_holder,
@@ -1390,7 +1392,7 @@ Return ONLY valid JSON matching this schema:
                     "search_chunks",
                     {
                         "query": question,
-                        "book_ids": top_ids[:_TOP_BOOKS_FOR_CHUNK_SEARCH],
+                        "book_ids": top_ids,
                     },
                     ctx,
                     observations,
@@ -1410,7 +1412,7 @@ Return ONLY valid JSON matching this schema:
             top_ids = summary_res.get("book_ids", [])
             async for ev in self._run_tool_and_yield(
                 "search_chunks",
-                {"query": question, "book_ids": top_ids[:_TOP_BOOKS_FOR_CHUNK_SEARCH]},
+                {"query": question, "book_ids": top_ids},
                 ctx,
                 observations,
                 result_holder,

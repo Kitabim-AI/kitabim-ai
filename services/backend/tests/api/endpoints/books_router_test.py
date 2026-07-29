@@ -30,7 +30,7 @@ def test_books_basic():
 @pytest.mark.asyncio
 async def test_reprocess_graph_disabled():
     setup_paths()
-    from api.endpoints.books_router import reprocess_graph  # type: ignore[import]
+    from api.endpoints.books_router import reprocess_graph, ReprocessGraphRequest  # type: ignore[import]
 
     mock_session = AsyncMock()
     mock_user = MagicMock()
@@ -52,12 +52,23 @@ async def test_reprocess_graph_disabled():
         with pytest.raises(HTTPException) as excinfo:
             await reprocess_graph(
                 book_id="some-book-id",
+                request=ReprocessGraphRequest(scope="nonfiction"),
                 current_user=mock_user,
                 session=mock_session,
             )
 
     assert excinfo.value.status_code == 400
     assert "Knowledge Graph generation is currently disabled" in excinfo.value.detail
+
+
+@pytest.mark.asyncio
+async def test_reprocess_graph_request_rejects_invalid_scope():
+    setup_paths()
+    from api.endpoints.books_router import ReprocessGraphRequest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        ReprocessGraphRequest(scope="not-a-real-scope")
 
 
 @pytest.mark.asyncio
@@ -266,21 +277,66 @@ async def test_merge_graph_entities_endpoint():
 
     mock_session = AsyncMock()
     mock_user = MagicMock()
+    mock_user.email = "admin@example.com"
 
-    mock_request = MergeEntitiesRequest(keep_name="A", remove_name="B")
+    mock_request = MergeEntitiesRequest(keep_id="keep-1", remove_id="remove-1")
 
     mock_repo = MagicMock()
-    mock_repo.merge_entities = AsyncMock()
+    mock_repo.close = AsyncMock()
 
-    with patch(
-        "app.db.repositories.graph_repository.GraphRepository", return_value=mock_repo
+    with (
+        patch(
+            "app.db.repositories.graph_repository.GraphRepository",
+            return_value=mock_repo,
+        ),
+        patch(
+            "app.services.entity_resolution_service.execute_merge",
+            new=AsyncMock(return_value=42),
+        ) as mock_execute_merge,
     ):
         response = await merge_graph_entities(
             request=mock_request, current_user=mock_user, session=mock_session
         )
 
     assert response["status"] == "success"
-    mock_repo.merge_entities.assert_called_once_with("A", "B")
+    assert response["mergeLogId"] == 42
+    mock_execute_merge.assert_called_once_with(
+        mock_session,
+        mock_repo,
+        keep_id="keep-1",
+        remove_id="remove-1",
+        performed_by="admin@example.com",
+    )
+
+
+@pytest.mark.asyncio
+async def test_merge_graph_entities_endpoint_missing_entity_returns_400():
+    setup_paths()
+    from api.endpoints.books_router import merge_graph_entities, MergeEntitiesRequest
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+    mock_user.email = "admin@example.com"
+    mock_request = MergeEntitiesRequest(keep_id="keep-1", remove_id="missing")
+
+    mock_repo = MagicMock()
+    mock_repo.close = AsyncMock()
+
+    with (
+        patch(
+            "app.db.repositories.graph_repository.GraphRepository",
+            return_value=mock_repo,
+        ),
+        patch(
+            "app.services.entity_resolution_service.execute_merge",
+            new=AsyncMock(return_value=None),
+        ),
+    ):
+        with pytest.raises(HTTPException) as excinfo:
+            await merge_graph_entities(
+                request=mock_request, current_user=mock_user, session=mock_session
+            )
+    assert excinfo.value.status_code == 400
 
 
 @pytest.mark.asyncio
@@ -289,10 +345,10 @@ async def test_merge_entities_request_accepts_camel_case():
     from api.endpoints.books_router import MergeEntitiesRequest
 
     req = MergeEntitiesRequest.model_validate(
-        {"keepName": "KeepName", "removeName": "RemoveName"}
+        {"keepId": "keep-1", "removeId": "remove-1"}
     )
-    assert req.keep_name == "KeepName"
-    assert req.remove_name == "RemoveName"
+    assert req.keep_id == "keep-1"
+    assert req.remove_id == "remove-1"
 
 
 @pytest.mark.asyncio
@@ -306,12 +362,10 @@ async def test_delete_graph_relationship_endpoint():
     mock_session = AsyncMock()
     mock_user = MagicMock()
 
-    mock_request = DeleteRelationshipRequest(
-        source_name="A", target_name="B", rel_type="SON_OF"
-    )
+    mock_request = DeleteRelationshipRequest(edge_id="edge-1")
 
     mock_repo = MagicMock()
-    mock_repo.delete_relationship = AsyncMock()
+    mock_repo.delete_relationship_by_id = AsyncMock()
 
     with patch(
         "app.db.repositories.graph_repository.GraphRepository", return_value=mock_repo
@@ -321,7 +375,7 @@ async def test_delete_graph_relationship_endpoint():
         )
 
     assert response["status"] == "success"
-    mock_repo.delete_relationship.assert_called_once_with("A", "B", "SON_OF")
+    mock_repo.delete_relationship_by_id.assert_called_once_with("edge-1")
 
 
 @pytest.mark.asyncio
@@ -334,12 +388,10 @@ async def test_delete_graph_relationship_endpoint_not_found():
 
     mock_session = AsyncMock()
     mock_user = MagicMock()
-    mock_request = DeleteRelationshipRequest(
-        source_name="A", target_name="B", rel_type="SON_OF"
-    )
+    mock_request = DeleteRelationshipRequest(edge_id="missing-edge")
 
     mock_repo = MagicMock()
-    mock_repo.delete_relationship = AsyncMock(side_effect=ValueError("not found"))
+    mock_repo.delete_relationship_by_id = AsyncMock(side_effect=ValueError("not found"))
 
     with patch(
         "app.db.repositories.graph_repository.GraphRepository", return_value=mock_repo
@@ -356,12 +408,8 @@ async def test_delete_relationship_request_accepts_camel_case():
     setup_paths()
     from api.endpoints.books_router import DeleteRelationshipRequest
 
-    req = DeleteRelationshipRequest.model_validate(
-        {"sourceName": "A", "targetName": "B", "relType": "SON_OF"}
-    )
-    assert req.source_name == "A"
-    assert req.target_name == "B"
-    assert req.rel_type == "SON_OF"
+    req = DeleteRelationshipRequest.model_validate({"edgeId": "edge-1"})
+    assert req.edge_id == "edge-1"
 
 
 @pytest.mark.asyncio
@@ -374,21 +422,29 @@ async def test_rename_graph_entity_endpoint_success():
 
     mock_session = AsyncMock()
     mock_user = MagicMock()
-    mock_request = RenameEntityRequest(old_name="OldName", new_name="NewName")
+    mock_request = RenameEntityRequest(entity_id="entity-1", new_name="NewName")
 
     mock_repo = MagicMock()
     mock_repo.rename_entity = AsyncMock(return_value=True)
 
-    with patch(
-        "app.db.repositories.graph_repository.GraphRepository", return_value=mock_repo
+    with (
+        patch(
+            "app.db.repositories.graph_repository.GraphRepository",
+            return_value=mock_repo,
+        ),
+        patch(
+            "app.services.entity_resolution_service.update_alias_cache",
+            new=AsyncMock(),
+        ) as mock_update_cache,
     ):
         response = await rename_graph_entity(
             request=mock_request, current_user=mock_user, session=mock_session
         )
 
     assert response["status"] == "success"
-    assert response["message"] == "Renamed entity 'OldName' to 'NewName'"
-    mock_repo.rename_entity.assert_called_once_with("OldName", "NewName")
+    assert response["message"] == "Renamed entity 'entity-1' to 'NewName'"
+    mock_repo.rename_entity.assert_called_once_with("entity-1", "NewName")
+    mock_update_cache.assert_called_once_with(mock_repo, "entity-1")
 
 
 @pytest.mark.asyncio
@@ -401,7 +457,7 @@ async def test_rename_graph_entity_endpoint_error():
 
     mock_session = AsyncMock()
     mock_user = MagicMock()
-    mock_request = RenameEntityRequest(old_name="OldName", new_name="NewName")
+    mock_request = RenameEntityRequest(entity_id="entity-1", new_name="NewName")
 
     mock_repo = MagicMock()
     mock_repo.rename_entity = AsyncMock(side_effect=ValueError("Already exists"))
@@ -424,7 +480,7 @@ async def test_rename_entity_request_accepts_camel_case():
     from api.endpoints.books_router import RenameEntityRequest
 
     req = RenameEntityRequest.model_validate(
-        {"oldName": "OldName", "newName": "NewName"}
+        {"entityId": "entity-1", "newName": "NewName"}
     )
-    assert req.old_name == "OldName"
+    assert req.entity_id == "entity-1"
     assert req.new_name == "NewName"

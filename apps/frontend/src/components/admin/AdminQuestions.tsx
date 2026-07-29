@@ -2,7 +2,7 @@
  * Admin Questions Panel — shows all RAG questions with a home-page visibility toggle.
  */
 
-import { AlertCircle, Globe, Loader, MessageSquare, RefreshCw, Search, X } from 'lucide-react';
+import { AlertCircle, BookOpen, Globe, Loader, MessageSquare, RefreshCw, Search, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../i18n/I18nContext';
 import { authFetch } from '../../services/authService';
@@ -14,10 +14,16 @@ interface RagQuestion {
   question: string;
   isGlobal: boolean;
   bookId: string | null;
+  userId: string | null;
+  userDisplayName: string | null;
   isFirstTurn: boolean;
   showOnHomepage: boolean;
   userFeedback: string | null;
   ts: string;
+  evalStatus: string;
+  faithfulnessScore: number | null;
+  answerRelevanceScore: number | null;
+  contextPrecisionScore: number | null;
 }
 
 interface QuestionsPage {
@@ -220,11 +226,12 @@ export function AdminQuestions() {
             <table className="w-full text-right lg:min-w-[900px]" dir="rtl">
               <thead>
                 <tr className="bg-[#0369a1]/5 dark:bg-[#38bdf8]/5 border-b border-[#0369a1]/10 dark:border-slate-800 text-[12px] md:text-[14px] lg:text-[16px] font-normal text-[#0369a1] dark:text-[#38bdf8] uppercase">
-                  <th className="px-3 md:px-6 py-3 md:py-5 text-right font-normal w-[80%] lg:w-[50%]">{t('admin.questions.colQuestion')}</th>
-                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal w-[15%]">{t('admin.questions.colScope')}</th>
-                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal w-[12%]">{t('admin.questions.colFeedback')}</th>
-                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal w-[18%]">{t('admin.questions.colDate')}</th>
-                  <th className="px-3 md:px-6 py-3 md:py-5 text-left font-normal w-[20%] lg:w-[10%]">{t('admin.questions.colShowOnHome')}</th>
+                  <th className="px-3 md:px-6 py-3 md:py-5 text-right font-normal w-[50%] sm:w-[45%] lg:w-[40%]">{t('admin.questions.colQuestion')}</th>
+                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal w-[14%]">{t('admin.questions.colUser')}</th>
+                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal w-[8%]">{t('admin.questions.colFeedback')}</th>
+                  <th className="hidden sm:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal w-[30%] sm:w-[35%] lg:w-[16%]">{t('admin.questions.colEvalQuality')}</th>
+                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal w-[15%]">{t('admin.questions.colDate')}</th>
+                  <th className="px-3 md:px-6 py-3 md:py-5 text-left font-normal w-[20%] sm:w-[20%] lg:w-[7%]">{t('admin.questions.colShowOnHome')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#75C5F0]/5 dark:divide-slate-800/30">
@@ -237,29 +244,35 @@ export function AdminQuestions() {
                   >
                     {/* Question text */}
                     <td className="px-3 md:px-6 py-4 md:py-6">
-                      <p
-                        className="uyghur-text text-[#1a1a1a] dark:text-slate-100 font-semibold text-[14px] md:text-[16px] lg:text-[17px] leading-relaxed line-clamp-2 text-right"
-                        dir="rtl"
-                        lang="ug"
-                        title={q.question}
-                      >
-                        {q.question}
-                      </p>
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          title={q.isGlobal ? t('admin.questions.scopeGlobal') : t('admin.questions.scopeBook')}
+                          className={`p-1.5 rounded-lg shrink-0 ${
+                            q.isGlobal
+                              ? 'bg-violet-50 dark:bg-violet-950/40 text-violet-600 dark:text-violet-400'
+                              : 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400'
+                          }`}
+                        >
+                          {q.isGlobal ? <Globe size={14} /> : <BookOpen size={14} />}
+                        </div>
+                        <p
+                          className="uyghur-text text-[#1a1a1a] dark:text-slate-100 font-semibold text-[14px] md:text-[16px] lg:text-[17px] leading-relaxed line-clamp-2 text-right flex-1"
+                          dir="rtl"
+                          lang="ug"
+                          title={q.question}
+                        >
+                          {q.question}
+                        </p>
+                      </div>
                     </td>
 
-                    {/* Scope: global vs book */}
-                    <td className="hidden lg:table-cell px-3 md:px-6 py-4 md:py-6 text-center">
-                      <span
-                        className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] md:text-[12px] font-medium border shadow-sm ${
-                          q.isGlobal
-                            ? 'bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-400 border-violet-100 dark:border-violet-900/50'
-                            : 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-100 dark:border-amber-900/50'
-                        }`}
-                      >
-                        {q.isGlobal
-                          ? t('admin.questions.scopeGlobal')
-                          : t('admin.questions.scopeBook')}
-                      </span>
+                    {/* User display name */}
+                    <td className="hidden lg:table-cell px-3 md:px-6 py-4 md:py-6 text-center text-xs md:text-sm text-slate-700 dark:text-slate-300 font-medium whitespace-nowrap">
+                      {q.userDisplayName ? (
+                        <span>{q.userDisplayName}</span>
+                      ) : (
+                        <span className="text-slate-300 dark:text-slate-650">—</span>
+                      )}
                     </td>
 
                     {/* User feedback */}
@@ -268,6 +281,43 @@ export function AdminQuestions() {
                         <span title="Positive" className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/50 shadow-sm">👍</span>
                       ) : q.userFeedback === 'negative' ? (
                         <span title="Negative" className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-50 dark:bg-red-950/30 text-red-650 dark:text-red-400 border border-red-100 dark:border-red-900/50 shadow-sm">👎</span>
+                      ) : (
+                        <span className="text-slate-300 dark:text-slate-650">—</span>
+                      )}
+                    </td>
+
+                    {/* Eval quality */}
+                    <td className="hidden sm:table-cell px-3 md:px-6 py-4 md:py-6 text-center">
+                      {q.evalStatus === 'completed' ? (
+                        <div className="flex items-center justify-center gap-1 flex-wrap" dir="ltr">
+                          <span
+                            title={t('admin.questions.evalFaithfulness')}
+                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] md:text-[11px] font-medium bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/50"
+                          >
+                            {Math.round((q.faithfulnessScore ?? 0) * 100)}%
+                          </span>
+                          <span
+                            title={t('admin.questions.evalAnswerRelevance')}
+                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] md:text-[11px] font-medium bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border border-blue-100 dark:border-blue-900/50"
+                          >
+                            {Math.round((q.answerRelevanceScore ?? 0) * 100)}%
+                          </span>
+                          <span
+                            title={t('admin.questions.evalContextPrecision')}
+                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] md:text-[11px] font-medium bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-400 border border-violet-100 dark:border-violet-900/50"
+                          >
+                            {Math.round((q.contextPrecisionScore ?? 0) * 100)}%
+                          </span>
+                        </div>
+                      ) : q.evalStatus === 'queued' ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400">
+                          <Loader size={11} className="animate-spin" />
+                          {t('admin.questions.evalQueued')}
+                        </span>
+                      ) : q.evalStatus === 'failed' ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-50 dark:bg-red-950/30 text-red-650 dark:text-red-400 border border-red-100 dark:border-red-900/50">
+                          {t('admin.questions.evalFailed')}
+                        </span>
                       ) : (
                         <span className="text-slate-300 dark:text-slate-650">—</span>
                       )}

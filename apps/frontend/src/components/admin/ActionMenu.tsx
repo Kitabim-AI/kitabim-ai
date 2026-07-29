@@ -137,7 +137,7 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
             className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-950/20 disabled:opacity-30 disabled:cursor-not-allowed rounded-xl transition-all active:scale-[0.98]"
           >
             {reprocessingStep === REPROCESS_STEP.GRAPH ? <Loader2 size={16} className="animate-spin" /> : <Network size={16} />}
-            <span className="flex-1 text-right">{t('admin.table.reprocess.graph') || 'قايتا گىراف تۈزۈش'}</span>
+            <span className="flex-1 text-right">{t('admin.table.reprocess.graph') || 'قايتا گىرافىك قۇرۇش'}</span>
           </button>
         )}
  
