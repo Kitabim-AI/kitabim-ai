@@ -117,7 +117,8 @@ flowchart TD
 
 ```
 1. Fetch scanner_page_limit (system_configs, default 100) and
-   spell_check_enabled (system_configs, default false).
+   spell_check_enabled (system_configs; code fallback "false" if unset,
+   but seeded "true" on every startup — see Configuration Reference).
 2. SELECT Page.id, Page.book_id JOIN Book WHERE
      ocr_milestone = 'succeeded'
      AND chunking_milestone = 'idle'
@@ -201,7 +202,7 @@ flowchart TD
     CHUNK_IDLE -->|"ChunkingScanner / EventDispatcher: claim"| CHUNK_IP
     CHUNK_IP -->|"ChunkingJob: split + upsert succeed"| CHUNK_OK
     CHUNK_IP -->|"ChunkingJob: exception"| CHUNK_FAIL
-    CHUNK_FAIL -->|"retry_count < ocr_max_retry_count:<br/>PipelineDriver resets"| CHUNK_IDLE
+    CHUNK_FAIL -->|"retry_count < ocr_max_retry_count<br/>AND book.status NOT IN (ready, error):<br/>PipelineDriver resets"| CHUNK_IDLE
     CHUNK_FAIL -->|"retry_count >= ocr_max_retry_count"| EXHAUSTED
     CHUNK_OK -->|"AutoCorrectJob rewrites page.text<br/>(auto_correct_service)"| CHUNK_IDLE
 
@@ -216,13 +217,14 @@ flowchart TD
     class CHUNK_FAIL,EXHAUSTED fail
 ```
 
-`EXHAUSTED` is a mandatory-step failure — `PipelineDriver` marks the whole book `status='error'` once any page has an exhausted OCR/chunking/embedding failure (see `WORKER_DESIGN.md`). The `CHUNK_OK -> CHUNK_IDLE` transition triggered by `AutoCorrectJob` is what keeps `ready` books' corrected pages flowing back through chunking (see Overview) — it is a text-content trigger, not a retry.
+`EXHAUSTED` is a mandatory-step failure — `PipelineDriver` marks the whole book `status='error'` once any page has an exhausted OCR/chunking/embedding failure (see `WORKER_DESIGN.md`). The `CHUNK_OK -> CHUNK_IDLE` transition triggered by `AutoCorrectJob` is what keeps `ready` books' corrected pages flowing back through chunking (see Overview) — it is a text-content trigger, not a retry. **The `CHUNK_FAIL -> CHUNK_IDLE` retry transition does not apply to `ready` books:** `PipelineDriver`'s Reset step excludes any book whose `status` is `'ready'` or `'error'`, so if a `ready` book's auto-correct-reopened page then fails chunking, that page stays `CHUNK_FAIL` regardless of `retry_count` — see Error Handling & Retries for the gap this creates.
 
 ## Error Handling & Retries
 
 | Scenario | Behavior |
 |---|---|
-| `chunking_service.split_text()` or the DB upsert raises any exception | Page set `chunking_milestone='failed'`, `retry_count+=1`, `error=<message, truncated 500 chars>`. Emits `chunking_failed`. `PipelineDriver` resets it to `idle` on its next run if `retry_count < ocr_max_retry_count`, so `ChunkingScanner` reclaims it — this never blocks the book while retries remain. |
+| `chunking_service.split_text()` or the DB upsert raises any exception, **on a book whose `status` is not `'ready'` or `'error'`** | Page set `chunking_milestone='failed'`, `retry_count+=1`, `error=<message, truncated 500 chars>`. Emits `chunking_failed`. `PipelineDriver`'s Reset step resets it to `idle` on its next run if `retry_count < ocr_max_retry_count`, so `ChunkingScanner` reclaims it — this never blocks the book while retries remain. |
+| Same exception, **on a book whose `status == 'ready'`** (e.g. a page reopened by `AutoCorrectJob` per Overview) | Page set `chunking_milestone='failed'`, `retry_count+=1`, same as above — but `PipelineDriver`'s Reset step (`services/worker/scanners/pipeline_driver.py`) filters every reset query with `~Book.status.in_(_V1_READY_STATUSES)`, where `_V1_READY_STATUSES = ("ready", "error")`; a `ready` book is excluded regardless of `retry_count`. `BookMilestoneService.update_book_milestone_for_step` (`packages/backend-core/app/services/book_milestone_service.py`) never writes `book.status`, so nothing else flips the book off `'ready'` either. **Gap: the page is never auto-retried** — it stays `chunking_milestone='failed'` until an admin reprocesses it (`POST /{book_id}/reprocess/chunking`) or the book's `status` otherwise changes. |
 | `retry_count >= ocr_max_retry_count` (shared pipeline-level retry budget key, `system_configs`, default `10`) after a chunking failure | Page stays `chunking_milestone='failed'` permanently; `PipelineDriver` marks the whole book `status='error'` (chunking is a mandatory step). No soft-skip path exists for chunking — unlike OCR, an exhausted chunking failure always leaves the page genuinely failed. |
 | Page has empty `text` (soft-skipped by OCR) or `is_toc=True` | Not a failure — `chunking_service.split_text("")` and the `is_toc` branch both produce `chunks=[]`; the page succeeds with zero chunk rows and flows to Embedding as a page with nothing to embed. |
 | A page's Redis lock can't be acquired (another `ChunkingJob` already holds it) | That page is silently dropped from this run (not marked failed) — it stays `in_progress` and is picked up again once the lock expires (1h) or `StaleWatchdog` resets it. |
@@ -234,7 +236,7 @@ flowchart TD
 | Key | Default | Used by |
 |---|---|---|
 | `scanner_page_limit` (`system_configs`) | `100` (code fallback; no seed row exists in `packages/backend-core/app/db/seeds.py`) | `chunking_scanner` — idle pages claimed per run, across all books. Also used by `embedding_scanner`/`spell_check_scanner`. |
-| `spell_check_enabled` (`system_configs`) | `false` (code fallback; no seed row) | `chunking_scanner` / `event_dispatcher` — when `"true"`, adds the `spell_check_milestone IN ('succeeded', 'failed')` eligibility condition described in Overview. |
+| `spell_check_enabled` (`system_configs`) | `"true"` — seeded by `seed_system_configs()` (`packages/backend-core/app/db/seeds.py`, lines 56–60), which runs on every backend startup (`services/backend/main.py`, lines 129–134) and every worker startup (`packages/backend-core/app/queue.py`, lines 57–61) and inserts the row whenever the key is absent. The code-level fallback passed to `config_repo.get_value("spell_check_enabled", "false")` is `"false"`, but that path is only reached if seeding has never run — in practice the effective default is spell-check gating **enabled**. | `chunking_scanner` / `event_dispatcher` — when `"true"`, adds the `spell_check_milestone IN ('succeeded', 'failed')` eligibility condition described in Overview. |
 | `ocr_max_retry_count` (`system_configs`) | `10` (seeded in `seeds.py`) | `PipelineDriver` — the same shared pipeline-level retry budget used by OCR also governs when a `chunking_milestone='failed'` page is reset to `idle` vs. left exhausted. There is no chunking-specific retry-count key. |
 | `CHUNK_SIZE` (env, `packages/backend-core/app/core/config.py`) | `1500` | `chunking_service` — `RecursiveCharacterTextSplitter`'s target maximum chunk length in characters. |
 | `CHUNK_OVERLAP` (env, `packages/backend-core/app/core/config.py`) | `300` | `chunking_service` — characters of overlap carried between consecutive merged chunks. |
