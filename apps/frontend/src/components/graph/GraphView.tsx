@@ -20,6 +20,7 @@ interface GraphNode {
   year_hijri?: number;
   year_gregorian?: number;
   century_gregorian?: number;
+  context_summary?: string;
 }
 
 interface GraphLink {
@@ -29,6 +30,7 @@ interface GraphLink {
   label: string;
   book_id?: string;
   chunk_refs?: string[];
+  evidence?: string;
   year_hijri?: number;
   year_gregorian?: number;
   century_gregorian?: number;
@@ -121,6 +123,7 @@ export const GraphView: React.FC = () => {
   const [isFullScreen, setIsFullScreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<any>(null);
+  const isInitializedRef = useRef(false);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
 
   const [activeChunkRef, setActiveChunkRef] = useState<string | null>(null);
@@ -173,16 +176,11 @@ export const GraphView: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeChunkRef, activeChunkIndex, connChunkRefs]);
 
-  // Automatically switch tab to Details when a node is selected
-  useEffect(() => {
-    if (selectedNode) {
-      setActiveTab('details');
-    }
-  }, [selectedNode]);
+
 
 
   // Load graph data
-  const fetchGraphData = async (query = '') => {
+  const fetchGraphData = async (query = '', resetFilters = false) => {
     setLoading(true);
     try {
       const res = await fetch(`/api/books/graph${query ? `?q=${encodeURIComponent(query)}` : ''}`);
@@ -214,11 +212,29 @@ export const GraphView: React.FC = () => {
 
       setRawGraphData({ nodes: coloredNodes, links: graphData.links });
 
-      // Initialize selected types to all unique types
+      // Initialize selected types on first load / search reset, or preserve user filter selections on refetch
       const uniqueNodeTypes = Array.from(new Set(coloredNodes.map(node => node.type || 'Entity')));
       const uniqueEdgeTypes = Array.from(new Set(graphData.links.map(link => link.label || 'RELATED_TO')));
-      setSelectedNodeTypes(uniqueNodeTypes);
-      setSelectedEdgeTypes(uniqueEdgeTypes);
+
+      if (!isInitializedRef.current || resetFilters) {
+        setSelectedNodeTypes(uniqueNodeTypes);
+        setSelectedEdgeTypes(uniqueEdgeTypes);
+        isInitializedRef.current = true;
+      } else {
+        setSelectedNodeTypes(prev => {
+          if (prev.length >= availableNodeTypes.length && availableNodeTypes.length > 0) {
+            return uniqueNodeTypes;
+          }
+          return prev.filter(t => uniqueNodeTypes.includes(t));
+        });
+
+        setSelectedEdgeTypes(prev => {
+          if (prev.length >= availableEdgeTypes.length && availableEdgeTypes.length > 0) {
+            return uniqueEdgeTypes;
+          }
+          return prev.filter(t => uniqueEdgeTypes.includes(t));
+        });
+      }
       return coloredNodes;
     } catch (e) {
       console.error('Failed to load graph data', e);
@@ -242,7 +258,7 @@ export const GraphView: React.FC = () => {
     if (!targetNode) {
       const term = entityName || entityId;
       setSearchQuery(term);
-      const loadedNodes = await fetchGraphData(term);
+      const loadedNodes = await fetchGraphData(term, true);
       if (loadedNodes && loadedNodes.length > 0) {
         targetNode = loadedNodes.find(
           n => n.id === entityId || (normName && n.label.trim().toLowerCase() === normName) || n.id === entityName
@@ -251,9 +267,8 @@ export const GraphView: React.FC = () => {
     }
 
     if (targetNode) {
-      if (targetNode.type && !selectedNodeTypes.includes(targetNode.type)) {
-        setSelectedNodeTypes(prev => Array.from(new Set([...prev, targetNode.type])));
-      }
+      setSelectedNodeTypes(availableNodeTypes);
+      setSelectedEdgeTypes(availableEdgeTypes);
 
       setSelectedNode(targetNode);
       setActiveTab('details');
@@ -570,7 +585,7 @@ export const GraphView: React.FC = () => {
     e.preventDefault();
     setSelectedNode(null);
     setActiveTab('filters');
-    fetchGraphData(searchQuery);
+    fetchGraphData(searchQuery, true);
   };
 
   // Escape key to exit fullscreen or cancel an in-progress merge pick
@@ -621,6 +636,7 @@ export const GraphView: React.FC = () => {
         node: targetNode || { id: targetNodeId, label: targetNodeId, type: 'Unknown' },
         book_id: link.book_id,
         chunk_refs: link.chunk_refs || [],
+        evidence: link.evidence,
         year_hijri: link.year_hijri,
         year_gregorian: link.year_gregorian,
         century_gregorian: link.century_gregorian,
@@ -691,6 +707,9 @@ export const GraphView: React.FC = () => {
       }
       await fetchGraphData(searchQuery);
       setSelectedNode(keepNode);
+      if (isAdmin) {
+        fetchReviews();
+      }
     } catch (err: any) {
       setMergeError(err.message || t('graph.admin.mergeError'));
     } finally {
@@ -897,6 +916,16 @@ export const GraphView: React.FC = () => {
               <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'} font-medium`}>{t('graph.nodePanel.centuryGregorian')}</span>
             </div>
           )}
+          {selectedNode.context_summary && (
+            <div className={`p-2.5 rounded-xl border ${isDark ? 'bg-slate-950/80 border-slate-800/80' : 'bg-slate-50 border-slate-100'}`}>
+              <div className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'} font-medium mb-1`}>
+                {language === 'ug' ? 'مەزمۇن قىسقىچە مەزمۇنى' : 'Context Summary'}
+              </div>
+              <div className={`text-xs ${isDark ? 'text-slate-200' : 'text-slate-800'} italic`}>
+                "{selectedNode.context_summary}"
+              </div>
+            </div>
+          )}
         </div>
 
         {isAdmin && (
@@ -1020,6 +1049,13 @@ export const GraphView: React.FC = () => {
                     </div>
                   )}
                 </div>
+                {conn.evidence && (
+                  <div className={`mt-2 p-2 rounded-lg text-xs italic border ${
+                    isDark ? 'bg-slate-900/60 text-slate-300 border-slate-800' : 'bg-white text-slate-700 border-slate-100'
+                  }`}>
+                    "{conn.evidence}"
+                  </div>
+                )}
               </div>
             ))
           )}
@@ -1179,7 +1215,7 @@ export const GraphView: React.FC = () => {
                     setSearchQuery('');
                     setSelectedNode(null);
                     setActiveTab('filters');
-                    fetchGraphData('');
+                    fetchGraphData('', true);
                   }}
                   className="absolute inset-y-0 left-4 flex items-center text-[#94a3b8] hover:text-[#0369a1] dark:hover:text-[#38bdf8] transition-colors active:scale-95"
                 >
@@ -1223,7 +1259,7 @@ export const GraphView: React.FC = () => {
                       setSearchQuery('');
                       setSelectedNode(null);
                       setActiveTab('filters');
-                      fetchGraphData('');
+                      fetchGraphData('', true);
                     }}
                     className="absolute inset-y-0 left-4 flex items-center text-[#94a3b8] hover:text-[#0369a1] dark:hover:text-[#38bdf8] transition-colors active:scale-95"
                   >
@@ -1347,6 +1383,7 @@ export const GraphView: React.FC = () => {
                   return;
                 }
                 setSelectedNode(node);
+                setActiveTab('details');
               }}
               nodeCanvasObject={(node: any, ctx, globalScale) => {
                 const label = node.label;
@@ -1431,7 +1468,7 @@ export const GraphView: React.FC = () => {
                         setSearchQuery('');
                         setSelectedNode(null);
                         setActiveTab('filters');
-                        fetchGraphData('');
+                        fetchGraphData('', true);
                       }}
                       className="absolute inset-y-0 left-4 flex items-center text-slate-500 hover:text-slate-300 transition-colors active:scale-95"
                     >
@@ -1570,13 +1607,13 @@ export const GraphView: React.FC = () => {
         <div className="fixed top-[80px] sm:top-[96px] lg:top-[104px] left-0 right-0 z-[210] px-4 animate-fade-in">
           <div className="mx-auto flex items-center justify-between gap-3 bg-slate-900/90 backdrop-blur-xl border border-amber-400/30 rounded-2xl px-4 py-2.5 shadow-lg max-w-md w-full">
             <GitMerge size={16} className="text-amber-400 shrink-0" />
-            <span className="text-xs text-slate-200 font-medium">
+            <span className="text-xs text-slate-200 font-medium min-w-0 flex-1">
               {t('graph.admin.mergePickTarget', { name: mergeCandidate.label })}
             </span>
             <button
               type="button"
               onClick={() => setMergeCandidate(null)}
-              className="text-xs text-slate-400 hover:text-slate-200 border border-slate-700 hover:border-slate-600 rounded-lg px-2 py-1 transition-all active:scale-95"
+              className="text-xs text-slate-400 hover:text-slate-200 border border-slate-700 hover:border-slate-600 rounded-lg px-2 py-1 transition-all active:scale-95 whitespace-nowrap shrink-0"
             >
               {t('common.cancel')}
             </button>
@@ -1758,31 +1795,6 @@ export const GraphView: React.FC = () => {
               </div>
               
               <div className="flex items-center gap-2 shrink-0">
-                {connChunkRefs.length > 1 && (
-                  <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/80" dir="ltr">
-                    <button
-                      type="button"
-                      onClick={() => activeChunkIndex > 0 && setActiveChunkRef(connChunkRefs[activeChunkIndex - 1])}
-                      disabled={activeChunkIndex === 0}
-                      title={t('graph.prevReference')}
-                      className="p-1 text-slate-600 dark:text-slate-300 hover:text-sky-500 disabled:opacity-30 disabled:hover:text-slate-600 rounded-lg transition-all"
-                    >
-                      <ChevronLeft size={16} />
-                    </button>
-                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 px-1.5 min-w-[3rem] text-center select-none">
-                      {activeChunkIndex + 1} / {connChunkRefs.length}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => activeChunkIndex < connChunkRefs.length - 1 && setActiveChunkRef(connChunkRefs[activeChunkIndex + 1])}
-                      disabled={activeChunkIndex >= connChunkRefs.length - 1}
-                      title={t('graph.nextReference')}
-                      className="p-1 text-slate-600 dark:text-slate-300 hover:text-sky-500 disabled:opacity-30 disabled:hover:text-slate-600 rounded-lg transition-all"
-                    >
-                      <ChevronRight size={16} />
-                    </button>
-                  </div>
-                )}
                 <button
                   onClick={() => setActiveChunkRef(null)}
                   className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"

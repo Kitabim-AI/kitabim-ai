@@ -5,6 +5,7 @@ Postgres owns queue/review/audit state; Neo4j owns the entity data itself.
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -170,6 +171,99 @@ class GraphResolutionReviewsRepository(BaseRepository[GraphResolutionReview]):
         await self.session.commit()
         await self.session.refresh(review)
         return review
+
+    async def resolve_reviews_for_merge(
+        self,
+        keep_id: str,
+        remove_id: str,
+        reviewed_by: Optional[str] = None,
+    ) -> None:
+        """Resolves pending review queue entries when `remove_id` is merged into `keep_id`:
+        1. Marks any pending reviews between keep_id and remove_id (in either order)
+           as 'approved'.
+        2. Re-points any remaining pending reviews involving remove_id to keep_id,
+           or marks them 'approved' if a review for (keep_id, other_id) already exists.
+        """
+        try:
+            keep_uuid = uuid.UUID(keep_id) if isinstance(keep_id, str) else keep_id
+            remove_uuid = (
+                uuid.UUID(remove_id) if isinstance(remove_id, str) else remove_id
+            )
+        except ValueError:
+            return
+
+        now = datetime.now(timezone.utc)
+
+        # 1. Direct reviews between keep_id and remove_id
+        direct_stmt = (
+            update(GraphResolutionReview)
+            .where(
+                GraphResolutionReview.status == "pending",
+                (
+                    (GraphResolutionReview.entity_a_id == keep_uuid)
+                    & (GraphResolutionReview.entity_b_id == remove_uuid)
+                )
+                | (
+                    (GraphResolutionReview.entity_a_id == remove_uuid)
+                    & (GraphResolutionReview.entity_b_id == keep_uuid)
+                ),
+            )
+            .values(
+                status="approved",
+                reviewed_by=reviewed_by,
+                reviewed_at=now,
+            )
+        )
+        await self.session.execute(direct_stmt)
+
+        # 2. Other pending reviews involving remove_id
+        stmt = select(GraphResolutionReview).where(
+            GraphResolutionReview.status == "pending",
+            (GraphResolutionReview.entity_a_id == remove_uuid)
+            | (GraphResolutionReview.entity_b_id == remove_uuid),
+        )
+        result = await self.session.execute(stmt)
+        remaining_reviews = list(result.scalars().all())
+
+        for review in remaining_reviews:
+            other_id = (
+                review.entity_b_id
+                if review.entity_a_id == remove_uuid
+                else review.entity_a_id
+            )
+
+            if other_id == keep_uuid:
+                review.status = "approved"
+                review.reviewed_by = reviewed_by
+                review.reviewed_at = now
+                continue
+
+            existing_stmt = select(GraphResolutionReview).where(
+                GraphResolutionReview.status == "pending",
+                GraphResolutionReview.id != review.id,
+                (
+                    (GraphResolutionReview.entity_a_id == keep_uuid)
+                    & (GraphResolutionReview.entity_b_id == other_id)
+                )
+                | (
+                    (GraphResolutionReview.entity_a_id == other_id)
+                    & (GraphResolutionReview.entity_b_id == keep_uuid)
+                ),
+            )
+            existing_res = await self.session.execute(existing_stmt)
+            existing_review = existing_res.scalar_one_or_none()
+
+            if existing_review:
+                review.status = "approved"
+                review.reviewed_by = reviewed_by
+                review.reviewed_at = now
+            else:
+                if review.entity_a_id == remove_uuid:
+                    review.entity_a_id = keep_uuid
+                if review.entity_b_id == remove_uuid:
+                    review.entity_b_id = keep_uuid
+
+        await self.session.commit()
 
 
 class GraphMergeLogRepository(BaseRepository[GraphMergeLog]):

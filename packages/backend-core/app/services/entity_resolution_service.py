@@ -96,9 +96,10 @@ def _graded_score(
     candidate: Dict[str, Any],
     entity_facts: Dict[str, Any],
     candidate_facts: Dict[str, Any],
+    hard_match: bool = False,
 ) -> float:
-    """Name/alias similarity + relationship-neighborhood overlap + weak subtype hint,
-    roughly normalized to 0.0-1.0."""
+    """Name/alias similarity + relationship-neighborhood overlap + weak subtype hint +
+    discounted shared-parent boost, roughly normalized to 0.0-1.0."""
     name_score = max(
         _name_similarity(entity.get("canonical_name"), candidate.get("canonical_name")),
         max(
@@ -136,7 +137,17 @@ def _graded_score(
         else 0.0
     )
 
-    return 0.55 * name_score + 0.35 * neighbor_score + 0.10 * subtype_score
+    base_score = 0.55 * name_score + 0.35 * neighbor_score + 0.10 * subtype_score
+
+    # Item 3: Shared parent is a supporting signal, not an auto-merge.
+    # Discount shared parent if neighbor degree indicates a high-degree hub ancestor.
+    if hard_match:
+        max_degree = max(len(e_neighbors), len(c_neighbors))
+        # High degree hub (e.g. >10 connections to prominent ancestor) receives discounted boost
+        parent_boost = 0.05 if max_degree > 10 else 0.15
+        base_score = min(1.0, base_score + parent_boost)
+
+    return round(base_score, 4)
 
 
 def _entity_summary_for_judge(
@@ -230,17 +241,19 @@ async def execute_merge(
     graph_repo: GraphRepository,
     keep_id: str,
     remove_id: str,
-    performed_by: Optional[str],
+    performed_by: Optional[str] = None,
+    user_id: Optional[str] = None,
 ) -> Optional[int]:
     """Merges `remove_id` into `keep_id`: snapshots `remove_id` to `graph_merge_log`
     BEFORE deleting it, redirects edges via GraphRepository.merge_entities_by_id,
-    cleans up `remove_id`'s resolution-queue row, re-queues CHILD_OF children of
-    either node (re-propagation, §4 step 4), and refreshes the alias cache.
+    cleans up `remove_id`'s resolution-queue row, resolves pending review findings for `remove_id`,
+    re-queues CHILD_OF children of either node (re-propagation, §4 step 4), and refreshes the alias cache.
 
     Returns the new `graph_merge_log` row's id (pass to `execute_unmerge` to revert),
     or None (no-op) if either entity no longer exists.
     """
     queue_repo = GraphResolutionQueueRepository(session)
+    reviews_repo = GraphResolutionReviewsRepository(session)
     merge_log_repo = GraphMergeLogRepository(session)
     config_repo = SystemConfigsRepository(session)
 
@@ -276,6 +289,9 @@ async def execute_merge(
 
     await graph_repo.merge_entities_by_id(keep_id, remove_id, combined_aliases, edges)
     await queue_repo.delete_by_entity_id(remove_id)
+    await reviews_repo.resolve_reviews_for_merge(
+        keep_id=keep_id, remove_id=remove_id, reviewed_by=user_id or performed_by
+    )
 
     max_passes = int(await config_repo.get_value("resolution_max_passes", "5"))
     for child_id in dict.fromkeys([*children_of_remove, *children_of_keep]):
@@ -392,48 +408,52 @@ async def resolve_entity(
 
         if hard == "conflict":
             continue  # hard-constraint split signal: leave separate, next candidate
-        if hard == "match":
+
+        score = _graded_score(
+            entity,
+            candidate,
+            entity_facts,
+            candidate_facts,
+            hard_match=(hard == "match"),
+        )
+        if score >= STRONG_MERGE_SCORE:
             decision = "merge"
+        elif score <= STRONG_LEAVE_SCORE:
+            decision = "leave"
         else:
-            score = _graded_score(entity, candidate, entity_facts, candidate_facts)
-            if score >= STRONG_MERGE_SCORE:
+            verdict = await _gray_zone_judge(
+                entity, candidate, entity_facts, candidate_facts, config_repo
+            )
+            evidence = {
+                "graded_score": score,
+                "hard_constraint": hard,
+                "verdict": verdict.verdict,
+                "confidence": verdict.confidence,
+                "reasoning": verdict.reasoning,
+                "entity_a_name": entity.get("canonical_name"),
+                "entity_b_name": candidate.get("canonical_name"),
+            }
+            if (
+                verdict.verdict == "same"
+                and verdict.confidence >= GRAY_ZONE_CONFIDENCE_THRESHOLD
+            ):
                 decision = "merge"
-            elif score <= STRONG_LEAVE_SCORE:
+            elif (
+                verdict.verdict == "different"
+                and verdict.confidence >= GRAY_ZONE_CONFIDENCE_THRESHOLD
+            ):
                 decision = "leave"
             else:
-                verdict = await _gray_zone_judge(
-                    entity, candidate, entity_facts, candidate_facts, config_repo
+                suggested_action = (
+                    "merge"
+                    if verdict.verdict == "same"
+                    else ("split" if verdict.verdict == "different" else "unsure")
                 )
-                evidence = {
-                    "graded_score": score,
-                    "hard_constraint": hard,
-                    "verdict": verdict.verdict,
-                    "confidence": verdict.confidence,
-                    "reasoning": verdict.reasoning,
-                    "entity_a_name": entity.get("canonical_name"),
-                    "entity_b_name": candidate.get("canonical_name"),
-                }
-                if (
-                    verdict.verdict == "same"
-                    and verdict.confidence >= GRAY_ZONE_CONFIDENCE_THRESHOLD
-                ):
-                    decision = "merge"
-                elif (
-                    verdict.verdict == "different"
-                    and verdict.confidence >= GRAY_ZONE_CONFIDENCE_THRESHOLD
-                ):
-                    decision = "leave"
-                else:
-                    suggested_action = (
-                        "merge"
-                        if verdict.verdict == "same"
-                        else ("split" if verdict.verdict == "different" else "unsure")
-                    )
-                    await reviews_repo.create_review(
-                        entity_id, candidate_id, scope, evidence, suggested_action
-                    )
-                    review_created = True
-                    decision = "review"
+                await reviews_repo.create_review(
+                    entity_id, candidate_id, scope, evidence, suggested_action
+                )
+                review_created = True
+                decision = "review"
 
         if decision == "merge":
             await execute_merge(

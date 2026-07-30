@@ -27,7 +27,7 @@ flowchart TD
         S1_DB --> S1_LLM["[LLM] Unified Query Analyzer<br/>(Extract intent, signals, rewrite, & sub-questions)<br/>emits: planning / rewrite_query / decompose"]
         S1_LLM --> SUB_LOOP{"For each sub-question"}
         SUB_LOOP -->|"Multi-question<br/>(signals inline from LLM)"| SUB_DB["DB Lookups Only<br/>_build_sub_signals_from_llm()<br/>(title/author check — no LLM)"]
-        SUB_LOOP -->|Single question / Reuse| S4["Stage 3: Execution Router<br/>(Run path A-I directly)"]
+        SUB_LOOP -->|Single question / Reuse| S4["Stage 3: ADK Workflow Execution Router<br/>(10 path selection nodes in graph_router.py:<br/>current_page, quran, dictionary, catalog,<br/>named_title, named_author, volume_shift,<br/>in_reader_only, context_books, open)"]
         SUB_DB --> S4
         S4 --> T_DET["Execute Path Tool<br/>emits: tool_call<br/>tool_result"]
         T_DET -->|Return observations| S4
@@ -41,7 +41,7 @@ flowchart TD
         DECOMP --> CTX_INJ["Context Injection<br/>_build_human_message<br/>Inject [Context] block:<br/>current book_id, context book IDs,<br/>category filter"]
         CTX_INJ --> ADK["[LLM] ADK Agent Execution<br/>InMemoryRunner.run_async<br/>emits: agent_thinking"]
 
-        ADK -->|Call Tools| TOOL["Execute Tool<br/>(11 tools available)<br/>emits: tool_call<br/>tool_result"]
+        ADK -->|Call Tools| TOOL["Execute Tool<br/>(19 tools available)<br/>emits: tool_call<br/>tool_result"]
         TOOL -->|Return observation<br/>data| ADK
 
         ADK -->|Finish Loop / Max Steps| DEDUP["Deduplicate Observations<br/>by book_id and page"]
@@ -79,7 +79,7 @@ Handler selection is dynamically governed by the `use_deterministic_router` conf
 flowchart LR
     Q([Question]) --> REG["HandlerRegistry"]
     REG --> CAN_DET{"can_handle?<br/>(use_deterministic_router == true)"}
-    CAN_DET -- Yes --> DET["DeterministicRAGHandler<br/>Deterministic path selection"]
+    CAN_DET -- Yes --> DET["DeterministicRAGHandler<br/>ADK Workflow path selection"]
     CAN_DET -- No --> ADK["AgentRAGHandler<br/>ADK ReAct reasoning loop"]
     DET --> ANS([Answer])
     ADK --> ANS([Answer])
@@ -152,10 +152,9 @@ flowchart TD
     WHO -->|Yes| GBS_G[Tool: get_book_summary<br/>max 5 IDs] --> STOP
     WHO -->|No| SC_G[Tool: search_chunks<br/>with returned book_ids] --> CHK
 
-    %% Step 4h — relationships / connections
-    INTENT -->|"Relationships / connections — 4h"| T_KG["[LLM] Tool: query_knowledge_graph"]
-    T_KG -->|Precise passages needed| SC_KG[Tool: search_chunks] --> CHK
-    T_KG -->|Only graph relations| STOP
+    %% Step 4h — Quran / Dictionary / Graph
+    INTENT -->|"Quran search — 4h"| T_Q[Tool: search_quran] --> STOP
+    INTENT -->|"Dictionary / language query — 4h"| T_DICT[Tools: lookup_uyghur_word, lookup_history_term,<br/>translate_english_to_uyghur, check_word_spelling,<br/>lookup_uyghur_name, search_language_sources,<br/>lookup_proverbs, lookup_synonyms] --> STOP
 
     %% Step 4i — retry (search_chunks only, never after get_book_summary)
     CHK{"Step 4i:<br/>search_chunks < 4 results?<br/>Never applies after<br/>get_book_summary"}
@@ -169,35 +168,37 @@ flowchart TD
     classDef stop fill:#fee2e2,stroke:#dc2626,stroke-width:2px
     classDef llm fill:#fef08a,stroke:#ca8a04,stroke-width:2px
 
-    class FBT_R,GBS_R,SC_R,T_AUTH,T_BAUTH,T_CAT,T_CUR,FBT_A,GBS_A,FBT_B,SC_B,GBA_C,SC_C,SC_D,SBS_E,GBS_E,SBS_G,GBS_G,SC_G,SC_H,GSV_D,SC_D_SIS,GSV_F,SC_F_SIS,SC_KG tool
+    class FBT_R,GBS_R,SC_R,T_AUTH,T_BAUTH,T_CAT,T_CUR,FBT_A,GBS_A,FBT_B,SC_B,GBA_C,SC_C,SC_D,SBS_E,GBS_E,SBS_G,GBS_G,SC_G,SC_H,GSV_D,SC_D_SIS,GSV_F,SC_F_SIS,T_Q,T_DICT tool
     class PRON,RETITLE,CHAR_R,INTENT,WHO,CHK,VOL_D,VOL_F decision
     class STOP stop
-    class REWRITE,T_KG llm
+    class REWRITE llm
 ```
 
 ---
 
-## Agent Tools Reference
+## Agent Tools Reference (19 Tools Total)
 
 | Tool | Type | Wraps | When agent/router calls it |
 |------|------|-------|---------------------|
 | `rewrite_query` | Utility | `QueryRewriter` | Question has pronouns or follow-up markers ("چۇ" clitic) and chat history exists. |
 | `find_books_by_title` | Content | `BooksRepository` title match | Question explicitly names a book title; returns book IDs, title, author, and volume metadata. |
 | `search_books_by_summary` | Content | `BookSummariesRepository` | Finding which books cover a topic; also used with `context_book_ids` to verify a "who is X" question. |
-| `search_chunks` | Content | pgvector similarity search | Retrieving passages; uses L1+L2 cache; called directly with `[Context]` book_id when available. |
+| `search_chunks` | Content | pgvector similarity search + `graph_entity_lookup` | Retrieving passages; uses L1+L2 cache; called directly with `[Context]` book_id when available; automatically runs post-vector `graph_entity_lookup`. |
 | `get_book_author` | Metadata | `BooksRepository` | Author lookup for "who wrote X?" questions. |
 | `get_books_by_author` | Metadata | `BooksRepository` | Book list for "what did Y write?" questions. |
 | `get_book_summary` | Content | `BookSummariesRepository` | Plot, themes, or main characters of specific books; or identifying characters/persons. |
 | `get_current_page` | Content | `PagesRepository.find_one` | Raw text of the page the user is currently reading (in-reader mode). |
 | `get_sister_volumes` | Content | `BooksRepository` | All volumes of the same series as a given book_id. |
 | `search_catalog` | Metadata | `CatalogHandler` | Library browsing and general listing queries. |
-| `query_knowledge_graph` | Content | `GraphRepository` | Queries Neo4j to retrieve connections between entities. |
+| `search_quran` | Content | `quran` table search | Surah/ayah lookup or free-text pgvector search within the Holy Quran. |
 | `lookup_uyghur_word` | Dictionary | `DictionaryRepository.lookup_uyghur_definition` | Lookup definitions for Uyghur words. |
 | `lookup_history_term` | Dictionary | `DictionaryRepository.lookup_history_term` | Lookup definition for a historical term, person, event, or concept. |
 | `translate_english_to_uyghur` | Dictionary | `DictionaryRepository.translate_english_to_uyghur` | Translate English word/phrase to Uyghur. |
 | `check_word_spelling` | Dictionary | `DictionaryRepository.check_word_spelling` | Validate word spelling and suggest corrections. |
 | `lookup_uyghur_name` | Dictionary | `DictionaryRepository.lookup_name` | Lookup a Uyghur person name or list names starting with a specific letter. |
 | `search_language_sources` | Dictionary | `DictionaryRepository.search_language_sources` | Fallback search across all language/dictionary sources. |
+| `lookup_proverbs` | Dictionary | `DictionaryRepository.lookup_proverbs` | Lookup Uyghur proverbs and idioms. |
+| `lookup_synonyms` | Dictionary | `DictionaryRepository.lookup_synonyms` | Lookup synonyms for Uyghur words. |
 
 ---
 

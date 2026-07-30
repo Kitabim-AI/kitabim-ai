@@ -1,148 +1,338 @@
 # Kitabim.AI
 
-**Kitabim.AI** is the definitive intelligent knowledge base for Uyghur literature, history, and culture — semantically indexing books published in the Uyghur language and making that knowledge explorable through AI-powered conversation.
+> **The definitive intelligent knowledge base for Uyghur literature, history, and culture.**
+
+**Kitabim.AI** is an end-to-end digital library, OCR ingestion engine, and agentic RAG query assistant dedicated to digitizing, indexing, and preserving the complete written corpus of publications in the Uyghur language. It turns physical books into a living, queryable knowledge network accessible through natural-language conversation, interactive dictionary lookup, and graph-based entity exploration.
 
 ---
 
-## Mission & Scale
+## 📋 Table of Contents
 
-Uyghur is spoken by millions yet remains severely underrepresented in the digital world. Kitabim.AI is building the most comprehensive and authentic Uyghur-language knowledge base ever assembled, targeting the complete corpus of Uyghur-language publications across literature, history, poetry, science, and culture.
-
-**Target:** books published in Uyghur — the complete written record of a civilization.
-
-This is not a search index or a catalogue. It is a living, queryable knowledge base where the entire body of Uyghur written knowledge can be explored through natural-language conversation.
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Architecture \& High-Level Design](#architecture--high-level-design)
+  - [System Architecture](#system-architecture)
+  - [Book Processing \& Ingestion Pipeline](#book-processing--ingestion-pipeline)
+  - [Agentic RAG Question Answering Pipeline](#agentic-rag-question-answering-pipeline)
+  - [Knowledge Graph \& Entity Resolution](#knowledge-graph--entity-resolution)
+- [Monorepo Project Structure](#monorepo-project-structure)
+- [Technology Stack](#technology-stack)
+- [Getting Started (Local Development)](#getting-started-local-development)
+  - [Prerequisites](#prerequisites)
+  - [Environment Setup](#environment-setup)
+  - [Running with Docker Compose](#running-with-docker-compose)
+  - [Local Service Endpoints](#local-service-endpoints)
+  - [Rebuilding Services](#rebuilding-services)
+- [Production Deployment \& Data Safety](#production-deployment--data-safety)
+- [Documentation Index](#documentation-index)
 
 ---
 
-## The Problem We Solve
+## Overview
 
-Uyghur literature, history, and culture exist almost entirely in physical form. Millions of speakers have no way to search, discover, or query the written knowledge of their own civilization — and as physical books become scarce, that knowledge risks being lost entirely. Even where text can be extracted by OCR, a keyword search fails: Uyghur is agglutinative, pronouns are ambiguous, and a reader rarely knows which of hundreds of books holds the answer they need.
+Uyghur literature and historical publications exist overwhelmingly in physical form. Millions of Uyghur speakers worldwide face severe challenges discovering, searching, and analyzing the written heritage of their civilization. Keyword searching fails on scanned PDFs because Uyghur is agglutinative, OCR output often has spelling anomalies, and complex thematic or historical questions span multiple books and volumes.
 
-**Our solution is a knowledge-base agent** that reasons over the entire corpus before it answers. Instead of a single vector search, a language-model agent decides which tools to call, in which order, to collect enough evidence before forming a response.
+**Kitabim.AI solves this by pairing OCR digitization with an Agentic RAG architecture powered by Google ADK and Google Gemini.** Rather than relying on simple vector search, Kitabim.AI employs language-model agents that reason over query intent, decompose composite questions, call specialized retrieval and dictionary tools, perform graph entity lookups, and synthesize answers with precise inline citations to source books, volumes, and page numbers.
 
 ---
 
-## Knowledge Base Agent — Agentic RAG with Google ADK
+## Key Features
 
-The query assistant interface runs an **agentic loop built on Google ADK**. The system supports two execution pathways: **`ChatOrchestrator`** (ADK-native two-agent pipeline with persisted conversation history) and **`RAGService` / `HandlerRegistry`** (gated between `DeterministicRAGHandler` and `LLMRoutedRAGHandler`).
+### 📄 Ingestion & Digitization Pipeline
+- **Gemini Vision OCR**: Page-by-page text extraction from uploaded PDFs with automated text normalization for Uyghur script. Supports interactive API execution as well as asynchronous **Gemini Batch API** modes (`gemini_batch_ocr_enabled` / `gemini_batch_embedding_enabled`).
+- **Milestone State Machine**: Resumable, multi-stage processing pipeline (`OCR → Chunking → Embedding → Spell-Check → Summary → Graph Extraction`).
+- **Event-Driven Outbox**: Low-latency reactive trigger system (`pipeline_events` outbox + Event Dispatcher) ensuring swift stage handoffs without waiting for cron intervals.
+- **Smart Chunking & Embeddings**: Overlapping window chunking stored with `pgvector` similarity indexes using Gemini Embedding v2.
+
+### 🤖 Agentic RAG & Natural Language QA
+- **Dual Query Pipelines**:
+  - **`ChatOrchestrator`**: Persistent conversation history, query analysis, ADK Retrieval Agent (19 tools), context reranking, context grading, and ADK Answer Agent with streaming SSE output.
+  - **`RAGService` / `HandlerRegistry`**: Configurable router supporting `DeterministicRAGHandler` (Google ADK Workflow graph with 10 path selection nodes) and `LLMRoutedRAGHandler` (ADK ReAct reasoning loop).
+- **19 Specialized ADK Tools**: Includes passage search, summary search, title/author matching, catalog lookup, current reader page text, sister volume discovery, Uyghur dictionary lookups, scripture (Quran) vector search, and post-vector knowledge graph entity lookup.
+- **Automated RAG Evaluation**: Post-turn async scoring (`rag_eval_job`) evaluating answer faithfulness, relevance, and precision.
+
+### 🕸️ Knowledge Graph & Entity Resolution (GraphRAG)
+- **Neo4j Semantic Network**: Automatically extracts Person, Location, Organization, Work, and Event entities and relationships from book content.
+- **Scheduled Entity Resolution**: Background worker pipeline (`graph_resolution_scanner` → `graph_resolution_job`) resolving duplicate entities using hard-match parent boosting, gray-zone review management (`graph_resolution_reviews`), and automated review resolution upon entity merges.
+
+### 📖 Editorial Workspace & Quality Layer
+- **Uyghur Spell-Checking**: Per-page spell audit against an extensive Uyghur dictionary with custom auto-correct rules.
+- **Bulk OCR Auto-Correction**: Scheduled daily job (`auto_correct_scanner`) applying auto-correction rules across processed pages.
+- **Interactive Reader & Curation UI**: Modern React 19 SPA with PDF viewer, in-reader query assistant, spellcheck review workspace, and admin analytics panel.
+
+### 🔐 User Management & Access Control
+- **OAuth2 & JWT Authentication**: Support for Google, Facebook, and Twitter/X login with secure `httpOnly` cookies.
+- **Role Hierarchy**: Strict role-based access control (**Admin**, **Editor**, **Reader**, **Guest**).
+
+---
+
+## Architecture & High-Level Design
+
+### System Architecture
+
+```mermaid
+flowchart LR
+  FE[Frontend<br/>React 19 + Vite] -->|REST API, SSE| BE[Backend API<br/>FastAPI]
+  BE -->|enqueue jobs| RQ[(Redis / ARQ Queue)]
+  RQ --> WK[Worker<br/>ARQ scanners + jobs]
+  BE --> GEM[Gemini API<br/>google-genai / google-adk]
+  WK --> GEM
+  BE --> DB[(PostgreSQL<br/>+ pgvector)]
+  WK --> DB
+  WK -.->|transactional outbox| DB
+  DB -.->|pipeline_events poll| WK
+  BE <-->|PDFs / covers| GCS[(Google Cloud Storage / Local)]
+  WK <-->|PDFs / covers| GCS
+  BE <-->|L0-L3 Cache| CACHE[(Redis Cache)]
+  BE --> N4J[(Neo4j<br/>Knowledge Graph)]
+  WK --> N4J
+```
+
+### Book Processing & Ingestion Pipeline
+
+The worker runs an event-driven milestone state machine driving books from `pending` to `ready`.
+
+```mermaid
+flowchart TD
+    %% Triggers
+    subgraph Triggers [Event Triggers]
+        T1[User Uploads PDF] -->|Creates Book + page stubs| InitDB
+        T2[GCS Discovery Scanner<br/>every 5 min] -->|Registers Book + page stubs| InitDB
+    end
+
+    InitDB(["Book: status=pending<br/>Pages: all milestones idle"])
+
+    %% Mandatory sequential pipeline
+    subgraph Pipeline ["Mandatory Pipeline — OCR → Chunking → Embedding"]
+        S_OCR["OCR Scanner<br/>groups claim by book"] -->|Claim idle, dispatch per book| J_OCR[OCR Job]
+        S_CH["Chunking Scanner<br/>cross-book"] -->|"Claim idle<br/>dep: ocr=succeeded<br/>+ spell_check terminal when<br/>spell_check_enabled"| J_CH[Chunking Job]
+        S_EM["Embedding Scanner<br/>cross-book"] -->|"Claim idle<br/>dep: chunking=succeeded"| J_EM[Embedding Job]
+    end
+
+    InitDB --> S_OCR
+
+    %% Event Bus / Outbox — reactive low-latency triggers
+    subgraph Outbox [Transactional Outbox]
+        J_OCR -->|"Write Event<br/>ocr_succeeded"| OB[(pipeline_events)]
+        J_CH -->|"Write Event<br/>chunking_succeeded"| OB
+        J_EM -->|"Write Event<br/>embedding_succeeded"| OB
+
+        OB -->|Poll, every 1 min + startup| ED[Event Dispatcher]
+
+        ED -->|"Immediate dispatch chunking_job"| J_CH
+        ED -->|"Immediate dispatch embedding_job"| J_EM
+    end
+
+    %% Book readiness — driven by PipelineDriver
+    J_EM -->|embedding terminal| PD["Pipeline Driver<br/>every 1 min"]
+    PD -->|"ALL pages terminal,<br/>zero exhausted failures"| Ready([Book: status=ready])
+    PD -->|"ALL pages terminal,<br/>>=1 exhausted failure"| BookErr([Book: status=error])
+
+    Ready -->|Auto-enqueue, once per book| J_SUM[Summary Job]
+    Ready -.->|"graph_milestone reset to idle<br/>(manual trigger only)"| J_KG[Knowledge Graph Job]
+
+    J_SUM -->|Save summary + embedding| PG[(PostgreSQL)]
+    J_KG -->|"Index entities & relations"| N4J[(Neo4j)]
+
+    %% Entity resolution
+    subgraph Resolution ["Entity Resolution"]
+        J_KG -->|"Bulk-enqueue entity rows"| GQ[(graph_resolution_queue)]
+        GQ --> S_GR["Graph Resolution Scanner<br/>every 5 min"]
+        S_GR -->|"Claim batch, dispatch per scope"| J_GR[Graph Resolution Job]
+        J_GR -->|"Merge duplicates & parent boost"| N4J
+    end
+
+    %% Quality layer
+    subgraph SpellCheck ["Quality Layer"]
+        S_SC["Spell Check Scanner"] -->|Claim idle| J_SC[Spell Check Job]
+    end
+    InitDB -.->|ocr done| S_SC
+    J_SC -->|"Write Event"| OB
+```
+
+### Agentic RAG Question Answering Pipeline
+
+Question answering supports both `ChatOrchestrator` (persistent multi-turn conversations) and `RAGService` (handler-registry architecture).
 
 ```mermaid
 flowchart TD
     Q(["User Question + Context"]) --> ROUTE{"Has conversationId or<br/>use_adk_chat_v2?"}
 
-    ROUTE -- Yes (Default for Stream) --> ORCH["ChatOrchestrator Pipeline<br/>(Persisted Conversation History)"]
-    ORCH --> RET_AGENT["[LLM] Retrieval Agent<br/>(Google ADK + 19 Tools)"]
-    RET_AGENT --> GRADE_ORCH["Context Grading"]
-    GRADE_ORCH --> ANS_AGENT["[LLM] Answer Agent<br/>(Streaming Synthesis + Citations)"]
-    ANS_AGENT --> SAVE["Persist Turn & Return"]
+    ROUTE -- Yes (Streaming Default) --> ORCH["ChatOrchestrator Pipeline"]
+    ORCH --> RET_AGENT["[LLM] KitabimRetrievalAgent<br/>(Google ADK + 19 Tools)"]
+    RET_AGENT --> RERANK{"rag_reranker_enabled?"}
+    RERANK -- Yes --> RR["LLM Reranker"]
+    RERANK -- No --> GRADE1["Context Grading"]
+    RR --> GRADE1
+    GRADE1 --> ANS_AGENT["[LLM] KitabimAnswerAgent<br/>(Streaming Answer Synthesis)"]
+    ANS_AGENT --> SAVE["Save Turn & Enqueue Evaluation"]
 
     ROUTE -- No --> REG["RAGService / HandlerRegistry"]
     REG --> DET_CHECK{"use_deterministic_router?"}
-    DET_CHECK -- Yes --> DET["DeterministicRAGHandler<br/>(ADK Workflow Graph)"]
+    DET_CHECK -- Yes --> DET["DeterministicRAGHandler<br/>(ADK Workflow Graph - 10 Nodes)"]
     DET_CHECK -- No --> LLM_RAG["LLMRoutedRAGHandler<br/>(ADK ReAct Loop + 19 Tools)"]
-    DET --> GRADE_REG["Context Grading & Synthesis"]
-    LLM_RAG --> GRADE_REG
-    GRADE_REG --> RETURN["Return Answer"]
+    DET --> GRADE2["Context Grading & Synthesis"]
+    LLM_RAG --> GRADE2
+    GRADE2 --> STREAM["Stream Response"]
 ```
 
-**How Agentic RAG works:**
+### Knowledge Graph & Entity Resolution
 
-1. **Preprocessing & Signal Extraction**
-   - **Intent detection** — classifies page-specific questions, metadata queries, dictionary lookups, scripture questions, and content search.
-   - **Query Decomposition** — for queries containing multiple questions, an LLM call splits them into up to 4 self-contained sub-questions so context is retrieved for each.
-   - **Co-reference Resolution** — resolves Uyghur pronouns and follow-up markers using conversation history (`rewrite_query`).
-
-2. **Context Injection** — before the first tool call, the query is enriched with a `[Context]` block including the current book ID (if reading in reader mode), previously-referenced book IDs from conversation history, and category filters.
-
-3. **Google ADK Reasoning & Tool Execution** — the agent executes a reasoning loop using Google ADK (`google-adk`), choosing from **19 specialized retrieval, catalog, dictionary, and Quran tools**:
-   - **Content Retrieval**: `search_chunks` (pgvector similarity search), `search_books_by_summary` (summary embedding search), `find_books_by_title`, `get_book_summary`, `get_current_page` (reader page text), `rewrite_query`, `get_sister_volumes`.
-   - **Catalog & Metadata**: `get_book_author`, `get_books_by_author`, `search_catalog`.
-   - **Dictionary & Language**: `lookup_uyghur_word`, `lookup_history_term`, `translate_english_to_uyghur`, `check_word_spelling`, `lookup_uyghur_name`, `search_language_sources`, `lookup_proverbs`, `lookup_synonyms`.
-   - **Scripture**: `search_quran` (Surah/Ayah vector search and translation lookup).
-
-4. **Post-Processing (Grading & Synthesis)**
-   - **Deduplication and Grading** — merges retrieved passages and filters low-relevance chunks using relative score thresholds.
-   - **Answer Synthesis** — generates a streaming response with inline citations pointing to source books, volumes, and page numbers.
+1. **Extraction (`knowledge_graph_job`)**: Triggered manually via admin action (`POST /api/books/{id}/reprocess/graph`). Extracts entities and relationships into Neo4j using UUID keys and inserts entity records into PostgreSQL `graph_resolution_queue`.
+2. **Resolution (`graph_resolution_scanner` → `graph_resolution_job`)**: Scheduled every 5 minutes. Claims queued entity batches oldest-generation-first (`FOR UPDATE SKIP LOCKED`), applies fuzzy/phonetic/alias matching with hard-match parent boosting, merges target entities in Neo4j, auto-resolves existing reviews, or flags ambiguous entities in `graph_resolution_reviews`.
 
 ---
 
-## Core Technologies and AI Stack
+## Monorepo Project Structure
 
-The platform is built on specialized database, AI, and backend technologies:
+```
+kitabim-ai/
+├── apps/
+│   └── frontend/              # React 19 + Vite + TypeScript SPA
+├── packages/
+│   ├── backend-core/          # Shared Python core: models, repos, LLM clients, services, ADK tools
+│   └── shared/                # Generated OpenAPI TypeScript types (npm workspace package)
+├── services/
+│   ├── backend/                # FastAPI HTTP API (routes, auth, middleware)
+│   └── worker/                 # ARQ background processing worker (14 scanners, 9 jobs)
+├── deploy/
+│   ├── local/                 # Local Docker Compose rebuild & execution scripts
+│   └── gcp/                    # Production GCP infrastructure & deployment scripts
+├── scripts/                    # Operational, diagnostic, and database maintenance scripts
+├── data/                       # Local volume storing uploaded PDFs and page images
+├── docs/                       # Comprehensive architecture and design documentation
+├── docker-compose.yml          # Local development Docker Compose manifest
+├── Dockerfile.backend          # Production Dockerfile for Backend API service
+└── Dockerfile.worker           # Production Dockerfile for Worker service
+```
 
-- **Google ADK (`google-adk`)**: Serves as the agentic reasoning engine, coordinating the ReAct loop and automated tool dispatching for the RAG assistant.
-- **google-genai SDK (`google-genai`)**: Used for all direct LLM generation and embedding calls across the application (OCR pipeline, summarization, entity extraction, text/structured chains).
-- **Neo4j**: A graph database storing semantic networks of entities (Persons, Locations, Organizations, Works, Events) extracted from books, queried using Cypher for GraphRAG.
-- **pgvector (PostgreSQL)**: PostgreSQL with `pgvector` stores page-chunk embeddings (Gemini Embedding v2) and performs similarity searches.
-- **ARQ (Redis)**: Asynchronous task queue running background processing pipelines (OCR, chunking, embedding, summary extraction, and Neo4j ingestion).
-- **FastAPI**: Asynchronous Python web framework providing API routes, user auth, rate limits, and streaming responses.
+### Core Package Breakdown (`packages/backend-core/app/`)
 
----
-
-## Features
-
-### OCR & Digitization Pipeline
-- Upload PDFs and extract Uyghur text page-by-page using Google Gemini Vision.
-- Milestone-based processing (`ocr → chunking → embedding`) with resumable jobs and real-time progress tracking.
-- Text cleaning tailored for Uyghur script (removes OCR noise, header/footer markers).
-- Semantic chunking with overlapping windows; upsert strategy so re-chunking is idempotent.
-- AI-generated book summaries stored with embeddings for topic-based book discovery.
-- **Knowledge Graph Ingestion (GraphRAG)**: Extracts Person, Location, Organization, Work, and Event entities and their semantic relationships from book chunks, building a knowledge network in Neo4j.
-
-### Curation Workspace
-- Per-page spell-check against a Uyghur dictionary with one-click corrections.
-- Auto-correction rules for common OCR errors applied in bulk.
-- Editor role with review queue; books go public only after editorial sign-off.
-
-### User Management & Admin
-- OAuth login (Google, Facebook, X).
-- Role-based access: **Admin**, **Editor**, **Reader**, **Guest**.
-- JWT access + refresh tokens via httpOnly cookies.
-- Admin dashboard with per-book pipeline stats, user management, and user feedback analytics.
-- All AI models and thresholds are configurable at runtime via `system_configs` table — no redeploy required.
+- **`core/`**: Environment configurations (`config.py`), cache templates (`cache_config.py`), pipeline state constants (`pipeline.py`), character personas (`characters.py`), and i18n (`i18n.py`).
+- **`db/`**: SQLAlchemy models (`models.py` — 25 PostgreSQL tables), database engine factory (`session.py`), system configuration seeds (`seeds.py`), and 17 repository classes in `db/repositories/`.
+- **`llm/`**: `GeminiLLM` client, `TextChain` / `StructuredChain` wrappers, Redis rate limiting, and circuit breaker resilience.
+- **`services/`**: Core business services including OCR, chunking, embeddings, spell-check, auto-correction, summary generation, storage abstraction, and sub-packages:
+  - **`services/rag/`**: `RAGService`, `HandlerRegistry`, `DeterministicRAGHandler`, `LLMRoutedRAGHandler`, `graph_router.py` (10-node ADK Workflow), retrieval engine (`retrieval.py`), context grading, answer builder, and 19 ADK tools (`rag/agent/tools.py`).
+  - **`services/chat/`**: `ChatOrchestrator`, `KitabimRetrievalAgent`, `KitabimAnswerAgent`, conversation state management (`history.py`), and context builders.
 
 ---
 
-## Quick Start (Docker Compose)
+## Technology Stack
 
-**Prerequisites:** Docker Desktop and a `GEMINI_API_KEY` from [Google AI Studio](https://aistudio.google.com).
+| Layer | Technologies Used |
+|---|---|
+| **Frontend** | React 19, TypeScript, Vite, Tailwind CSS, Lucide Icons, PDF.js |
+| **Backend API** | Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy (Async IO) |
+| **Worker / Queue** | Python 3.11+, ARQ (Async Redis Queue) |
+| **Relational Database** | PostgreSQL 16+ with `pgvector` extension (Vector Similarity Search) |
+| **Graph Database** | Neo4j 5+ (Cypher Graph Database for GraphRAG) |
+| **Cache & Locking** | Redis (L0-L3 Query Caching, Distributed `MultiPageLock`, Rate Limiting) |
+| **Storage** | Google Cloud Storage (GCS) with local `./data/` volume fallback |
+| **AI & LLM Frameworks** | Google Gemini API (`google-genai` SDK), Google ADK (`google-adk` framework) |
+| **Authentication** | JWT (httpOnly Cookies) + OAuth2 (Google, Facebook, Twitter/X) |
+
+---
+
+## Getting Started (Local Development)
+
+### Prerequisites
+
+1. **Docker Desktop** installed and running.
+2. **PostgreSQL** running standalone on the local host machine at `localhost:5432` (PostgreSQL is **not** containerized in Docker Compose locally; containers connect via `host.docker.internal:5432`).
+3. A **Google Gemini API Key** from [Google AI Studio](https://aistudio.google.com).
+
+### Environment Setup
+
+Copy the environment template and set your API keys:
 
 ```bash
 cp .env.template .env
-# Fill in GEMINI_API_KEY and other required values
+```
 
+Ensure `.env` contains at minimum:
+```env
+GEMINI_API_KEY=your_actual_gemini_api_key
+POSTGRES_DB=kitabim
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_HOST=host.docker.internal
+POSTGRES_PORT=5432
+REDIS_URL=redis://redis:6379/0
+```
+
+### Running with Docker Compose
+
+Build images and start all local development services:
+
+```bash
 ./deploy/local/rebuild-and-restart.sh all
 ```
 
-| Service | URL |
-|---------|-----|
-| Web UI | http://localhost:30080 |
-| API + Swagger | http://localhost:30800/docs |
-| Health check | http://localhost:30800/health |
-| Neo4j Bolt | localhost:37687 |
-| Neo4j Browser (UI) | http://localhost:37474 |
+This starts Redis, Neo4j, Backend API, ARQ Worker, and Frontend UI in Docker containers.
+
+### Local Service Endpoints
+
+| Service | Access URL | Description |
+|---|---|---|
+| **Web Frontend** | http://localhost:30080 | React 19 Web Application |
+| **Backend API Docs** | http://localhost:30800/docs | Swagger UI for FastAPI endpoints |
+| **API Health Check** | http://localhost:30800/health | Backend health check endpoint |
+| **Neo4j Browser** | http://localhost:37474 | Graph Database UI (`neo4j` / password configured in `.env`) |
+| **Neo4j Bolt Port** | `localhost:37687` | Bolt protocol port for Neo4j connections |
+
+### Rebuilding Services
+
+When making code edits, re-build specific containers using the deployment helper:
 
 ```bash
-# Rebuild a single service after code changes
-./deploy/local/rebuild-and-restart.sh [frontend|backend|worker]
+# Rebuild a single service
+./deploy/local/rebuild-and-restart.sh frontend
+./deploy/local/rebuild-and-restart.sh backend
+./deploy/local/rebuild-and-restart.sh worker
 
-# Logs
+# Inspect logs
 docker compose logs -f backend
 docker compose logs -f worker
 ```
 
+> ⚠️ **CRITICAL LOCAL RULE**: Do not rely solely on standalone dev servers (`npm run dev`). Always verify changes using Docker Compose to guarantee build consistency.
 
-## Documentation
+---
 
-All architectural and design documents are located under the `docs/` directory.
+## Production Deployment & Data Safety
 
-| Document | Contents |
-|----------|----------|
-| [docs/main/SYSTEM_DESIGN.md](docs/main/SYSTEM_DESIGN.md) | Architecture overview, data model, key flows, technology stack |
-| [docs/main/LLM_ROUTED_RAG_DESIGN.md](docs/main/LLM_ROUTED_RAG_DESIGN.md) | Handler registry, agent tools, loop logic, caching, latency budget |
-| [docs/main/QUESTION_ANSWERING_DIAGRAM.md](docs/main/QUESTION_ANSWERING_DIAGRAM.md) | Visual pipeline and handler routing diagrams |
-| [docs/main/WORKER_DESIGN.md](docs/main/WORKER_DESIGN.md) | Event-driven pipeline, scanners, jobs, state machine |
-| [docs/main/PROJECT_STRUCTURE.md](docs/main/PROJECT_STRUCTURE.md) | Full directory structure, service responsibilities, configuration reference |
-| [docs/main/REQUIREMENTS.md](docs/main/REQUIREMENTS.md) | Business requirements and user role permission matrix |
-| [docs/main/UI_CSS_STANDARD.md](docs/main/UI_CSS_STANDARD.md) | Frontend CSS and Tailwind conventions |
-| [docs/main/openapi.json](docs/main/openapi.json) | OpenAPI 3.0 spec for the REST API |
+Production releases use automated GCP Compute Engine deployment scripts.
+
+```bash
+# Deploy to GCP production VM
+./deploy/gcp/scripts/deploy.sh [IMAGE_TAG]
+```
+
+### 🔒 Data Safety Rules
+1. **Never run `docker system prune --volumes`** or any command that deletes persistent storage volumes in production or local environments.
+2. **Never stop or remove stateful database containers** (`neo4j`, `postgres`, `redis`) during routine application code deployments.
+3. **Never execute destructive graph data reset operations** (`scripts/reset_graph_data.py`) without explicit permission (`--confirm-reset-all-graph-data`).
+
+---
+
+## Documentation Index
+
+Detailed architectural specs, milestone state machine details, and stage documentation are located in `docs/main/`:
+
+| Document | Description |
+|---|---|
+| [**`SYSTEM_DESIGN.md`**](docs/main/SYSTEM_DESIGN.md) | High-level system architecture, data models, and technology stack |
+| [**`WORKER_DESIGN.md`**](docs/main/WORKER_DESIGN.md) | Background worker design, ARQ cron schedule, scanners, and jobs |
+| [**`BOOK_PROCESSING_DIAGRAM.md`**](docs/main/BOOK_PROCESSING_DIAGRAM.md) | Comprehensive mermaid diagrams for the book ingestion pipeline |
+| [**`DOCUMENT_DISCOVERY_DESIGN.md`**](docs/main/DOCUMENT_DISCOVERY_DESIGN.md) | PDF discovery scanner, duplicate detection, and book registration |
+| [**`OCR_DESIGN.md`**](docs/main/OCR_DESIGN.md) | Gemini Vision interactive and Batch OCR ingestion engine |
+| [**`CHUNKING_DESIGN.md`**](docs/main/CHUNKING_DESIGN.md) | Text cleaning, Uyghur script normalization, and chunk splitting |
+| [**`EMBEDDING_DESIGN.md`**](docs/main/EMBEDDING_DESIGN.md) | Vector embeddings, pgvector indexing, and batch embedding mode |
+| [**`SPELLCHECK_DESIGN.md`**](docs/main/SPELLCHECK_DESIGN.md) | Uyghur dictionary spell-checking and auto-correction engine |
+| [**`SUMMARY_DESIGN.md`**](docs/main/SUMMARY_DESIGN.md) | Book-level summary generation for RAG book selection |
+| [**`CHAT_RAG_DESIGN.md`**](docs/main/CHAT_RAG_DESIGN.md) | ChatOrchestrator, RAGService, 19 ADK tools, reranking, and evaluation |
+| [**`KNOWLEDGE_GRAPH_DESIGN.md`**](docs/main/KNOWLEDGE_GRAPH_DESIGN.md) | Neo4j GraphRAG entity extraction and scheduled entity resolution |
+| [**`PROJECT_STRUCTURE.md`**](docs/main/PROJECT_STRUCTURE.md) | Directory structure map, module responsibilities, and key files |
+| [**`REQUIREMENTS.md`**](docs/main/REQUIREMENTS.md) | Business functional requirements and user role permission matrix |
+| [**`UI_CSS_STANDARD.md`**](docs/main/UI_CSS_STANDARD.md) | Frontend CSS design system and styling standards |
+| [**`openapi.json`**](docs/main/openapi.json) | OpenAPI 3.0 specification for backend REST endpoints |

@@ -255,6 +255,7 @@ async def approve_review(
                 keep_id=str(review.entity_a_id),
                 remove_id=str(review.entity_b_id),
                 performed_by=current_user.email,
+                user_id=current_user.id,
             )
         finally:
             await graph_repo.close()

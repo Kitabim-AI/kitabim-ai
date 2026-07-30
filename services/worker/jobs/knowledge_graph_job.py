@@ -224,6 +224,16 @@ async def knowledge_graph_job(ctx, book_id: str, scope: str) -> None:
                         "- In Uyghur historical texts, terms of endearment or lineage like 'قوزىچىسى' or 'نەۋرىسى' "
                         "refer to a grandchild (e.g., GRANDSON_OF or GRANDCHILD_OF), NOT a direct child (e.g., CHILD_OF).\n"
                         "- Verify and extract the exact kinship relationship using this rule.\n\n"
+                        "Literal Kinship vs Figurative Language Guideline:\n"
+                        "- Only emit kinship edges (SON_OF, FATHER_OF, CHILD_OF, DAUGHTER_OF, BROTHER_OF, etc.) for LITERAL biological, legal, or genealogical relationships.\n"
+                        "- NEVER emit kinship edges for figurative, simile, metaphorical, honorific, or emotional expressions.\n"
+                        "- Negative examples (do NOT emit kinship edge):\n"
+                        "  * Simile/metaphor: 'loved me like a father', 'gave the love of a father', 'was a father to the orphans' -> NO edge\n"
+                        "  * Honorific/epithet: 'father of the nation', 'father of medicine' -> NO edge\n"
+                        "  * Spiritual/metaphorical: 'spiritual father', 'father of the movement' -> NO edge\n"
+                        "  * Uyghur comparison markers: 'ئاتا / ئاتىسى' used figuratively with 'ئوخشاش', 'گويا', 'دەك' -> NO edge\n"
+                        "- Precision over recall for relations: if unsure whether a relationship is literal biological kinship, do NOT emit the kinship edge.\n"
+                        "- Always capture the exact supporting sentence fragment in the `evidence` field of ExtractedRelation.\n\n"
                         "Military/Political Guideline:\n"
                         "- Extract explicit military and political actions as directed relationship edges, not just as event nodes.\n"
                         "- Examples: CONQUERED, DEFEATED, FOUGHT_IN, ALLIED_WITH, LED_ARMY, FLED_FROM, FLED_TO, RULED, CAPTURED, SERVED, PLEDGED_ALLEGIANCE_TO.\n"
@@ -315,6 +325,7 @@ async def knowledge_graph_job(ctx, book_id: str, scope: str) -> None:
                         "aliases": [name],
                         "type": etype,
                         "subtype": ent.subtype,
+                        "context_summary": ent.context_summary,
                         "scope": scope,
                         "book_id": fiction_book_id,
                         "resolution_status": "unresolved",
@@ -356,6 +367,8 @@ async def knowledge_graph_job(ctx, book_id: str, scope: str) -> None:
                         "book_id": str(book_id),
                         "chunk_refs": chunk_refs,
                     }
+                    if rel.evidence:
+                        relation_data["evidence"] = rel.evidence
                     if rtype == "CHILD_OF" and rel.parent_role:
                         relation_data["parent_role"] = rel.parent_role
                     if rel.year_hijri:

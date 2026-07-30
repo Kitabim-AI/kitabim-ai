@@ -912,10 +912,12 @@ async def get_global_graph(
         WHERE toLower(s.canonical_name) CONTAINS toLower($q) OR toLower(t.canonical_name) CONTAINS toLower($q)
         RETURN s.id AS source_id, s.canonical_name AS source_name, s.type AS source_type,
                s.year_hijri AS source_year_hijri, s.year_gregorian AS source_year_gregorian, s.century_gregorian AS source_century_gregorian,
-               r.id AS rel_id, r.rel_type AS rel_type, r.book_id AS rel_book_id, r.chunk_refs AS rel_chunk_refs,
+               s.context_summary AS source_context_summary,
+               r.id AS rel_id, r.rel_type AS rel_type, r.book_id AS rel_book_id, r.chunk_refs AS rel_chunk_refs, r.evidence AS rel_evidence,
                r.year_hijri AS rel_year_hijri, r.year_gregorian AS rel_year_gregorian, r.century_gregorian AS rel_century_gregorian,
                t.id AS target_id, t.canonical_name AS target_name, t.type AS target_type,
-               t.year_hijri AS target_year_hijri, t.year_gregorian AS target_year_gregorian, t.century_gregorian AS target_century_gregorian
+               t.year_hijri AS target_year_hijri, t.year_gregorian AS target_year_gregorian, t.century_gregorian AS target_century_gregorian,
+               t.context_summary AS target_context_summary
         LIMIT 150
         """
         params = {"q": q.strip()}
@@ -924,10 +926,12 @@ async def get_global_graph(
         MATCH (s:Entity)-[r:RELATED_TO]->(t:Entity)
         RETURN s.id AS source_id, s.canonical_name AS source_name, s.type AS source_type,
                s.year_hijri AS source_year_hijri, s.year_gregorian AS source_year_gregorian, s.century_gregorian AS source_century_gregorian,
-               r.id AS rel_id, r.rel_type AS rel_type, r.book_id AS rel_book_id, r.chunk_refs AS rel_chunk_refs,
+               s.context_summary AS source_context_summary,
+               r.id AS rel_id, r.rel_type AS rel_type, r.book_id AS rel_book_id, r.chunk_refs AS rel_chunk_refs, r.evidence AS rel_evidence,
                r.year_hijri AS rel_year_hijri, r.year_gregorian AS rel_year_gregorian, r.century_gregorian AS rel_century_gregorian,
                t.id AS target_id, t.canonical_name AS target_name, t.type AS target_type,
-               t.year_hijri AS target_year_hijri, t.year_gregorian AS target_year_gregorian, t.century_gregorian AS target_century_gregorian
+               t.year_hijri AS target_year_hijri, t.year_gregorian AS target_year_gregorian, t.century_gregorian AS target_century_gregorian,
+               t.context_summary AS target_context_summary
         LIMIT 150
         """
         params = {}
@@ -960,6 +964,7 @@ async def get_global_graph(
                     "year_hijri": rec.get("source_year_hijri"),
                     "year_gregorian": rec.get("source_year_gregorian"),
                     "century_gregorian": rec.get("source_century_gregorian"),
+                    "context_summary": rec.get("source_context_summary"),
                 }
             )
 
@@ -974,6 +979,7 @@ async def get_global_graph(
                     "year_hijri": rec.get("target_year_hijri"),
                     "year_gregorian": rec.get("target_year_gregorian"),
                     "century_gregorian": rec.get("target_century_gregorian"),
+                    "context_summary": rec.get("target_context_summary"),
                 }
             )
 
@@ -986,6 +992,7 @@ async def get_global_graph(
                 "label": rec["rel_type"],
                 "book_id": rec.get("rel_book_id"),
                 "chunk_refs": rec.get("rel_chunk_refs") or [],
+                "evidence": rec.get("rel_evidence"),
                 "year_hijri": rec.get("rel_year_hijri"),
                 "year_gregorian": rec.get("rel_year_gregorian"),
                 "century_gregorian": rec.get("rel_century_gregorian"),
@@ -1087,6 +1094,7 @@ async def merge_graph_entities(
             keep_id=request.keep_id,
             remove_id=request.remove_id,
             performed_by=current_user.email,
+            user_id=current_user.id,
         )
     except Exception as exc:
         logger.error(f"Failed to merge entities: {exc}")

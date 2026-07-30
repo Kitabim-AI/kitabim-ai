@@ -229,6 +229,7 @@ async def test_approve_review_merge_action_executes_merge():
         keep_id="a1",
         remove_id="b1",
         performed_by="admin@example.com",
+        user_id="admin-id",
     )
     reviews_repo.set_status.assert_called_once_with(1, "approved", "admin-id")
 
