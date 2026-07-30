@@ -44,7 +44,7 @@ gcloud compute scp packages/backend-core/migrations/033_reset_spell_check_for_ne
 gcloud compute ssh kitabim-prod --zone=us-south1-c
 
 # Run migration
-PGPASSWORD='<password>' psql -h 10.158.0.5 -p 5432 -U kitabim -d kitabim-ai \
+PGPASSWORD='<password>' psql -h <CLOUD_SQL_PRIVATE_IP> -p 5432 -U kitabim -d kitabim-ai \
   -f /tmp/033_reset_spell_check_for_new_logic.sql
 
 # Clean up
@@ -61,7 +61,7 @@ gcloud compute ssh kitabim-prod --zone=us-south1-c
 # Run via backend container
 cd /opt/kitabim
 docker compose -f deploy/gcp/docker-compose.yml exec backend \
-  psql postgresql://kitabim:<password>@10.158.0.5:5432/kitabim-ai \
+  psql postgresql://kitabim:<password>@<CLOUD_SQL_PRIVATE_IP>:5432/kitabim-ai \
   -f /app/packages/backend-core/migrations/033_reset_spell_check_for_new_logic.sql
 ```
 
