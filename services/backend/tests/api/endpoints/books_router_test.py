@@ -278,6 +278,7 @@ async def test_merge_graph_entities_endpoint():
     mock_session = AsyncMock()
     mock_user = MagicMock()
     mock_user.email = "admin@example.com"
+    mock_user.id = "user-1"
 
     mock_request = MergeEntitiesRequest(keep_id="keep-1", remove_id="remove-1")
 
@@ -306,6 +307,7 @@ async def test_merge_graph_entities_endpoint():
         keep_id="keep-1",
         remove_id="remove-1",
         performed_by="admin@example.com",
+        user_id="user-1",
     )
 
 

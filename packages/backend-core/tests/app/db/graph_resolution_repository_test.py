@@ -177,3 +177,23 @@ async def test_mark_reverted_missing_entry_returns_none():
 
     updated = await repo.mark_reverted(999)
     assert updated is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_reviews_for_merge_updates_pending_reviews():
+    import uuid
+
+    session = AsyncMock()
+    repo = GraphResolutionReviewsRepository(session)
+
+    e1 = str(uuid.uuid4())
+    e2 = str(uuid.uuid4())
+
+    select_result = MagicMock()
+    select_result.scalars.return_value.all.return_value = []
+    session.execute.return_value = select_result
+
+    await repo.resolve_reviews_for_merge(e1, e2, reviewed_by="user-123")
+
+    assert session.execute.call_count >= 2
+    session.commit.assert_called_once()

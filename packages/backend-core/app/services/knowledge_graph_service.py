@@ -137,6 +137,10 @@ class ExtractedRelation(BaseModel):
         None,
         description="Gregorian century when this relationship occurred (e.g. 15 for 15th century CE). Use only when a Gregorian century is stated but no specific Hijri year.",
     )
+    evidence: Optional[str] = Field(
+        None,
+        description="The exact phrase or sentence fragment from the text supporting this relationship extraction. Required for auditing and filtering figurative kinship claims.",
+    )
 
 
 class KnowledgeExtraction(BaseModel):

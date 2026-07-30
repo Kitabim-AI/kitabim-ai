@@ -146,9 +146,17 @@ class GraphRepository:
             )
 
     async def get_children_via_child_of(self, entity_id: str) -> List[str]:
-        """Returns ids of entities with a CHILD_OF edge pointing to `entity_id` as parent —
+        """Returns ids of entities with a kinship edge pointing to `entity_id` as parent —
         the re-propagation candidates after a merge/split touching `entity_id` (§4 step 4)."""
-        query = "MATCH (child:Entity)-[:CHILD_OF]->(parent:Entity {id: $id}) RETURN DISTINCT child.id AS id"
+        query = """
+        MATCH (child:Entity)
+        WHERE (child)-[:RELATED_TO {rel_type: 'CHILD_OF'}]->(:Entity {id: $id})
+           OR (child)-[:RELATED_TO {rel_type: 'SON_OF'}]->(:Entity {id: $id})
+           OR (child)-[:RELATED_TO {rel_type: 'DAUGHTER_OF'}]->(:Entity {id: $id})
+           OR (child)<-[:RELATED_TO {rel_type: 'FATHER_OF'}]-(:Entity {id: $id})
+           OR (child)<-[:RELATED_TO {rel_type: 'MOTHER_OF'}]-(:Entity {id: $id})
+        RETURN DISTINCT child.id AS id
+        """
         async with self._driver.session() as session:
             result = await session.run(query, id=entity_id)
             records = await result.data()
@@ -180,6 +188,7 @@ class GraphRepository:
                 ],
                 "type": e.get("type"),
                 "subtype": e.get("subtype"),
+                "context_summary": e.get("context_summary"),
                 "scope": e.get("scope"),
                 "book_id": e.get("book_id"),
                 "year_hijri": e.get("year_hijri"),
@@ -196,6 +205,7 @@ class GraphRepository:
             e.aliases = e_data.aliases,
             e.type = e_data.type,
             e.subtype = e_data.subtype,
+            e.context_summary = e_data.context_summary,
             e.scope = e_data.scope,
             e.book_id = e_data.book_id,
             e.year_hijri = e_data.year_hijri,
@@ -264,6 +274,7 @@ class GraphRepository:
                     "century_gregorian": r.get("century_gregorian"),
                     # CHILD_OF-only; null/ignored for every other rel_type.
                     "parent_role": r.get("parent_role"),
+                    "evidence": r.get("evidence"),
                 }
             )
 
@@ -277,7 +288,8 @@ class GraphRepository:
                       r.year_hijri = rel.year_hijri,
                       r.year_gregorian = rel.year_gregorian,
                       r.century_gregorian = rel.century_gregorian,
-                      r.parent_role = rel.parent_role
+                      r.parent_role = rel.parent_role,
+                      r.evidence = rel.evidence
         ON MATCH SET r.chunk_refs = rel.merged_chunk_refs
         """
         async with self._driver.session() as session:
@@ -328,17 +340,23 @@ class GraphRepository:
         return {r["id"]: r["name"] for r in records if r.get("id") and r.get("name")}
 
     async def get_entity_facts(self, entity_id: str) -> Dict[str, Any]:
-        """Return the canonical functional facts (CHILD_OF/BORN_IN/DIED_IN) + a sample
-        of relationship neighbors for `entity_id`, used for hard-constraint checks and
+        """Return the canonical functional facts (CHILD_OF/SON_OF/DAUGHTER_OF/FATHER_OF/MOTHER_OF/BORN_IN/DIED_IN)
+        + a sample of relationship neighbors for `entity_id`, used for hard-constraint checks and
         as gray-zone LLM judge input (design v2 §4 step 2, §4.1)."""
         query = """
         MATCH (e:Entity {id: $id})
-        OPTIONAL MATCH (e)-[co:CHILD_OF]->(parent:Entity)
-        OPTIONAL MATCH (e)-[bi:BORN_IN]->(loc:Entity)
-        OPTIONAL MATCH (e)-[di:DIED_IN]->(era:Entity)
+        OPTIONAL MATCH (e)-[co:RELATED_TO]->(parent:Entity)
+          WHERE co.rel_type IN ['CHILD_OF', 'SON_OF', 'DAUGHTER_OF']
+        OPTIONAL MATCH (e)<-[co_rev:RELATED_TO]-(parent_rev:Entity)
+          WHERE co_rev.rel_type IN ['FATHER_OF', 'MOTHER_OF']
+        OPTIONAL MATCH (e)-[bi:RELATED_TO]->(loc:Entity)
+          WHERE bi.rel_type = 'BORN_IN'
+        OPTIONAL MATCH (e)-[di:RELATED_TO]->(era:Entity)
+          WHERE di.rel_type = 'DIED_IN'
         OPTIONAL MATCH (e)-[nb:RELATED_TO]-(neighbor:Entity)
         RETURN
-            [p IN collect(DISTINCT {parent_id: parent.id, parent_name: parent.canonical_name, parent_role: co.parent_role}) WHERE p.parent_id IS NOT NULL] AS child_of,
+            [p IN collect(DISTINCT {parent_id: parent.id, parent_name: parent.canonical_name, parent_role: co.parent_role}) WHERE p.parent_id IS NOT NULL] +
+            [p IN collect(DISTINCT {parent_id: parent_rev.id, parent_name: parent_rev.canonical_name, parent_role: CASE WHEN co_rev.rel_type = 'FATHER_OF' THEN 'father' ELSE 'mother' END}) WHERE p.parent_id IS NOT NULL] AS child_of,
             [b IN collect(DISTINCT {location_id: loc.id, location_name: loc.canonical_name}) WHERE b.location_id IS NOT NULL] AS born_in,
             [d IN collect(DISTINCT {era_id: era.id, era_name: era.canonical_name, year_hijri: di.year_hijri, year_gregorian: di.year_gregorian}) WHERE d.era_id IS NOT NULL] AS died_in,
             [n IN collect(DISTINCT {neighbor_id: neighbor.id, neighbor_name: neighbor.canonical_name, rel_type: nb.rel_type}) WHERE n.neighbor_id IS NOT NULL] AS neighbors
@@ -914,4 +932,124 @@ class GraphRepository:
                 book_ids=book_ids,
             )
             records = await result.data()
+            return records
+
+    # ------------------------------------------------------------------
+    # Neo4j Graph Data Science (GDS) Integration (Items 5–9)
+    # ------------------------------------------------------------------
+
+    async def project_gds_graph(
+        self, graph_name: str = "entity_resolution_graph"
+    ) -> bool:
+        """Projects an in-memory graph using Neo4j GDS procedure `gds.graph.project` (Item 5)."""
+        drop_query = "CALL gds.graph.drop($graph_name, false) YIELD graphName"
+        project_query = """
+        CALL gds.graph.project(
+            $graph_name,
+            'Entity',
+            {
+                RELATED_TO: {
+                    type: 'RELATED_TO',
+                    orientation: 'UNDIRECTED'
+                }
+            }
+        )
+        YIELD graphName, nodeCount, relationshipCount
+        """
+        async with self._driver.session() as session:
+            try:
+                await session.run(drop_query, graph_name=graph_name)
+            except Exception:
+                pass
+            res = await session.run(project_query, graph_name=graph_name)
+            record = await res.single()
+            return record is not None
+
+    async def run_gds_node_similarity(
+        self,
+        graph_name: str = "entity_resolution_graph",
+        similarity_cutoff: float = 0.5,
+    ) -> List[Dict[str, Any]]:
+        """Computes Jaccard neighbor similarity using `gds.nodeSimilarity.stream` (Item 6)."""
+        query = """
+        CALL gds.nodeSimilarity.stream($graph_name, {similarityCutoff: $cutoff})
+        YIELD node1, node2, similarity
+        RETURN gds.util.asNode(node1).id AS node1_id,
+               gds.util.asNode(node2).id AS node2_id,
+               similarity
+        """
+        async with self._driver.session() as session:
+            res = await session.run(
+                query, graph_name=graph_name, cutoff=similarity_cutoff
+            )
+            records = await res.data()
+            return records
+
+    async def run_gds_fastrp(
+        self,
+        graph_name: str = "entity_resolution_graph",
+        embedding_dimension: int = 128,
+    ) -> None:
+        """Computes structural embeddings using `gds.fastRP.mutate` (Item 7)."""
+        query = """
+        CALL gds.fastRP.mutate($graph_name, {
+            mutateProperty: 'fastrp_embedding',
+            embeddingDimension: $dim,
+            iterationWeights: [0.0, 1.0, 0.7]
+        })
+        YIELD nodePropertiesWritten
+        """
+        async with self._driver.session() as session:
+            await session.run(query, graph_name=graph_name, dim=embedding_dimension)
+
+    async def store_profile_embeddings_bulk(
+        self, profile_data: List[Dict[str, Any]]
+    ) -> None:
+        """Stores vector profile embeddings on Entity nodes for semantic matching (Item 8)."""
+        query = """
+        UNWIND $data AS row
+        MATCH (e:Entity {id: row.id})
+        SET e.profile_embedding = row.embedding
+        """
+        async with self._driver.session() as session:
+            await session.run(query, data=profile_data)
+
+    async def run_gds_knn_similarity(
+        self,
+        graph_name: str = "entity_resolution_graph",
+        top_k: int = 10,
+        similarity_cutoff: float = 0.75,
+    ) -> List[Dict[str, Any]]:
+        """Computes semantic profile vector similarity using `gds.knn.stream` (Item 8)."""
+        query = """
+        CALL gds.knn.stream($graph_name, {
+            nodeProperties: ['profile_embedding'],
+            topK: $top_k,
+            sampleRate: 1.0,
+            similarityCutoff: $cutoff
+        })
+        YIELD node1, node2, similarity
+        RETURN gds.util.asNode(node1).id AS node1_id,
+               gds.util.asNode(node2).id AS node2_id,
+               similarity
+        """
+        async with self._driver.session() as session:
+            res = await session.run(
+                query, graph_name=graph_name, top_k=top_k, cutoff=similarity_cutoff
+            )
+            records = await res.data()
+            return records
+
+    async def run_gds_wcc_clustering(
+        self, graph_name: str = "entity_resolution_graph"
+    ) -> List[Dict[str, Any]]:
+        """Computes Weakly Connected Components using `gds.wcc.stream` (Item 9)."""
+        query = """
+        CALL gds.wcc.stream($graph_name)
+        YIELD nodeId, componentId
+        RETURN gds.util.asNode(nodeId).id AS entity_id, componentId AS cluster_id
+        """
+        async with self._driver.session() as session:
+            res = await session.run(query, graph_name=graph_name)
+            records = await res.data()
             return records
