@@ -33,9 +33,9 @@ Key characteristics:
 | `source` | `text`, nullable | `"gcs_sync"` (GCS discovery) or `"upload"` (manual upload). |
 | `pipeline_step` | `varchar(20)`, nullable | GCS path and manual PDF upload: `NULL`. Manual DOCX upload: `"chunking"` (`PIPELINE_STEP_CHUNKING`), since OCR is skipped. |
 | `ocr_milestone` / `chunking_milestone` / `embedding_milestone` / `spell_check_milestone` | `varchar(20)`, default `"idle"` | Book-level milestones use a distinct vocabulary from page-level milestones: `idle \| in_progress \| complete \| partial_failure \| failed` (see `BOOK_MILESTONE_*` in `packages/backend-core/app/core/pipeline.py`), vs. pages' `idle \| in_progress \| succeeded \| failed`. GCS discovery leaves all four at the column default `"idle"`. Manual PDF upload explicitly sets `ocr_milestone="idle"` (the other three are also set to `"idle"`). Manual DOCX upload sets `ocr_milestone="complete"` (a literal string, matching `BOOK_MILESTONE_COMPLETE` but not imported as a constant at that call site) since OCR is bypassed; the other three milestones are set to `"idle"`. |
-| `cover_url` | `text`, nullable | Path to the extracted first-page cover JPEG (`covers/{book_id}.jpg`), or `NULL` if extraction failed. |
+| `cover_url` | `text`, nullable | `NULL` if extraction failed on either path. Otherwise the two paths diverge: manual upload stores the raw relative path `remote_cover_path` (`covers/{book_id}.jpg`); GCS discovery stores `storage.get_public_url(remote_cover_path)`, which resolves to `/api/covers/{book_id}.jpg` locally or `https://storage.googleapis.com/{bucket}/covers/{book_id}.jpg` on GCS. |
 | `categories` | `text[]` | `[]` on creation from both entry points. |
-| `visibility` | `varchar(20)`, default `"private"` | Not set explicitly by either creation path; both rely on the column default. |
+| `visibility` | `varchar(20)`, default `"private"` | Manual upload sets it explicitly (`visibility="private"`). GCS discovery does not pass it to `create()` and relies on the column default. Both paths land on the same value (`"private"`), but via different mechanisms. |
 | `upload_date` / `last_updated` | `timestamptz` | Set to `datetime.now(timezone.utc)` by both paths. |
 | `created_by` / `updated_by` | `varchar(255)`, nullable | Manual upload only: the uploading user's email. GCS discovery leaves these `NULL`. |
 
