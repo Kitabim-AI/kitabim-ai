@@ -200,7 +200,7 @@ flowchart TD
 
 | Component | Role |
 |---|---|
-| **ARQ Worker** | Executes the 7 registered jobs and 13 scheduled scanners (of 14 total; `graph_scanner` unscheduled) via the Redis-backed queue |
+| **ARQ Worker** | Executes the 9 registered jobs and 14 scheduled scanners (of 15 total; `graph_scanner` unscheduled) via the Redis-backed queue |
 | **Pipeline Driver** | Initializes new pages, resets retryable failures, computes book `ready`/`error`, auto-enqueues `summary_job` |
 | **Scanners** | Poll for eligible `idle` pages/books, enforce their own upstream dependency, dispatch jobs |
 | **Event Dispatcher** | Polls `pipeline_events` and immediately dispatches the next job, bypassing the 1-minute cron cadence |
