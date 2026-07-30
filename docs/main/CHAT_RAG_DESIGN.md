@@ -102,7 +102,7 @@ This stage **writes** four tables and **reads** the artifacts of every prior sta
 | `packages/backend-core/app/services/chat/orchestrator.py` | `ChatOrchestrator.stream_response()` — conversation get-or-create, signal pre-processing, retrieval agent run, rerank/grade, answer agent run, citation fix, eval insert + `rag_eval_job` enqueue, turn persistence. |
 | `packages/backend-core/app/services/chat/context.py` | `ChatRequestDTO` (frozen dataclass the router builds from `ChatRequest`) and `ToolDependencies`. |
 | `packages/backend-core/app/services/chat/history.py` | `format_history_for_analysis()` — renders `ConversationMessage` rows as `User: …` / `Assistant: …` lines. |
-| `packages/backend-core/app/services/chat/retrieval_agent.py` | `build_retrieval_agent()` — ADK `Agent` named `KitabimRetrievalAgent` over `ALL_TOOLS` (the same 19 tools) with `AGENT_SYSTEM_PROMPT` plus appended "Structured Intent Hints" derived from the extracted signals. |
+| `packages/backend-core/app/services/chat/retrieval_agent.py` | `ALL_TOOLS` (the 19-tool list, defined here) and `build_retrieval_agent()` — ADK `Agent` named `KitabimRetrievalAgent` over `ALL_TOOLS` with `AGENT_SYSTEM_PROMPT` plus appended "Structured Intent Hints" derived from the extracted signals. |
 | `packages/backend-core/app/services/chat/answer_agent.py` | `build_answer_agent()` — tool-less ADK `Agent` named `KitabimAnswerAgent`; the graded context is embedded directly into its `instruction`. |
 | `packages/backend-core/app/services/chat/answer_prompts.py` | `build_answer_instructions()` — the orchestrator's own citation/grammar instruction builder (a parallel implementation of `answer_builder.build_instructions`). |
 | `packages/backend-core/app/services/rag_service.py` | `RAGService` facade: `_build_context()` (character/model/config resolution), `answer_question()`, `answer_question_stream()`, `_record_eval()`. |
@@ -112,7 +112,7 @@ This stage **writes** four tables and **reads** the artifacts of every prior sta
 | `packages/backend-core/app/services/rag/retrieval.py` | Shared, LLM-free retrieval primitives: `embed_query` (L1 cache), `vector_search` (L2 cache, RRF hybrid fusion, per-book quotas, threshold retry, dev-only fuzzy fallback, Quran merge), `graph_entity_lookup`, `find_books_by_title_in_question`. |
 | `packages/backend-core/app/services/rag/agent/tools.py` | The 19 ADK tool declarations, `_execute_and_record_tool` (writes `tool_context.state["observations"]`), `_dispatch_tool_with_retry` (name→implementation switch), and every `_run_*` implementation. |
 | `packages/backend-core/app/services/rag/agent/prompts.py` | `AGENT_SYSTEM_PROMPT` — the 8-step retrieval decision tree plus `_HARD_LIMITS`, shared by `LLMRoutedRAGHandler` and the orchestrator's retrieval agent. |
-| `packages/backend-core/app/services/rag/agent/adk_agent.py` | `build_rag_agent()` — `LLMRoutedRAGHandler`'s ADK `Agent` (`kitabim_retrieval_agent`, `temperature=0.0`). |
+| `packages/backend-core/app/services/rag/agent/adk_agent.py` | `build_rag_agent()` — `LLMRoutedRAGHandler`'s ADK `Agent` (`kitabim_retrieval_agent`, `temperature=0.0`), over its own local copy of the same 19-tool list (it does not import `ALL_TOOLS`). |
 | `packages/backend-core/app/services/rag/agent/llm_routed_handler.py` | `LLMRoutedRAGHandler` plus the post-processing helpers **both** registry handlers and the orchestrator import: `_build_human_message`, `_grade_context`, `_extract_used_book_ids`, `_populate_ctx_from_observations`. |
 | `packages/backend-core/app/services/rag/agent/deterministic_handler.py` | `DeterministicRAGHandler` — `_llm_analyze_query`, `extract_signals`, `classify_intent`, the ten `_path_*` methods, `_run_universal_fallback`, composite sub-question fan-out (`_merge_sub_question_streams`). |
 | `packages/backend-core/app/services/rag/agent/graph_router.py` | `_select_route()` precedence chain, `build_path_selection_workflow()` / `run_path_selection_workflow()` (ADK `Workflow`), and the `types.Content` progress-event bridge (`_to_progress_content` / `decode_progress_event`). |
@@ -125,15 +125,15 @@ This stage **writes** four tables and **reads** the artifacts of every prior sta
 | `packages/backend-core/app/services/rag/llm_resources.py` | Cached `get_embeddings` / `get_rag_chain` / `get_rewrite_chain` factories. |
 | `packages/backend-core/app/services/rag/keywords.py`, `utils.py` | Uyghur keyword/pronoun lists and `normalize_uyghur` / `format_chat_history` / `fuzzy_token_similar` / `is_islam_or_quran_query`. |
 | `packages/backend-core/app/services/chat_limit_service.py` | `ChatLimitService` singleton — per-role daily limits, Redis+Postgres usage counters (atomic Lua `INCR`+`EXPIRE`). |
-| `packages/backend-core/app/db/repositories/conversation_repository.py` | `create_conversation`, `get_conversation`, `list_user_conversations`, `add_message`, `get_recent_messages`, `save_turn`, `update_title`, `delete_conversation` (soft). |
-| `packages/backend-core/app/db/repositories/rag_evaluations_repository.py` | `create_evaluation`, `get`, `update_one`, `update_feedback`, `get_recent_standalone_questions`, `get_questions_paginated`, `toggle_show_on_homepage`, `get_featured_questions`. |
+| `packages/backend-core/app/db/repositories/conversation_repository.py` | `create_conversation`, `get_conversation`, `list_user_conversations`, `add_message`, `get_conversation_messages` (full history, oldest-first — what the messages endpoint serves), `get_recent_messages` (the last N turns the orchestrator feeds to signal extraction), `save_turn`, `update_title`, `delete_conversation` (soft). |
+| `packages/backend-core/app/db/repositories/rag_evaluations_repository.py` | `create_evaluation`, `update_feedback`, `get_recent_standalone_questions`, `get_questions_paginated`, `toggle_show_on_homepage`, `get_featured_questions`, plus the generic `get` / `update_one` inherited from `BaseRepository` (the only two `rag_eval_job` uses). |
 | `services/worker/jobs/rag_eval_job.py` | `rag_eval_job(ctx, eval_id)` — post-turn async judge scoring. Not a pipeline/cron job. |
 | `services/backend/api/endpoints/questions_router.py` | Admin/public views over `rag_evaluations` questions (curation + home-page rotator). |
 | `services/backend/main.py` | Startup: builds the ADK `DatabaseSessionService` into `app.state.adk_session_service` (falls back to `None` on failure); mounts `chat_router` at `/api/chat`, `ai_router` at `/api/ai`, `questions_router` at `/api/questions`. |
 
 ### Agent Tools
 
-All 19 tools are registered in both `adk_agent.py::build_rag_agent()` (`LLMRoutedRAGHandler`) and `chat/retrieval_agent.py::build_retrieval_agent()` (`ChatOrchestrator`) — the same `ALL_TOOLS` list on both pipelines. Every tool function lives in `packages/backend-core/app/services/rag/agent/tools.py` and dispatches through `_execute_and_record_tool`, which appends the call to `tool_context.state["observations"]`. Cache tiers referenced below are the L0/L1/L2 layers defined in [Cache Layers](#cache-layers).
+All 19 tools are registered in both `adk_agent.py::build_rag_agent()` (`LLMRoutedRAGHandler`) and `chat/retrieval_agent.py::build_retrieval_agent()` (`ChatOrchestrator`) — two separate but currently identical lists, not one shared constant: `ALL_TOOLS` is defined only in `retrieval_agent.py`, while `build_rag_agent()` builds its own local `tools` list. Adding a tool means editing both. Every tool function lives in `packages/backend-core/app/services/rag/agent/tools.py` and dispatches through `_execute_and_record_tool`, which appends the call to `tool_context.state["observations"]`. Cache tiers referenced below are the L0/L1/L2 layers defined in [Cache Layers](#cache-layers).
 
 **Content Retrieval**
 
@@ -180,7 +180,7 @@ All 19 tools are registered in both `adk_agent.py::build_rag_agent()` (`LLMRoute
 
 ```mermaid
 flowchart TD
-    Q(["ChatRequest<br/>question ≤ 500 chars, Arabic script<br/>bookId / isGlobal / currentPage /<br/>characterId / conversationId / contextBookIds"])
+    Q(["ChatRequest<br/>question ≤ 500 chars, Arabic script<br/>bookId / isGlobal / currentPage / characterId /<br/>conversationId / contextBookIds / history"])
     LIMIT{"chat_limit_service:<br/>has_reached_limit?"}
     L429["429 (POST /) or<br/>SSE {error} (POST /stream)"]
     EP{"which endpoint?"}
@@ -214,12 +214,12 @@ flowchart TD
 
     subgraph Shared ["Shared retrieval — rag/agent/tools.py + rag/retrieval.py"]
         TOOLS["19 tools: search_chunks, search_books_by_summary,<br/>find_books_by_title, rewrite_query, get_book_author,<br/>get_books_by_author, search_catalog, get_book_summary,<br/>get_sister_volumes, get_current_page, search_quran,<br/>+ 8 dictionary tools"]
-        VS["embed_query (L1) → vector_search (L2)<br/>pgvector + optional keyword leg fused by RRF<br/>+ graph_entity_lookup + Quran merge"]
+        VS["embed_query (L1) → vector_search (L2)<br/>pgvector + optional keyword leg fused by RRF<br/>+ Quran merge; then, in _run_search_chunks,<br/>graph_entity_lookup (uncached, post-vector_search)"]
         DATA[("chunks / book_summaries / pages /<br/>books / quran / dictionary tables")]
     end
 
     WORKER["rag_eval_job (arq worker):<br/>score_answer → faithfulness /<br/>answer_relevance / context_precision"]
-    OUT(["SSE stream to client:<br/>chunk × N then<br/>done {conversationId, contextBookIds, evalId, usage}"])
+    OUT(["SSE stream to client:<br/>chunk × N then<br/>done {usage, contextBookIds, evalId,<br/>+ conversationId on the orchestrator path only}"])
     INC["chat_limit_service.increment_usage"]
 
     Q --> LIMIT
@@ -307,7 +307,9 @@ flowchart TD
    "librarian") → persona_prompt, character_categories. Load the Book row
    when not global. Read gemini_chat_model (falling back to the
    model_name argument), gemini_agent_loop_model (→ chat_model),
-   gemini_embedding_model (→ settings.gemini_embedding_model, else
+   gemini_embedding_model (→ getattr(settings,
+   "gemini_embedding_model", "text-embedding-004") — and settings has no
+   such attribute, so in practice the fallback is always the literal
    "text-embedding-004"). Note: unlike RAGService, missing model configs
    do NOT raise here.
 3. Build QueryContext and set_current_query_context(ctx) — the ContextVar
@@ -677,6 +679,11 @@ The agent's tool-selection order is governed entirely by prose in `AGENT_SYSTEM_
 
 `_run_search_chunks` adds two things on top: a **context-switch rescue** (when a global turn reused the previous answer's `context_book_ids` verbatim and the top score is below `CONTEXT_SWITCH_SCORE_THRESHOLD`, rediscover books via `search_books_by_summary` and re-search), and a **knowledge-graph entity lookup** (`graph_entity_lookup` — a Redis alias-cache read plus a Neo4j fact fetch, no LLM call — appended as chunk-shaped dicts titled `Knowledge Graph`; any failure is logged and ignored).
 
+`graph_entity_lookup` lives in `retrieval.py` but is called from `_run_search_chunks` in `tools.py`, *after* `vector_search` returns — it is not part of `vector_search` and its results are never written to the L2 search cache. Two properties of it matter when reading answers:
+
+- **Candidate extraction is exact-match on unigrams and bigrams.** The question is normalized (`normalize_uyghur`), split on whitespace, stripped of punctuation, filtered to tokens ≥ 3 chars, and turned into single words plus adjacent-word pairs; each candidate is normalized with `entity_resolution_service.normalize_alias` and looked up as a `graph:alias:{alias}` key. Uyghur is agglutinative, so a name typed with a case or possessive suffix attached will not match the bare cached alias — a known limitation of this first pass (documented in `retrieval.py`'s docstring), not a silent failure.
+- **Ambiguity is deliberately not resolved here.** When one alias maps to several entity IDs, facts from *every* match are returned, each carrying its own `book_id`/`page` citation from the first supporting `chunk_ref`; the existing per-turn answer LLM call disambiguates from the question wording, exactly as it does for any other retrieved chunk.
+
 ## State Machine
 
 `rag_evaluations.eval_status` is the one persisted state this stage owns (`CHECK (eval_status IN ('queued','skipped','completed','failed'))`, column default `'skipped'`).
@@ -720,9 +727,9 @@ flowchart TD
 | Scenario | Behavior |
 |---|---|
 | User is over their daily limit | `POST /api/chat/` raises `HTTPException(429, t("errors.daily_limit_reached"))`. `POST /api/chat/stream` returns HTTP 200 with a single SSE `{"error": ...}` event instead — the frontend must read the error out of the stream body, not the status code. |
-| `gemini_chat_model` or `gemini_embedding_model` unset in `system_configs` | `RAGService._build_context` raises `RuntimeError` → generic `500 t("errors.system_busy_generic")` and a `record_book_error(..., "chat")` entry. `ChatOrchestrator` does **not** raise: it falls back to the `model_name` argument (`"gemini-2.5-flash"`) and `settings.gemini_embedding_model` / `"text-embedding-004"`. |
+| `gemini_chat_model` or `gemini_embedding_model` unset in `system_configs` | `RAGService._build_context` raises `RuntimeError` → generic `500 t("errors.system_busy_generic")` and a `record_book_error(..., "chat")` entry. `ChatOrchestrator` does **not** raise: it falls back to the `model_name` argument (`"gemini-2.5-flash"`) and to `"text-embedding-004"` for embeddings. |
 | Book not found (non-global request) | `_build_context` raises `ValueError` → `404` on `POST /api/chat/`; on `/stream` it is caught as a validation error and emitted as an SSE `{"error": ...}`. |
-| Gemini returns 429 / `RESOURCE_EXHAUSTED` | `POST /api/chat/` maps it to `HTTPException(429, t("errors.system_busy"))` before the generic 500 branch. `/stream` has no such special case — every non-`ValueError` becomes the generic `t("errors.system_busy_generic")` SSE error. |
+| Gemini returns 429 / `RESOURCE_EXHAUSTED` | `POST /api/chat/` maps it to `HTTPException(429, t("errors.system_busy"))` before the generic 500 branch. `/stream` has no such special case — every non-`ValueError` becomes the generic `t("errors.system_busy_generic")` SSE error, followed by a `record_book_error(..., "chat_stream")` attempt. |
 | `_llm_analyze_query` fails (any exception) | `extract_signals` falls back to direct DB title/author lookups plus pure-Python keyword/regex heuristics; the turn proceeds with `intent = "passage"` and no rewrite. |
 | `_llm_analyze_query` exceeds 3 model turns without final JSON | Raises `ValueError("Too many tool call iterations in query analysis")` — caught by the same `extract_signals` fallback above. In `ChatOrchestrator`, which calls `_llm_analyze_query` **directly** with no such wrapper, the exception propagates out of `stream_response` and surfaces as the generic SSE error. |
 | Intent-classification LLM call fails | Logged as a warning; intent defaults to `"passage"`. |
@@ -755,7 +762,7 @@ flowchart TD
 | `settings.cache_ttl_rag_query` (env `CACHE_TTL_RAG_QUERY`) | `3600` (seconds) | TTL for the L1 embedding cache, the L2 search cache, and the L0 rewrite cache. |
 | `settings.cache_ttl_summary_search` (env `CACHE_TTL_SUMMARY_SEARCH`) | `1800` | Only referenced as `cache_config.TTL_SUMMARY_SEARCH`; no code sets a value under `KEY_RAG_SUMMARY_SEARCH`, so summary searches are uncached (see Cache Layers). |
 | `gemini_chat_model` (`system_configs`) | `"gemini-3.1-flash-lite"` (seeded by `seed_system_configs()`) | Answer synthesis chain / `KitabimAnswerAgent`. No code-level fallback on the `RAGService` path (raises `RuntimeError` if the key is unset); `ChatOrchestrator` instead falls back to its `model_name` argument (`"gemini-2.5-flash"`) if the key is unset. |
-| `gemini_embedding_model` (`system_configs`) | `"gemini-embedding-2"` (seeded by `seed_system_configs()`; see [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md)) | `embed_query` — must match the model that embedded `chunks` and `book_summaries`. No code-level fallback on the `RAGService` path (raises if the key is unset); `ChatOrchestrator` instead falls back to `settings.gemini_embedding_model` then `"text-embedding-004"` if the key is unset. |
+| `gemini_embedding_model` (`system_configs`) | `"gemini-embedding-2"` (seeded by `seed_system_configs()`; see [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md)) | `embed_query` — must match the model that embedded `chunks` and `book_summaries`. No code-level fallback on the `RAGService` path (raises if the key is unset); `ChatOrchestrator` instead falls back to `"text-embedding-004"` if the key is unset (its `getattr(settings, "gemini_embedding_model", ...)` lookup never resolves — `Settings` is a frozen dataclass with no such field, by design: model names are `system_configs`-only). |
 | `gemini_agent_loop_model` (`system_configs`) | Unset; falls back to `gemini_chat_model` | `ctx.agent_model` — the retrieval agent / ReAct loop / signal-extraction / intent-classification / decomposition model on both pipelines. |
 | `gemini_reranker_model` (`system_configs`) | `"gemini-3.1-flash-lite"` (seeded, and repeated as the code default) | `rerank_context`. |
 | `gemini_judge_model` (`system_configs`) | `"gemini-3.1-flash-lite"` (seeded, and repeated as the code default) | `rag_eval_job` → `score_answer`. |
@@ -789,7 +796,7 @@ All chat routes are mounted at `/api/chat` (`services/backend/main.py`), `questi
 | Endpoint | Role required | Effect |
 |---|---|---|
 | `POST /api/chat/` | `Depends(require_reader)` (ADMIN, EDITOR, or READER) | Non-streaming chat. Enforces the daily limit (429), then **always** `RAGService.answer_question` — this route never checks `use_adk_chat_v2` and cannot reach `ChatOrchestrator`. Applies `fix_malformed_citations`, increments usage on success, returns `{answer, usage}`. Maps `ValueError` → 404, Gemini 429/`RESOURCE_EXHAUSTED` → 429, anything else → 500 plus a `record_book_error(..., "chat")` entry. |
-| `POST /api/chat/stream` | `Depends(require_reader)` | SSE chat. Limit check emits an error event rather than a status code. Computes `use_v2` and dispatches to `ChatOrchestrator` or `RAGService.answer_question_stream`. Response headers `Cache-Control: no-cache`, `Connection: keep-alive`, `X-Accel-Buffering: no` (nginx buffering off). On the legacy path only, a post-stream `{"correction": ...}` event is emitted when `fix_malformed_citations` changed the accumulated text. Terminal event `{done, usage, conversationId, contextBookIds, evalId}`. |
+| `POST /api/chat/stream` | `Depends(require_reader)` | SSE chat. Limit check emits an error event rather than a status code. Computes `use_v2` and dispatches to `ChatOrchestrator` or `RAGService.answer_question_stream`. Response headers `Cache-Control: no-cache`, `Connection: keep-alive`, `X-Accel-Buffering: no` (nginx buffering off). On the legacy path only, a post-stream `{"correction": ...}` event is emitted when `fix_malformed_citations` changed the accumulated text. Terminal event `{done, usage, contextBookIds, evalId}`, plus `conversationId` on the orchestrator path only. Non-`ValueError` failures also record a `record_book_error(..., "chat_stream")` entry (best-effort — a failure to record is itself only logged). |
 | `GET /api/chat/usage` | `Depends(require_reader)` | `ChatUsageStatus` = `{usage, limit, has_reached_limit}` for the caller. |
 | `POST /api/chat/feedback` | `Depends(require_reader)` | Records `'positive'`/`'negative'` on `rag_evaluations.user_feedback`. Rejects other values with 400. **Loads the row and verifies `record.user_id == current_user.id` before mutating**, returning 404 otherwise — `eval_id` is a sequential integer, so without this check any reader could write feedback onto another user's turn. |
 | `GET /api/chat/recent-questions` | **None** — no auth dependency | Recent distinct first-turn questions for the public home-page rotator (`get_recent_standalone_questions`). Deliberately public. |
@@ -814,7 +821,7 @@ All chat routes are mounted at `/api/chat` (`services/backend/main.py`), `questi
 - **Cross-user data access is checked per row, not just per role.** `POST /api/chat/feedback` re-reads the `RAGEvaluation` and compares `user_id` before updating (the code comments call out the sequential-integer enumeration risk). Conversation read/delete both scope by `current_user.id`. Note that `RAGEvaluation.user_id` is a nullable `SET NULL` FK, so rows whose user was deleted can never be matched by the feedback ownership check.
 - **Admin-only curation surface.** `GET/PATCH /api/questions/admin/questions*` require `require_admin` — these expose every user's raw questions, so the role gate is the only thing preventing cross-user question disclosure through the admin list.
 - **Answer-side output handling.** `fix_malformed_citations` rewrites model-emitted citation links into the expected `ref:book_id:page` form; it is a formatting repair, not a sanitizer. Rendering safety for markdown/links is the frontend's responsibility.
-- **Secrets and cross-service calls.** No API key or model name is ever echoed into an SSE event; failures are surfaced as i18n keys (`t("errors.system_busy")`, `t("errors.system_busy_generic")`) rather than raw provider errors. Raw exception text is logged server-side via `log_json` and, for `POST /api/chat/`, recorded with `record_book_error`.
+- **Secrets and cross-service calls.** No API key or model name is ever echoed into an SSE event; failures are surfaced as i18n keys (`t("errors.system_busy")`, `t("errors.system_busy_generic")`) rather than raw provider errors. Raw exception text is logged server-side via `log_json` and recorded with `record_book_error` — stage `"chat"` from `POST /api/chat/`, stage `"chat_stream"` from `POST /api/chat/stream`.
 
 ## Testing
 

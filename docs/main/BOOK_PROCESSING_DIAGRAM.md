@@ -57,7 +57,7 @@ flowchart TD
         J_KG -->|"Bulk-enqueue one row per new entity"| GQ[(graph_resolution_queue)]
         GQ --> S_GR["Graph Resolution Scanner<br/>every 5 min (scheduled)"]
         S_GR -->|"Claim batch oldest-generation-first,<br/>dispatch one job per scope"| J_GR[Graph Resolution Job]
-        J_GR -->|"Merge duplicates, or open a<br/>graph_resolution_reviews row when unsure"| N4J
+        J_GR -->|"Merge duplicates (with parent boosting &<br/>auto-review resolution), or open a<br/>graph_resolution_reviews row when unsure"| N4J
     end
 
     %% Quality layer — never affects book status, but does gate chunking when enabled
