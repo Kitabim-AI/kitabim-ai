@@ -180,7 +180,7 @@ export const GraphView: React.FC = () => {
 
 
   // Load graph data
-  const fetchGraphData = async (query = '') => {
+  const fetchGraphData = async (query = '', resetFilters = false) => {
     setLoading(true);
     try {
       const res = await fetch(`/api/books/graph${query ? `?q=${encodeURIComponent(query)}` : ''}`);
@@ -212,11 +212,11 @@ export const GraphView: React.FC = () => {
 
       setRawGraphData({ nodes: coloredNodes, links: graphData.links });
 
-      // Initialize selected types on first load, or preserve user filter selections on refetch
+      // Initialize selected types on first load / search reset, or preserve user filter selections on refetch
       const uniqueNodeTypes = Array.from(new Set(coloredNodes.map(node => node.type || 'Entity')));
       const uniqueEdgeTypes = Array.from(new Set(graphData.links.map(link => link.label || 'RELATED_TO')));
 
-      if (!isInitializedRef.current) {
+      if (!isInitializedRef.current || resetFilters) {
         setSelectedNodeTypes(uniqueNodeTypes);
         setSelectedEdgeTypes(uniqueEdgeTypes);
         isInitializedRef.current = true;
@@ -258,7 +258,7 @@ export const GraphView: React.FC = () => {
     if (!targetNode) {
       const term = entityName || entityId;
       setSearchQuery(term);
-      const loadedNodes = await fetchGraphData(term);
+      const loadedNodes = await fetchGraphData(term, true);
       if (loadedNodes && loadedNodes.length > 0) {
         targetNode = loadedNodes.find(
           n => n.id === entityId || (normName && n.label.trim().toLowerCase() === normName) || n.id === entityName
@@ -267,9 +267,8 @@ export const GraphView: React.FC = () => {
     }
 
     if (targetNode) {
-      if (targetNode.type && !selectedNodeTypes.includes(targetNode.type)) {
-        setSelectedNodeTypes(prev => Array.from(new Set([...prev, targetNode.type])));
-      }
+      setSelectedNodeTypes(availableNodeTypes);
+      setSelectedEdgeTypes(availableEdgeTypes);
 
       setSelectedNode(targetNode);
       setActiveTab('details');
@@ -586,7 +585,7 @@ export const GraphView: React.FC = () => {
     e.preventDefault();
     setSelectedNode(null);
     setActiveTab('filters');
-    fetchGraphData(searchQuery);
+    fetchGraphData(searchQuery, true);
   };
 
   // Escape key to exit fullscreen or cancel an in-progress merge pick
@@ -1216,7 +1215,7 @@ export const GraphView: React.FC = () => {
                     setSearchQuery('');
                     setSelectedNode(null);
                     setActiveTab('filters');
-                    fetchGraphData('');
+                    fetchGraphData('', true);
                   }}
                   className="absolute inset-y-0 left-4 flex items-center text-[#94a3b8] hover:text-[#0369a1] dark:hover:text-[#38bdf8] transition-colors active:scale-95"
                 >
@@ -1260,7 +1259,7 @@ export const GraphView: React.FC = () => {
                       setSearchQuery('');
                       setSelectedNode(null);
                       setActiveTab('filters');
-                      fetchGraphData('');
+                      fetchGraphData('', true);
                     }}
                     className="absolute inset-y-0 left-4 flex items-center text-[#94a3b8] hover:text-[#0369a1] dark:hover:text-[#38bdf8] transition-colors active:scale-95"
                   >
@@ -1469,7 +1468,7 @@ export const GraphView: React.FC = () => {
                         setSearchQuery('');
                         setSelectedNode(null);
                         setActiveTab('filters');
-                        fetchGraphData('');
+                        fetchGraphData('', true);
                       }}
                       className="absolute inset-y-0 left-4 flex items-center text-slate-500 hover:text-slate-300 transition-colors active:scale-95"
                     >
