@@ -1,6 +1,6 @@
 # Spellcheck + Auto-Correct — Design
 
-See also: [WORKER_DESIGN.md](WORKER_DESIGN.md) for the full pipeline overview and [book_processing_diagram.md](book_processing_diagram.md) for the cross-stage diagram this stage's Data Flow is scoped from. Prior stages: [OCR_DESIGN.md](OCR_DESIGN.md), [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md), [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md). Next stage: [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md).
+See also: [WORKER_DESIGN.md](WORKER_DESIGN.md) for the full pipeline overview and [BOOK_PROCESSING_DIAGRAM.md](BOOK_PROCESSING_DIAGRAM.md) for the cross-stage diagram this stage's Data Flow is scoped from. Prior stages: [OCR_DESIGN.md](OCR_DESIGN.md), [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md), [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md). Next stage: [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md).
 
 ## Overview
 
@@ -420,5 +420,5 @@ Every mutating spellcheck/auto-correct-rules endpoint requires `require_editor` 
 - [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md) — documents the same `spell_check_enabled`-gated dependency from the other direction (chunking waiting on spellcheck), and the `ready`-book re-chunking trigger that auto-correct's milestone reset feeds.
 - [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md) — the analogous `ready`-book re-embedding trigger; terminal stage of the mandatory pipeline that spellcheck/auto-correct run alongside without gating.
 - [WORKER_DESIGN.md](WORKER_DESIGN.md) — full pipeline, `PipelineDriver`, `MultiPageLock`, `StaleWatchdog`, `BookMilestoneService`, and the shared milestone/state-machine conventions.
-- [book_processing_diagram.md](book_processing_diagram.md) — cross-stage diagram; this doc's Data Flow is the spellcheck/auto-correct slice of its "Full Pipeline" diagram's `SpellCheck`/`AutoCorrect` subgraphs.
+- [BOOK_PROCESSING_DIAGRAM.md](BOOK_PROCESSING_DIAGRAM.md) — cross-stage diagram; this doc's Data Flow is the spellcheck/auto-correct slice of its "Full Pipeline" diagram's `SpellCheck`/`AutoCorrect` subgraphs.
 - [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md) covers `summary_job`, which `PipelineDriver` enqueues once a book's mandatory pipeline is fully terminal — independent of, and not gated by, this stage.

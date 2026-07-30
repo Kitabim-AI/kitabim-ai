@@ -1,6 +1,6 @@
 # Chunking — Design
 
-See also: [WORKER_DESIGN.md](WORKER_DESIGN.md) for the full pipeline overview and [book_processing_diagram.md](book_processing_diagram.md) for the cross-stage diagram this stage's Data Flow is scoped from. Previous stage: [OCR_DESIGN.md](OCR_DESIGN.md). Next stage: [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md).
+See also: [WORKER_DESIGN.md](WORKER_DESIGN.md) for the full pipeline overview and [BOOK_PROCESSING_DIAGRAM.md](BOOK_PROCESSING_DIAGRAM.md) for the cross-stage diagram this stage's Data Flow is scoped from. Previous stage: [OCR_DESIGN.md](OCR_DESIGN.md). Next stage: [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md).
 
 ## Overview
 
@@ -259,4 +259,4 @@ flowchart TD
 - [OCR_DESIGN.md](OCR_DESIGN.md) — previous stage; provides the `text`/`is_toc` this stage reads and the `ocr_succeeded` event that (absent spell check) triggers reactive dispatch.
 - [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md) — next stage; claims chunks once `chunking_milestone='succeeded'` and fills in `chunks.embedding`.
 - [WORKER_DESIGN.md](WORKER_DESIGN.md) — full pipeline, `PipelineDriver`, `MultiPageLock`, `StaleWatchdog`, and the shared milestone/state-machine conventions.
-- [book_processing_diagram.md](book_processing_diagram.md) — cross-stage diagram; this doc's Data Flow is the chunking-only slice of its "Full Pipeline" diagram.
+- [BOOK_PROCESSING_DIAGRAM.md](BOOK_PROCESSING_DIAGRAM.md) — cross-stage diagram; this doc's Data Flow is the chunking-only slice of its "Full Pipeline" diagram.

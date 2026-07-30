@@ -1,6 +1,6 @@
 # Document Discovery — Design
 
-See also: [WORKER_DESIGN.md](WORKER_DESIGN.md) for the full pipeline overview, and [book_processing_diagram.md](book_processing_diagram.md) for the cross-stage diagram this stage's Data Flow is scoped from. Next stage: [OCR_DESIGN.md](OCR_DESIGN.md).
+See also: [WORKER_DESIGN.md](WORKER_DESIGN.md) for the full pipeline overview, and [BOOK_PROCESSING_DIAGRAM.md](BOOK_PROCESSING_DIAGRAM.md) for the cross-stage diagram this stage's Data Flow is scoped from. Next stage: [OCR_DESIGN.md](OCR_DESIGN.md).
 
 ## Overview
 
@@ -207,4 +207,4 @@ flowchart TD
 
 - [OCR_DESIGN.md](OCR_DESIGN.md) — next stage; begins once a page's `ocr_milestone` is `idle` (skipped for DOCX uploads).
 - [WORKER_DESIGN.md](WORKER_DESIGN.md) — full pipeline, `PipelineDriver`, and the shared milestone/state-machine conventions.
-- [book_processing_diagram.md](book_processing_diagram.md) — cross-stage diagram; this doc's Data Flow is the discovery-only slice of its `Triggers` subgraph.
+- [BOOK_PROCESSING_DIAGRAM.md](BOOK_PROCESSING_DIAGRAM.md) — cross-stage diagram; this doc's Data Flow is the discovery-only slice of its `Triggers` subgraph.

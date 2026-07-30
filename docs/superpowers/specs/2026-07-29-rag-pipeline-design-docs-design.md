@@ -7,7 +7,7 @@
 
 The RAG/book-processing pipeline (discovery → OCR → chunking → embedding → spellcheck → summary → chat → knowledge graph) has its design spread thin and unevenly across a handful of docs:
 
-- `docs/main/WORKER_DESIGN.md` and `docs/main/book_processing_diagram.md` cover discovery, OCR, chunking, embedding, spellcheck, auto-correct, and summary all in one place, at a per-scanner/per-job level of detail, interleaved with pipeline-wide orchestration concerns (outbox, event dispatcher, stale watchdog, retry semantics, cron schedule).
+- `docs/main/WORKER_DESIGN.md` and `docs/main/BOOK_PROCESSING_DIAGRAM.md` cover discovery, OCR, chunking, embedding, spellcheck, auto-correct, and summary all in one place, at a per-scanner/per-job level of detail, interleaved with pipeline-wide orchestration concerns (outbox, event dispatcher, stale watchdog, retry semantics, cron schedule).
 - `docs/main/QUESTION_ANSWERING_DIAGRAM.md`, `docs/main/LLM_ROUTED_RAG_DESIGN.md`, and `docs/main/RAG_DETERMINISTIC_ROUTER_DESIGN.md` split the chat/RAG retrieval stage across three docs.
 - Knowledge graph extraction and entity resolution have no `docs/main/` doc at all — the only write-up (`docs/feature/rag-retrieval-reranking-hybrid-search/knowledge-graph-entity-resolution-design-v2.md`) is a feature-branch artifact, not a maintained reference.
 
@@ -15,11 +15,11 @@ There's no consistent per-stage reference doc, no standard template, and no sing
 
 ## Existing state (reference material for authoring)
 
-House diagram/doc style, confirmed from `docs/main/WORKER_DESIGN.md` and `docs/main/book_processing_diagram.md`:
+House diagram/doc style, confirmed from `docs/main/WORKER_DESIGN.md` and `docs/main/BOOK_PROCESSING_DIAGRAM.md`:
 - Mermaid `flowchart TD` diagrams (with `classDef` color coding for state types), not ASCII art.
 - Dense, file-anchored prose — every claim cites the actual file/function/column/config key.
 - Numbered pseudocode blocks for scanner/job algorithms (e.g. `OcrJob(book_id, page_ids): 1. ... 2. ...`).
-- Tables for schema columns, feature flags, config defaults, cron schedule, and (in `book_processing_diagram.md`'s Admin Recovery Actions section) API endpoints with a role-required column.
+- Tables for schema columns, feature flags, config defaults, cron schedule, and (in `BOOK_PROCESSING_DIAGRAM.md`'s Admin Recovery Actions section) API endpoints with a role-required column.
 - Docs describe **only current, shipped behavior** — no roadmap/TODO language, no aspirational design.
 
 Current pipeline stage → key files (already mapped during exploration, will be re-verified per doc at authoring time since code may drift):
@@ -54,7 +54,7 @@ Each doc reflects **only the current state of the code** — no historical narra
 
 ### Disposition of existing docs
 
-- **`WORKER_DESIGN.md`** and **`book_processing_diagram.md`** are trimmed, not deleted. They keep only what's genuinely cross-cutting and shared by every stage: the Transactional Outbox pattern, `EventDispatcher`, `MultiPageLock`, `StaleWatchdog`, the shared `retry_count` semantics, and the cron schedule table. Every per-step algorithm section (OcrJob, ChunkingJob, EmbeddingJob, SpellCheckJob, AutoCorrectJob, SummaryJob, KnowledgeGraphJob and their scanners) is removed from these two docs and replaced with a one-line link to the new stage doc.
+- **`WORKER_DESIGN.md`** and **`BOOK_PROCESSING_DIAGRAM.md`** are trimmed, not deleted. They keep only what's genuinely cross-cutting and shared by every stage: the Transactional Outbox pattern, `EventDispatcher`, `MultiPageLock`, `StaleWatchdog`, the shared `retry_count` semantics, and the cron schedule table. Every per-step algorithm section (OcrJob, ChunkingJob, EmbeddingJob, SpellCheckJob, AutoCorrectJob, SummaryJob, KnowledgeGraphJob and their scanners) is removed from these two docs and replaced with a one-line link to the new stage doc.
 - **`QUESTION_ANSWERING_DIAGRAM.md`, `LLM_ROUTED_RAG_DESIGN.md`, `RAG_DETERMINISTIC_ROUTER_DESIGN.md`** are fully replaced by `CHAT_RAG_DESIGN.md` and deleted.
 - **`SYSTEM_DESIGN.md`** and **`PROJECT_STRUCTURE.md`** are untouched — different altitude (whole-system/repo layout, not pipeline-stage detail).
 - Root **`README.md`**'s existing pipeline/architecture section is updated to link to the new stage docs instead of (or in addition to) the docs it currently references.
@@ -81,7 +81,7 @@ Sections marked *(optional)* are included only when they'd add real information 
 
 ### Authoring order
 
-Discovery → OCR → Chunking → Embedding → Spellcheck → Summary → Chat/RAG → Knowledge Graph (pipeline order; Chat and Knowledge Graph last since they're the largest/most complex and most likely to surface template adjustments needed for the simpler docs). The `WORKER_DESIGN.md`/`book_processing_diagram.md` trims, the deletion of the three superseded chat docs, and the `README.md`/doc-index updates happen as a final cleanup pass after all 8 stage docs exist.
+Discovery → OCR → Chunking → Embedding → Spellcheck → Summary → Chat/RAG → Knowledge Graph (pipeline order; Chat and Knowledge Graph last since they're the largest/most complex and most likely to surface template adjustments needed for the simpler docs). The `WORKER_DESIGN.md`/`BOOK_PROCESSING_DIAGRAM.md` trims, the deletion of the three superseded chat docs, and the `README.md`/doc-index updates happen as a final cleanup pass after all 8 stage docs exist.
 
 ### Out of scope
 

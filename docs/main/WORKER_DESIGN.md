@@ -1,6 +1,6 @@
 # Worker Design — Event-Driven Pipeline
 
-See also: [book_processing_diagram.md](book_processing_diagram.md) for the visual pipeline diagram, admin recovery actions, and page-milestone transition diagrams.
+See also: [BOOK_PROCESSING_DIAGRAM.md](BOOK_PROCESSING_DIAGRAM.md) for the visual pipeline diagram, admin recovery actions, and page-milestone transition diagrams.
 
 ## Overview
 

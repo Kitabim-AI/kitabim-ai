@@ -140,7 +140,7 @@ All architectural and design documents are located under the `docs/` directory.
 |----------|----------|
 | [docs/main/SYSTEM_DESIGN.md](docs/main/SYSTEM_DESIGN.md) | Architecture overview, data model, key flows, technology stack |
 | [docs/main/WORKER_DESIGN.md](docs/main/WORKER_DESIGN.md) | Event-driven pipeline, scanners, jobs, state machine |
-| [docs/main/book_processing_diagram.md](docs/main/book_processing_diagram.md) | Visual diagrams of the book processing pipeline |
+| [docs/main/BOOK_PROCESSING_DIAGRAM.md](docs/main/BOOK_PROCESSING_DIAGRAM.md) | Visual diagrams of the book processing pipeline |
 | [docs/main/DOCUMENT_DISCOVERY_DESIGN.md](docs/main/DOCUMENT_DISCOVERY_DESIGN.md) | Manual upload + GCS bucket discovery, duplicate detection |
 | [docs/main/OCR_DESIGN.md](docs/main/OCR_DESIGN.md) | Gemini Vision OCR, soft-skip retries, batch OCR mode |
 | [docs/main/CHUNKING_DESIGN.md](docs/main/CHUNKING_DESIGN.md) | Recursive character splitting, chunk upsert strategy |

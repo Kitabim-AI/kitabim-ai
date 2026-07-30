@@ -13,7 +13,7 @@ Kitabim.ai is a monorepo platform for OCR digitization, editorial curation, and 
 | [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md) | System architecture, data model, AI model configuration, key flows |
 | [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) | Monorepo layout, service responsibilities, worker jobs/scanners, key files |
 | [WORKER_DESIGN.md](WORKER_DESIGN.md) | Event-driven pipeline architecture, state machine, worker components |
-| [book_processing_diagram.md](book_processing_diagram.md) | Visual diagrams of the book processing pipeline |
+| [BOOK_PROCESSING_DIAGRAM.md](BOOK_PROCESSING_DIAGRAM.md) | Visual diagrams of the book processing pipeline |
 
 ### Pipeline Stages
 

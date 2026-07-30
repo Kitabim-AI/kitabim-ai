@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the scattered pipeline-stage coverage in `docs/main/WORKER_DESIGN.md`, `docs/main/book_processing_diagram.md`, and the three chat docs with 8 standardized, current-state-only design docs — one per RAG pipeline stage.
+**Goal:** Replace the scattered pipeline-stage coverage in `docs/main/WORKER_DESIGN.md`, `docs/main/BOOK_PROCESSING_DIAGRAM.md`, and the three chat docs with 8 standardized, current-state-only design docs — one per RAG pipeline stage.
 
 **Architecture:** No code changes. Each task researches one pipeline stage's actual current implementation (services, repos, worker jobs/scanners, routers, tests), writes one `docs/main/<STAGE>_DESIGN.md` file following a fixed 14-section template, and verifies every factual claim against the live codebase before committing. A final cleanup task trims the two multi-stage docs down to cross-cutting content only, deletes the three now-superseded chat docs, and updates the doc indexes.
 
@@ -84,7 +84,7 @@ flowchart TD
 
 **Files:**
 - Create: `docs/main/DOCUMENT_DISCOVERY_DESIGN.md`
-- Research (read, do not modify): `services/worker/scanners/gcs_discovery_scanner.py`, `packages/backend-core/app/services/storage_service.py`, `packages/backend-core/app/services/pdf_service.py`, `packages/backend-core/app/db/repositories/books_repository.py`, `services/backend/api/endpoints/books_router.py` (upload-related routes only), `docs/main/WORKER_DESIGN.md` (GcsDiscoveryScanner section), `docs/main/book_processing_diagram.md` (Triggers subgraph)
+- Research (read, do not modify): `services/worker/scanners/gcs_discovery_scanner.py`, `packages/backend-core/app/services/storage_service.py`, `packages/backend-core/app/services/pdf_service.py`, `packages/backend-core/app/db/repositories/books_repository.py`, `services/backend/api/endpoints/books_router.py` (upload-related routes only), `docs/main/WORKER_DESIGN.md` (GcsDiscoveryScanner section), `docs/main/BOOK_PROCESSING_DIAGRAM.md` (Triggers subgraph)
 - Test file to locate and cite: search `packages/backend-core/tests/` and `services/worker/tests/` for discovery/upload/GCS-related test files (exact filename discovered during research — cite what actually exists)
 
 **Interfaces:**
@@ -110,7 +110,7 @@ Include:
 - Overview: manual upload path vs. GCS-scanner discovery path, and that both converge on the same `Book` + `Page` stub creation.
 - Schema: the `books` table columns touched at creation time (`status`, `upload_date`, whichever milestone/pipeline_step defaults are set), and `pages` table stub row shape.
 - Architecture: the file list above with one-line purposes.
-- Data Flow: a mermaid diagram showing both entry points (manual upload endpoint, `GcsDiscoveryScanner` cron) converging on `InitDB` (book + page stubs created), matching the `Triggers` subgraph style already in `book_processing_diagram.md` but scoped to discovery only (stop at the "book+pages exist" node — do not continue into OCR).
+- Data Flow: a mermaid diagram showing both entry points (manual upload endpoint, `GcsDiscoveryScanner` cron) converging on `InitDB` (book + page stubs created), matching the `Triggers` subgraph style already in `BOOK_PROCESSING_DIAGRAM.md` but scoped to discovery only (stop at the "book+pages exist" node — do not continue into OCR).
 - Component Responsibilities: `GcsDiscoveryScanner` as numbered steps (already documented in `WORKER_DESIGN.md` — re-verify against current source, don't just copy), plus the manual upload endpoint's handler logic.
 - API Endpoints: the upload endpoint(s) in `books_router.py`, with role required read from the actual `Depends(...)` on that route.
 - Security Considerations: file-type/size validation on upload, GCS signed URL usage if present, content-hash duplicate detection as a de-dup/integrity measure.
@@ -142,7 +142,7 @@ git commit -m "docs: add Document Discovery pipeline stage design doc"
 
 **Files:**
 - Create: `docs/main/OCR_DESIGN.md`
-- Research: `services/worker/jobs/ocr_job.py`, `services/worker/scanners/ocr_scanner.py`, `services/worker/scanners/batch_ocr_poller_scanner.py`, `packages/backend-core/app/services/ocr_service.py`, `packages/backend-core/app/services/batch_ocr_service.py`, `packages/backend-core/app/db/repositories/pages_repository.py`, `services/backend/api/endpoints/books_router.py` (OCR reprocess/reset endpoints), `docs/main/WORKER_DESIGN.md` (OcrScanner, OcrJob, Batch OCR sections), `docs/main/book_processing_diagram.md` (Full Pipeline OCR portion + Batch OCR subgraph)
+- Research: `services/worker/jobs/ocr_job.py`, `services/worker/scanners/ocr_scanner.py`, `services/worker/scanners/batch_ocr_poller_scanner.py`, `packages/backend-core/app/services/ocr_service.py`, `packages/backend-core/app/services/batch_ocr_service.py`, `packages/backend-core/app/db/repositories/pages_repository.py`, `services/backend/api/endpoints/books_router.py` (OCR reprocess/reset endpoints), `docs/main/WORKER_DESIGN.md` (OcrScanner, OcrJob, Batch OCR sections), `docs/main/BOOK_PROCESSING_DIAGRAM.md` (Full Pipeline OCR portion + Batch OCR subgraph)
 - Test file to locate: OCR-related test files under `packages/backend-core/tests/` and `services/worker/tests/`
 
 **Interfaces:**
@@ -164,7 +164,7 @@ grep -rl "ocr_job\|OcrJob\|ocr_scanner\|OcrScanner\|ocr_service\|batch_ocr" pack
 Include:
 - Feature Flags: `gemini_batch_ocr_enabled` (default, what it gates).
 - Schema: `pages.ocr_milestone`, `pages.retry_count`, `pages.worker_id`/`claimed_at`, `books.ocr_milestone`, `books.pipeline_step`.
-- Data Flow: scoped mermaid diagram — `OCR_IDLE` scanner claim → job → Gemini Vision call → success/soft-skip/failure → outbox `ocr_succeeded` event → handoff to Chunking. Include the batch-mode branch as a sub-flow (reuse the shape of `book_processing_diagram.md`'s "Batch OCR & Batch Embedding" diagram, OCR half only).
+- Data Flow: scoped mermaid diagram — `OCR_IDLE` scanner claim → job → Gemini Vision call → success/soft-skip/failure → outbox `ocr_succeeded` event → handoff to Chunking. Include the batch-mode branch as a sub-flow (reuse the shape of `BOOK_PROCESSING_DIAGRAM.md`'s "Batch OCR & Batch Embedding" diagram, OCR half only).
 - Component Responsibilities: `OcrScanner` and `OcrJob` as numbered pseudocode (re-verify against current `ocr_job.py`/`ocr_scanner.py` — the exhaustion/soft-skip logic is easy to get subtly wrong, read the actual exception-handling branch), plus `batch_ocr_service.submit_batch_ocr_job` and `batch_ocr_poller_scanner`.
 - State Machine: `ocr_milestone` states (`idle`/`in_progress`/`succeeded` incl. soft-skip/`failed`) and transitions — mermaid diagram, reusing the `WORKER_DESIGN.md` OCR portion of the full state machine but as its own standalone diagram.
 - Error Handling & Retries: distinguish "soft-skip" (never blocks book) from genuine `ocr_milestone='failed'` (only when the PDF itself can't be downloaded — this is what can push a book to `status='error'`).
@@ -234,7 +234,7 @@ git commit -m "docs: add Chunking pipeline stage design doc"
 
 **Files:**
 - Create: `docs/main/EMBEDDING_DESIGN.md`
-- Research: `services/worker/jobs/embedding_job.py`, `services/worker/scanners/embedding_scanner.py`, `services/worker/scanners/batch_embedding_poller_scanner.py`, `packages/backend-core/app/services/batch_embedding_service.py`, `packages/backend-core/app/db/repositories/chunks_repository.py`, `services/backend/api/endpoints/books_router.py` (reprocess/embedding endpoint), `docs/main/WORKER_DESIGN.md` (EmbeddingScanner, EmbeddingJob, Batch Embedding sections), `docs/main/book_processing_diagram.md` (Batch OCR & Batch Embedding diagram, embedding half)
+- Research: `services/worker/jobs/embedding_job.py`, `services/worker/scanners/embedding_scanner.py`, `services/worker/scanners/batch_embedding_poller_scanner.py`, `packages/backend-core/app/services/batch_embedding_service.py`, `packages/backend-core/app/db/repositories/chunks_repository.py`, `services/backend/api/endpoints/books_router.py` (reprocess/embedding endpoint), `docs/main/WORKER_DESIGN.md` (EmbeddingScanner, EmbeddingJob, Batch Embedding sections), `docs/main/BOOK_PROCESSING_DIAGRAM.md` (Batch OCR & Batch Embedding diagram, embedding half)
 - Test file to locate: embedding-related test files
 
 **Interfaces:**
@@ -301,7 +301,7 @@ grep -rl "spell_check\|SpellCheck\|auto_correct\|AutoCorrect" packages/backend-c
 Include:
 - Feature Flags: `spell_check_enabled`, `auto_correct_enabled`.
 - Schema: `pages.spell_check_milestone`, `dictionary`, `page_spell_issues`, `auto_correct_rules` tables.
-- Data Flow: one scoped diagram covering both spell-check and auto-correct as two connected subgraphs, matching the shape of `book_processing_diagram.md`'s `SpellCheck`/`AutoCorrect` subgraphs.
+- Data Flow: one scoped diagram covering both spell-check and auto-correct as two connected subgraphs, matching the shape of `BOOK_PROCESSING_DIAGRAM.md`'s `SpellCheck`/`AutoCorrect` subgraphs.
 - Component Responsibilities: `SpellCheckScanner`/`SpellCheckJob` and `AutoCorrectScanner`/`AutoCorrectJob`, all four as numbered steps.
 - State Machine: `spell_check_milestone` states (note: exhaustion here never affects `book.status`, unlike chunking/embedding).
 - Configuration Reference: `max_concurrent_spell_check_books`, `scanner_page_limit`, `MAX_PARALLEL_SPELL_CHECK`, `auto_correct_batch_size`, `MAX_PARALLEL_AUTO_CORRECT`.
@@ -457,7 +457,7 @@ git commit -m "docs: add Knowledge Graph pipeline stage design doc"
 
 **Files:**
 - Modify: `docs/main/WORKER_DESIGN.md`
-- Modify: `docs/main/book_processing_diagram.md`
+- Modify: `docs/main/BOOK_PROCESSING_DIAGRAM.md`
 - Delete: `docs/main/QUESTION_ANSWERING_DIAGRAM.md`
 - Delete: `docs/main/LLM_ROUTED_RAG_DESIGN.md`
 - Delete: `docs/main/RAG_DETERMINISTIC_ROUTER_DESIGN.md`
@@ -472,7 +472,7 @@ git commit -m "docs: add Knowledge Graph pipeline stage design doc"
 
 Read the current file. Remove the per-step algorithm subsections that now live in the stage docs: `OcrScanner / ChunkingScanner / EmbeddingScanner / SpellCheckScanner` component-responsibility details, the `Jobs` subsection (`OcrJob`, `ChunkingJob`, `EmbeddingJob`, `SpellCheckJob`, `AutoCorrectJob`, `SummaryJob`, `KnowledgeGraphJob` bodies), `Batch OCR & Batch Embedding` detail, `AutoCorrectScanner` detail. Replace each removed subsection with a single line: `See [<STAGE>_DESIGN.md](<STAGE>_DESIGN.md) for the full <stage> algorithm.` Keep: Overview, Goals, Feature Flags (as a full cross-stage index — do not remove flags just because they're also documented per-stage), Schema (the milestone-column tables — these are inherently cross-stage), the top-level Architecture file tree (as a directory map, not per-file algorithm detail), `PipelineDriver`, `StaleWatchdog`, `EventDispatcher`, `MaintenanceScanner` (these have no single stage owner), the State Machine mermaid diagram (it's the cross-stage view — the per-stage docs have their own scoped versions), Retry Logic, Cron Schedule.
 
-- [ ] **Step 2: Trim `docs/main/book_processing_diagram.md`**
+- [ ] **Step 2: Trim `docs/main/BOOK_PROCESSING_DIAGRAM.md`**
 
 Same principle: keep the "Full Pipeline" top-level mermaid diagram (cross-stage view) and the Admin Recovery Actions / Page Milestone Transitions / Key Infrastructure sections (cross-stage). Remove the per-stage sub-diagrams that are now duplicated in each stage doc's own Data Flow section, replacing with a link, e.g. `See [OCR_DESIGN.md](OCR_DESIGN.md#data-flow) for the OCR-specific diagram.`
 
@@ -507,7 +507,7 @@ Expect: no output. If any file still references a deleted doc, fix it.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add docs/main/WORKER_DESIGN.md docs/main/book_processing_diagram.md docs/main/README.md README.md
+git add docs/main/WORKER_DESIGN.md docs/main/BOOK_PROCESSING_DIAGRAM.md docs/main/README.md README.md
 git add -u docs/main/
 git commit -m "docs: trim multi-stage docs and delete superseded chat docs after per-stage doc split"
 ```

@@ -1,6 +1,6 @@
 # Summary Generation — Design
 
-See also: [WORKER_DESIGN.md](WORKER_DESIGN.md) for the full pipeline overview and [book_processing_diagram.md](book_processing_diagram.md) for the cross-stage diagram (summary generation is the last node of the mandatory-adjacent pipeline it depicts). Prior stages: [OCR_DESIGN.md](OCR_DESIGN.md), [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md), [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md), [SPELLCHECK_DESIGN.md](SPELLCHECK_DESIGN.md). Next stage: [CHAT_RAG_DESIGN.md](CHAT_RAG_DESIGN.md).
+See also: [WORKER_DESIGN.md](WORKER_DESIGN.md) for the full pipeline overview and [BOOK_PROCESSING_DIAGRAM.md](BOOK_PROCESSING_DIAGRAM.md) for the cross-stage diagram (summary generation is the last node of the mandatory-adjacent pipeline it depicts). Prior stages: [OCR_DESIGN.md](OCR_DESIGN.md), [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md), [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md), [SPELLCHECK_DESIGN.md](SPELLCHECK_DESIGN.md). Next stage: [CHAT_RAG_DESIGN.md](CHAT_RAG_DESIGN.md).
 
 ## Overview
 

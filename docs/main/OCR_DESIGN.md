@@ -1,6 +1,6 @@
 # OCR — Design
 
-See also: [WORKER_DESIGN.md](WORKER_DESIGN.md) for the full pipeline overview and [book_processing_diagram.md](book_processing_diagram.md) for the cross-stage diagram this stage's Data Flow is scoped from. Previous stage: [DOCUMENT_DISCOVERY_DESIGN.md](DOCUMENT_DISCOVERY_DESIGN.md). Next stage: [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md).
+See also: [WORKER_DESIGN.md](WORKER_DESIGN.md) for the full pipeline overview and [BOOK_PROCESSING_DIAGRAM.md](BOOK_PROCESSING_DIAGRAM.md) for the cross-stage diagram this stage's Data Flow is scoped from. Previous stage: [DOCUMENT_DISCOVERY_DESIGN.md](DOCUMENT_DISCOVERY_DESIGN.md). Next stage: [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md).
 
 ## Overview
 
@@ -334,4 +334,4 @@ Note the role asymmetry: `/reprocess/ocr` requires ADMIN while the otherwise-equ
 - [DOCUMENT_DISCOVERY_DESIGN.md](DOCUMENT_DISCOVERY_DESIGN.md) — previous stage; provides the `Book` + `Page` stub rows OCR operates on.
 - [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md) — next stage; claims pages once `ocr_milestone='succeeded'`.
 - [WORKER_DESIGN.md](WORKER_DESIGN.md) — full pipeline, `PipelineDriver`, `MultiPageLock`, `StaleWatchdog`, and the shared milestone/state-machine conventions.
-- [book_processing_diagram.md](book_processing_diagram.md) — cross-stage diagram; this doc's Data Flow is the OCR-only slice of its "Full Pipeline" and "Batch OCR & Batch Embedding" diagrams.
+- [BOOK_PROCESSING_DIAGRAM.md](BOOK_PROCESSING_DIAGRAM.md) — cross-stage diagram; this doc's Data Flow is the OCR-only slice of its "Full Pipeline" and "Batch OCR & Batch Embedding" diagrams.
