@@ -149,6 +149,9 @@ flowchart TD
         FLAG{"knowledge_graph_enabled<br/>== 'true'?"}
         MILE["books.graph_milestone = 'in_progress'<br/>(set by the endpoint, before enqueue)"]
         ENQ["enqueue knowledge_graph_job<br/>(_job_id=knowledge_graph:&lt;book_id&gt;)"]
+        JFLAG{"knowledge_graph_enabled<br/>== 'true'? (re-checked inside the job)"}
+        BOOKSEL["SELECT the Book row"]
+        BOOKGONE(["Book missing: return;<br/>graph_milestone left AS-IS<br/>(the only exit path that<br/>does not reset it)"])
         LOAD["Load all Chunk rows for the book<br/>ORDER BY page_number, chunk_index"]
         CLEAR["delete_book_graph(book_id)<br/>+ init_constraints()"]
         BATCH["Group into batches of kg_chunk_batch_size;<br/>asyncio.Semaphore(kg_max_parallel_chunks)"]
@@ -182,8 +185,12 @@ flowchart TD
 
     ADMIN --> FLAG
     FLAG -- No --> REJ["HTTP 400: feature disabled"]
-    FLAG -- Yes --> MILE --> ENQ --> LOAD
-    LOAD -->|"flag off, book missing,<br/>or zero chunks"| NOOP
+    FLAG -- Yes --> MILE --> ENQ --> JFLAG
+    JFLAG -- No --> NOOP
+    JFLAG -- Yes --> BOOKSEL
+    BOOKSEL -->|"missing"| BOOKGONE
+    BOOKSEL -->|"found"| LOAD
+    LOAD -->|"zero chunks"| NOOP
     LOAD --> CLEAR --> BATCH --> LLM --> IDS --> WRITE --> QUEUE --> DONE
 
     QUEUE --> SCAN --> DISPATCH --> RESOLVE --> CAND
@@ -207,8 +214,8 @@ flowchart TD
     classDef done fill:#d4f1f4,stroke:#189ab4
     classDef fail fill:#ffcccb,stroke:#d32f2f
 
-    class ADMIN,FLAG,HARD idle
-    class MILE,ENQ,LOAD,CLEAR,BATCH,LLM,IDS,SCAN,DISPATCH,RESOLVE,CAND,SCORE,JUDGE,LOOKUP,FACTS active
+    class ADMIN,FLAG,HARD,JFLAG,BOOKGONE idle
+    class MILE,ENQ,LOAD,CLEAR,BATCH,LLM,IDS,SCAN,DISPATCH,RESOLVE,CAND,SCORE,JUDGE,LOOKUP,FACTS,BOOKSEL active
     class WRITE,QUEUE,DONE,MERGE,OK,CACHE,CHUNKS,NEXT done
     class REJ,NOOP,REVIEW fail
 ```
@@ -484,7 +491,7 @@ flowchart TD
     QPROG -->|"no candidate needed review"| QOK
     QPROG -->|"gray-zone review created"| QREV
     QPROG -->|"entity absent / exception"| QFAIL
-    QOK -->|"a merge/split touched it as a CHILD_OF child<br/>→ requeue_or_cap, pass_count+1"| QIDLE
+    QOK -->|"a merge touched it as a CHILD_OF child<br/>→ requeue_or_cap, pass_count+1"| QIDLE
     QREV -->|"requeue_or_cap at cap"| QREV
     QPROG -->|"merged into another entity"| GONE
 
