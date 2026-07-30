@@ -179,6 +179,39 @@ async def test_graph_repository_connect_entities_bulk_no_existing_edge():
 
 
 @pytest.mark.asyncio
+async def test_graph_repository_connect_entities_bulk_carries_evidence():
+    """evidence must survive into the write payload — it's dropped before this fix,
+    silently discarding the figurative-kinship audit trail (item 4)."""
+    mock_read_result = AsyncMock()
+    mock_read_result.data.return_value = []
+    mock_session = AsyncMock()
+    mock_session.__aenter__.return_value = mock_session
+    mock_session.run.side_effect = [mock_read_result, AsyncMock()]
+    mock_driver = _mock_driver_session(mock_session)
+
+    with patch(
+        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
+        return_value=mock_driver,
+    ):
+        repo = GraphRepository()
+        relations = [
+            {
+                "source_id": "s1",
+                "rel_type": "SON_OF",
+                "target_id": "t1",
+                "book_id": "book-1",
+                "chunk_refs": ["book-1:1:0"],
+                "evidence": "he was the son of Ibrahim",
+            }
+        ]
+        await repo.connect_entities_bulk(relations)
+
+        write_kwargs = mock_session.run.call_args_list[1][1]
+        normalized = write_kwargs["relations_data"][0]
+        assert normalized["evidence"] == "he was the son of Ibrahim"
+
+
+@pytest.mark.asyncio
 async def test_graph_repository_merge_entities_by_id_redirects_edges_and_deletes():
     mock_session = AsyncMock()
     mock_session.__aenter__.return_value = mock_session

@@ -107,6 +107,11 @@ services:
       - "37474:7474" # HTTP Neo4j Browser UI
     environment:
       - NEO4J_AUTH=none
+      - NEO4J_PLUGINS=["graph-data-science"]
+      - NEO4J_dbms_security_procedures_unrestricted=gds.*
+      - NEO4J_server_memory_heap_initial__size=256m
+      - NEO4J_server_memory_heap_max__size=512m
+      - NEO4J_server_memory_pagecache_size=256m
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs
@@ -120,7 +125,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 1.5G
 
 
 volumes:

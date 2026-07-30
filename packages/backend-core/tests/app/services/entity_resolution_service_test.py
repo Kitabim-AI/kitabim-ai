@@ -153,6 +153,9 @@ async def test_execute_merge_happy_path_logs_before_delete_and_requeues_children
             "app.services.entity_resolution_service.GraphResolutionQueueRepository"
         ) as MockQueueRepo,
         patch(
+            "app.services.entity_resolution_service.GraphResolutionReviewsRepository"
+        ) as MockReviewsRepo,
+        patch(
             "app.services.entity_resolution_service.SystemConfigsRepository"
         ) as MockConfigRepo,
         patch(
@@ -166,6 +169,9 @@ async def test_execute_merge_happy_path_logs_before_delete_and_requeues_children
 
         queue_repo = AsyncMock()
         MockQueueRepo.return_value = queue_repo
+
+        reviews_repo = AsyncMock()
+        MockReviewsRepo.return_value = reviews_repo
 
         config_repo = AsyncMock()
         config_repo.get_value.return_value = "5"
@@ -186,6 +192,9 @@ async def test_execute_merge_happy_path_logs_before_delete_and_requeues_children
         assert set(combined_aliases) == {"Remove", "RemoveAlt"}
 
         queue_repo.delete_by_entity_id.assert_called_once_with("remove-1")
+        reviews_repo.resolve_reviews_for_merge.assert_called_once_with(
+            keep_id="keep-1", remove_id="remove-1", reviewed_by="admin@example.com"
+        )
         requeued_ids = {c[0][0] for c in queue_repo.requeue_or_cap.call_args_list}
         assert requeued_ids == {"child-of-remove", "child-of-keep"}
         mock_update_cache.assert_called_once_with(graph_repo, "keep-1")
@@ -404,13 +413,14 @@ async def test_resolve_entity_hard_match_executes_merge():
             "id": "e1",
             "canonical_name": "A",
             "aliases": [],
+            "subtype": "Person",
             "scope": "nonfiction",
             "book_id": None,
         },
-        "cand-1": {"id": "cand-1", "canonical_name": "A"},
+        "cand-1": {"id": "cand-1", "canonical_name": "A", "subtype": "Person"},
     }.get(eid)
     graph_repo.find_resolution_candidates.return_value = [
-        {"id": "cand-1", "canonical_name": "A"}
+        {"id": "cand-1", "canonical_name": "A", "subtype": "Person"}
     ]
     graph_repo.get_entity_facts.side_effect = lambda eid: {
         "e1": {
@@ -433,7 +443,7 @@ async def test_resolve_entity_hard_match_executes_merge():
         ) as MockQueueRepo,
         patch(
             "app.services.entity_resolution_service.GraphResolutionReviewsRepository"
-        ),
+        ) as MockReviewsRepo,
         patch(
             "app.services.entity_resolution_service.SystemConfigsRepository"
         ) as MockConfigRepo,
@@ -446,6 +456,8 @@ async def test_resolve_entity_hard_match_executes_merge():
     ):
         queue_repo = AsyncMock()
         MockQueueRepo.return_value = queue_repo
+        reviews_repo = AsyncMock()
+        MockReviewsRepo.return_value = reviews_repo
         config_repo = AsyncMock()
         config_repo.get_value.return_value = "5"
         MockConfigRepo.return_value = config_repo
