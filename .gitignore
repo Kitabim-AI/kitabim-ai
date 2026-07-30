@@ -46,7 +46,7 @@ infra/k8s/docker-desktop/secret.yaml
 deploy/gcp/
 
 # Production connection guides — contain server details
-docs/main/NEO4J_CONNECTION.md
+**/NEO4J_CONNECTION.md
 
 # Logs
 npm-debug.log*
@@ -70,6 +70,10 @@ Thumbs.db
 # Testing
 /coverage/
 .nyc_output
+vitest_results.json
+
+# Build and Dev Caches
+.vite/
 
 # Miscellaneous
 .DS_Store

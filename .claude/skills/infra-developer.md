@@ -408,7 +408,7 @@ jobs:
 |--------|-------|
 | `GCP_SA_KEY` | GCP service account JSON (Artifact Registry write + Compute SSH) |
 | `GCP_PROJECT_ID` | GCP project ID |
-| `VM_HOST` | VM external IP (34.174.120.98) |
+| `VM_HOST` | VM external IP (`<PRODUCTION_VM_IP>`) |
 | `VM_USER` | SSH username on VM |
 | `VM_SSH_KEY` | Private SSH key for VM access |
 

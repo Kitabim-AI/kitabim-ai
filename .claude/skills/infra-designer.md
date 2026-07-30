@@ -11,7 +11,7 @@ Internet
   │
   ▼
 GCP VM: kitabim-prod (e2-standard-2, us-south1-c)
-  IP: 34.174.120.98
+  IP: <PRODUCTION_VM_IP>
   │
   ├── Nginx (80/443) ── Let's Encrypt SSL (auto-renew via cron 3am)
   │     ├── /api/* ──────────────────────► backend:8000
@@ -30,9 +30,9 @@ GCP VM: kitabim-prod (e2-standard-2, us-south1-c)
   └── /etc/gcs/key.json  ← GCS service account key (on VM)
 
 External Services (not on VM):
-  ├── Cloud SQL (PostgreSQL) — private IP 10.158.0.5:5432
-  ├── GCS data bucket  — ai-kitabim-prod-data-bkt  (PDFs)
-  ├── GCS media bucket — ai-kitabim-prod-media-bkt (covers)
+  ├── Cloud SQL (PostgreSQL) — private IP <CLOUD_SQL_PRIVATE_IP>:5432
+  ├── GCS data bucket  — <GCS_DATA_BUCKET>  (PDFs)
+  ├── GCS media bucket — <GCS_MEDIA_BUCKET> (covers)
   ├── Artifact Registry — us-south1-docker.pkg.dev/{PROJECT_ID}/kitabim
   └── Gemini API (external)
 ```
@@ -44,9 +44,9 @@ External Services (not on VM):
 | Resource | Name / ID | Notes |
 |----------|-----------|-------|
 | Compute Engine VM | `kitabim-prod` | e2-standard-2, us-south1-c |
-| Cloud SQL | private IP `10.158.0.5` | PostgreSQL, pgvector extension |
-| GCS bucket (data) | `ai-kitabim-prod-data-bkt` | PDFs, private |
-| GCS bucket (media) | `ai-kitabim-prod-media-bkt` | Covers, partially public |
+| Cloud SQL | private IP `<CLOUD_SQL_PRIVATE_IP>` | PostgreSQL, pgvector extension |
+| GCS bucket (data) | `<GCS_DATA_BUCKET>` | PDFs, private |
+| GCS bucket (media) | `<GCS_MEDIA_BUCKET>` | Covers, partially public |
 | Artifact Registry | `us-south1-docker.pkg.dev/{PROJECT_ID}/kitabim` | Docker images |
 | SSL | Let's Encrypt (certbot) | Auto-renews via cron |
 | DNS | External (points to VM IP) | Not managed in GCP |
@@ -207,7 +207,7 @@ When designing a CI/CD workflow, follow this structure:
 
 | Aspect | Local dev | Production (GCP) |
 |--------|-----------|-----------------|
-| Postgres | `host.docker.internal:5432` (standalone on host) | Cloud SQL `10.158.0.5:5432` |
+| Postgres | `host.docker.internal:5432` (standalone on host) | Cloud SQL `<CLOUD_SQL_PRIVATE_IP>:5432` |
 | Redis persistence | None (ephemeral) | `appendonly yes`, `appendfsync everysec` |
 | Redis memory | 256 MB | 512 MB |
 | File storage | `./data` bind mount | `/mnt/kitabim-data` named volume |
