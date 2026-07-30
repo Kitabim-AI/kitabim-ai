@@ -1,6 +1,6 @@
 # Spellcheck + Auto-Correct — Design
 
-See also: [WORKER_DESIGN.md](WORKER_DESIGN.md) for the full pipeline overview and [book_processing_diagram.md](book_processing_diagram.md) for the cross-stage diagram this stage's Data Flow is scoped from. Prior stages: [OCR_DESIGN.md](OCR_DESIGN.md), [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md), [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md).
+See also: [WORKER_DESIGN.md](WORKER_DESIGN.md) for the full pipeline overview and [book_processing_diagram.md](book_processing_diagram.md) for the cross-stage diagram this stage's Data Flow is scoped from. Prior stages: [OCR_DESIGN.md](OCR_DESIGN.md), [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md), [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md). Next stage: [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md).
 
 ## Overview
 
@@ -394,6 +394,11 @@ Unlike `EXHAUSTED` in the OCR/chunking/embedding state machines, `SC_TERMINAL` i
 
 Every mutating spellcheck/auto-correct-rules endpoint requires `require_editor` (ADMIN or EDITOR); only the read-only `dictionary` (definitions) endpoints are unauthenticated.
 
+## Security Considerations
+
+- **Admin-writable content flows into an LLM prompt.** `auto_correct_rules` (editable via `POST`/`PATCH`/`DELETE /api/auto-correct-rules`, `require_editor`) feeds `AutoCorrectRulesRepository.get_frequent_corrections_block()`, which is interpolated into `OCR_PROMPT`'s `{frequent_corrections}` placeholder (see [OCR_DESIGN.md](OCR_DESIGN.md)) — an editor's rule text reaches a live Gemini Vision call on every subsequent OCR run, not just this stage's own auto-correct pass.
+- **Four `dictionary` endpoints are unauthenticated.** `GET /api/dictionary/search`, `/stats`, `/letter-groups`, and the bare `/dictionary` listing (see API Endpoints) carry no auth dependency at all and are publicly reachable. They only expose the read-only `dictionary` definitions table — unrelated to spellcheck's own `words` table — but the endpoints themselves have no access control.
+
 ## Testing
 
 - `services/worker/tests/scanners/spell_check_scanner_test.py` — `test_spell_check_scanner_no_work`, `test_spell_check_scanner_dispatches_job`.
@@ -416,4 +421,4 @@ Every mutating spellcheck/auto-correct-rules endpoint requires `require_editor` 
 - [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md) — the analogous `ready`-book re-embedding trigger; terminal stage of the mandatory pipeline that spellcheck/auto-correct run alongside without gating.
 - [WORKER_DESIGN.md](WORKER_DESIGN.md) — full pipeline, `PipelineDriver`, `MultiPageLock`, `StaleWatchdog`, `BookMilestoneService`, and the shared milestone/state-machine conventions.
 - [book_processing_diagram.md](book_processing_diagram.md) — cross-stage diagram; this doc's Data Flow is the spellcheck/auto-correct slice of its "Full Pipeline" diagram's `SpellCheck`/`AutoCorrect` subgraphs.
-- Summary Generation design doc (not yet written as of this doc) will cover `summary_job`, which `PipelineDriver` enqueues once a book's mandatory pipeline is fully terminal — independent of, and not gated by, this stage.
+- [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md) covers `summary_job`, which `PipelineDriver` enqueues once a book's mandatory pipeline is fully terminal — independent of, and not gated by, this stage.

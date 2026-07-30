@@ -33,7 +33,7 @@ Several pipeline stages are gated by boolean flags in `system_configs` (checked 
 |---|---|---|
 | `spell_check_enabled` | `true` | `spell_check_scanner` — returns immediately if not `"true"` |
 | `auto_correct_enabled` | `true` | `auto_correct_scanner` — returns immediately if not `"true"` |
-| `knowledge_graph_enabled` | `false` | `graph_scanner` and `knowledge_graph_job` — both no-op (and reset `graph_milestone` back to `idle`) if not `"true"` |
+| `knowledge_graph_enabled` | `false` | `graph_scanner`, `graph_resolution_scanner`, and `knowledge_graph_job` — all no-op if not `"true"` (`knowledge_graph_job` additionally resets `graph_milestone` back to `idle`); also gates `POST /{book_id}/reprocess/graph`, which returns `400` if the flag isn't `"true"` |
 | `gemini_batch_ocr_enabled` | `false` | `ocr_job` — submits a `batch_ocr_jobs` row via the Gemini Batch API instead of OCR'ing inline when `"true"` |
 | `gemini_batch_embedding_enabled` | `false` | `embedding_scanner` — submits a `batch_embedding_jobs` row via the Gemini Batch API instead of dispatching `embedding_job` when `"true"` |
 
@@ -81,6 +81,7 @@ worker/
     stale_watchdog_scanner.py  ← resets pages/books stuck in_progress using worker-heartbeat detection
     summary_scanner.py         ← backfills/retries missing book_summaries for ready books
     graph_scanner.py           ← backfills/retries missing knowledge graphs for ready books (feature-flagged; see note below)
+    graph_resolution_scanner.py ← claims graph_resolution_queue rows every 5 min, dispatches GraphResolutionJob per scope (feature-flagged)
     maintenance_scanner.py     ← deletes old processed pipeline_events rows
   jobs/
     ocr_job.py                 ← downloads PDF, OCRs pages via Gemini Vision (google-genai)
@@ -90,10 +91,12 @@ worker/
     auto_correct_job.py        ← applies auto-correction rules to open spell issues
     summary_job.py             ← generates a semantic book summary + embedding for RAG routing
     knowledge_graph_job.py     ← extracts entities/relationships and indexes them in Neo4j
-  worker.py                    ← ARQ WorkerSettings: registers the 7 jobs and 13 of the 14 scanners as cron jobs
+    graph_resolution_job.py    ← resolves/merges duplicate graph entities against Neo4j fuzzy-match candidates
+    rag_eval_job.py            ← post-turn async judge scoring for rag_evaluations (not a pipeline/cron job)
+  worker.py                    ← ARQ WorkerSettings: registers the 9 jobs and 14 of the 15 scanners as cron jobs
 ```
 
-**Job and scanner count:** 7 job functions are registered in `WorkerSettings.functions`. 14 scanner modules exist under `services/worker/scanners/` (including the two batch-API poller scanners), but only **13** are wired into `WorkerSettings.cron_jobs` in `worker.py` — `graph_scanner.py` is fully implemented and tested but is **not currently scheduled** (see [Cron Schedule](#cron-schedule)).
+**Job and scanner count:** 9 job functions are registered in `WorkerSettings.functions` (`ocr_job`, `chunking_job`, `embedding_job`, `spell_check_job`, `summary_job`, `auto_correct_job`, `knowledge_graph_job`, `graph_resolution_job`, `rag_eval_job`). 15 scanner modules exist under `services/worker/scanners/` (including the two batch-API poller scanners and `graph_resolution_scanner.py`), but only **14** are wired into `WorkerSettings.cron_jobs` in `worker.py` — `graph_scanner.py` is fully implemented and tested but is **not currently scheduled** (see [Cron Schedule](#cron-schedule)).
 
 Batch OCR/embedding submission itself is **not** a separate ARQ job — it happens inline inside `ocr_job.py` and `embedding_scanner.py` respectively, gated by the feature flags above (see [OCR_DESIGN.md](OCR_DESIGN.md#data-flow) and [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md#data-flow)).
 
@@ -136,7 +139,8 @@ Each claims idle pages atomically (`SELECT ... FOR UPDATE SKIP LOCKED`, or an at
 - See [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md) for the full embedding algorithm (`EmbeddingJob`).
 - See [SPELLCHECK_DESIGN.md](SPELLCHECK_DESIGN.md) for the full spellcheck/auto-correct algorithm (`SpellCheckJob`, `AutoCorrectJob`).
 - See [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md) for the full summary algorithm (`SummaryJob`).
-- See [KNOWLEDGE_GRAPH_DESIGN.md](KNOWLEDGE_GRAPH_DESIGN.md) for the full knowledge-graph algorithm (`KnowledgeGraphJob`).
+- See [KNOWLEDGE_GRAPH_DESIGN.md](KNOWLEDGE_GRAPH_DESIGN.md) for the full knowledge-graph extraction algorithm (`KnowledgeGraphJob`) and the entity-resolution sub-pipeline (`graph_resolution_scanner` / `GraphResolutionJob`).
+- See [CHAT_RAG_DESIGN.md](CHAT_RAG_DESIGN.md) for `rag_eval_job` — post-turn async judge scoring, not a pipeline/cron job.
 
 ### StaleWatchdog
 
@@ -198,6 +202,7 @@ Authoritative source: `WorkerSettings.cron_jobs` in `services/worker/worker.py`.
 | `event_dispatcher` | Every 1 min (+ at startup) | Reactive low-latency progression via the outbox |
 | `stale_watchdog` | Minute 0 and 30 (i.e. every 30 min) | Worker-heartbeat-aware reset |
 | `summary_scanner` | Every 5 min | Backfill/retry missing book summaries |
+| `graph_resolution_scanner` | Every 5 min | Claims `graph_resolution_queue` rows, dispatches one `graph_resolution_job` per scope; no-op unless `knowledge_graph_enabled` |
 | `auto_correct_scanner` | Daily at 3:00 AM | Loops through all eligible pages in batches |
 | `maintenance_scanner` | Daily at 3:00 AM | Deletes old processed outbox events |
 

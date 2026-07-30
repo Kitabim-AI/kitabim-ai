@@ -1,6 +1,6 @@
 # Chat / RAG Retrieval — Design
 
-See also: [WORKER_DESIGN.md](WORKER_DESIGN.md) for the ingestion pipeline overview. Prior stages that produce everything this stage reads: [DOCUMENT_DISCOVERY_DESIGN.md](DOCUMENT_DISCOVERY_DESIGN.md), [OCR_DESIGN.md](OCR_DESIGN.md), [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md), [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md), [SPELLCHECK_DESIGN.md](SPELLCHECK_DESIGN.md), [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md).
+See also: [WORKER_DESIGN.md](WORKER_DESIGN.md) for the ingestion pipeline overview. Prior stages that produce everything this stage reads: [DOCUMENT_DISCOVERY_DESIGN.md](DOCUMENT_DISCOVERY_DESIGN.md), [OCR_DESIGN.md](OCR_DESIGN.md), [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md), [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md), [SPELLCHECK_DESIGN.md](SPELLCHECK_DESIGN.md), [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md). Next stage: [KNOWLEDGE_GRAPH_DESIGN.md](KNOWLEDGE_GRAPH_DESIGN.md) (also a producer this stage reads from, via `retrieval.graph_entity_lookup` — see Related Docs).
 
 ## Overview
 
@@ -130,6 +130,51 @@ This stage **writes** four tables and **reads** the artifacts of every prior sta
 | `services/worker/jobs/rag_eval_job.py` | `rag_eval_job(ctx, eval_id)` — post-turn async judge scoring. Not a pipeline/cron job. |
 | `services/backend/api/endpoints/questions_router.py` | Admin/public views over `rag_evaluations` questions (curation + home-page rotator). |
 | `services/backend/main.py` | Startup: builds the ADK `DatabaseSessionService` into `app.state.adk_session_service` (falls back to `None` on failure); mounts `chat_router` at `/api/chat`, `ai_router` at `/api/ai`, `questions_router` at `/api/questions`. |
+
+### Agent Tools
+
+All 19 tools are registered in both `adk_agent.py::build_rag_agent()` (`LLMRoutedRAGHandler`) and `chat/retrieval_agent.py::build_retrieval_agent()` (`ChatOrchestrator`) — the same `ALL_TOOLS` list on both pipelines. Every tool function lives in `packages/backend-core/app/services/rag/agent/tools.py` and dispatches through `_execute_and_record_tool`, which appends the call to `tool_context.state["observations"]`. Cache tiers referenced below are the L0/L1/L2 layers defined in [Cache Layers](#cache-layers).
+
+**Content Retrieval**
+
+| Tool | Wraps | Cache | Description |
+|---|---|---|---|
+| `search_chunks` | `vector_search` (pgvector `ChunksRepository.similarity_search`, optionally fused with `keyword_search` via RRF) | L1 (`embed_query`) + L2 (`vector_search` results) | Vector/hybrid-search passages; the primary retrieval tool. Also appends knowledge-graph facts via `graph_entity_lookup` (Redis alias-cache read, no LLM call) as extra chunk-shaped results titled `Knowledge Graph` — see [KNOWLEDGE_GRAPH_DESIGN.md](KNOWLEDGE_GRAPH_DESIGN.md). |
+| `search_books_by_summary` | `BookSummariesRepository.summary_search` (pgvector over `book_summaries.embedding`) | L1 (`embed_query`) only — the search results themselves are not cached; `KEY_RAG_SUMMARY_SEARCH` is defined but never written (see Cache Layers) | Find which book(s) cover a topic when book scope is unknown ("book routing" — see [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md)). |
+| `find_books_by_title` | `find_books_by_title_in_question` (`retrieval.py`) plus a fuzzy-keyword fallback over `Book` when strict matching finds nothing | In-request only (`ctx._title_cache`, a plain dict — not a Redis tier) | Resolve a book title mentioned in the question to internal book IDs; includes a false-positive guard for lone single-word matches. |
+| `get_book_summary` | `BookSummariesRepository.get_summaries_for_books`, with a `PagesRepository.find_first_pages_with_text` intro-excerpt fallback | none | Full semantic summary text for specific books, with server-side sister-volume expansion; falls back to a ≤2,000-char intro excerpt per book when no summary row exists yet. |
+| `get_current_page` | `PagesRepository` | none | Raw text of the page currently open in the reader (reader mode only). |
+| `get_sister_volumes` | `BooksRepository.find_sister_volumes` | none | Other volumes of the same series as a given `book_id`. |
+| `rewrite_query` | `QueryRewriter.rewrite` | L0 (`KEY_RAG_REWRITE`) | Resolves co-references/pronouns using conversation history. |
+
+**Catalog & Metadata**
+
+| Tool | Wraps | Cache | Description |
+|---|---|---|---|
+| `get_book_author` | `BooksRepository.find_author_by_title_in_question` | none | Author lookup for "who wrote X?" questions; falls back to the current reader-mode book on a deictic reference ("this book"). |
+| `get_books_by_author` | `BooksRepository.find_books_by_author_in_question` | none | Book list for "what did Y write?" questions. |
+| `search_catalog` | `CatalogHandler._build_catalog_context` / `_prepend_current_book` | none | Library browsing/general listing queries. Despite its module name, `CatalogHandler` is not a `QueryHandler` and is not registered in `HandlerRegistry` — it exists only behind this tool. |
+
+**Dictionary & Language (8 tools)**
+
+| Tool | Wraps | Cache | Description |
+|---|---|---|---|
+| `lookup_uyghur_word` | `DictionaryRepository.lookup_uyghur_definition` (`dictionary` table) | none | Uyghur word definition lookup. |
+| `lookup_history_term` | `DictionaryRepository.lookup_history_term`, falling back to `search_language_sources` when empty | none | Historical term/person/event/place lookup. |
+| `translate_english_to_uyghur` | `DictionaryRepository.translate_english_to_uyghur` | none | English → Uyghur translation. |
+| `check_word_spelling` | `DictionaryRepository.check_word_spelling` (`words` table — spellcheck's own dictionary, see [SPELLCHECK_DESIGN.md](SPELLCHECK_DESIGN.md)) | none | Uyghur spelling validity check, with suggested corrections. |
+| `search_language_sources` | `DictionaryRepository.search_language_sources` (fans out across dictionary/history/English/names sources) | none | Fallback dictionary search across sources when the source type is unclear. |
+| `lookup_uyghur_name` | `DictionaryRepository.lookup_name`, or a direct `NamesDictionary` letter-group query | none | Uyghur person-name lookup (meaning, or listing by starting letter). |
+| `lookup_proverbs` | `ProverbsRepository` (`get_random_proverb`, or a direct regex `Proverb` query) | none | Uyghur proverb/saying lookup, with volume/page reference when available. |
+| `lookup_synonyms` | `SynonymsRepository` (`lookup_word` / `search_fuzzy` / `list_by_letter_group`) | none | Synonym-dictionary lookup. |
+
+**Quran**
+
+| Tool | Wraps | Cache | Description |
+|---|---|---|---|
+| `search_quran` | Direct `quran` table query: surah/ayah lookup, or pgvector semantic search with an `ILIKE` keyword fallback | L1 (`embed_query`) when doing semantic search; no dedicated results cache | Surah/ayah lookup or free-text search within the Quran (a source separate from the book library); also returns surah metadata (total ayah count, Uyghur/Arabic/English surah names) for every surah touched by the results. |
+
+7 + 3 + 8 + 1 = 19 tools total, matching the count referenced throughout this doc's Data Flow, Component Responsibilities, and Testing sections.
 
 ## Data Flow
 
@@ -709,8 +754,8 @@ flowchart TD
 | `settings.summary_top_k` (env `SUMMARY_TOP_K`) | `5` | Defined in `config.py`; `_run_search_books_by_summary` hardcodes `limit=20` instead and does not read it. |
 | `settings.cache_ttl_rag_query` (env `CACHE_TTL_RAG_QUERY`) | `3600` (seconds) | TTL for the L1 embedding cache, the L2 search cache, and the L0 rewrite cache. |
 | `settings.cache_ttl_summary_search` (env `CACHE_TTL_SUMMARY_SEARCH`) | `1800` | Only referenced as `cache_config.TTL_SUMMARY_SEARCH`; no code sets a value under `KEY_RAG_SUMMARY_SEARCH`, so summary searches are uncached (see Cache Layers). |
-| `gemini_chat_model` (`system_configs`) | No fallback on the `RAGService` path (raises `RuntimeError`); `ChatOrchestrator` falls back to its `model_name` argument (`"gemini-2.5-flash"`) | Answer synthesis chain / `KitabimAnswerAgent`. |
-| `gemini_embedding_model` (`system_configs`) | No fallback on the `RAGService` path (raises); `ChatOrchestrator` falls back to `settings.gemini_embedding_model` then `"text-embedding-004"` | `embed_query` — must match the model that embedded `chunks` and `book_summaries` (see [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md)). |
+| `gemini_chat_model` (`system_configs`) | `"gemini-3.1-flash-lite"` (seeded by `seed_system_configs()`) | Answer synthesis chain / `KitabimAnswerAgent`. No code-level fallback on the `RAGService` path (raises `RuntimeError` if the key is unset); `ChatOrchestrator` instead falls back to its `model_name` argument (`"gemini-2.5-flash"`) if the key is unset. |
+| `gemini_embedding_model` (`system_configs`) | `"gemini-embedding-2"` (seeded by `seed_system_configs()`; see [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md)) | `embed_query` — must match the model that embedded `chunks` and `book_summaries`. No code-level fallback on the `RAGService` path (raises if the key is unset); `ChatOrchestrator` instead falls back to `settings.gemini_embedding_model` then `"text-embedding-004"` if the key is unset. |
 | `gemini_agent_loop_model` (`system_configs`) | Unset; falls back to `gemini_chat_model` | `ctx.agent_model` — the retrieval agent / ReAct loop / signal-extraction / intent-classification / decomposition model on both pipelines. |
 | `gemini_reranker_model` (`system_configs`) | `"gemini-3.1-flash-lite"` (seeded, and repeated as the code default) | `rerank_context`. |
 | `gemini_judge_model` (`system_configs`) | `"gemini-3.1-flash-lite"` (seeded, and repeated as the code default) | `rag_eval_job` → `score_answer`. |
@@ -815,6 +860,6 @@ No dedicated test file exists for `HandlerRegistry` selection itself, for `RAGSe
 - [OCR_DESIGN.md](OCR_DESIGN.md) — produces `pages.text`, read directly by `get_current_page` and by the dev-only fuzzy fallback in `vector_search`. Also the actual home of `POST /api/ai/ocr`.
 - [SPELLCHECK_DESIGN.md](SPELLCHECK_DESIGN.md) — the auto-correct pass that improves the text this stage retrieves; `check_word_spelling` reuses the same word/dictionary tables from the read side.
 - [DOCUMENT_DISCOVERY_DESIGN.md](DOCUMENT_DISCOVERY_DESIGN.md) — how a book enters the library in the first place.
-- `KNOWLEDGE_GRAPH_DESIGN.md` (not yet written as of this doc) — will document the Neo4j `Entity` graph, `entity_resolution_service`, and the `graph:alias:{alias}` Redis cache that `retrieval.graph_entity_lookup` reads. Graph facts ride the existing `search_chunks` call as extra chunk-shaped results titled `Knowledge Graph`; there is no separate graph tool exposed to either agent (`rag_adk_agent_test.py::test_knowledge_graph_tool_not_offered` asserts this), and the LLM-routed handler does not query the graph itself.
+- [KNOWLEDGE_GRAPH_DESIGN.md](KNOWLEDGE_GRAPH_DESIGN.md) documents the Neo4j `Entity` graph, `entity_resolution_service`, and the `graph:alias:{alias}` Redis cache that `retrieval.graph_entity_lookup` reads. Graph facts ride the existing `search_chunks` call as extra chunk-shaped results titled `Knowledge Graph`; there is no separate graph tool exposed to either agent (`rag_adk_agent_test.py::test_knowledge_graph_tool_not_offered` asserts this), and the LLM-routed handler does not query the graph itself.
 - [WORKER_DESIGN.md](WORKER_DESIGN.md) — the arq worker that runs `rag_eval_job`, plus shared job conventions.
 - [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md) — service topology, auth, and cross-cutting concerns.

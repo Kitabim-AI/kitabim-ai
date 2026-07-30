@@ -1,6 +1,6 @@
 # Embedding — Design
 
-See also: [WORKER_DESIGN.md](WORKER_DESIGN.md) for the full pipeline overview and [book_processing_diagram.md](book_processing_diagram.md) for the cross-stage diagram this stage's Data Flow is scoped from. Previous stage: [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md).
+See also: [WORKER_DESIGN.md](WORKER_DESIGN.md) for the full pipeline overview and [book_processing_diagram.md](book_processing_diagram.md) for the cross-stage diagram this stage's Data Flow is scoped from. Previous stage: [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md). Next stage: [SPELLCHECK_DESIGN.md](SPELLCHECK_DESIGN.md).
 
 ## Overview
 
@@ -346,4 +346,4 @@ flowchart TD
 - [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md) — previous stage; provides the `chunks` rows (with `embedding=NULL`) this stage fills in, and the `chunking_succeeded` event that triggers reactive dispatch.
 - [WORKER_DESIGN.md](WORKER_DESIGN.md) — full pipeline, `PipelineDriver` (book-ready / book-error detection once embedding is terminal for every page), `MultiPageLock`, `StaleWatchdog`, and the shared milestone/state-machine conventions.
 - [book_processing_diagram.md](book_processing_diagram.md) — cross-stage diagram; this doc's Data Flow is the embedding-only slice of its "Full Pipeline" and "Batch OCR & Batch Embedding" diagrams.
-- Spell check and Summary Generation design docs (not yet written as of this doc) will cover, respectively, the independent quality layer that runs alongside chunking/embedding, and `summary_job` — the job `PipelineDriver` enqueues once a book's embedding work is fully terminal and the book transitions to `status='ready'`.
+- [SPELLCHECK_DESIGN.md](SPELLCHECK_DESIGN.md) and [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md) cover, respectively, the independent quality layer that runs alongside chunking/embedding, and `summary_job` — the job `PipelineDriver` enqueues once a book's embedding work is fully terminal and the book transitions to `status='ready'`.
