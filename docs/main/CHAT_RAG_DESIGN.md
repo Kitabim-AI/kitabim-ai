@@ -47,7 +47,7 @@ This stage **writes** four tables and **reads** the artifacts of every prior sta
 | `is_global` | `boolean`, not null, default `false` | Library-wide vs. single-book conversation. |
 | `title` | `varchar(200)`, nullable | Derived from the first question (`cleaned_q[:37] + "..."` when longer than 40 chars); also backfilled when the existing title is one of the placeholder values `NULL`/`""`/`يېڭى سۆھبەت`/`New Conversation`/`سۆھبەت`. |
 | `created_at`, `updated_at` | `timestamptz`, not null, default `CURRENT_TIMESTAMP` | |
-| `deleted_at` | `timestamptz`, nullable | Soft delete — `DELETE /api/chat/conversations/{id}` sets this rather than removing the row (ORM-only column; see note below). |
+| `deleted_at` | `timestamptz`, nullable | Soft delete — `DELETE /api/chat/conversations/{id}` sets this rather than removing the row (added by migration `073_add_conversations_soft_delete.sql`; see note below). |
 
 ### `conversation_messages` (written by `ChatOrchestrator` only)
 
