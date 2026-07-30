@@ -1,6 +1,6 @@
 # Book Processing Pipeline Diagram
 
-Visual companion to [WORKER_DESIGN.md](WORKER_DESIGN.md). Gemini API calls are synchronous/real-time by default. OCR and embedding can each optionally run through the Gemini Batch API instead (`gemini_batch_ocr_enabled` / `gemini_batch_embedding_enabled`, both `false` by default) — see [Batch OCR & Batch Embedding](#batch-ocr--batch-embedding-optional) below.
+Visual companion to [WORKER_DESIGN.md](WORKER_DESIGN.md). Gemini API calls are synchronous/real-time by default. OCR and embedding can each optionally run through the Gemini Batch API instead (`gemini_batch_ocr_enabled` / `gemini_batch_embedding_enabled`, both `false` by default) — see [OCR_DESIGN.md](OCR_DESIGN.md#data-flow) and [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md#data-flow) for the batch-mode diagrams.
 
 ---
 
@@ -89,39 +89,7 @@ flowchart TD
 
 ## Batch OCR & Batch Embedding (optional)
 
-Both feature-flagged off by default. When enabled, they replace the interactive-API branch of `OCR Job`/`Embedding Scanner` with an async submit-then-poll cycle against the Gemini Batch API.
-
-```mermaid
-flowchart TD
-    OCR_S["OCR Scanner<br/>claims idle pages"] --> OCR_FLAG{"gemini_batch_ocr_enabled?"}
-    OCR_FLAG -- No --> J_OCR2[OCR Job<br/>inline Gemini Vision call]
-    OCR_FLAG -- Yes --> SUB_OCR["OCR Job: submit_batch_ocr_job()<br/>render pages → JSONL → Gemini Batch API"]
-    SUB_OCR --> BOJ[("batch_ocr_jobs<br/>status=submitted")]
-    BOJ --> POLL_OCR["batch_ocr_poller_scanner<br/>every 1 min"]
-    POLL_OCR -->|running| BOJ
-    POLL_OCR -->|succeeded: ingest JSONL result| OCR_OK2["pages.text written<br/>ocr_milestone=succeeded"]
-    POLL_OCR -->|failed/cancelled/timeout| OCR_FAIL2["ocr_milestone=failed"]
-
-    EMB_S["Embedding Scanner<br/>claims idle pages"] --> EMB_FLAG{"gemini_batch_embedding_enabled?"}
-    EMB_FLAG -- No --> J_EM2[Embedding Job<br/>inline GeminiEmbeddings call]
-    EMB_FLAG -- Yes --> SUB_EMB["Embedding Scanner: submit_batch_embedding_job()<br/>chunks → JSONL → Gemini Batch API"]
-    SUB_EMB --> BEJ[("batch_embedding_jobs<br/>status=submitted")]
-    BEJ --> POLL_EMB["batch_embedding_poller_scanner<br/>every 1 min"]
-    POLL_EMB -->|running| BEJ
-    POLL_EMB -->|succeeded: ingest JSONL result| EMB_OK2["chunks.embedding written<br/>embedding_milestone=succeeded"]
-    POLL_EMB -->|failed/cancelled/timeout| EMB_FAIL2["embedding_milestone=failed"]
-
-    classDef job fill:#d4f1f4,stroke:#189ab4,stroke-width:1px
-    classDef event fill:#ffe8d6,stroke:#b5838d,stroke-dasharray: 5 5
-    classDef db fill:#f3f4f6,stroke:#4b5563,stroke-width:1px
-    classDef errStage fill:#ffcccb,stroke:#d32f2f,stroke-width:2px
-
-    class J_OCR2,J_EM2,SUB_OCR,SUB_EMB,POLL_OCR,POLL_EMB job
-    class BOJ,BEJ db
-    class OCR_FAIL2,EMB_FAIL2 errStage
-```
-
-Both poller scanners run on their 1-minute cron tick unconditionally — they simply find no in-flight `batch_*_jobs` rows when the corresponding flag has never been turned on. A job stuck past `gemini_batch_ocr_timeout_hours`/`gemini_batch_embedding_timeout_hours` (default 24h each) is marked failed rather than polled forever.
+Both feature-flagged off by default. When enabled, they replace the interactive-API branch of `OCR Job`/`Embedding Scanner` with an async submit-then-poll cycle against the Gemini Batch API. See [OCR_DESIGN.md](OCR_DESIGN.md#data-flow) for the batch-OCR diagram and [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md#data-flow) for the batch-embedding diagram.
 
 ---
 

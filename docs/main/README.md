@@ -15,15 +15,20 @@ Kitabim.ai is a monorepo platform for OCR digitization, editorial curation, and 
 | [WORKER_DESIGN.md](WORKER_DESIGN.md) | Event-driven pipeline architecture, state machine, worker components |
 | [book_processing_diagram.md](book_processing_diagram.md) | Visual diagrams of the book processing pipeline |
 
-### RAG / Chat Assistant
+### Pipeline Stages
 
 | Document | Contents |
 |----------|----------|
-| [QUESTION_ANSWERING_DIAGRAM.md](QUESTION_ANSWERING_DIAGRAM.md) | Visual pipeline diagrams for both the `ChatOrchestrator` (persisted conversations) and `HandlerRegistry` (`DeterministicRAGHandler`/`LLMRoutedRAGHandler`) pipelines, tool reference |
-| [LLM_ROUTED_RAG_DESIGN.md](LLM_ROUTED_RAG_DESIGN.md) | `LLMRoutedRAGHandler` — Google ADK ReAct loop, 19 tools, grading, caching |
-| [RAG_DETERMINISTIC_ROUTER_DESIGN.md](RAG_DETERMINISTIC_ROUTER_DESIGN.md) | `DeterministicRAGHandler` — fixed Python routing over an ADK `Workflow` graph |
+| [DOCUMENT_DISCOVERY_DESIGN.md](DOCUMENT_DISCOVERY_DESIGN.md) | Manual upload + GCS bucket discovery, duplicate detection, DOCX vs. PDF entry paths |
+| [OCR_DESIGN.md](OCR_DESIGN.md) | Gemini Vision OCR, soft-skip retries, table-of-contents detection, batch OCR mode |
+| [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md) | Recursive character splitting, chunk upsert strategy, TOC page handling |
+| [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md) | Gemini embedding generation, pgvector storage, batch embedding mode |
+| [SPELLCHECK_DESIGN.md](SPELLCHECK_DESIGN.md) | Spellcheck + auto-correct — independent quality layer, dictionary-based corrections |
+| [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md) | Book-level summary generation + embedding for RAG book routing |
+| [CHAT_RAG_DESIGN.md](CHAT_RAG_DESIGN.md) | `ChatOrchestrator` and `RAGService`/`HandlerRegistry` — retrieval, Google ADK agent tools, reranking, judge scoring, tool reference |
+| [KNOWLEDGE_GRAPH_DESIGN.md](KNOWLEDGE_GRAPH_DESIGN.md) | Entity/relationship extraction and entity resolution into Neo4j (GraphRAG) |
 
-Two independent chat pipelines exist today: `ChatOrchestrator` (`packages/backend-core/app/services/chat/`) persists conversation history and is the default for the streaming endpoint; `RAGService`/`HandlerRegistry` (the two docs above) has no conversation persistence and is used otherwise. See [SYSTEM_DESIGN.md §6B](SYSTEM_DESIGN.md) for how the two relate.
+Two independent chat pipelines exist today: `ChatOrchestrator` (`packages/backend-core/app/services/chat/`) persists conversation history and is the default for the streaming endpoint; `RAGService`/`HandlerRegistry` (both covered in [CHAT_RAG_DESIGN.md](CHAT_RAG_DESIGN.md)) has no conversation persistence and is used otherwise. See [SYSTEM_DESIGN.md §6B](SYSTEM_DESIGN.md) for how the two relate.
 
 ### Other
 
@@ -42,7 +47,7 @@ Two independent chat pipelines exist today: `ChatOrchestrator` (`packages/backen
    - Start with [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md) for the architecture overview.
    - Read [WORKER_DESIGN.md](WORKER_DESIGN.md) to understand the book processing pipeline.
    - Check [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for codebase layout and where things live.
-   - For the chat assistant specifically, read [QUESTION_ANSWERING_DIAGRAM.md](QUESTION_ANSWERING_DIAGRAM.md) first, then the handler-specific design doc.
+   - For the chat assistant specifically, read [CHAT_RAG_DESIGN.md](CHAT_RAG_DESIGN.md).
 
 2. **Local development:**
    - Rebuild and restart: `./deploy/local/rebuild-and-restart.sh [all|backend|worker|frontend]`

@@ -139,9 +139,16 @@ All architectural and design documents are located under the `docs/` directory.
 | Document | Contents |
 |----------|----------|
 | [docs/main/SYSTEM_DESIGN.md](docs/main/SYSTEM_DESIGN.md) | Architecture overview, data model, key flows, technology stack |
-| [docs/main/LLM_ROUTED_RAG_DESIGN.md](docs/main/LLM_ROUTED_RAG_DESIGN.md) | Handler registry, agent tools, loop logic, caching, latency budget |
-| [docs/main/QUESTION_ANSWERING_DIAGRAM.md](docs/main/QUESTION_ANSWERING_DIAGRAM.md) | Visual pipeline and handler routing diagrams |
 | [docs/main/WORKER_DESIGN.md](docs/main/WORKER_DESIGN.md) | Event-driven pipeline, scanners, jobs, state machine |
+| [docs/main/book_processing_diagram.md](docs/main/book_processing_diagram.md) | Visual diagrams of the book processing pipeline |
+| [docs/main/DOCUMENT_DISCOVERY_DESIGN.md](docs/main/DOCUMENT_DISCOVERY_DESIGN.md) | Manual upload + GCS bucket discovery, duplicate detection |
+| [docs/main/OCR_DESIGN.md](docs/main/OCR_DESIGN.md) | Gemini Vision OCR, soft-skip retries, batch OCR mode |
+| [docs/main/CHUNKING_DESIGN.md](docs/main/CHUNKING_DESIGN.md) | Recursive character splitting, chunk upsert strategy |
+| [docs/main/EMBEDDING_DESIGN.md](docs/main/EMBEDDING_DESIGN.md) | Gemini embeddings, pgvector storage, batch embedding mode |
+| [docs/main/SPELLCHECK_DESIGN.md](docs/main/SPELLCHECK_DESIGN.md) | Spellcheck + auto-correct — independent quality layer |
+| [docs/main/SUMMARY_DESIGN.md](docs/main/SUMMARY_DESIGN.md) | Book-level summary generation for RAG book routing |
+| [docs/main/CHAT_RAG_DESIGN.md](docs/main/CHAT_RAG_DESIGN.md) | ChatOrchestrator + RAGService/HandlerRegistry — retrieval, agent tools, reranking, judge scoring |
+| [docs/main/KNOWLEDGE_GRAPH_DESIGN.md](docs/main/KNOWLEDGE_GRAPH_DESIGN.md) | Entity/relationship extraction into Neo4j (GraphRAG) |
 | [docs/main/PROJECT_STRUCTURE.md](docs/main/PROJECT_STRUCTURE.md) | Full directory structure, service responsibilities, configuration reference |
 | [docs/main/REQUIREMENTS.md](docs/main/REQUIREMENTS.md) | Business requirements and user role permission matrix |
 | [docs/main/UI_CSS_STANDARD.md](docs/main/UI_CSS_STANDARD.md) | Frontend CSS and Tailwind conventions |
