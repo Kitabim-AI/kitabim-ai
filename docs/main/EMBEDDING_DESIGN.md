@@ -283,7 +283,7 @@ flowchart TD
     EMB_IP -->|"EmbeddingJob: exception, or<br/>batch submit/poll/timeout failure"| EMB_FAIL
     EMB_FAIL -->|"retry_count < ocr_max_retry_count<br/>AND book.status NOT IN (ready, error):<br/>PipelineDriver resets"| EMB_IDLE
     EMB_FAIL -->|"retry_count >= ocr_max_retry_count"| EXHAUSTED
-    EMB_OK -->|"AutoCorrectJob rewrites page.text<br/>-> ChunkingJob sets chunk.embedding=NULL<br/>(auto_correct_service)"| EMB_IDLE
+    EMB_OK -->|"AutoCorrectJob rewrites page.text<br/>(auto_correct_service)"| EMB_IDLE
 
     classDef idle fill:#e9edc9,stroke:#606c38
     classDef active fill:#fff3cd,stroke:#856404
