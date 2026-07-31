@@ -50,7 +50,7 @@ async def test_submit_batch_ocr_job():
             "book_123",
             [mock_page],
             mock_doc,
-            "gemini-3.5-flash",
+            "gemini-2.5-flash",
         )
 
         assert batch_job.book_id == "book_123"
@@ -60,7 +60,7 @@ async def test_submit_batch_ocr_job():
         mock_storage.upload_bytes.assert_called_once()
         mock_genai_client.files.upload.assert_called_once()
         mock_genai_client.batches.create.assert_called_once_with(
-            model="gemini-3.5-flash", src="files/abc123"
+            model="gemini-2.5-flash", src="files/abc123"
         )
 
         jsonl_content = mock_storage.upload_bytes.call_args.args[0]
@@ -71,6 +71,57 @@ async def test_submit_batch_ocr_job():
             ]
             == 0
         )
+
+
+@pytest.mark.asyncio
+async def test_submit_batch_ocr_job_uses_thinking_level_for_v3_model():
+    mock_session = AsyncMock()
+    mock_page = MagicMock(spec=Page)
+    mock_page.id = 101
+    mock_page.page_number = 1
+
+    mock_doc = MagicMock()
+    mock_fitz_page = MagicMock()
+    mock_pix = MagicMock()
+    mock_pix.tobytes.return_value = b"test_image_bytes"
+    mock_fitz_page.get_pixmap.return_value = mock_pix
+    mock_doc.load_page.return_value = mock_fitz_page
+
+    with (
+        patch(
+            "app.services.batch_ocr_service._build_ocr_prompt",
+            new_callable=AsyncMock,
+        ) as mock_prompt,
+        patch("app.services.batch_ocr_service.storage") as mock_storage,
+        patch("app.services.batch_ocr_service._get_genai_client") as mock_client_fn,
+    ):
+        mock_prompt.return_value = "Test Prompt"
+        mock_storage.upload_bytes = AsyncMock()
+        mock_storage.get_gs_uri.return_value = "gs://bucket/batch_ocr/inputs/job1.jsonl"
+
+        mock_genai_client = MagicMock()
+        mock_uploaded_file = MagicMock()
+        mock_uploaded_file.name = "files/abc123"
+        mock_genai_client.files.upload.return_value = mock_uploaded_file
+        mock_batch_job = MagicMock()
+        mock_batch_job.name = "batches/123456"
+        mock_genai_client.batches.create.return_value = mock_batch_job
+        mock_client_fn.return_value = mock_genai_client
+
+        await submit_batch_ocr_job(
+            mock_session,
+            "book_123",
+            [mock_page],
+            mock_doc,
+            "gemini-3.6-flash",
+        )
+
+        jsonl_content = mock_storage.upload_bytes.call_args.args[0]
+        request_line = json.loads(jsonl_content.decode("utf-8").splitlines()[0])
+        thinking_config = request_line["request"]["generation_config"][
+            "thinking_config"
+        ]
+        assert thinking_config == {"thinking_level": "MINIMAL"}
 
 
 @pytest.mark.asyncio

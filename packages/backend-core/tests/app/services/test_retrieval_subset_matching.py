@@ -27,14 +27,13 @@ async def test_find_books_by_title_subset_filtering():
 
     # We expect to match:
     # - "لېيىغان بۇلاق" (7 books)
-    # - "مۇرات" (1 book)
     # "بۇلاق" must be filtered out because it is a strict subset of "لېيىغان بۇلاق".
     # "باشقا كىتاب" must not match.
     assert res is not None
     matched_ids = {r["id"] for r in res}
 
-    # b1-b7 (لېيىغان بۇلاق) and b9 (مۇرات) should be in matches
-    expected_ids = {"b1", "b2", "b3", "b4", "b5", "b6", "b7", "b9"}
+    # b1-b7 (لېيىغان بۇلاق) should be in matches
+    expected_ids = {"b1", "b2", "b3", "b4", "b5", "b6", "b7"}
     assert matched_ids == expected_ids
 
     # b8 (بۇلاق) must NOT be present

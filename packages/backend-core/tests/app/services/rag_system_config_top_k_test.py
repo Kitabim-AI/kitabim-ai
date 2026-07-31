@@ -33,6 +33,7 @@ async def test_vector_search_uses_dynamic_rag_top_k(mock_ctx):
         limit,
         threshold,
         hybrid_enabled,
+        **kwargs,
     ):
         # Verify limit matches the dynamic rag_top_k value (10 instead of default 25)
         assert limit == 10

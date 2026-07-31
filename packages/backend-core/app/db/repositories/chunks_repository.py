@@ -10,6 +10,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Chunk
 from app.db.repositories.base_repository import BaseRepository
 
+# Tuned against a production case where a common word matched ~194K rows and
+# took 40-60s: work_mem avoids the disk-bound fallback strategies, the
+# timeout bounds whatever it doesn't fix. See keyword_search() below.
+_KEYWORD_SEARCH_WORK_MEM = "128MB"
+_KEYWORD_SEARCH_STATEMENT_TIMEOUT_MS = "5000"
+
+
+def _format_tsquery_expression(query_text: str) -> str:
+    """Format query_text into a flexible OR-based prefix tsquery expression.
+    Converts multi-word questions (e.g. 'جەتە دىگەن قەيەر؟') into 'جەتە:* | دىگەن:* | قەيەر:*'
+    so conversational question filler words don't prevent matching.
+    """
+    import re
+
+    clean = re.sub(r"[^\w\s]", " ", query_text)
+    words = [w.strip() for w in clean.split() if len(w.strip()) > 1]
+    if not words:
+        return query_text
+    return " | ".join(f"{w}:*" for w in words)
+
 
 class ChunksRepository(BaseRepository[Chunk]):
     """
@@ -242,6 +262,7 @@ class ChunksRepository(BaseRepository[Chunk]):
         cat_filter = (
             "AND b.categories && CAST(:categories AS text[])" if categories else ""
         )
+        tsquery_expr = _format_tsquery_expression(query_text)
 
         if book_ids is not None:
             if not book_ids:
@@ -253,10 +274,10 @@ class ChunksRepository(BaseRepository[Chunk]):
                         c.page_number,
                         c.chunk_index,
                         c.text,
-                        ts_rank(c.text_search, plainto_tsquery('simple', :query_text)) AS rank
+                        ts_rank(c.text_search, to_tsquery('simple', :tsquery_expr)) AS rank
                     FROM chunks c
                     WHERE c.book_id = ANY(:book_ids)
-                      AND c.text_search @@ plainto_tsquery('simple', :query_text)
+                      AND c.text_search @@ to_tsquery('simple', :tsquery_expr)
                 )
                 SELECT
                     km.book_id,
@@ -276,7 +297,7 @@ class ChunksRepository(BaseRepository[Chunk]):
                 LIMIT :limit
             """)
             params = {
-                "query_text": query_text,
+                "tsquery_expr": tsquery_expr,
                 "book_ids": [str(bid) for bid in book_ids],
                 "limit": limit,
             }
@@ -290,9 +311,9 @@ class ChunksRepository(BaseRepository[Chunk]):
                         c.page_number,
                         c.chunk_index,
                         c.text,
-                        ts_rank(c.text_search, plainto_tsquery('simple', :query_text)) AS rank
+                        ts_rank(c.text_search, to_tsquery('simple', :tsquery_expr)) AS rank
                     FROM chunks c
-                    WHERE c.text_search @@ plainto_tsquery('simple', :query_text)
+                    WHERE c.text_search @@ to_tsquery('simple', :tsquery_expr)
                 )
                 SELECT
                     km.book_id,
@@ -311,10 +332,28 @@ class ChunksRepository(BaseRepository[Chunk]):
                 ORDER BY km.rank DESC
                 LIMIT :limit
             """)
-            params = {"query_text": query_text, "limit": limit}
+            params = {"tsquery_expr": tsquery_expr, "limit": limit}
             if categories:
                 params["categories"] = categories
 
+        # A common word in a broad OR tsquery (e.g. a grammatical particle
+        # slipping through) can match a huge fraction of the table. Under the
+        # default work_mem, that forces a lossy bitmap recheck (re-fetching
+        # whole heap pages instead of exact tuples) plus a disk-spilled sort —
+        # confirmed in production to take 40-60s. LOCAL scoping keeps this
+        # bump to just this statement's transaction, not every connection.
+        await self.session.execute(
+            text(f"SET LOCAL work_mem = '{_KEYWORD_SEARCH_WORK_MEM}'")
+        )
+        # Backstop for whatever work_mem doesn't fix: caps the worst case so a
+        # single pathological term can't cost a user 40+ seconds. A canceled
+        # statement raises here; callers already treat a keyword-leg
+        # exception as "fall back to vector-only for this call."
+        await self.session.execute(
+            text(
+                f"SET LOCAL statement_timeout = '{_KEYWORD_SEARCH_STATEMENT_TIMEOUT_MS}'"
+            )
+        )
         result = await self.session.execute(query, params)
         rows = result.fetchall()
 

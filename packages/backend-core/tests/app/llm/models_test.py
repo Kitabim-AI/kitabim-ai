@@ -1,6 +1,20 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
-from app.llm.models import GeminiEmbeddings
+from app.llm.models import GeminiEmbeddings, disabled_thinking_config
+
+
+@pytest.mark.parametrize(
+    "model_name,expected",
+    [
+        ("gemini-2.0-flash", {"thinking_budget": 0}),
+        ("gemini-2.5-flash", {"thinking_budget": 0}),
+        ("gemini-3.6-flash", {"thinking_level": "MINIMAL"}),
+        ("models/gemini-3.0-pro", {"thinking_level": "MINIMAL"}),
+        ("gemini-embedding-2", {"thinking_budget": 0}),
+    ],
+)
+def test_disabled_thinking_config(model_name, expected):
+    assert disabled_thinking_config(model_name) == expected
 
 
 def test_gemini_embeddings_init():
@@ -270,6 +284,36 @@ async def test_generate_text_with_image_timeout_propagation(
     assert config.system_instruction == "prompt"
     assert "prompt" not in kwargs["contents"]
     assert config.thinking_config.thinking_budget == 0
+
+
+@pytest.mark.asyncio
+@patch("app.llm.models._get_ocr_client")
+@patch("app.llm.models._OCR_BREAKER.call")
+@patch("app.llm.models._OCR_LIMITER.wait", new_callable=AsyncMock)
+async def test_generate_text_with_image_uses_thinking_level_for_v3_model(
+    mock_limiter_wait, mock_breaker_call, mock_get_client
+):
+    async def side_effect(fn, *args, ignore_on_failure=None, **kwargs):
+        return await fn(*args, **kwargs)
+
+    mock_breaker_call.side_effect = side_effect
+
+    mock_client = MagicMock()
+    mock_generate_content = AsyncMock()
+    mock_resp = MagicMock()
+    mock_resp.text = "ocr response"
+    mock_generate_content.return_value = mock_resp
+    mock_client.aio.models.generate_content = mock_generate_content
+    mock_get_client.return_value = mock_client
+
+    from app.llm.models import generate_text_with_image
+
+    await generate_text_with_image("prompt", b"image", "gemini-3.6-flash")
+
+    kwargs = mock_generate_content.call_args.kwargs
+    config = kwargs["config"]
+    assert config.thinking_config.thinking_level.value == "MINIMAL"
+    assert config.thinking_config.thinking_budget is None
 
 
 @pytest.mark.asyncio

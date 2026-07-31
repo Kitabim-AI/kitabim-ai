@@ -90,6 +90,7 @@ async def _execute_and_record_tool(
 async def search_chunks(
     query: str,
     book_ids: Optional[List[str]] = None,
+    keywords: Optional[List[str]] = None,
     tool_context: ToolContext = None,
 ) -> dict:
     """Vector-search book chunks for passages relevant to a query.
@@ -100,8 +101,15 @@ async def search_chunks(
                   Always try to restrict scope first. Only omit (pass no book_ids) after a
                   scoped search returned fewer than 4 results, or after discovery tools found
                   no usable book IDs.
+        keywords: 2-5 essential content words from the question — proper nouns, specific
+                  topics, names, numbers — used for exact-term keyword matching alongside the
+                  semantic search from `query`. Omit grammatical/filler words (question words
+                  like كىم/نېمە, particles, common verbs like بار/بولۇش) — they match huge
+                  portions of the library and add noise, not signal. Example: for
+                  "بابۇر پادىشاھنىڭ قانچە بالىسى بار؟", pass ["بابۇر", "پادىشاھ", "بالىلىرى"],
+                  not the whole question.
     """
-    args = {"query": query, "book_ids": book_ids}
+    args = {"query": query, "book_ids": book_ids, "keywords": keywords}
     return await _execute_and_record_tool(tool_context, "search_chunks", args)
 
 
@@ -537,11 +545,22 @@ async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
     if book_ids is None and not ctx.is_global and ctx.book_id:
         book_ids = [ctx.book_id]
 
+    # Agent-supplied content words (proper nouns, topics — no grammatical filler),
+    # used in place of the full question for the keyword-search leg's tsquery.
+    # Falls back to the old whole-question behavior when omitted/empty, so an
+    # LLM turn that doesn't comply loses the improvement but never breaks.
+    keywords_arg = args.get("keywords")
+    keywords: Optional[List[str]] = (
+        [str(k) for k in keywords_arg if str(k).strip()] if keywords_arg else None
+    ) or None
+
     query_vector = await embed_query(query, ctx)
     if not query_vector:
         return []
 
-    results = await vector_search(ctx, book_ids, query_vector=query_vector)
+    results = await vector_search(
+        ctx, book_ids, query_vector=query_vector, keywords=keywords
+    )
 
     # Transparent context-switch fallback: if the LLM passed the previous
     # answer's book IDs verbatim and the similarity scores are weak (different
@@ -564,7 +583,7 @@ async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
             new_book_ids = await _run_search_books_by_summary({"query": query}, ctx)
             if new_book_ids:
                 broader = await vector_search(
-                    ctx, new_book_ids, query_vector=query_vector
+                    ctx, new_book_ids, query_vector=query_vector, keywords=keywords
                 )
                 if broader:
                     results = broader
@@ -593,6 +612,7 @@ async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
         query=query[:60],
         book_count=len(book_ids) if book_ids is not None else 0,
         results=len(results),
+        keywords=keywords,
     )
     return results
 
@@ -616,7 +636,7 @@ async def _run_search_books_by_summary(args: dict, ctx: QueryContext) -> List[st
         book_ids=char_book_ids,
         categories=ctx.character_categories or None,
         threshold=settings.summary_threshold,
-        limit=20,
+        limit=30,
     )
 
     log_json(

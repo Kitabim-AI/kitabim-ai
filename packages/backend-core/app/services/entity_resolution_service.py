@@ -13,7 +13,7 @@ import difflib
 import json
 import logging
 import unicodedata
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,6 +42,25 @@ logger = logging.getLogger("app.services.entity_resolution")
 STRONG_MERGE_SCORE = 0.75
 STRONG_LEAVE_SCORE = 0.25
 GRAY_ZONE_CONFIDENCE_THRESHOLD = 0.75
+
+TITLES_HONORIFICS = {"شاخ", "خان", "سۇلتان", "بەگ", "ھاجى", "میرزا", "مىرزا", "شاھ"}
+
+
+def _expand_name_components(raw_aliases: List[str]) -> List[str]:
+    """Decomposes canonical names and aliases into distinct component tokens (Item B2).
+    Filters out common title/honorific tokens and short words (<3 chars).
+    """
+    expanded = list(raw_aliases)
+    for a in raw_aliases:
+        if not a:
+            continue
+        parts = [p.strip() for p in a.split()]
+        if len(parts) > 1:
+            for p in parts:
+                norm_p = normalize_alias(p)
+                if len(norm_p) >= 3 and norm_p not in TITLES_HONORIFICS:
+                    expanded.append(p)
+    return list(dict.fromkeys([a for a in expanded if a]))
 
 
 class EntityResolutionVerdict(BaseModel):
@@ -224,9 +243,10 @@ async def update_alias_cache(graph_repo: GraphRepository, entity_id: str) -> Non
     entity = await graph_repo.get_entity_by_id(entity_id)
     if not entity:
         return
-    aliases = list(
+    raw_aliases = list(
         dict.fromkeys([entity.get("canonical_name"), *(entity.get("aliases") or [])])
     )
+    aliases = _expand_name_components(raw_aliases)
     for alias in aliases:
         if not alias:
             continue
@@ -261,6 +281,25 @@ async def execute_merge(
     remove = await graph_repo.get_entity_by_id(remove_id)
     if not keep or not remove:
         return None
+
+    # Clean up dangling Redis alias pointers for the removed entity (Item B2 cleanup)
+    remove_raw_aliases = list(
+        dict.fromkeys([remove.get("canonical_name"), *(remove.get("aliases") or [])])
+    )
+    remove_alias_keys = _expand_name_components(remove_raw_aliases)
+    for alias in remove_alias_keys:
+        if not alias:
+            continue
+        key = cache_config.KEY_GRAPH_ALIAS_LOOKUP.format(alias=normalize_alias(alias))
+        existing = await cache_service.get(key) or []
+        if remove_id in existing:
+            remaining = [eid for eid in existing if eid != remove_id]
+            if remaining:
+                await cache_service.set(
+                    key, remaining, ttl=settings.cache_ttl_rag_query
+                )
+            else:
+                await cache_service.delete(key)
 
     edges = await graph_repo.get_entity_edges_snapshot(remove_id)
     merge_log_entry = await merge_log_repo.log_merge(

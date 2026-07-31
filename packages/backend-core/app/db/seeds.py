@@ -139,6 +139,11 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Globally enable/disable Gemini Batch API embedding processing. Set to 'true' to activate.",
         },
         {
+            "key": "log_level",
+            "value": "INFO",
+            "description": "Global application logging level (DEBUG, INFO, WARNING, ERROR). Configurable dynamically in the System Configs admin panel.",
+        },
+        {
             "key": "gemini_batch_embedding_timeout_hours",
             "value": "24",
             "description": "Timeout threshold in hours after which a pending/running batch embedding job is marked stale and retried.",

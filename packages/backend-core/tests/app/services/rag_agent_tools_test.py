@@ -392,7 +392,7 @@ async def test_search_chunks_falls_back_to_current_book_in_reader_mode():
 
     searched_book_ids = None
 
-    async def fake_vector_search(ctx, book_ids, query_vector=None):
+    async def fake_vector_search(ctx, book_ids, query_vector=None, keywords=None):
         nonlocal searched_book_ids
         searched_book_ids = book_ids
         return [{"text": "matching chunk", "score": 0.8}]
@@ -406,6 +406,78 @@ async def test_search_chunks_falls_back_to_current_book_in_reader_mode():
 
     assert searched_book_ids == ["book-789"]
     assert len(result) == 1
+
+
+@pytest.mark.asyncio
+async def test_search_chunks_passes_agent_supplied_keywords_to_vector_search():
+    """The LLM can supply a short content-word list (e.g. proper nouns) instead
+    of letting the full question — including grammatical filler — become the
+    keyword-search leg's tsquery input. Confirmed in production that a common
+    filler word can match ~194K rows and cost 40-60s; this is the mitigation."""
+    from app.services.rag.agent.tools import _run_search_chunks
+
+    ctx = MagicMock()
+    ctx.session = AsyncMock()
+    ctx.is_global = True
+    ctx.context_book_ids = None
+
+    async def fake_embed_query(query, ctx):
+        return [0.1] * 3072
+
+    received_keywords = "not set"
+
+    async def fake_vector_search(ctx, book_ids, query_vector=None, keywords=None):
+        nonlocal received_keywords
+        received_keywords = keywords
+        return [{"text": "matching chunk", "score": 0.8, "book_id": "b1"}]
+
+    with (
+        patch("app.services.rag.agent.tools.embed_query", fake_embed_query),
+        patch("app.services.rag.agent.tools.vector_search", fake_vector_search),
+    ):
+        await _run_search_chunks(
+            {
+                "query": "بابۇر پادىشاھنىڭ قانچە بالىسى بار؟",
+                "book_ids": ["b1"],
+                "keywords": ["بابۇر", "پادىشاھ", "بالىلىرى"],
+            },
+            ctx,
+        )
+
+    assert received_keywords == ["بابۇر", "پادىشاھ", "بالىلىرى"]
+
+
+@pytest.mark.asyncio
+async def test_search_chunks_keywords_omitted_falls_back_to_none():
+    """When the LLM doesn't supply keywords (or sends an empty list), vector_search
+    must receive None so it falls back to its old whole-question behavior — no
+    hard failure mode for a non-complying agent turn."""
+    from app.services.rag.agent.tools import _run_search_chunks
+
+    ctx = MagicMock()
+    ctx.session = AsyncMock()
+    ctx.is_global = True
+    ctx.context_book_ids = None
+
+    async def fake_embed_query(query, ctx):
+        return [0.1] * 3072
+
+    received_keywords = "not set"
+
+    async def fake_vector_search(ctx, book_ids, query_vector=None, keywords=None):
+        nonlocal received_keywords
+        received_keywords = keywords
+        return [{"text": "matching chunk", "score": 0.8, "book_id": "b1"}]
+
+    with (
+        patch("app.services.rag.agent.tools.embed_query", fake_embed_query),
+        patch("app.services.rag.agent.tools.vector_search", fake_vector_search),
+    ):
+        await _run_search_chunks(
+            {"query": "some question", "book_ids": ["b1"], "keywords": []}, ctx
+        )
+
+    assert received_keywords is None
 
 
 @pytest.mark.asyncio

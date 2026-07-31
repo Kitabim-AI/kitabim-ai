@@ -125,13 +125,26 @@ async def lifespan(app: FastAPI):
     # Initialize SQLAlchemy (replaces db_manager.connect_to_storage())
     await init_db()
 
-    # Seed system configurations
+    # Seed system configurations & load runtime log_level
     try:
         from app.db.seeds import seed_system_configs
         from app.db import session as db_session
+        from app.db.repositories.system_configs_repository import (
+            SystemConfigsRepository,
+        )
 
         async with db_session.async_session_factory() as session:
             await seed_system_configs(session)
+            repo = SystemConfigsRepository(session)
+            log_level_val = await repo.get_value("log_level", settings.log_level)
+            if log_level_val:
+                new_level = getattr(logging, log_level_val.upper(), logging.INFO)
+                logging.getLogger().setLevel(new_level)
+                log_json(
+                    logger,
+                    logging.INFO,
+                    f"Applied system_configs log_level: {log_level_val.upper()}",
+                )
     except Exception as exc:
         logger = logging.getLogger("app.startup")
         log_json(logger, logging.ERROR, "System config seeding failed", error=str(exc))
