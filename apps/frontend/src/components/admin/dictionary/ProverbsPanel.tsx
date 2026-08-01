@@ -300,7 +300,7 @@ export const ProverbsPanel: React.FC = () => {
                                 placeholder={t('admin.proverbs.searchPlaceholder')}
                               />
                             </div>
-                            {(entry.volume != null || entry.page_number != null) && (
+                            {isEditor && (entry.volume != null || entry.page_number != null) && (
                               <p className="uyghur-text text-[11px] md:text-[12px] text-slate-400 dark:text-slate-500 font-bold opacity-80">
                                  {t('admin.proverbs.volumeAndPage', { volume: entry.volume ?? '-', page: entry.page_number ?? '-' })}
                               </p>
@@ -313,7 +313,7 @@ export const ProverbsPanel: React.FC = () => {
                                  {entry.text}
                               </span>
                             </div>
-                            {(entry.volume != null || entry.page_number != null) && (
+                            {isEditor && (entry.volume != null || entry.page_number != null) && (
                               <p className="uyghur-text text-[11px] md:text-[12px] text-slate-400 dark:text-slate-500 font-bold mt-1.5 opacity-80">
                                  {t('admin.proverbs.volumeAndPage', { volume: entry.volume ?? '-', page: entry.page_number ?? '-' })}
                               </p>
