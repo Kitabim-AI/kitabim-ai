@@ -29,7 +29,7 @@ test('renders the first 6 tabs plus a page toggle on page 1', () => {
   SEARCH_TABS.slice(6).forEach((tabDef) => {
     expect(screen.queryByText(tabDef.labelKey)).not.toBeInTheDocument();
   });
-  expect(screen.getByTestId('search-tab-page-toggle')).toHaveTextContent('common.more · 4');
+  expect(screen.getByTestId('search-tab-page-toggle')).toHaveTextContent('...');
 });
 
 test('marks the active tab as pressed', () => {
@@ -64,7 +64,7 @@ test('clicking back on page 2 returns to page 1', () => {
 
   expect(screen.getByText('home.tabs.ask')).toBeInTheDocument();
   expect(screen.queryByText('home.tabs.enUg')).not.toBeInTheDocument();
-  expect(screen.getByTestId('search-tab-page-toggle')).toHaveTextContent('common.more · 4');
+  expect(screen.getByTestId('search-tab-page-toggle')).toHaveTextContent('...');
 });
 
 test('selecting a tab on page 2 calls onChange correctly', () => {
@@ -86,5 +86,5 @@ test('always starts on page 1 even when the active tab is on page 2', () => {
   renderTabBar('proverbs');
   expect(screen.getByText('home.tabs.ask')).toBeInTheDocument();
   expect(screen.queryByText('home.tabs.proverbs')).not.toBeInTheDocument();
-  expect(screen.getByTestId('search-tab-page-toggle')).toHaveTextContent('common.more · 4');
+  expect(screen.getByTestId('search-tab-page-toggle')).toHaveTextContent('...');
 });

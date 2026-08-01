@@ -21,7 +21,6 @@ export const SearchTabBar: React.FC<SearchTabBarProps> = ({ activeTab, onChange 
 
   const isLastPage = currentPage === TAB_PAGES.length - 1;
   const showToggle = TAB_PAGES.length > 1;
-  const hiddenCount = TAB_PAGES.slice(currentPage + 1).reduce((sum, page) => sum + page.length, 0);
 
   const handleToggle = () => {
     setCurrentPage(isLastPage ? 0 : currentPage + 1);
@@ -67,9 +66,7 @@ export const SearchTabBar: React.FC<SearchTabBarProps> = ({ activeTab, onChange 
             ) : (
               <ChevronLeft size={16} strokeWidth={2} className="flex-shrink-0" />
             )}
-            <span className="uyghur-text mt-[2px]">
-              {isLastPage ? t('common.back') : `${t('common.more')} · ${hiddenCount}`}
-            </span>
+            <span className="uyghur-text mt-[2px]">{isLastPage ? t('common.back') : '...'}</span>
           </button>
         )}
       </div>
