@@ -33,11 +33,7 @@ export const ProverbsPanel: React.FC = () => {
 
   // Inline Edit state
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState<{ text: string; volume: string; page_number: string }>({
-    text: '',
-    volume: '',
-    page_number: '',
-  });
+  const [editForm, setEditForm] = useState<{ text: string }>({ text: '' });
   const [isSaving, setIsSaving] = useState(false);
 
   // Infinite Scroll State
@@ -133,11 +129,7 @@ export const ProverbsPanel: React.FC = () => {
 
   const handleEditRow = (entry: ProverbEntry) => {
     setEditingId(entry.id);
-    setEditForm({
-      text: entry.text,
-      volume: entry.volume != null ? String(entry.volume) : '',
-      page_number: entry.page_number != null ? String(entry.page_number) : '',
-    });
+    setEditForm({ text: entry.text });
   };
 
   const handleCancelEdit = () => {
@@ -148,11 +140,7 @@ export const ProverbsPanel: React.FC = () => {
     if (!editForm.text.trim()) return;
     setIsSaving(true);
     try {
-      const body = {
-        text: editForm.text.trim(),
-        volume: editForm.volume !== '' ? Number(editForm.volume) : null,
-        page_number: editForm.page_number !== '' ? Number(editForm.page_number) : null,
-      };
+      const body = { text: editForm.text.trim() };
       const resp = await authFetch(`/api/proverbs/${entry.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -312,28 +300,11 @@ export const ProverbsPanel: React.FC = () => {
                                 placeholder={t('admin.proverbs.searchPlaceholder')}
                               />
                             </div>
-                            <div className="flex flex-wrap items-center gap-3">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-xs font-bold text-slate-400 dark:text-slate-500">توم:</span>
-                                <input
-                                  type="number"
-                                  value={editForm.volume}
-                                  onChange={(e) => setEditForm(prev => ({ ...prev, volume: e.target.value }))}
-                                  className="w-20 px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 outline-none"
-                                  placeholder="1"
-                                />
-                              </div>
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-xs font-bold text-slate-400 dark:text-slate-500">بەت:</span>
-                                <input
-                                  type="number"
-                                  value={editForm.page_number}
-                                  onChange={(e) => setEditForm(prev => ({ ...prev, page_number: e.target.value }))}
-                                  className="w-20 px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 outline-none"
-                                  placeholder="1"
-                                />
-                              </div>
-                            </div>
+                            {(entry.volume != null || entry.page_number != null) && (
+                              <p className="uyghur-text text-[11px] md:text-[12px] text-slate-400 dark:text-slate-500 font-bold opacity-80">
+                                 {t('admin.proverbs.volumeAndPage', { volume: entry.volume ?? '-', page: entry.page_number ?? '-' })}
+                              </p>
+                            )}
                           </div>
                         ) : (
                           <div className="flex-1 min-w-0 pr-2">

@@ -38,8 +38,6 @@ class ProverbEntryOut(BaseModel):
 
 class ProverbUpdate(BaseModel):
     text: Optional[str] = None
-    volume: Optional[int] = None
-    page_number: Optional[int] = None
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -106,7 +104,8 @@ async def update_proverb(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(require_editor),
 ):
-    """Update a proverb (Admin / Editor only)."""
+    """Update a proverb's text (Admin / Editor only). Volume and page number are
+    source references and are never changed by this endpoint."""
     stmt = select(Proverb).where(Proverb.id == proverb_id)
     res = await session.execute(stmt)
     proverb = res.scalar_one_or_none()
@@ -115,10 +114,6 @@ async def update_proverb(
 
     if body.text is not None:
         proverb.text = body.text.strip()
-    if body.volume is not None:
-        proverb.volume = body.volume
-    if body.page_number is not None:
-        proverb.page_number = body.page_number
 
     await session.commit()
     await session.refresh(proverb)
