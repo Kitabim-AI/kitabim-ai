@@ -68,6 +68,10 @@
     "volume_label": "Volume {volume}",
     "volume_unknown": "Volume information not available",
     "pages_suffix": ", {pages} pages",
-    "followup_context_prefix": "[Previous answer: {context}]"
+    "followup_context_prefix": "[Previous answer: {context}]",
+    "exact_phrase_no_matches": "No exact matches found for \"{phrase}\".",
+    "exact_phrase_page_hits_header": "Found {count} exact match(es):",
+    "exact_phrase_page_hit_line": "{title} — page {page}",
+    "exact_phrase_page_hit_line_no_page": "{title}"
   }
 }

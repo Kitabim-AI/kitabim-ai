@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from app.db.repositories.chunks_repository import ChunksRepository
-from app.db.models import Chunk
+from app.db.models import Chunk, Book
 
 
 @pytest.mark.asyncio
@@ -143,8 +143,11 @@ async def test_keyword_search_unscoped():
     assert results[0]["rank"] == 0.045
     # book_ids/threshold aren't part of keyword_search's query params
     call_args = session.execute.await_args
-    assert call_args.args[1]["query_text"] == "سوئال"
+    assert call_args.args[1]["phrase"] == "سوئال"
     assert call_args.args[1]["limit"] == 5
+    query_sql = str(call_args.args[0])
+    assert query_sql.count("phraseto_tsquery(") == 2
+    assert "tsquery_expr" not in query_sql
 
 
 @pytest.mark.asyncio
@@ -170,6 +173,8 @@ async def test_keyword_search_with_book_ids():
     assert len(results) == 1
     call_args = session.execute.await_args
     assert call_args.args[1]["book_ids"] == ["b1"]
+    assert call_args.args[1]["phrase"] == "سوئال"
+    assert "phraseto_tsquery(" in str(call_args.args[0])
 
 
 @pytest.mark.asyncio
@@ -181,6 +186,23 @@ async def test_keyword_search_empty_book_ids_fast_exit():
 
     assert results == []
     session.execute.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_keyword_search_passes_multi_word_phrase_through_unformatted():
+    """Phrase mode hands the raw phrase to phraseto_tsquery() and lets
+    Postgres build the tsquery — it must not pre-split/OR-format the words
+    in Python the way the old prefix-match query did."""
+    session = AsyncMock()
+    repo = ChunksRepository(session)
+    mock_res = MagicMock()
+    mock_res.fetchall.return_value = []
+    session.execute.return_value = mock_res
+
+    await repo.keyword_search("king Babur")
+
+    call_args = session.execute.await_args
+    assert call_args.args[1]["phrase"] == "king Babur"
 
 
 @pytest.mark.asyncio
@@ -196,6 +218,95 @@ async def test_keyword_search_with_categories():
 
     call_args = session.execute.await_args
     assert call_args.args[1]["categories"] == ["history"]
+
+
+@pytest.mark.asyncio
+async def test_find_books_by_exact_phrase_returns_books_and_total():
+    """The home 'Content' tab: exact-phrase search over chunk text, grouped
+    by book, paginated. Distinct from keyword_search's chat-retrieval leg —
+    this is a browse/discovery search, not context for an LLM answer."""
+    session = AsyncMock()
+    repo = ChunksRepository(session)
+
+    mock_count_res = MagicMock()
+    mock_count_res.scalar_one.return_value = 2
+
+    book1 = Book(id="b1", content_hash="h1", title="Book One", author="Author A")
+    book2 = Book(
+        id="b2", content_hash="h2", title="Book Two", author="Author B", volume=1
+    )
+    mock_books_res = MagicMock()
+    mock_books_res.scalars.return_value.all.return_value = [book1, book2]
+
+    session.execute.side_effect = [mock_count_res, mock_books_res]
+
+    books, total = await repo.find_books_by_exact_phrase("king Babur", skip=0, limit=40)
+
+    assert total == 2
+    assert len(books) == 2
+    assert books[0].id == "b1"
+    assert session.execute.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_find_books_by_exact_phrase_respects_pagination_params():
+    session = AsyncMock()
+    repo = ChunksRepository(session)
+
+    mock_count_res = MagicMock()
+    mock_count_res.scalar_one.return_value = 0
+    mock_books_res = MagicMock()
+    mock_books_res.scalars.return_value.all.return_value = []
+    session.execute.side_effect = [mock_count_res, mock_books_res]
+
+    await repo.find_books_by_exact_phrase("king Babur", skip=40, limit=20)
+
+    books_stmt = session.execute.await_args_list[1].args[0]
+    compiled = str(books_stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "LIMIT 20" in compiled
+    assert "OFFSET 40" in compiled
+
+
+@pytest.mark.asyncio
+async def test_find_books_by_exact_phrase_restricts_to_public_by_default():
+    """Guests must not see private/draft books' content leak through the
+    Content-tab search — same visibility rule as the rest of books_router."""
+    session = AsyncMock()
+    repo = ChunksRepository(session)
+
+    mock_count_res = MagicMock()
+    mock_count_res.scalar_one.return_value = 0
+    mock_books_res = MagicMock()
+    mock_books_res.scalars.return_value.all.return_value = []
+    session.execute.side_effect = [mock_count_res, mock_books_res]
+
+    await repo.find_books_by_exact_phrase("king Babur", skip=0, limit=40)
+
+    books_stmt = session.execute.await_args_list[1].args[0]
+    compiled = str(books_stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "visibility" in compiled.lower()
+    assert "'ready'" in compiled or '"ready"' in compiled
+
+
+@pytest.mark.asyncio
+async def test_find_books_by_exact_phrase_skips_visibility_filter_when_not_restricted():
+    session = AsyncMock()
+    repo = ChunksRepository(session)
+
+    mock_count_res = MagicMock()
+    mock_count_res.scalar_one.return_value = 0
+    mock_books_res = MagicMock()
+    mock_books_res.scalars.return_value.all.return_value = []
+    session.execute.side_effect = [mock_count_res, mock_books_res]
+
+    await repo.find_books_by_exact_phrase(
+        "king Babur", skip=0, limit=40, restrict_to_public=False
+    )
+
+    books_stmt = session.execute.await_args_list[1].args[0]
+    compiled = str(books_stmt.compile(compile_kwargs={"literal_binds": True})).lower()
+    where_clause = compiled.split(" where ", 1)[1]
+    assert "visibility" not in where_clause
 
 
 def test_get_chunks_repository():

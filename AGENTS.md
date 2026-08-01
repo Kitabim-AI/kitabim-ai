@@ -6,7 +6,7 @@ This file provides guidance for automated agents working in this repo.
 ## Repository Rules
 - Keep the monorepo structure intact.
 - Local development uses **Docker Compose**.
-- Database: **PostgreSQL (local host)**. MongoDB is removed.
+- Database: **PostgreSQL** (standalone on the host in local dev; Cloud SQL in production — see Production Deployment below). MongoDB is removed.
 
 ## Microservices
 - **Backend API**: `services/backend/` — FastAPI HTTP service (uses `packages/backend-core`)
@@ -48,10 +48,10 @@ This file provides guidance for automated agents working in this repo.
 - **CRITICAL PRODUCTION RULE**: Use the automated deployment script for all production releases. This ensures the correct architecture (linux/amd64), registry tagging, and VM sync.
 - Run: `./deploy/gcp/scripts/deploy.sh [IMAGE_TAG]` from the repository root.
 - The script handles building, pushing, and remote deployment commands.
-- GCP infra: Compute Engine VM + Cloud Storage + Nginx reverse proxy (`deploy/gcp/nginx/`).
+- GCP infra: Compute Engine VM + Cloud Storage + Nginx reverse proxy (`deploy/gcp/nginx/`) + **Cloud SQL for PostgreSQL** (external managed instance — not a container; reached via a private IP set in `DATABASE_URL`).
 - **DATA SAFETY RULES**:
   1. Never run `docker system prune --volumes` or any prune flag that deletes persistent storage volumes in production or local environments.
-  2. Never stop or remove stateful database containers (`neo4j`, `postgres`, `redis`) during routine application code deployments.
+  2. Never stop or remove stateful database containers (`neo4j`, `redis`) during routine application code deployments. PostgreSQL is Cloud SQL in production, not a container, so it has no container lifecycle to protect — the equivalent risk there is an accidental Cloud SQL instance stop/delete.
   3. Never execute destructive graph data reset operations (`scripts/reset_graph_data.py`) without explicit user permission (`--confirm-reset-all-graph-data`).
 
 ## File Management & Tooling

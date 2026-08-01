@@ -3,9 +3,10 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 import logging
 import uuid
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.ext.asyncio import AsyncSession
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -36,7 +37,11 @@ from api.endpoints import (
     graph_admin_router,
 )
 from app.core.config import settings
-from app.db.session import init_db, close_db  # SQLAlchemy session management
+from app.db.session import (
+    init_db,
+    close_db,
+    get_session,
+)  # SQLAlchemy session management
 from app.core.i18n import I18n, set_current_lang, t
 
 from app.utils.observability import configure_logging, log_json, request_id_var
@@ -495,9 +500,21 @@ app.include_router(
 
 
 @app.get("/api/config")
-async def get_public_config():
+async def get_public_config(session: AsyncSession = Depends(get_session)):
     """Public endpoint — returns config the frontend needs before it can authenticate."""
-    return {"appId": settings.security_app_id}
+    from app.db.repositories.system_configs_repository import SystemConfigsRepository
+
+    repo = SystemConfigsRepository(session)
+    collection_page_size_str = await repo.get_value("collection_page_size", "40")
+    try:
+        collection_page_size = int(collection_page_size_str)
+    except (ValueError, TypeError):
+        collection_page_size = 40
+
+    return {
+        "appId": settings.security_app_id,
+        "collectionPageSize": collection_page_size,
+    }
 
 
 @app.get("/")

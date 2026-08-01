@@ -24,16 +24,8 @@ def mock_ctx():
 
 @pytest.mark.asyncio
 async def test_vector_search_uses_dynamic_rag_top_k(mock_ctx):
-    async def fake_search_chunks(
-        chunks_repo,
-        query_embedding,
-        query_text,
-        book_ids,
-        categories,
-        limit,
-        threshold,
-        hybrid_enabled,
-        **kwargs,
+    async def fake_similarity_search(
+        query_embedding, book_ids, categories, limit, threshold
     ):
         # Verify limit matches the dynamic rag_top_k value (10 instead of default 25)
         assert limit == 10
@@ -50,8 +42,11 @@ async def test_vector_search_uses_dynamic_rag_top_k(mock_ctx):
             for i in range(10)
         ]
 
-    with patch("app.core.providers.get_vector_store"), patch(
-        "app.services.rag.retrieval._search_chunks", side_effect=fake_search_chunks
+    mock_chunks_repo = AsyncMock()
+    mock_chunks_repo.similarity_search = AsyncMock(side_effect=fake_similarity_search)
+
+    with patch(
+        "app.core.providers.get_vector_store", return_value=mock_chunks_repo
     ), patch("app.services.rag.retrieval.cache_service.get", return_value=None), patch(
         "app.services.rag.retrieval.cache_service.set", new_callable=AsyncMock
     ), patch(
@@ -59,10 +54,8 @@ async def test_vector_search_uses_dynamic_rag_top_k(mock_ctx):
     ) as mock_config_cls:
 
         async def mock_get_value(key, default=""):
-            if key == "rag_top_k":
+            if key == "rag_vector_top_k":
                 return "10"
-            if key == "rag_hybrid_search_enabled":
-                return "false"
             return default
 
         mock_config_cls.return_value.get_value = AsyncMock(side_effect=mock_get_value)

@@ -1,11 +1,15 @@
 import { Book as BookIcon, Bot, Keyboard, RefreshCw, Search, X, Delete } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
+import { useHomeSearchTab } from '../../hooks/useHomeSearchTab';
 import { useI18n } from '../../i18n/I18nContext';
+import { getCollectionPageSize } from '../../services/authService';
 import { PersistenceService } from '../../services/persistenceService';
 import { ProverbDisplay } from '../common/ProverbDisplay';
 import { QuestionRotator } from '../common/QuestionRotator';
 import { BookCard } from './BookCard';
+import { HomeSearchTabResults } from './HomeSearchTabResults';
+import { SearchTabBar } from './SearchTabBar';
 
 interface KeyDef {
   latin: string;
@@ -71,6 +75,8 @@ export const HomeView: React.FC = () => {
   } = useAppContext();
 
   const { t } = useI18n();
+  const { activeTab, setActiveTab } = useHomeSearchTab();
+  const isBookTab = activeTab === 'ask' || activeTab === 'books';
   const [localSearch, setLocalSearch] = useState(searchQuery);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const localSearchRef = useRef(localSearch);
@@ -220,11 +226,14 @@ export const HomeView: React.FC = () => {
     return () => clearTimeout(timer);
   }, [localSearch]);
 
-  // Search is active if we have a category OR at least 3 characters
-  const hasSearch = (searchQuery.length >= 3) || selectedCategory.length > 0;
+  // Search is active if we have a category OR at least 3 characters (book tabs), or any
+  // typed text for the other tabs (they debounce their own fetches independently).
+  const hasBookSearch = (searchQuery.length >= 3) || selectedCategory.length > 0;
+  const hasSearch = isBookTab ? hasBookSearch : localSearch.trim().length > 0;
 
-  // No books found for a text query (not a category browse) — prompt to chat
-  const chatHint = searchQuery.length >= 3 && !selectedCategory && !isInitialLoading && books.length === 0;
+  // No books found for a text query (not a category browse) — prompt to chat.
+  // Only the "Ask" tab falls back to chat; "Books" is an explicit title/author/category search.
+  const chatHint = activeTab === 'ask' && searchQuery.length >= 3 && !selectedCategory && !isInitialLoading && books.length === 0;
   const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
   const isMac = !isTouchDevice && navigator.platform.toUpperCase().startsWith('MAC');
 
@@ -232,7 +241,10 @@ export const HomeView: React.FC = () => {
   // Once chatHint is active, suppress updates as long as the query stays long
   // enough to be a question — only let through a clear (< 3 chars) so the user
   // can exit chat mode by deleting the input.
+  // Only the book tabs (Ask/Books) drive the context's book search — the other tabs
+  // fetch independently in HomeSearchTabResults, so skip this sync for them entirely.
   useEffect(() => {
+    if (!isBookTab) return;
     const timer = setTimeout(() => {
       const trimmed = localSearch.trim();
       if (trimmed === searchQuery) return;
@@ -240,7 +252,7 @@ export const HomeView: React.FC = () => {
       setSearchQuery(trimmed);
     }, 300);
     return () => clearTimeout(timer);
-  }, [localSearch, searchQuery, setSearchQuery, chatHint]);
+  }, [localSearch, searchQuery, setSearchQuery, chatHint, isBookTab]);
 
   // Sync local search when global search is cleared or changed externally
   useEffect(() => {
@@ -252,7 +264,7 @@ export const HomeView: React.FC = () => {
 
 
   useEffect(() => {
-    if (!hasSearch) return;
+    if (!isBookTab || !hasSearch) return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && !isInitialLoading && hasMore && !isLoadingMore && books.length > 0) {
@@ -263,7 +275,7 @@ export const HomeView: React.FC = () => {
     );
     if (loaderRef.current) observer.observe(loaderRef.current);
     return () => observer.disconnect();
-  }, [hasSearch, hasMore, isLoadingMore, loadMoreShelf, loaderRef, isInitialLoading]);
+  }, [isBookTab, hasSearch, hasMore, isLoadingMore, loadMoreShelf, loaderRef, isInitialLoading]);
 
   const handleSearchSubmit = () => {
     const trimmed = localSearch.trim();
@@ -305,6 +317,9 @@ export const HomeView: React.FC = () => {
 
       {/* Search Section */}
       <div className="w-full max-w-3xl px-4 relative mb-8 sm:mb-10 md:mb-12">
+        <div className="mb-4">
+          <SearchTabBar activeTab={activeTab} onChange={setActiveTab} />
+        </div>
         <div className="relative group">
           <button
             onClick={handleSearchSubmit}
@@ -495,66 +510,83 @@ export const HomeView: React.FC = () => {
       </div>
 
       {/* Results Section */}
-      {hasSearch && !chatHint && (
-        <div className="w-full max-w-none px-4 md:px-8 pb-24 sm:pb-32">
-          <div className="flex flex-col mb-10 sm:mb-12 md:mb-16 gap-2">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl sm:text-2xl md:text-3xl font-normal text-[#1a1a1a] dark:text-slate-100">{t('home.searchResults')}</h2>
-              <div className="px-3 sm:px-4 py-1 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] rounded-xl text-xs sm:text-sm font-normal shadow-inner border border-[#0369a1]/5 dark:border-[#38bdf8]/5">
-                {isInitialLoading ? <RefreshCw size={12} className="inline-block animate-spin mx-1" /> : totalBooks} <span className="opacity-60">{t('home.totalBooks')}</span>
-              </div>
-            </div>
-            <p className="text-xs sm:text-sm font-normal text-[#94a3b8] dark:text-slate-400 uppercase">«{searchQuery || selectedCategory}» {t('home.resultsFor')}</p>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-3 sm:gap-x-8 gap-y-8 sm:gap-y-12 justify-items-center">
-            {books.map(book => (
-              <BookCard
-                key={book.id}
-                book={book}
-                onClick={bookActions.openReader}
-              />
-            ))}
-
-            {isInitialLoading && books.length === 0 && (
-              <div className="col-span-full py-20 w-full flex flex-col items-center justify-center">
-                <div className="relative mb-6">
-                  <div className="w-16 h-16 border-4 border-[#0369a1]/10 border-t-[#0369a1] rounded-full animate-spin"></div>
-                  <div className="absolute inset-0 flex items-center justify-center text-[#0369a1]">
-                    <RefreshCw className="w-8 h-8 animate-pulse" />
-                  </div>
+      {isBookTab ? (
+        hasSearch && !chatHint && (
+          <div className="w-full max-w-none px-4 md:px-8 pb-24 sm:pb-32">
+            <div className="flex flex-col mb-10 sm:mb-12 md:mb-16 gap-2">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl sm:text-2xl md:text-3xl font-normal text-[#1a1a1a] dark:text-slate-100">{t('home.searchResults')}</h2>
+                <div className="px-3 sm:px-4 py-1 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] rounded-xl text-xs sm:text-sm font-normal shadow-inner border border-[#0369a1]/5 dark:border-[#38bdf8]/5">
+                  {isInitialLoading ? <RefreshCw size={12} className="inline-block animate-spin mx-1" /> : totalBooks} <span className="opacity-60">{t('home.totalBooks')}</span>
                 </div>
-                <h3 className="text-xl font-normal text-[#1a1a1a]">{t('common.loading')}</h3>
               </div>
-            )}
-          </div>
-
-          {books.length === 0 && !isInitialLoading && (
-            <div className="w-full py-20 text-center glass-panel flex flex-col items-center justify-center rounded-[32px]">
-              <div className="p-6 bg-[#0369a1]/10 rounded-[32px] mb-6">
-                <BookIcon className="w-16 h-16 text-[#0369a1] opacity-40" />
-              </div>
-              <p className="text-[#1a1a1a] font-normal text-xl sm:text-2xl mb-2">{t(hasSearch ? 'library.noResults.title' : 'library.empty.title')}</p>
-              <p className="text-[#94a3b8] font-bold text-sm sm:text-base max-w-sm">{t(hasSearch ? 'library.noResults.message' : 'library.empty.message')}</p>
+              <p className="text-xs sm:text-sm font-normal text-[#94a3b8] dark:text-slate-400 uppercase">«{searchQuery || selectedCategory}» {t('home.resultsFor')}</p>
             </div>
-          )}
 
-          {/* Infinite Scroll Trigger */}
-          <div ref={loaderRef as any} className="h-60 flex flex-col items-center justify-center gap-6">
-            {!isInitialLoading && isLoadingMore && (
-              <div className="flex flex-col items-center gap-4">
-                <div className="w-10 h-10 border-4 border-[#0369a1]/10 border-t-[#0369a1] rounded-full animate-spin"></div>
-                <span className="text-xs font-black text-[#0369a1] uppercase animate-pulse">{t('library.loadingMore')}</span>
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-3 sm:gap-x-8 gap-y-8 sm:gap-y-12 justify-items-center">
+              {books.map(book => (
+                <BookCard
+                  key={book.id}
+                  book={book}
+                  onClick={bookActions.openReader}
+                />
+              ))}
+
+              {isInitialLoading && books.length === 0 && (
+                <div className="col-span-full py-20 w-full flex flex-col items-center justify-center">
+                  <div className="relative mb-6">
+                    <div className="w-16 h-16 border-4 border-[#0369a1]/10 border-t-[#0369a1] rounded-full animate-spin"></div>
+                    <div className="absolute inset-0 flex items-center justify-center text-[#0369a1]">
+                      <RefreshCw className="w-8 h-8 animate-pulse" />
+                    </div>
+                  </div>
+                  <h3 className="text-xl font-normal text-[#1a1a1a]">{t('common.loading')}</h3>
+                </div>
+              )}
+            </div>
+
+            {books.length === 0 && !isInitialLoading && (
+              <div className="w-full py-20 text-center glass-panel flex flex-col items-center justify-center rounded-[32px]">
+                <div className="p-6 bg-[#0369a1]/10 rounded-[32px] mb-6">
+                  <BookIcon className="w-16 h-16 text-[#0369a1] opacity-40" />
+                </div>
+                <p className="text-[#1a1a1a] font-normal text-xl sm:text-2xl mb-2">{t(hasSearch ? 'library.noResults.title' : 'library.empty.title')}</p>
+                <p className="text-[#94a3b8] font-bold text-sm sm:text-base max-w-sm">{t(hasSearch ? 'library.noResults.message' : 'library.empty.message')}</p>
               </div>
             )}
-            {!hasMore && books.length > 0 && (
-              <div className="flex flex-col items-center gap-2 opacity-30">
-                <div className="w-8 h-[1px] bg-[#94a3b8] dark:bg-slate-700"></div>
-                <span className="text-xs font-black text-[#94a3b8] dark:text-slate-500 uppercase">{t('common.endOfList')}</span>
-              </div>
-            )}
+
+            {/* Infinite Scroll Trigger */}
+            <div ref={loaderRef as any} className="h-60 flex flex-col items-center justify-center gap-6">
+              {!isInitialLoading && isLoadingMore && (
+                <div className="flex flex-col items-center gap-4">
+                  <div className="w-10 h-10 border-4 border-[#0369a1]/10 border-t-[#0369a1] rounded-full animate-spin"></div>
+                  <span className="text-xs font-black text-[#0369a1] uppercase animate-pulse">{t('library.loadingMore')}</span>
+                </div>
+              )}
+              {!hasMore && books.length > 0 && (
+                <div className="flex flex-col items-center gap-2 opacity-30">
+                  <div className="w-8 h-[1px] bg-[#94a3b8] dark:bg-slate-700"></div>
+                  <span className="text-xs font-black text-[#94a3b8] dark:text-slate-500 uppercase">{t('common.endOfList')}</span>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )
+      ) : (
+        hasSearch && (
+          <div className="w-full max-w-none px-4 md:px-8 pb-24 sm:pb-32">
+            <div className="flex flex-col mb-10 sm:mb-12 md:mb-16 gap-2">
+              <h2 className="text-xl sm:text-2xl md:text-3xl font-normal text-[#1a1a1a] dark:text-slate-100">{t('home.searchResults')}</h2>
+              <p className="text-xs sm:text-sm font-normal text-[#94a3b8] dark:text-slate-400 uppercase">«{localSearch}» {t('home.resultsFor')}</p>
+            </div>
+            <HomeSearchTabResults
+              activeTab={activeTab}
+              query={localSearch}
+              pageSize={getCollectionPageSize()}
+              onOpenBook={bookActions.openReader}
+            />
+          </div>
+        )
       )}
     </div>
   );

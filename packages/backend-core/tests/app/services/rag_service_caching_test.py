@@ -5,11 +5,10 @@ from app.services.rag.retrieval import embed_query, vector_search
 
 
 @pytest.mark.asyncio
-async def test_vector_search_uses_keywords_override_for_keyword_leg_when_provided():
-    """Agent-supplied keywords replace the whole question as the keyword-search
-    leg's tsquery input, so grammatical filler words in the raw question don't
-    reach the tsquery. Confirmed in production that a filler word left in can
-    match ~194K rows and cost 40-60s (see ChunksRepository.keyword_search)."""
+async def test_vector_search_is_vector_only_never_calls_keyword_search():
+    """The keyword leg no longer blends with vector results (removed in the
+    keyword-search rework, Phase 1) — vector_search must never call
+    keyword_search at all."""
     ctx = MagicMock()
     ctx.session = AsyncMock()
     ctx.query_vector = [0.1] * 3072
@@ -34,13 +33,8 @@ async def test_vector_search_uses_keywords_override_for_keyword_leg_when_provide
     )
     chunks_repo_mock.keyword_search = AsyncMock(return_value=[])
 
-    async def mock_get_value(key, default=""):
-        if key == "rag_hybrid_search_enabled":
-            return "true"
-        return default
-
     mock_config_repo = AsyncMock()
-    mock_config_repo.get_value = AsyncMock(side_effect=mock_get_value)
+    mock_config_repo.get_value = AsyncMock(return_value="25")
 
     with (
         patch("app.core.providers.get_vector_store", return_value=chunks_repo_mock),
@@ -51,63 +45,10 @@ async def test_vector_search_uses_keywords_override_for_keyword_leg_when_provide
             return_value=mock_config_repo,
         ),
     ):
-        await vector_search(
-            ctx, book_ids=["b1"], keywords=["بابۇر", "پادىشاھ", "بالىلىرى"]
-        )
+        results = await vector_search(ctx, book_ids=["b1"])
 
-    call_kwargs = chunks_repo_mock.keyword_search.call_args_list[0].kwargs
-    assert call_kwargs["query_text"] == "بابۇر پادىشاھ بالىلىرى"
-
-
-@pytest.mark.asyncio
-async def test_vector_search_falls_back_to_question_when_keywords_omitted():
-    """No keywords supplied -> old behavior unchanged: the full (enriched)
-    question is used for the keyword-search leg."""
-    ctx = MagicMock()
-    ctx.session = AsyncMock()
-    ctx.query_vector = [0.1] * 3072
-    ctx.character_categories = []
-    ctx.is_global = False
-    ctx.question = "بابۇر پادىشاھنىڭ قانچە بالىسى بار؟"
-    ctx.enriched_question = None
-
-    chunks_repo_mock = AsyncMock()
-    chunks_repo_mock.similarity_search = AsyncMock(
-        return_value=[
-            {
-                "book_id": "b1",
-                "text": "t",
-                "similarity": 0.9,
-                "page_number": 1,
-                "title": "T",
-                "volume": None,
-                "author": "A",
-            }
-        ]
-    )
-    chunks_repo_mock.keyword_search = AsyncMock(return_value=[])
-
-    async def mock_get_value(key, default=""):
-        if key == "rag_hybrid_search_enabled":
-            return "true"
-        return default
-
-    mock_config_repo = AsyncMock()
-    mock_config_repo.get_value = AsyncMock(side_effect=mock_get_value)
-
-    with (
-        patch("app.core.providers.get_vector_store", return_value=chunks_repo_mock),
-        patch("app.services.cache_service.cache_service.get", return_value=None),
-        patch("app.services.cache_service.cache_service.set", return_value=None),
-        patch(
-            "app.db.repositories.system_configs_repository.SystemConfigsRepository",
-            return_value=mock_config_repo,
-        ),
-    ):
-        await vector_search(ctx, book_ids=["b1"])
-
-    call_kwargs = chunks_repo_mock.keyword_search.call_args_list[0].kwargs
-    assert call_kwargs["query_text"] == "بابۇر پادىشاھنىڭ قانچە بالىسى بار؟"
+    chunks_repo_mock.keyword_search.assert_not_awaited()
+    assert results and results[0]["text"] == "t"
 
 
 @pytest.mark.asyncio
@@ -345,7 +286,7 @@ async def test_vector_search_multi_book_guarantees_per_book_quota(monkeypatch):
         mock_repo.similarity_search = AsyncMock(side_effect=fake_similarity_search)
 
         async def mock_get_value(key, default=""):
-            if key == "rag_top_k":
+            if key == "rag_vector_top_k":
                 return "25"
             if key == "rag_hybrid_search_enabled":
                 return "false"

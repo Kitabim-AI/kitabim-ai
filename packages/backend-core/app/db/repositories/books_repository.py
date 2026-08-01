@@ -684,20 +684,11 @@ class BooksRepository(BaseRepository[Book]):
         result = await self.session.execute(stmt)
         rows = [(row[0], row[1]) for row in result.fetchall() if row[0] and row[1]]
 
-        import re
-
         q = question.strip()
 
-        # Exact match when the question contains a «quoted» title
-        quoted = re.findall(r"«([^»]+)»", q)
-        if quoted:
-            for candidate in quoted:
-                candidate_norm = _normalize_uyghur(candidate.strip())
-                for title, author in rows:
-                    if _normalize_uyghur(title.strip()) == candidate_norm:
-                        return title, author
-            return None  # quoted title present but not found — don't fuzzy-match
-
+        # `«...»` no longer signals a quoted title (it now means phrase-search
+        # intent elsewhere in the RAG pipeline) — fuzzy word-prefix matching
+        # resolves the title the same way whether quoted or not.
         for title, author in rows:
             if _entity_matches_question(title, q):
                 return title, author
@@ -782,30 +773,14 @@ class BooksRepository(BaseRepository[Book]):
         result = await self.session.execute(stmt)
         titles = [row[0] for row in result.fetchall() if row[0]]
 
-        import re
-
         q = question.strip()
 
-        # Exact match when the question contains a «quoted» title
-        quoted = re.findall(r"«([^»]+)»", q)
-        matched_title = None
-        if quoted:
-            for candidate in quoted:
-                candidate_norm = _normalize_uyghur(candidate.strip())
-                matched_title = next(
-                    (
-                        t
-                        for t in titles
-                        if _normalize_uyghur(t.strip()) == candidate_norm
-                    ),
-                    None,
-                )
-                if matched_title:
-                    break
-        if not matched_title:
-            matched_title = next(
-                (t for t in titles if _entity_matches_question(t, q)), None
-            )
+        # `«...»` no longer signals a quoted title (it now means phrase-search
+        # intent elsewhere in the RAG pipeline) — fuzzy word-prefix matching
+        # resolves the title the same way whether quoted or not.
+        matched_title = next(
+            (t for t in titles if _entity_matches_question(t, q)), None
+        )
         if not matched_title:
             return []
 

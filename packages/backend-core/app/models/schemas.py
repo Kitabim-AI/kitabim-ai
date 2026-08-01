@@ -118,6 +118,9 @@ class ChatRequest(BaseModel):
     context_book_ids: List[
         str
     ] = []  # API: contextBookIds — book IDs from the previous response, sent by frontend
+    exact_phrase: bool = (
+        False  # API: exactPhrase — explicit UI "Exact phrase" search mode
+    )
 
     @field_validator("question")
     @classmethod

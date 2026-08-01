@@ -35,6 +35,7 @@ from app.core.pipeline import (
 )
 from app.db.session import get_session
 from app.db.repositories.books_repository import BooksRepository
+from app.db.repositories.chunks_repository import ChunksRepository
 from app.db.repositories.pages_repository import PagesRepository
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.db.models import Book as BookDB, Page, Chunk, BookSummary
@@ -675,6 +676,41 @@ async def get_books(
             await cache_service.set(cache_key, result, ttl=cache_ttl)
 
     return result
+
+
+@router.get("/content-search", response_model=PaginatedBooks)
+async def search_book_content(
+    q: str = Query(..., min_length=1, max_length=500),
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(40, ge=1, le=100),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    session: AsyncSession = Depends(get_session),
+):
+    """Home 'Content' tab: exact-phrase search over book content, returning
+    matching books (not raw chunks/pages), paginated for infinite scroll.
+
+    Separate from the in-chat keyword retrieval leg (`rag_keyword_top_k`) —
+    this is a browse/discovery search over the whole library and paginates
+    instead of capping results. See keyword-search-rework-plan.md Phase 3.
+    """
+    skip = (page - 1) * pageSize
+    restrict_to_public = current_user is None or current_user.role not in (
+        "admin",
+        "editor",
+    )
+
+    chunks_repo = ChunksRepository(session)
+    books, total = await chunks_repo.find_books_by_exact_phrase(
+        q, skip=skip, limit=pageSize, restrict_to_public=restrict_to_public
+    )
+
+    return PaginatedBooks(
+        books=[Book.model_validate(b) for b in books],
+        total=total,
+        total_ready=total,
+        page=page,
+        page_size=pageSize,
+    )
 
 
 @router.get("/random-proverb")

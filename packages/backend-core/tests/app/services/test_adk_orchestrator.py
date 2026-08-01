@@ -1,13 +1,34 @@
 """Tests for ChatOrchestrator and ADK chat pipeline"""
 
+from contextlib import contextmanager, ExitStack
+from pathlib import Path
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from app.core.i18n import I18n
 from app.db.models import Conversation
 from app.services.chat.context import ChatRequestDTO
 from app.services.chat.orchestrator import ChatOrchestrator
 from app.services.chat.retrieval_agent import build_retrieval_agent
 from app.services.chat.answer_agent import build_answer_agent
+
+_REPO_ROOT = Path(__file__).resolve().parents[5]
+
+
+@pytest.fixture(autouse=True)
+def _load_real_translations():
+    # i18n.py's default _locales_dir only resolves correctly when
+    # services/backend/main.py overrides it at app startup — unit tests run
+    # outside that startup path, so point it at the real locales directory
+    # directly, same as main.py does.
+    original_dir = I18n._locales_dir
+    original_translations = I18n._translations
+    I18n._locales_dir = str(_REPO_ROOT / "services" / "backend" / "locales")
+    I18n.load_translations()
+    yield
+    I18n._locales_dir = original_dir
+    I18n._translations = original_translations
 
 
 def test_chat_request_dto_immutability():
@@ -807,3 +828,334 @@ async def test_stream_response_falls_back_to_grade_context_when_reranker_fails()
     assert eval_repo.create_evaluation.await_args.kwargs["retrieved_context"] == (
         "fallback context"
     )
+
+
+@contextmanager
+def _exact_phrase_orchestrator_patches(
+    conv_repo, eval_repo, mock_configs_repo, retrieval_runner, answer_runner
+):
+    """Shared patch set for exact-phrase stream_response tests — the
+    retrieval_agent/DeterministicRAGHandler machinery must never run for an
+    exact-phrase question, so any call into it should surface as a test
+    failure rather than being silently mocked away."""
+    with ExitStack() as stack:
+        stack.enter_context(
+            patch(
+                "app.services.chat.orchestrator.ConversationRepository",
+                return_value=conv_repo,
+            )
+        )
+        stack.enter_context(
+            patch(
+                "app.services.chat.orchestrator.SystemConfigsRepository",
+                return_value=mock_configs_repo,
+            )
+        )
+        stack.enter_context(
+            patch(
+                "app.services.chat.orchestrator.RAGEvaluationsRepository",
+                return_value=eval_repo,
+            )
+        )
+        stack.enter_context(
+            patch(
+                "app.services.chat.orchestrator.InMemorySessionService",
+                return_value=MagicMock(),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "app.services.chat.orchestrator.Runner", return_value=retrieval_runner
+            )
+        )
+        stack.enter_context(
+            patch(
+                "app.services.chat.orchestrator.InMemoryRunner",
+                return_value=answer_runner,
+            )
+        )
+        stack.enter_context(
+            patch(
+                "app.services.chat.orchestrator._extract_used_book_ids",
+                return_value=["b1"],
+            )
+        )
+        stack.enter_context(
+            patch(
+                "app.services.chat.orchestrator.fix_malformed_citations",
+                side_effect=lambda text: text,
+            )
+        )
+        yield
+
+
+@pytest.mark.asyncio
+async def test_stream_response_exact_phrase_uses_configured_rag_keyword_top_k():
+    """The exact-phrase leg's result cap comes from the rag_keyword_top_k
+    system_config (Phase 2 of the keyword-search rework), not a hardcoded
+    value."""
+    db_session = AsyncMock()
+
+    conv_repo = AsyncMock()
+    conv_repo.get_conversation.return_value = None
+    conv_repo.create_conversation.return_value = Conversation(
+        id="conv-1", user_id="user-1", book_id="book-1", is_global=False
+    )
+    conv_repo.get_recent_messages.return_value = []
+    conv_repo.save_turn.return_value = (MagicMock(), MagicMock())
+
+    eval_repo = AsyncMock()
+    eval_repo.create_evaluation.return_value = MagicMock(id=42)
+
+    retrieval_runner = MagicMock()
+    retrieval_runner.run_async = MagicMock(
+        side_effect=AssertionError(
+            "retrieval agent must not run for an exact-phrase question"
+        )
+    )
+    answer_runner = MagicMock()
+    answer_runner.run_async = MagicMock(
+        side_effect=AssertionError(
+            "answer agent must not run for a page-finding exact-phrase question"
+        )
+    )
+
+    mock_configs_repo = AsyncMock()
+    mock_configs_repo.get_value = AsyncMock(
+        side_effect=_configs_get_value_side_effect({"rag_keyword_top_k": "3"})
+    )
+
+    mock_run_retrieval = AsyncMock(
+        return_value=(
+            [],
+            {
+                "tool": "search_chunks",
+                "result": {"ok": True, "data": {"chunks": []}, "found_count": 0},
+            },
+        )
+    )
+
+    with _exact_phrase_orchestrator_patches(
+        conv_repo, eval_repo, mock_configs_repo, retrieval_runner, answer_runner
+    ), patch(
+        "app.services.chat.orchestrator.run_exact_phrase_retrieval", mock_run_retrieval
+    ), patch("app.services.chat.orchestrator.DeterministicRAGHandler"):
+        orchestrator = ChatOrchestrator(session_service=None)
+        dto = ChatRequestDTO(
+            question='find pages with "king Babur"',
+            user_id="user-1",
+            book_id="book-1",
+            is_global=False,
+        )
+
+        [event async for event in orchestrator.stream_response(dto, db_session)]
+
+    assert mock_run_retrieval.await_args.kwargs["limit"] == 3
+
+
+@pytest.mark.asyncio
+async def test_stream_response_page_finding_exact_phrase_yields_page_hits_and_skips_answer_agent():
+    """A page-finding exact-phrase question ('find pages with "..."') must
+    bypass the ADK retrieval agent and the LLM answer agent entirely,
+    yielding a structured page_hits event instead of synthesized prose."""
+    db_session = AsyncMock()
+
+    conv_repo = AsyncMock()
+    conv_repo.get_conversation.return_value = None
+    conv_repo.create_conversation.return_value = Conversation(
+        id="conv-1", user_id="user-1", book_id="book-1", is_global=False
+    )
+    conv_repo.get_recent_messages.return_value = []
+    conv_repo.save_turn.return_value = (MagicMock(), MagicMock())
+
+    eval_repo = AsyncMock()
+    eval_repo.create_evaluation.return_value = MagicMock(id=42)
+
+    retrieval_runner = MagicMock()
+    retrieval_runner.run_async = MagicMock(
+        side_effect=AssertionError(
+            "retrieval agent must not run for an exact-phrase question"
+        )
+    )
+    answer_runner = MagicMock()
+    answer_runner.run_async = MagicMock(
+        side_effect=AssertionError(
+            "answer agent must not run for a page-finding exact-phrase question"
+        )
+    )
+
+    mock_configs_repo = AsyncMock()
+    mock_configs_repo.get_value = AsyncMock(
+        side_effect=_configs_get_value_side_effect({})
+    )
+
+    hits = [
+        {
+            "book_id": "book-1",
+            "page_number": 5,
+            "text": "king Babur ruled here",
+            "title": "History",
+            "volume": None,
+            "author": "A",
+            "rank": 0.5,
+        }
+    ]
+
+    with _exact_phrase_orchestrator_patches(
+        conv_repo, eval_repo, mock_configs_repo, retrieval_runner, answer_runner
+    ), patch(
+        "app.services.chat.orchestrator.run_exact_phrase_retrieval",
+        AsyncMock(
+            return_value=(
+                hits,
+                {
+                    "tool": "search_chunks",
+                    "result": {
+                        "ok": True,
+                        "data": {
+                            "chunks": [
+                                {
+                                    "book_id": "book-1",
+                                    "page_number": 5,
+                                    "text": "king Babur ruled here",
+                                    "title": "History",
+                                    "volume": None,
+                                    "author": "A",
+                                    "score": 0.5,
+                                }
+                            ]
+                        },
+                        "found_count": 1,
+                    },
+                },
+            )
+        ),
+    ), patch("app.services.chat.orchestrator.DeterministicRAGHandler") as mock_det:
+        orchestrator = ChatOrchestrator(session_service=None)
+        dto = ChatRequestDTO(
+            question='find pages with "king Babur"',
+            user_id="user-1",
+            book_id="book-1",
+            is_global=False,
+        )
+
+        events = [
+            event async for event in orchestrator.stream_response(dto, db_session)
+        ]
+
+    mock_det.assert_not_called()
+    page_hits_events = [e for e in events if e.get("type") == "page_hits"]
+    assert len(page_hits_events) == 1
+    assert page_hits_events[0]["hits"] == [
+        {
+            "bookId": "book-1",
+            "title": "History",
+            "volume": None,
+            "author": "A",
+            "page": 5,
+            "snippet": "king Babur ruled here",
+        }
+    ]
+    chunk_events = [e for e in events if e.get("type") == "chunk"]
+    assert chunk_events == []
+    save_turn_kwargs = conv_repo.save_turn.await_args.kwargs
+    assert "History" in save_turn_kwargs["answer"]
+
+
+@pytest.mark.asyncio
+async def test_stream_response_non_page_finding_exact_phrase_still_synthesizes_answer():
+    """A quoted exact-phrase question that isn't page-finding phrasing still
+    gets an LLM-synthesized answer — but built only from the exact-phrase
+    leg, bypassing the ADK retrieval agent's vector+graph tool calls."""
+    db_session = AsyncMock()
+
+    conv_repo = AsyncMock()
+    conv_repo.get_conversation.return_value = None
+    conv_repo.create_conversation.return_value = Conversation(
+        id="conv-1", user_id="user-1", book_id="book-1", is_global=False
+    )
+    conv_repo.get_recent_messages.return_value = []
+    conv_repo.save_turn.return_value = (MagicMock(), MagicMock())
+
+    eval_repo = AsyncMock()
+    eval_repo.create_evaluation.return_value = MagicMock(id=42)
+
+    retrieval_runner = MagicMock()
+    retrieval_runner.run_async = MagicMock(
+        side_effect=AssertionError(
+            "retrieval agent must not run for an exact-phrase question"
+        )
+    )
+    answer_runner = MagicMock()
+    answer_runner.run_async = MagicMock(return_value=_empty_async_gen())
+
+    mock_configs_repo = AsyncMock()
+    mock_configs_repo.get_value = AsyncMock(
+        side_effect=_configs_get_value_side_effect({})
+    )
+
+    hits = [
+        {
+            "book_id": "book-1",
+            "page_number": 5,
+            "text": "king Babur ruled here",
+            "title": "History",
+            "volume": None,
+            "author": "A",
+            "rank": 0.5,
+        }
+    ]
+    observation = {
+        "tool": "search_chunks",
+        "result": {
+            "ok": True,
+            "data": {
+                "chunks": [
+                    {
+                        "book_id": "book-1",
+                        "page_number": 5,
+                        "text": "king Babur ruled here",
+                        "title": "History",
+                        "volume": None,
+                        "author": "A",
+                        "score": 0.5,
+                    }
+                ]
+            },
+            "found_count": 1,
+        },
+    }
+
+    with _exact_phrase_orchestrator_patches(
+        conv_repo, eval_repo, mock_configs_repo, retrieval_runner, answer_runner
+    ), patch(
+        "app.services.chat.orchestrator.run_exact_phrase_retrieval",
+        AsyncMock(return_value=(hits, observation)),
+    ), patch(
+        "app.services.chat.orchestrator.build_answer_agent", return_value=MagicMock()
+    ), patch(
+        "app.services.chat.orchestrator._grade_context",
+        return_value=("king Babur ruled here", 1, 1),
+    ) as mock_grade, patch(
+        "app.services.chat.orchestrator.DeterministicRAGHandler"
+    ) as mock_det:
+        orchestrator = ChatOrchestrator(session_service=None)
+        dto = ChatRequestDTO(
+            question='what does "king Babur" mean',
+            user_id="user-1",
+            book_id="book-1",
+            is_global=False,
+        )
+
+        events = [
+            event async for event in orchestrator.stream_response(dto, db_session)
+        ]
+
+    mock_det.assert_not_called()
+    mock_grade.assert_called_once()
+    graded_observations = mock_grade.call_args.args[0]
+    assert graded_observations == [observation]
+    page_hits_events = [e for e in events if e.get("type") == "page_hits"]
+    assert page_hits_events == []
+    answer_start_events = [e for e in events if e.get("type") == "answer_start"]
+    assert len(answer_start_events) == 1

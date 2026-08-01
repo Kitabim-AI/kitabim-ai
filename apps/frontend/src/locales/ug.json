@@ -122,7 +122,26 @@
     "keyboardMapTooltip": "ئۇيغۇرچە كۇنۇپكا تاختىسى خەرىتىسىنى كۆرسىتىش",
     "keyboardMapTitle": "ئۇيغۇرچە كۇنۇپكا تاختىسى خەرىتىسى",
     "keyboardMapSubtitle": "فىزىكىلىق كۇنۇپكا تاختىسىدىن پايدىلىنىڭ ياكى ئېكراندىكى كۇنۇپكىلارنى چېكىپ كىرگۈزۈڭ. Ctrl+K نى بېسىپ كىرگۈزۈش ھالىتىنى ئالماشتۇرۇڭ.",
-    "spaceKey": "بوشلۇق"
+    "spaceKey": "بوشلۇق",
+    "tabs": {
+      "ask": "Ask",
+      "books": "Books",
+      "quran": "Quran",
+      "content": "Content",
+      "dictionary": "Dictionary",
+      "names": "Names",
+      "history": "History Terms",
+      "proverbs": "Proverbs",
+      "spellCheck": "Spell Check",
+      "enUg": "EN↔UG",
+      "contentPlaceholder": "Search for an exact phrase inside book content...",
+      "proverbVolumePage": "Volume {{volume}}, page {{page}}"
+    },
+    "spellCheck": {
+      "known": "\"{{word}}\" is spelled correctly.",
+      "unknown": "\"{{word}}\" was not found in the spelling word list.",
+      "suggestions": "Similar spellings"
+    }
   },
   "library": {
     "title": "كىتابىم كۇتۇپخانىسى",

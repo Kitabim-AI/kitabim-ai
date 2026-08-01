@@ -8,6 +8,9 @@ const SESSION_TOKEN_KEY = 'kitabim_access_token_session';
 let _appClientId = '';
 let _configPromise: Promise<void> | null = null;
 
+const DEFAULT_COLLECTION_PAGE_SIZE = 40;
+let _collectionPageSize = DEFAULT_COLLECTION_PAGE_SIZE;
+
 export async function initAppConfig(): Promise<void> {
   if (_appClientId) return;
   if (!_configPromise) {
@@ -17,6 +20,10 @@ export async function initAppConfig(): Promise<void> {
         if (res.ok) {
           const data = await res.json();
           _appClientId = data.appId ?? '';
+          _collectionPageSize =
+            typeof data.collectionPageSize === 'number'
+              ? data.collectionPageSize
+              : DEFAULT_COLLECTION_PAGE_SIZE;
         }
       } catch {
         // Non-fatal — requests will be sent without the app ID header
@@ -26,6 +33,10 @@ export async function initAppConfig(): Promise<void> {
     })();
   }
   return _configPromise;
+}
+
+export function getCollectionPageSize(): number {
+  return _collectionPageSize;
 }
 
 // Access token lives in memory only — never persisted to localStorage.

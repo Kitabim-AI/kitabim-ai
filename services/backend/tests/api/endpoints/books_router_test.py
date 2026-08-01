@@ -158,6 +158,78 @@ async def test_get_books():
 
 
 @pytest.mark.asyncio
+async def test_search_book_content_returns_paginated_books():
+    setup_paths()
+    from api.endpoints.books_router import search_book_content
+    from app.db.models import Book as BookDB
+    from datetime import datetime, timezone
+
+    mock_session = AsyncMock()
+
+    mock_book = BookDB(
+        id="book-1",
+        content_hash="hash-1",
+        title="Test Book",
+        author="Test Author",
+        total_pages=10,
+        status="ready",
+        upload_date=datetime.now(timezone.utc),
+        visibility="public",
+        categories=[],
+        read_count=0,
+        ocr_milestone="succeeded",
+        chunking_milestone="succeeded",
+        embedding_milestone="succeeded",
+        spell_check_milestone="succeeded",
+    )
+
+    mock_repo = AsyncMock()
+    mock_repo.find_books_by_exact_phrase = AsyncMock(return_value=([mock_book], 1))
+
+    with patch("api.endpoints.books_router.ChunksRepository", return_value=mock_repo):
+        result = await search_book_content(
+            q="king Babur",
+            page=1,
+            pageSize=40,
+            current_user=None,
+            session=mock_session,
+        )
+
+    assert result.total == 1
+    assert len(result.books) == 1
+    assert result.books[0].id == "book-1"
+    mock_repo.find_books_by_exact_phrase.assert_awaited_once_with(
+        "king Babur", skip=0, limit=40, restrict_to_public=True
+    )
+
+
+@pytest.mark.asyncio
+async def test_search_book_content_admin_sees_private_books():
+    setup_paths()
+    from api.endpoints.books_router import search_book_content
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+    mock_user.role = "admin"
+
+    mock_repo = AsyncMock()
+    mock_repo.find_books_by_exact_phrase = AsyncMock(return_value=([], 0))
+
+    with patch("api.endpoints.books_router.ChunksRepository", return_value=mock_repo):
+        await search_book_content(
+            q="king Babur",
+            page=2,
+            pageSize=20,
+            current_user=mock_user,
+            session=mock_session,
+        )
+
+    mock_repo.find_books_by_exact_phrase.assert_awaited_once_with(
+        "king Babur", skip=20, limit=20, restrict_to_public=False
+    )
+
+
+@pytest.mark.asyncio
 async def test_update_book_details_overrides_error_status_when_made_public():
     setup_paths()
     from api.endpoints.books_router import update_book_details

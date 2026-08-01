@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
 from app.db.models import Dictionary
+from app.db.repositories.dictionary_repository import DictionaryRepository
 
 router = APIRouter()
 
@@ -33,7 +34,34 @@ class DictionaryEntryOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SpellingSuggestionOut(BaseModel):
+    id: int
+    word: str
+    score: Optional[float] = None
+
+
+class SpellingCheckOut(BaseModel):
+    is_known: bool
+    word: Optional[str] = None
+    suggestions: List[SpellingSuggestionOut]
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
+
+@router.get("/dictionary/check-spelling", response_model=SpellingCheckOut)
+async def check_spelling(
+    word: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """Check whether a Uyghur word exists in the spelling word list.
+
+    Public read-only lookup used by the home search box's "Spell Check" tab
+    and the equivalent `check_word_spelling` chat tool.
+    """
+    repo = DictionaryRepository(session)
+    result = await repo.check_word_spelling(word)
+    return SpellingCheckOut(**result)
 
 
 @router.get("/dictionary/search", response_model=List[DictionaryEntryOut])

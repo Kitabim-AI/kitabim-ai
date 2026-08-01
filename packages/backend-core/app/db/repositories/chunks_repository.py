@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from sqlalchemy import select, delete, text
+from sqlalchemy import select, delete, func, or_, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.models import Chunk
+from app.db.models import Book, Chunk
 from app.db.repositories.base_repository import BaseRepository
 
 # Tuned against a production case where a common word matched ~194K rows and
@@ -15,20 +15,6 @@ from app.db.repositories.base_repository import BaseRepository
 # timeout bounds whatever it doesn't fix. See keyword_search() below.
 _KEYWORD_SEARCH_WORK_MEM = "128MB"
 _KEYWORD_SEARCH_STATEMENT_TIMEOUT_MS = "5000"
-
-
-def _format_tsquery_expression(query_text: str) -> str:
-    """Format query_text into a flexible OR-based prefix tsquery expression.
-    Converts multi-word questions (e.g. 'جەتە دىگەن قەيەر؟') into 'جەتە:* | دىگەن:* | قەيەر:*'
-    so conversational question filler words don't prevent matching.
-    """
-    import re
-
-    clean = re.sub(r"[^\w\s]", " ", query_text)
-    words = [w.strip() for w in clean.split() if len(w.strip()) > 1]
-    if not words:
-        return query_text
-    return " | ".join(f"{w}:*" for w in words)
 
 
 class ChunksRepository(BaseRepository[Chunk]):
@@ -241,28 +227,30 @@ class ChunksRepository(BaseRepository[Chunk]):
 
     async def keyword_search(
         self,
-        query_text: str,
+        phrase: str,
         book_ids: Optional[List[str]] = None,
         categories: Optional[List[str]] = None,
-        limit: int = 12,
+        limit: int = 10,
     ) -> List[dict]:
         """
-        Postgres full-text keyword search over `chunks.text_search`
+        Postgres full-text EXACT PHRASE search over `chunks.text_search`
         (a generated tsvector column, migration 074).
 
-        Uses the 'simple' text search config — matching the column's
-        generation expression — deliberately not 'english', since book
-        content is substantially Uyghur-language and 'english' stemming
-        rules don't meaningfully apply.
+        Uses `phraseto_tsquery('simple', ...)` — a contiguous-phrase match
+        (word order and adjacency matter), not the old OR-based
+        any-word-prefix match. This is FTS phrase-exact, not raw substring
+        exact: tokenization, punctuation, normalization, and script-specific
+        behavior can still affect matches. Uses the 'simple' text search
+        config — matching the column's generation expression — deliberately
+        not 'english', since book content is substantially Uyghur-language
+        and 'english' stemming rules don't meaningfully apply.
 
         Mirrors similarity_search's two-branch (scoped/unscoped) shape and
-        dict keys (plus a `rank` score in place of `similarity`) so results
-        from both legs can be fused by (book_id, page_number, chunk_index).
+        dict keys (plus a `rank` score in place of `similarity`).
         """
         cat_filter = (
             "AND b.categories && CAST(:categories AS text[])" if categories else ""
         )
-        tsquery_expr = _format_tsquery_expression(query_text)
 
         if book_ids is not None:
             if not book_ids:
@@ -274,10 +262,10 @@ class ChunksRepository(BaseRepository[Chunk]):
                         c.page_number,
                         c.chunk_index,
                         c.text,
-                        ts_rank(c.text_search, to_tsquery('simple', :tsquery_expr)) AS rank
+                        ts_rank(c.text_search, phraseto_tsquery('simple', :phrase)) AS rank
                     FROM chunks c
                     WHERE c.book_id = ANY(:book_ids)
-                      AND c.text_search @@ to_tsquery('simple', :tsquery_expr)
+                      AND c.text_search @@ phraseto_tsquery('simple', :phrase)
                 )
                 SELECT
                     km.book_id,
@@ -297,7 +285,7 @@ class ChunksRepository(BaseRepository[Chunk]):
                 LIMIT :limit
             """)
             params = {
-                "tsquery_expr": tsquery_expr,
+                "phrase": phrase,
                 "book_ids": [str(bid) for bid in book_ids],
                 "limit": limit,
             }
@@ -311,9 +299,9 @@ class ChunksRepository(BaseRepository[Chunk]):
                         c.page_number,
                         c.chunk_index,
                         c.text,
-                        ts_rank(c.text_search, to_tsquery('simple', :tsquery_expr)) AS rank
+                        ts_rank(c.text_search, phraseto_tsquery('simple', :phrase)) AS rank
                     FROM chunks c
-                    WHERE c.text_search @@ to_tsquery('simple', :tsquery_expr)
+                    WHERE c.text_search @@ phraseto_tsquery('simple', :phrase)
                 )
                 SELECT
                     km.book_id,
@@ -332,7 +320,7 @@ class ChunksRepository(BaseRepository[Chunk]):
                 ORDER BY km.rank DESC
                 LIMIT :limit
             """)
-            params = {"tsquery_expr": tsquery_expr, "limit": limit}
+            params = {"phrase": phrase, "limit": limit}
             if categories:
                 params["categories"] = categories
 
@@ -370,6 +358,57 @@ class ChunksRepository(BaseRepository[Chunk]):
             }
             for row in rows
         ]
+
+    async def find_books_by_exact_phrase(
+        self,
+        phrase: str,
+        skip: int = 0,
+        limit: int = 40,
+        restrict_to_public: bool = True,
+    ) -> tuple[List[Book], int]:
+        """Home 'Content' tab: exact-phrase search over chunk text, grouped by
+        book, paginated (infinite scroll — see keyword-search-rework-plan.md
+        Phase 3). This is a browse/discovery search over the whole library,
+        not the chat-retrieval keyword leg (`keyword_search`), so it isn't
+        capped by `rag_keyword_top_k` — the caller paginates instead.
+
+        *restrict_to_public* mirrors the same guest-visibility rule used
+        throughout `books_router.py` (status == "ready" and
+        visibility public/legacy-NULL) — callers pass False only for
+        admin/editor users who should see private/draft book content too.
+        """
+        exists_clause = text(
+            """EXISTS (
+                SELECT 1 FROM chunks c
+                WHERE c.book_id = books.id
+                  AND c.text_search @@ phraseto_tsquery('simple', :phrase)
+            )"""
+        ).bindparams(phrase=phrase)
+
+        conditions = [exists_clause]
+        if restrict_to_public:
+            conditions.append(Book.status == "ready")
+            conditions.append(
+                or_(Book.visibility == "public", Book.visibility.is_(None))
+            )
+        else:
+            conditions.append(Book.status != "error")
+
+        count_stmt = select(func.count()).select_from(Book).where(*conditions)
+        count_result = await self.session.execute(count_stmt)
+        total = count_result.scalar_one()
+
+        books_stmt = (
+            select(Book)
+            .where(*conditions)
+            .order_by(Book.title.asc())
+            .offset(skip)
+            .limit(limit)
+        )
+        books_result = await self.session.execute(books_stmt)
+        books = list(books_result.scalars().all())
+
+        return books, total
 
 
 def get_chunks_repository(session: AsyncSession) -> ChunksRepository:

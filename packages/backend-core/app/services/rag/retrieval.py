@@ -8,8 +8,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-import re
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional
 
 from sqlalchemy import select
 
@@ -79,220 +78,69 @@ async def embed_query(query: str, ctx: "QueryContext") -> List[float]:
 # ---------------------------------------------------------------------------
 
 
-def _fuse_rrf(*result_lists: List[dict], limit: int) -> Tuple[List[dict], dict]:
-    """Reciprocal Rank Fusion: score(chunk) = sum(1 / (RRF_K + rank)) across
-    the rankers where the chunk appears, identified by
-    (book_id, page_number, chunk_index). Supports arbitrary number of result
-    lists (vector_results as first list, followed by keyword result lists).
-    The RRF score is used only to order/truncate the fused list — it is NOT written back
-    into a returned dict's `similarity` field. RRF scores (~0.01-0.03 for RRF_K=60)
-    and cosine similarity (~0-1) aren't on a comparable scale, and several
-    downstream consumers (e.g. CONTEXT_SWITCH_SCORE_THRESHOLD in
-    agent/tools.py and deterministic_handler.py) compare `similarity`/`score`
-    against an absolute threshold calibrated for genuine cosine similarity —
-    overwriting it with an RRF value made those checks permanently read
-    "weak match" whenever hybrid search was on. Each returned dict keeps
-    whichever original score field its source leg gave it: `similarity` for
-    a vector hit, nothing (no genuine similarity) for a keyword-only hit.
+async def exact_phrase_chunk_search(
+    chunks_repo,
+    phrases: List[str],
+    book_ids: Optional[List[str]],
+    categories: Optional[List[str]],
+    limit: int,
+) -> List[dict]:
+    """Keyword-only exact-phrase retrieval — the phrase-search-intent leg
+    (see keyword-search-rework-plan.md Phase 1). No vector or graph fusion:
+    phrase mode is keyword-only by design.
 
-    Returns a tuple of (fused_docs, stats_dict)."""
-    from app.services.rag.agent.config import RRF_K
+    Multiple phrases are ANDed together (a result must contain all of them),
+    per the resolved decision on multi-phrase queries — implemented as one
+    `keyword_search` call per phrase, intersected by
+    (book_id, page_number, chunk_index).
+    """
+    if not phrases:
+        return []
+
+    per_phrase_results = await asyncio.gather(
+        *[
+            chunks_repo.keyword_search(
+                phrase=phrase,
+                book_ids=book_ids,
+                categories=categories,
+                limit=limit,
+            )
+            for phrase in phrases
+        ]
+    )
 
     def key_of(c: dict) -> tuple:
         return (c.get("book_id"), c.get("page_number"), c.get("chunk_index"))
 
-    scores: dict = {}
+    common_keys = None
     docs: dict = {}
-    vector_keys = set()
-    keyword_keys = set()
-
-    if result_lists:
-        for rank, c in enumerate(result_lists[0], start=1):
+    for leg in per_phrase_results:
+        leg_keys = set()
+        for c in leg:
             k = key_of(c)
-            vector_keys.add(k)
-            scores[k] = scores.get(k, 0.0) + 1.0 / (RRF_K + rank)
+            leg_keys.add(k)
             docs.setdefault(k, c)
+        common_keys = leg_keys if common_keys is None else (common_keys & leg_keys)
 
-        for kw_list in result_lists[1:]:
-            for rank, c in enumerate(kw_list, start=1):
-                k = key_of(c)
-                keyword_keys.add(k)
-                scores[k] = scores.get(k, 0.0) + 1.0 / (RRF_K + rank)
-                docs.setdefault(k, c)
+    if not common_keys:
+        return []
 
-    ordered_keys = sorted(scores.keys(), key=lambda k: scores[k], reverse=True)[:limit]
-    fused_docs = []
-    final_vector_only = 0
-    final_keyword_only = 0
-    final_both = 0
-
-    for k in ordered_keys:
-        doc = dict(docs[k])
-        doc["rrf_score"] = scores[k]
-        in_vec = k in vector_keys
-        in_kw = k in keyword_keys
-        if in_vec and in_kw:
-            final_both += 1
-        elif in_vec:
-            final_vector_only += 1
-        else:
-            final_keyword_only += 1
-        fused_docs.append(doc)
-
-    stats = {
-        "vector_hits": len(vector_keys),
-        "keyword_hits": len(keyword_keys),
-        "fused_count": len(fused_docs),
-        "final_from_vector": final_vector_only + final_both,
-        "final_from_keyword": final_keyword_only + final_both,
-        "final_vector_only": final_vector_only,
-        "final_keyword_only": final_keyword_only,
-        "final_both": final_both,
-    }
-    return fused_docs, stats
-
-
-async def _search_chunks(
-    chunks_repo,
-    query_embedding: List[float],
-    query_text: str,
-    book_ids: Optional[List[str]],
-    categories: Optional[List[str]],
-    limit: int,
-    threshold: float,
-    hybrid_enabled: bool,
-    allow_unscoped_keyword: bool = True,
-) -> List[dict]:
-    """Vector search, plus — when hybrid_enabled — a parallel Postgres
-    keyword search leg (both scoped and unscoped when book_ids is provided
-    and allow_unscoped_keyword is True), fused via Reciprocal Rank Fusion.
-    Falls back to vector-only results if the keyword legs error (e.g. a
-    malformed tsquery from unusual input) — equivalent to hybrid search being
-    off for that one call, not a whole-turn failure.
-
-    NOTE: the two keyword legs below share *chunks_repo* (one AsyncSession)
-    and are gathered concurrently — a single session/connection can only run
-    one statement at a time, so this pair silently serializes rather than
-    erroring. Left as-is (small, bounded cost — at most 2 legs); the caller
-    is responsible for giving each *book* its own session/repo when fanning
-    this call out per book, since that fan-out is unbounded and was the
-    dominant cost observed in production (see vector_search()).
-    """
-    import time
-
-    vector_start = time.perf_counter()
-    vector_results = await chunks_repo.similarity_search(
-        query_embedding=query_embedding,
-        book_ids=book_ids,
-        categories=categories,
-        limit=limit,
-        threshold=threshold,
-    )
-    vector_ms = round((time.perf_counter() - vector_start) * 1000)
-    if not hybrid_enabled:
-        return vector_results
-
-    keyword_start = time.perf_counter()
-    try:
-        if book_ids:
-            leg_labels = ["scoped"]
-            tasks = [
-                chunks_repo.keyword_search(
-                    query_text=query_text,
-                    book_ids=book_ids,
-                    categories=categories,
-                    limit=limit,
-                )
-            ]
-            if allow_unscoped_keyword:
-                leg_labels.append("unscoped")
-                tasks.append(
-                    chunks_repo.keyword_search(
-                        query_text=query_text,
-                        book_ids=None,
-                        categories=categories,
-                        limit=limit,
-                    )
-                )
-
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            keyword_legs = [r for r in results if isinstance(r, list)]
-            keyword_ms = round((time.perf_counter() - keyword_start) * 1000)
-            # A partial failure (e.g. the unscoped leg hitting statement_timeout
-            # while the scoped leg succeeds) previously left no trace at all —
-            # keyword_leg_count would just read lower with no explanation why.
-            failed_legs = [
-                {"leg": label, "error": str(r)}
-                for label, r in zip(leg_labels, results)
-                if not isinstance(r, list)
-            ]
-            if failed_legs:
-                log_json(
-                    logger,
-                    logging.WARNING,
-                    "One or more keyword search legs failed or timed out",
-                    failed_legs=failed_legs,
-                )
-            if not keyword_legs:
-                log_json(
-                    logger,
-                    logging.WARNING,
-                    "Keyword search legs failed, falling back to vector-only for this call",
-                )
-                return vector_results
-            fused, stats = _fuse_rrf(vector_results, *keyword_legs, limit=limit)
-            log_json(
-                logger,
-                logging.INFO,
-                "Hybrid search fused vector + keyword results",
-                keyword_leg_count=len(keyword_legs),
-                vector_ms=vector_ms,
-                keyword_ms=keyword_ms,
-                **stats,
-            )
-            return fused
-        else:
-            keyword_results = await chunks_repo.keyword_search(
-                query_text=query_text,
-                book_ids=None,
-                categories=categories,
-                limit=limit,
-            )
-            keyword_ms = round((time.perf_counter() - keyword_start) * 1000)
-            fused, stats = _fuse_rrf(vector_results, keyword_results, limit=limit)
-            log_json(
-                logger,
-                logging.INFO,
-                "Hybrid search fused vector + keyword results",
-                vector_ms=vector_ms,
-                keyword_ms=keyword_ms,
-                **stats,
-            )
-            return fused
-    except Exception as exc:
-        log_json(
-            logger,
-            logging.WARNING,
-            "Keyword search leg failed, falling back to vector-only for this call",
-            error=str(exc),
-        )
-        return vector_results
+    matched = [docs[k] for k in common_keys]
+    matched.sort(key=lambda c: c.get("rank", 0.0), reverse=True)
+    return matched[:limit]
 
 
 async def vector_search(
     ctx: "QueryContext",
     book_ids: Optional[List[str]],
     query_vector: Optional[List[float]] = None,
-    keywords: Optional[List[str]] = None,
 ) -> List[dict]:
-    """Cached pgvector similarity search.
+    """Cached pgvector similarity search — vector-only.
 
     Uses *query_vector* when provided; falls back to ``ctx.query_vector``.
-    *keywords*, when provided, replaces the whole question as the keyword-search
-    leg's input text — the caller (agent tool) is expected to have already
-    stripped grammatical filler, so the tsquery built from it stays small
-    instead of matching a huge fraction of the table on a common word.
-    Falls back to the full question when omitted, unchanged from before.
+    The keyword leg never blends with vector results (see
+    exact_phrase_chunk_search / keyword-search-rework-plan.md Phase 1) — it
+    runs standalone, only for exact-phrase-search intent.
     Returns a list of dicts with keys: text, score, page, title, volume, author, book_id.
     """
     effective_vector = query_vector if query_vector is not None else ctx.query_vector
@@ -310,38 +158,30 @@ async def vector_search(
     chunks_repo = get_vector_store(ctx.session)
 
     async def _search_book_isolated(
-        bid: str, limit: int, threshold: float, allow_unscoped: bool
+        bid: str, limit: int, threshold: float
     ) -> List[dict]:
-        # Own session per book: asyncio.gather over _search_chunks calls that
-        # all shared ctx.session's single connection was serializing what
-        # looked like concurrent per-book searches into N sequential ones —
-        # the dominant cost in a since-fixed production slowdown (multi-book
-        # questions taking minutes instead of seconds).
+        # Own session per book: asyncio.gather over similarity_search calls
+        # that all shared ctx.session's single connection was serializing
+        # what looked like concurrent per-book searches into N sequential
+        # ones — the dominant cost in a since-fixed production slowdown
+        # (multi-book questions taking minutes instead of seconds).
         async with async_session_factory() as book_session:
-            return await _search_chunks(
-                get_vector_store(book_session),
+            return await get_vector_store(book_session).similarity_search(
                 query_embedding=effective_vector,
-                query_text=keyword_query_text,
                 book_ids=[bid],
                 categories=ctx.character_categories or None,
                 limit=limit,
                 threshold=threshold,
-                hybrid_enabled=hybrid_enabled,
-                allow_unscoped_keyword=allow_unscoped,
             )
 
     configs_repo = SystemConfigsRepository(ctx.session)
-    hybrid_enabled = (
-        await configs_repo.get_value("rag_hybrid_search_enabled", "true")
-    ).lower() == "true"
-    rag_top_k_str = await configs_repo.get_value("rag_top_k", str(settings.rag_top_k))
+    rag_top_k_str = await configs_repo.get_value(
+        "rag_vector_top_k", str(settings.rag_top_k)
+    )
     try:
         rag_top_k = int(rag_top_k_str)
     except ValueError:
         rag_top_k = settings.rag_top_k
-    keyword_query_text = (
-        " ".join(keywords) if keywords else (ctx.enriched_question or ctx.question)
-    )
 
     emb_hash = hashlib.md5(str(effective_vector).encode()).hexdigest()
     sorted_book_ids = sorted(book_ids) if book_ids else []
@@ -376,7 +216,6 @@ async def vector_search(
                 # highest can crowd out the others entirely. Guarantee each
                 # named book a minimum slice instead of letting a single
                 # embedding-similarity ranking decide.
-                allow_unscoped = getattr(ctx, "is_global", True)
                 per_book_limit = max(rag_top_k // len(sorted_book_ids), 3)
                 per_book_results = await asyncio.gather(
                     *[
@@ -384,7 +223,6 @@ async def vector_search(
                             bid,
                             limit=per_book_limit,
                             threshold=settings.rag_score_threshold,
-                            allow_unscoped=allow_unscoped,
                         )
                         for bid in sorted_book_ids
                     ]
@@ -393,20 +231,16 @@ async def vector_search(
                     chunk for chunks in per_book_results for chunk in chunks
                 ]
                 similar_chunks.sort(
-                    key=lambda c: (c.get("rrf_score", 0.0), c.get("similarity", 0.0)),
+                    key=lambda c: c.get("similarity", 0.0),
                     reverse=True,
                 )
             else:
-                similar_chunks = await _search_chunks(
-                    chunks_repo,
+                similar_chunks = await chunks_repo.similarity_search(
                     query_embedding=effective_vector,
-                    query_text=keyword_query_text,
                     book_ids=book_ids,
                     categories=ctx.character_categories or None,
                     limit=rag_top_k,
                     threshold=settings.rag_score_threshold,
-                    hybrid_enabled=hybrid_enabled,
-                    allow_unscoped_keyword=getattr(ctx, "is_global", True),
                 )
 
             if not similar_chunks:
@@ -423,7 +257,6 @@ async def vector_search(
                                 bid,
                                 limit=per_book_limit,
                                 threshold=0.0,
-                                allow_unscoped=allow_unscoped,
                             )
                             for bid in sorted_book_ids
                         ]
@@ -432,30 +265,21 @@ async def vector_search(
                         chunk for chunks in per_book_results for chunk in chunks
                     ]
                     similar_chunks.sort(
-                        key=lambda c: (
-                            c.get("rrf_score", 0.0),
-                            c.get("similarity", 0.0),
-                        ),
+                        key=lambda c: c.get("similarity", 0.0),
                         reverse=True,
                     )
                 else:
-                    similar_chunks = await _search_chunks(
-                        chunks_repo,
+                    similar_chunks = await chunks_repo.similarity_search(
                         query_embedding=effective_vector,
-                        query_text=keyword_query_text,
                         book_ids=book_ids,
                         categories=ctx.character_categories or None,
                         limit=rag_top_k,
                         threshold=0.0,
-                        hybrid_enabled=hybrid_enabled,
-                        allow_unscoped_keyword=getattr(ctx, "is_global", True),
                     )
             top_results = [
                 {
                     "text": chunk.get("text", ""),
                     "score": chunk.get("similarity", 0.0),
-                    "rrf_score": chunk.get("rrf_score", 0.0),
-                    "rank": chunk.get("rank"),
                     "page": chunk.get("page_number"),
                     "title": chunk.get("title") or "Unknown",
                     "volume": chunk.get("volume"),
@@ -646,7 +470,7 @@ async def vector_search(
 # ---------------------------------------------------------------------------
 
 
-async def graph_entity_lookup(question: str) -> List[dict]:
+async def graph_entity_lookup(question: str, top_k: int = 10) -> List[dict]:
     """Query-time knowledge-graph lookup — Redis cache read with prefix enumeration (B1),
     partial-name token-intersection & IDF specificity scoring (B2), and miss-only
     Neo4j full-text fuzzy fallback (B3). No LLM call is made here.
@@ -655,6 +479,12 @@ async def graph_entity_lookup(question: str) -> List[dict]:
     unchanged. On a match, returns chunk-shaped dicts (`text`/`score`/`page`/`title`/
     `book_id`) so the rest of the RAG pipeline (grading, Document conversion,
     citations) handles them exactly like any other retrieved chunk.
+
+    *top_k* caps the number of facts returned (highest-scoring first) — the
+    matching stages above (B1/B2/B3) are otherwise uncapped, and a broad
+    question can surface many entities. The cache holds the full uncapped
+    result set so a later call with a different top_k isn't stuck with a
+    stale, differently-truncated cached list.
     """
     import math
     from app.core import cache_config
@@ -673,7 +503,9 @@ async def graph_entity_lookup(question: str) -> List[dict]:
     try:
         cached_results = await cache_service.get(cache_key)
         if cached_results is not None:
-            return cached_results
+            return sorted(cached_results, key=lambda r: r["score"], reverse=True)[
+                :top_k
+            ]
     except Exception:
         pass
 
@@ -836,7 +668,7 @@ async def graph_entity_lookup(question: str) -> List[dict]:
     except Exception:
         pass
 
-    return results
+    return sorted(results, key=lambda r: r["score"], reverse=True)[:top_k]
 
 
 # ---------------------------------------------------------------------------
@@ -849,10 +681,9 @@ async def find_books_by_title_in_question(
 ) -> Optional[List[dict]]:
     """Return metadata (id, title, author, volume) for all volumes of a title mentioned in *question*, or None.
 
-    If the question contains a title in «» quotes, exact (normalized) matching
-    is tried first so that a quoted title is not accidentally matched to a
-    shorter title that shares some words.
-    Falls back to word-prefix matching when no «» are present.
+    Uses fuzzy word-prefix matching (Uyghur agglutinative-suffix aware).
+    `«...»` has no special effect here — it now signals phrase-search intent
+    elsewhere in the RAG pipeline, not a quoted title (keyword-search-rework-plan.md 1.7).
     """
     from app.services.rag.utils import entity_matches_question, normalize_uyghur
 
@@ -901,28 +732,10 @@ async def find_books_by_title_in_question(
                 }
             )
 
-    # --- Exact match for «quoted» titles ---
-    quoted = re.findall(r"«([^»]+)»", q)
-    if quoted:
-        # Collect a match for every quoted title (not just the first one) so
-        # "«Book A» بىلەن «Book B» نى سېلىشتۇر" resolves both books.
-        matched_titles: list = []
-        matched_books: list = []
-        for candidate in quoted:
-            candidate_norm = normalize_uyghur(candidate.strip())
-            for title, books in title_to_books.items():
-                if (
-                    normalize_uyghur(title.strip()) == candidate_norm
-                    and title not in matched_titles
-                ):
-                    matched_titles.append(title)
-                    matched_books.extend(books)
-                    break
-        # Quoted titles present but none matched — don't fall through to fuzzy
-        # (avoids wrong-book answers like the «ئۇيغۇر تارىخى» case).
-        return matched_books if matched_books else None
-
-    # --- Fuzzy word-prefix match (no quotes in question) ---
+    # --- Fuzzy word-prefix match ---
+    # `«...»` no longer signals a quoted title (it now means phrase-search
+    # intent, see keyword-search-rework-plan.md 1.7) — quoting a title has no
+    # special effect here; it resolves the same way whether quoted or not.
     # Collect ALL matching titles so multi-book questions return info for every
     # named book (not just the first one that happens to match).
     matching_titles: list[str] = []

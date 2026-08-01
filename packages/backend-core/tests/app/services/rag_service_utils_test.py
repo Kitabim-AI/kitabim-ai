@@ -43,6 +43,21 @@ def test_entity_matches_question():
     assert entity_matches_question("زوردۇن سابىر", "يازغۇچى كىم؟") is False
 
 
+def test_entity_matches_question_quotes_no_longer_grant_single_word_match():
+    """`«...»` no longer signals a title reference for the single-word
+    matching heuristic (it now means phrase-search intent — see
+    keyword-search-rework-plan.md 1.7). A quoted single-word entity that is
+    neither at sentence-start nor followed by a title-indicator word must
+    not match on the strength of the quotes alone."""
+    question = "مەن «ھايات» دەيدىغان سۆزنى ئاڭلىدىم"
+    assert entity_matches_question("ھايات", question) is False
+
+
+def test_entity_matches_question_sentence_start_still_matches_single_word():
+    question = "ھايات توغرىسىدا نېمە بىلىسەن؟"
+    assert entity_matches_question("ھايات", question) is True
+
+
 def test_format_document():
     doc = Document(
         page_content="Content",

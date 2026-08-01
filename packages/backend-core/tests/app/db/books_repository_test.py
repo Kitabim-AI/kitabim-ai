@@ -247,6 +247,38 @@ def test_get_books_repository():
     assert isinstance(repo, BooksRepository)
 
 
+@pytest.mark.asyncio
+async def test_find_author_by_title_quoted_title_with_suffix_still_matches():
+    """`«...»` no longer signals a quoted title (it now means phrase-search
+    intent — see keyword-search-rework-plan.md 1.7). A quoted title carrying
+    a natural Uyghur suffix must resolve via fuzzy word-prefix matching
+    instead of failing an exact-string comparison and returning None."""
+    session = AsyncMock()
+    repo = BooksRepository(session)
+    mock_res = MagicMock()
+    mock_res.fetchall.return_value = [("ئانا يۇرت", "زوردۇن سابىر")]
+    session.execute.return_value = mock_res
+
+    result = await repo.find_author_by_title_in_question("«ئانا يۇرتنى» يازغۇچىسى كىم؟")
+
+    assert result == ("ئانا يۇرت", "زوردۇن سابىر")
+
+
+@pytest.mark.asyncio
+async def test_find_volume_info_quoted_title_with_suffix_still_matches():
+    session = AsyncMock()
+    repo = BooksRepository(session)
+    mock_res = MagicMock()
+    mock_res.fetchall.return_value = [("ئانا يۇرت", 1, 200)]
+    session.execute.return_value = mock_res
+
+    result = await repo.find_volume_info_by_title_in_question(
+        "«ئانا يۇرتنى» قانچە بەت؟"
+    )
+
+    assert result == [{"title": "ئانا يۇرت", "volume": 1, "total_pages": 200}]
+
+
 def test_entity_matches_question_variations():
     from app.db.repositories.books_repository import _entity_matches_question
 
