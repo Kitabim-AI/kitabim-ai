@@ -118,29 +118,29 @@
     "pressEnterToChat": "Enter كونۇپكىسىنى بېسىپ زېرەكچاق بىلەن سۆھبىتىڭىزنى باشلاڭ ",
     "pressReturnToChat": "Return كونۇپكىسىنى بېسىپ زېرەكچاق بىلەن سۆھبىتىڭىزنى باشلاڭ",
     "tapToChat": "زېرەكچاق سىنبەلگىسىنى چېكىپ سۆھبىتىڭىزنى باشلاڭ",
-    "recentQuestions": "ئەڭ يېڭى جاۋاب بېرىلگەن سۇئاللار",
+    "recentQuestions": "ئەڭ يېڭى جاۋاب بېرىلگەن سوئاللار",
     "keyboardMapTooltip": "ئۇيغۇرچە كۇنۇپكا تاختىسى خەرىتىسىنى كۆرسىتىش",
     "keyboardMapTitle": "ئۇيغۇرچە كۇنۇپكا تاختىسى خەرىتىسى",
     "keyboardMapSubtitle": "فىزىكىلىق كۇنۇپكا تاختىسىدىن پايدىلىنىڭ ياكى ئېكراندىكى كۇنۇپكىلارنى چېكىپ كىرگۈزۈڭ. Ctrl+K نى بېسىپ كىرگۈزۈش ھالىتىنى ئالماشتۇرۇڭ.",
     "spaceKey": "بوشلۇق",
     "tabs": {
-      "ask": "Ask",
-      "books": "Books",
-      "quran": "Quran",
-      "content": "Content",
-      "dictionary": "Dictionary",
-      "names": "Names",
-      "history": "History Terms",
-      "proverbs": "Proverbs",
-      "spellCheck": "Spell Check",
-      "enUg": "EN↔UG",
-      "contentPlaceholder": "Search for an exact phrase inside book content...",
-      "proverbVolumePage": "Volume {{volume}}, page {{page}}"
+      "ask": "سوئال",
+      "books": "كىتاب",
+      "quran": "قۇرئان",
+      "content": "مەزمۇن",
+      "dictionary": "لۇغەت",
+      "names": "ئىسىم",
+      "history": "تارىخ",
+      "proverbs": "ماقال-تەمسىل",
+      "spellCheck": "ئىملا",
+      "enUg": "ئىنگلىزچە",
+      "contentPlaceholder": "كىتاب مەزمۇنىدىن ئېنىق سۆز-جۈملىلەرنى ئىزدەڭ...",
+      "proverbVolumePage": "{{volume}}-توم، {{page}}-بەت"
     },
     "spellCheck": {
-      "known": "\"{{word}}\" is spelled correctly.",
-      "unknown": "\"{{word}}\" was not found in the spelling word list.",
-      "suggestions": "Similar spellings"
+      "known": "\"{{word}}\" نىڭ ئىملاسى توغرا.",
+      "unknown": "\"{{word}}\" ئىملا لۇغىتىدىن تېپىلمىدى.",
+      "suggestions": "ئوخشىشىپ كېتىدىغان ئىملا تەكلىپلىرى"
     }
   },
   "library": {
