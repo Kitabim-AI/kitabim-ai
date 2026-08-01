@@ -20,13 +20,16 @@ const renderTabBar = (activeTab = 'ask') => {
   return { onChange };
 };
 
-test('renders all 10 tabs in the fixed plan order', () => {
+test('renders the first 6 tabs plus a page toggle on page 1', () => {
   renderTabBar();
-  const buttons = screen.getAllByRole('button');
-  expect(buttons).toHaveLength(SEARCH_TABS.length);
-  SEARCH_TABS.forEach((tabDef, index) => {
-    expect(buttons[index]).toHaveTextContent(tabDef.labelKey);
+
+  SEARCH_TABS.slice(0, 6).forEach((tabDef) => {
+    expect(screen.getByText(tabDef.labelKey)).toBeInTheDocument();
   });
+  SEARCH_TABS.slice(6).forEach((tabDef) => {
+    expect(screen.queryByText(tabDef.labelKey)).not.toBeInTheDocument();
+  });
+  expect(screen.getByTestId('search-tab-page-toggle')).toHaveTextContent('common.more · 4');
 });
 
 test('marks the active tab as pressed', () => {
@@ -37,6 +40,51 @@ test('marks the active tab as pressed', () => {
 
 test('clicking a tab calls onChange with its key', () => {
   const { onChange } = renderTabBar('ask');
+  fireEvent.click(screen.getByText('home.tabs.dictionary'));
+  expect(onChange).toHaveBeenCalledWith('dictionary');
+});
+
+test('clicking the toggle swaps to page 2, revealing the remaining tabs with a back control', () => {
+  renderTabBar();
+  fireEvent.click(screen.getByTestId('search-tab-page-toggle'));
+
+  SEARCH_TABS.slice(6).forEach((tabDef) => {
+    expect(screen.getByText(tabDef.labelKey)).toBeInTheDocument();
+  });
+  SEARCH_TABS.slice(0, 6).forEach((tabDef) => {
+    expect(screen.queryByText(tabDef.labelKey)).not.toBeInTheDocument();
+  });
+  expect(screen.getByTestId('search-tab-page-toggle')).toHaveTextContent('common.back');
+});
+
+test('clicking back on page 2 returns to page 1', () => {
+  renderTabBar();
+  fireEvent.click(screen.getByTestId('search-tab-page-toggle'));
+  fireEvent.click(screen.getByTestId('search-tab-page-toggle'));
+
+  expect(screen.getByText('home.tabs.ask')).toBeInTheDocument();
+  expect(screen.queryByText('home.tabs.enUg')).not.toBeInTheDocument();
+  expect(screen.getByTestId('search-tab-page-toggle')).toHaveTextContent('common.more · 4');
+});
+
+test('selecting a tab on page 2 calls onChange correctly', () => {
+  const { onChange } = renderTabBar();
+  fireEvent.click(screen.getByTestId('search-tab-page-toggle'));
   fireEvent.click(screen.getByText('home.tabs.proverbs'));
   expect(onChange).toHaveBeenCalledWith('proverbs');
+});
+
+test('the page toggle never carries aria-pressed and never calls onChange', () => {
+  const { onChange } = renderTabBar();
+  const toggle = screen.getByTestId('search-tab-page-toggle');
+  expect(toggle).not.toHaveAttribute('aria-pressed');
+  fireEvent.click(toggle);
+  expect(onChange).not.toHaveBeenCalled();
+});
+
+test('always starts on page 1 even when the active tab is on page 2', () => {
+  renderTabBar('proverbs');
+  expect(screen.getByText('home.tabs.ask')).toBeInTheDocument();
+  expect(screen.queryByText('home.tabs.proverbs')).not.toBeInTheDocument();
+  expect(screen.getByTestId('search-tab-page-toggle')).toHaveTextContent('common.more · 4');
 });
