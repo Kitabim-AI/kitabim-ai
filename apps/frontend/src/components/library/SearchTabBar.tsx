@@ -15,16 +15,18 @@ const TAB_PAGES: SearchTabDef[][] = Array.from(
   (_, pageIndex) => SEARCH_TABS.slice(pageIndex * TABS_PER_PAGE, (pageIndex + 1) * TABS_PER_PAGE)
 );
 
+const PAGE_TOGGLE_CLASSNAME =
+  'flex items-center gap-1.5 px-3.5 sm:px-5 py-2.5 sm:py-3 transition-all duration-200 text-[13px] sm:text-[14px] whitespace-nowrap rounded-t-xl font-normal flex-shrink-0 active:scale-95 cursor-pointer bg-white/80 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 border border-b-0 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/80 hover:text-slate-800 dark:hover:text-slate-200';
+
 export const SearchTabBar: React.FC<SearchTabBarProps> = ({ activeTab, onChange }) => {
   const { t } = useI18n();
   const [currentPage, setCurrentPage] = useState(0);
 
-  const isLastPage = currentPage === TAB_PAGES.length - 1;
-  const showToggle = TAB_PAGES.length > 1;
+  const isFirstPage = currentPage === 0;
+  const showPagination = TAB_PAGES.length > 1;
 
-  const handleToggle = () => {
-    setCurrentPage(isLastPage ? 0 : currentPage + 1);
-  };
+  const goToNextPage = () => setCurrentPage((page) => page + 1);
+  const goToFirstPage = () => setCurrentPage(0);
 
   return (
     <div className="w-full border-b border-slate-200 dark:border-slate-800 px-1" dir="rtl">
@@ -32,6 +34,19 @@ export const SearchTabBar: React.FC<SearchTabBarProps> = ({ activeTab, onChange 
         className="flex items-end overflow-x-auto overflow-y-hidden gap-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
         dir="rtl"
       >
+        {showPagination && !isFirstPage && (
+          <button
+            type="button"
+            data-testid="search-tab-page-toggle"
+            onClick={goToFirstPage}
+            title={t('common.back')}
+            className={PAGE_TOGGLE_CLASSNAME}
+          >
+            <ChevronRight size={16} strokeWidth={2} className="flex-shrink-0" />
+            <span className="uyghur-text mt-[2px]">...</span>
+          </button>
+        )}
+
         {TAB_PAGES[currentPage].map(({ key, labelKey, icon: Icon }) => {
           const isActive = key === activeTab;
 
@@ -53,20 +68,17 @@ export const SearchTabBar: React.FC<SearchTabBarProps> = ({ activeTab, onChange 
             </button>
           );
         })}
-        {showToggle && (
+
+        {showPagination && isFirstPage && (
           <button
             type="button"
             data-testid="search-tab-page-toggle"
-            onClick={handleToggle}
-            title={isLastPage ? t('common.back') : t('common.more')}
-            className="flex items-center gap-1.5 px-3.5 sm:px-5 py-2.5 sm:py-3 transition-all duration-200 text-[13px] sm:text-[14px] whitespace-nowrap rounded-t-xl font-normal flex-shrink-0 active:scale-95 cursor-pointer bg-white/80 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 border border-b-0 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/80 hover:text-slate-800 dark:hover:text-slate-200"
+            onClick={goToNextPage}
+            title={t('common.more')}
+            className={PAGE_TOGGLE_CLASSNAME}
           >
-            {isLastPage ? (
-              <ChevronRight size={16} strokeWidth={2} className="flex-shrink-0" />
-            ) : (
-              <ChevronLeft size={16} strokeWidth={2} className="flex-shrink-0" />
-            )}
-            <span className="uyghur-text mt-[2px]">{isLastPage ? t('common.back') : '...'}</span>
+            <ChevronLeft size={16} strokeWidth={2} className="flex-shrink-0" />
+            <span className="uyghur-text mt-[2px]">...</span>
           </button>
         )}
       </div>

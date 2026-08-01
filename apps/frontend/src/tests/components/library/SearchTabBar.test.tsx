@@ -20,7 +20,7 @@ const renderTabBar = (activeTab = 'ask') => {
   return { onChange };
 };
 
-test('renders the first 6 tabs plus a page toggle on page 1', () => {
+test('renders the first 6 tabs plus a page toggle as the last button on page 1', () => {
   renderTabBar();
 
   SEARCH_TABS.slice(0, 6).forEach((tabDef) => {
@@ -29,7 +29,10 @@ test('renders the first 6 tabs plus a page toggle on page 1', () => {
   SEARCH_TABS.slice(6).forEach((tabDef) => {
     expect(screen.queryByText(tabDef.labelKey)).not.toBeInTheDocument();
   });
-  expect(screen.getByTestId('search-tab-page-toggle')).toHaveTextContent('...');
+  const toggle = screen.getByTestId('search-tab-page-toggle');
+  expect(toggle).toHaveTextContent('...');
+  const buttons = screen.getAllByRole('button');
+  expect(buttons[buttons.length - 1]).toBe(toggle);
 });
 
 test('marks the active tab as pressed', () => {
@@ -44,7 +47,7 @@ test('clicking a tab calls onChange with its key', () => {
   expect(onChange).toHaveBeenCalledWith('dictionary');
 });
 
-test('clicking the toggle swaps to page 2, revealing the remaining tabs with a back control', () => {
+test('clicking the toggle swaps to page 2, revealing the remaining tabs with a back control as the first button', () => {
   renderTabBar();
   fireEvent.click(screen.getByTestId('search-tab-page-toggle'));
 
@@ -54,7 +57,10 @@ test('clicking the toggle swaps to page 2, revealing the remaining tabs with a b
   SEARCH_TABS.slice(0, 6).forEach((tabDef) => {
     expect(screen.queryByText(tabDef.labelKey)).not.toBeInTheDocument();
   });
-  expect(screen.getByTestId('search-tab-page-toggle')).toHaveTextContent('common.back');
+  const toggle = screen.getByTestId('search-tab-page-toggle');
+  expect(toggle).toHaveTextContent('...');
+  const buttons = screen.getAllByRole('button');
+  expect(buttons[0]).toBe(toggle);
 });
 
 test('clicking back on page 2 returns to page 1', () => {
