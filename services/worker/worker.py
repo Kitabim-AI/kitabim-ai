@@ -55,6 +55,7 @@ from jobs.auto_correct_job import auto_correct_job
 from jobs.knowledge_graph_job import knowledge_graph_job
 from jobs.graph_resolution_job import graph_resolution_job
 from jobs.rag_eval_job import rag_eval_job
+from jobs.history_extraction_job import extract_book_history_terms_task
 
 
 class WorkerSettings:
@@ -70,6 +71,7 @@ class WorkerSettings:
         knowledge_graph_job,
         graph_resolution_job,
         rag_eval_job,
+        extract_book_history_terms_task,
     ]
 
     # Build cron jobs list conditionally based on feature flags
