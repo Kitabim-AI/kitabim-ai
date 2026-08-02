@@ -310,6 +310,9 @@ Each suggestion is labeled with its type (title, author, or category) so the use
 **REQ-SEARCH-004: Theme-Relevant Proverb**
 Several views (home, library, management dashboard, chat, join-us) each display a randomly selected Uyghur proverb weighted toward a context-appropriate theme (e.g. books/knowledge on the home and library pages) each time they load. Each proverb includes its source reference (volume and page number).
 
+**REQ-SEARCH-005: Tabbed Home Search**
+The home page search bar is paired with a row of tabs that scope what a typed query searches: an **Ask** tab (the AI chat fallback), a **Books** tab (title/author/category search, see REQ-SEARCH-001), a **Content** tab that searches page-level text across the entire library and opens the reader directly to the matching page, and one tab each for the dictionary, proverbs, synonyms, history/terminology, names, English–Uyghur, Quran, and spell-check reference tools (see Section 3.16), each running the same lookup as its reference-library counterpart without leaving the home page. When the tabs do not fit in a single row, they are paginated into fixed-size pages with a "More" / "Back" toggle to page between them.
+
 ---
 
 ### 3.7 Book Reader

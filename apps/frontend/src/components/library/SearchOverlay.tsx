@@ -168,10 +168,10 @@ export const SearchOverlay: React.FC = () => {
                        <Library className="w-12 h-12 md:w-16 md:h-16 text-amber-500/60 dark:text-amber-400/80" strokeWidth={1} />
                     </div>
                     <div className="space-y-3">
-                       <h4 className="text-xl md:text-2xl font-black text-[#1a1a1a] dark:text-slate-100">
+                       <h4 className="text-xl md:text-2xl font-black text-[#1a1a1a] dark:text-slate-100 uyghur-text">
                         {t('library.noResults.title')}
                       </h4>
-                      <p className="text-slate-500 font-normal md:text-lg">
+                      <p className="text-slate-500 dark:text-slate-400 font-normal md:text-lg uyghur-text">
                         {t('library.noResults.message')}
                       </p>
                     </div>

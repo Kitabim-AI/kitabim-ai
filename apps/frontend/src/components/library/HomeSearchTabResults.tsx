@@ -13,18 +13,19 @@ import {
   NameEntry,
   ProverbEntry,
   SearchTabsService,
+  SynonymEntry,
 } from '../../services/searchTabsService';
-import { BookCard } from './BookCard';
+import { ContentResultsList } from './ContentResultsList';
 import { LookupItem, LookupResultsList } from './LookupResultsList';
 import { QuranResultsList } from './QuranResultsList';
-import { SearchTabKey } from './searchTabsConfig';
+import { SearchTabKey, getTabNoResultsKey } from './searchTabsConfig';
 import { SpellCheckResultView } from './SpellCheckResult';
 
 interface HomeSearchTabResultsProps {
   activeTab: SearchTabKey;
   query: string;
   pageSize: number;
-  onOpenBook: (book: Book) => void;
+  onOpenBook: (book: Book | { id: string }, initialPage?: number) => void;
 }
 
 // Only the active tab's hook receives the live query — the rest get '' so they skip fetching
@@ -39,7 +40,20 @@ const mapHistory = (e: HistoryTermEntry): LookupItem => ({
   primary: e.term,
   secondary: e.definition || e.transliteration,
 });
-const mapEnUg = (e: EnglishUyghurEntry): LookupItem => ({ id: e.id, primary: e.uyghur, secondary: e.english });
+const mapSynonyms = (e: SynonymEntry): LookupItem => ({
+  id: e.id,
+  primary: e.word,
+  secondary: Array.isArray(e.synonyms) ? e.synonyms.join('، ') : '',
+});
+const mapEnUg = (e: EnglishUyghurEntry): LookupItem => ({
+  id: e.id,
+  primary: e.english,
+  secondary: e.uyghur,
+  primaryClassName: 'text-lg font-bold text-[#1a1a1a] dark:text-slate-100',
+  secondaryClassName: 'mt-1 text-lg text-slate-500 dark:text-slate-400 uyghur-text',
+  primaryDir: 'ltr',
+  secondaryDir: 'rtl',
+});
 
 export const HomeSearchTabResults: React.FC<HomeSearchTabResultsProps> = ({ activeTab, query, pageSize, onOpenBook }) => {
   const { t } = useI18n();
@@ -49,6 +63,7 @@ export const HomeSearchTabResults: React.FC<HomeSearchTabResultsProps> = ({ acti
   const names = useLookupSearch(SearchTabsService.searchNames, queryFor('names', activeTab, query), 1);
   const history = useLookupSearch(SearchTabsService.searchHistoryTerms, queryFor('history', activeTab, query), 1);
   const proverbs = useLookupSearch(SearchTabsService.searchProverbs, queryFor('proverbs', activeTab, query), 1);
+  const synonyms = useLookupSearch(SearchTabsService.searchSynonyms, queryFor('synonyms', activeTab, query), 1);
   const enUg = useLookupSearch(SearchTabsService.searchEnglishUyghur, queryFor('en-ug', activeTab, query), 1);
   const quran = useLookupSearch(SearchTabsService.searchQuran, queryFor('quran', activeTab, query), 2);
   const content = useContentSearch(queryFor('content', activeTab, query), pageSize);
@@ -79,49 +94,38 @@ export const HomeSearchTabResults: React.FC<HomeSearchTabResultsProps> = ({ acti
 
   const trimmedQuery = query.trim();
   const hasQuery = trimmedQuery.length > 0;
+  const noResultsTitleKey = getTabNoResultsKey(activeTab);
 
   switch (activeTab) {
     case 'dictionary':
-      return <LookupResultsList items={dictionary.results.map(mapDictionary)} isLoading={dictionary.isLoading} hasQuery={hasQuery} />;
+      return <LookupResultsList items={dictionary.results.map(mapDictionary)} isLoading={dictionary.isLoading} hasQuery={hasQuery} noResultsTitleKey={noResultsTitleKey} />;
     case 'names':
-      return <LookupResultsList items={names.results.map(mapName)} isLoading={names.isLoading} hasQuery={hasQuery} />;
+      return <LookupResultsList items={names.results.map(mapName)} isLoading={names.isLoading} hasQuery={hasQuery} noResultsTitleKey={noResultsTitleKey} />;
     case 'history':
-      return <LookupResultsList items={history.results.map(mapHistory)} isLoading={history.isLoading} hasQuery={hasQuery} />;
+      return <LookupResultsList items={history.results.map(mapHistory)} isLoading={history.isLoading} hasQuery={hasQuery} noResultsTitleKey={noResultsTitleKey} />;
     case 'proverbs':
-      return <LookupResultsList items={proverbs.results.map(mapProverb)} isLoading={proverbs.isLoading} hasQuery={hasQuery} />;
+      return <LookupResultsList items={proverbs.results.map(mapProverb)} isLoading={proverbs.isLoading} hasQuery={hasQuery} noResultsTitleKey={noResultsTitleKey} />;
+    case 'synonyms':
+      return <LookupResultsList items={synonyms.results.map(mapSynonyms)} isLoading={synonyms.isLoading} hasQuery={hasQuery} noResultsTitleKey={noResultsTitleKey} />;
     case 'en-ug':
-      return <LookupResultsList items={enUg.results.map(mapEnUg)} isLoading={enUg.isLoading} hasQuery={hasQuery} />;
+      return <LookupResultsList items={enUg.results.map(mapEnUg)} isLoading={enUg.isLoading} hasQuery={hasQuery} noResultsTitleKey={noResultsTitleKey} />;
     case 'quran':
-      return <QuranResultsList items={quran.results} isLoading={quran.isLoading} hasQuery={hasQuery} />;
+      return <QuranResultsList items={quran.results} isLoading={quran.isLoading} hasQuery={hasQuery} noResultsTitleKey={noResultsTitleKey} />;
     case 'spell-check':
       return <SpellCheckResultView result={spelling.result} isLoading={spelling.isLoading} hasQuery={hasQuery} />;
     case 'content':
       return (
         <div className="w-full max-w-none">
-          {content.books.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-3 sm:gap-x-8 gap-y-8 sm:gap-y-12 justify-items-center">
-              {content.books.map((book) => (
-                <BookCard key={book.id} book={book} onClick={onOpenBook} />
-              ))}
-            </div>
-          ) : content.isLoading ? (
-            <div className="w-full py-20 flex flex-col items-center justify-center gap-4">
-              <RefreshCw className="w-8 h-8 text-[#0369a1] dark:text-[#38bdf8] animate-spin" />
-              <span className="text-xs font-black text-[#0369a1] dark:text-[#38bdf8] uppercase">{t('common.loading')}</span>
-            </div>
-          ) : hasQuery ? (
-            <div className="w-full py-20 text-center glass-panel flex flex-col items-center justify-center rounded-[32px]">
-              <p className="text-[#1a1a1a] dark:text-slate-100 font-normal text-lg sm:text-xl mb-2">{t('library.noResults.title')}</p>
-              <p className="text-[#94a3b8] font-bold text-sm max-w-sm">{t('library.noResults.message')}</p>
-            </div>
-          ) : (
-            <div className="w-full py-20 flex flex-col items-center justify-center opacity-40">
-              <Search size={40} strokeWidth={1} className="text-[#0369a1] dark:text-[#38bdf8] mb-4" />
-              <p className="text-slate-500 dark:text-slate-400 uyghur-text">{t('home.tabs.contentPlaceholder')}</p>
-            </div>
-          )}
-          {content.books.length > 0 && (
-            <div ref={loaderRef} className="h-40 flex items-center justify-center">
+          <ContentResultsList
+            hits={content.hits}
+            isLoading={content.isLoading}
+            hasQuery={hasQuery}
+            query={trimmedQuery}
+            noResultsTitleKey={noResultsTitleKey}
+            onOpenHit={(hit) => onOpenBook({ id: hit.bookId } as Book, hit.pageNumber)}
+          />
+          {content.hits.length > 0 && (
+            <div ref={loaderRef} className="h-20 flex items-center justify-center">
               {content.isLoadingMore && <RefreshCw className="w-6 h-6 text-[#0369a1] dark:text-[#38bdf8] animate-spin" />}
             </div>
           )}

@@ -8,9 +8,13 @@ import {
   Loader2,
   RefreshCw,
   Search,
+  Trash2,
   X
 } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useAppContext } from '../../../context/AppContext';
+import { useNotification } from '../../../context/NotificationContext';
+import { useIsAdmin } from '../../../hooks/useAuth';
 import { useI18n } from '../../../i18n/I18nContext';
 import { authFetch } from '../../../services/authService';
 import { UYGHUR_ALPHABET, sortByUyghurAlphabet, parseDefinition } from '../../../utils/uyghurAlphabet';
@@ -24,6 +28,9 @@ interface DictionaryEntry {
 
 export const DictionaryPanel: React.FC = () => {
   const { t } = useI18n();
+  const isAdmin = useIsAdmin();
+  const { setModal } = useAppContext();
+  const { addNotification } = useNotification();
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState<DictionaryEntry[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -142,6 +149,33 @@ export const DictionaryPanel: React.FC = () => {
 
   const activeEntries = searchQuery.trim() ? suggestions : allEntries;
 
+  const handleDeleteEntry = (entry: DictionaryEntry) => {
+    setModal({
+      isOpen: true,
+      title: t('common.delete'),
+      message: t('admin.dictionary.confirmDelete', { word: entry.word }),
+      type: 'confirm',
+      confirmText: t('common.delete'),
+      destructive: true,
+      onConfirm: async () => {
+        setModal((prev: any) => ({ ...prev, isLoading: true }));
+        try {
+          const resp = await authFetch(`/api/dictionary/${entry.id}`, { method: 'DELETE' });
+          if (!resp.ok) throw new Error('Failed to delete entry');
+          setAllEntries(prev => prev.filter(e => e.id !== entry.id));
+          setSuggestions(prev => prev.filter(e => e.id !== entry.id));
+          fetchStats();
+          setModal((prev: any) => ({ ...prev, isOpen: false }));
+          addNotification(t('admin.dictionary.deleteSuccess'), 'success');
+        } catch (e) {
+          console.error('Failed to delete dictionary entry', e);
+          setModal((prev: any) => ({ ...prev, isOpen: false }));
+          addNotification(t('admin.dictionary.deleteError'), 'error');
+        }
+      },
+    });
+  };
+
   return (
     <div className="space-y-6 md:space-y-8 animate-fade-in pb-20" dir="rtl" lang="ug">
       {/* Main Search & Tool Section */}
@@ -240,20 +274,20 @@ export const DictionaryPanel: React.FC = () => {
             <div className="glass-panel rounded-[32px] p-2 overflow-hidden shadow-xl animate-fade-in border border-[#0369a1]/5 dark:border-[#38bdf8]/10">
               <div className="grid grid-cols-1 gap-1">
                   {activeEntries.map((entry) => (
-                    <div 
-                      key={entry.id} 
+                    <div
+                      key={entry.id}
                       className={`
-                        flex items-start justify-between px-4 md:px-6 py-4 md:py-5 rounded-2xl transition-all group hover:bg-slate-50/50 dark:hover:bg-slate-800/30
+                        flex items-start justify-between px-4 md:px-6 py-4 md:py-5 rounded-2xl transition-all group hover:bg-slate-50/50 dark:hover:bg-slate-800/30 gap-3
                       `}
                     >
                       <div className="flex-1 min-w-0 pr-2">
                         <div className="flex items-center gap-3">
-                          <span className="uyghur-text text-[16px] md:text-xl font-bold text-slate-800 dark:text-slate-100">
+                          <span className="uyghur-text text-sm sm:text-lg font-bold text-slate-800 dark:text-slate-100">
                              {entry.word}
                           </span>
                         </div>
                         {entry.definition && (
-                          <p className="uyghur-text text-[13px] md:text-[14px] text-slate-500 dark:text-slate-400 font-normal leading-relaxed mt-1.5 whitespace-pre-wrap">
+                          <p className="uyghur-text text-sm sm:text-lg text-slate-500 dark:text-slate-400 font-normal leading-relaxed mt-1.5 whitespace-pre-wrap">
                              {parseDefinition(entry.definition).map((chunk, idx) => {
                                if (chunk.type === 'br') {
                                  return <br key={idx} />;
@@ -270,6 +304,15 @@ export const DictionaryPanel: React.FC = () => {
                           </p>
                         )}
                       </div>
+                      {isAdmin && (
+                        <button
+                          onClick={() => handleDeleteEntry(entry)}
+                          className="p-2 shrink-0 bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400 rounded-xl hover:bg-red-500 dark:hover:bg-red-600 hover:text-white transition-all"
+                          title={t('common.delete')}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
                     </div>
                   ))}
               </div>

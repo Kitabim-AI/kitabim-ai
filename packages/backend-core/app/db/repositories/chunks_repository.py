@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import List, Optional
 
 from sqlalchemy import select, delete, func, or_, text
@@ -9,6 +10,8 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Book, Chunk
 from app.db.repositories.base_repository import BaseRepository
+
+logger = logging.getLogger("app.db.repositories.chunks_repository")
 
 # Tuned against a production case where a common word matched ~194K rows and
 # took 40-60s: work_mem avoids the disk-bound fallback strategies, the
@@ -349,6 +352,7 @@ class ChunksRepository(BaseRepository[Chunk]):
             {
                 "book_id": str(row.book_id),
                 "page_number": row.page_number,
+                "page": row.page_number,
                 "chunk_index": row.chunk_index,
                 "text": row.text,
                 "title": row.title,
@@ -409,6 +413,112 @@ class ChunksRepository(BaseRepository[Chunk]):
         books = list(books_result.scalars().all())
 
         return books, total
+
+    async def search_content_chunks(
+        self,
+        phrase: str,
+        skip: int = 0,
+        limit: int = 40,
+        restrict_to_public: bool = True,
+    ) -> tuple[List[dict], int]:
+        """Home 'Content' tab: exact-phrase search over chunk text returning paginated
+        chunk hits with text snippets, page numbers, book title, author, volume, and cover.
+        """
+        vis_clause = (
+            "b.status = 'ready' AND (b.visibility = 'public' OR b.visibility IS NULL)"
+            if restrict_to_public
+            else "b.status != 'error'"
+        )
+
+        # Single-token terms (e.g. "ياش") can match thousands of chunks. Evaluating
+        # ts_rank() for thousands of hits incurs huge CPU overhead with virtually
+        # no ranking benefit. Skip ts_rank for single-word queries to allow Postgres
+        # to satisfy the query using fast index scans.
+        is_single_token = len(phrase.strip().split()) == 1
+        rank_projection = (
+            "0.0 AS rank"
+            if is_single_token
+            else "ts_rank(c.text_search, phraseto_tsquery('simple', :phrase)) AS rank"
+        )
+        order_clause = (
+            "ORDER BY b.title ASC, c.page_number ASC, c.chunk_index ASC"
+            if is_single_token
+            else "ORDER BY rank DESC, b.title ASC, c.page_number ASC"
+        )
+
+        count_query = text(f"""
+            SELECT COUNT(*)
+            FROM chunks c
+            JOIN books b ON c.book_id = b.id
+            LEFT JOIN pages p ON c.book_id = p.book_id AND c.page_number = p.page_number
+            WHERE c.text_search @@ phraseto_tsquery('simple', :phrase)
+              AND (p.is_toc IS NOT TRUE OR p.id IS NULL)
+              AND {vis_clause}
+        """)
+
+        hits_query = text(f"""
+            SELECT
+                c.book_id,
+                c.page_number,
+                c.chunk_index,
+                c.text,
+                b.title,
+                b.volume,
+                b.author,
+                b.cover_url,
+                {rank_projection}
+            FROM chunks c
+            JOIN books b ON c.book_id = b.id
+            LEFT JOIN pages p ON c.book_id = p.book_id AND c.page_number = p.page_number
+            WHERE c.text_search @@ phraseto_tsquery('simple', :phrase)
+              AND (p.is_toc IS NOT TRUE OR p.id IS NULL)
+              AND {vis_clause}
+            {order_clause}
+            OFFSET :skip LIMIT :limit
+        """)
+
+        params = {"phrase": phrase, "skip": skip, "limit": limit}
+
+        try:
+            await self.session.execute(
+                text(f"SET LOCAL work_mem = '{_KEYWORD_SEARCH_WORK_MEM}'")
+            )
+            await self.session.execute(
+                text(
+                    f"SET LOCAL statement_timeout = '{_KEYWORD_SEARCH_STATEMENT_TIMEOUT_MS}'"
+                )
+            )
+
+            count_res = await self.session.execute(count_query, {"phrase": phrase})
+            total = count_res.scalar_one()
+
+            hits_res = await self.session.execute(hits_query, params)
+            rows = hits_res.fetchall()
+        except Exception as e:
+            logger.warning(
+                "Content search query timed out or failed for phrase '%s': %s",
+                phrase,
+                e,
+            )
+            return [], 0
+
+        hits = [
+            {
+                "id": f"{row.book_id}_{row.page_number}_{row.chunk_index}",
+                "book_id": str(row.book_id),
+                "book_title": row.title,
+                "book_author": row.author,
+                "book_volume": row.volume,
+                "book_cover_url": row.cover_url,
+                "page_number": row.page_number,
+                "page": row.page_number,
+                "snippet": row.text,
+                "rank": float(row.rank),
+            }
+            for row in rows
+        ]
+
+        return hits, total
 
 
 def get_chunks_repository(session: AsyncSession) -> ChunksRepository:

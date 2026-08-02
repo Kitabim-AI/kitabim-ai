@@ -236,3 +236,30 @@ class RagQuestionToggleResponse(BaseModel):
 
     id: int
     show_on_homepage: bool
+
+
+class ContentSearchHit(BaseModel):
+    """Single page content hit for Home 'Content' search tab."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
+    )
+
+    id: str
+    book_id: str
+    book_title: str
+    book_author: Optional[str] = None
+    book_volume: Optional[int] = None
+    book_cover_url: Optional[str] = None
+    page_number: int
+    snippet: str
+    rank: Optional[float] = 0.0
+
+
+class PaginatedContentHits(BaseModel):
+    """Paginated response for Home 'Content' search hits."""
+
+    hits: List[ContentSearchHit]
+    total: int
+    page: int
+    page_size: int

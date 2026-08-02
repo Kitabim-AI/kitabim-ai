@@ -206,8 +206,10 @@ The exhaustion check (step 8d) is the exact branch that decides soft-skip vs. ha
 1. Build one JSONL line per page: render to JPEG (PyMuPDF, same
    OCR_PAGE_ZOOM_FACTOR), base64-encode, embed alongside the OCR prompt
    as a Gemini Batch API request entry (custom_id="page_{id}",
-   thinking_budget=0 to avoid silent empty output from reasoning
-   burn-through).
+   thinking disabled via `disabled_thinking_config(model)` —
+   thinking_budget=0 for pre-3.x models, thinking_level="MINIMAL" for
+   Gemini 3.x+ which reject thinking_budget=0 — to avoid silent empty
+   output from reasoning burn-through).
 2. Upload the JSONL to storage as an audit copy
    (batch_ocr/inputs/{job_id}.jsonl).
 3. Upload the same JSONL to the Gemini Files API and call

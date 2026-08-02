@@ -46,6 +46,7 @@ The backend API and worker are two separate deployable services that share one P
 - **Frontend (`apps/frontend`)**
   - React 19 SPA built with Vite, served by Nginx.
   - Reader UI with real-time book/page milestone polling, curation/spell-check workspace, admin dashboard, and streaming chat UI (renders `planning`, `decompose`, `tool_call`, `grading`, and `chunk` SSE events as they arrive).
+  - Home page search is a paginated tab bar (`SearchTabBar`, 6 tabs per page with a More/Back toggle) covering chat, catalog browse, full-text content search, and independent reference lookups — see §6D.
 
 - **Gemini Infrastructure**
   - Interactive (real-time) API for OCR, embeddings, chat, summarization, and entity extraction — the default path for all of these.
@@ -92,7 +93,7 @@ PostgreSQL itself is **not** containerized in local dev — it runs standalone o
 
 ## 5) Data Model
 
-### PostgreSQL (25 tables)
+### PostgreSQL (28 tables)
 
 **`books`**
 - `status`: `pending`, `ocr_processing`, `ocr_done`, `indexing`, `ready`, `error`.
@@ -126,6 +127,8 @@ PostgreSQL itself is **not** containerized in local dev — it runs standalone o
 **Curation tables**: `page_spell_issues`, `auto_correct_rules` — per-page spell-check findings and reusable OCR auto-correction rules.
 
 **Platform tables**: `users` (role: `admin` | `editor` | `reader`), `refresh_tokens`, `user_chat_usage` (daily chat-quota tracking), `rag_evaluations` (per-request RAG telemetry, now optionally linked to a `conversation_id`), `system_configs` (runtime-tunable settings, see below), `contact_submissions`.
+
+**Graph resolution tables**: `graph_resolution_queue` (one row per extracted entity awaiting dedup, claimed by `graph_resolution_scanner`), `graph_resolution_reviews` (ambiguous merge decisions parked for a human admin), `graph_merge_log` (pre-delete snapshot of every merged node + its edges, enabling `unmerge`) — see [KNOWLEDGE_GRAPH_DESIGN.md](KNOWLEDGE_GRAPH_DESIGN.md) for the full resolution pipeline.
 
 ### `system_configs` — runtime configuration
 A key/value table (seeded with defaults, editable via the admin dashboard) that drives model selection and pipeline tuning without a redeploy — including `gemini_chat_model`, `gemini_ocr_model`, `gemini_embedding_model`, `gemini_kg_extraction_model`, `gemini_agent_loop_model` (optional override, otherwise falls back to `gemini_chat_model`), `use_deterministic_router`, `use_adk_chat_v2` (routes streaming chat to `ChatOrchestrator`, see §6B — seeded `true`), `knowledge_graph_enabled`, `gemini_batch_ocr_enabled` / `gemini_batch_embedding_enabled` (default `false`), `agent_max_steps`, `agent_enough_chunks`, and various batch-size/timeout/retention knobs.
@@ -195,6 +198,10 @@ Every request routed here is dispatched through `HandlerRegistry` (`packages/bac
 6. Persists both the user and model messages via `ConversationRepository.save_turn()`, links the `rag_evaluations` row it also writes to the conversation, and emits a `done` event carrying `conversationId`.
 
 This is the only path that reads/writes `conversations`/`conversation_messages` — `RAGService` remains entirely conversation-unaware. The REST endpoints `POST/GET /api/chat/conversations`, `GET /api/chat/conversations/{id}/messages`, and `DELETE /api/chat/conversations/{id}` (all under `require_reader` auth) back the frontend's conversation-history sidebar (list, resume, delete).
+
+### D) Home Search / Library Discovery
+
+The home page's search box drives a single tab bar (`SearchTabBar`) covering 11 modes, paginated 6-per-page with a More/Back toggle: `ask` (routes to RAG chat, §6B), `books` (title/author/category catalog browse), `content` (full-text search over `chunks.text_search` across the whole library), and eight reference-lookup tabs — dictionary, names, history terms, proverbs, synonyms, English↔Uyghur, Quran, and single-word spell-check. Only the active tab's hook performs a live, debounced fetch against its own existing lookup endpoint (dictionary/proverb/Quran/etc. — no LLM involved); the rest are cheap no-ops. The `content` tab is the one exception requiring pagination: `GET /api/books/content-search` (backed by `ChunksRepository.search_content_chunks`, an exact-phrase Postgres full-text match) returns snippet hits paginated for infinite scroll, page size driven by the `collection_page_size` system config (default 40).
 
 ## 7) Gemini Integration Strategy
 - **`google-genai` SDK** — used for every direct (non-agentic) AI call: the File API for OCR image uploads, OCR text extraction, book summarization, structured knowledge-graph entity/relation extraction (Pydantic schemas), embedding generation, and the deterministic router's signal-extraction/intent-classification/query-rewrite/decomposition calls.

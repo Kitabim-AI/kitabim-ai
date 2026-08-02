@@ -198,6 +198,7 @@ class ChatOrchestrator:
                 book_ids=ctx.context_book_ids,
                 categories=ctx.character_categories or None,
                 limit=rag_keyword_top_k,
+                is_global=request_dto.is_global,
             )
             observations.append(observation)
             yield {

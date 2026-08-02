@@ -38,6 +38,13 @@ export interface EnglishUyghurEntry {
   letterGroup: string;
 }
 
+export interface SynonymEntry {
+  id: number;
+  word: string;
+  letterGroup: string;
+  synonyms: string[];
+}
+
 export interface QuranAyah {
   id: number;
   surah: number;
@@ -60,6 +67,25 @@ export interface SpellingCheckResult {
   isKnown: boolean;
   word?: string | null;
   suggestions: SpellingSuggestion[];
+}
+
+export interface ContentSearchHit {
+  id: string;
+  bookId: string;
+  bookTitle: string;
+  bookAuthor?: string | null;
+  bookVolume?: number | null;
+  bookCoverUrl?: string | null;
+  pageNumber: number;
+  snippet: string;
+  rank?: number | null;
+}
+
+export interface PaginatedContentHits {
+  hits: ContentSearchHit[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 async function getJson<T>(url: string, fallback: T): Promise<T> {
@@ -103,6 +129,11 @@ export const SearchTabsService = {
     return raw.map((r) => ({ id: r.id, english: r.english, uyghur: r.uyghur, letterGroup: r.letter_group }));
   },
 
+  async searchSynonyms(q: string, limit: number = 20): Promise<SynonymEntry[]> {
+    const raw = await getJson<any[]>(`${API_BASE}/synonyms/search?q=${encodeURIComponent(q)}&limit=${limit}`, []);
+    return raw.map((r) => ({ id: r.id, word: r.word, letterGroup: r.letter_group, synonyms: r.synonyms || [] }));
+  },
+
   async searchQuran(q: string, limit: number = 20): Promise<QuranAyah[]> {
     const raw = await getJson<any[]>(`${API_BASE}/quran/search?q=${encodeURIComponent(q)}&limit=${limit}`, []);
     return raw.map((r) => ({
@@ -129,24 +160,16 @@ export const SearchTabsService = {
     }
   },
 
-  async searchBookContent(q: string, page: number = 1, pageSize: number = 40): Promise<PaginatedBooks> {
+  async searchBookContent(q: string, page: number = 1, pageSize: number = 40): Promise<PaginatedContentHits> {
     try {
       const url = `${API_BASE}/books/content-search?q=${encodeURIComponent(q)}&page=${page}&pageSize=${pageSize}`;
       const response = await authFetch(url);
       if (!response.ok) throw new Error('Failed to fetch content search results');
-      const data = await response.json();
-      return {
-        ...data,
-        books: data.books.map((b: any) => ({
-          ...b,
-          pages: b.pages || [],
-          uploadDate: new Date(b.uploadDate),
-          lastUpdated: b.lastUpdated ? new Date(b.lastUpdated) : null,
-        })) as Book[],
-      };
+      return await response.json();
     } catch (error) {
       console.error('Failed to fetch content search results', error);
-      return { books: [], total: 0, totalReady: 0, page, pageSize };
+      return { hits: [], total: 0, page, pageSize };
     }
   },
 };
+

@@ -8,12 +8,12 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
 from app.db.models import Proverb
-from auth.dependencies import require_editor
+from auth.dependencies import require_editor, require_admin
 from app.models.user import User
 from app.services.cache_service import cache_service
 
@@ -123,3 +123,24 @@ async def update_proverb(
     await cache_service.delete_pattern("proverbs:*")
 
     return proverb
+
+
+@router.delete("/proverbs/{proverb_id}", status_code=204)
+async def delete_proverb(
+    proverb_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_admin),
+):
+    """Delete a proverb (Admin only)."""
+    result = await session.execute(
+        delete(Proverb).where(Proverb.id == proverb_id).returning(Proverb.id)
+    )
+    if not result.fetchone():
+        raise HTTPException(status_code=404, detail="Proverb not found")
+
+    await session.commit()
+
+    await cache_service.delete_pattern("proverb:*")
+    await cache_service.delete_pattern("proverbs:*")
+
+    return None

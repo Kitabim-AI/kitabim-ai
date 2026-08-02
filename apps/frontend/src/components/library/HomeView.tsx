@@ -1,7 +1,6 @@
 import { Book as BookIcon, Bot, Keyboard, RefreshCw, Search, X, Delete } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
-import { useHomeSearchTab } from '../../hooks/useHomeSearchTab';
 import { useI18n } from '../../i18n/I18nContext';
 import { getCollectionPageSize } from '../../services/authService';
 import { PersistenceService } from '../../services/persistenceService';
@@ -10,6 +9,7 @@ import { QuestionRotator } from '../common/QuestionRotator';
 import { BookCard } from './BookCard';
 import { HomeSearchTabResults } from './HomeSearchTabResults';
 import { SearchTabBar } from './SearchTabBar';
+import { getTabNoResultsKey, getTabPlaceholderKey } from './searchTabsConfig';
 
 interface KeyDef {
   latin: string;
@@ -64,6 +64,10 @@ export const HomeView: React.FC = () => {
     hasMoreShelf: hasMore,
     homeSearchQuery: searchQuery,
     setHomeSearchQuery: setSearchQuery,
+    homeActiveTab: activeTab,
+    setHomeActiveTab: setActiveTab,
+    homeSearchText,
+    setHomeSearchText,
     selectedCategory,
     setSelectedCategory,
     bookActions,
@@ -75,9 +79,12 @@ export const HomeView: React.FC = () => {
   } = useAppContext();
 
   const { t } = useI18n();
-  const { activeTab, setActiveTab } = useHomeSearchTab();
   const isBookTab = activeTab === 'ask' || activeTab === 'books';
-  const [localSearch, setLocalSearch] = useState(searchQuery);
+  const isEnUg = activeTab === 'en-ug';
+  // The typed query is persisted in `homeSearchText` (AppContext) for every tab, so it
+  // survives HomeView unmounting (opening/closing the reader) and carries over when the
+  // user switches tabs. Book tabs additionally commit into `searchQuery` to trigger the fetch.
+  const [localSearch, setLocalSearch] = useState(homeSearchText);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const localSearchRef = useRef(localSearch);
   const keyboardRef = useRef<HTMLDivElement>(null);
@@ -203,10 +210,13 @@ export const HomeView: React.FC = () => {
     }, 0);
   };
 
-  // Focus the search input by default on mount
+  // Focus the search input on mount and when activeTab changes
   useEffect(() => {
     searchInputRef.current?.focus();
-  }, []);
+    if (isEnUg) {
+      setShowKeyboardMap(false);
+    }
+  }, [activeTab, isEnUg]);
 
   // Keep the input scrolled to the caret (end of text) when the query is long
   useEffect(() => {
@@ -237,29 +247,33 @@ export const HomeView: React.FC = () => {
   const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
   const isMac = !isTouchDevice && navigator.platform.toUpperCase().startsWith('MAC');
 
-  // Debounce: only update context (triggers API call) after 300ms of no typing.
-  // Once chatHint is active, suppress updates as long as the query stays long
-  // enough to be a question — only let through a clear (< 3 chars) so the user
-  // can exit chat mode by deleting the input.
-  // Only the book tabs (Ask/Books) drive the context's book search — the other tabs
-  // fetch independently in HomeSearchTabResults, so skip this sync for them entirely.
+  // Debounce: after 300ms of no typing, persist the query (so it carries over across tabs
+  // and survives HomeView unmounting/remounting) and, for book tabs, commit it to `searchQuery`
+  // to trigger the API call. Once chatHint is active, suppress the `searchQuery` commit as long
+  // as the query stays long enough to be a question — only let through a clear (< 3 chars) so
+  // the user can exit chat mode by deleting the input.
   useEffect(() => {
-    if (!isBookTab) return;
     const timer = setTimeout(() => {
       const trimmed = localSearch.trim();
-      if (trimmed === searchQuery) return;
-      if (chatHint && trimmed.length >= 3 && trimmed.length >= searchQuery.length) return;
-      setSearchQuery(trimmed);
+      if (trimmed !== homeSearchText) {
+        setHomeSearchText(trimmed);
+      }
+      if (isBookTab) {
+        if (trimmed === searchQuery) return;
+        if (chatHint && trimmed.length >= 3 && trimmed.length >= searchQuery.length) return;
+        setSearchQuery(trimmed);
+      }
     }, 300);
     return () => clearTimeout(timer);
-  }, [localSearch, searchQuery, setSearchQuery, chatHint, isBookTab]);
+  }, [localSearch, searchQuery, homeSearchText, setSearchQuery, setHomeSearchText, chatHint, isBookTab]);
 
-  // Sync local search when global search is cleared or changed externally
+  // Sync local search when the persisted query is cleared or changed externally
+  // (e.g. the clear button, a chat handoff, or navigating away and back to home).
   useEffect(() => {
-    if (localSearchRef.current.trim() !== searchQuery) {
-      setLocalSearch(searchQuery);
+    if (localSearchRef.current.trim() !== homeSearchText) {
+      setLocalSearch(homeSearchText);
     }
-  }, [searchQuery]);
+  }, [homeSearchText]);
 
 
 
@@ -283,6 +297,7 @@ export const HomeView: React.FC = () => {
       chat.setChatInput(trimmed);
       setLocalSearch('');
       setSearchQuery('');
+      setHomeSearchText('');
       setView('global-chat');
     }
   };
@@ -316,14 +331,14 @@ export const HomeView: React.FC = () => {
       </div>
 
       {/* Search Section */}
-      <div className="w-full max-w-3xl px-4 relative mb-8 sm:mb-10 md:mb-12">
+      <div className="w-full max-w-[840px] px-4 relative mb-8 sm:mb-10 md:mb-12">
         <div className="mb-4">
           <SearchTabBar activeTab={activeTab} onChange={setActiveTab} />
         </div>
         <div className="relative group">
           <button
             onClick={handleSearchSubmit}
-            className="absolute inset-y-0 right-0 pr-4 sm:pr-6 flex items-center text-[#94a3b8] group-focus-within:text-[#0369a1] dark:group-focus-within:text-[#38bdf8] transition-colors z-10"
+            className={`absolute inset-y-0 ${isEnUg ? 'left-0 pl-4 sm:pl-6' : 'right-0 pr-4 sm:pr-6'} flex items-center text-[#94a3b8] group-focus-within:text-[#0369a1] dark:group-focus-within:text-[#38bdf8] transition-colors z-10`}
           >
             {isInitialLoading && localSearch ? (
               <RefreshCw size={20} className="sm:w-[22px] sm:h-[22px] animate-spin" strokeWidth={3} />
@@ -336,21 +351,27 @@ export const HomeView: React.FC = () => {
           <input
             ref={searchInputRef}
             type="text"
-            className={`w-full pr-12 md:pr-16 py-4 sm:py-5 bg-white/60 dark:bg-slate-900/60 backdrop-blur-2xl border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-[32px] text-base sm:text-lg font-normal text-[#1a1a1a] dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-500 outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] focus:ring-[12px] focus:ring-[#0369a1]/5 dark:focus:ring-[#38bdf8]/5 transition-all shadow-xl uyghur-text md:pl-28 ${
-              localSearch ? 'pl-14' : 'pl-6'
+            className={`w-full py-4 sm:py-5 bg-white/60 dark:bg-slate-900/60 backdrop-blur-2xl border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-[32px] text-base sm:text-lg font-normal text-[#1a1a1a] dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-500 outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] focus:ring-[12px] focus:ring-[#0369a1]/5 dark:focus:ring-[#38bdf8]/5 transition-all shadow-xl ${
+              isEnUg ? '' : 'uyghur-text'
+            } ${
+              isEnUg
+                ? `pl-12 md:pl-16 ${localSearch ? 'pr-14' : 'pr-6'}`
+                : `pr-12 md:pr-16 md:pl-28 ${localSearch ? 'pl-14' : 'pl-6'}`
             }`}
-            placeholder={t('home.searchOrChatPlaceholder')}
+            placeholder={t(getTabPlaceholderKey(activeTab))}
             value={localSearch}
             onChange={(e) => setLocalSearch(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') handleSearchSubmit(); }}
-            dir="rtl"
+            dir={isEnUg ? 'ltr' : 'rtl'}
+            lang={isEnUg ? 'en' : 'ug'}
+            data-latin={isEnUg ? 'true' : undefined}
           />
-          <div className="absolute inset-y-0 left-0 pl-4 sm:pl-6 flex items-center gap-0.5 z-10" dir="ltr">
+          <div className={`absolute inset-y-0 ${isEnUg ? 'right-0 pr-4 sm:pr-6' : 'left-0 pl-4 sm:pl-6'} flex items-center gap-0.5 z-10`} dir="ltr">
             {localSearch && (
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={() => { setLocalSearch(''); setSearchQuery(''); }}
+                onClick={() => { setLocalSearch(''); setSearchQuery(''); setHomeSearchText(''); }}
                 className="w-9 h-9 rounded-full flex items-center justify-center text-[#94a3b8] hover:text-[#0369a1] hover:bg-slate-100/50 transition-colors"
                 title="Clear"
               >
@@ -358,23 +379,25 @@ export const HomeView: React.FC = () => {
               </button>
             )}
 
-            {/* Keyboard layout toggle icon, hidden on mobile */}
-            <button
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => setShowKeyboardMap(!showKeyboardMap)}
-              className={`hidden md:flex items-center justify-center text-[#94a3b8] hover:text-[#0369a1] transition-colors w-9 h-9 rounded-full hover:bg-slate-100/50 keyboard-toggle-btn ${
-                showKeyboardMap ? 'text-[#0369a1] bg-[#0369a1]/10 hover:bg-[#0369a1]/15' : ''
-              }`}
-              title={t('home.keyboardMapTooltip')}
-            >
-              <Keyboard size={20} className="sm:w-[22px] sm:h-[22px]" strokeWidth={2.5} />
-            </button>
+            {/* Keyboard layout toggle icon, hidden on mobile and en-ug tab */}
+            {!isEnUg && (
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setShowKeyboardMap(!showKeyboardMap)}
+                className={`hidden md:flex items-center justify-center text-[#94a3b8] hover:text-[#0369a1] transition-colors w-9 h-9 rounded-full hover:bg-slate-100/50 keyboard-toggle-btn ${
+                  showKeyboardMap ? 'text-[#0369a1] bg-[#0369a1]/10 hover:bg-[#0369a1]/15' : ''
+                }`}
+                title={t('home.keyboardMapTooltip')}
+              >
+                <Keyboard size={20} className="sm:w-[22px] sm:h-[22px]" strokeWidth={2.5} />
+              </button>
+            )}
           </div>
         </div>
 
         {/* Keyboard Map Panel */}
-        {showKeyboardMap && (
+        {!isEnUg && showKeyboardMap && (
           <div
             ref={keyboardRef}
             className="absolute left-4 right-4 mt-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl border border-slate-200/60 dark:border-slate-800 rounded-3xl p-5 shadow-2xl z-20 hidden md:block animate-in fade-in slide-in-from-top-4 duration-200"
@@ -520,7 +543,6 @@ export const HomeView: React.FC = () => {
                   {isInitialLoading ? <RefreshCw size={12} className="inline-block animate-spin mx-1" /> : totalBooks} <span className="opacity-60">{t('home.totalBooks')}</span>
                 </div>
               </div>
-              <p className="text-xs sm:text-sm font-normal text-[#94a3b8] dark:text-slate-400 uppercase">«{searchQuery || selectedCategory}» {t('home.resultsFor')}</p>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-3 sm:gap-x-8 gap-y-8 sm:gap-y-12 justify-items-center">
@@ -540,18 +562,18 @@ export const HomeView: React.FC = () => {
                       <RefreshCw className="w-8 h-8 animate-pulse" />
                     </div>
                   </div>
-                  <h3 className="text-xl font-normal text-[#1a1a1a]">{t('common.loading')}</h3>
+                  <h3 className="text-xl font-normal text-[#1a1a1a] dark:text-slate-100">{t('common.loading')}</h3>
                 </div>
               )}
             </div>
 
             {books.length === 0 && !isInitialLoading && (
               <div className="w-full py-20 text-center glass-panel flex flex-col items-center justify-center rounded-[32px]">
-                <div className="p-6 bg-[#0369a1]/10 rounded-[32px] mb-6">
-                  <BookIcon className="w-16 h-16 text-[#0369a1] opacity-40" />
+                <div className="p-6 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 rounded-[32px] mb-6">
+                  <BookIcon className="w-16 h-16 text-[#0369a1] dark:text-[#38bdf8] opacity-60 dark:opacity-80" />
                 </div>
-                <p className="text-[#1a1a1a] font-normal text-xl sm:text-2xl mb-2">{t(hasSearch ? 'library.noResults.title' : 'library.empty.title')}</p>
-                <p className="text-[#94a3b8] font-bold text-sm sm:text-base max-w-sm">{t(hasSearch ? 'library.noResults.message' : 'library.empty.message')}</p>
+                <p className="text-[#1a1a1a] dark:text-slate-100 font-bold text-xl sm:text-2xl mb-2 uyghur-text">{t(hasSearch ? getTabNoResultsKey(activeTab) : 'library.empty.title')}</p>
+                <p className="text-[#94a3b8] dark:text-slate-400 font-medium text-sm sm:text-base max-w-sm uyghur-text">{t(hasSearch ? 'library.noResults.message' : 'library.empty.message')}</p>
               </div>
             )}
 
@@ -577,7 +599,6 @@ export const HomeView: React.FC = () => {
           <div className="w-full max-w-none px-4 md:px-8 pb-24 sm:pb-32">
             <div className="flex flex-col mb-10 sm:mb-12 md:mb-16 gap-2">
               <h2 className="text-xl sm:text-2xl md:text-3xl font-normal text-[#1a1a1a] dark:text-slate-100">{t('home.searchResults')}</h2>
-              <p className="text-xs sm:text-sm font-normal text-[#94a3b8] dark:text-slate-400 uppercase">«{localSearch}» {t('home.resultsFor')}</p>
             </div>
             <HomeSearchTabResults
               activeTab={activeTab}

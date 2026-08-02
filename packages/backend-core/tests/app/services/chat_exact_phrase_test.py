@@ -69,6 +69,7 @@ async def test_run_exact_phrase_retrieval_wraps_hits_as_search_chunks_observatio
     chunk = observation["result"]["data"]["chunks"][0]
     assert chunk["book_id"] == "b1"
     assert chunk["page_number"] == 3
+    assert chunk["page"] == 3
     assert chunk["text"] == "king Babur ruled here"
 
 

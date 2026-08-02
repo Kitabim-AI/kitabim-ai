@@ -54,9 +54,9 @@ html {
   --glass-blur: blur(20px) saturate(180%);
   --glass-border: 1px solid rgba(255, 193, 7, 0.15);
 
-  --font-uyghur: "ALKATIP Basma", serif;
-  --font-headers: "ALKATIP Basma", serif;
-  --font-nav: "ALKATIP Basma", serif;
+  --font-uyghur: "ALKATIP Basma", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-headers: "ALKATIP Basma", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-nav: "ALKATIP Basma", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 @keyframes float {

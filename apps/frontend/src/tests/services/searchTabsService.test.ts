@@ -48,5 +48,17 @@ test('searchBookContent returns an empty page on failure instead of throwing', a
 
   const result = await SearchTabsService.searchBookContent('some phrase', 1, 40);
 
-  expect(result).toEqual({ books: [], total: 0, totalReady: 0, page: 1, pageSize: 40 });
+  expect(result).toEqual({ hits: [], total: 0, page: 1, pageSize: 40 });
+});
+
+test('searchSynonyms maps snake_case letter_group and returns synonym items', async () => {
+  vi.mocked(authFetch).mockResolvedValue({
+    ok: true,
+    json: async () => [{ id: 1, word: 'ئانا', letter_group: 'ئا', synonyms: ['ئاپا', 'ۋالىدە'] }],
+  } as any);
+
+  const result = await SearchTabsService.searchSynonyms('ئانا');
+
+  expect(result).toEqual([{ id: 1, word: 'ئانا', letterGroup: 'ئا', synonyms: ['ئاپا', 'ۋالىدە'] }]);
+  expect(authFetch).toHaveBeenCalledWith(expect.stringContaining('/api/synonyms/search?q='));
 });

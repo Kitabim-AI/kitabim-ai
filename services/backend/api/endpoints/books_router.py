@@ -39,7 +39,14 @@ from app.db.repositories.chunks_repository import ChunksRepository
 from app.db.repositories.pages_repository import PagesRepository
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.db.models import Book as BookDB, Page, Chunk, BookSummary
-from app.models.schemas import Book, PaginatedBooks, ExtractionResult, to_camel
+from app.models.schemas import (
+    Book,
+    PaginatedBooks,
+    ContentSearchHit,
+    PaginatedContentHits,
+    ExtractionResult,
+    to_camel,
+)
 from app.models.user import User
 from app.services.storage_service import storage
 from app.services.chunking_service import chunking_service
@@ -678,7 +685,7 @@ async def get_books(
     return result
 
 
-@router.get("/content-search", response_model=PaginatedBooks)
+@router.get("/content-search", response_model=PaginatedContentHits)
 async def search_book_content(
     q: str = Query(..., min_length=1, max_length=500),
     page: int = Query(1, ge=1),
@@ -687,11 +694,7 @@ async def search_book_content(
     session: AsyncSession = Depends(get_session),
 ):
     """Home 'Content' tab: exact-phrase search over book content, returning
-    matching books (not raw chunks/pages), paginated for infinite scroll.
-
-    Separate from the in-chat keyword retrieval leg (`rag_keyword_top_k`) —
-    this is a browse/discovery search over the whole library and paginates
-    instead of capping results. See keyword-search-rework-plan.md Phase 3.
+    matching page content hits with snippets and page numbers, paginated for infinite scroll.
     """
     skip = (page - 1) * pageSize
     restrict_to_public = current_user is None or current_user.role not in (
@@ -700,14 +703,13 @@ async def search_book_content(
     )
 
     chunks_repo = ChunksRepository(session)
-    books, total = await chunks_repo.find_books_by_exact_phrase(
+    hits, total = await chunks_repo.search_content_chunks(
         q, skip=skip, limit=pageSize, restrict_to_public=restrict_to_public
     )
 
-    return PaginatedBooks(
-        books=[Book.model_validate(b) for b in books],
+    return PaginatedContentHits(
+        hits=[ContentSearchHit.model_validate(h) for h in hits],
         total=total,
-        total_ready=total,
         page=page,
         page_size=pageSize,
     )

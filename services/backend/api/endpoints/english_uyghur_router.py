@@ -1,18 +1,20 @@
 """
-English-Uyghur Dictionary API — read-only access to English-Uyghur dictionary entries.
+English-Uyghur Dictionary API — access to English-Uyghur dictionary entries, admin delete.
 """
 
 from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, func, distinct
+from sqlalchemy import select, func, distinct, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
 from app.db.models import EnglishUyghurDictionary
+from app.models.user import User
+from auth.dependencies import require_admin
 
 router = APIRouter()
 
@@ -96,3 +98,21 @@ async def list_english_uyghur_entries(
     stmt = stmt.offset(skip).limit(limit)
     res = await session.execute(stmt)
     return res.scalars().all()
+
+
+@router.delete("/english-uyghur-dictionary/{entry_id}", status_code=204)
+async def delete_english_uyghur_entry(
+    entry_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_admin),
+):
+    """Delete an English-Uyghur dictionary entry (Admin only)."""
+    result = await session.execute(
+        delete(EnglishUyghurDictionary)
+        .where(EnglishUyghurDictionary.id == entry_id)
+        .returning(EnglishUyghurDictionary.id)
+    )
+    if not result.fetchone():
+        raise HTTPException(status_code=404, detail="Entry not found")
+    await session.commit()
+    return None

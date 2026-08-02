@@ -111,6 +111,32 @@
   "home": {
     "searchOrChatPlaceholder": "Ask questions or search books, authors or topics...",
     "searchPlaceholder": "Search books, authors or topics...",
+    "placeholders": {
+      "ask": "Ask questions or search books, authors or topics...",
+      "books": "Search by book title, author, or category...",
+      "content": "Search for an exact phrase inside book content...",
+      "history": "Search historical terms, figures, or events...",
+      "dictionary": "Search words and definitions in Uyghur dictionary...",
+      "quran": "Search Quran verses, surahs, or translations...",
+      "proverbs": "Search Uyghur proverbs and sayings...",
+      "names": "Search Uyghur names and their meanings...",
+      "spellCheck": "Enter a word to check its spelling...",
+      "synonyms": "Search words and synonyms in Uyghur synonym dictionary...",
+      "enUg": "Enter an English or Uyghur word to translate..."
+    },
+    "noResults": {
+      "ask": "Sorry, no matching books found.",
+      "books": "Sorry, no books found.",
+      "content": "Sorry, no content found.",
+      "history": "Sorry, no historical terms found.",
+      "dictionary": "Sorry, no dictionary entries found.",
+      "quran": "Sorry, no Quran verses found.",
+      "proverbs": "Sorry, no proverbs or folk verses found.",
+      "names": "Sorry, no names found.",
+      "spellCheck": "Sorry, no spell-check results found.",
+      "synonyms": "Sorry, no synonym entries found.",
+      "enUg": "Sorry, no English-Uyghur entries found."
+    },
     "topCategories": "All Categories",
     "searchResults": "Search Results",
     "resultsFor": "Results for",
@@ -133,6 +159,7 @@
       "history": "History Terms",
       "proverbs": "Proverbs",
       "spellCheck": "Spell Check",
+      "synonyms": "Synonyms",
       "enUg": "EN↔UG",
       "contentPlaceholder": "Search for an exact phrase inside book content...",
       "proverbVolumePage": "Volume {{volume}}, page {{page}}"
@@ -263,6 +290,8 @@
     "fontSize": "Font Size",
     "editBook": "Edit Book",
     "editPage": "Edit Page",
+    "loadFullDocument": "Load Full Document",
+    "virtualScroll": "Virtual Scroll",
     "spellCheck": "Spell Check",
     "pageNumber": "Page Number",
     "next": "Next",
@@ -528,45 +557,66 @@
       "searchPlaceholder": "Search word...",
       "totalWords": "Total {{count}} words",
       "wordExists": "Word exists in words list.",
-      "wordNotFound": "Word not found in words list."
+      "wordNotFound": "Word not found in words list.",
+      "confirmDelete": "Are you sure you want to delete \"{{word}}\"?",
+      "deleteSuccess": "Word deleted.",
+      "deleteError": "Failed to delete word."
     },
     "dictionary": {
       "title": "Dictionary Management",
       "searchPlaceholder": "Search dictionary...",
       "totalWords": "Total {{count}} entries",
-      "wordNotFound": "Word not found in dictionary."
+      "wordNotFound": "Word not found in dictionary.",
+      "confirmDelete": "Are you sure you want to delete \"{{word}}\"?",
+      "deleteSuccess": "Entry deleted.",
+      "deleteError": "Failed to delete entry."
     },
     "synonyms": {
       "title": "Synonym Dictionary",
       "searchPlaceholder": "Search synonyms...",
       "totalWords": "Total {{count}} entries",
-      "wordNotFound": "Word not found in synonym dictionary."
+      "wordNotFound": "Word not found in synonym dictionary.",
+      "confirmDelete": "Are you sure you want to delete \"{{word}}\"?",
+      "deleteSuccess": "Entry deleted.",
+      "deleteError": "Failed to delete entry."
     },
     "historyDictionary": {
       "title": "History Dictionary",
       "searchPlaceholder": "Search history dictionary...",
       "totalEntries": "Total {{count}} entries",
       "entryNotFound": "No matching entries found.",
-      "transliteration": "Romanization"
+      "transliteration": "Romanization",
+      "confirmDelete": "Are you sure you want to delete \"{{word}}\"?",
+      "deleteSuccess": "Entry deleted.",
+      "deleteError": "Failed to delete entry."
     },
     "namesDictionary": {
       "title": "Person Names",
       "searchPlaceholder": "Search person names...",
       "totalEntries": "Total {{count}} names",
-      "entryNotFound": "No matching names found."
+      "entryNotFound": "No matching names found.",
+      "confirmDelete": "Are you sure you want to delete \"{{word}}\"?",
+      "deleteSuccess": "Entry deleted.",
+      "deleteError": "Failed to delete entry."
     },
     "englishUyghurDictionary": {
       "title": "English-Uyghur",
       "searchPlaceholder": "Search English words...",
       "totalEntries": "Total {{count}} entries",
-      "entryNotFound": "No matching entries found."
+      "entryNotFound": "No matching entries found.",
+      "confirmDelete": "Are you sure you want to delete \"{{word}}\"?",
+      "deleteSuccess": "Entry deleted.",
+      "deleteError": "Failed to delete entry."
     },
     "proverbs": {
       "title": "Proverbs",
       "searchPlaceholder": "Search proverbs...",
       "totalEntries": "Total {{count}} proverbs",
       "entryNotFound": "No matching proverbs found.",
-      "volumeAndPage": "Vol. {{volume}}, Page {{page}}"
+      "volumeAndPage": "Vol. {{volume}}, Page {{page}}",
+      "confirmDelete": "Are you sure you want to delete \"{{word}}\"?",
+      "deleteSuccess": "Proverb deleted.",
+      "deleteError": "Failed to delete proverb."
     }
   },
   "spellCheck": {

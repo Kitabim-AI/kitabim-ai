@@ -68,7 +68,7 @@ packages/backend-core/app/
 │   ├── prompts.py             # Base prompt templates
 │   └── providers.py           # LLM/storage provider protocols
 ├── db/
-│   ├── models.py               # SQLAlchemy ORM models (25 tables)
+│   ├── models.py               # SQLAlchemy ORM models (28 tables)
 │   ├── session.py               # Async engine/session factory, init/close hooks
 │   ├── seeds.py                   # Default system_configs seeding
 │   └── repositories/               # 17 repository modules, ~one per table, incl. graph_repository.py (Neo4j)
@@ -115,7 +115,10 @@ app/services/rag/
 ├── context.py                 # QueryContext dataclass — per-request state threaded through both handlers
 ├── answer_builder.py            # Shared instruction-building + generate_answer(_stream)()
 ├── query_rewriter.py              # Standalone pronoun-resolution helper
-├── retrieval.py                     # vector_search, embed_query, find_books_by_title_in_question
+├── retrieval.py                     # vector_search, embed_query, find_books_by_title_in_question,
+│                                        exact_phrase_chunk_search (keyword-only leg)
+├── phrase_intent.py                    # detect_phrase_intent() — classifies quoted/"Exact phrase" questions
+│                                          (keyword-search-rework-plan.md Phase 1)
 ├── keywords.py                        # Keyword lists used by fallback heuristics
 ├── llm_resources.py                     # Builds/caches the answer-generation LLM chain per model name
 ├── utils.py                               # normalize_uyghur, format_chat_history, empty-response text
@@ -141,10 +144,12 @@ app/services/chat/
 ├── answer_prompts.py          # build_answer_instructions() — a separate fork of answer_builder.py's citation prompt
 ├── answer_agent.py               # build_answer_agent() — tools-less ADK Agent for answer synthesis
 ├── retrieval_agent.py               # build_retrieval_agent() — reuses AGENT_SYSTEM_PROMPT + all 19 tools from rag/agent/
+├── exact_phrase.py                     # run_exact_phrase_retrieval() + page-hit formatting for the keyword-only leg
+│                                          (Phase 1 of keyword-search-rework-plan.md), driven by rag/phrase_intent.py
 └── orchestrator.py                     # ChatOrchestrator — the pipeline itself, see below
 ```
 
-`ChatOrchestrator` does **not** go through `HandlerRegistry` or `RAGService` — it runs its own two-agent pipeline (retrieval agent → grading → answer agent) directly on an ADK `Runner`, persists every turn to `conversations`/`conversation_messages` via `ConversationRepository`, and is what backs the frontend's conversation-history sidebar. The streaming chat endpoint (`services/backend/api/endpoints/chat_router.py`) routes a request here whenever the `use_adk_chat_v2` system config is `true` (seeded on) or the request carries a `conversationId`; otherwise it falls through to `RAGService`/`HandlerRegistry` above, which has no conversation persistence. It reuses the `rag/agent/` tool implementations, system prompt, and grading helpers, but has its own copy of the answer-synthesis citation prompt (`answer_prompts.py`) rather than sharing `rag/answer_builder.py`.
+`ChatOrchestrator` does **not** go through `HandlerRegistry` or `RAGService` — it runs its own two-agent pipeline (retrieval agent → grading → answer agent) directly on an ADK `Runner`, persists every turn to `conversations`/`conversation_messages` via `ConversationRepository`, and is what backs the frontend's conversation-history sidebar. The streaming chat endpoint (`services/backend/api/endpoints/chat_router.py`) routes a request here whenever the `use_adk_chat_v2` system config is `true` (seeded on) or the request carries a `conversationId`; otherwise it falls through to `RAGService`/`HandlerRegistry` above, which has no conversation persistence. It reuses the `rag/agent/` tool implementations, system prompt, and grading helpers, but has its own copy of the answer-synthesis citation prompt (`answer_prompts.py`) rather than sharing `rag/answer_builder.py`. Before any of that, `detect_phrase_intent()` (`rag/phrase_intent.py`) checks the question for a quoted phrase or the explicit "Exact phrase" UI flag; if it matches, the turn is answered by `chat/exact_phrase.py`'s keyword-only leg instead (no vector/graph fusion), with page-finding phrasing ("find pages with...") rendered as raw page hits rather than an LLM-synthesized answer.
 
 ---
 
@@ -212,15 +217,27 @@ services/worker/
 apps/frontend/src/
 ├── components/       # admin/ auth/ chat/ common/ graph/ layout/ library/ pages/ reader/ share/ spell-check/ ui/
 │                        chat/: AgentThinkingSteps, ChatInterface, ReferenceModal
+│                        library/: SearchTabBar + searchTabsConfig.ts drive the home search box's fixed, paginated
+│                                   tab bar (Ask/Books/Content/Dictionary/Quran/Names/History/Proverbs/Spell-check/
+│                                   Synonyms/English-Uyghur); per-tab result rendering lives in HomeSearchTabResults,
+│                                   LookupResultsList (dictionary/names/history/synonyms/en-ug), QuranResultsList,
+│                                   and SpellCheckResult
 │                        share/: ShareModal (whole-book share), ShareChatModal (single Q&A share — implemented,
 │                                 backed by a working `/api/share/qa` endpoint, but not currently rendered from
 │                                 any component; there is no "share this answer" entry point in the chat UI today)
-├── hooks/               # useAuth, useBooks, useBookActions, useChat, usePendingCorrections, useSpellCheck, useUyghurInput (7)
-├── services/              # authService, contactService, geminiService, pdfService, persistenceService, userService (6)
+├── hooks/               # useAuth, useBookActions, useBooks, useChat, useContentSearch, useHomeSearchTab,
+│                            useLookupSearch, usePendingCorrections, useSpellCheck, useSpellingCheck,
+│                            useUyghurInput (11)
+├── services/              # authService, contactService, geminiService, pdfService, persistenceService,
+│                             searchTabsService, userService (7)
 │                             geminiService.ts is legacy-named — despite the name, it calls the Kitabim backend
 │                             (/api/chat/*, /api/ai/ocr/), never Gemini directly; it owns chatWithBookStream()
 │                             (the SSE transport) and the conversation CRUD calls (getUserConversations,
 │                             getConversationMessages, deleteConversation, createConversation)
+│                             searchTabsService.ts is the client for the non-"Ask" home search tabs — thin wrappers
+│                             over the existing dictionary/names/history/proverbs/synonyms/english-uyghur/quran
+│                             search endpoints plus the new `/api/books/content-search` and
+│                             `/api/dictionary/check-spelling` endpoints
 ├── context/                 # React context providers
 ├── constants/                  # Static config
 ├── i18n/, locales/               # Frontend translations

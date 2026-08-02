@@ -7,9 +7,10 @@ interface QuranResultsListProps {
   items: QuranAyah[];
   isLoading: boolean;
   hasQuery: boolean;
+  noResultsTitleKey?: string;
 }
 
-export const QuranResultsList: React.FC<QuranResultsListProps> = ({ items, isLoading, hasQuery }) => {
+export const QuranResultsList: React.FC<QuranResultsListProps> = ({ items, isLoading, hasQuery, noResultsTitleKey }) => {
   const { t } = useI18n();
 
   if (isLoading && items.length === 0) {
@@ -33,21 +34,21 @@ export const QuranResultsList: React.FC<QuranResultsListProps> = ({ items, isLoa
   if (items.length === 0) {
     return (
       <div className="w-full py-20 text-center glass-panel flex flex-col items-center justify-center rounded-[32px]">
-        <p className="text-[#1a1a1a] dark:text-slate-100 font-normal text-lg sm:text-xl mb-2">{t('library.noResults.title')}</p>
-        <p className="text-[#94a3b8] font-bold text-sm max-w-sm">{t('library.noResults.message')}</p>
+        <p className="text-[#1a1a1a] dark:text-slate-100 font-bold text-lg sm:text-xl mb-2 uyghur-text">{t(noResultsTitleKey || 'library.noResults.title')}</p>
+        <p className="text-[#94a3b8] dark:text-slate-400 font-medium text-sm max-w-sm uyghur-text">{t('library.noResults.message')}</p>
       </div>
     );
   }
 
   return (
-    <div className="w-full max-w-3xl mx-auto flex flex-col gap-4">
+    <div className="w-full flex flex-col gap-4">
       {items.map((ayah) => (
         <div
           key={ayah.id}
           className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl rounded-2xl border border-[#0369a1]/10 dark:border-slate-800 px-5 py-4 shadow-md"
         >
           <div className="flex items-center justify-between mb-3" dir="rtl">
-            <span className="uyghur-text text-sm text-[#1a1a1a] dark:text-slate-100">{ayah.surahNameUg}</span>
+            <span className="uyghur-text text-lg text-[#1a1a1a] dark:text-slate-100">{ayah.surahNameUg}</span>
             <span className="px-3 py-1 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] rounded-full text-xs">
               {ayah.surah}:{ayah.ayah}
             </span>
@@ -55,7 +56,7 @@ export const QuranResultsList: React.FC<QuranResultsListProps> = ({ items, isLoa
           <p dir="rtl" className="arabic-text text-xl sm:text-2xl leading-loose text-[#1a1a1a] dark:text-slate-100 mb-3">
             {ayah.textAr}
           </p>
-          <p dir="rtl" className="uyghur-text text-sm sm:text-base text-slate-600 dark:text-slate-300">
+          <p dir="rtl" className="uyghur-text text-lg text-slate-600 dark:text-slate-300">
             {ayah.textUg}
           </p>
         </div>

@@ -315,3 +315,99 @@ def test_get_chunks_repository():
     session = AsyncMock()
     repo = get_chunks_repository(session)
     assert isinstance(repo, ChunksRepository)
+
+
+@pytest.mark.asyncio
+async def test_search_content_chunks_single_token():
+    session = AsyncMock()
+    repo = ChunksRepository(session)
+
+    mock_count_res = MagicMock()
+    mock_count_res.scalar_one.return_value = 5
+
+    mock_row = MagicMock()
+    mock_row.book_id = "b1"
+    mock_row.page_number = 10
+    mock_row.chunk_index = 0
+    mock_row.text = "test snippet"
+    mock_row.title = "Test Book"
+    mock_row.volume = None
+    mock_row.author = "Test Author"
+    mock_row.cover_url = None
+    mock_row.rank = 0.0
+
+    mock_hits_res = MagicMock()
+    mock_hits_res.fetchall.return_value = [mock_row]
+
+    session.execute.side_effect = [
+        MagicMock(),  # SET work_mem
+        MagicMock(),  # SET statement_timeout
+        mock_count_res,
+        mock_hits_res,
+    ]
+
+    hits, total = await repo.search_content_chunks("ياش", skip=0, limit=40)
+
+    assert total == 5
+    assert len(hits) == 1
+    assert hits[0]["book_title"] == "Test Book"
+    assert hits[0]["rank"] == 0.0
+
+    # Verify single-token SQL query omits ts_rank
+    hits_query_arg = str(session.execute.await_args_list[3].args[0])
+    assert "0.0 AS rank" in hits_query_arg
+    assert "ts_rank" not in hits_query_arg
+
+
+@pytest.mark.asyncio
+async def test_search_content_chunks_multi_token():
+    session = AsyncMock()
+    repo = ChunksRepository(session)
+
+    mock_count_res = MagicMock()
+    mock_count_res.scalar_one.return_value = 1
+
+    mock_row = MagicMock()
+    mock_row.book_id = "b1"
+    mock_row.page_number = 10
+    mock_row.chunk_index = 0
+    mock_row.text = "test snippet"
+    mock_row.title = "Test Book"
+    mock_row.volume = None
+    mock_row.author = "Test Author"
+    mock_row.cover_url = None
+    mock_row.rank = 0.85
+
+    mock_hits_res = MagicMock()
+    mock_hits_res.fetchall.return_value = [mock_row]
+
+    session.execute.side_effect = [
+        MagicMock(),  # SET work_mem
+        MagicMock(),  # SET statement_timeout
+        mock_count_res,
+        mock_hits_res,
+    ]
+
+    hits, total = await repo.search_content_chunks("ياش يىگىت", skip=0, limit=40)
+
+    assert total == 1
+    assert hits[0]["rank"] == 0.85
+
+    # Verify multi-token SQL query includes ts_rank
+    hits_query_arg = str(session.execute.await_args_list[3].args[0])
+    assert "ts_rank" in hits_query_arg
+
+
+@pytest.mark.asyncio
+async def test_search_content_chunks_handles_timeout():
+    session = AsyncMock()
+    repo = ChunksRepository(session)
+
+    session.execute.side_effect = Exception(
+        "canceling statement due to statement timeout"
+    )
+
+    hits, total = await repo.search_content_chunks("ياش", skip=0, limit=40)
+
+    assert hits == []
+    assert total == 0

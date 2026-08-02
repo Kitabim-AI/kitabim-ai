@@ -110,7 +110,8 @@ async def exact_phrase_chunk_search(
     )
 
     def key_of(c: dict) -> tuple:
-        return (c.get("book_id"), c.get("page_number"), c.get("chunk_index"))
+        page_val = c.get("page") if c.get("page") is not None else c.get("page_number")
+        return (c.get("book_id"), page_val, c.get("chunk_index"))
 
     common_keys = None
     docs: dict = {}
@@ -280,7 +281,12 @@ async def vector_search(
                 {
                     "text": chunk.get("text", ""),
                     "score": chunk.get("similarity", 0.0),
-                    "page": chunk.get("page_number"),
+                    "page": chunk.get("page_number")
+                    if chunk.get("page") is None
+                    else chunk.get("page"),
+                    "page_number": chunk.get("page_number")
+                    if chunk.get("page") is None
+                    else chunk.get("page"),
                     "title": chunk.get("title") or "Unknown",
                     "volume": chunk.get("volume"),
                     "author": chunk.get("author") or None,
@@ -374,6 +380,7 @@ async def vector_search(
                                 "text": mc["row"][3],
                                 "score": 0.8 + (0.05 * mc["match_count"]),
                                 "page": mc["row"][1],
+                                "page_number": mc["row"][1],
                                 "title": mc["row"][4] or "Unknown",
                                 "volume": mc["row"][5],
                                 "author": mc["row"][6] or None,
@@ -651,11 +658,17 @@ async def graph_entity_lookup(question: str, top_k: int = 10) -> List[dict]:
         if not isinstance(facts, list):
             continue
         for fact in facts:
+            page_val = (
+                fact.get("page")
+                if fact.get("page") is not None
+                else fact.get("page_number")
+            )
             results.append(
                 {
                     "text": fact["text"],
                     "score": entity_scores.get(entity_id, 0.9),
-                    "page": fact.get("page"),
+                    "page": page_val,
+                    "page_number": page_val,
                     "title": "Knowledge Graph",
                     "volume": None,
                     "author": None,

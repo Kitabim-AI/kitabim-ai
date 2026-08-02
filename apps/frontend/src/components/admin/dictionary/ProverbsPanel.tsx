@@ -6,11 +6,14 @@ import {
   RefreshCw,
   Save,
   Search,
+  Trash2,
   X
 } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useAppContext } from '../../../context/AppContext';
+import { useNotification } from '../../../context/NotificationContext';
 import { useI18n } from '../../../i18n/I18nContext';
-import { useIsEditor } from '../../../hooks/useAuth';
+import { useIsAdmin, useIsEditor } from '../../../hooks/useAuth';
 import { authFetch } from '../../../services/authService';
 import { UYGHUR_ALPHABET } from '../../../utils/uyghurAlphabet';
 
@@ -24,6 +27,9 @@ interface ProverbEntry {
 export const ProverbsPanel: React.FC = () => {
   const { t } = useI18n();
   const isEditor = useIsEditor();
+  const isAdmin = useIsAdmin();
+  const { setModal } = useAppContext();
+  const { addNotification } = useNotification();
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState<ProverbEntry[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -163,6 +169,33 @@ export const ProverbsPanel: React.FC = () => {
     }
   };
 
+  const handleDeleteEntry = (entry: ProverbEntry) => {
+    setModal({
+      isOpen: true,
+      title: t('common.delete'),
+      message: t('admin.proverbs.confirmDelete', { word: entry.text }),
+      type: 'confirm',
+      confirmText: t('common.delete'),
+      destructive: true,
+      onConfirm: async () => {
+        setModal((prev: any) => ({ ...prev, isLoading: true }));
+        try {
+          const resp = await authFetch(`/api/proverbs/${entry.id}`, { method: 'DELETE' });
+          if (!resp.ok) throw new Error('Failed to delete proverb');
+          setAllEntries(prev => prev.filter(e => e.id !== entry.id));
+          setSuggestions(prev => prev.filter(e => e.id !== entry.id));
+          fetchStats();
+          setModal((prev: any) => ({ ...prev, isOpen: false }));
+          addNotification(t('admin.proverbs.deleteSuccess'), 'success');
+        } catch (e) {
+          console.error('Failed to delete proverb', e);
+          setModal((prev: any) => ({ ...prev, isOpen: false }));
+          addNotification(t('admin.proverbs.deleteError'), 'error');
+        }
+      },
+    });
+  };
+
   // Infinite Scroll Observer
   useEffect(() => {
     if (!hasMore || isLoadingMore || searchQuery.trim()) return;
@@ -296,12 +329,12 @@ export const ProverbsPanel: React.FC = () => {
                                 rows={2}
                                 value={editForm.text}
                                 onChange={(e) => setEditForm(prev => ({ ...prev, text: e.target.value }))}
-                                className="w-full px-4 py-2.5 text-[16px] md:text-xl border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 outline-none uyghur-text resize-y font-normal"
+                                className="w-full px-4 py-2.5 text-sm sm:text-lg border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 outline-none uyghur-text resize-y font-normal"
                                 placeholder={t('admin.proverbs.searchPlaceholder')}
                               />
                             </div>
                             {isEditor && (entry.volume != null || entry.page_number != null) && (
-                              <p className="uyghur-text text-[11px] md:text-[12px] text-slate-400 dark:text-slate-500 font-bold opacity-80">
+                              <p className="uyghur-text text-sm sm:text-lg text-slate-400 dark:text-slate-500 font-bold opacity-80">
                                  {t('admin.proverbs.volumeAndPage', { volume: entry.volume ?? '-', page: entry.page_number ?? '-' })}
                               </p>
                             )}
@@ -309,12 +342,12 @@ export const ProverbsPanel: React.FC = () => {
                         ) : (
                           <div className="flex-1 min-w-0 pr-2">
                             <div className="flex items-center gap-3">
-                              <span className="uyghur-text text-[16px] md:text-xl font-normal text-slate-800 dark:text-slate-100 italic leading-relaxed">
+                              <span className="uyghur-text text-sm sm:text-lg font-normal text-slate-800 dark:text-slate-100 italic leading-relaxed">
                                  {entry.text}
                               </span>
                             </div>
                             {isEditor && (entry.volume != null || entry.page_number != null) && (
-                              <p className="uyghur-text text-[11px] md:text-[12px] text-slate-400 dark:text-slate-500 font-bold mt-1.5 opacity-80">
+                              <p className="uyghur-text text-sm sm:text-lg text-slate-400 dark:text-slate-500 font-bold mt-1.5 opacity-80">
                                  {t('admin.proverbs.volumeAndPage', { volume: entry.volume ?? '-', page: entry.page_number ?? '-' })}
                               </p>
                             )}
@@ -341,15 +374,26 @@ export const ProverbsPanel: React.FC = () => {
                               </button>
                             </div>
                           ) : (
-                            isEditor && (
-                              <button
-                                onClick={() => handleEditRow(entry)}
-                                className="p-2 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-xl transition-all"
-                                title={t('common.edit')}
-                              >
-                                <Edit2 size={18} />
-                              </button>
-                            )
+                            <>
+                              {isEditor && (
+                                <button
+                                  onClick={() => handleEditRow(entry)}
+                                  className="p-2 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-xl transition-all"
+                                  title={t('common.edit')}
+                                >
+                                  <Edit2 size={18} />
+                                </button>
+                              )}
+                              {isAdmin && (
+                                <button
+                                  onClick={() => handleDeleteEntry(entry)}
+                                  className="p-2 bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400 rounded-xl hover:bg-red-500 dark:hover:bg-red-600 hover:text-white transition-all"
+                                  title={t('common.delete')}
+                                >
+                                  <Trash2 size={18} />
+                                </button>
+                              )}
+                            </>
                           )}
                         </div>
                       </div>

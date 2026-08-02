@@ -6,14 +6,16 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
 from app.db.models import Dictionary
 from app.db.repositories.dictionary_repository import DictionaryRepository
+from app.models.user import User
+from auth.dependencies import require_admin
 
 router = APIRouter()
 
@@ -127,3 +129,19 @@ async def list_dictionary_entries(
     stmt = stmt.offset(skip).limit(limit)
     res = await session.execute(stmt)
     return res.scalars().all()
+
+
+@router.delete("/dictionary/{entry_id}", status_code=204)
+async def delete_dictionary_entry(
+    entry_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_admin),
+):
+    """Delete a dictionary entry (Admin only)."""
+    result = await session.execute(
+        delete(Dictionary).where(Dictionary.id == entry_id).returning(Dictionary.id)
+    )
+    if not result.fetchone():
+        raise HTTPException(status_code=404, detail="Dictionary entry not found")
+    await session.commit()
+    return None

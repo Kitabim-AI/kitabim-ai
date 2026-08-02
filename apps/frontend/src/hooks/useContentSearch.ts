@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Book } from '@shared/types';
-import { SearchTabsService } from '../services/searchTabsService';
+import { ContentSearchHit, SearchTabsService } from '../services/searchTabsService';
 
 interface UseContentSearchReturn {
-  books: Book[];
+  hits: ContentSearchHit[];
   total: number;
   isLoading: boolean;
   isLoadingMore: boolean;
@@ -14,7 +13,7 @@ interface UseContentSearchReturn {
 const MIN_QUERY_LENGTH = 2;
 
 export function useContentSearch(query: string, pageSize: number): UseContentSearchReturn {
-  const [books, setBooks] = useState<Book[]>([]);
+  const [hits, setHits] = useState<ContentSearchHit[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
@@ -24,7 +23,7 @@ export function useContentSearch(query: string, pageSize: number): UseContentSea
   useEffect(() => {
     const trimmed = query.trim();
     if (trimmed.length < MIN_QUERY_LENGTH) {
-      setBooks([]);
+      setHits([]);
       setTotal(0);
       setPage(1);
       setIsLoading(false);
@@ -36,8 +35,8 @@ export function useContentSearch(query: string, pageSize: number): UseContentSea
     const timer = setTimeout(async () => {
       const result = await SearchTabsService.searchBookContent(trimmed, 1, pageSize);
       if (requestIdRef.current === requestId) {
-        setBooks(result.books);
-        setTotal(result.total);
+        setHits(result.hits || []);
+        setTotal(result.total || 0);
         setPage(1);
         setIsLoading(false);
       }
@@ -53,16 +52,18 @@ export function useContentSearch(query: string, pageSize: number): UseContentSea
     setIsLoadingMore(true);
     const nextPage = page + 1;
     const result = await SearchTabsService.searchBookContent(trimmed, nextPage, pageSize);
-    setBooks((prev) => {
-      const existingIds = new Set(prev.map((b) => b.id));
-      return [...prev, ...result.books.filter((b) => !existingIds.has(b.id))];
+    setHits((prev) => {
+      const existingIds = new Set(prev.map((h) => h.id));
+      const newHits = (result.hits || []).filter((h) => !existingIds.has(h.id));
+      return [...prev, ...newHits];
     });
-    setTotal(result.total);
+    setTotal(result.total || 0);
     setPage(nextPage);
     setIsLoadingMore(false);
   }, [query, page, pageSize, isLoadingMore]);
 
-  const hasMore = books.length < total;
+  const hasMore = hits.length < total;
 
-  return { books, total, isLoading, isLoadingMore, hasMore, loadMore };
+  return { hits, total, isLoading, isLoadingMore, hasMore, loadMore };
 }
+

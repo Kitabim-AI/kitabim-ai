@@ -8,9 +8,13 @@ import {
   Loader2,
   RefreshCw,
   Search,
+  Trash2,
   X,
 } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useAppContext } from '../../../context/AppContext';
+import { useNotification } from '../../../context/NotificationContext';
+import { useIsAdmin } from '../../../hooks/useAuth';
 import { useI18n } from '../../../i18n/I18nContext';
 import { authFetch } from '../../../services/authService';
 
@@ -30,6 +34,9 @@ const ENGLISH_ALPHABET = [
 
 export const EnglishUyghurPanel: React.FC = () => {
   const { t } = useI18n();
+  const isAdmin = useIsAdmin();
+  const { setModal } = useAppContext();
+  const { addNotification } = useNotification();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState<EnglishUyghurEntry[]>([]);
@@ -144,6 +151,33 @@ export const EnglishUyghurPanel: React.FC = () => {
 
   const activeEntries = searchQuery.trim() ? suggestions : allEntries;
 
+  const handleDeleteEntry = (entry: EnglishUyghurEntry) => {
+    setModal({
+      isOpen: true,
+      title: t('common.delete'),
+      message: t('admin.englishUyghurDictionary.confirmDelete', { word: entry.english }),
+      type: 'confirm',
+      confirmText: t('common.delete'),
+      destructive: true,
+      onConfirm: async () => {
+        setModal((prev: any) => ({ ...prev, isLoading: true }));
+        try {
+          const resp = await authFetch(`/api/english-uyghur-dictionary/${entry.id}`, { method: 'DELETE' });
+          if (!resp.ok) throw new Error('Failed to delete entry');
+          setAllEntries(prev => prev.filter(e => e.id !== entry.id));
+          setSuggestions(prev => prev.filter(e => e.id !== entry.id));
+          fetchStats();
+          setModal((prev: any) => ({ ...prev, isOpen: false }));
+          addNotification(t('admin.englishUyghurDictionary.deleteSuccess'), 'success');
+        } catch (e) {
+          console.error('Failed to delete English-Uyghur entry', e);
+          setModal((prev: any) => ({ ...prev, isOpen: false }));
+          addNotification(t('admin.englishUyghurDictionary.deleteError'), 'error');
+        }
+      },
+    });
+  };
+
   return (
     <div className="space-y-6 md:space-y-8 animate-fade-in pb-20" dir="rtl">
       {/* Search + Stats row */}
@@ -250,18 +284,27 @@ export const EnglishUyghurPanel: React.FC = () => {
                 {activeEntries.map((entry) => (
                   <div
                     key={entry.id}
-                    className="flex items-start justify-between px-4 md:px-6 py-4 md:py-5 rounded-2xl transition-all group hover:bg-slate-50/50 dark:hover:bg-slate-800/30"
+                    className="flex items-start justify-between gap-3 px-4 md:px-6 py-4 md:py-5 rounded-2xl transition-all group hover:bg-slate-50/50 dark:hover:bg-slate-800/30"
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-baseline gap-2 md:gap-3">
-                        <span className="text-[16px] md:text-xl font-bold text-slate-800 dark:text-slate-100">
+                        <span className="text-sm sm:text-lg font-bold text-slate-800 dark:text-slate-100">
                           {entry.english}
                         </span>
                       </div>
-                      <p className="uyghur-text text-[13px] md:text-[14px] text-slate-500 dark:text-slate-400 font-normal leading-relaxed mt-1.5 whitespace-pre-wrap" dir="rtl" lang="ug">
+                      <p className="uyghur-text text-sm sm:text-lg text-slate-500 dark:text-slate-400 font-normal leading-relaxed mt-1.5 whitespace-pre-wrap" dir="rtl" lang="ug">
                         {entry.uyghur}
                       </p>
                     </div>
+                    {isAdmin && (
+                      <button
+                        onClick={() => handleDeleteEntry(entry)}
+                        className="p-2 shrink-0 bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400 rounded-xl hover:bg-red-500 dark:hover:bg-red-600 hover:text-white transition-all"
+                        title={t('common.delete')}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>

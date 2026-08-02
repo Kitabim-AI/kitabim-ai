@@ -23,6 +23,7 @@ async def run_exact_phrase_retrieval(
     book_ids: Optional[List[str]],
     categories: Optional[List[str]],
     limit: int,
+    is_global: bool = True,
 ) -> tuple[List[dict], dict]:
     """Run the keyword-only exact-phrase leg and package the hits as a
     `search_chunks`-shaped observation, so the existing grading/rerank/
@@ -39,10 +40,23 @@ async def run_exact_phrase_retrieval(
         categories=categories,
         limit=limit,
     )
+    if not hits and book_ids is not None and is_global:
+        hits = await exact_phrase_chunk_search(
+            chunks_repo,
+            phrase_intent.phrases,
+            book_ids=None,
+            categories=categories,
+            limit=limit,
+        )
     chunks = [
         {
             "book_id": h.get("book_id"),
-            "page_number": h.get("page_number"),
+            "page_number": h.get("page_number")
+            if h.get("page_number") is not None
+            else h.get("page"),
+            "page": h.get("page")
+            if h.get("page") is not None
+            else h.get("page_number"),
             "text": h.get("text", ""),
             "title": h.get("title") or "Unknown",
             "volume": h.get("volume"),
