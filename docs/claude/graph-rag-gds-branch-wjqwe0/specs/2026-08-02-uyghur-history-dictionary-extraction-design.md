@@ -18,7 +18,7 @@ This design introduces an on-demand, semi-automated extraction and enrichment pi
    - **Events** (`ۋەقە-ھادىسىلەر`)
    - **Dynasties & Regimes** (`خانلىقلار`)
    - **Concepts & Places** (`ئاتالغۇ-جاي-ئورۇنلار`)
-3. Candidates are filtered for historical significance (default $\ge 5/10$).
+3. Candidates are filtered against a 4-tier historical significance rubric (default threshold $\ge 5/10$).
 4. Duplicate entries found across multiple books or existing records in `history_dictionary` are automatically merged using **LLM Incremental Enrichment**:
    - Gemini synthesizes an updated definition with **Inline Footnote Citations** (e.g. `[1]`, `[2]`) pointing to exact books and pages, appending new source metadata (`sources` JSONB array).
 5. Candidates & Enriched updates are written to a `history_dictionary_staging` table (marked with `is_ai_generated = true` and `entry_type = 'new'` or `'enrichment'`) for admin review, editing, and single/bulk approval in the Admin Panel before going live.
@@ -37,7 +37,9 @@ flowchart TD
     
     ARQWorker -->|Batch Pages + 2-Page Window| GeminiClient["Gemini 3.6 Flash API\n(response_schema)"]
     
-    GeminiClient -->|Candidate Entities| DeduplicationEngine["Deduplication & LLM Synthesis Engine"]
+    GeminiClient -->|Candidate Entities + Significance Rubric| SignificanceFilter["Significance Filter\n(score >= min_significance)"]
+    SignificanceFilter -->|Passes Threshold| DeduplicationEngine["Deduplication & LLM Synthesis Engine"]
+    
     DeduplicationEngine -->|Trigram Similarity Match| DBCheck{Existing Term Found?}
     
     DBCheck -->|No Match| NewStaging["Create New Candidate\n(entry_type = 'new')"]
@@ -81,6 +83,7 @@ CREATE TABLE IF NOT EXISTS public.history_dictionary_staging (
     original_definition    TEXT, -- Stashed existing definition for side-by-side diff
     category               VARCHAR(30) NOT NULL DEFAULT 'general',
     significance_score     INTEGER NOT NULL DEFAULT 5,
+    significance_reason    TEXT, -- LLM rationale for significance rating
     is_ai_generated        BOOLEAN NOT NULL DEFAULT TRUE,
     entry_type             VARCHAR(20) NOT NULL DEFAULT 'new', -- 'new' or 'enrichment'
     letter_group           VARCHAR(10) NOT NULL,
@@ -117,38 +120,40 @@ CREATE INDEX IF NOT EXISTS idx_history_staging_entry_type ON public.history_dict
 ]
 ```
 
-### 3.4 Definition Text with Inline Citations
-Definitions incorporate inline footnote tags matching the `sources` array IDs (e.g. `[1]`, `[2]`):
-```text
-سۇلتان سۇتۇق بۇغراخان (955-يىلى ۋاپات بولغان) — ئوتتۇرا ئاسىيادىكى قاراخانىيلار خاندانلىقىنىڭ خاقانى [1]. 
-
-ئۇ 943-يىلى ئىسلام دىنىنى خانلىقنىڭ دۆلەت دىنى قىلىپ بەلگىلىگەن [2].
-```
-
 ---
 
-## 4. Backend Extraction & Incremental Enrichment Pipeline
+## 4. Historical Significance Evaluation & Extraction Pipeline
 
-### 4.1 System Configuration Keys (`system_config`)
-The pipeline reads the following dynamic settings from `system_config`:
+### 4.1 Four-Tier Historical Significance Rubric
+To guarantee that extracted records are historically significant and not incidental mentions (e.g. a unnamed messenger or single-phrase comment), Gemini evaluates candidates against a strict rubric:
+
+| Score Range | Significance Level | Evaluation Criteria | Action |
+| :--- | :--- | :--- | :--- |
+| **9 – 10** | **Central Historical Entity** | Major rulers, kings/sultans, pivotal wars/battles, famous authors, central dynasties (e.g. *Sultan Sutuk Bughra Khan*, *Kutadgu Bilig*). | ✅ Automatically Extracted |
+| **7 – 8** | **High Significance** | Key generals, regional rulers, major historical cities/fortresses, treaties, key cultural/religious movements. | ✅ Automatically Extracted |
+| **5 – 6** | **Standard Significance** | Verifiable secondary historical figures or localized events with documented dates and biographical contributions. | ✅ Extracted (Subject to `min_significance` config) |
+| **1 – 4** | **Incidental / Minor** | Unnamed messengers, single-sentence mentions, generic titles, minor characters without historical impact. | ❌ Automatically Filtered Out |
+
+Gemini outputs a `significance_score` (1–10) and a `significance_reason` string explaining the score.
+
+### 4.2 System Configuration Keys (`system_config`)
 - `history_extraction_model`: Default `'gemini-2.5-flash'` (or `'gemini-1.5-flash'`).
-- `history_extraction_min_significance`: Default `'5'`.
+- `history_extraction_min_significance`: Default `'5'` (Entities with score $< 5$ are automatically dropped).
 - `history_extraction_batch_pages`: Default `'15'`.
 
-### 4.2 Split-Page Handling & LLM Incremental Enrichment
+### 4.3 Split-Page Handling & LLM Incremental Enrichment
 1. **Continuous Batching with Overlap**:
    - Reads pages in 15-page blocks with a 2-page sliding overlap window to handle cross-page split narratives.
 2. **Incremental Enrichment Logic**:
-   - When a term candidate is extracted, the service checks both `history_dictionary_staging` and published `history_dictionary` using normalized trigram similarity (`similarity > 0.85`).
+   - When a term candidate is extracted and passes `significance_score >= min_significance`, the service checks both `history_dictionary_staging` and published `history_dictionary` using normalized trigram similarity (`similarity > 0.85`).
    - If an existing record is matched:
-     - The service prompts Gemini Flash with the existing definition + the newly discovered facts from the new book page chunks.
-     - Gemini generates a synthesized definition with inline citations (`[1]`, `[2]`) corresponding to each source book.
-     - Creates/updates an entry in `history_dictionary_staging` with `entry_type = 'enrichment'`, preserving `existing_dictionary_id` and storing `original_definition` for admin diff comparison.
+     - Gemini synthesizes an enriched definition with inline citations (`[1]`, `[2]`) corresponding to each source book.
+     - Creates/updates an entry in `history_dictionary_staging` with `entry_type = 'enrichment'`, preserving `existing_dictionary_id` and storing `original_definition`.
 
-### 4.3 Admin API Routes (`services/backend/app/routes/admin/history_dictionary.py`)
+### 4.4 Admin API Routes (`services/backend/app/routes/admin/history_dictionary.py`)
 - `POST /api/v1/admin/books/{book_id}/extract-history`: Enqueue ARQ task.
 - `GET /api/v1/admin/history-dictionary/staging`: List pending candidates with filters (`category`, `entry_type`, `is_ai_generated`, `significance`).
-- `POST /api/v1/admin/history-dictionary/staging/{id}/approve`: Apply candidate. For `entry_type = 'enrichment'`, updates the existing `history_dictionary` row with the enriched definition, merged sources, and sets `is_ai_generated = true`.
+- `POST /api/v1/admin/history-dictionary/staging/{id}/approve`: Apply candidate.
 - `POST /api/v1/admin/history-dictionary/staging/bulk-approve`: Approve multiple selected IDs.
 - `DELETE /api/v1/admin/history-dictionary/staging/{id}`: Reject staging item.
 
@@ -158,33 +163,29 @@ The pipeline reads the following dynamic settings from `system_config`:
 
 ### 5.1 Book Catalog Action
 - Button Label: **"تارىخىي ئاتالغۇلارنى تېپىش"**
-- Opens confirmation modal showing target book title, dynamic `system_config` model name, and significance slider.
+- Modal shows book details, dynamic `system_config` model name, and a **Significance Threshold Slider** (default: 5).
 
 ### 5.2 Admin Staging Queue (`HistoryDictionaryPanel.tsx`)
 - **Location**: `apps/frontend/src/components/admin/dictionary/HistoryDictionaryPanel.tsx`
 - **Tab 1 (Staging Queue)**:
-  - Table Columns: Term (تارىخىي ئاتالغۇ), Transliteration/Dates, Category Badge, Type Badge (`🆕 New` vs `✨ Enrichment`), Significance Badge (1–10), `🤖 AI Extraction` Badge, Enriched Definition (with inline footnotes `[1]`, `[2]`), Sources, Actions.
-  - **Diff Modal**: For `✨ Enrichment` candidates, clicking "View Diff (تەققىقلاش)" displays a side-by-side text diff of the original definition vs. the proposed enriched definition.
+  - Table Columns: Term, Transliteration/Dates, Category Badge, Type Badge (`🆕 New` vs `✨ Enrichment`), **Significance Score Badge (with hover tooltip displaying `significance_reason`)**, `🤖 AI Extraction` Badge, Enriched Definition (with inline footnotes `[1]`, `[2]`), Sources, Actions.
   - Actions: **Approve (تەستىقلاش)**, **Edit & Approve (تەھرىرلەپ تەستىقلاش)**, **Reject (رەت قىلىش)**.
   - Bulk approval support.
-- **Tab 2 (Published Terms)**: Search and edit live entries in `history_dictionary`, displaying `is_ai_generated` badges and full source citations.
+- **Tab 2 (Published Terms)**: Search and edit live entries in `history_dictionary`.
 
 ### 5.3 Public Search View with Interactive Footnotes
-- When a user views a history term in Home/Dictionary search:
-  - Inline footnote tags `[1]`, `[2]` in the definition text are interactive clickable badges.
-  - Clicking `[1]` scrolls down to Source #1 (*ئۇيغۇر ئومۇمىي تارىخى, Vol. 2, p. 45*) and highlights the **"بەتنى ئوقۇش / Read Page"** button to jump directly into the reader at that exact book page!
+- Footnotes `[1]`, `[2]` in definition text are clickable badges that jump to the source citation card and highlight the **"بەتنى ئوقۇش / Read Page"** button.
 
 ---
 
 ## 6. Verification Plan
 
 ### Automated Verification
-1. Migration test: Verify `history_dictionary_staging` schema includes `existing_dictionary_id`, `entry_type`, and `original_definition`.
-2. Backend enrichment test: Unit test for `history_extraction_service.py` verifying that extracting new facts for an existing term creates an `enrichment` candidate with inline citations `[1]`, `[2]` and combined sources.
-3. Approval test: Test that approving an enrichment candidate updates the corresponding live `history_dictionary` row.
+1. Migration test: Verify `history_dictionary_staging` schema includes `significance_reason`, `existing_dictionary_id`, `entry_type`, and `original_definition`.
+2. Significance filtering test: Unit test verifying that candidates with score $< min\_significance$ are dropped automatically.
+3. Backend enrichment test: Unit test verifying that extracting new facts for an existing term creates an `enrichment` candidate with inline citations `[1]`, `[2]` and combined sources.
 
 ### Manual Verification
-1. Run **"تارىخىي ئاتالغۇلارنى تېپىش"** on Book 1. Approve term X.
-2. Run **"تارىخىي ئاتالغۇلارنى تېپىش"** on Book 2 (which contains additional facts about term X).
-3. Verify term X appears in Staging Queue marked as `✨ Enrichment Candidate` with inline citation `[2]`. Open Diff view to inspect added facts and new citations.
-4. Approve the enrichment; verify in search results that clicking footnote `[2]` points to Book 2 and opens the reader to the exact target page.
+1. Run **"تارىخىي ئاتالغۇلارنى تېپىش"** on Book 1 with threshold set to 5.
+2. Inspect Staging Queue: verify that minor incidental mentions are excluded, and each candidate has a clear significance score (e.g. 8/10) and explanation tooltip.
+3. Approve candidates and verify public search functionality.
