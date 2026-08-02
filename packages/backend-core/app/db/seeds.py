@@ -149,6 +149,11 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Timeout threshold in hours after which a pending/running batch embedding job is marked stale and retried.",
         },
         {
+            "key": "history_extraction_model",
+            "value": "gemini-2.5-flash",
+            "description": "Gemini model used for structured Uyghur history dictionary term extraction and factual synthesis.",
+        },
+        {
             "key": "gemini_batch_embedding_max_chunks_per_job",
             "value": "100",
             "description": "Maximum number of chunks packaged into a single Gemini Batch API embedding submission. Sized for the Tier 1 batch enqueued-tokens budget (500K) assuming several concurrent jobs — raise if the Gemini API key is upgraded to a higher tier.",
