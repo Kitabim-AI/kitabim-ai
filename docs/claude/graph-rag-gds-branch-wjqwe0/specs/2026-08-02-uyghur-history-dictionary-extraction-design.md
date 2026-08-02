@@ -20,7 +20,7 @@ This design introduces an on-demand, semi-automated extraction pipeline:
    - **Concepts & Places** (`ئاتالغۇ-جاي-ئورۇنلار`)
 3. Candidates are filtered for historical significance (default $\ge 5/10$).
 4. Duplicate entries found across multiple books are automatically synthesized using LLM text consolidation and assigned multi-book source citations (`sources` JSONB array).
-5. Candidates are written to a `history_dictionary_staging` table for admin review, editing, and single/bulk approval in the Admin Panel before going live.
+5. Candidates are written to a `history_dictionary_staging` table (marked with `is_ai_generated = true`) for admin review, editing, and single/bulk approval in the Admin Panel before going live into `history_dictionary`.
 
 ---
 
@@ -36,7 +36,7 @@ flowchart TD
     
     ARQWorker -->|Batch Pages + 2-Page Window| GeminiClient["Gemini 3.6 Flash API\n(response_schema)"]
     
-    GeminiClient -->|Candidate Entities| DeduplicationEngine["Deduplication & LLM Synthesis Engine"]
+    GeminiClient -->|Candidate Entities (is_ai_generated=true)| DeduplicationEngine["Deduplication & LLM Synthesis Engine"]
     DeduplicationEngine -->|Normalized Similarity Check| HistoryStaging[("history_dictionary_staging")]
     
     DeduplicationEngine -->|Existing Duplicate Found| LLMSynthesizer["LLM Multi-Book Synthesizer"]
@@ -56,9 +56,11 @@ Add the following columns to `public.history_dictionary`:
 ALTER TABLE public.history_dictionary
     ADD COLUMN IF NOT EXISTS category VARCHAR(30) DEFAULT 'general',
     ADD COLUMN IF NOT EXISTS significance_score INTEGER DEFAULT 5,
+    ADD COLUMN IF NOT EXISTS is_ai_generated BOOLEAN NOT NULL DEFAULT FALSE,
     ADD COLUMN IF NOT EXISTS sources JSONB DEFAULT '[]'::jsonb;
 
 CREATE INDEX IF NOT EXISTS idx_history_dictionary_category ON public.history_dictionary(category);
+CREATE INDEX IF NOT EXISTS idx_history_dictionary_ai_gen ON public.history_dictionary(is_ai_generated);
 ```
 
 ### 3.2 Migration: Create `public.history_dictionary_staging`
@@ -71,6 +73,7 @@ CREATE TABLE IF NOT EXISTS public.history_dictionary_staging (
     definition         TEXT NOT NULL,
     category           VARCHAR(30) NOT NULL DEFAULT 'general',
     significance_score INTEGER NOT NULL DEFAULT 5,
+    is_ai_generated    BOOLEAN NOT NULL DEFAULT TRUE,
     letter_group       VARCHAR(10) NOT NULL,
     sources            JSONB NOT NULL DEFAULT '[]'::jsonb,
     status             VARCHAR(20) NOT NULL DEFAULT 'pending',
@@ -100,11 +103,11 @@ The pipeline reads the following dynamic settings from `system_config`:
 2. **Page Range Citations**:
    - Structured JSON schema returns `pages: number[]` for multi-page entities.
 3. **Cross-Book Synthesis**:
-   - When a candidate matches an existing term in `history_dictionary_staging` or `history_dictionary` (`trigram similarity > 0.85`), the synthesizer sends both definitions to Gemini to construct a single unified biography/event text, appending the new book's citation to `sources`.
+   - When a candidate matches an existing term in `history_dictionary_staging` or `history_dictionary` (`trigram similarity > 0.85`), the synthesizer sends both definitions to Gemini to construct a single unified biography/event text, appending the new book's citation to `sources`. `is_ai_generated` remains `TRUE`.
 
 ### 4.3 Admin API Routes (`services/backend/app/routes/admin/history_dictionary.py`)
 - `POST /api/v1/admin/books/{book_id}/extract-history`: Enqueue ARQ task.
-- `GET /api/v1/admin/history-dictionary/staging`: List pending candidates with pagination, category, and significance filters.
+- `GET /api/v1/admin/history-dictionary/staging`: List pending candidates with pagination, category, `is_ai_generated`, and significance filters.
 - `POST /api/v1/admin/history-dictionary/staging/{id}/approve`: Move candidate from staging to `history_dictionary`.
 - `POST /api/v1/admin/history-dictionary/staging/bulk-approve`: Approve multiple selected IDs.
 - `DELETE /api/v1/admin/history-dictionary/staging/{id}`: Reject staging item.
@@ -120,21 +123,21 @@ The pipeline reads the following dynamic settings from `system_config`:
 ### 5.2 Admin Staging Queue (`HistoryDictionaryPanel.tsx`)
 - **Location**: `apps/frontend/src/components/admin/dictionary/HistoryDictionaryPanel.tsx`
 - **Tab 1 (Staging Queue)**:
-  - Table Columns: Term (تارىخىي ئاتالغۇ), Transliteration/Dates, Category Badge, Significance Badge (1–10), Definition, Sources (`Book Title, p. 45–46`), Actions.
+  - Table Columns: Term (تارىخىي ئاتالغۇ), Transliteration/Dates, Category Badge, Significance Badge (1–10), **AI Badge (`🤖 AI Extraction`)**, Definition, Sources (`Book Title, p. 45–46`), Actions.
   - Actions: **Approve (تەستىقلاش)**, **Edit & Approve (تەھرىرلەپ تەستىقلاش)**, **Reject (رەت قىلىش)**.
   - Bulk approval support.
-- **Tab 2 (Published Terms)**: Search and edit live entries in `history_dictionary`.
+- **Tab 2 (Published Terms)**: Search and edit live entries in `history_dictionary`, with an `is_ai_generated` filter badge and column.
 
 ---
 
 ## 6. Verification Plan
 
 ### Automated Verification
-1. Migration test: Apply migrations and verify table structures in PostgreSQL.
-2. Backend core test: Unit tests for `history_extraction_service.py` verifying JSON prompt parsing, split-page windowing, and similarity deduplication logic.
+1. Migration test: Apply migrations and verify `is_ai_generated` column exists in both tables.
+2. Backend core test: Unit tests for `history_extraction_service.py` verifying JSON prompt parsing, `is_ai_generated=true` flag set, split-page windowing, and similarity deduplication logic.
 3. API route test: Test FastAPI admin routes for extraction enqueue, staging list, approval, and rejection.
 
 ### Manual Verification
 1. Trigger **"تارىخىي ئاتالغۇلارنى تېپىش"** on a test history book in the Admin Panel.
-2. Verify candidate terms appear in the Staging Queue with correct categories, scores, and sources.
-3. Edit and approve a candidate term; verify it moves to `history_dictionary` and appears in public History Dictionary search results.
+2. Verify candidate terms appear in the Staging Queue marked with `🤖 AI Extraction`.
+3. Edit and approve a candidate term; verify it moves to `history_dictionary` with `is_ai_generated = true` preserved and appears in public History Dictionary search results.
