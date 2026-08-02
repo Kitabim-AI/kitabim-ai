@@ -1,5 +1,5 @@
 import { Book } from '@shared/types';
-import { BookOpen, BookOpenCheck, Cuboid, FileText, Image, Loader2, Network, RotateCcw, ScanText, Scissors, Trash2 } from 'lucide-react';
+import { BookOpen, BookOpenCheck, Cuboid, FileText, Image, Loader2, Network, RotateCcw, ScanText, Scissors, ScrollText, Trash2 } from 'lucide-react';
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { REPROCESS_STEP } from '../../constants/milestones';
@@ -149,6 +149,30 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
           >
             {reprocessingStep === REPROCESS_STEP.SUMMARY ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
             <span className="flex-1 text-right">{t('admin.table.reprocess.summary') || 'قىسقىچە مەزمۇنىنى قايتا ھاسىللاش'}</span>
+          </button>
+        )}
+
+        {isAdmin && (
+          <button
+            onClick={async () => {
+              try {
+                const res = await fetch(`/api/v1/admin/books/${book.id}/extract-history`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ min_significance: 5 })
+                });
+                if (res.ok) {
+                  alert(t('admin.historyExtractionStarted') || 'تارىخىي ئاتالغۇلارنى تېپىش ۋەزىپىسى باشلاندى.');
+                }
+              } catch (e) {
+                console.error(e);
+              }
+              close();
+            }}
+            className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 rounded-xl transition-all active:scale-[0.98]"
+          >
+            <ScrollText size={16} />
+            <span className="flex-1 text-right">{t('admin.table.extractHistory') || 'تارىخىي ئاتالغۇلارنى تېپىش'}</span>
           </button>
         )}
  

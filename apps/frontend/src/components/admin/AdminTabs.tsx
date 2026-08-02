@@ -1,8 +1,5 @@
-/**
- * Admin Tabs - Tabbed interface for admin panels
- */
-
-import { BarChart3, Mail, MessageSquare, Settings, Sparkles, TableOfContents, Users } from 'lucide-react';
+import { HistoryStagingQueuePanel } from './dictionary/HistoryStagingQueuePanel';
+import { BarChart3, History, Mail, MessageSquare, Settings, Sparkles, TableOfContents, Users } from 'lucide-react';
 import React from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth, useIsAdmin, useIsEditor } from '../../hooks/useAuth';
@@ -18,7 +15,7 @@ interface AdminTabsProps {
   bookManagementPanel: React.ReactNode;
 }
 
-type TabId = 'books' | 'stats' | 'users' | 'contacts' | 'config' | 'rules' | 'questions';
+type TabId = 'books' | 'stats' | 'users' | 'contacts' | 'config' | 'rules' | 'questions' | 'history-staging';
 
 interface Tab {
   id: TabId;
@@ -49,6 +46,7 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
 
   const tabs: Tab[] = [
     { id: 'books', label: t('admin.booksLabel'), icon: <TableOfContents size={18} /> },
+    { id: 'history-staging', label: t('admin.historyStagingLabel') || 'تارىخىي ئاتالغۇلار باھالاش', icon: <History size={18} />, adminOnly: true },
     { id: 'users', label: t('admin.usersLabel'), icon: <Users size={18} />, adminOnly: true },
     { id: 'questions', label: t('admin.questionsLabel'), icon: <MessageSquare size={18} />, adminOnly: true },
     { id: 'rules', label: t('admin.rulesLabel') || 'Auto-Correction', icon: <Sparkles size={18} />, adminOnly: false },
@@ -67,7 +65,7 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
           {visibleTabs.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => setActiveTab(tab.id as any)}
               className={`
                 flex items-center gap-2 md:gap-2.5 px-4 sm:px-5 md:px-6 py-2.5 md:py-3 transition-all duration-200
                 text-[13px] md:text-[14px] whitespace-nowrap rounded-t-xl font-normal
@@ -92,6 +90,7 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
       {/* Tab Content */}
       <div className="pt-6 md:pt-8">
         {activeTab === 'books' && bookManagementPanel}
+        {activeTab === 'history-staging' && isAdmin && <HistoryStagingQueuePanel />}
         {activeTab === 'users' && isAdmin && <UserManagementPanel />}
         {activeTab === 'rules' && <AutoCorrectRulesPanel />}
         {activeTab === 'questions' && isAdmin && <AdminQuestions />}
