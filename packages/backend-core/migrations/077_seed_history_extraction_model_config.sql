@@ -2,7 +2,7 @@
 --
 -- Inserts the default history_extraction_model config row if it does not exist.
 
-INSERT INTO system_config (key, value, description, updated_at)
+INSERT INTO system_configs (key, value, description, updated_at)
 VALUES (
     'history_extraction_model',
     'gemini-2.5-flash',
