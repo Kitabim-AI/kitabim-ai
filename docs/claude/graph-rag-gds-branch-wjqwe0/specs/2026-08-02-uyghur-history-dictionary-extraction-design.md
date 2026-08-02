@@ -21,7 +21,7 @@ This design introduces an on-demand, semi-automated extraction and enrichment pi
 3. Candidates are filtered against a 4-tier historical significance rubric (default threshold $\ge 5/10$, configured via `history_extraction_min_significance`).
 4. Duplicate entries found across multiple books or existing records in `history_dictionary` are automatically merged using **LLM Incremental Enrichment**:
    - Gemini synthesizes an updated definition with **Inline Footnote Citations** (e.g. `[1]`, `[2]`) pointing to exact books and pages, appending new source metadata (`sources` JSONB array).
-5. Candidates & Enriched updates are written to a `history_dictionary_staging` table (marked with `is_ai_generated = true` and `entry_type = 'new'` or `'enrichment'`) for admin review, editing, and single/bulk approval in the Admin Panel before going live.
+5. **Strict Admin Re-Review Gate**: Any modification or enrichment proposed for an existing published history record is written as a pending candidate (`entry_type = 'enrichment'`) to `history_dictionary_staging`. The live public record remains unchanged until an Admin reviews the proposed diff and explicitly approves it.
 
 ---
 
@@ -42,16 +42,16 @@ flowchart TD
     
     DeduplicationEngine -->|Trigram Similarity Match| DBCheck{Existing Term Found?}
     
-    DBCheck -->|No Match| NewStaging["Create New Candidate\n(entry_type = 'new')"]
+    DBCheck -->|No Match| NewStaging["Create New Candidate\n(entry_type = 'new', status = 'pending')"]
     DBCheck -->|Match Found in Live/Staging| EnrichmentSynthesizer["LLM Incremental Enrichment\n(Merge existing + new facts + inline citations)"]
     
-    EnrichmentSynthesizer -->|Staged Update| EnrichmentStaging["Create Enrichment Candidate\n(entry_type = 'enrichment')"]
+    EnrichmentSynthesizer -->|Staged Update (Live Record Untouched)| EnrichmentStaging["Create Enrichment Candidate\n(entry_type = 'enrichment', status = 'pending')"]
     
     NewStaging --> HistoryStaging[("history_dictionary_staging")]
     EnrichmentStaging --> HistoryStaging
     
-    HistoryStaging -->|Review & Approve| AdminStagingUI["Admin Staging Queue UI\n(HistoryDictionaryPanel.tsx)"]
-    AdminStagingUI -->|Publish / Update| HistoryDict[("history_dictionary Table")]
+    HistoryStaging -->|Diff View & Admin Review| AdminStagingUI["Admin Staging Queue UI\n(HistoryDictionaryPanel.tsx)"]
+    AdminStagingUI -->|Admin Explicit Approval| HistoryDict[("history_dictionary Table\n(Updates Live Entry)")]
 ```
 
 ---
@@ -88,14 +88,14 @@ CREATE TABLE IF NOT EXISTS public.history_dictionary_staging (
     entry_type             VARCHAR(20) NOT NULL DEFAULT 'new', -- 'new' or 'enrichment'
     letter_group           VARCHAR(10) NOT NULL,
     sources                JSONB NOT NULL DEFAULT '[]'::jsonb,
-    status                 VARCHAR(20) NOT NULL DEFAULT 'pending',
+    status                 VARCHAR(20) NOT NULL DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
     created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_history_staging_term ON public.history_dictionary_staging(term);
-CREATE INDEX IF NOT EXISTS idx_history_staging_status ON public.history_dictionary_staging(status);
-CREATE INDEX IF NOT EXISTS idx_history_staging_entry_type ON public.history_dictionary_staging(entry_type);
+CREATE INDEX IF NOT EXISTS idx_history_staging_term ON public.history_staging(term);
+CREATE INDEX IF NOT EXISTS idx_history_staging_status ON public.history_staging(status);
+CREATE INDEX IF NOT EXISTS idx_history_staging_entry_type ON public.history_staging(entry_type);
 ```
 
 ---
@@ -115,7 +115,7 @@ The extraction pipeline dynamically fetches settings from `system_config` at the
 
 ---
 
-## 5. Historical Significance Evaluation & Extraction Pipeline
+## 5. Historical Significance & Admin Re-Review Gate
 
 ### 5.1 Four-Tier Historical Significance Rubric
 Gemini evaluates candidate terms against a strict 4-tier rubric:
@@ -124,19 +124,13 @@ Gemini evaluates candidate terms against a strict 4-tier rubric:
 - **Score 5–6**: Verifiable secondary historical figures or localized events with documented dates and biographical contributions.
 - **Score 1–4**: Incidental mentions (messengers, local soldiers, generic titles, unverified single-sentence references) $\rightarrow$ **Filtered Out**.
 
-### 5.2 Split-Page Handling & LLM Incremental Enrichment
-1. **Continuous Batching with Overlap**:
-   - Reads pages in 15-page blocks with a 2-page sliding overlap window to handle cross-page split narratives.
-2. **Incremental Enrichment Logic**:
-   - Matches candidate terms against `history_dictionary_staging` and `history_dictionary` using normalized trigram similarity (`similarity > 0.85`).
-   - If a match is found, Gemini synthesizes an enriched definition with inline footnote citations (`[1]`, `[2]`) pointing to exact books and pages, preserving original content and updating `sources`.
-
-### 5.3 Admin API Routes (`services/backend/app/routes/admin/history_dictionary.py`)
-- `POST /api/v1/admin/books/{book_id}/extract-history`: Enqueue ARQ task.
-- `GET /api/v1/admin/history-dictionary/staging`: List pending candidates with filters (`category`, `entry_type`, `is_ai_generated`, `significance`).
-- `POST /api/v1/admin/history-dictionary/staging/{id}/approve`: Apply candidate.
-- `POST /api/v1/admin/history-dictionary/staging/bulk-approve`: Approve multiple selected IDs.
-- `DELETE /api/v1/admin/history-dictionary/staging/{id}`: Reject staging item.
+### 5.2 Mandatory Admin Re-Review Gate for Enriched Records
+- **Data Safety Rule**: Proposed modifications or additions to existing live records in `history_dictionary` **NEVER** overwrite the published live record automatically.
+- **Staging Flow**:
+  1. The pipeline creates a candidate record in `history_dictionary_staging` with `entry_type = 'enrichment'`, storing the existing definition in `original_definition` and the proposed enriched text in `definition`.
+  2. The candidate is flagged with `status = 'pending'`.
+  3. The live public record in `history_dictionary` continues serving user search queries in its original form.
+  4. Admins open the **Staging Queue UI**, review the side-by-side **Diff View**, and explicitly click **"Approve (تەستىقلاش)"**. Only upon explicit approval does the system update the live `history_dictionary` row.
 
 ---
 
@@ -150,6 +144,7 @@ Gemini evaluates candidate terms against a strict 4-tier rubric:
 - **Location**: `apps/frontend/src/components/admin/dictionary/HistoryDictionaryPanel.tsx`
 - **Tab 1 (Staging Queue)**:
   - Table Columns: Term, Transliteration/Dates, Category Badge, Type Badge (`🆕 New` vs `✨ Enrichment`), Significance Score Badge (with hover tooltip displaying `significance_reason`), `🤖 AI Extraction` Badge, Enriched Definition (with inline footnotes `[1]`, `[2]`), Sources, Actions.
+  - **Diff Modal**: For `✨ Enrichment` candidates, clicking "View Diff (تەققىقلاش)" displays a side-by-side text diff of the original live definition vs. the proposed enriched definition.
   - Actions: **Approve (تەستىقلاش)**, **Edit & Approve (تەھرىرلەپ تەستىقلاش)**, **Reject (رەت قىلىش)**.
   - Bulk approval support.
 - **Tab 2 (Published Terms)**: Search and edit live entries in `history_dictionary`.
@@ -163,10 +158,11 @@ Gemini evaluates candidate terms against a strict 4-tier rubric:
 
 ### Automated Verification
 1. `system_config` integration test: Verify `history_extraction_service.py` dynamically loads `history_extraction_model` from `system_config` repo.
-2. Migration test: Verify `history_dictionary_staging` schema includes `significance_reason`, `existing_dictionary_id`, `entry_type`, and `original_definition`.
+2. Re-review gate test: Unit test verifying that enriching an existing published record creates a `pending` staging entry and leaves the live `history_dictionary` row intact until explicit approval.
 3. Significance filtering test: Unit test verifying candidates with score $< min\_significance$ are dropped automatically.
 
 ### Manual Verification
-1. Update `history_extraction_model` in `system_config` to `gemini-2.5-flash`.
-2. Run **"تارىخىي ئاتالغۇلارنى تېپىش"** on a test history book and confirm the task executes using the configured model.
-3. Inspect Staging Queue, verify significance scores/rationale, edit & approve a candidate term, and test search result interactive footnotes.
+1. Run **"تارىخىي ئاتالغۇلارنى تېپىش"** on a book that contains facts about an existing published term.
+2. Confirm the live record in `history_dictionary` remains unchanged in search results.
+3. Open the Staging Queue, inspect the pending `✨ Enrichment Candidate`, use the Diff View to verify changes, and click Approve.
+4. Verify the live `history_dictionary` record updates cleanly.
