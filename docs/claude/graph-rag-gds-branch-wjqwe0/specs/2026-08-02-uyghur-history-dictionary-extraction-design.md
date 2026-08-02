@@ -20,7 +20,7 @@ This design introduces an on-demand, semi-automated extraction and enrichment pi
    - **Concepts & Places** (`ئاتالغۇ-جاي-ئورۇنلار`)
 3. Candidates are filtered for historical significance (default $\ge 5/10$).
 4. Duplicate entries found across multiple books or existing records in `history_dictionary` are automatically merged using **LLM Incremental Enrichment**:
-   - If new facts/details are discovered for an existing entry (whether already published or in staging), Gemini synthesizes an updated enriched definition and appends new source citations (`sources` JSONB array).
+   - Gemini synthesizes an updated definition with **Inline Footnote Citations** (e.g. `[1]`, `[2]`) pointing to exact books and pages, appending new source metadata (`sources` JSONB array).
 5. Candidates & Enriched updates are written to a `history_dictionary_staging` table (marked with `is_ai_generated = true` and `entry_type = 'new'` or `'enrichment'`) for admin review, editing, and single/bulk approval in the Admin Panel before going live.
 
 ---
@@ -41,7 +41,7 @@ flowchart TD
     DeduplicationEngine -->|Trigram Similarity Match| DBCheck{Existing Term Found?}
     
     DBCheck -->|No Match| NewStaging["Create New Candidate\n(entry_type = 'new')"]
-    DBCheck -->|Match Found in Live/Staging| EnrichmentSynthesizer["LLM Incremental Enrichment\n(Merge existing + new facts + citations)"]
+    DBCheck -->|Match Found in Live/Staging| EnrichmentSynthesizer["LLM Incremental Enrichment\n(Merge existing + new facts + inline citations)"]
     
     EnrichmentSynthesizer -->|Staged Update| EnrichmentStaging["Create Enrichment Candidate\n(entry_type = 'enrichment')"]
     
@@ -54,7 +54,7 @@ flowchart TD
 
 ---
 
-## 3. Detailed Data Models & Migrations
+## 3. Detailed Data Models & Multi-Book Citation Schema
 
 ### 3.1 Migration: Enhance `public.history_dictionary`
 Add the following columns to `public.history_dictionary`:
@@ -95,6 +95,36 @@ CREATE INDEX IF NOT EXISTS idx_history_staging_status ON public.history_dictiona
 CREATE INDEX IF NOT EXISTS idx_history_staging_entry_type ON public.history_dictionary_staging(entry_type);
 ```
 
+### 3.3 Multi-Book Citation JSONB Structure (`sources`)
+```json
+[
+  {
+    "id": 1,
+    "book_id": "book-uyghur-history-v2",
+    "book_title": "ئۇيغۇر ئومۇمىي تارىخى",
+    "volume": 2,
+    "pages": [45, 46, 47],
+    "extracted_at": "2026-08-02T14:50:00Z"
+  },
+  {
+    "id": 2,
+    "book_id": "book-karakhanid-history",
+    "book_title": "قاراخانىيلار خانلىقى تارىخى",
+    "volume": 1,
+    "pages": [102, 108],
+    "extracted_at": "2026-08-02T15:10:00Z"
+  }
+]
+```
+
+### 3.4 Definition Text with Inline Citations
+Definitions incorporate inline footnote tags matching the `sources` array IDs (e.g. `[1]`, `[2]`):
+```text
+سۇلتان سۇتۇق بۇغراخان (955-يىلى ۋاپات بولغان) — ئوتتۇرا ئاسىيادىكى قاراخانىيلار خاندانلىقىنىڭ خاقانى [1]. 
+
+ئۇ 943-يىلى ئىسلام دىنىنى خانلىقنىڭ دۆلەت دىنى قىلىپ بەلگىلىگەن [2].
+```
+
 ---
 
 ## 4. Backend Extraction & Incremental Enrichment Pipeline
@@ -111,9 +141,8 @@ The pipeline reads the following dynamic settings from `system_config`:
 2. **Incremental Enrichment Logic**:
    - When a term candidate is extracted, the service checks both `history_dictionary_staging` and published `history_dictionary` using normalized trigram similarity (`similarity > 0.85`).
    - If an existing record is matched:
-     - The service prompts Gemini Flash with the existing definition + the newly discovered facts from the new book page chunks:
-       > *"You are given an existing historical definition and new source text from another book. Integrate any new facts, dates, or details into the existing definition without losing existing correct information. Output a comprehensive enriched definition."*
-     - Consolidates source citations (`sources` JSONB array).
+     - The service prompts Gemini Flash with the existing definition + the newly discovered facts from the new book page chunks.
+     - Gemini generates a synthesized definition with inline citations (`[1]`, `[2]`) corresponding to each source book.
      - Creates/updates an entry in `history_dictionary_staging` with `entry_type = 'enrichment'`, preserving `existing_dictionary_id` and storing `original_definition` for admin diff comparison.
 
 ### 4.3 Admin API Routes (`services/backend/app/routes/admin/history_dictionary.py`)
@@ -125,7 +154,7 @@ The pipeline reads the following dynamic settings from `system_config`:
 
 ---
 
-## 5. Admin Frontend UI Design
+## 5. Admin & User UI Design
 
 ### 5.1 Book Catalog Action
 - Button Label: **"تارىخىي ئاتالغۇلارنى تېپىش"**
@@ -134,11 +163,16 @@ The pipeline reads the following dynamic settings from `system_config`:
 ### 5.2 Admin Staging Queue (`HistoryDictionaryPanel.tsx`)
 - **Location**: `apps/frontend/src/components/admin/dictionary/HistoryDictionaryPanel.tsx`
 - **Tab 1 (Staging Queue)**:
-  - Table Columns: Term (تارىخىي ئاتالغۇ), Transliteration/Dates, Category Badge, Type Badge (`🆕 New` vs `✨ Enrichment`), Significance Badge (1–10), `🤖 AI Extraction` Badge, Enriched Definition, Sources, Actions.
+  - Table Columns: Term (تارىخىي ئاتالغۇ), Transliteration/Dates, Category Badge, Type Badge (`🆕 New` vs `✨ Enrichment`), Significance Badge (1–10), `🤖 AI Extraction` Badge, Enriched Definition (with inline footnotes `[1]`, `[2]`), Sources, Actions.
   - **Diff Modal**: For `✨ Enrichment` candidates, clicking "View Diff (تەققىقلاش)" displays a side-by-side text diff of the original definition vs. the proposed enriched definition.
   - Actions: **Approve (تەستىقلاش)**, **Edit & Approve (تەھرىرلەپ تەستىقلاش)**, **Reject (رەت قىلىش)**.
   - Bulk approval support.
 - **Tab 2 (Published Terms)**: Search and edit live entries in `history_dictionary`, displaying `is_ai_generated` badges and full source citations.
+
+### 5.3 Public Search View with Interactive Footnotes
+- When a user views a history term in Home/Dictionary search:
+  - Inline footnote tags `[1]`, `[2]` in the definition text are interactive clickable badges.
+  - Clicking `[1]` scrolls down to Source #1 (*ئۇيغۇر ئومۇمىي تارىخى, Vol. 2, p. 45*) and highlights the **"بەتنى ئوقۇش / Read Page"** button to jump directly into the reader at that exact book page!
 
 ---
 
@@ -146,11 +180,11 @@ The pipeline reads the following dynamic settings from `system_config`:
 
 ### Automated Verification
 1. Migration test: Verify `history_dictionary_staging` schema includes `existing_dictionary_id`, `entry_type`, and `original_definition`.
-2. Backend enrichment test: Unit test for `history_extraction_service.py` verifying that extracting new facts for an existing term creates an `enrichment` candidate with combined sources and synthesized definition.
+2. Backend enrichment test: Unit test for `history_extraction_service.py` verifying that extracting new facts for an existing term creates an `enrichment` candidate with inline citations `[1]`, `[2]` and combined sources.
 3. Approval test: Test that approving an enrichment candidate updates the corresponding live `history_dictionary` row.
 
 ### Manual Verification
 1. Run **"تارىخىي ئاتالغۇلارنى تېپىش"** on Book 1. Approve term X.
 2. Run **"تارىخىي ئاتالغۇلارنى تېپىش"** on Book 2 (which contains additional facts about term X).
-3. Verify term X appears in Staging Queue marked as `✨ Enrichment Candidate`. Open the Diff view to inspect added facts and new citations.
-4. Approve the enrichment; verify the published term X in `history_dictionary` now contains the unified enriched definition and multi-book sources.
+3. Verify term X appears in Staging Queue marked as `✨ Enrichment Candidate` with inline citation `[2]`. Open Diff view to inspect added facts and new citations.
+4. Approve the enrichment; verify in search results that clicking footnote `[2]` points to Book 2 and opens the reader to the exact target page.
