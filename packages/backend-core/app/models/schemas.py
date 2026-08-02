@@ -263,3 +263,47 @@ class PaginatedContentHits(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class SourceCitation(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    id: Optional[int] = None
+    book_id: str
+    book_title: str
+    volume: Optional[int] = None
+    pages: List[int] = Field(default_factory=list)
+    extracted_at: Optional[datetime] = None
+
+
+class HistoryStagingItem(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
+    )
+
+    id: int
+    existing_dictionary_id: Optional[int] = None
+    book_id: str
+    term: str
+    transliteration: Optional[str] = None
+    definition: str
+    original_definition: Optional[str] = None
+    category: str = "general"
+    significance_score: int = 5
+    significance_reason: Optional[str] = None
+    is_ai_generated: bool = True
+    entry_type: str = "new"
+    letter_group: str
+    sources: List[SourceCitation] = Field(default_factory=list)
+    status: str = "pending"
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class PaginatedHistoryStagingItems(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    items: List[HistoryStagingItem]
+    total: int
+    page: int
+    page_size: int

@@ -866,6 +866,65 @@ class HistoryDictionary(Base):
     transliteration: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     definition: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     letter_group: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    category: Mapped[str] = mapped_column(
+        String(30),
+        default="general",
+        server_default="general",
+        nullable=False,
+        index=True,
+    )
+    significance_score: Mapped[int] = mapped_column(
+        Integer, default=5, server_default="5", nullable=False, index=True
+    )
+    is_ai_generated: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False, index=True
+    )
+    sources: Mapped[list] = mapped_column(
+        JSON, default=list, server_default=text("'[]'::jsonb"), nullable=False
+    )
+
+
+class HistoryDictionaryStaging(Base):
+    """Staging queue for extracted history dictionary candidates awaiting admin review"""
+
+    __tablename__ = "history_dictionary_staging"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    existing_dictionary_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("history_dictionary.id", ondelete="SET NULL"), nullable=True
+    )
+    book_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    term: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
+    transliteration: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    definition: Mapped[str] = mapped_column(Text, nullable=False)
+    original_definition: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    category: Mapped[str] = mapped_column(String(30), default="general", nullable=False)
+    significance_score: Mapped[int] = mapped_column(
+        Integer, default=5, nullable=False, index=True
+    )
+    significance_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_ai_generated: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    entry_type: Mapped[str] = mapped_column(
+        String(20), default="new", nullable=False, index=True
+    )
+    letter_group: Mapped[str] = mapped_column(String(10), nullable=False)
+    sources: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), default="pending", nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
 
 
 class NamesDictionary(Base):
