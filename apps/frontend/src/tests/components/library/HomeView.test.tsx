@@ -228,3 +228,49 @@ test('HomeView closes keyboard map on Escape key press', () => {
   fireEvent.keyDown(window, { key: 'Escape' });
   expect(screen.queryByText('home.keyboardMapTitle')).not.toBeInTheDocument();
 });
+
+test('pressing Enter on search box starts global chat when on ask tab', () => {
+  const setViewMock = vi.fn();
+  const setChatInputMock = vi.fn();
+  const clearChatMock = vi.fn();
+  const context = {
+    ...baseContext,
+    homeActiveTab: 'ask' as SearchTabKey,
+    setView: setViewMock,
+    chat: {
+      ...baseContext.chat,
+      setChatInput: setChatInputMock,
+      clearChat: clearChatMock,
+    },
+  };
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue(context as any);
+  render(<HomeView />);
+
+  const input = screen.getByPlaceholderText('home.placeholders.ask');
+  fireEvent.change(input, { target: { value: 'تارىختىن بىر سوئال' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+
+  expect(clearChatMock).toHaveBeenCalled();
+  expect(setChatInputMock).toHaveBeenCalledWith('تارىختىن بىر سوئال');
+  expect(setViewMock).toHaveBeenCalledWith('global-chat');
+});
+
+test('pressing Enter on search box does not start global chat when on books tab', () => {
+  const setViewMock = vi.fn();
+  const setSearchQueryMock = vi.fn();
+  const context = {
+    ...baseContext,
+    homeActiveTab: 'books' as SearchTabKey,
+    setView: setViewMock,
+    setHomeSearchQuery: setSearchQueryMock,
+  };
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue(context as any);
+  render(<HomeView />);
+
+  const input = screen.getByPlaceholderText('home.placeholders.books');
+  fireEvent.change(input, { target: { value: 'تارىخىي كىتاب' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+
+  expect(setViewMock).not.toHaveBeenCalled();
+  expect(setSearchQueryMock).toHaveBeenCalledWith('تارىخىي كىتاب');
+});

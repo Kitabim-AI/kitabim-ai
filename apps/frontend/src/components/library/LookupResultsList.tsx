@@ -43,8 +43,8 @@ export const LookupResultsList: React.FC<LookupResultsListProps> = ({ items, isL
 
   if (items.length === 0) {
     return (
-      <div className="w-full py-20 text-center glass-panel flex flex-col items-center justify-center rounded-[32px]">
-        <p className="text-[#1a1a1a] dark:text-slate-100 font-bold text-lg sm:text-xl mb-2 uyghur-text">{t(noResultsTitleKey || 'library.noResults.title')}</p>
+      <div className="w-full py-12 sm:py-20 px-6 sm:px-8 text-center glass-panel flex flex-col items-center justify-center rounded-[32px]">
+        <p className="text-[#1a1a1a] dark:text-slate-100 font-bold text-lg sm:text-xl mb-2 uyghur-text max-w-md">{t(noResultsTitleKey || 'library.noResults.title')}</p>
         <p className="text-[#94a3b8] dark:text-slate-400 font-medium text-sm max-w-sm uyghur-text">{t('library.noResults.message')}</p>
       </div>
     );
@@ -59,14 +59,14 @@ export const LookupResultsList: React.FC<LookupResultsListProps> = ({ items, isL
           dir="rtl"
         >
           <p
-            className={item.primaryClassName ?? 'text-lg font-bold text-[#1a1a1a] dark:text-slate-100 uyghur-text'}
+            className={item.primaryClassName ?? 'text-base font-bold text-[#1a1a1a] dark:text-slate-100 uyghur-text'}
             dir={item.primaryDir}
           >
             {item.primary}
           </p>
           {item.secondary && (
             <p
-              className={item.secondaryClassName ?? 'mt-1 text-lg text-slate-500 dark:text-slate-400 uyghur-text whitespace-pre-wrap'}
+              className={item.secondaryClassName ?? 'mt-1 text-base text-slate-500 dark:text-slate-400 uyghur-text whitespace-pre-wrap'}
               dir={item.secondaryDir}
             >
               {parseDefinition(item.secondary).map((chunk, idx) => {

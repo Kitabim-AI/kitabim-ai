@@ -143,6 +143,15 @@ select {
   font-family: var(--font-uyghur);
 }
 
+/* Prevent iOS Safari auto-zoom on input/textarea focus by enforcing minimum 16px font-size on mobile */
+@media screen and (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
 nav,
 .navbar,
 [role="navigation"] {

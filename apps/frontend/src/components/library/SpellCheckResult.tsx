@@ -44,7 +44,7 @@ export const SpellCheckResultView: React.FC<SpellCheckResultProps> = ({ result, 
         ) : (
           <XCircle className="w-6 h-6 text-amber-600 dark:text-amber-400 flex-shrink-0" />
         )}
-        <p className="uyghur-text text-lg text-[#1a1a1a] dark:text-slate-100">
+        <p className="uyghur-text text-base text-[#1a1a1a] dark:text-slate-100">
           {t(result.isKnown ? 'home.spellCheck.known' : 'home.spellCheck.unknown', { word: result.word || '' })}
         </p>
       </div>
@@ -57,7 +57,7 @@ export const SpellCheckResultView: React.FC<SpellCheckResultProps> = ({ result, 
               key={s.id}
               className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl rounded-2xl border border-[#0369a1]/10 dark:border-slate-800 px-5 py-3 shadow-sm"
             >
-              <p className="uyghur-text text-lg text-[#1a1a1a] dark:text-slate-100">{s.word}</p>
+              <p className="uyghur-text text-base text-[#1a1a1a] dark:text-slate-100">{s.word}</p>
             </div>
           ))}
         </div>

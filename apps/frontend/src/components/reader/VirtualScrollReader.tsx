@@ -1,6 +1,7 @@
 import { Loader2 } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
+import { useScrollStabilizer } from '../../hooks/useScrollStabilizer';
 import { useScrollToPage } from '../../hooks/useScrollToPage';
 import { useI18n } from '../../i18n/I18nContext';
 import { PersistenceService } from '../../services/persistenceService';
@@ -94,6 +95,16 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
       currentCenterPageRef.current = page;
       setCurrentCenterPage(page);
     }, []),
+  });
+
+  // Keeps the visible page stationary as off-screen-above placeholders resolve
+  // to real content during ordinary scrolling (useScrollToPage handles the
+  // equivalent for the initial jump-to-page settle window, hence the suppression).
+  useScrollStabilizer({
+    containerRef: scrollParentRef as React.RefObject<HTMLElement>,
+    itemsRef: pageRefs,
+    suppressedRef: isScrollingToTargetRef,
+    resubscribeKey: totalPages,
   });
 
   const RATE_LIMIT_MS = 300;

@@ -243,15 +243,13 @@ export const HomeView: React.FC = () => {
 
   // No books found for a text query (not a category browse) — prompt to chat.
   // Only the "Ask" tab falls back to chat; "Books" is an explicit title/author/category search.
-  const chatHint = activeTab === 'ask' && searchQuery.length >= 3 && !selectedCategory && !isInitialLoading && books.length === 0;
+  const chatHint = activeTab === 'ask' && localSearch.trim().length > 0;
   const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
   const isMac = !isTouchDevice && navigator.platform.toUpperCase().startsWith('MAC');
 
   // Debounce: after 300ms of no typing, persist the query (so it carries over across tabs
   // and survives HomeView unmounting/remounting) and, for book tabs, commit it to `searchQuery`
-  // to trigger the API call. Once chatHint is active, suppress the `searchQuery` commit as long
-  // as the query stays long enough to be a question — only let through a clear (< 3 chars) so
-  // the user can exit chat mode by deleting the input.
+  // to trigger the API call.
   useEffect(() => {
     const timer = setTimeout(() => {
       const trimmed = localSearch.trim();
@@ -260,12 +258,11 @@ export const HomeView: React.FC = () => {
       }
       if (isBookTab) {
         if (trimmed === searchQuery) return;
-        if (chatHint && trimmed.length >= 3 && trimmed.length >= searchQuery.length) return;
         setSearchQuery(trimmed);
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [localSearch, searchQuery, homeSearchText, setSearchQuery, setHomeSearchText, chatHint, isBookTab]);
+  }, [localSearch, searchQuery, homeSearchText, setSearchQuery, setHomeSearchText, isBookTab]);
 
   // Sync local search when the persisted query is cleared or changed externally
   // (e.g. the clear button, a chat handoff, or navigating away and back to home).
@@ -293,12 +290,15 @@ export const HomeView: React.FC = () => {
 
   const handleSearchSubmit = () => {
     const trimmed = localSearch.trim();
-    if (trimmed.length >= 3 && !selectedCategory && !isInitialLoading && books.length === 0) {
+    if (activeTab === 'ask' && trimmed.length > 0) {
+      chat.clearChat?.();
       chat.setChatInput(trimmed);
       setLocalSearch('');
       setSearchQuery('');
       setHomeSearchText('');
       setView('global-chat');
+    } else if (activeTab === 'books' && trimmed.length > 0) {
+      setSearchQuery(trimmed);
     }
   };
 
@@ -568,11 +568,11 @@ export const HomeView: React.FC = () => {
             </div>
 
             {books.length === 0 && !isInitialLoading && (
-              <div className="w-full py-20 text-center glass-panel flex flex-col items-center justify-center rounded-[32px]">
+              <div className="w-full py-12 sm:py-20 px-6 sm:px-8 text-center glass-panel flex flex-col items-center justify-center rounded-[32px]">
                 <div className="p-6 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 rounded-[32px] mb-6">
                   <BookIcon className="w-16 h-16 text-[#0369a1] dark:text-[#38bdf8] opacity-60 dark:opacity-80" />
                 </div>
-                <p className="text-[#1a1a1a] dark:text-slate-100 font-bold text-xl sm:text-2xl mb-2 uyghur-text">{t(hasSearch ? getTabNoResultsKey(activeTab) : 'library.empty.title')}</p>
+                <p className="text-[#1a1a1a] dark:text-slate-100 font-bold text-xl sm:text-2xl mb-2 uyghur-text max-w-md">{t(hasSearch ? getTabNoResultsKey(activeTab) : 'library.empty.title')}</p>
                 <p className="text-[#94a3b8] dark:text-slate-400 font-medium text-sm sm:text-base max-w-sm uyghur-text">{t(hasSearch ? 'library.noResults.message' : 'library.empty.message')}</p>
               </div>
             )}

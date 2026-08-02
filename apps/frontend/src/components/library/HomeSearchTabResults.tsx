@@ -49,8 +49,8 @@ const mapEnUg = (e: EnglishUyghurEntry): LookupItem => ({
   id: e.id,
   primary: e.english,
   secondary: e.uyghur,
-  primaryClassName: 'text-lg font-bold text-[#1a1a1a] dark:text-slate-100',
-  secondaryClassName: 'mt-1 text-lg text-slate-500 dark:text-slate-400 uyghur-text',
+  primaryClassName: 'text-base font-bold text-[#1a1a1a] dark:text-slate-100',
+  secondaryClassName: 'mt-1 text-base text-slate-500 dark:text-slate-400 uyghur-text',
   primaryDir: 'ltr',
   secondaryDir: 'rtl',
 });

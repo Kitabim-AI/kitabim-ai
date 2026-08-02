@@ -318,83 +318,77 @@ export const ProverbsPanel: React.FC = () => {
                     return (
                       <div 
                         key={entry.id} 
-                        className={`
-                          flex items-start justify-between px-4 md:px-6 py-4 md:py-5 rounded-2xl transition-all group hover:bg-slate-50/50 dark:hover:bg-slate-800/30 gap-4
-                        `}
+                        className="flex flex-col px-4 md:px-6 py-4 md:py-5 rounded-2xl transition-all group hover:bg-slate-50/50 dark:hover:bg-slate-800/30 gap-3"
                       >
                         {isEditingThis ? (
-                          <div className="flex-1 min-w-0 pr-2 space-y-3">
-                            <div>
-                              <textarea
-                                rows={2}
-                                value={editForm.text}
-                                onChange={(e) => setEditForm(prev => ({ ...prev, text: e.target.value }))}
-                                className="w-full px-4 py-2.5 text-sm sm:text-lg border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 outline-none uyghur-text resize-y font-normal"
-                                placeholder={t('admin.proverbs.searchPlaceholder')}
-                              />
-                            </div>
-                            {isEditor && (entry.volume != null || entry.page_number != null) && (
-                              <p className="uyghur-text text-sm sm:text-lg text-slate-400 dark:text-slate-500 font-bold opacity-80">
-                                 {t('admin.proverbs.volumeAndPage', { volume: entry.volume ?? '-', page: entry.page_number ?? '-' })}
-                              </p>
-                            )}
+                          <div className="w-full">
+                            <textarea
+                              rows={2}
+                              value={editForm.text}
+                              onChange={(e) => setEditForm(prev => ({ ...prev, text: e.target.value }))}
+                              className="w-full px-4 py-2.5 text-base sm:text-lg border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 outline-none uyghur-text resize-y font-normal"
+                              placeholder={t('admin.proverbs.searchPlaceholder')}
+                            />
                           </div>
                         ) : (
-                          <div className="flex-1 min-w-0 pr-2">
-                            <div className="flex items-center gap-3">
-                              <span className="uyghur-text text-sm sm:text-lg font-normal text-slate-800 dark:text-slate-100 italic leading-relaxed">
-                                 {entry.text}
-                              </span>
-                            </div>
-                            {isEditor && (entry.volume != null || entry.page_number != null) && (
-                              <p className="uyghur-text text-sm sm:text-lg text-slate-400 dark:text-slate-500 font-bold mt-1.5 opacity-80">
-                                 {t('admin.proverbs.volumeAndPage', { volume: entry.volume ?? '-', page: entry.page_number ?? '-' })}
-                              </p>
-                            )}
+                          <div className="w-full">
+                            <span className="uyghur-text text-sm sm:text-lg font-normal text-slate-800 dark:text-slate-100 italic leading-relaxed block">
+                              {entry.text}
+                            </span>
                           </div>
                         )}
 
-                        <div className="flex items-center justify-end gap-2 shrink-0">
-                          {isEditingThis ? (
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => handleSaveRow(entry)}
-                                disabled={isSaving || !editForm.text.trim()}
-                                className="p-2.5 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl hover:bg-[#0369a1]/90 dark:hover:bg-[#38bdf8]/90 transition-all shadow-lg shadow-[#0369a1]/10 dark:shadow-[#38bdf8]/10 disabled:opacity-50"
-                                title={t('common.save')}
-                              >
-                                {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-                              </button>
-                              <button
-                                onClick={handleCancelEdit}
-                                className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-90 transition-all"
-                                title={t('common.cancel')}
-                              >
-                                <X size={20} />
-                              </button>
-                            </div>
+                        <div className="flex items-center justify-between gap-4 w-full pt-1">
+                          {isEditor && (entry.volume != null || entry.page_number != null) ? (
+                            <p className="uyghur-text text-sm sm:text-lg text-slate-400 dark:text-slate-500 font-bold opacity-80">
+                              {t('admin.proverbs.volumeAndPage', { volume: entry.volume ?? '-', page: entry.page_number ?? '-' })}
+                            </p>
                           ) : (
-                            <>
-                              {isEditor && (
-                                <button
-                                  onClick={() => handleEditRow(entry)}
-                                  className="p-2 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-xl transition-all"
-                                  title={t('common.edit')}
-                                >
-                                  <Edit2 size={18} />
-                                </button>
-                              )}
-                              {isAdmin && (
-                                <button
-                                  onClick={() => handleDeleteEntry(entry)}
-                                  className="p-2 bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400 rounded-xl hover:bg-red-500 dark:hover:bg-red-600 hover:text-white transition-all"
-                                  title={t('common.delete')}
-                                >
-                                  <Trash2 size={18} />
-                                </button>
-                              )}
-                            </>
+                            <div />
                           )}
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            {isEditingThis ? (
+                              <>
+                                <button
+                                  onClick={() => handleSaveRow(entry)}
+                                  disabled={isSaving || !editForm.text.trim()}
+                                  className="p-2.5 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl hover:bg-[#0369a1]/90 dark:hover:bg-[#38bdf8]/90 transition-all shadow-lg shadow-[#0369a1]/10 dark:shadow-[#38bdf8]/10 disabled:opacity-50"
+                                  title={t('common.save')}
+                                >
+                                  {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                                </button>
+                                <button
+                                  onClick={handleCancelEdit}
+                                  className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-90 transition-all"
+                                  title={t('common.cancel')}
+                                >
+                                  <X size={20} />
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                {isEditor && (
+                                  <button
+                                    onClick={() => handleEditRow(entry)}
+                                    className="p-2 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-xl transition-all"
+                                    title={t('common.edit')}
+                                  >
+                                    <Edit2 size={18} />
+                                  </button>
+                                )}
+                                {isAdmin && (
+                                  <button
+                                    onClick={() => handleDeleteEntry(entry)}
+                                    className="p-2 bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400 rounded-xl hover:bg-red-500 dark:hover:bg-red-600 hover:text-white transition-all"
+                                    title={t('common.delete')}
+                                  >
+                                    <Trash2 size={18} />
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );

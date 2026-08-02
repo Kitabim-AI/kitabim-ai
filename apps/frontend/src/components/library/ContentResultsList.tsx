@@ -97,8 +97,8 @@ export const ContentResultsList: React.FC<ContentResultsListProps> = ({
 
   if (hits.length === 0) {
     return (
-      <div className="w-full py-20 text-center glass-panel flex flex-col items-center justify-center rounded-[32px]">
-        <p className="text-[#1a1a1a] dark:text-slate-100 font-bold text-lg sm:text-xl mb-2 uyghur-text">
+      <div className="w-full py-12 sm:py-20 px-6 sm:px-8 text-center glass-panel flex flex-col items-center justify-center rounded-[32px]">
+        <p className="text-[#1a1a1a] dark:text-slate-100 font-bold text-lg sm:text-xl mb-2 uyghur-text max-w-md">
           {t(noResultsTitleKey || 'library.noResults.title')}
         </p>
         <p className="text-[#94a3b8] dark:text-slate-400 font-medium text-sm max-w-sm uyghur-text">
@@ -148,7 +148,7 @@ export const ContentResultsList: React.FC<ContentResultsListProps> = ({
             {/* Snippet text */}
             <div
               data-testid="snippet-container"
-              className={`uyghur-text text-slate-700 dark:text-slate-300 text-lg leading-relaxed bg-slate-50/50 dark:bg-slate-950/40 p-3 sm:p-4 rounded-xl border border-slate-100 dark:border-slate-800/80 ${
+              className={`uyghur-text text-slate-700 dark:text-slate-300 text-base leading-relaxed bg-slate-50/50 dark:bg-slate-950/40 p-3 sm:p-4 rounded-xl border border-slate-100 dark:border-slate-800/80 ${
                 isGuest ? 'select-none' : ''
               }`}
               onCopy={isGuest ? (e) => e.preventDefault() : undefined}

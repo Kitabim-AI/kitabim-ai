@@ -79,3 +79,27 @@ test('allows selection and copying for registered/authenticated users in reader'
   fireEvent(readerContainer, contextMenuEvent);
   expect(preventContextMenuSpy).not.toHaveBeenCalled();
 });
+
+test('observes every rendered page for resize, so async content loads cannot silently shift scroll position', () => {
+  const observe = vi.fn();
+  const realResizeObserver = global.ResizeObserver;
+  vi.stubGlobal('ResizeObserver', class {
+    observe = observe;
+    unobserve = vi.fn();
+    disconnect = vi.fn();
+  });
+
+  vi.mocked(AuthModule.useAuth).mockReturnValue({
+    isAuthenticated: true,
+    user: { id: 'user-1', role: 'reader' },
+  } as any);
+
+  renderReader();
+
+  const observedPages = observe.mock.calls
+    .map(([el]) => el.getAttribute('data-page-number'))
+    .filter(Boolean);
+  expect(new Set(observedPages)).toEqual(new Set(['1', '2', '3', '4', '5']));
+
+  vi.stubGlobal('ResizeObserver', realResizeObserver);
+});
