@@ -22,6 +22,7 @@ from app.services.history_fact_utils import (
     find_deterministic_duplicate,
     merge_citation,
 )
+from app.utils.observability import log_json
 
 logger = logging.getLogger(__name__)
 
@@ -383,6 +384,7 @@ class HistoryExtractionService:
 
         # Sort pages by page_number
         pages_data = sorted(pages_data, key=lambda x: x.get("page_number", 0))
+        total_pages = len(pages_data)
 
         # Sliding window batching
         i = 0
@@ -390,6 +392,19 @@ class HistoryExtractionService:
             batch = pages_data[i : i + batch_size]
             if not batch:
                 break
+
+            page_numbers = [p.get("page_number", 0) for p in batch]
+            log_json(
+                logger,
+                logging.INFO,
+                "Processing history extraction window",
+                book_id=book_id,
+                book_title=book_title,
+                page_start=page_numbers[0],
+                page_end=page_numbers[-1],
+                pages_in_window=len(batch),
+                total_pages=total_pages,
+            )
 
             # Construct pages_text
             text_blocks = []

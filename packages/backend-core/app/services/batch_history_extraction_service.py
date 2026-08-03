@@ -99,6 +99,19 @@ async def submit_batch_history_extraction_job(
 
         pages_text = "\n\n".join(text_blocks)
         if pages_text.strip():
+            page_numbers = [p.page_number for p in batch]
+            log_json(
+                logger,
+                logging.INFO,
+                "Preparing history extraction batch",
+                book_id=book_id,
+                book_title=book.title,
+                page_start=page_numbers[0],
+                page_end=page_numbers[-1],
+                pages_in_batch=len(batch),
+                total_pages=len(pages),
+                batch_idx=batch_idx,
+            )
             prompt = EXTRACTION_PROMPT_TEMPLATE.format(pages_text=pages_text)
             req_item = {
                 "custom_id": f"history-batch-{batch_idx}",
