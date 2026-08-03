@@ -136,6 +136,13 @@ async def test_poll_and_process_batch_history_jobs():
         assert processed == 1
         assert mock_job.status == "succeeded"
         mock_stage.assert_called_once()
+        # Must commit per entity (default auto_commit=True), not defer to a
+        # single commit at the end of the job — a job with hundreds of
+        # entities can be evicted mid-run by the scanner's cron interval, and
+        # a single trailing commit would roll back all work done so far,
+        # producing zero staged rows on every retry (2026-08-03 production
+        # incident).
+        assert mock_stage.call_args.kwargs.get("auto_commit", True) is True
 
 
 @pytest.mark.asyncio
@@ -216,3 +223,10 @@ async def test_poll_and_process_batch_history_jobs_handles_bare_list_entities():
         assert processed == 1
         assert mock_job.status == "succeeded"
         mock_stage.assert_called_once()
+        # Must commit per entity (default auto_commit=True), not defer to a
+        # single commit at the end of the job — a job with hundreds of
+        # entities can be evicted mid-run by the scanner's cron interval, and
+        # a single trailing commit would roll back all work done so far,
+        # producing zero staged rows on every retry (2026-08-03 production
+        # incident).
+        assert mock_stage.call_args.kwargs.get("auto_commit", True) is True

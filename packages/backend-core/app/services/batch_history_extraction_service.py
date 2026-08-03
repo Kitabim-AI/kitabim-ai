@@ -245,13 +245,22 @@ async def poll_and_process_batch_history_jobs(session: AsyncSession) -> int:
                                     if score < job.min_significance:
                                         continue
 
+                                    # Commit per entity (default auto_commit=True) rather
+                                    # than batching every entity in this job into one
+                                    # commit at the end. A large book can have hundreds
+                                    # of recurring-figure mentions each needing an
+                                    # embedding/classification call, which can take
+                                    # longer than one scanner cron interval — if that
+                                    # invocation gets evicted before finishing, batching
+                                    # would roll back every staged row from this run,
+                                    # forcing the next tick to redo the same work from
+                                    # scratch and never make forward progress.
                                     await extraction_service._stage_entity(
                                         book_id=job.book_id,
                                         book_title=book_title,
                                         volume=volume,
                                         entity=ent,
                                         model_name=job.model_name,
-                                        auto_commit=False,
                                     )
                                     staged_count += 1
                         except Exception as parse_err:
