@@ -325,6 +325,44 @@
     "questionsLabel": "سوئاللار",
     "rulesLabel": "ئاپتوماتىك تۈزىتىش",
     "dictionaryLabel": "لۇغەت",
+    "historyStagingLabel": "تارىخىي ئاتالغۇلارنى بايقاش",
+    "historyStagingQueue": "كاندىدات ئاتالغۇلار",
+    "historyStagingDesc": "سۈنئىي ئىدراك بايقىغان ئاتالغۇلارنى تەكشۈرۈپ تەستىقلاش",
+    "historyStagingLoadError": "تىزىملىكنى يۈكلىيەلمىدى",
+    "historyStagingActionError": "مەشغۇلات مەغلۇپ بولدى",
+    "historyExtractionStarted": "تارىخىي ئاتالغۇلارنى بايقاش ۋەزىپىسى باشلاندى.",
+    "historyFactsActive": "پاكىتلار",
+    "historyFactsRejected": "رەت قىلىنغان پاكىتلار",
+    "historyFactsShowRejected": "رەت قىلىنغانلارنى كۆرسەت",
+    "historyFactsHideRejected": "رەت قىلىنغانلارنى يوشۇر",
+    "historyFactConflict": "زىددىيەتلىك پاكىتلار",
+    "historyFactKeepThis": "بۇنى ساقلا",
+    "historyFactKeepOther": "ئۇنى ساقلا",
+    "historyFactKeepBoth": "ئىككىلىسىنى ساقلا",
+    "historyFactReject": "رەت قىل",
+    "historyPreview": "ئالدىن كۆزىتىش",
+    "historyPreviewing": "ئالدىن كۆزىتىش قۇرۇلۋاتىدۇ...",
+    "historyNoPreviewYet": "تېخى ئالدىن كۆزىتىش يوق — نۆۋەتتىكى پاكىتلاردىن ئېنىقلىما قۇرۇش ئۈچۈن «ئالدىن كۆزىتىش»نى بېسىڭ.",
+    "historyApproveBlockedConflicts": "ئالدى بىلەن {count} زىددىيەتلىك پاكىتنى بىر تەرەپ قىلىڭ",
+    "historySynthesisFailed": "ئالدىن كۆزىتىشنى قۇرالمىدى. قايتا سىناپ بېقىڭ.",
+    "bulkApprove": "توپ تەستىقلاش",
+    "minSignificanceFilter": "مۇھىملىق دەرىجىسى شۈزگۈچ",
+    "minScoreAll": "بارلىق رېكورد",
+    "minScoreModerate": "ئادەتتىكى",
+    "minScoreImportant": "ئوتتۇراھال",
+    "minScoreHigh": "مۇھىم",
+    "minScoreVeryImportant": "ئىنتايىن مۇھىم",
+    "statusPending": "تەستىقلانمىغان",
+    "statusApproved": "تەستىقلانغان",
+    "statusRejected": "رەت قىلىنغان",
+    "noStagingItems": "تەستىقلايدىغان تارىخىي ئاتالغۇ يوق.",
+    "typeEnrichment": "تولۇقلانغان",
+    "typeNew": "يېڭى ئاتالغۇ",
+    "approve": "تەستىقلاش",
+    "reject": "رەت قىلىش",
+    "originalDefinition": "ئەسلى نۇسخا",
+    "enrichedDefinition": "تولۇقلانغان نۇسخا",
+    "sources": "مەنبە",
     "searchPlaceholder": "كىتاب نامى، ئاپتورى ياكى تۈرى بويىچە ئىزدەش...",
     "stats": {
       "title": "كىتابىم ستاتىستىكىسى",
@@ -406,7 +444,8 @@
       "embedding": "ۋېكتورلاش",
       "summary": "قىسقىچە مەزمۇن",
       "spellCheck": "ئىملا تەكشۈرۈش",
-      "graph": "بىلىم گىرافىكى"
+      "graph": "بىلىم گىرافىكى",
+      "history": "تارىخىي ئاتالغۇلار"
     },
     "table": {
       "loading": "ئ‍ېچىلۋاتىدۇ",
@@ -424,6 +463,7 @@
       "replaceCover": "مۇقاۋىنى ئالماشتۇرۇش",
       "resetFailed": "مەغلۇپ بەتلەرنى دەسلەپلەش",
       "retryFailed": "مەغلۇپ بەتلەرنى قايتا سىناش",
+      "extractHistory": "تارىخىي ئاتالغۇلارنى بايقاش",
       "reprocess": {
         "ocr": "قايتا OCR",
         "chunking": "قايتا پارچىلاش",
@@ -788,6 +828,9 @@
     "reprocessSummary": {
       "title": "قىسقىچە مەزمۇننى قايتا ھاسىللاش"
     },
+    "reprocessHistory": {
+      "title": "تارىخىي ئاتالغۇلارنى بايقاش"
+    },
     "reprocess": {
       "ocr": {
         "message": "بۇ كىتابنىڭ بارلىق بەتلىرىنى OCR باسقۇچىدىن باشلاپ قايتا بىر تەرەپ قىلامسىز؟ بارلىق تېكىستلەر ئۆچۈرۈلىدۇ."
@@ -806,6 +849,9 @@
       },
       "summary": {
         "message": "بۇ كىتابنىڭ قىسقىچە مەزمۇنىنى قايتا ھاسىللامسىز؟."
+      },
+      "history": {
+        "message": "بۇ كىتابتىن تارىخىي ئاتالغۇلارنى بايقاش ۋەزىپىسىنى باشلامسىز؟"
       }
     },
     "redoOcrError": {
@@ -954,7 +1000,7 @@
   },
   "graph": {
     "title": "بىلىم گىرافى",
-    "subtitle": "كىتابلاردىن ئايرىپ ئېلىنغان سۆزلۈك ۋە ئۇلارنىڭ ئۆز-ئارا مۇناسىۋەتلىرىنىڭ كۆرۈنۈشلۈك گىرافى",
+    "subtitle": "مىڭ ئاڭلىغاندىن بىر كۆرگەن ئەلا",
     "searchPlaceholder": "سۆزلۈك ئىزدەڭ...",
     "loading": "بىلىم گىرافىنى تەكشۈرۋاتىدۇ...",
     "noData": "ئىزدەشكە ماس كېلىدىغان سۆزلۈك تېپىلمىدى.",
