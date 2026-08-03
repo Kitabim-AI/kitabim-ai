@@ -800,6 +800,79 @@
         }
       }
     },
+    "/api/books/content-search": {
+      "get": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Search Book Content",
+        "description": "Home 'Content' tab: exact-phrase search over book content, returning\nmatching page content hits with snippets and page numbers, paginated for infinite scroll.",
+        "operationId": "search_book_content_api_books_content_search_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "title": "Q"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 40,
+              "title": "Pagesize"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedContentHits"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/books/random-proverb": {
       "get": {
         "tags": [
@@ -1006,13 +1079,56 @@
         }
       }
     },
+    "/api/books/graph/chunk": {
+      "get": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Get Graph Chunk Detail",
+        "description": "Retrieve original text and metadata for a chunk referenced by a graph edge.",
+        "operationId": "get_graph_chunk_detail_api_books_graph_chunk_get",
+        "parameters": [
+          {
+            "name": "ref",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Chunk ref string (e.g. book_id:page:chunk_index or chunk_id)",
+              "title": "Ref"
+            },
+            "description": "Chunk ref string (e.g. book_id:page:chunk_index or chunk_id)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/books/graph/merge": {
       "post": {
         "tags": [
           "books"
         ],
         "summary": "Merge Graph Entities",
-        "description": "Merge two knowledge graph entities (admin only).",
+        "description": "Merge two knowledge graph entities by id (admin only).",
         "operationId": "merge_graph_entities_api_books_graph_merge_post",
         "requestBody": {
           "content": {
@@ -1057,7 +1173,7 @@
           "books"
         ],
         "summary": "Delete Graph Relationship",
-        "description": "Delete a relationship between two knowledge graph entities (admin only).",
+        "description": "Delete a relationship between two knowledge graph entities by edge id (admin only).",
         "operationId": "delete_graph_relationship_api_books_graph_relationship_delete_post",
         "requestBody": {
           "content": {
@@ -1102,7 +1218,7 @@
           "books"
         ],
         "summary": "Rename Graph Entity",
-        "description": "Rename a knowledge graph entity (admin only).",
+        "description": "Rename a knowledge graph entity by id (admin only).\n\nThe previous canonical_name is folded into aliases (see GraphRepository.rename_entity)\nso existing citations/lookups by the old spelling keep resolving.",
         "operationId": "rename_graph_entity_api_books_graph_entity_rename_post",
         "requestBody": {
           "content": {
@@ -1834,7 +1950,7 @@
           "books"
         ],
         "summary": "Reprocess Graph",
-        "description": "Manually trigger/reprocess Knowledge Graph extraction for a book.\n\nThis queues the `knowledge_graph_job` to extract entities and relations in Neo4j.",
+        "description": "Manually trigger/reprocess Knowledge Graph extraction for a book.\n\nThis queues the `knowledge_graph_job` to extract entities and relations in Neo4j.\n`scope` (\"fiction\" | \"nonfiction\") is required \u2014 the admin already knows which,\nsince they're the one choosing to extract this specific book (design v2 \u00a73).",
         "operationId": "reprocess_graph_api_books__book_id__reprocess_graph_post",
         "security": [
           {
@@ -1852,6 +1968,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReprocessGraphRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -3947,6 +4073,49 @@
         }
       }
     },
+    "/api/dictionary/check-spelling": {
+      "get": {
+        "tags": [
+          "dictionary"
+        ],
+        "summary": "Check Spelling",
+        "description": "Check whether a Uyghur word exists in the spelling word list.\n\nPublic read-only lookup used by the home search box's \"Spell Check\" tab\nand the equivalent `check_word_spelling` chat tool.",
+        "operationId": "check_spelling_api_dictionary_check_spelling_get",
+        "parameters": [
+          {
+            "name": "word",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Word"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpellingCheckOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/dictionary/search": {
       "get": {
         "tags": [
@@ -4154,6 +4323,47 @@
         }
       }
     },
+    "/api/dictionary/{entry_id}": {
+      "delete": {
+        "tags": [
+          "dictionary"
+        ],
+        "summary": "Delete Dictionary Entry",
+        "description": "Delete a dictionary entry (Admin only).",
+        "operationId": "delete_dictionary_entry_api_dictionary__entry_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Entry Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/spell-check/words/search": {
       "get": {
         "tags": [
@@ -4347,6 +4557,47 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/spell-check/words/{word_id}": {
+      "delete": {
+        "tags": [
+          "words"
+        ],
+        "summary": "Delete Word",
+        "description": "Delete a spell check word entry (Admin only).",
+        "operationId": "delete_word_api_spell_check_words__word_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "word_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Word Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",
@@ -4611,6 +4862,47 @@
         }
       }
     },
+    "/api/synonyms/{entry_id}": {
+      "delete": {
+        "tags": [
+          "synonyms"
+        ],
+        "summary": "Delete Synonym Entry",
+        "description": "Delete a synonym entry (Admin only).",
+        "operationId": "delete_synonym_entry_api_synonyms__entry_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Entry Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/history-dictionary/stats": {
       "get": {
         "tags": [
@@ -4800,6 +5092,47 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history-dictionary/{entry_id}": {
+      "delete": {
+        "tags": [
+          "history-dictionary"
+        ],
+        "summary": "Delete History Entry",
+        "description": "Delete a history dictionary entry (Admin only).",
+        "operationId": "delete_history_entry_api_history_dictionary__entry_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Entry Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",
@@ -5017,6 +5350,47 @@
         }
       }
     },
+    "/api/names-dictionary/{entry_id}": {
+      "delete": {
+        "tags": [
+          "names-dictionary"
+        ],
+        "summary": "Delete Name Entry",
+        "description": "Delete a names dictionary entry (Admin only).",
+        "operationId": "delete_name_entry_api_names_dictionary__entry_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Entry Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/english-uyghur-dictionary/stats": {
       "get": {
         "tags": [
@@ -5206,6 +5580,47 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/english-uyghur-dictionary/{entry_id}": {
+      "delete": {
+        "tags": [
+          "english-uyghur-dictionary"
+        ],
+        "summary": "Delete English Uyghur Entry",
+        "description": "Delete an English-Uyghur dictionary entry (Admin only).",
+        "operationId": "delete_english_uyghur_entry_api_english_uyghur_dictionary__entry_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Entry Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",
@@ -5742,6 +6157,103 @@
         }
       }
     },
+    "/api/proverbs/{proverb_id}": {
+      "put": {
+        "tags": [
+          "proverbs"
+        ],
+        "summary": "Update Proverb",
+        "description": "Update a proverb's text (Admin / Editor only). Volume and page number are\nsource references and are never changed by this endpoint.",
+        "operationId": "update_proverb_api_proverbs__proverb_id__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "proverb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Proverb Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProverbUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProverbEntryOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "proverbs"
+        ],
+        "summary": "Delete Proverb",
+        "description": "Delete a proverb (Admin only).",
+        "operationId": "delete_proverb_api_proverbs__proverb_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "proverb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Proverb Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/quran/surahs": {
       "get": {
         "tags": [
@@ -5933,6 +6445,682 @@
                   },
                   "title": "Response List Quran Entries Api Quran Get"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/books/{book_id}/extract-history": {
+      "post": {
+        "tags": [
+          "admin-history-dictionary"
+        ],
+        "summary": "Trigger History Extraction",
+        "description": "Trigger background ARQ extraction task for a specific book (\"\u062a\u0627\u0631\u0649\u062e\u0649\u064a \u0626\u0627\u062a\u0627\u0644\u063a\u06c7\u0644\u0627\u0631\u0646\u0649 \u062a\u06d0\u067e\u0649\u0634\").",
+        "operationId": "trigger_history_extraction_api_admin_books__book_id__extract_history_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtractHistoryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/history-dictionary/staging": {
+      "get": {
+        "tags": [
+          "admin-history-dictionary"
+        ],
+        "summary": "List Staging Terms",
+        "description": "List staging queue terms ordered by significance_score DESC.",
+        "operationId": "list_staging_terms_api_admin_history_dictionary_staging_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "pending",
+              "title": "Status"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "name": "minSignificance",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Minsignificance"
+            }
+          },
+          {
+            "name": "bookId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Bookid"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Pagesize"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/history-dictionary/staging/{staging_id}/approve": {
+      "post": {
+        "tags": [
+          "admin-history-dictionary"
+        ],
+        "summary": "Approve Staging Term",
+        "description": "Approve candidate term and publish to live history_dictionary.",
+        "operationId": "approve_staging_term_api_admin_history_dictionary_staging__staging_id__approve_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "staging_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Staging Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/history-dictionary/staging/bulk-approve": {
+      "post": {
+        "tags": [
+          "admin-history-dictionary"
+        ],
+        "summary": "Bulk Approve Staging Terms",
+        "description": "Bulk approve multiple staging candidate terms. Items with unresolved\nconflicts or a failed synthesis are skipped and reported, not silently dropped.",
+        "operationId": "bulk_approve_staging_terms_api_admin_history_dictionary_staging_bulk_approve_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkApproveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/admin/history-dictionary/staging/{staging_id}": {
+      "delete": {
+        "tags": [
+          "admin-history-dictionary"
+        ],
+        "summary": "Reject Staging Term",
+        "description": "Reject candidate term.",
+        "operationId": "reject_staging_term_api_admin_history_dictionary_staging__staging_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "staging_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Staging Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/history-dictionary/staging/{staging_id}/facts/{fact_id}": {
+      "patch": {
+        "tags": [
+          "admin-history-dictionary"
+        ],
+        "summary": "Resolve Staging Fact",
+        "description": "Resolve a single fact (accept/reject/edit) on a pending staging candidate.",
+        "operationId": "resolve_staging_fact_api_admin_history_dictionary_staging__staging_id__facts__fact_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "staging_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Staging Id"
+            }
+          },
+          {
+            "name": "fact_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Fact Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveFactRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/history-dictionary/staging/{staging_id}/synthesize": {
+      "post": {
+        "tags": [
+          "admin-history-dictionary"
+        ],
+        "summary": "Synthesize Staging Definition",
+        "description": "Regenerate the preview `definition` from the candidate's current active facts.",
+        "operationId": "synthesize_staging_definition_api_admin_history_dictionary_staging__staging_id__synthesize_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "staging_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Staging Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/graph/entities/{entity_id}/split": {
+      "post": {
+        "tags": [
+          "graph-admin"
+        ],
+        "summary": "Split Entity",
+        "description": "Split an over-merged entity at `split_point_edge_id` via connected-component\npartitioning (design v2 \u00a75). Edges that don't cluster with either anchor are left\non the original node and returned as `unclusteredEdgeIds` for manual reassignment.",
+        "operationId": "split_entity_api_admin_graph_entities__entity_id__split_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SplitEntityRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/graph/merge-log/{merge_log_id}/unmerge": {
+      "post": {
+        "tags": [
+          "graph-admin"
+        ],
+        "summary": "Unmerge Entity",
+        "description": "Reverts a merge by its `graph_merge_log` id (design v2 \u00a75). Restores the\nremoved node and re-points its original edges (matched by stable edge id) back\nonto it \u2014 edges that collided with a pre-existing edge on the kept node during\nthe merge cannot be re-pointed (see `unrecoverableEdgeIds`, a known accepted gap).",
+        "operationId": "unmerge_entity_api_admin_graph_merge_log__merge_log_id__unmerge_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "merge_log_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Merge Log Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/graph/review-queue": {
+      "get": {
+        "tags": [
+          "graph-admin"
+        ],
+        "summary": "List Review Queue",
+        "description": "Paginated list of pending gray-zone resolution reviews (design v2 \u00a74.1/\u00a75).",
+        "operationId": "list_review_queue_api_admin_graph_review_queue_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/graph/review-queue/{review_id}/approve": {
+      "post": {
+        "tags": [
+          "graph-admin"
+        ],
+        "summary": "Approve Review",
+        "description": "Approves a pending review and executes its `suggestedAction` (merge only \u2014\n'split'/'unsure' suggestions require the admin to call split/unmerge explicitly\nwith the specific edge/log id, since neither can be inferred from the review row\nalone).",
+        "operationId": "approve_review_api_admin_graph_review_queue__review_id__approve_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "review_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Review Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/graph/review-queue/{review_id}/reject": {
+      "post": {
+        "tags": [
+          "graph-admin"
+        ],
+        "summary": "Reject Review",
+        "description": "Rejects a pending review \u2014 leaves both entities exactly as they are.",
+        "operationId": "reject_review_api_admin_graph_review_queue__review_id__reject_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "review_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Review Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -6340,6 +7528,11 @@
             "title": "Hasgraph",
             "default": false
           },
+          "hasHistory": {
+            "type": "boolean",
+            "title": "Hashistory",
+            "default": false
+          },
           "ocrMilestone": {
             "type": "string",
             "title": "Ocrmilestone",
@@ -6418,6 +7611,22 @@
         ],
         "title": "BookStatusCount"
       },
+      "BulkApproveRequest": {
+        "properties": {
+          "staging_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Staging Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "staging_ids"
+        ],
+        "title": "BulkApproveRequest"
+      },
       "ChatRequest": {
         "properties": {
           "bookId": {
@@ -6489,6 +7698,11 @@
             "type": "array",
             "title": "Contextbookids",
             "default": []
+          },
+          "exactPhrase": {
+            "type": "boolean",
+            "title": "Exactphrase",
+            "default": false
           }
         },
         "type": "object",
@@ -6723,6 +7937,85 @@
         "title": "ContactSubmissionPublic",
         "description": "Public response schema for contact submission"
       },
+      "ContentSearchHit": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "bookId": {
+            "type": "string",
+            "title": "Bookid"
+          },
+          "bookTitle": {
+            "type": "string",
+            "title": "Booktitle"
+          },
+          "bookAuthor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bookauthor"
+          },
+          "bookVolume": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bookvolume"
+          },
+          "bookCoverUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bookcoverurl"
+          },
+          "pageNumber": {
+            "type": "integer",
+            "title": "Pagenumber"
+          },
+          "snippet": {
+            "type": "string",
+            "title": "Snippet"
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rank",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "bookId",
+          "bookTitle",
+          "pageNumber",
+          "snippet"
+        ],
+        "title": "ContentSearchHit",
+        "description": "Single page content hit for Home 'Content' search tab."
+      },
       "CorrectionItem": {
         "properties": {
           "issue_id": {
@@ -6845,24 +8138,14 @@
       },
       "DeleteRelationshipRequest": {
         "properties": {
-          "sourceName": {
+          "edgeId": {
             "type": "string",
-            "title": "Sourcename"
-          },
-          "targetName": {
-            "type": "string",
-            "title": "Targetname"
-          },
-          "relType": {
-            "type": "string",
-            "title": "Reltype"
+            "title": "Edgeid"
           }
         },
         "type": "object",
         "required": [
-          "sourceName",
-          "targetName",
-          "relType"
+          "edgeId"
         ],
         "title": "DeleteRelationshipRequest"
       },
@@ -6995,6 +8278,24 @@
           "message"
         ],
         "title": "ErrorEvent"
+      },
+      "ExtractHistoryRequest": {
+        "properties": {
+          "min_significance": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Significance",
+            "default": 5
+          }
+        },
+        "type": "object",
+        "title": "ExtractHistoryRequest"
       },
       "ExtractionResult": {
         "properties": {
@@ -7183,19 +8484,19 @@
       },
       "MergeEntitiesRequest": {
         "properties": {
-          "keepName": {
+          "keepId": {
             "type": "string",
-            "title": "Keepname"
+            "title": "Keepid"
           },
-          "removeName": {
+          "removeId": {
             "type": "string",
-            "title": "Removename"
+            "title": "Removeid"
           }
         },
         "type": "object",
         "required": [
-          "keepName",
-          "removeName"
+          "keepId",
+          "removeId"
         ],
         "title": "MergeEntitiesRequest"
       },
@@ -7419,6 +8720,38 @@
         ],
         "title": "PaginatedBooks"
       },
+      "PaginatedContentHits": {
+        "properties": {
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/ContentSearchHit"
+            },
+            "type": "array",
+            "title": "Hits"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "hits",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "PaginatedContentHits",
+        "description": "Paginated response for Home 'Content' search hits."
+      },
       "PaginatedUsers": {
         "properties": {
           "users": {
@@ -7554,6 +8887,23 @@
         ],
         "title": "ProverbEntryOut"
       },
+      "ProverbUpdate": {
+        "properties": {
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "title": "ProverbUpdate"
+      },
       "ProverbsStatsOut": {
         "properties": {
           "total_entries": {
@@ -7672,6 +9022,17 @@
               }
             ],
             "title": "Avg Answer Relevance"
+          },
+          "avg_context_precision": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Context Precision"
           }
         },
         "type": "object",
@@ -7719,6 +9080,17 @@
             ],
             "title": "Userid"
           },
+          "userDisplayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Userdisplayname"
+          },
           "isFirstTurn": {
             "type": "boolean",
             "title": "Isfirstturn"
@@ -7742,6 +9114,43 @@
             "type": "string",
             "format": "date-time",
             "title": "Ts"
+          },
+          "evalStatus": {
+            "type": "string",
+            "title": "Evalstatus"
+          },
+          "faithfulnessScore": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Faithfulnessscore"
+          },
+          "answerRelevanceScore": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answerrelevancescore"
+          },
+          "contextPrecisionScore": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contextprecisionscore"
           }
         },
         "type": "object",
@@ -7751,7 +9160,8 @@
           "isGlobal",
           "isFirstTurn",
           "showOnHomepage",
-          "ts"
+          "ts",
+          "evalStatus"
         ],
         "title": "RagQuestionAdmin",
         "description": "Admin view of a single RAG evaluation question row."
@@ -7888,9 +9298,9 @@
       },
       "RenameEntityRequest": {
         "properties": {
-          "oldName": {
+          "entityId": {
             "type": "string",
-            "title": "Oldname"
+            "title": "Entityid"
           },
           "newName": {
             "type": "string",
@@ -7899,10 +9309,47 @@
         },
         "type": "object",
         "required": [
-          "oldName",
+          "entityId",
           "newName"
         ],
         "title": "RenameEntityRequest"
+      },
+      "ReprocessGraphRequest": {
+        "properties": {
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scope"
+        ],
+        "title": "ReprocessGraphRequest"
+      },
+      "ResolveFactRequest": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "ResolveFactRequest"
       },
       "SpellIssueOut": {
         "properties": {
@@ -7976,6 +9423,80 @@
           "confidence"
         ],
         "title": "SpellSuggestionOut"
+      },
+      "SpellingCheckOut": {
+        "properties": {
+          "is_known": {
+            "type": "boolean",
+            "title": "Is Known"
+          },
+          "word": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Word"
+          },
+          "suggestions": {
+            "items": {
+              "$ref": "#/components/schemas/SpellingSuggestionOut"
+            },
+            "type": "array",
+            "title": "Suggestions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "is_known",
+          "suggestions"
+        ],
+        "title": "SpellingCheckOut"
+      },
+      "SpellingSuggestionOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "word": {
+            "type": "string",
+            "title": "Word"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "word"
+        ],
+        "title": "SpellingSuggestionOut"
+      },
+      "SplitEntityRequest": {
+        "properties": {
+          "splitPointEdgeId": {
+            "type": "string",
+            "title": "Splitpointedgeid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "splitPointEdgeId"
+        ],
+        "title": "SplitEntityRequest"
       },
       "SurahOut": {
         "properties": {

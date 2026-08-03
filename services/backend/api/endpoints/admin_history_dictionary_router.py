@@ -11,8 +11,14 @@ from arq import create_pool
 from arq.connections import RedisSettings
 
 from app.core.config import settings
+from app.core.i18n import t
 from app.db.session import get_session
 from app.db.repositories.dictionary_repository import DictionaryRepository
+from app.services.dictionary_staging_service import (
+    DictionaryStagingService,
+    StagingConflictsUnresolvedError,
+)
+from app.services.history_extraction_service import HistoryFactSynthesisError
 from app.models.user import User
 from auth.dependencies import require_admin
 
@@ -41,8 +47,14 @@ class BulkApproveRequest(BaseModel):
     staging_ids: List[int]
 
 
+class ResolveFactRequest(BaseModel):
+    status: str
+    text: Optional[str] = None
+
+
 ExtractHistoryRequest.model_rebuild()
 BulkApproveRequest.model_rebuild()
+ResolveFactRequest.model_rebuild()
 
 
 @router.post("/books/{book_id}/extract-history")
@@ -61,7 +73,7 @@ async def trigger_history_extraction(
         "status": "queued",
         "jobId": job_id,
         "bookId": book_id,
-        "message": "تارىخىي ئاتالغۇلارنى تېپىش ۋەزىپىسى باشلاندى.",
+        "message": t("messages.history_extraction_started"),
     }
 
 
@@ -95,12 +107,23 @@ async def approve_staging_term(
     current_admin: User = Depends(require_admin),
 ):
     """Approve candidate term and publish to live history_dictionary."""
-    repo = DictionaryRepository(db)
-    result = await repo.approve_staging_term(staging_id)
+    service = DictionaryStagingService(db)
+    try:
+        result = await service.approve_staging_term(staging_id)
+    except StagingConflictsUnresolvedError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=t("errors.staging_conflicts_unresolved"),
+        )
+    except HistoryFactSynthesisError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=t("errors.staging_synthesis_failed"),
+        )
     if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Staging candidate not found or already processed",
+            detail=t("errors.staging_candidate_not_found"),
         )
     return {"status": "success", "item": result}
 
@@ -111,14 +134,26 @@ async def bulk_approve_staging_terms(
     db: AsyncSession = Depends(get_session),
     current_admin: User = Depends(require_admin),
 ):
-    """Bulk approve multiple staging candidate terms."""
-    repo = DictionaryRepository(db)
+    """Bulk approve multiple staging candidate terms. Items with unresolved
+    conflicts or a failed synthesis are skipped and reported, not silently dropped."""
+    service = DictionaryStagingService(db)
     approved_count = 0
+    results = []
     for sid in req.staging_ids:
-        res = await repo.approve_staging_term(sid)
+        try:
+            res = await service.approve_staging_term(sid)
+        except StagingConflictsUnresolvedError:
+            results.append({"stagingId": sid, "status": "conflict"})
+            continue
+        except HistoryFactSynthesisError:
+            results.append({"stagingId": sid, "status": "synthesis_failed"})
+            continue
         if res:
             approved_count += 1
-    return {"status": "success", "approvedCount": approved_count}
+            results.append({"stagingId": sid, "status": "approved"})
+        else:
+            results.append({"stagingId": sid, "status": "not_found"})
+    return {"status": "success", "approvedCount": approved_count, "results": results}
 
 
 @router.delete("/history-dictionary/staging/{staging_id}")
@@ -128,11 +163,58 @@ async def reject_staging_term(
     current_admin: User = Depends(require_admin),
 ):
     """Reject candidate term."""
-    repo = DictionaryRepository(db)
-    success = await repo.reject_staging_term(staging_id)
+    service = DictionaryStagingService(db)
+    success = await service.reject_staging_term(staging_id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Staging candidate not found",
+            detail=t("errors.staging_candidate_not_found"),
         )
     return {"status": "success", "message": "Candidate rejected"}
+
+
+@router.patch("/history-dictionary/staging/{staging_id}/facts/{fact_id}")
+async def resolve_staging_fact(
+    staging_id: int,
+    fact_id: int,
+    req: ResolveFactRequest,
+    db: AsyncSession = Depends(get_session),
+    current_admin: User = Depends(require_admin),
+):
+    """Resolve a single fact (accept/reject/edit) on a pending staging candidate."""
+    if req.status not in ("active", "rejected"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=t("errors.invalid_fact_status"),
+        )
+    service = DictionaryStagingService(db)
+    result = await service.resolve_fact(staging_id, fact_id, req.status, req.text)
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=t("errors.staging_fact_not_found"),
+        )
+    return {"status": "success", "item": result}
+
+
+@router.post("/history-dictionary/staging/{staging_id}/synthesize")
+async def synthesize_staging_definition(
+    staging_id: int,
+    db: AsyncSession = Depends(get_session),
+    current_admin: User = Depends(require_admin),
+):
+    """Regenerate the preview `definition` from the candidate's current active facts."""
+    service = DictionaryStagingService(db)
+    try:
+        definition = await service.synthesize_definition(staging_id)
+    except HistoryFactSynthesisError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=t("errors.staging_synthesis_failed"),
+        )
+    if definition is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=t("errors.staging_candidate_not_found"),
+        )
+    return {"status": "success", "definition": definition}
