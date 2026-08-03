@@ -131,6 +131,10 @@ class DictionaryStagingService:
         target["status"] = status
         if text is not None:
             target["text"] = text.strip()
+            # A cached embedding is only valid for the text it was computed
+            # from — drop it so the next merge event re-embeds the edited text
+            # instead of comparing against a now-stale vector.
+            target.pop("embedding", None)
         if status != "conflict":
             target["conflict_group"] = None
 

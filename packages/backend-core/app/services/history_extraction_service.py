@@ -183,17 +183,22 @@ class HistoryExtractionService:
             max((f.get("conflict_group") or 0 for f in facts), default=0) + 1
         )
 
-        def _append_new(text: str, citation: Dict[str, Any]) -> None:
+        def _append_new(
+            text: str,
+            citation: Dict[str, Any],
+            embedding: List[float] | None = None,
+        ) -> None:
             nonlocal next_id
-            facts.append(
-                {
-                    "id": next_id,
-                    "text": text,
-                    "citations": [citation],
-                    "status": "active",
-                    "conflict_group": None,
-                }
-            )
+            new_fact = {
+                "id": next_id,
+                "text": text,
+                "citations": [citation],
+                "status": "active",
+                "conflict_group": None,
+            }
+            if embedding is not None:
+                new_fact["embedding"] = embedding
+            facts.append(new_fact)
             next_id += 1
 
         # Tier 1: deterministic spelling-normalized match
@@ -225,21 +230,35 @@ class HistoryExtractionService:
             return facts
 
         try:
-            texts_to_embed = [f["text"] for f in active_facts] + [
+            # Only embed facts that don't already carry a cached vector from a
+            # prior merge event — re-embedding the whole accumulated fact list
+            # on every merge turns a recurring entity's cost into O(windows^2)
+            # instead of O(windows). Cached vectors are written back onto
+            # `facts` below so the caller persists them for next time.
+            facts_missing_embedding = [
+                f for f in active_facts if not f.get("embedding")
+            ]
+            texts_to_embed = [f["text"] for f in facts_missing_embedding] + [
                 u["text"] for u in unresolved
             ]
-            vectors = await self._embed_facts(texts_to_embed)
-            existing_vectors = vectors[: len(active_facts)]
-            candidate_vectors = vectors[len(active_facts) :]
+            vectors = await self._embed_facts(texts_to_embed) if texts_to_embed else []
+
+            for f, vec in zip(
+                facts_missing_embedding, vectors[: len(facts_missing_embedding)]
+            ):
+                f["embedding"] = vec
+            candidate_vectors = vectors[len(facts_missing_embedding) :]
+            existing_vectors = [f.get("embedding") for f in active_facts]
 
             for cand, vec in zip(unresolved, candidate_vectors):
+                cand["embedding"] = vec
                 best_score = max(
                     (cosine_similarity(vec, ev) for ev in existing_vectors), default=0.0
                 )
                 if best_score >= EMBEDDING_RELATED_THRESHOLD:
                     related_candidates.append(cand)
                 else:
-                    _append_new(cand["text"], cand["citation"])
+                    _append_new(cand["text"], cand["citation"], embedding=vec)
         except Exception as exc:
             logger.warning(f"Fact embedding similarity check failed: {exc}")
             related_candidates = list(unresolved)
@@ -279,26 +298,29 @@ class HistoryExtractionService:
                     target["conflict_group"] = next_conflict_group
                     target["status"] = "conflict"
                     next_conflict_group += 1
-                facts.append(
-                    {
-                        "id": next_id,
-                        "text": cand["text"],
-                        "citations": [cand["citation"]],
-                        "status": "conflict",
-                        "conflict_group": target["conflict_group"],
-                    }
-                )
+                conflict_fact = {
+                    "id": next_id,
+                    "text": cand["text"],
+                    "citations": [cand["citation"]],
+                    "status": "conflict",
+                    "conflict_group": target["conflict_group"],
+                }
+                if cand.get("embedding") is not None:
+                    conflict_fact["embedding"] = cand["embedding"]
+                facts.append(conflict_fact)
                 next_id += 1
                 continue
 
             # "new", or any unrecognized/mistargeted decision: default to a new active fact
-            _append_new(cand["text"], cand["citation"])
+            _append_new(cand["text"], cand["citation"], embedding=cand.get("embedding"))
 
         # Any candidate the classifier didn't return a decision for (call failed,
         # returned [], or skipped an index) also defaults to new — never dropped.
         for i, cand in enumerate(related_candidates):
             if i not in decided_indices:
-                _append_new(cand["text"], cand["citation"])
+                _append_new(
+                    cand["text"], cand["citation"], embedding=cand.get("embedding")
+                )
 
         return facts
 

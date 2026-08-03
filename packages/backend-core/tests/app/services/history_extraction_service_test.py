@@ -71,6 +71,41 @@ async def test_merge_facts_tier1_deterministic_duplicate_merges_citation():
 
 
 @pytest.mark.asyncio
+async def test_merge_facts_reuses_cached_embeddings_for_existing_facts():
+    # Regression: a prior implementation re-embedded every already-accumulated
+    # active fact on every merge event, growing O(window_count) per recurring
+    # entity into O(window_count^2) total embedding calls across a book.
+    # Existing facts that already carry a cached "embedding" must not be
+    # re-sent to the embeddings API — only genuinely new candidate text should be.
+    service = _svc()
+    existing = [
+        {
+            "id": 1,
+            "text": "ياركەند خانلىقىنىڭ خانى.",
+            "citations": [],
+            "status": "active",
+            "conflict_group": None,
+            "embedding": [1.0, 0.0],
+        }
+    ]
+    candidates = [{"text": "قوشۇمچە پاكىت.", "pages": [50]}]
+    citation_base = {"book_id": "book-2", "book_title": "U", "volume": None}
+
+    with patch.object(
+        service, "_embed_facts", new=AsyncMock(return_value=[[0.0, 1.0]])
+    ) as mock_embed, patch.object(
+        service, "_classify_facts", new=AsyncMock(return_value=[])
+    ):
+        result = await service._merge_facts(
+            "سۇلتان سەئىدخان", existing, candidates, citation_base, "gemini-2.5-flash"
+        )
+
+    mock_embed.assert_called_once_with(["قوشۇمچە پاكىت."])
+    assert result[0]["embedding"] == [1.0, 0.0]
+    assert result[1]["embedding"] == [0.0, 1.0]
+
+
+@pytest.mark.asyncio
 async def test_merge_facts_no_existing_facts_appends_as_new_without_embedding_or_llm():
     service = _svc()
     candidates = [{"text": "ھىجرىيە 915-يىلى تۇغۇلغان.", "pages": [343]}]

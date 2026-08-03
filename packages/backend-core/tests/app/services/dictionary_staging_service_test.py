@@ -219,6 +219,39 @@ async def test_resolve_fact_updates_status_and_clears_conflict_group():
 
 
 @pytest.mark.asyncio
+async def test_resolve_fact_invalidates_cached_embedding_when_text_edited():
+    # A cached embedding is only valid for the text it was computed from — if
+    # an admin edits the text, the stale vector must be dropped so the next
+    # merge event re-embeds the corrected text instead of comparing against
+    # a vector that no longer matches what's stored.
+    mock_session = AsyncMock()
+    service = DictionaryStagingService(mock_session)
+
+    mock_staging = AsyncMock()
+    mock_staging.id = 1
+    mock_staging.status = "pending"
+    mock_staging.facts = [
+        {
+            "id": 1,
+            "text": "old text",
+            "citations": [],
+            "status": "active",
+            "conflict_group": None,
+            "embedding": [1.0, 0.0],
+        }
+    ]
+    service.repo.get_staging_term_by_id = AsyncMock(return_value=mock_staging)
+    service.repo.update_staging_term = AsyncMock()
+
+    await service.resolve_fact(1, fact_id=1, status="active", text="edited text")
+
+    kwargs = service.repo.update_staging_term.call_args.kwargs
+    edited = next(f for f in kwargs["facts"] if f["id"] == 1)
+    assert edited["text"] == "edited text"
+    assert "embedding" not in edited
+
+
+@pytest.mark.asyncio
 async def test_resolve_fact_returns_none_for_unknown_fact_id():
     mock_session = AsyncMock()
     service = DictionaryStagingService(mock_session)
