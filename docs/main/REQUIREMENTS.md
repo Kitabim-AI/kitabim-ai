@@ -131,10 +131,10 @@ An administrator has full control over the system.
 ### 3.1 User Authentication
 
 **REQ-AUTH-001: Sign Up via OAuth**
-New users create an account by signing in with their Google, Facebook, or Twitter (X) account for the first time. There is no separate registration step — the account is created automatically upon first sign-in. The user's display name, email, and profile picture are imported from the OAuth provider. New users are assigned the **Reader** role by default.
+New users create an account by signing in with their Google, Facebook, Twitter (X), or Instagram account for the first time. There is no separate registration step — the account is created automatically upon first sign-in. The user's display name, email, and profile picture are imported from the OAuth provider. New users are assigned the **Reader** role by default.
 
 **REQ-AUTH-002: Sign In via OAuth**
-Returning users sign in using their Google, Facebook, or Twitter account. No manual sign-in (username/password) is supported — authentication is exclusively through OAuth providers.
+Returning users sign in using their Google, Facebook, Twitter, or Instagram account. No manual sign-in (username/password) is supported — authentication is exclusively through OAuth providers.
 
 **REQ-AUTH-003: Automatic Session Management**
 After sign-in, the user's session is maintained automatically. Short-lived access credentials are refreshed transparently so the user does not need to re-authenticate frequently. Sessions last up to 7 days before requiring a new sign-in.
@@ -288,7 +288,7 @@ The management dashboard uses traditional pagination with configurable page size
 Books can optionally be grouped by "work" (title + author combination) so that multi-volume books appear as a single entry rather than multiple separate books.
 
 **REQ-LIB-007: Automatic Status Polling**
-When books are being processed, the interface automatically polls for status updates every 10 seconds so users can see progress without manually refreshing.
+When books are being processed, the interface automatically polls for status updates every 30 seconds so users can see progress without manually refreshing.
 
 ---
 
@@ -383,7 +383,7 @@ The assistant detects when a message contains multiple distinct questions and au
 ### 3.9 Spell Check & Correction
 
 **REQ-SPELL-001: AI-Powered Spell Check**
-The system detects spelling errors, OCR recognition errors, character confusion (similar-looking Uyghur/Arabic characters swapped), and grammar issues likely caused by OCR errors — both automatically, via a background pass that runs once a page finishes embedding (when enabled system-wide), and on demand, when an editor runs spell check for a whole book or an individual page.
+The system detects spelling errors, OCR recognition errors, character confusion (similar-looking Uyghur/Arabic characters swapped), and grammar issues likely caused by OCR errors — both automatically, via a background pass that runs once a page finishes OCR (independently of, and in parallel with, chunking/embedding — when enabled system-wide), and on demand, when an editor runs spell check for a whole book or an individual page.
 
 **REQ-SPELL-002: Correction Suggestions**
 For each detected issue, the system provides:

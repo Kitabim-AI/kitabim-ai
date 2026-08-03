@@ -38,7 +38,13 @@ from app.db.repositories.books_repository import BooksRepository
 from app.db.repositories.chunks_repository import ChunksRepository
 from app.db.repositories.pages_repository import PagesRepository
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
-from app.db.models import Book as BookDB, Page, Chunk, BookSummary
+from app.db.models import (
+    Book as BookDB,
+    Page,
+    Chunk,
+    BookSummary,
+    BatchHistoryExtractionJob,
+)
 from app.models.schemas import (
     Book,
     PaginatedBooks,
@@ -340,6 +346,7 @@ async def get_books(
                 book.pipeline_stats = stats.get("pipeline_stats", {})
                 book.has_summary = stats.get("has_summary", False)
                 book.has_graph = stats.get("has_graph", False)
+                book.has_history = stats.get("has_history", False)
 
         # Return immediately with cached metadata + fresh stats
         return PaginatedBooks.model_validate(
@@ -591,6 +598,7 @@ async def get_books(
             "pipeline_stats": {},
             "has_summary": False,
             "has_graph": False,
+            "has_history": False,
             # Book-level milestones for accurate icon colors
             "ocr_milestone": b.ocr_milestone,
             "chunking_milestone": b.chunking_milestone,
@@ -613,11 +621,20 @@ async def get_books(
         g_res = await session.execute(g_stmt)
         graph_ids = {str(row[0]) for row in g_res.fetchall()}
 
+        h_stmt = select(BatchHistoryExtractionJob.book_id).where(
+            BatchHistoryExtractionJob.book_id.in_(bid_list),
+            BatchHistoryExtractionJob.status == "succeeded",
+        )
+        h_res = await session.execute(h_stmt)
+        history_ids = {str(row[0]) for row in h_res.fetchall()}
+
         for pydantic_book in books_data:
             if str(pydantic_book.id) in summary_ids:
                 pydantic_book.has_summary = True
             if str(pydantic_book.id) in graph_ids:
                 pydantic_book.has_graph = True
+            if str(pydantic_book.id) in history_ids:
+                pydantic_book.has_history = True
 
     # Only fetch expensive pipeline stats if explicitly requested (non-lite)
     if should_include_stats and books_data:
@@ -631,6 +648,8 @@ async def get_books(
                 pydantic_book.has_summary = True
             if stats.get("has_graph"):
                 pydantic_book.has_graph = True
+            if stats.get("has_history"):
+                pydantic_book.has_history = True
 
     result = {
         "books": books_data,
@@ -657,6 +676,7 @@ async def get_books(
                         "pipeline_stats": {},
                         "has_summary": False,
                         "has_graph": False,
+                        "has_history": False,
                     }
                     for book in books_data
                 ],
@@ -1295,6 +1315,7 @@ async def get_book(
     pipeline_stats = stats.get("pipeline_stats", {})
     has_summary = stats.get("has_summary", False)
     has_graph = stats.get("has_graph", False)
+    has_history = stats.get("has_history", False)
 
     # Create a dict with only metadata
     book_dict = {
@@ -1328,6 +1349,7 @@ async def get_book(
         "pipeline_stats": pipeline_stats,
         "has_summary": has_summary,
         "has_graph": has_graph,
+        "has_history": has_history,
     }
 
     # Convert SQLAlchemy models to Pydantic (automatic camelCase conversion)
@@ -1373,6 +1395,7 @@ async def get_book_pipeline_stats(
         "pipeline_stats": stats.get("pipeline_stats", {}),
         "has_summary": stats.get("has_summary", False),
         "has_graph": stats.get("has_graph", False),
+        "has_history": stats.get("has_history", False),
         "total_pages": stats["book"].total_pages,
     }
 

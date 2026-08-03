@@ -14,6 +14,7 @@ Key characteristics:
 - **Exhausting the outer retry budget on a single page is a soft-skip, not a failure.** The page is marked `ocr_milestone='succeeded'` with empty text rather than `'failed'`, so a single unreadable page never blocks the book. The only way OCR can genuinely leave a page (in fact, the whole claimed batch) `ocr_milestone='failed'` in a way that can exhaust retries and push the book to `status='error'` is if the book's PDF itself can't be downloaded/opened at all.
 - **Optional Gemini Batch API mode** (`gemini_batch_ocr_enabled`, default `false`) replaces the inline per-page Gemini Vision call with an async submit-then-poll cycle against the Gemini Batch API, trading latency for a 50% API cost discount on high-volume ingestion.
 - **Table-of-contents detection runs inline during OCR** (`is_toc_page`), setting `pages.is_toc` so Chunking can skip splitting those pages later.
+- **The OCR prompt is dynamically augmented with frequent auto-correction rules.** `_build_ocr_prompt` fills the `OCR_PROMPT` template's `{frequent_corrections}` placeholder from `AutoCorrectRulesRepository.get_frequent_corrections_block()` (a cached, formatted block of the active `auto_correct_rules` pairs), steering the model away from common transcription mistakes at the source rather than relying solely on the post-hoc `auto_correct_scanner`.
 
 ## Feature Flags
 

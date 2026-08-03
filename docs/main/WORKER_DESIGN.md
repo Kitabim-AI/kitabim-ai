@@ -301,7 +301,7 @@ All batch sizes, concurrency limits, and model names below are `system_configs` 
 | `ocr_max_retry_count` | `10` | All scanners/`PipelineDriver` — pipeline-level retry budget |
 | `ocr_max_parallel_pages` | `1` | `ocr_job` — pages OCR'd concurrently within one job |
 | `ocr_scanner_batch_size` | `10` | `ocr_scanner` — pages claimed per book per run |
-| `scanner_book_limit` | `2` | `ocr_scanner` — books dispatched per run |
+| `scanner_book_limit` | `10` | `ocr_scanner` — books dispatched per run |
 | `scanner_page_limit` | `100` | `chunking_scanner` / `embedding_scanner` / `spell_check_scanner` — pages claimed per run |
 | `gemini_ocr_timeout` | `300` (sec) | `ocr_job` — per-page Gemini Vision call timeout |
 | `auto_correct_batch_size` | `500` | `auto_correct_scanner` — pages per dispatched batch |
@@ -315,7 +315,7 @@ All batch sizes, concurrency limits, and model names below are `system_configs` 
 | `gemini_batch_embedding_enabled` | `false` | `embedding_scanner` — routes embedding through the Gemini Batch API instead of `embedding_job` |
 | `gemini_batch_embedding_max_chunks_per_job` | `100` | `batch_embedding_service` — chunks per submitted batch-embedding sub-job |
 | `gemini_batch_ocr_timeout_hours` / `gemini_batch_embedding_timeout_hours` | `24` | Poller scanners — wall-clock timeout before marking a stuck batch job's pages failed |
-| `gemini_batch_ocr_max_retry_count` / `gemini_batch_embedding_max_retry_count` | `3` | Poller scanners — per-item retry budget before giving up on that page |
+| `gemini_batch_embedding_max_retry_count` | `3` | `batch_embedding_service` (poller scanner) — per-chunk retry budget before giving up. Batch OCR has no equivalent dedicated key — `batch_ocr_service` reuses `ocr_max_retry_count` (default `10`) as its per-page retry budget instead |
 | `MAX_PARALLEL_SPELL_CHECK` (env) | `6` | `spell_check_job` — pages spell-checked concurrently |
 | `MAX_CONCURRENT_SPELL_CHECK_BOOKS` (env) | `3` | `spell_check_scanner` — books actively spell-checked at once |
 | `MAX_PARALLEL_AUTO_CORRECT` (env) | `10` | `auto_correct_job` — pages corrected concurrently |

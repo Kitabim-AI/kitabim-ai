@@ -22,7 +22,7 @@ The backend API and worker are two separate deployable services that share one P
 
 **Non-Goals (current)**
 - Multi-tenant billing.
-- Automated offline RAG metrics scoring (e.g. Ragas) — telemetry is recorded for manual/human review only.
+- Corpus-wide/batch RAG metrics scoring (e.g. a periodic Ragas run) — but each `ChatOrchestrator` turn does get an async, single-turn LLM-judge score (faithfulness/answer relevance/context precision, via `rag_eval_job`, gated by `rag_judge_scoring_enabled`, default `true`); user thumbs-up/down feedback remains the primary review signal for `RAGService` turns.
 
 ## 3) Architecture (High-Level)
 
@@ -46,7 +46,7 @@ The backend API and worker are two separate deployable services that share one P
 - **Frontend (`apps/frontend`)**
   - React 19 SPA built with Vite, served by Nginx.
   - Reader UI with real-time book/page milestone polling, curation/spell-check workspace, admin dashboard, and streaming chat UI (renders `planning`, `decompose`, `tool_call`, `grading`, and `chunk` SSE events as they arrive).
-  - Home page search is a paginated tab bar (`SearchTabBar`, 6 tabs per page with a More/Back toggle) covering chat, catalog browse, full-text content search, and independent reference lookups — see §6D.
+  - Home page search is a paginated tab bar (`SearchTabBar`, 11 tabs per page with a More/Back toggle) covering chat, catalog browse, full-text content search, and independent reference lookups — see §6D.
 
 - **Gemini Infrastructure**
   - Interactive (real-time) API for OCR, embeddings, chat, summarization, and entity extraction — the default path for all of these.
@@ -137,10 +137,10 @@ A key/value table (seeded with defaults, editable via the admin dashboard) that 
 Stores only entities and their relationships extracted from book chunks — no `Book`, `Author`, or `Chunk` nodes live in the graph; those stay in PostgreSQL.
 
 **Nodes**
-- `Entity` — `name` (unique, NFC-normalized canonical name), `type` (e.g. Person, Location, Event, Organization, HistoricalEra, Concept), optional `subtype`.
+- `Entity` — keyed by a stable `id` (uuid, unique constraint `entity_id_unique`), never by name. `canonical_name` (NFC-normalized display name, not unique) and `type` (Person, Location, Event, Organization, HistoricalEra, Concept, Other), optional `subtype`. See [NEO4J_CONNECTION.md](NEO4J_CONNECTION.md) for the full property schema.
 
 **Relationships**
-- `RELATED_TO` (directed, `Entity` → `Entity`) — `book_id` (the PostgreSQL book UUID the relationship was extracted from) and `type` (the semantic relation, e.g. `LIVED_IN`, `BORN_IN`, `FRIEND_OF`). Multiple books can contribute independent `RELATED_TO` edges between the same two entities; edges are deleted per-`book_id` when a book is reprocessed or removed, and orphaned `Entity` nodes are cleaned up afterward.
+- `RELATED_TO` (directed, `Entity` → `Entity`) — `book_id` (the PostgreSQL book UUID the relationship was extracted from) and `rel_type` (the semantic relation, e.g. `LIVED_IN`, `BORN_IN`, `FRIEND_OF`). Multiple books can contribute independent `RELATED_TO` edges between the same two entities; edges are deleted per-`book_id` when a book is reprocessed or removed, and orphaned `Entity` nodes are cleaned up afterward.
 
 Knowledge-graph extraction and ingestion are gated by the `knowledge_graph_enabled` system config (disabled by default).
 
@@ -172,8 +172,8 @@ Every request routed here is dispatched through `HandlerRegistry` (`packages/bac
 1. **`DeterministicRAGHandler`** (`services/rag/agent/deterministic_handler.py`) — matches when the `use_deterministic_router` system config is `true` (disabled by default).
    - **Signal extraction**: a single structured Gemini call (with a keyword-based fallback if it fails) classifies intent (`catalog`, `dictionary`, `identity`, `summary`, `relationship`, `passage`, `quran`), detects composite/multi-part questions, pronoun-coreference needs, and volume-shift requests, alongside pure-Python DB lookups for title/author matches.
    - **Coreference rewrite**: if the question depends on chat history, an LLM rewrite resolves pronouns into a self-contained question before retrieval.
-   - **Path selection & execution**: routing itself is a declarative `google.adk.workflow.Workflow` graph (`services/rag/agent/graph_router.py`) that picks one of nine fixed retrieval paths (current page, Quran, dictionary, catalog, named title, named author, volume shift, in-reader-only, prior-context, or an open/global fallback) and runs it via the corresponding `DeterministicRAGHandler._path_*` method — no LLM decides tool order once the path is chosen.
-   - **Universal fallback**: six of the nine paths automatically widen search scope (book-summary discovery, then global chunk search) when the primary retrieval returns thin or low-confidence results.
+   - **Path selection & execution**: routing itself is a declarative `google.adk.workflow.Workflow` graph (`services/rag/agent/graph_router.py`) that picks one of ten fixed retrieval paths (current page, Quran, dictionary, catalog, named title, named author, volume shift, in-reader-only, prior-context, or an open/global fallback) and runs it via the corresponding `DeterministicRAGHandler._path_*` method — no LLM decides tool order once the path is chosen.
+   - **Universal fallback**: six of the ten paths automatically widen search scope (book-summary discovery, then global chunk search) when the primary retrieval returns thin or low-confidence results.
    - Composite questions run their sub-questions concurrently, each against an isolated observation list, merged back in original order.
 
 2. **`LLMRoutedRAGHandler`** (`services/rag/agent/llm_routed_handler.py`) — the always-matching fallback, used whenever `use_deterministic_router` is `false` (the default).
@@ -193,15 +193,15 @@ Every request routed here is dispatched through `HandlerRegistry` (`packages/bac
 1. Gets-or-creates a `conversations` row (`ConversationRepository`), deriving a title from the current book or the first ~40 characters of the question.
 2. Loads the last 6 messages of that conversation as pre-processing context, and runs `DeterministicRAGHandler._llm_analyze_query()` for fast signal extraction (unconditionally — independent of the `use_deterministic_router` config, which only gates the old handler's own routing).
 3. Builds a **retrieval agent** (`chat/retrieval_agent.py`) — the same `AGENT_SYSTEM_PROMPT` and 19 tools as `LLMRoutedRAGHandler` — and runs it via an ADK `Runner` backed by a persistent `DatabaseSessionService` (wired in `services/backend/main.py`), streaming `tool_call`/`tool_result`/`agent_thinking` events.
-4. Grades the collected context with the same `_grade_context`/`_extract_used_book_ids` functions the old pipeline uses.
+4. Grades the collected context — by default via an LLM reranker (`rerank_context`, gated by `rag_reranker_enabled`, default `true`) that replaces the relative-score selection with real semantic reranking, falling back to the same `_grade_context` function the old pipeline uses if the reranker call fails, times out, or is disabled — then extracts used book IDs with `_extract_used_book_ids`.
 5. Builds a separate, tools-less **answer agent** (`chat/answer_agent.py`) to stream the final answer, using its own citation-instruction prompt (`chat/answer_prompts.py` — a parallel implementation of `answer_builder.py`'s instructions, not a shared call).
-6. Persists both the user and model messages via `ConversationRepository.save_turn()`, links the `rag_evaluations` row it also writes to the conversation, and emits a `done` event carrying `conversationId`.
+6. Persists both the user and model messages via `ConversationRepository.save_turn()`, links the `rag_evaluations` row it also writes to the conversation, enqueues `rag_eval_job` for async LLM-judge scoring of the turn (gated by `rag_judge_scoring_enabled`, default `true`), and emits a `done` event carrying `conversationId`.
 
 This is the only path that reads/writes `conversations`/`conversation_messages` — `RAGService` remains entirely conversation-unaware. The REST endpoints `POST/GET /api/chat/conversations`, `GET /api/chat/conversations/{id}/messages`, and `DELETE /api/chat/conversations/{id}` (all under `require_reader` auth) back the frontend's conversation-history sidebar (list, resume, delete).
 
 ### D) Home Search / Library Discovery
 
-The home page's search box drives a single tab bar (`SearchTabBar`) covering 11 modes, paginated 6-per-page with a More/Back toggle: `ask` (routes to RAG chat, §6B), `books` (title/author/category catalog browse), `content` (full-text search over `chunks.text_search` across the whole library), and eight reference-lookup tabs — dictionary, names, history terms, proverbs, synonyms, English↔Uyghur, Quran, and single-word spell-check. Only the active tab's hook performs a live, debounced fetch against its own existing lookup endpoint (dictionary/proverb/Quran/etc. — no LLM involved); the rest are cheap no-ops. The `content` tab is the one exception requiring pagination: `GET /api/books/content-search` (backed by `ChunksRepository.search_content_chunks`, an exact-phrase Postgres full-text match) returns snippet hits paginated for infinite scroll, page size driven by the `collection_page_size` system config (default 40).
+The home page's search box drives a single tab bar (`SearchTabBar`) covering 11 modes, paginated 11-per-page with a More/Back toggle (currently a dormant no-op, since all 11 tabs already fit on the one page): `ask` (routes to RAG chat, §6B), `books` (title/author/category catalog browse), `content` (full-text search over `chunks.text_search` across the whole library), and eight reference-lookup tabs — dictionary, names, history terms, proverbs, synonyms, English↔Uyghur, Quran, and single-word spell-check. Only the active tab's hook performs a live, debounced fetch against its own existing lookup endpoint (dictionary/proverb/Quran/etc. — no LLM involved); the rest are cheap no-ops. The `content` tab is the one exception requiring pagination: `GET /api/books/content-search` (backed by `ChunksRepository.search_content_chunks`, an exact-phrase Postgres full-text match) returns snippet hits paginated for infinite scroll, page size 40 by default (matching, but not read from, the `collection_page_size` system config).
 
 ## 7) Gemini Integration Strategy
 - **`google-genai` SDK** — used for every direct (non-agentic) AI call: the File API for OCR image uploads, OCR text extraction, book summarization, structured knowledge-graph entity/relation extraction (Pydantic schemas), embedding generation, and the deterministic router's signal-extraction/intent-classification/query-rewrite/decomposition calls.
@@ -215,7 +215,7 @@ The home page's search box drives a single tab bar (`SearchTabBar`) covering 11 
 - **Circuit breakers**: independent breakers protect Redis and each class of Gemini call (text, OCR, embedding) so an outage in one degrades gracefully instead of cascading.
 - **Caching**: Redis caches books, category lists, system configs, RAG query/embedding/rewrite/summary-search results, and stats, each with its own TTL.
 - **Worker tracking**: the admin dashboard exposes live job state and per-page pipeline progress.
-- **Feedback & telemetry**: `rag_evaluations` captures per-request metrics and thumbs-up/down feedback for manual review; there is no automated offline evaluation job.
+- **Feedback & telemetry**: `rag_evaluations` captures per-request metrics and thumbs-up/down feedback for manual review; `ChatOrchestrator` turns additionally get an async LLM-judge score (`rag_eval_job`) — there is no corpus-wide/batch offline evaluation job.
 
 ## 9) Scalability
 - **Concurrency**: ARQ workers process pages/books in parallel; pages are leased atomically (`worker_id`/`claimed_at`) to avoid double-processing.

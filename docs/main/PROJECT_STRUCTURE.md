@@ -182,15 +182,17 @@ The worker adds `services/worker/requirements.worker.txt` on top of these two fi
 services/worker/
 ├── worker.py                # ARQ WorkerSettings entrypoint (arq worker.WorkerSettings)
 ├── manual_scan.py             # CLI to trigger a scanner pass on demand
-├── jobs/                        # Per-unit-of-work executors (7)
+├── jobs/                        # Per-unit-of-work executors (9)
 │   ├── ocr_job.py                  # Renders a page, calls Gemini Vision (or submits a batch_ocr_job if gemini_batch_ocr_enabled)
 │   ├── chunking_job.py               # Cleans text, writes chunk rows
 │   ├── embedding_job.py                # Vectorizes chunks (synchronous path; batch path is submitted inline by embedding_scanner)
 │   ├── spell_check_job.py                # Flags likely OCR errors per page
 │   ├── auto_correct_job.py                 # Applies bulk auto-correction rules
 │   ├── summary_job.py                        # Generates + embeds a book summary
-│   └── knowledge_graph_job.py                  # Extracts entities/relations, writes to Neo4j
-└── scanners/                             # Periodic pollers + the event-driven dispatcher (14)
+│   ├── knowledge_graph_job.py                  # Extracts entities/relations, writes to Neo4j
+│   ├── graph_resolution_job.py                   # Resolves/merges duplicate graph entities against Neo4j fuzzy-match candidates
+│   └── rag_eval_job.py                             # Post-turn async judge scoring for rag_evaluations (enqueued by ChatOrchestrator, not a scanner)
+└── scanners/                             # Periodic pollers + the event-driven dispatcher (15)
     ├── ocr_scanner.py                        # Leases idle pages, enqueues ocr_job
     ├── batch_ocr_poller_scanner.py              # Polls in-flight batch_ocr_jobs, ingests results when Gemini finishes
     ├── chunking_scanner.py                        # Leases OCR'd pages, enqueues chunking_job
@@ -200,6 +202,7 @@ services/worker/
     ├── auto_correct_scanner.py                             # Enqueues auto_correct_job
     ├── summary_scanner.py                                    # Leases ready books, enqueues summary_job
     ├── graph_scanner.py                                        # Leases ready books, enqueues knowledge_graph_job (implemented but NOT wired into WorkerSettings.cron_jobs — see WORKER_DESIGN.md)
+    ├── graph_resolution_scanner.py                               # Claims graph_resolution_queue rows, dispatches one graph_resolution_job per scope
     ├── event_dispatcher.py                                       # Reacts to pipeline_events for immediate next-step triggering
     ├── gcs_discovery_scanner.py                                    # Discovers books uploaded directly to GCS
     ├── pipeline_driver.py                                            # Coordinates scanner scheduling
@@ -207,7 +210,7 @@ services/worker/
     └── maintenance_scanner.py                                            # Cleans up processed pipeline_events
 ```
 
-13 of these 14 scanners are wired into `WorkerSettings.cron_jobs` — `graph_scanner.py` is the one exception (see [WORKER_DESIGN.md](WORKER_DESIGN.md)). Each scanner uses a fresh `async with async_session_factory()` per page/batch it processes — no session is held or shared across pages within a run. `ocr_job`, `chunking_job`, `embedding_job`, and `spell_check_job` additionally take a Redis `MultiPageLock` (namespaced per stage via a `prefix` argument) around their claimed page IDs as a second line of defense against double-processing.
+14 of these 15 scanners are wired into `WorkerSettings.cron_jobs` — `graph_scanner.py` is the one exception (see [WORKER_DESIGN.md](WORKER_DESIGN.md)). Each scanner uses a fresh `async with async_session_factory()` per page/batch it processes — no session is held or shared across pages within a run. `ocr_job`, `chunking_job`, `embedding_job`, and `spell_check_job` additionally take a Redis `MultiPageLock` (namespaced per stage via a `prefix` argument) around their claimed page IDs as a second line of defense against double-processing.
 
 ---
 
@@ -225,9 +228,13 @@ apps/frontend/src/
 │                        share/: ShareModal (whole-book share), ShareChatModal (single Q&A share — implemented,
 │                                 backed by a working `/api/share/qa` endpoint, but not currently rendered from
 │                                 any component; there is no "share this answer" entry point in the chat UI today)
-├── hooks/               # useAuth, useBookActions, useBooks, useChat, useContentSearch, useHomeSearchTab,
-│                            useLookupSearch, usePendingCorrections, useSpellCheck, useSpellingCheck,
-│                            useUyghurInput (11)
+├── hooks/               # useAuth, useBookActions, useBooks, useChat, useContentSearch, useLookupSearch,
+│                            usePendingCorrections, useScrollStabilizer, useScrollToPage, useSpellCheck,
+│                            useSpellingCheck, useUyghurInput (12)
+│                            useScrollStabilizer: keeps the visible reader page stationary while
+│                            off-screen-above placeholders resolve to real content during ordinary
+│                            scrolling; useScrollToPage handles the equivalent for the initial
+│                            jump-to-page settle window
 ├── services/              # authService, contactService, geminiService, pdfService, persistenceService,
 │                             searchTabsService, userService (7)
 │                             geminiService.ts is legacy-named — despite the name, it calls the Kitabim backend

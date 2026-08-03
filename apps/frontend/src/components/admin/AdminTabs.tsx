@@ -1,5 +1,4 @@
-import { HistoryStagingQueuePanel } from './dictionary/HistoryStagingQueuePanel';
-import { BarChart3, History, Mail, MessageSquare, Settings, Sparkles, TableOfContents, Users } from 'lucide-react';
+import { BarChart3, Mail, MessageSquare, Settings, Sparkles, TableOfContents, Users } from 'lucide-react';
 import React from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth, useIsAdmin, useIsEditor } from '../../hooks/useAuth';
@@ -15,7 +14,7 @@ interface AdminTabsProps {
   bookManagementPanel: React.ReactNode;
 }
 
-type TabId = 'books' | 'stats' | 'users' | 'contacts' | 'config' | 'rules' | 'questions' | 'history-staging';
+type TabId = 'books' | 'stats' | 'users' | 'contacts' | 'config' | 'rules' | 'questions';
 
 interface Tab {
   id: TabId;
@@ -46,7 +45,6 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
 
   const tabs: Tab[] = [
     { id: 'books', label: t('admin.booksLabel'), icon: <TableOfContents size={18} /> },
-    { id: 'history-staging', label: t('admin.historyStagingLabel') || 'تارىخىي ئاتالغۇلار باھالاش', icon: <History size={18} />, adminOnly: true },
     { id: 'users', label: t('admin.usersLabel'), icon: <Users size={18} />, adminOnly: true },
     { id: 'questions', label: t('admin.questionsLabel'), icon: <MessageSquare size={18} />, adminOnly: true },
     { id: 'rules', label: t('admin.rulesLabel') || 'Auto-Correction', icon: <Sparkles size={18} />, adminOnly: false },
@@ -90,7 +88,6 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
       {/* Tab Content */}
       <div className="pt-6 md:pt-8">
         {activeTab === 'books' && bookManagementPanel}
-        {activeTab === 'history-staging' && isAdmin && <HistoryStagingQueuePanel />}
         {activeTab === 'users' && isAdmin && <UserManagementPanel />}
         {activeTab === 'rules' && <AutoCorrectRulesPanel />}
         {activeTab === 'questions' && isAdmin && <AdminQuestions />}

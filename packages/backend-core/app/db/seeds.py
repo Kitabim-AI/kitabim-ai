@@ -154,6 +154,16 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Gemini model used for structured Uyghur history dictionary term extraction and factual synthesis.",
         },
         {
+            "key": "gemini_batch_history_extraction_enabled",
+            "value": "false",
+            "description": "Globally enable/disable Gemini Batch API for history dictionary extraction. Set to 'true' to use Batch API (50% cost discount) or 'false' for online sliding-window extraction.",
+        },
+        {
+            "key": "history_extraction_batch_size",
+            "value": "15",
+            "description": "Number of book pages grouped per sliding window / batch request during history dictionary extraction.",
+        },
+        {
             "key": "gemini_batch_embedding_max_chunks_per_job",
             "value": "100",
             "description": "Maximum number of chunks packaged into a single Gemini Batch API embedding submission. Sized for the Tier 1 batch enqueued-tokens budget (500K) assuming several concurrent jobs — raise if the Gemini API key is upgraded to a higher tier.",

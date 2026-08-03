@@ -78,6 +78,8 @@ To be added to `tailwind.config.js` under `theme.extend.fontSize`.
 - Uyghur content text: `1.8` (`.uyghur-text` class)
 - UI / chrome text: `1.5` (Tailwind default `leading-normal`)
 
+**Mobile input font-size:** `index.css` forces `font-size: 16px !important` on `input`, `select`, and `textarea` below 768px viewport width (`@media screen and (max-width: 767px)`), to prevent iOS Safari from auto-zooming on focus. This already matches the `text-ui-base` (16px) target above, independent of token adoption.
+
 ---
 
 ## Border Radius

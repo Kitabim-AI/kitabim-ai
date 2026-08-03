@@ -65,3 +65,4 @@ This file provides guidance for automated agents working in this repo.
 - Worker-specific code (jobs, scanners) lives in `services/worker/`.
 - Keep secrets out of the frontend; all AI calls are proxied via the backend.
 - Prefer small, surgical edits; update docs when behavior changes.
+- **LLM Prompts Language Rule**: ALL LLM system prompts in code MUST be written in English. NEVER write LLM system prompts in Uyghur in the codebase. Explicitly specify input language and output language/script requirements in English within the prompt (e.g. *"Input book pages are in Uyghur. All output text fields must be strictly written in modern Uyghur using Uyghur Arabic script"*).

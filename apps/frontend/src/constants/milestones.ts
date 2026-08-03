@@ -5,6 +5,7 @@ export const PIPELINE_STEP = {
   SUMMARY: 'summary',
   SPELL_CHECK: 'spell_check',
   GRAPH: 'graph',
+  HISTORY: 'history',
   READY: 'ready',
   ERROR: 'error',
 } as const;
@@ -25,6 +26,7 @@ export const MILESTONE_FIELD_BY_STEP = {
   [PIPELINE_STEP.SPELL_CHECK]: 'spellCheckMilestone',
   [PIPELINE_STEP.SUMMARY]: 'hasSummary',
   [PIPELINE_STEP.GRAPH]: 'hasGraph',
+  [PIPELINE_STEP.HISTORY]: 'hasHistory',
 } as const;
 
 export const ADMIN_PIPELINE_STEPS = [
@@ -34,6 +36,7 @@ export const ADMIN_PIPELINE_STEPS = [
   { key: PIPELINE_STEP.SUMMARY, label: 'admin.pipeline.summary' },
   { key: PIPELINE_STEP.SPELL_CHECK, label: 'admin.pipeline.spellCheck' },
   { key: PIPELINE_STEP.GRAPH, label: 'admin.pipeline.graph' },
+  { key: PIPELINE_STEP.HISTORY, label: 'admin.pipeline.history' },
 ] as const;
 
 export const REPROCESS_STEP = {
@@ -43,6 +46,7 @@ export const REPROCESS_STEP = {
   SPELL_CHECK: 'spell-check',
   GRAPH: 'graph',
   SUMMARY: 'summary',
+  HISTORY: 'history',
 } as const;
 
 export type ReprocessStep = typeof REPROCESS_STEP[keyof typeof REPROCESS_STEP];
