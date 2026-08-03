@@ -54,6 +54,14 @@ def test_find_deterministic_duplicate_no_match_returns_none():
     assert match is None
 
 
+def test_find_deterministic_duplicate_ignores_differing_digits_even_at_high_similarity():
+    # Same shape, different year — must NOT auto-merge via tier 1 (deferred to
+    # tier 3, which can tell "reworded" apart from "conflicting date").
+    existing = [{"id": 1, "text": "ھىجرىيە 915-يىلى تۇغۇلغان.", "status": "active"}]
+    match = find_deterministic_duplicate("ھىجرىيە 916-يىلى تۇغۇلغان.", existing)
+    assert match is None
+
+
 def test_cosine_similarity_identical_vectors_returns_one():
     v = [1.0, 2.0, 3.0]
     assert abs(cosine_similarity(v, v) - 1.0) < 1e-9

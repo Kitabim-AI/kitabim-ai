@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 from difflib import SequenceMatcher
 from typing import Any, Dict, List, Optional
 
@@ -20,19 +21,34 @@ def fact_text_similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, norm_a, norm_b).ratio()
 
 
+def _digit_sequences(text: str) -> List[str]:
+    return re.findall(r"\d+", text)
+
+
 def find_deterministic_duplicate(
     candidate_text: str,
     existing_facts: List[Dict[str, Any]],
     threshold: float = DUPLICATE_TEXT_SIMILARITY_THRESHOLD,
 ) -> Optional[int]:
     """Return the id of an existing *active* fact that is a near-exact spelling
-    variant of candidate_text (best match above threshold), or None."""
+    variant of candidate_text (best match above threshold), or None.
+
+    Facts whose digit sequences differ (e.g. different years or counts) are
+    never treated as tier-1 duplicates, even at high text similarity — a
+    single differing digit is far more likely to be a genuine distinguishing
+    fact than spelling noise, so that case is deferred to tier 3 (LLM
+    classification), which can tell "same fact, reworded" apart from "same
+    shape, different year" (a conflict)."""
+    candidate_digits = _digit_sequences(candidate_text)
     best_id: Optional[int] = None
     best_score = 0.0
     for fact in existing_facts:
         if fact.get("status") != "active":
             continue
-        score = fact_text_similarity(candidate_text, fact.get("text", ""))
+        fact_text = fact.get("text", "")
+        if _digit_sequences(fact_text) != candidate_digits:
+            continue
+        score = fact_text_similarity(candidate_text, fact_text)
         if score >= threshold and score > best_score:
             best_score = score
             best_id = fact.get("id")
