@@ -46,6 +46,26 @@ def _build_fuzzy_term_where(column, norm_term: str):
     )
 
 
+def _build_strict_term_where(column, norm_term: str):
+    """Stricter than _build_fuzzy_term_where — for extraction-dedup safety
+    checks only (find_matching_history_term / find_matching_staging_term),
+    where a false match silently discards legitimate new content rather than
+    just ranking lower in a search result list.
+
+    _build_fuzzy_term_where's "shares one common word + similarity > 0.4"
+    branch is tuned for tolerant search/RAG lookup and caused a 2026-08-03
+    production incident: it matched "تارىخى رەشىدى" (a book) against "رىم
+    تارىخى" ("History of Rome", similarity 0.47, shared word "تارىخى") and
+    "سۇلتان سەئىدخان" (a person) against the bare word "سۇلتان" (similarity
+    0.5) — silently skipping every extracted entity as if it already existed.
+    This never matches on a single shared common word; it requires either a
+    full substring containment or a high overall similarity."""
+    norm_col = _sql_normalize_uyghur(column)
+    return norm_col.ilike(f"%{norm_term}%") | (
+        func.similarity(norm_col, norm_term) >= 0.7
+    )
+
+
 class DictionaryRepository:
     """Read-only lookup helpers across language dictionary tables."""
 
@@ -426,11 +446,15 @@ class DictionaryRepository:
         return res.scalar_one_or_none()
 
     async def find_matching_history_term(self, term: str) -> HistoryDictionary | None:
-        """Find an existing published HistoryDictionary entry using normalized spelling and similarity."""
+        """Find an existing published HistoryDictionary entry using normalized spelling and similarity.
+
+        Uses the strict matcher, not the search-tolerant one — a false match
+        here silently discards legitimate extraction output (see
+        _build_strict_term_where)."""
         norm_term = normalize_uyghur_spelling(term)
         stmt = (
             select(HistoryDictionary)
-            .where(_build_fuzzy_term_where(HistoryDictionary.term, norm_term))
+            .where(_build_strict_term_where(HistoryDictionary.term, norm_term))
             .order_by(
                 func.similarity(
                     _sql_normalize_uyghur(HistoryDictionary.term), norm_term
@@ -444,13 +468,16 @@ class DictionaryRepository:
     async def find_matching_staging_term(
         self, term: str
     ) -> HistoryDictionaryStaging | None:
-        """Find an existing pending staging term using normalized spelling and similarity."""
+        """Find an existing pending staging term using normalized spelling and similarity.
+
+        Uses the strict matcher, not the search-tolerant one — see
+        _build_strict_term_where."""
         norm_term = normalize_uyghur_spelling(term)
         stmt = (
             select(HistoryDictionaryStaging)
             .where(
                 HistoryDictionaryStaging.status == "pending",
-                _build_fuzzy_term_where(HistoryDictionaryStaging.term, norm_term),
+                _build_strict_term_where(HistoryDictionaryStaging.term, norm_term),
             )
             .order_by(
                 func.similarity(
