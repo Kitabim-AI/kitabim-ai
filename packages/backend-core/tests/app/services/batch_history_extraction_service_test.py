@@ -136,3 +136,83 @@ async def test_poll_and_process_batch_history_jobs():
         assert processed == 1
         assert mock_job.status == "succeeded"
         mock_stage.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_poll_and_process_batch_history_jobs_handles_bare_list_entities():
+    # Reproduces a production bug: the model sometimes returns the entities
+    # array directly instead of the requested {"entities": [...]} wrapper,
+    # which crashed with "'list' object has no attribute 'get'" and silently
+    # dropped the whole batch line (caught by the per-line try/except).
+    mock_session = AsyncMock()
+
+    mock_job = BatchHistoryExtractionJob(
+        id="job-456",
+        gemini_batch_id="batches/test-batch-456",
+        book_id="book-123",
+        status="submitted",
+        min_significance=5,
+        model_name="gemini-2.5-flash",
+    )
+
+    mock_active_res = MagicMock()
+    mock_active_res.scalars.return_value.all.return_value = [mock_job]
+    mock_session.execute.return_value = mock_active_res
+
+    mock_book = Book(id="book-123", title="تارىخ", volume=1)
+    mock_session.scalar.return_value = mock_book
+
+    with patch(
+        "app.services.batch_history_extraction_service._get_genai_client"
+    ) as mock_get_client, patch(
+        "app.services.batch_history_extraction_service.HistoryExtractionService._stage_entity",
+        new_callable=AsyncMock,
+    ) as mock_stage:
+        mock_client = MagicMock()
+        mock_batch_info = MagicMock()
+        mock_batch_info.state = "SUCCEEDED"
+        mock_dest = MagicMock()
+        mock_dest.file_name = "files/output-file-id"
+        mock_dest.gcs_uri = None
+        mock_batch_info.dest = mock_dest
+
+        output_json = {
+            "response": {
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [
+                                {
+                                    "text": json.dumps(
+                                        [
+                                            {
+                                                "term": "سۇلتان سۇتۇق بۇغراخان",
+                                                "category": "figure",
+                                                "significance_score": 9,
+                                                "facts": [
+                                                    {
+                                                        "text": "قاراخانىيلار خانلىقىنىڭ خانى.",
+                                                        "pages": [1],
+                                                    }
+                                                ],
+                                            }
+                                        ]
+                                    )
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        }
+        output_bytes = (json.dumps(output_json) + "\n").encode("utf-8")
+
+        mock_client.batches.get.return_value = mock_batch_info
+        mock_client.files.download.return_value = output_bytes
+        mock_get_client.return_value = mock_client
+
+        processed = await poll_and_process_batch_history_jobs(mock_session)
+
+        assert processed == 1
+        assert mock_job.status == "succeeded"
+        mock_stage.assert_called_once()

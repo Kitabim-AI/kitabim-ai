@@ -40,6 +40,37 @@ def _parse_json_object(raw: str) -> Dict[str, Any]:
     return json.loads(match.group())
 
 
+def _entities_from_parsed(data: Any) -> List[Dict[str, Any]]:
+    """Normalize an already-parsed extraction payload into its entities list.
+    Models sometimes return the entities array directly instead of the
+    requested {"entities": [...]} wrapper — tolerate both shapes rather than
+    crashing (a bare list has no .get) or silently dropping the whole batch."""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        return data.get("entities", [])
+    return []
+
+
+def parse_extraction_entities(raw: str) -> List[Dict[str, Any]]:
+    """Parse the extraction LLM's raw JSON response into an entities list,
+    tolerating markdown code fences and either JSON shape (see
+    _entities_from_parsed). Shared by the interactive and Gemini Batch API
+    extraction paths so both handle model output the same way."""
+    text = raw.strip()
+    try:
+        return _entities_from_parsed(json.loads(text))
+    except json.JSONDecodeError:
+        pass
+    match = re.search(r"[\{\[].*[\}\]]", text, re.DOTALL)
+    if not match:
+        return []
+    try:
+        return _entities_from_parsed(json.loads(match.group()))
+    except json.JSONDecodeError:
+        return []
+
+
 class HistoryExtractionService:
     def __init__(self, session: AsyncSession, gemini_client: Any = None):
         self.session = session
@@ -84,15 +115,14 @@ class HistoryExtractionService:
         prompt = EXTRACTION_PROMPT_TEMPLATE.format(pages_text=pages_text)
         if self.gemini_client and hasattr(self.gemini_client, "generate_structured"):
             res = await self.gemini_client.generate_structured(prompt, model=model_name)
-            return res.get("entities", [])
+            return _entities_from_parsed(res)
 
         # Fallback or standard call via internal LLM service
         try:
             from app.llm.models import generate_text
 
             raw_res = await generate_text(prompt, model_name=model_name)
-            data = _parse_json_object(raw_res)
-            return data.get("entities", [])
+            return parse_extraction_entities(raw_res)
         except Exception as e:
             logger.warning(f"LLM extraction call failed: {e}")
             return []

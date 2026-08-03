@@ -7,6 +7,46 @@ def _svc():
     return HistoryExtractionService(AsyncMock())
 
 
+def test_parse_extraction_entities_handles_wrapped_object():
+    from app.services.history_extraction_service import parse_extraction_entities
+
+    raw = '{"entities": [{"term": "x"}]}'
+    assert parse_extraction_entities(raw) == [{"term": "x"}]
+
+
+def test_parse_extraction_entities_handles_bare_list():
+    # Some models skip the requested {"entities": [...]} wrapper and return
+    # the array directly — this must not be silently dropped.
+    from app.services.history_extraction_service import parse_extraction_entities
+
+    raw = '[{"term": "x"}, {"term": "y"}]'
+    assert parse_extraction_entities(raw) == [{"term": "x"}, {"term": "y"}]
+
+
+def test_parse_extraction_entities_handles_markdown_fence():
+    from app.services.history_extraction_service import parse_extraction_entities
+
+    raw = '```json\n{"entities": [{"term": "x"}]}\n```'
+    assert parse_extraction_entities(raw) == [{"term": "x"}]
+
+
+def test_parse_extraction_entities_returns_empty_for_garbage():
+    from app.services.history_extraction_service import parse_extraction_entities
+
+    assert parse_extraction_entities("not json at all") == []
+
+
+@pytest.mark.asyncio
+async def test_call_llm_extraction_handles_bare_list_response():
+    service = _svc()
+    with patch(
+        "app.llm.models.generate_text",
+        new=AsyncMock(return_value='[{"term": "x", "facts": []}]'),
+    ):
+        entities = await service._call_llm_extraction("page text", "gemini-2.5-flash")
+    assert entities == [{"term": "x", "facts": []}]
+
+
 @pytest.mark.asyncio
 async def test_merge_facts_tier1_deterministic_duplicate_merges_citation():
     service = _svc()

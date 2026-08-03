@@ -21,7 +21,10 @@ from app.core.config import settings
 from app.db.models import BatchHistoryExtractionJob, Book, Page
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.core.prompts import EXTRACTION_PROMPT_TEMPLATE
-from app.services.history_extraction_service import HistoryExtractionService
+from app.services.history_extraction_service import (
+    HistoryExtractionService,
+    parse_extraction_entities,
+)
 from app.services.storage_service import storage
 from app.utils.observability import log_json
 
@@ -236,8 +239,7 @@ async def poll_and_process_batch_history_jobs(session: AsyncSession) -> int:
                                 .get("text", "")
                             )
                             if candidates:
-                                data = json.loads(candidates)
-                                entities = data.get("entities", [])
+                                entities = parse_extraction_entities(candidates)
                                 for ent in entities:
                                     score = ent.get("significance_score", 5)
                                     if score < job.min_significance:
