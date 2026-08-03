@@ -329,8 +329,8 @@ class DictionaryRepository:
         self,
         book_id: str,
         term: str,
-        definition: str,
         letter_group: str,
+        definition: str | None = None,
         transliteration: str | None = None,
         original_definition: str | None = None,
         category: str = "general",
@@ -339,14 +339,14 @@ class DictionaryRepository:
         is_ai_generated: bool = True,
         entry_type: str = "new",
         existing_dictionary_id: int | None = None,
-        sources: list[dict[str, Any]] | None = None,
+        facts: list[dict[str, Any]] | None = None,
     ) -> HistoryDictionaryStaging:
         """Create a new staging candidate entry."""
         staging = HistoryDictionaryStaging(
             book_id=book_id,
             term=term.strip(),
             transliteration=transliteration.strip() if transliteration else None,
-            definition=definition.strip(),
+            definition=definition.strip() if definition else None,
             original_definition=original_definition.strip()
             if original_definition
             else None,
@@ -357,12 +357,11 @@ class DictionaryRepository:
             entry_type=entry_type,
             existing_dictionary_id=existing_dictionary_id,
             letter_group=letter_group,
-            sources=sources or [],
+            facts=facts or [],
             status="pending",
         )
         self.session.add(staging)
-        await self.session.commit()
-        await self.session.refresh(staging)
+        await self.session.flush()
         return staging
 
     async def get_staging_terms(
@@ -463,72 +462,47 @@ class DictionaryRepository:
         res = await self.session.execute(stmt)
         return res.scalar_one_or_none()
 
-    async def approve_staging_term(self, staging_id: int) -> dict[str, Any] | None:
-        """Approve candidate: insert or update into history_dictionary and set staging status to approved."""
-        staging = await self.get_staging_term_by_id(staging_id)
-        if not staging or staging.status != "pending":
-            return None
+    async def get_history_dictionary_by_id(
+        self, entry_id: int
+    ) -> HistoryDictionary | None:
+        stmt = select(HistoryDictionary).where(HistoryDictionary.id == entry_id)
+        res = await self.session.execute(stmt)
+        return res.scalar_one_or_none()
 
-        # Check if existing_dictionary_id or exact term exists in history_dictionary
-        target_entry = None
-        if staging.existing_dictionary_id:
-            stmt = select(HistoryDictionary).where(
-                HistoryDictionary.id == staging.existing_dictionary_id
-            )
-            res = await self.session.execute(stmt)
-            target_entry = res.scalar_one_or_none()
+    async def get_history_dictionary_by_term(
+        self, term: str
+    ) -> HistoryDictionary | None:
+        stmt = select(HistoryDictionary).where(HistoryDictionary.term == term)
+        res = await self.session.execute(stmt)
+        return res.scalar_one_or_none()
 
-        if not target_entry:
-            stmt = select(HistoryDictionary).where(
-                HistoryDictionary.term == staging.term
-            )
-            res = await self.session.execute(stmt)
-            target_entry = res.scalar_one_or_none()
+    async def create_history_dictionary_entry(self, **fields: Any) -> HistoryDictionary:
+        """Insert a new live history_dictionary record. Caller owns the transaction."""
+        entry = HistoryDictionary(**fields)
+        self.session.add(entry)
+        await self.session.flush()
+        return entry
 
-        if target_entry:
-            # Update existing record
-            target_entry.definition = staging.definition
-            if staging.transliteration:
-                target_entry.transliteration = staging.transliteration
-            target_entry.category = staging.category
-            target_entry.significance_score = staging.significance_score
-            target_entry.is_ai_generated = True
-            target_entry.sources = staging.sources
-        else:
-            # Create new live record
-            target_entry = HistoryDictionary(
-                term=staging.term,
-                transliteration=staging.transliteration,
-                definition=staging.definition,
-                letter_group=staging.letter_group,
-                category=staging.category,
-                significance_score=staging.significance_score,
-                is_ai_generated=staging.is_ai_generated,
-                sources=staging.sources,
-            )
-            self.session.add(target_entry)
+    async def update_history_dictionary_entry(
+        self, entry: HistoryDictionary, **fields: Any
+    ) -> HistoryDictionary:
+        """Apply field updates to an existing live history_dictionary record."""
+        for key, value in fields.items():
+            setattr(entry, key, value)
+        await self.session.flush()
+        return entry
 
-        staging.status = "approved"
-        await self.session.commit()
-        await self.session.refresh(target_entry)
+    async def update_staging_term(
+        self, staging: HistoryDictionaryStaging, **fields: Any
+    ) -> HistoryDictionaryStaging:
+        """Apply field updates to an existing pending staging record."""
+        for key, value in fields.items():
+            setattr(staging, key, value)
+        await self.session.flush()
+        return staging
 
-        return {
-            "id": target_entry.id,
-            "term": target_entry.term,
-            "transliteration": target_entry.transliteration,
-            "definition": target_entry.definition,
-            "letterGroup": target_entry.letter_group,
-            "category": target_entry.category,
-            "significanceScore": target_entry.significance_score,
-            "isAiGenerated": target_entry.is_ai_generated,
-            "sources": target_entry.sources,
-        }
-
-    async def reject_staging_term(self, staging_id: int) -> bool:
-        """Set staging status to rejected."""
-        staging = await self.get_staging_term_by_id(staging_id)
-        if not staging:
-            return False
-        staging.status = "rejected"
-        await self.session.commit()
-        return True
+    async def set_staging_status(
+        self, staging: HistoryDictionaryStaging, status: str
+    ) -> None:
+        staging.status = status
+        await self.session.flush()

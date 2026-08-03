@@ -11,16 +11,26 @@ async def test_create_staging_term():
     staged = await repo.create_staging_term(
         book_id="book-1",
         term="سۇلتان سۇتۇق بۇغراخان",
+        letter_group="س",
         transliteration="Sultan Sutuk Bughra Khan",
-        definition="تارىخىي شەخس",
         category="figure",
         significance_score=9,
         significance_reason="Central Karakhanid ruler",
-        letter_group="س",
-        sources=[{"book_id": "book-1", "book_title": "ئۇيغۇر تارىخى", "pages": [10]}],
+        facts=[
+            {
+                "id": 1,
+                "text": "تارىخىي شەخس",
+                "citations": [
+                    {"book_id": "book-1", "book_title": "ئۇيغۇر تارىخى", "pages": [10]}
+                ],
+                "status": "active",
+                "conflict_group": None,
+            }
+        ],
     )
     assert staged.term == "سۇلتان سۇتۇق بۇغراخان"
     assert staged.significance_score == 9
+    assert staged.definition is None
 
 
 @pytest.mark.asyncio
@@ -41,7 +51,7 @@ async def test_get_staging_terms():
         is_ai_generated=True,
         entry_type="new",
         letter_group="س",
-        sources=[],
+        facts=[],
         status="pending",
     )
 
