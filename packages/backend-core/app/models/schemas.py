@@ -79,6 +79,7 @@ class Book(BaseModel):
     )  # DB: pipeline_stats, API: pipelineStats
     has_summary: bool = False  # API: hasSummary
     has_graph: bool = False  # API: hasGraph
+    has_history: bool = False  # API: hasHistory
     # Book-level milestones (denormalized from pages for performance)
     ocr_milestone: str = "idle"  # DB: ocr_milestone, API: ocrMilestone
     chunking_milestone: str = "idle"  # DB: chunking_milestone, API: chunkingMilestone
@@ -265,15 +266,23 @@ class PaginatedContentHits(BaseModel):
     page_size: int
 
 
-class SourceCitation(BaseModel):
+class FactCitation(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
-    id: Optional[int] = None
     book_id: str
     book_title: str
     volume: Optional[int] = None
     pages: List[int] = Field(default_factory=list)
-    extracted_at: Optional[datetime] = None
+
+
+class HistoryFact(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    id: int
+    text: str
+    citations: List[FactCitation] = Field(default_factory=list)
+    status: str = "active"
+    conflict_group: Optional[int] = None
 
 
 class HistoryStagingItem(BaseModel):
@@ -286,7 +295,7 @@ class HistoryStagingItem(BaseModel):
     book_id: str
     term: str
     transliteration: Optional[str] = None
-    definition: str
+    definition: Optional[str] = None
     original_definition: Optional[str] = None
     category: str = "general"
     significance_score: int = 5
@@ -294,7 +303,7 @@ class HistoryStagingItem(BaseModel):
     is_ai_generated: bool = True
     entry_type: str = "new"
     letter_group: str
-    sources: List[SourceCitation] = Field(default_factory=list)
+    facts: List[HistoryFact] = Field(default_factory=list)
     status: str = "pending"
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

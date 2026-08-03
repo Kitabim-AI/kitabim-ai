@@ -346,6 +346,76 @@ class BatchEmbeddingJob(Base):
     )
 
 
+class BatchHistoryExtractionJob(Base):
+    """Batch History Extraction Job model tracking Gemini Batch API history extraction requests"""
+
+    __tablename__ = "batch_history_extraction_jobs"
+
+    id: Mapped[str] = mapped_column(
+        String(64),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    gemini_batch_id: Mapped[Optional[str]] = mapped_column(
+        String(255), unique=True, nullable=True
+    )
+    book_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("books.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default="submitting",
+        server_default="submitting",
+        index=True,
+        nullable=False,
+    )
+
+    gcs_input_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    gcs_output_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    total_batches: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    min_significance: Mapped[int] = mapped_column(
+        Integer, default=5, server_default="5"
+    )
+    model_name: Mapped[str] = mapped_column(
+        String(100), default="gemini-2.5-flash", server_default="gemini-2.5-flash"
+    )
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        onupdate=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    # Relationships
+    book: Mapped["Book"] = relationship("Book")
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('submitting', 'submitted', 'running', 'succeeded', 'failed', 'cancelled')",
+            name="check_batch_history_jobs_status",
+        ),
+    )
+
+
 class Chunk(Base):
     """Chunk model for RAG with semantic embeddings"""
 
@@ -879,7 +949,7 @@ class HistoryDictionary(Base):
     is_ai_generated: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", nullable=False, index=True
     )
-    sources: Mapped[list] = mapped_column(
+    facts: Mapped[list] = mapped_column(
         JSON, default=list, server_default=text("'[]'::jsonb"), nullable=False
     )
 
@@ -896,7 +966,7 @@ class HistoryDictionaryStaging(Base):
     book_id: Mapped[str] = mapped_column(String(64), nullable=False)
     term: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
     transliteration: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    definition: Mapped[str] = mapped_column(Text, nullable=False)
+    definition: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     original_definition: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     category: Mapped[str] = mapped_column(String(30), default="general", nullable=False)
     significance_score: Mapped[int] = mapped_column(
@@ -908,7 +978,7 @@ class HistoryDictionaryStaging(Base):
         String(20), default="new", nullable=False, index=True
     )
     letter_group: Mapped[str] = mapped_column(String(10), nullable=False)
-    sources: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    facts: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     status: Mapped[str] = mapped_column(
         String(20), default="pending", nullable=False, index=True
     )
