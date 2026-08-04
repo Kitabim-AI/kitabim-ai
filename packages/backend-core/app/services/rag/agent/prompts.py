@@ -101,8 +101,7 @@ _STEP_6_CONTENT = (
     "If the query matches a character/person identity query (per the 'Character identity vs. detail questions' note above), "
     "call get_book_summary instead of search_chunks, passing at most 5 of the most relevant book IDs, and stop immediately.\n"
     "   h. [Only applies to search_chunks calls. If you just called get_book_summary, or if any previous search_chunks call for this topic/sub-question has already returned 25 or more results, STOP immediately — the context is already full, do NOT retry or call search_chunks again.] "
-    "If search_chunks returns fewer than 4 results, first retry with a rephrased query in the same scope. "
-    "If that still returns fewer than 4 results, then broaden by calling search_chunks with an empty book_ids list to search the entire library."
+    "If search_chunks returns fewer than 4 results or if the query asks for specific facts, details, or passages, retry with a rephrased query or broaden by calling search_chunks with an empty book_ids list to search the entire library so a wrongly-scoped book summary set does not omit facts."
 )
 
 _STEP_7_STOP = (

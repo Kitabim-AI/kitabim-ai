@@ -107,3 +107,43 @@ async def test_update_status():
     page = await repo.update_status("b1", 1, "ready")
     assert page.status == "ready"
     assert session.flush.called
+
+
+@pytest.mark.asyncio
+async def test_search_content_pages():
+    session = AsyncMock()
+    repo = PagesRepository(session)
+
+    mock_count_res = MagicMock()
+    mock_count_res.scalar_one.return_value = 1
+
+    mock_row = MagicMock()
+    mock_row.book_id = "b1"
+    mock_row.page_number = 5
+    mock_row.text = "مۇھىم تېكىست"
+    mock_row.title = "تارىخىي كىتاب"
+    mock_row.volume = 1
+    mock_row.author = "مۇئەللىپ"
+    mock_row.cover_url = "/covers/b1.jpg"
+    mock_row.rank = 0.85
+
+    mock_hits_res = MagicMock()
+    mock_hits_res.fetchall.return_value = [mock_row]
+
+    session.execute.side_effect = [
+        MagicMock(),  # SET work_mem
+        MagicMock(),  # SET statement_timeout
+        mock_count_res,
+        mock_hits_res,
+    ]
+
+    hits, total = await repo.search_content_pages("تېكىست", skip=0, limit=20)
+
+    assert total == 1
+    assert len(hits) == 1
+    assert hits[0]["id"] == "b1_5"
+    assert hits[0]["book_id"] == "b1"
+    assert hits[0]["book_title"] == "تارىخىي كىتاب"
+    assert hits[0]["page_number"] == 5
+    assert hits[0]["snippet"] == "مۇھىم تېكىست"
+    assert hits[0]["rank"] == 0.85

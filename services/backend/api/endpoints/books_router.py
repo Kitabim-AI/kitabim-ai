@@ -37,8 +37,21 @@ from app.db.session import get_session
 from app.db.repositories.books_repository import BooksRepository
 from app.db.repositories.pages_repository import PagesRepository
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
-from app.db.models import Book as BookDB, Page, Chunk, BookSummary
-from app.models.schemas import Book, PaginatedBooks, ExtractionResult, to_camel
+from app.db.models import (
+    Book as BookDB,
+    Page,
+    Chunk,
+    BookSummary,
+    BatchHistoryExtractionJob,
+)
+from app.models.schemas import (
+    Book,
+    PaginatedBooks,
+    ContentSearchHit,
+    PaginatedContentHits,
+    ExtractionResult,
+    to_camel,
+)
 from app.models.user import User
 from app.services.storage_service import storage
 from app.services.chunking_service import chunking_service
@@ -332,6 +345,7 @@ async def get_books(
                 book.pipeline_stats = stats.get("pipeline_stats", {})
                 book.has_summary = stats.get("has_summary", False)
                 book.has_graph = stats.get("has_graph", False)
+                book.has_history = stats.get("has_history", False)
 
         # Return immediately with cached metadata + fresh stats
         return PaginatedBooks.model_validate(
@@ -583,6 +597,7 @@ async def get_books(
             "pipeline_stats": {},
             "has_summary": False,
             "has_graph": False,
+            "has_history": False,
             # Book-level milestones for accurate icon colors
             "ocr_milestone": b.ocr_milestone,
             "chunking_milestone": b.chunking_milestone,
@@ -605,11 +620,20 @@ async def get_books(
         g_res = await session.execute(g_stmt)
         graph_ids = {str(row[0]) for row in g_res.fetchall()}
 
+        h_stmt = select(BatchHistoryExtractionJob.book_id).where(
+            BatchHistoryExtractionJob.book_id.in_(bid_list),
+            BatchHistoryExtractionJob.status == "succeeded",
+        )
+        h_res = await session.execute(h_stmt)
+        history_ids = {str(row[0]) for row in h_res.fetchall()}
+
         for pydantic_book in books_data:
             if str(pydantic_book.id) in summary_ids:
                 pydantic_book.has_summary = True
             if str(pydantic_book.id) in graph_ids:
                 pydantic_book.has_graph = True
+            if str(pydantic_book.id) in history_ids:
+                pydantic_book.has_history = True
 
     # Only fetch expensive pipeline stats if explicitly requested (non-lite)
     if should_include_stats and books_data:
@@ -623,6 +647,8 @@ async def get_books(
                 pydantic_book.has_summary = True
             if stats.get("has_graph"):
                 pydantic_book.has_graph = True
+            if stats.get("has_history"):
+                pydantic_book.has_history = True
 
     result = {
         "books": books_data,
@@ -649,6 +675,7 @@ async def get_books(
                         "pipeline_stats": {},
                         "has_summary": False,
                         "has_graph": False,
+                        "has_history": False,
                     }
                     for book in books_data
                 ],
@@ -675,6 +702,36 @@ async def get_books(
             await cache_service.set(cache_key, result, ttl=cache_ttl)
 
     return result
+
+
+@router.get("/content-search", response_model=PaginatedContentHits)
+async def search_book_content(
+    q: str = Query(..., min_length=1, max_length=500),
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(40, ge=1, le=100),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    session: AsyncSession = Depends(get_session),
+):
+    """Home 'Content' tab: exact-phrase search over book content, returning
+    matching page content hits with snippets and page numbers, paginated for infinite scroll.
+    """
+    skip = (page - 1) * pageSize
+    restrict_to_public = current_user is None or current_user.role not in (
+        "admin",
+        "editor",
+    )
+
+    pages_repo = PagesRepository(session)
+    hits, total = await pages_repo.search_content_pages(
+        q, skip=skip, limit=pageSize, restrict_to_public=restrict_to_public
+    )
+
+    return PaginatedContentHits(
+        hits=[ContentSearchHit.model_validate(h) for h in hits],
+        total=total,
+        page=page,
+        page_size=pageSize,
+    )
 
 
 @router.get("/random-proverb")
@@ -1257,6 +1314,7 @@ async def get_book(
     pipeline_stats = stats.get("pipeline_stats", {})
     has_summary = stats.get("has_summary", False)
     has_graph = stats.get("has_graph", False)
+    has_history = stats.get("has_history", False)
 
     # Create a dict with only metadata
     book_dict = {
@@ -1290,6 +1348,7 @@ async def get_book(
         "pipeline_stats": pipeline_stats,
         "has_summary": has_summary,
         "has_graph": has_graph,
+        "has_history": has_history,
     }
 
     # Convert SQLAlchemy models to Pydantic (automatic camelCase conversion)
@@ -1335,6 +1394,7 @@ async def get_book_pipeline_stats(
         "pipeline_stats": stats.get("pipeline_stats", {}),
         "has_summary": stats.get("has_summary", False),
         "has_graph": stats.get("has_graph", False),
+        "has_history": stats.get("has_history", False),
         "total_pages": stats["book"].total_pages,
     }
 

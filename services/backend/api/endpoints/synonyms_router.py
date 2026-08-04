@@ -1,5 +1,5 @@
 """
-Synonyms API — read-only lookup and search for the Uyghur synonym dictionary.
+Synonyms API — lookup and search for the Uyghur synonym dictionary, admin delete.
 """
 
 from __future__ import annotations
@@ -8,11 +8,13 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, func, distinct
+from sqlalchemy import select, func, distinct, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
 from app.db.models import Synonym
+from app.models.user import User
+from auth.dependencies import require_admin
 
 router = APIRouter()
 
@@ -109,3 +111,19 @@ async def list_synonyms(
     stmt = stmt.order_by(Synonym.word).offset(skip).limit(limit)
     res = await session.execute(stmt)
     return res.scalars().all()
+
+
+@router.delete("/synonyms/{entry_id}", status_code=204)
+async def delete_synonym_entry(
+    entry_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_admin),
+):
+    """Delete a synonym entry (Admin only)."""
+    result = await session.execute(
+        delete(Synonym).where(Synonym.id == entry_id).returning(Synonym.id)
+    )
+    if not result.fetchone():
+        raise HTTPException(status_code=404, detail="Entry not found")
+    await session.commit()
+    return None

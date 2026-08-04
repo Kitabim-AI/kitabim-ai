@@ -139,9 +139,34 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Globally enable/disable Gemini Batch API embedding processing. Set to 'true' to activate.",
         },
         {
+            "key": "log_level",
+            "value": "INFO",
+            "description": "Global application logging level (DEBUG, INFO, WARNING, ERROR). Configurable dynamically in the System Configs admin panel.",
+        },
+        {
             "key": "gemini_batch_embedding_timeout_hours",
             "value": "24",
             "description": "Timeout threshold in hours after which a pending/running batch embedding job is marked stale and retried.",
+        },
+        {
+            "key": "history_extraction_enabled",
+            "value": "true",
+            "description": "Globally enable/disable Uyghur history dictionary term extraction feature. Set to 'true' to enable or 'false' to disable.",
+        },
+        {
+            "key": "history_extraction_model",
+            "value": "gemini-2.5-flash",
+            "description": "Gemini model used for structured Uyghur history dictionary term extraction and factual synthesis.",
+        },
+        {
+            "key": "gemini_batch_history_extraction_enabled",
+            "value": "false",
+            "description": "Globally enable/disable Gemini Batch API for history dictionary extraction. Set to 'true' to use Batch API (50% cost discount) or 'false' for online sliding-window extraction.",
+        },
+        {
+            "key": "history_extraction_batch_size",
+            "value": "15",
+            "description": "Number of book pages grouped per sliding window / batch request during history dictionary extraction.",
         },
         {
             "key": "gemini_batch_embedding_max_chunks_per_job",
@@ -174,14 +199,24 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Gemini model used for LLM-based reranking of retrieved chunks.",
         },
         {
-            "key": "rag_hybrid_search_enabled",
-            "value": "true",
-            "description": "Globally enable/disable the Postgres full-text keyword search leg fused with vector search (Reciprocal Rank Fusion). Set to 'false' for vector-only retrieval, identical to pre-hybrid-search behavior.",
+            "key": "rag_vector_top_k",
+            "value": "25",
+            "description": "Maximum number of top chunks retrieved during vector similarity search and retained for answer context synthesis. Renamed from rag_top_k — see rag_keyword_top_k / rag_graph_top_k for the other two legs' independent caps.",
         },
         {
-            "key": "rag_top_k",
-            "value": "25",
-            "description": "Maximum number of top chunks retrieved during vector/hybrid search and retained for answer context synthesis.",
+            "key": "rag_keyword_top_k",
+            "value": "10",
+            "description": "Maximum number of chunks returned by the keyword (exact-phrase) retrieval leg. Independent of rag_vector_top_k — bounds the keyword leg even for a common phrase.",
+        },
+        {
+            "key": "rag_graph_top_k",
+            "value": "10",
+            "description": "Maximum number of knowledge-graph facts fed into RAG context per turn, highest-scoring first.",
+        },
+        {
+            "key": "collection_page_size",
+            "value": "40",
+            "description": "Batch size for infinite-scroll pagination on the library shelves and home search results.",
         },
     ]
 

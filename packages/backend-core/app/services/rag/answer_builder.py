@@ -158,7 +158,11 @@ def format_document(doc: Document) -> str:
     title = doc.metadata.get("title") or "Unknown"
     author = doc.metadata.get("author") or None
     volume = doc.metadata.get("volume")
-    page = doc.metadata.get("page")
+    page = (
+        doc.metadata.get("page")
+        if doc.metadata.get("page") is not None
+        else doc.metadata.get("page_number")
+    )
     book_id = doc.metadata.get("book_id") or "unknown"
 
     if book_id == "quran":

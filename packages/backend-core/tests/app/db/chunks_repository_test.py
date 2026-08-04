@@ -143,8 +143,11 @@ async def test_keyword_search_unscoped():
     assert results[0]["rank"] == 0.045
     # book_ids/threshold aren't part of keyword_search's query params
     call_args = session.execute.await_args
-    assert call_args.args[1]["query_text"] == "سوئال"
+    assert call_args.args[1]["phrase"] == "سوئال"
     assert call_args.args[1]["limit"] == 5
+    query_sql = str(call_args.args[0])
+    assert query_sql.count("phraseto_tsquery(") == 2
+    assert "tsquery_expr" not in query_sql
 
 
 @pytest.mark.asyncio
@@ -170,6 +173,8 @@ async def test_keyword_search_with_book_ids():
     assert len(results) == 1
     call_args = session.execute.await_args
     assert call_args.args[1]["book_ids"] == ["b1"]
+    assert call_args.args[1]["phrase"] == "سوئال"
+    assert "phraseto_tsquery(" in str(call_args.args[0])
 
 
 @pytest.mark.asyncio
@@ -181,6 +186,23 @@ async def test_keyword_search_empty_book_ids_fast_exit():
 
     assert results == []
     session.execute.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_keyword_search_passes_multi_word_phrase_through_unformatted():
+    """Phrase mode hands the raw phrase to phraseto_tsquery() and lets
+    Postgres build the tsquery — it must not pre-split/OR-format the words
+    in Python the way the old prefix-match query did."""
+    session = AsyncMock()
+    repo = ChunksRepository(session)
+    mock_res = MagicMock()
+    mock_res.fetchall.return_value = []
+    session.execute.return_value = mock_res
+
+    await repo.keyword_search("king Babur")
+
+    call_args = session.execute.await_args
+    assert call_args.args[1]["phrase"] == "king Babur"
 
 
 @pytest.mark.asyncio

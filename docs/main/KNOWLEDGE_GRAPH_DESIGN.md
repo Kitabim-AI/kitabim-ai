@@ -18,7 +18,7 @@ Other key characteristics:
 - **Fiction namespacing is done with an `Entity.book_id` property, not by mangling names.** For `scope = "fiction"`, every entity created in that run gets `book_id = <this book's id>`; for `nonfiction`, `book_id` is `null`. Candidate selection during resolution filters on `scope` and — when `book_id` is non-null — on the same `book_id`, so a fictional character resolves only within its own book while non-fiction historical figures resolve across the whole library. No `Person`-specific special case, no `"Name (Book Title)"` renaming, and no `fictional_categories` lookup exists in the current code (see the correction in [Related Docs](#related-docs)).
 - **Extraction is a single bulk write.** All batches' entities and relations are accumulated in memory and flushed in exactly two Neo4j round-trips per book (`upsert_entities_bulk`, then `connect_entities_bulk`), after `delete_book_graph` has cleared the book's previous edges.
 - **Merges are reversible.** Every merge snapshots the removed node and all its edges into `graph_merge_log` *before* deleting anything, so `POST /api/admin/graph/merge-log/{id}/unmerge` can recreate it.
-- **Query-time consumption is LLM-free and cache-first.** `retrieval.graph_entity_lookup` reads a Redis `graph:alias:{alias}` map (populated by the resolution service after every merge/split/unmerge/resolution), then fetches that entity's facts from Neo4j as chunk-shaped dicts titled `Knowledge Graph`. It rides the existing `search_chunks` agent tool — there is no separate graph tool.
+- **Query-time consumption is LLM-free and cache-first.** `retrieval.graph_entity_lookup` tokenizes the question and checks the Redis `graph:alias:{alias}` map (populated by the resolution service after every merge/split/unmerge/resolution) against per-word prefix stems (down to 4 characters, to catch a suffix agglutinated onto a cached name) plus bigrams/full-phrase, scoring phrase/multi-token hits higher and discounting by alias document frequency; a total cache miss falls back once to a Neo4j full-text fuzzy query (`search_entities_fulltext`). Matched entities' facts are then fetched from Neo4j in a single bulk call (`get_entities_facts_for_citation_bulk`) and returned as chunk-shaped dicts titled `Knowledge Graph`. It rides the existing `search_chunks` agent tool — there is no separate graph tool.
 
 ## Feature Flags
 
@@ -118,15 +118,15 @@ Indexes: `graph_resolution_queue_status_idx (status)`, `graph_resolution_queue_s
 
 ### Redis — alias lookup cache
 
-`graph:alias:{normalized_alias}` (`cache_config.KEY_GRAPH_ALIAS_LOOKUP`) → JSON list of entity ids, TTL `settings.cache_ttl_rag_query` (`CACHE_TTL_RAG_QUERY`, default 3600s). Written by `update_alias_cache` after every resolution/merge/split/unmerge/rename; read at query time by `retrieval.graph_entity_lookup`. Normalization is `unicodedata.normalize("NFC", alias).strip().lower()`.
+`graph:alias:{normalized_alias}` (`cache_config.KEY_GRAPH_ALIAS_LOOKUP`) → JSON list of entity ids, TTL `settings.cache_ttl_rag_query` (`CACHE_TTL_RAG_QUERY`, default 3600s). Written by `update_alias_cache` after every resolution/merge/split/unmerge/rename; read at query time by `retrieval.graph_entity_lookup`. Normalization is `unicodedata.normalize("NFC", alias).strip().lower()`. Before writing, `canonical_name`/`aliases` are expanded by `_expand_name_components` into their individual word components — filtering out title/honorific tokens (`خان`, `سۇلتان`, `شاھ`, …) and words under 3 characters — so a multi-word name is also findable by any one of its significant parts, not just the full string. `execute_merge` mirrors this: it removes (not just adds) the merged-away entity's own alias keys pointing at its now-deleted id, so a stale pointer never outlives the entity it named.
 
 ## Architecture
 
 | File | Purpose |
 |---|---|
 | `packages/backend-core/app/services/knowledge_graph_service.py` | Despite the name, holds **no orchestration logic** — it is the shared Pydantic extraction schema module: `EntityType` (with its synonym-coercing `_missing_`), `ExtractedEntity`, `ExtractedRelation`, `KnowledgeExtraction` (chunk-level), `GlobalRelation`/`GlobalMetadataExtraction` (book-level), and `parse_and_clean_json_from_exception` — a brace-matching JSON salvager that strips malformed entity/relation objects out of a failed structured response and re-validates. Its module docstring says `summary_job` imports from here too; it does not (`summary_job.py` imports nothing from this module), so `GlobalRelation`/`GlobalMetadataExtraction` are exercised only by `robust_parsing_test.py`. |
-| `packages/backend-core/app/services/entity_resolution_service.py` | The resolution algorithm and every graph-mutating operation: `normalize_alias`, `_name_similarity`, `_check_hard_constraints`, `_graded_score`, `_gray_zone_judge`, `update_alias_cache`, `execute_merge`, `execute_split`, `execute_unmerge`, `resolve_entity`. Shared by the worker job and the admin endpoints so merge/split execution, audit logging, re-propagation, and cache refresh happen in exactly one place. |
-| `packages/backend-core/app/db/repositories/graph_repository.py` | All Cypher. Class-level shared `AsyncGraphDatabase` driver (pool size 20, `max_connection_lifetime=300`, `liveness_check_timeout=0`, `connection_timeout=30`; credentials parsed out of `NEO4J_URL` if embedded). `close()` is a deliberate no-op — the driver is closed once at app shutdown via `close_driver()`. Grouped into: bulk write (`init_constraints`, `upsert_entities_bulk`, `connect_entities_bulk`, `delete_book_graph`); resolution/admin reads (`get_entity_by_id`, `get_entity_names_by_ids`, `get_entity_facts`, `get_entity_facts_for_citation`, `find_resolution_candidates`, `get_entity_edges_snapshot`, `get_children_via_child_of`, `set_resolution_status`); mutations (`merge_entities_by_id`, `split_entities` + its `_connected_components` union-find, `restore_entity_from_snapshot`, `rename_entity`, `delete_relationship_by_id`, `delete_relationships_by_ids`); and RAG/visualization reads (`query_subgraph`, `query_paths`, `check_books_exist`). Six Neo4j GDS wrappers also exist (`project_gds_graph`, `run_gds_node_similarity`, `run_gds_fastrp`, `store_profile_embeddings_bulk`, `run_gds_knn_similarity`, `run_gds_wcc_clustering`); no application code calls any of them, and no test covers them — the live resolution path uses `find_resolution_candidates`' full-text lookup. `query_paths` and `check_books_exist` likewise have no callers today, and `query_subgraph` is referenced only by its own unit test. |
+| `packages/backend-core/app/services/entity_resolution_service.py` | The resolution algorithm and every graph-mutating operation: `normalize_alias`, `_name_similarity`, `_check_hard_constraints`, `_graded_score`, `_expand_name_components` (splits a name into individually-cacheable word components, dropping honorifics/short words), `_gray_zone_judge`, `update_alias_cache`, `execute_merge`, `execute_split`, `execute_unmerge`, `resolve_entity`. Shared by the worker job and the admin endpoints so merge/split execution, audit logging, re-propagation, and cache refresh happen in exactly one place. |
+| `packages/backend-core/app/db/repositories/graph_repository.py` | All Cypher. Class-level shared `AsyncGraphDatabase` driver (pool size 20, `max_connection_lifetime=300`, `liveness_check_timeout=0`, `connection_timeout=30`; credentials parsed out of `NEO4J_URL` if embedded). `close()` is a deliberate no-op — the driver is closed once at app shutdown via `close_driver()`. Grouped into: bulk write (`init_constraints`, `upsert_entities_bulk`, `connect_entities_bulk`, `delete_book_graph`); resolution/admin/RAG reads (`get_entity_by_id`, `get_entity_names_by_ids`, `get_entity_facts`, `get_entities_facts_for_citation_bulk` — one Cypher call for many ids, with `get_entity_facts_for_citation` now a thin single-id wrapper around it —, `find_resolution_candidates`, `search_entities_fulltext` — the miss-only fuzzy fallback `retrieval.graph_entity_lookup` calls when the Redis alias cache has no hit at all —, `get_entity_edges_snapshot`, `get_children_via_child_of`, `set_resolution_status`); mutations (`merge_entities_by_id`, `split_entities` + its `_connected_components` union-find, `restore_entity_from_snapshot`, `rename_entity`, `delete_relationship_by_id`, `delete_relationships_by_ids`); and RAG/visualization reads (`query_subgraph`, `query_paths`, `check_books_exist`). Six Neo4j GDS wrappers also exist (`project_gds_graph`, `run_gds_node_similarity`, `run_gds_fastrp`, `store_profile_embeddings_bulk`, `run_gds_knn_similarity`, `run_gds_wcc_clustering`); no application code calls any of them, and no test covers them — the live resolution path uses `find_resolution_candidates`' full-text lookup. `query_paths` and `check_books_exist` likewise have no callers today, and `query_subgraph` is referenced only by its own unit test. |
 | `packages/backend-core/app/db/repositories/graph_resolution_repository.py` | The three Postgres coordination repositories: `GraphResolutionQueueRepository` (`bulk_enqueue`, `claim_batch` with `FOR UPDATE SKIP LOCKED`, `mark_status`, `delete_by_entity_id`, `requeue_or_cap`), `GraphResolutionReviewsRepository` (`create_review`, `list_pending`, `set_status`, `resolve_reviews_for_merge`), `GraphMergeLogRepository` (`log_merge`, `mark_reverted`). |
 | `services/worker/jobs/knowledge_graph_job.py` | `knowledge_graph_job(ctx, book_id, scope)` — bulk extraction for one book. Owns the extraction prompt inline (kinship-vs-figurative rules, Uyghur kinship term glossary, directed-edge semantics, year/century rules, script preservation). |
 | `services/worker/scanners/graph_scanner.py` | `run_graph_scanner` — claims `ready` books whose `graph_milestone` is `idle`/`failed` and enqueues extraction. **Written and unit-tested but not registered** in `worker.py`'s `cron_jobs`, so it never runs; its `enqueue_job` call also omits the now-required `scope` argument (its test asserts that exact call shape). |
@@ -134,7 +134,7 @@ Indexes: `graph_resolution_queue_status_idx (status)`, `graph_resolution_queue_s
 | `services/worker/jobs/graph_resolution_job.py` | `graph_resolution_job(ctx, entity_ids)` — loops the claimed ids, one fresh Postgres session per entity, delegating to `resolve_entity`; per-entity error isolation. |
 | `services/worker/scanners/stale_watchdog_scanner.py` | Resets any book stuck at `graph_milestone = 'in_progress'` with `last_updated` older than 1 hour back to `idle`. |
 | `packages/backend-core/app/core/prompts.py` | `ENTITY_RESOLUTION_JUDGE_PROMPT` — the gray-zone same/different/unsure judge prompt (precision-over-recall, "silence is not evidence of difference", strict JSON-only output). |
-| `packages/backend-core/app/services/rag/retrieval.py` | `graph_entity_lookup(question)` — the query-time consumer: whitespace/punctuation tokenization into unigrams+bigrams (min length 3), Redis alias-cache lookup, then `get_entity_facts_for_citation` per matched id, returned as chunk-shaped dicts (`score` hardcoded `0.9`, `title` `"Knowledge Graph"`). |
+| `packages/backend-core/app/services/rag/retrieval.py` | `graph_entity_lookup(question)` — the query-time consumer: whitespace/punctuation tokenization (min length 3), per-word prefix stems down to 4 characters plus bigram/full-phrase candidates, Redis alias-cache lookup scored by phrase/multi-token match and alias document frequency (base `0.95`/`0.85`, IDF-discounted); on a total cache miss, one fallback call to `search_entities_fulltext` (Neo4j fuzzy, score `0.80`). Matched ids' facts are fetched in one bulk call via `get_entities_facts_for_citation_bulk`, returned as chunk-shaped dicts titled `"Knowledge Graph"`. The full uncapped result set is itself cached under `rag_graph_lookup:{md5(question)}` so a later call with a different `top_k` isn't stuck with a stale truncation. |
 | `services/backend/api/endpoints/books_router.py` | Public graph read (`GET /graph`), chunk drill-down (`GET /graph/chunk`), admin merge/relationship-delete/entity-rename, and `POST /{book_id}/reprocess/graph`. |
 | `services/backend/api/endpoints/graph_admin_router.py` | Mounted at `/api/admin/graph` (`main.py`): split, unmerge, and the review queue (list/approve/reject). Merge deliberately stays on `/api/books/graph/merge`. |
 | `apps/frontend/src/components/graph/GraphView.tsx` | The graph UI (force-directed view via `react-force-graph`): public search/browse of nodes+links, chunk-evidence drill-down, and — gated on `useIsAdmin()` — merge (with an "undo last merge" button driven by the returned `mergeLogId`), split, rename, relationship delete, and a `reviews` tab wired to the review queue. |
@@ -178,8 +178,9 @@ flowchart TD
     end
 
     subgraph Consumer ["Query time — no LLM call"]
-        LOOKUP["retrieval.graph_entity_lookup(question):<br/>unigram/bigram alias cache read"]
-        FACTS["get_entity_facts_for_citation:<br/>one fact sentence per edge,<br/>tagged with book_id/page from chunk_refs"]
+        LOOKUP["retrieval.graph_entity_lookup(question):<br/>prefix-stemmed alias cache read<br/>(unigram prefixes + bigrams/phrase)"]
+        FALLBACK["Miss-only fallback:<br/>search_entities_fulltext<br/>(Neo4j fuzzy, score 0.80)"]
+        FACTS["get_entities_facts_for_citation_bulk:<br/>one fact sentence per edge,<br/>tagged with book_id/page from chunk_refs"]
         CHUNKS(["Appended to search_chunks results<br/>as title='Knowledge Graph'"])
     end
 
@@ -207,7 +208,10 @@ flowchart TD
     NEXT --> OK
     OK --> CACHE
     MERGE --> CACHE
-    CACHE --> LOOKUP --> FACTS --> CHUNKS
+    CACHE --> LOOKUP
+    LOOKUP -->|"cache hit"| FACTS
+    LOOKUP -->|"cache miss"| FALLBACK --> FACTS
+    FACTS --> CHUNKS
 
     classDef idle fill:#e9edc9,stroke:#606c38
     classDef active fill:#fff3cd,stroke:#856404
@@ -215,7 +219,7 @@ flowchart TD
     classDef fail fill:#ffcccb,stroke:#d32f2f
 
     class ADMIN,FLAG,HARD,JFLAG,BOOKGONE idle
-    class MILE,ENQ,LOAD,CLEAR,BATCH,LLM,IDS,SCAN,DISPATCH,RESOLVE,CAND,SCORE,JUDGE,LOOKUP,FACTS,BOOKSEL active
+    class MILE,ENQ,LOAD,CLEAR,BATCH,LLM,IDS,SCAN,DISPATCH,RESOLVE,CAND,SCORE,JUDGE,LOOKUP,FALLBACK,FACTS,BOOKSEL active
     class WRITE,QUEUE,DONE,MERGE,OK,CACHE,CHUNKS,NEXT done
     class REJ,NOOP,REVIEW fail
 ```
@@ -389,27 +393,35 @@ worker.py's cron_jobs; the only live extraction trigger is the admin endpoint.
 
 ```
 1. Fetch both nodes; IF either is missing return None (no-op).
-2. get_entity_edges_snapshot(remove_id) — every edge in either direction
+2. Clean up dangling Redis alias-cache pointers for the removed entity:
+   expand its canonical_name/aliases via _expand_name_components (dropping
+   honorifics/short words), and for each resulting graph:alias:{alias} key
+   still listing remove_id, drop remove_id from the list — or delete the
+   key outright if remove_id was its only entry — so a stale pointer never
+   outlives the entity it named.
+3. get_entity_edges_snapshot(remove_id) — every edge in either direction
    with its stable id, direction, and other endpoint.
-3. log_merge → graph_merge_log row, written BEFORE any deletion.
-4. combined_aliases = keep.aliases + remove.canonical_name + remove.aliases,
+4. log_merge → graph_merge_log row, written BEFORE any deletion.
+5. combined_aliases = keep.aliases + remove.canonical_name + remove.aliases,
    de-duplicated, with keep.canonical_name filtered out.
-5. Collect get_children_via_child_of for BOTH nodes (kinship children via
+6. Collect get_children_via_child_of for BOTH nodes (kinship children via
    CHILD_OF/SON_OF/DAUGHTER_OF outgoing or FATHER_OF/MOTHER_OF incoming).
-6. merge_entities_by_id: re-create the removed node's edges from keep's
+7. merge_entities_by_id: re-create the removed node's edges from keep's
    perspective through connect_entities_bulk (so a pre-existing identical
    (rel_type, endpoint, book_id) edge on keep absorbs the redirected edge's
    chunk_refs instead of duplicating), SET keep.aliases, then
    DETACH DELETE the removed node.
-7. delete_by_entity_id(remove_id) — drop its queue row, otherwise every
+8. delete_by_entity_id(remove_id) — drop its queue row, otherwise every
    later scan's existence check would mark it 'failed' forever.
-8. resolve_reviews_for_merge: approve any pending review between the two;
+9. resolve_reviews_for_merge: approve any pending review between the two;
    re-point other pending reviews naming remove_id onto keep_id, or approve
    them if an equivalent (keep_id, other) review already exists.
-9. For each collected child (deduplicated), requeue_or_cap(child_id,
-   resolution_max_passes): status='idle', pass_count+1 if under the cap;
-   else force 'needs_review' so a flip-flopping node stops looping.
-10. update_alias_cache(keep_id); log; return the merge_log row id.
+10. For each collected child (deduplicated), requeue_or_cap(child_id,
+    resolution_max_passes): status='idle', pass_count+1 if under the cap;
+    else force 'needs_review' so a flip-flopping node stops looping.
+11. update_alias_cache(keep_id) — re-expands keep's now-larger alias set
+    (including any name component folded in from the removed entity) into
+    cache keys; log; return the merge_log row id.
 ```
 
 **7. `execute_split(graph_repo, entity_id, split_point_edge_id)` and `execute_unmerge(session, graph_repo, merge_log_id)`:**
@@ -578,10 +590,10 @@ Roles are read directly from each route's auth dependency.
 
 ## Testing
 
-All of the following pass against the current working tree (82 tests across the eight graph-specific files, plus 11 graph-related cases in `books_router_test.py`).
+All of the following pass against the current working tree (84 tests across the eight graph-specific files, plus 11 graph-related cases in `books_router_test.py`).
 
-- `packages/backend-core/tests/app/db/graph_repository_test.py` — 18 tests, all mocking `AsyncGraphDatabase.driver` (no live Neo4j) with an autouse fixture that resets the class-level driver. **This file was modified alongside the code it covers and its current content does match this doc**: `test_graph_repository_init_constraints` asserts exactly 9 statements and specifically that `DROP CONSTRAINT entity_name_unique`, `CREATE CONSTRAINT entity_id_unique` and `CREATE FULLTEXT INDEX entity_search_idx` are among them; `..._connect_entities_bulk_unions_chunk_refs` / `..._no_existing_edge` / `..._carries_evidence` cover the read-before-write union and the `ON CREATE`-only `evidence`; `..._merge_entities_by_id_redirects_edges_and_deletes`, `..._split_entities_partitions_and_flags_unclustered`, `..._connected_components_groups_by_shared_book_and_endpoint`, `..._restore_entity_from_snapshot_repoints_matching_edges` / `..._reports_unrecoverable`, `..._rename_entity_folds_old_name_into_aliases`, `..._delete_relationship_by_id_*`, and `..._find_resolution_candidates_queries_fulltext_index` / `..._no_terms_returns_empty` cover the rest. Not covered: `upsert_entities_bulk`'s NFC normalization details beyond the happy path, `get_entity_facts`, `get_entity_facts_for_citation`, `delete_book_graph`, `query_paths`, `check_books_exist`, and all six GDS methods. `test_graph_repository_query_subgraph` is the only reference to `query_subgraph` anywhere outside the repository itself.
-- `packages/backend-core/tests/app/services/entity_resolution_service_test.py` — 22 tests: the pure helpers (`normalize_alias`, `_check_hard_constraints` conflict/match/none/`born_in` fallback, `_graded_score` high/low), `update_alias_cache` union and missing-entity no-op, `execute_merge` no-op plus the happy path asserting the merge log is written *before* the delete and that children are re-queued, `execute_split` cache refresh for both nodes, `execute_unmerge` restore/mark-reverted/missing/already-reverted, and `resolve_entity` across every branch (missing entity → failed, no candidates → succeeded, hard conflict skip, hard match merge, gray-zone unsure → review + `needs_review`, gray-zone confident-same → merge) plus the judge's exception fallback.
+- `packages/backend-core/tests/app/db/graph_repository_test.py` — 18 tests, all mocking `AsyncGraphDatabase.driver` (no live Neo4j) with an autouse fixture that resets the class-level driver. **This file was modified alongside the code it covers and its current content does match this doc**: `test_graph_repository_init_constraints` asserts exactly 9 statements and specifically that `DROP CONSTRAINT entity_name_unique`, `CREATE CONSTRAINT entity_id_unique` and `CREATE FULLTEXT INDEX entity_search_idx` are among them; `..._connect_entities_bulk_unions_chunk_refs` / `..._no_existing_edge` / `..._carries_evidence` cover the read-before-write union and the `ON CREATE`-only `evidence`; `..._merge_entities_by_id_redirects_edges_and_deletes`, `..._split_entities_partitions_and_flags_unclustered`, `..._connected_components_groups_by_shared_book_and_endpoint`, `..._restore_entity_from_snapshot_repoints_matching_edges` / `..._reports_unrecoverable`, `..._rename_entity_folds_old_name_into_aliases`, `..._delete_relationship_by_id_*`, and `..._find_resolution_candidates_queries_fulltext_index` / `..._no_terms_returns_empty` cover the rest. Not covered: `upsert_entities_bulk`'s NFC normalization details beyond the happy path, `get_entity_facts`, `get_entity_facts_for_citation`, `get_entities_facts_for_citation_bulk`, `search_entities_fulltext`, `delete_book_graph`, `query_paths`, `check_books_exist`, and all six GDS methods. `test_graph_repository_query_subgraph` is the only reference to `query_subgraph` anywhere outside the repository itself.
+- `packages/backend-core/tests/app/services/entity_resolution_service_test.py` — 24 tests: the pure helpers (`normalize_alias`, `_check_hard_constraints` conflict/match/none/`born_in` fallback, `_graded_score` high/low, `_expand_name_components` decomposing a multi-word name and filtering title/honorific tokens), `update_alias_cache` union and missing-entity no-op, `execute_merge` no-op plus the happy path asserting the merge log is written *before* the delete and that children are re-queued plus a dedicated case for cleaning up the removed entity's dangling alias-cache keys, `execute_split` cache refresh for both nodes, `execute_unmerge` restore/mark-reverted/missing/already-reverted, and `resolve_entity` across every branch (missing entity → failed, no candidates → succeeded, hard conflict skip, hard match merge, gray-zone unsure → review + `needs_review`, gray-zone confident-same → merge) plus the judge's exception fallback.
 - `packages/backend-core/tests/app/db/graph_resolution_repository_test.py` — 14 tests over all three repositories: `bulk_enqueue` empty/insert, `claim_batch` claim-and-update vs. empty, `requeue_or_cap` under-cap/at-cap/missing-row, `list_pending`, `set_status` found/missing, `log_merge`, `mark_reverted` found/missing, and `resolve_reviews_for_merge`.
 - `services/worker/tests/jobs/knowledge_graph_job_test.py` — 9 tests: invalid scope raises, flag-disabled path, book-not-found, no-chunks, the non-fiction and fiction success paths (the latter asserting `scope`/`book_id` are stamped on both the entity and its queue row), a relation with an unresolvable `local_id` being skipped, `CHILD_OF` carrying `parent_role`, and the failure path.
 - `services/worker/tests/jobs/graph_resolution_job_test.py` — 3 tests: one session per entity, one failure not aborting the batch, empty list still closing the repo.
@@ -590,12 +602,12 @@ All of the following pass against the current working tree (82 tests across the 
 - `services/backend/tests/api/endpoints/graph_admin_router_test.py` — 9 tests: split success and missing-edge `400`, unmerge success and not-found `400`, review-queue pagination, approve-with-merge, approve missing `404`, approve already-decided `400`, reject success.
 - `services/backend/tests/api/endpoints/books_router_test.py` — the graph-related subset (11 cases): `test_reprocess_graph_disabled`, `test_reprocess_graph_request_rejects_invalid_scope`, merge success / missing-entity `400` / camelCase alias acceptance, relationship-delete success / not-found / camelCase, and entity-rename success / error / camelCase.
 - `packages/backend-core/tests/app/services/robust_parsing_test.py` — covers `parse_and_clean_json_from_exception` and `EntityType` coercion for both `KnowledgeExtraction` and `GlobalMetadataExtraction`.
-- No dedicated test exists for `retrieval.graph_entity_lookup`, for `GET /api/books/graph` / `GET /api/books/graph/chunk`, or for `GraphView.tsx`. `packages/backend-core/tests/app/services/rag_adk_agent_test.py::test_knowledge_graph_tool_not_offered` asserts the negative on the consumer side: no graph tool is exposed to the agent.
+- `packages/backend-core/tests/app/services/rag_retrieval_test.py` covers `graph_entity_lookup` directly (alongside unrelated `exact_phrase_chunk_search` cases in the same file): `test_graph_entity_lookup_b1_prefix_enumeration`, `..._b2_token_intersection_suppresses_noise`, `..._b3_miss_only_fuzzy_fallback`, and `..._respects_top_k`. No dedicated test exists for `GET /api/books/graph` / `GET /api/books/graph/chunk`, or for `GraphView.tsx`. `packages/backend-core/tests/app/services/rag_adk_agent_test.py::test_knowledge_graph_tool_not_offered` asserts the negative on the consumer side: no graph tool is exposed to the agent.
 
 ## Related Docs
 
-- **Correction to a stale cross-doc claim.** [NEO4J_CONNECTION.md](NEO4J_CONNECTION.md) documents a uniqueness constraint on `Entity.name` and a `name` property — the current schema has no `name` property (it is `canonical_name` + `aliases`), and `init_constraints` explicitly drops `entity_name_unique` in favour of `entity_id_unique` on `id`; that doc's Cypher recipes and connection details remain useful, its schema table does not. (`WORKER_DESIGN.md`'s `KnowledgeGraphJob` coverage used to carry pseudocode describing `fictional_categories` namespacing, a Roman-numeral second LLM pass, and a `book_id`-only signature — all three were stale even before this doc existed. Task 9's cleanup trimmed that coverage down to a one-line link to this doc, so `WORKER_DESIGN.md` no longer makes any of those claims.)
-- [CHAT_RAG_DESIGN.md](CHAT_RAG_DESIGN.md) — the consumer. Graph facts reach an answer only via `retrieval.graph_entity_lookup` riding the `search_chunks` agent tool; there is no separate graph tool for either handler, and the LLM-routed handler never queries the graph itself. Note the known limitation documented there and in `retrieval.py`: alias matching is exact against whitespace/punctuation-split unigrams and bigrams, so Uyghur agglutinative suffixes attached to a name will not match a bare cached alias.
+- [NEO4J_CONNECTION.md](NEO4J_CONNECTION.md) — connection details and Cypher recipes; its schema table has since been corrected to match this doc (`Entity.id` as the unique key, `canonical_name` + `aliases`, `rel_type` not `type`). (`WORKER_DESIGN.md`'s `KnowledgeGraphJob` coverage used to carry pseudocode describing `fictional_categories` namespacing, a Roman-numeral second LLM pass, and a `book_id`-only signature — all three were stale even before this doc existed. Task 9's cleanup trimmed that coverage down to a one-line link to this doc, so `WORKER_DESIGN.md` no longer makes any of those claims.)
+- [CHAT_RAG_DESIGN.md](CHAT_RAG_DESIGN.md) — the consumer. Graph facts reach an answer only via `retrieval.graph_entity_lookup` riding the `search_chunks` agent tool; there is no separate graph tool for either handler, and the LLM-routed handler never queries the graph itself. Correction to a stale cross-doc claim: that doc (and an earlier version of `retrieval.py`) documented alias matching as exact against whitespace/punctuation-split unigrams and bigrams, so a Uyghur agglutinative suffix attached to a name would not match a bare cached alias. `graph_entity_lookup` now also checks per-word prefix stems (down to 4 characters) and falls back to a Neo4j fuzzy full-text query on a total cache miss, so that limitation no longer applies as stated — see CHAT_RAG_DESIGN.md's own B1/B2/B3 breakdown for the current matching behavior.
 - [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md) — the other post-`ready`, book-level, non-mandatory stage. It is triggered automatically by `PipelineDriver` (this stage is not) and shares no state with the graph, despite `knowledge_graph_service.py`'s docstring implying `summary_job` reuses its schemas.
 - [WORKER_DESIGN.md](WORKER_DESIGN.md) — cron schedule, `PipelineDriver`, `StaleWatchdog`, and the shared worker conventions.
 - [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md) — `system_configs`-driven model selection and the overall service topology.

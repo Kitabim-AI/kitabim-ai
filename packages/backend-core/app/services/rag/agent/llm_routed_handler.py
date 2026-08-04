@@ -167,7 +167,12 @@ def _grade_context(
                     "title": c.get("title") or "Unknown",
                     "author": c.get("author") or None,
                     "volume": c.get("volume"),
-                    "page": c.get("page"),
+                    "page": c.get("page")
+                    if c.get("page") is not None
+                    else c.get("page_number"),
+                    "page_number": c.get("page_number")
+                    if c.get("page_number") is not None
+                    else c.get("page"),
                     "book_id": c.get("book_id"),
                     "score": c.get("score", 0.0),
                     "rrf_score": c.get("rrf_score", 0.0),
@@ -206,7 +211,12 @@ def _grade_context(
 
         # Append to our global pool, deduplicating along the way
         for doc in graded_search_docs:
-            key = (doc.metadata["book_id"], doc.metadata["page"])
+            page_val = (
+                doc.metadata.get("page")
+                if doc.metadata.get("page") is not None
+                else doc.metadata.get("page_number")
+            )
+            key = (doc.metadata["book_id"], page_val)
             if key in seen:
                 continue
             seen.add(key)

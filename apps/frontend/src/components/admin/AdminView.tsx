@@ -1,4 +1,4 @@
-import { BookOpen, BookOpenCheck, Cuboid, Database, Edit2, Globe, Hash, MoreVertical, Network, RefreshCw, Save, ScanText, Scissors, Search, Shield, TableOfContents, User, Wand2, X } from 'lucide-react';
+import { BookOpen, BookOpenCheck, Cuboid, Database, Edit2, Globe, Hash, MoreVertical, Network, RefreshCw, Save, ScanText, Scissors, ScrollText, Search, Shield, TableOfContents, User, Wand2, X } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { useI18n } from '../../i18n/I18nContext';
@@ -49,14 +49,16 @@ const getPipelineIconClass = (
   // For page-level steps, use the aggregate counts to determine if finished
   const isPageLevel = PAGE_LEVEL_MILESTONE_STEPS.includes(stepKey as typeof PAGE_LEVEL_MILESTONE_STEPS[number]);
 
-  // Special case: Summary and Graph are determined by boolean flags
+  // Special case: Summary, Graph, and History are determined by boolean flags
   const isComplete = stepKey === 'summary'
     ? !!book.hasSummary
     : stepKey === 'graph'
-      ? !!book.hasGraph
-      : isPageLevel
-        ? (total > 0 && doneCount + failedCount === total)
-        : isCompleteParam;
+      ? !!(book.hasGraph || book.has_graph)
+      : stepKey === 'history'
+        ? !!(book.hasHistory || book.has_history)
+        : isPageLevel
+          ? (total > 0 && doneCount + failedCount === total)
+          : isCompleteParam;
 
   const isFailed = isPageLevel
     ? failedCount > 0
@@ -88,7 +90,10 @@ const getMilestoneColor = (book: any, stepKey: string) => {
     return book.hasSummary ? 'text-emerald-500' : 'text-slate-300';
   }
   if (stepKey === PIPELINE_STEP.GRAPH) {
-    return book.hasGraph ? 'text-emerald-500' : 'text-slate-300';
+    return (book.hasGraph || book.has_graph) ? 'text-emerald-500' : 'text-slate-300';
+  }
+  if (stepKey === PIPELINE_STEP.HISTORY) {
+    return (book.hasHistory || book.has_history) ? 'text-emerald-500' : 'text-slate-300';
   }
 
   const milestone = book[milestoneField];
@@ -489,13 +494,14 @@ export const AdminView: React.FC = () => {
                         <div className="flex flex-col gap-1.5 min-w-[120px] md:min-w-[150px]">
                           <div className="flex items-center gap-2.5">
                             {/* Baseline Pipeline Icons with Lazy Loading Tooltips */}
-                            {[
+                             {[
                               { ...ADMIN_PIPELINE_STEPS[0], icon: ScanText },
                               { ...ADMIN_PIPELINE_STEPS[1], icon: Scissors },
                               { ...ADMIN_PIPELINE_STEPS[2], icon: Cuboid },
                               { ...ADMIN_PIPELINE_STEPS[3], icon: Wand2 },
                               { ...ADMIN_PIPELINE_STEPS[4], icon: BookOpenCheck },
-                              { ...ADMIN_PIPELINE_STEPS[5], icon: Network }
+                              { ...ADMIN_PIPELINE_STEPS[5], icon: Network },
+                              { ...ADMIN_PIPELINE_STEPS[6], icon: ScrollText }
                             ].map(({ key, icon: Icon, label }) => {
                               const cacheKey = `${book.id}:${key}`;
                               const stats = detailedStats[cacheKey];
@@ -504,7 +510,7 @@ export const AdminView: React.FC = () => {
 
                               const colorClass = isLoaded
                                 ? getPipelineIconClass(
-                                    { ...book, pipelineStats: stats.pipeline_stats, hasSummary: stats.has_summary, hasGraph: stats.has_graph, totalPages: stats.total_pages },
+                                    { ...book, pipelineStats: stats.pipeline_stats, hasSummary: stats.has_summary, hasGraph: stats.has_graph, hasHistory: stats.has_history, totalPages: stats.total_pages },
                                     key,
                                     false, // handled inside getPipelineIconClass for page levels
                                     false  // handled inside getPipelineIconClass for page levels
@@ -531,6 +537,8 @@ export const AdminView: React.FC = () => {
                                             <span>{stats.has_summary ? t('common.done') : t('common.pending')}</span>
                                           ) : key === 'graph' ? (
                                             <span>{(stats.has_graph || stats.hasGraph) ? t('common.done') : t('common.pending')}</span>
+                                          ) : key === 'history' ? (
+                                            <span>{(stats.has_history || stats.hasHistory) ? t('common.done') : t('common.pending')}</span>
                                           ) : (
                                             <span>
                                               {getStat(stats.pipeline_stats, key)}/{stats.total_pages}

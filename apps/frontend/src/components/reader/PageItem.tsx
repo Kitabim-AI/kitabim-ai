@@ -39,6 +39,39 @@ export const PageItem: React.FC<PageItemProps> = ({
 }) => {
   const { t } = useI18n();
   const isEditor = useIsEditor();
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  const adjustHeight = React.useCallback(() => {
+    if (!isEditing || !textareaRef.current || !containerRef.current) return;
+    const textarea = textareaRef.current;
+    const container = containerRef.current;
+
+    textarea.style.height = '100%';
+    const containerHeight = container.clientHeight;
+    textarea.style.height = 'auto';
+    const contentHeight = textarea.scrollHeight;
+
+    if (contentHeight > containerHeight && containerHeight > 0) {
+      textarea.style.height = `${contentHeight}px`;
+    } else {
+      textarea.style.height = '100%';
+    }
+  }, [isEditing]);
+
+  React.useEffect(() => {
+    if (isEditing && textareaRef.current) {
+      textareaRef.current.focus();
+      adjustHeight();
+    }
+  }, [isEditing, tempText, fontSize, adjustHeight]);
+
+  React.useEffect(() => {
+    if (!isEditing || !containerRef.current) return;
+    const observer = new ResizeObserver(() => adjustHeight());
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [isEditing, adjustHeight]);
 
   return (
     <div onMouseEnter={onSetActive} className={`group relative p-6 rounded-[24px] transition-all duration-300 border ${isEditing ? 'flex-1 flex flex-col min-h-0' : ''} ${isActive ? 'bg-white dark:bg-slate-900/60 shadow-xl border-[#0369a1]/10 dark:border-[#38bdf8]/10' : 'border-transparent'}`}>
@@ -58,11 +91,12 @@ export const PageItem: React.FC<PageItemProps> = ({
 
       {isEditing ? (
         <div className="flex-1 flex flex-col gap-4 min-h-0">
-          <div className="relative flex-1 flex flex-col min-h-0">
+          <div ref={containerRef} className="relative flex-1 flex flex-col min-h-[300px]">
             <textarea 
+              ref={textareaRef}
               value={contentFontClassName === 'reader-font-adobe' ? normalizeArabic(tempText) : tempText} 
               onChange={(e) => onTempTextChange(contentFontClassName === 'reader-font-adobe' ? normalizeArabic(e.target.value) : e.target.value)} 
-              className={`flex-1 w-full p-4 uyghur-text border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl outline-none resize-none bg-white dark:bg-slate-800 text-[#1a1a1a] dark:text-slate-100 relative z-10 min-h-0 custom-scrollbar ${contentFontClassName || ''}`} 
+              className={`flex-1 w-full h-full p-4 uyghur-text border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl outline-none resize-none bg-white dark:bg-slate-800 text-[#1a1a1a] dark:text-slate-100 relative z-10 custom-scrollbar leading-relaxed ${contentFontClassName || ''}`} 
               style={{ fontSize: `${fontSize}px`, fontFamily: contentFontFamily }} 
               dir="rtl" 
             />

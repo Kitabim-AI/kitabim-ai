@@ -3,9 +3,10 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 import logging
 import uuid
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.ext.asyncio import AsyncSession
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -34,9 +35,14 @@ from api.endpoints import (
     proverbs_router,
     quran_router,
     graph_admin_router,
+    admin_history_dictionary_router,
 )
 from app.core.config import settings
-from app.db.session import init_db, close_db  # SQLAlchemy session management
+from app.db.session import (
+    init_db,
+    close_db,
+    get_session,
+)  # SQLAlchemy session management
 from app.core.i18n import I18n, set_current_lang, t
 
 from app.utils.observability import configure_logging, log_json, request_id_var
@@ -125,13 +131,26 @@ async def lifespan(app: FastAPI):
     # Initialize SQLAlchemy (replaces db_manager.connect_to_storage())
     await init_db()
 
-    # Seed system configurations
+    # Seed system configurations & load runtime log_level
     try:
         from app.db.seeds import seed_system_configs
         from app.db import session as db_session
+        from app.db.repositories.system_configs_repository import (
+            SystemConfigsRepository,
+        )
 
         async with db_session.async_session_factory() as session:
             await seed_system_configs(session)
+            repo = SystemConfigsRepository(session)
+            log_level_val = await repo.get_value("log_level", settings.log_level)
+            if log_level_val:
+                new_level = getattr(logging, log_level_val.upper(), logging.INFO)
+                logging.getLogger().setLevel(new_level)
+                log_json(
+                    logger,
+                    logging.INFO,
+                    f"Applied system_configs log_level: {log_level_val.upper()}",
+                )
     except Exception as exc:
         logger = logging.getLogger("app.startup")
         log_json(logger, logging.ERROR, "System config seeding failed", error=str(exc))
@@ -477,14 +496,31 @@ app.include_router(questions_router.router, prefix="/api/questions", tags=["ques
 app.include_router(proverbs_router.router, prefix="/api", tags=["proverbs"])
 app.include_router(quran_router.router, prefix="/api", tags=["quran"])
 app.include_router(
+    admin_history_dictionary_router.router,
+    prefix="/api/admin",
+    tags=["admin-history-dictionary"],
+)
+app.include_router(
     graph_admin_router.router, prefix="/api/admin/graph", tags=["graph-admin"]
 )
 
 
 @app.get("/api/config")
-async def get_public_config():
+async def get_public_config(session: AsyncSession = Depends(get_session)):
     """Public endpoint — returns config the frontend needs before it can authenticate."""
-    return {"appId": settings.security_app_id}
+    from app.db.repositories.system_configs_repository import SystemConfigsRepository
+
+    repo = SystemConfigsRepository(session)
+    collection_page_size_str = await repo.get_value("collection_page_size", "40")
+    try:
+        collection_page_size = int(collection_page_size_str)
+    except (ValueError, TypeError):
+        collection_page_size = 40
+
+    return {
+        "appId": settings.security_app_id,
+        "collectionPageSize": collection_page_size,
+    }
 
 
 @app.get("/")

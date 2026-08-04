@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import Any, AsyncIterator, List, Optional
 
 from google import genai
@@ -338,6 +339,25 @@ async def get_system_config_timeout(key: str, default_val: float) -> float:
     return default_val
 
 
+_MODEL_MAJOR_VERSION_RE = re.compile(r"gemini-(\d+)")
+
+
+def disabled_thinking_config(model_name: str) -> dict:
+    """
+    OCR is pure transcription, not a reasoning task — without disabling
+    "thinking", the model can burn its entire output budget on hidden
+    thinking and return finishReason=STOP with zero actual output tokens
+    (silent, no error surfaced). Gemini 3.x+ models reject
+    thinking_budget=0 (INVALID_ARGUMENT) and require thinking_level
+    instead; pre-3.x models don't recognize thinking_level at all.
+    """
+    match = _MODEL_MAJOR_VERSION_RE.search(model_name)
+    major = int(match.group(1)) if match else None
+    if major is not None and major >= 3:
+        return {"thinking_level": "MINIMAL"}
+    return {"thinking_budget": 0}
+
+
 async def generate_text_with_image(
     prompt: str, image_bytes: bytes, model_name: str, timeout: float | None = None
 ) -> str:
@@ -351,11 +371,7 @@ async def generate_text_with_image(
     config = types.GenerateContentConfig(
         temperature=0.0,
         system_instruction=prompt,
-        # OCR is pure transcription, not a reasoning task — without this, the
-        # model can burn its entire output budget on hidden "thinking" and
-        # return finishReason=STOP with zero actual output tokens (silent,
-        # no error surfaced).
-        thinking_config=types.ThinkingConfig(thinking_budget=0),
+        thinking_config=types.ThinkingConfig(**disabled_thinking_config(model)),
     )
     effective_timeout = timeout or await get_system_config_timeout(
         "gemini_ocr_timeout", _OCR_INVOKE_TIMEOUT

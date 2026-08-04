@@ -40,7 +40,7 @@ test('BookCard handles click event', () => {
 });
 
 test('BookCard shows processing state', () => {
-  const processingBook: Book = { ...mockBook, pipelineStep: 'ocr' };
+  const processingBook: Book = { ...mockBook, status: 'ocr_processing', pipelineStep: 'ocr' };
   render(<BookCard book={processingBook} onClick={vi.fn()} />);
 
   // In the new system, it shows the pipeline step name (translated)

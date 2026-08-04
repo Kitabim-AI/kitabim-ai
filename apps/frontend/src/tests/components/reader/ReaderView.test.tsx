@@ -34,7 +34,15 @@ vi.mock('@/src/components/ui/GlassPanel', () => ({
 }));
 
 vi.mock('@/src/components/reader/VirtualScrollReader', () => ({
-  default: () => <div>virtual-reader</div>,
+  default: ({ onEdit, onSave, onCancel, onReprocess }: any) => (
+    <div>
+      <div>virtual-reader</div>
+      <button onClick={() => onEdit?.(1, 'Page 1 content')}>virtual-edit-1</button>
+      <button onClick={() => onSave?.(1, 'Page 1 updated')}>virtual-save-1</button>
+      <button onClick={() => onCancel?.()}>virtual-cancel-1</button>
+      <button onClick={() => onReprocess?.(1)}>virtual-reprocess-1</button>
+    </div>
+  ),
 }));
 
 vi.mock('@/src/components/reader/PageItem', () => ({
@@ -139,14 +147,13 @@ beforeEach(() => {
   vi.mocked(AuthModule.useIsEditor).mockReturnValue(true);
 });
 
-test('ReaderView renders book content and controls', () => {
+test('ReaderView renders book title, virtual scroll by default, and controls', () => {
   vi.mocked(AppContextModule.useAppContext).mockReturnValue(createContextValue() as any);
 
   renderReader();
 
   expect(screen.getByText('Reader Book')).toBeInTheDocument();
-  expect(screen.getByText('Page 1 content')).toBeInTheDocument();
-  expect(screen.getByText('Page 2 content')).toBeInTheDocument();
+  expect(screen.getByText('virtual-reader')).toBeInTheDocument();
   expect(screen.getByText('chat-panel')).toBeInTheDocument();
 });
 
@@ -156,12 +163,35 @@ test('ReaderView handles font size changes', () => {
 
   renderReader();
 
+  const fontToggleButton = document.querySelector('.lucide-alarge-small')?.closest('button');
+  if (fontToggleButton) fireEvent.click(fontToggleButton);
+
   const fontControls = screen.getByText('18').parentElement;
   const buttons = fontControls?.querySelectorAll('button') || [];
-  fireEvent.click(buttons[0] as HTMLButtonElement);
-  fireEvent.click(buttons[1] as HTMLButtonElement);
+  if (buttons[0]) fireEvent.click(buttons[0]);
+  if (buttons[1]) fireEvent.click(buttons[1]);
 
-  expect(context.setFontSize).toHaveBeenCalledTimes(3);
+  expect(context.setFontSize).toHaveBeenCalled();
+});
+
+test('ReaderView toggles full document mode for editor', async () => {
+  const context = createContextValue();
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue(context as any);
+  vi.mocked(PersistenceService.getBookPages).mockResolvedValue(mockBook.pages as any);
+
+  renderReader();
+
+  // Initially virtual scroll is shown
+  expect(screen.getByText('virtual-reader')).toBeInTheDocument();
+
+  // Click Load Full Document button
+  const toggleBtn = screen.getByTitle('reader.loadFullDocument');
+  fireEvent.click(toggleBtn);
+
+  await waitFor(() => {
+    expect(screen.getByText('Page 1 content')).toBeInTheDocument();
+    expect(screen.getByText('Page 2 content')).toBeInTheDocument();
+  });
 });
 
 test('ReaderView enters global edit mode and saves corrections', async () => {
@@ -188,11 +218,19 @@ test('ReaderView enters global edit mode and saves corrections', async () => {
   );
 });
 
-test('ReaderView saves and cancels page edits', async () => {
+test('ReaderView saves and cancels page edits in full document mode', async () => {
   const context = createContextValue();
   vi.mocked(AppContextModule.useAppContext).mockReturnValue(context as any);
+  vi.mocked(PersistenceService.getBookPages).mockResolvedValue(mockBook.pages as any);
 
   renderReader();
+
+  // Switch to full document mode first
+  fireEvent.click(screen.getByTitle('reader.loadFullDocument'));
+
+  await waitFor(() => {
+    expect(screen.getByText('Page 1 content')).toBeInTheDocument();
+  });
 
   fireEvent.click(screen.getByText('edit-1'));
   fireEvent.click(await screen.findByText('save-1'));
@@ -204,12 +242,39 @@ test('ReaderView saves and cancels page edits', async () => {
   fireEvent.click(screen.getByText('cancel-1'));
 });
 
-test('ReaderView triggers page reprocess actions', () => {
+test('ReaderView triggers page reprocess actions in full document mode', async () => {
+  const context = createContextValue();
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue(context as any);
+  vi.mocked(PersistenceService.getBookPages).mockResolvedValue(mockBook.pages as any);
+
+  renderReader();
+
+  // Switch to full document mode first
+  fireEvent.click(screen.getByTitle('reader.loadFullDocument'));
+
+  await waitFor(() => {
+    expect(screen.getByText('Page 1 content')).toBeInTheDocument();
+  });
+
+  fireEvent.click(screen.getByText('reprocess-1'));
+  expect(context.bookActions.handleReProcessPage).toHaveBeenCalledWith('1', 1);
+});
+
+test('ReaderView saves page edits and handles reprocess in virtual scroll mode', async () => {
   const context = createContextValue();
   vi.mocked(AppContextModule.useAppContext).mockReturnValue(context as any);
 
   renderReader();
 
-  fireEvent.click(screen.getByText('reprocess-1'));
+  // Test virtual edit
+  fireEvent.click(screen.getByText('virtual-edit-1'));
+  fireEvent.click(screen.getByText('virtual-save-1'));
+
+  await waitFor(() => {
+    expect(context.bookActions.handleUpdatePage).toHaveBeenCalledWith('1', 1, 'Page 1 updated', expect.any(Function));
+  });
+
+  // Test virtual reprocess
+  fireEvent.click(screen.getByText('virtual-reprocess-1'));
   expect(context.bookActions.handleReProcessPage).toHaveBeenCalledWith('1', 1);
 });

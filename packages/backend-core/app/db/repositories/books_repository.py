@@ -16,7 +16,7 @@ from app.core.pipeline import (
     PIPELINE_STEP_SUMMARY,
     STEP_DONE_MILESTONE_BY_STEP,
 )
-from app.db.models import Book, Page, BookSummary
+from app.db.models import Book, Page, BookSummary, BatchHistoryExtractionJob
 from app.db.repositories.base_repository import BaseRepository
 
 
@@ -192,6 +192,13 @@ class BooksRepository(BaseRepository[Book]):
 
             has_graph = book.graph_milestone == "complete"
 
+            history_stmt = select(func.count(BatchHistoryExtractionJob.id)).where(
+                BatchHistoryExtractionJob.book_id == book_id,
+                BatchHistoryExtractionJob.status == "succeeded",
+            )
+            history_res = await self.session.execute(history_stmt)
+            has_history = (history_res.scalar() or 0) > 0
+
             # For ready books, we still need to check if background spell check is running
             sc_stmt = (
                 select(
@@ -244,6 +251,7 @@ class BooksRepository(BaseRepository[Book]):
                 },
                 "has_summary": has_summary,
                 "has_graph": has_graph,
+                "has_history": has_history,
                 "ocr_done_count": tp,
                 "error_count": sc_failed,
                 "pending_count": tp - sc_done - sc_active - sc_failed,
@@ -451,6 +459,7 @@ class BooksRepository(BaseRepository[Book]):
             },
             "has_summary": has_summary,
             "has_graph": has_graph,
+            "has_history": has_history,
             "ocr_done_count": row.ocr_done or 0,
             "error_count": (row.ocr_failed or 0)
             + (row.chunking_failed or 0)
@@ -567,6 +576,13 @@ class BooksRepository(BaseRepository[Book]):
             if info.get("graph_milestone") == "complete"
         }
 
+        history_stmt = select(BatchHistoryExtractionJob.book_id).where(
+            BatchHistoryExtractionJob.book_id.in_(book_ids),
+            BatchHistoryExtractionJob.status == "succeeded",
+        )
+        history_res = await self.session.execute(history_stmt)
+        books_with_history = {row[0] for row in history_res.fetchall()}
+
         # 3. Assemble final results
         final_results = {}
         for bid in book_ids:
@@ -601,6 +617,7 @@ class BooksRepository(BaseRepository[Book]):
                 "pipeline_stats": stats,
                 "has_summary": bid in books_with_summary,
                 "has_graph": bid in books_with_graph,
+                "has_history": bid in books_with_history,
             }
 
         return final_results
@@ -684,20 +701,11 @@ class BooksRepository(BaseRepository[Book]):
         result = await self.session.execute(stmt)
         rows = [(row[0], row[1]) for row in result.fetchall() if row[0] and row[1]]
 
-        import re
-
         q = question.strip()
 
-        # Exact match when the question contains a «quoted» title
-        quoted = re.findall(r"«([^»]+)»", q)
-        if quoted:
-            for candidate in quoted:
-                candidate_norm = _normalize_uyghur(candidate.strip())
-                for title, author in rows:
-                    if _normalize_uyghur(title.strip()) == candidate_norm:
-                        return title, author
-            return None  # quoted title present but not found — don't fuzzy-match
-
+        # `«...»` no longer signals a quoted title (it now means phrase-search
+        # intent elsewhere in the RAG pipeline) — fuzzy word-prefix matching
+        # resolves the title the same way whether quoted or not.
         for title, author in rows:
             if _entity_matches_question(title, q):
                 return title, author
@@ -782,30 +790,14 @@ class BooksRepository(BaseRepository[Book]):
         result = await self.session.execute(stmt)
         titles = [row[0] for row in result.fetchall() if row[0]]
 
-        import re
-
         q = question.strip()
 
-        # Exact match when the question contains a «quoted» title
-        quoted = re.findall(r"«([^»]+)»", q)
-        matched_title = None
-        if quoted:
-            for candidate in quoted:
-                candidate_norm = _normalize_uyghur(candidate.strip())
-                matched_title = next(
-                    (
-                        t
-                        for t in titles
-                        if _normalize_uyghur(t.strip()) == candidate_norm
-                    ),
-                    None,
-                )
-                if matched_title:
-                    break
-        if not matched_title:
-            matched_title = next(
-                (t for t in titles if _entity_matches_question(t, q)), None
-            )
+        # `«...»` no longer signals a quoted title (it now means phrase-search
+        # intent elsewhere in the RAG pipeline) — fuzzy word-prefix matching
+        # resolves the title the same way whether quoted or not.
+        matched_title = next(
+            (t for t in titles if _entity_matches_question(t, q)), None
+        )
         if not matched_title:
             return []
 

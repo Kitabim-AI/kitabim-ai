@@ -1,6 +1,7 @@
 import { Book } from '@shared/types';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PersistenceService } from '../services/persistenceService';
+import { getCollectionPageSize } from '../services/authService';
 import { useAuth } from './useAuth';
 
 export const useBooks = (view: string, searchQuery: string, pageSize: number, page: number, category?: string) => {
@@ -12,7 +13,10 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
   const [isLoading, setIsLoading] = useState(true);
   const [hasMoreShelf, setHasMoreShelf] = useState(true);
   const [shelfPage, setShelfPage] = useState(1);
-  const COLLECTION_PAGE_SIZE = 40;
+  // Backed by system_configs 'collection_page_size' (fetched once at app
+  // startup via /api/config); falls back to 40 if the fetch hasn't
+  // completed yet or failed — see authService.initAppConfig().
+  const COLLECTION_PAGE_SIZE = getCollectionPageSize();
 
   const [sortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'uploadDate', direction: 'desc' });
 

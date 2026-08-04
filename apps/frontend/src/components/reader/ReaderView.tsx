@@ -4,6 +4,7 @@ import {
   Bot,
   Download,
   Edit3,
+  FileText,
   Loader2,
   Maximize2, Minimize2,
   PanelLeftOpen,
@@ -62,6 +63,8 @@ export const ReaderView: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isFullDocumentMode, setIsFullDocumentMode] = useState(false);
+  const isVirtualScroll = !isFullDocumentMode;
 
   // Sync local fullscreen state → context (so Shell can hide the navbar)
   useEffect(() => {
@@ -89,7 +92,6 @@ export const ReaderView: React.FC = () => {
   const fontButtonRef = useRef<HTMLButtonElement>(null);
   const fontSliderRef = useRef<HTMLDivElement>(null);
 
-  const pageTextAreaRef = useRef<HTMLTextAreaElement>(null);
   const globalTextAreaRef = useRef<HTMLTextAreaElement>(null);
   const observerTarget = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -136,30 +138,29 @@ export const ReaderView: React.FC = () => {
   }, [mobileTab]);
 
   useEffect(() => {
-    if (isGuestOrReader) {
+    if (!isFullDocumentMode) {
       setLoadedPages([]);
     } else {
       setLoadedPages(selectedBook.pages || []);
     }
-  }, [selectedBook.id, isGuestOrReader]);
+  }, [selectedBook.id, isFullDocumentMode]);
 
   useEffect(() => {
-    if (isGuestOrReader && currentPage !== null) {
-      const fetchSpecificPage = async () => {
+    if (isFullDocumentMode && loadedPages.length === 0) {
+      const fetchFullDocPages = async () => {
         setIsLoadingMore(true);
         try {
-          const pages = await PersistenceService.getBookPages(selectedBook.id, currentPage - 1, 1);
+          const pages = await PersistenceService.getBookPages(selectedBook.id, 0, 10000);
           setLoadedPages(pages);
-          setPageInput(currentPage.toString());
         } catch (err) {
-          console.error("Failed to fetch requested page", err);
+          console.error("Failed to fetch full document pages", err);
         } finally {
           setIsLoadingMore(false);
         }
       };
-      fetchSpecificPage();
+      fetchFullDocPages();
     }
-  }, [selectedBook.id, currentPage, isGuestOrReader]);
+  }, [selectedBook.id, isFullDocumentMode, loadedPages.length]);
 
   useEffect(() => {
     if (currentPage !== null) {
@@ -183,10 +184,6 @@ export const ReaderView: React.FC = () => {
         const el = pageRefs.current.get(target);
         const container = mainScrollRef.current;
         if (el && container) {
-          // scrollIntoView dynamically forces the window to scroll as well if there 
-          // are nested scrollbars or hidden overflow. This forcefully breaks the fixed/sticky 
-          // navbar by displacing the document. Calculating exactly where to scroll manually 
-          // completely isolates the scroll action boundaries.
           const containerTop = container.getBoundingClientRect().top;
           const elTop = el.getBoundingClientRect().top;
           
@@ -199,9 +196,9 @@ export const ReaderView: React.FC = () => {
     }
   }, [editingPageNum]);
 
-  // Track current page from scrolling (admin/editor path)
+  // Track current page from scrolling (full document mode)
   useEffect(() => {
-    if (isGuestOrReader || !mainScrollRef.current) return;
+    if (!isFullDocumentMode || !mainScrollRef.current) return;
 
     const observer = new IntersectionObserver((entries) => {
       let mostVisiblePage = -1;
@@ -217,7 +214,7 @@ export const ReaderView: React.FC = () => {
 
     pageRefs.current.forEach(el => { if (el) observer.observe(el); });
     return () => observer.disconnect();
-  }, [loadedPages.length, isGuestOrReader]);
+  }, [loadedPages.length, isFullDocumentMode]);
 
   // Sync scroll position when switching tabs (not on every currentPage change)
   const currentPageRef = useRef(currentPage);
@@ -238,13 +235,6 @@ export const ReaderView: React.FC = () => {
       }
     }
   }, [mobileTab, isEditing, editingPageNum]);
-
-  useEffect(() => {
-    if (pageTextAreaRef.current) {
-      pageTextAreaRef.current.style.height = 'auto';
-      pageTextAreaRef.current.style.height = `${pageTextAreaRef.current.scrollHeight}px`;
-    }
-  }, [tempPageText, editingPageNum]);
 
   useEffect(() => {
     if (!showFontSlider) return;
@@ -271,7 +261,7 @@ export const ReaderView: React.FC = () => {
   }, [showFontSlider]);
 
   const fetchMorePages = useCallback(async () => {
-    if (isLoadingMore || !hasMorePages || isGuestOrReader) return;
+    if (isLoadingMore || !hasMorePages || !isFullDocumentMode) return;
     setIsLoadingMore(true);
 
     try {
@@ -292,7 +282,7 @@ export const ReaderView: React.FC = () => {
     } finally {
       setIsLoadingMore(false);
     }
-  }, [isLoadingMore, hasMorePages, loadedPages.length, selectedBook.id, isGuestOrReader]);
+  }, [isLoadingMore, hasMorePages, loadedPages.length, selectedBook.id, isFullDocumentMode]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -447,6 +437,15 @@ export const ReaderView: React.FC = () => {
                       <Edit3 size={14} className="sm:w-4 sm:h-4" />
                       <span className="hidden sm:inline">{t('reader.editBook')}</span>
                     </button>
+                    {!isFullDocumentMode && (
+                      <button
+                        onClick={() => setIsFullDocumentMode(true)}
+                        className="hidden sm:flex items-center justify-center p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10"
+                        title={t('reader.loadFullDocument')}
+                      >
+                        <FileText size={18} className="sm:w-5 sm:h-5" />
+                      </button>
+                    )}
                     {selectedBook.fileType === 'pdf' && (
                       <button
                         onClick={handleDownload}
@@ -551,7 +550,7 @@ export const ReaderView: React.FC = () => {
                 placeholder={t('common.enterContent')} 
               />
             </div>
-          ) : isGuestOrReader ? (
+          ) : isVirtualScroll ? (
             <VirtualScrollReader
               bookId={selectedBook.id}
               totalPages={selectedBook.totalPages || (selectedBook as any).total_pages || 0}
@@ -563,12 +562,28 @@ export const ReaderView: React.FC = () => {
               scrollParentRef={mainScrollRef}
               isFullscreen={isFullscreen}
               isChatCollapsed={isSidebarCollapsed}
+              editingPageNum={editingPageNum}
+              tempPageText={tempPageText}
+              onEdit={(pageNum, text) => {
+                setEditingPageNum(pageNum);
+                setTempPageText(text);
+              }}
+              onReprocess={(pageNum) => {
+                bookActions.handleReProcessPage(selectedBook.id, pageNum);
+              }}
+              onTempTextChange={setTempPageText}
+              onSave={(pageNum, text) => {
+                handleUpdatePage(selectedBook.id, pageNum, text);
+              }}
+              onCancel={() => setEditingPageNum(null)}
+              isSaving={isSaving}
+              selectedBookPages={selectedBook.pages}
             />
           ) : (
-            <div className={`w-full mx-auto transition-all duration-300 ${isSidebarCollapsed ? 'max-w-6xl' : 'max-w-4xl'} ${editingPageNum !== null ? 'h-full flex flex-col' : isGuestOrReader ? 'pt-8' : 'space-y-4 pb-40'}`}>
+            <div className={`w-full mx-auto transition-all duration-300 ${isSidebarCollapsed ? 'max-w-6xl' : 'max-w-4xl'} ${editingPageNum !== null ? 'h-full flex flex-col' : 'space-y-4 pb-40'}`}>
               {[...loadedPages]
                 .sort((a, b) => a.pageNumber - b.pageNumber)
-                .filter(page => isGuestOrReader ? Number(page.pageNumber) === Number(currentPage) : (editingPageNum === null || Number(page.pageNumber) === Number(editingPageNum)))
+                .filter(page => (editingPageNum === null || Number(page.pageNumber) === Number(editingPageNum)))
                 .map(page => (
                   <div
                     key={page.pageNumber}
@@ -584,7 +599,7 @@ export const ReaderView: React.FC = () => {
                       fontSize={fontSize}
                       contentFontFamily={readerContentFontFamily}
                       contentFontClassName={readerContentFontClassName}
-                      onSetActive={() => !isGuestOrReader && setCurrentPage(page.pageNumber)}
+                      onSetActive={() => setCurrentPage(page.pageNumber)}
                       onEdit={() => { setEditingPageNum(page.pageNumber); setTempPageText(page.text || ''); }}
                       onReprocess={() => bookActions.handleReProcessPage(selectedBook.id, page.pageNumber)}
                       tempText={tempPageText}
@@ -603,7 +618,7 @@ export const ReaderView: React.FC = () => {
                     />
                   </div>
                 ))}
-              {!isEditing && !isGuestOrReader && hasMorePages && <div ref={observerTarget} className="h-20 flex items-center justify-center">{isLoadingMore && <Loader2 className="animate-spin text-[#0369a1]" />}</div>}
+              {!isEditing && hasMorePages && <div ref={observerTarget} className="h-20 flex items-center justify-center">{isLoadingMore && <Loader2 className="animate-spin text-[#0369a1]" />}</div>}
             </div>
           )}
         </div>

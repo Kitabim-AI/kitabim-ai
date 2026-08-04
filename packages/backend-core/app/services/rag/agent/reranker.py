@@ -47,7 +47,10 @@ def _pool_and_dedup(observations: list[dict]) -> tuple[list[Document], int]:
             continue
         total_raw_chunks += len(chunks)
         for c in chunks:
-            key = (c.get("book_id"), c.get("page"))
+            page_val = (
+                c.get("page") if c.get("page") is not None else c.get("page_number")
+            )
+            key = (c.get("book_id"), page_val)
             if key in seen:
                 continue
             seen.add(key)
@@ -58,7 +61,8 @@ def _pool_and_dedup(observations: list[dict]) -> tuple[list[Document], int]:
                         "title": c.get("title") or "Unknown",
                         "author": c.get("author") or None,
                         "volume": c.get("volume"),
-                        "page": c.get("page"),
+                        "page": page_val,
+                        "page_number": page_val,
                         "book_id": c.get("book_id"),
                         "score": c.get("score", 0.0),
                         "rrf_score": c.get("rrf_score", 0.0),

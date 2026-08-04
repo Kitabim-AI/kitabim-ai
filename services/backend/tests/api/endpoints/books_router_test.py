@@ -158,6 +158,71 @@ async def test_get_books():
 
 
 @pytest.mark.asyncio
+async def test_search_book_content_returns_paginated_hits():
+    setup_paths()
+    from api.endpoints.books_router import search_book_content
+
+    mock_session = AsyncMock()
+
+    mock_hit = {
+        "id": "book-1_5",
+        "book_id": "book-1",
+        "book_title": "Test Book",
+        "book_author": "Test Author",
+        "book_volume": 1,
+        "book_cover_url": "/covers/1.jpg",
+        "page_number": 5,
+        "snippet": "Test snippet page content",
+        "rank": 0.5,
+    }
+
+    mock_repo = AsyncMock()
+    mock_repo.search_content_pages = AsyncMock(return_value=([mock_hit], 1))
+
+    with patch("api.endpoints.books_router.PagesRepository", return_value=mock_repo):
+        result = await search_book_content(
+            q="king Babur",
+            page=1,
+            pageSize=40,
+            current_user=None,
+            session=mock_session,
+        )
+
+    assert result.total == 1
+    assert len(result.hits) == 1
+    assert result.hits[0].id == "book-1_5"
+    mock_repo.search_content_pages.assert_awaited_once_with(
+        "king Babur", skip=0, limit=40, restrict_to_public=True
+    )
+
+
+@pytest.mark.asyncio
+async def test_search_book_content_admin_sees_private_books():
+    setup_paths()
+    from api.endpoints.books_router import search_book_content
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+    mock_user.role = "admin"
+
+    mock_repo = AsyncMock()
+    mock_repo.search_content_pages = AsyncMock(return_value=([], 0))
+
+    with patch("api.endpoints.books_router.PagesRepository", return_value=mock_repo):
+        await search_book_content(
+            q="king Babur",
+            page=2,
+            pageSize=20,
+            current_user=mock_user,
+            session=mock_session,
+        )
+
+    mock_repo.search_content_pages.assert_awaited_once_with(
+        "king Babur", skip=20, limit=20, restrict_to_public=False
+    )
+
+
+@pytest.mark.asyncio
 async def test_update_book_details_overrides_error_status_when_made_public():
     setup_paths()
     from api.endpoints.books_router import update_book_details

@@ -48,8 +48,10 @@ Uyghur literature and historical publications exist overwhelmingly in physical f
 - **Dual Query Pipelines**:
   - **`ChatOrchestrator`**: Persistent conversation history, query analysis, ADK Retrieval Agent (19 tools), context reranking, context grading, and ADK Answer Agent with streaming SSE output.
   - **`RAGService` / `HandlerRegistry`**: Configurable router supporting `DeterministicRAGHandler` (Google ADK Workflow graph with 10 path selection nodes) and `LLMRoutedRAGHandler` (ADK ReAct reasoning loop).
+- **Hybrid Retrieval**: `pgvector` semantic search fused with PostgreSQL full-text keyword search via Reciprocal Rank Fusion (`rag_hybrid_search_enabled`), followed by an LLM-based reranking pass (`rag_reranker_enabled`) before context grading.
 - **19 Specialized ADK Tools**: Includes passage search, summary search, title/author matching, catalog lookup, current reader page text, sister volume discovery, Uyghur dictionary lookups, scripture (Quran) vector search, and post-vector knowledge graph entity lookup.
-- **Automated RAG Evaluation**: Post-turn async scoring (`rag_eval_job`) evaluating answer faithfulness, relevance, and precision.
+- **Fine-Grained Citations**: Answers cite `ref:book_id:page_number` inline immediately after the relevant sentence (with multi-page and Quran surah:ayah variants), not just at the book level.
+- **Automated RAG Evaluation**: Post-turn async scoring (`rag_eval_job`) evaluating answer faithfulness, relevance, context precision, and context recall per turn.
 
 ### 🕸️ Knowledge Graph & Entity Resolution (GraphRAG)
 - **Neo4j Semantic Network**: Automatically extracts Person, Location, Organization, Work, and Event entities and relationships from book content.
@@ -57,6 +59,7 @@ Uyghur literature and historical publications exist overwhelmingly in physical f
 
 ### 📖 Editorial Workspace & Quality Layer
 - **Uyghur Spell-Checking**: Per-page spell audit against an extensive Uyghur dictionary with custom auto-correct rules.
+- **Human-in-the-Loop OCR Correction**: Dedicated spell-check review workspace (`SpellCheckPanel` / `SpellCheckView`) where editors accept, edit, skip, or dictionary-add flagged OCR words per page, with confidence badges and full state tracking (`page_spell_issues`).
 - **Bulk OCR Auto-Correction**: Scheduled daily job (`auto_correct_scanner`) applying auto-correction rules across processed pages.
 - **Interactive Reader & Curation UI**: Modern React 19 SPA with PDF viewer, in-reader query assistant, spellcheck review workspace, and admin analytics panel.
 

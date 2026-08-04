@@ -1,7 +1,7 @@
 # Proverbs Inline Editing Design Spec
 
 ## Executive Summary
-Admins and Editors will be able to inline-edit proverbs in the Dictionary Proverbs tab (`ProverbsPanel.tsx`) to fix OCR spelling mistakes. Following the Book Management page UI style, inline controls (Edit icon button, inline text/volume/page input controls, Save & Cancel buttons) allow fast corrections without page popups or entry deletion/creation capabilities.
+Admins and Editors will be able to inline-edit proverbs in the Dictionary Proverbs tab (`ProverbsPanel.tsx`) to fix OCR spelling mistakes. Following the Book Management page UI style, inline controls (Edit icon button, inline text input, Save & Cancel buttons) allow fast corrections without page popups or entry deletion/creation capabilities. Volume and page number are source references tied to the original scan and are never editable — they are shown read-only.
 
 ---
 
@@ -20,12 +20,10 @@ Admins and Editors will be able to inline-edit proverbs in the Dictionary Prover
     ```python
     class ProverbUpdate(BaseModel):
         text: Optional[str] = None
-        volume: Optional[int] = None
-        page_number: Optional[int] = None
     ```
   - **Action**:
     1. Fetch proverb by `id` from PostgreSQL database. Return `404` if not found.
-    2. Update provided non-null fields (`text`, `volume`, `page_number`).
+    2. Update the provided non-null `text` field. `volume` and `page_number` are never accepted or changed by this endpoint.
     3. Commit session and refresh object.
     4. Invalidate Redis proverb cache entries (`proverb:*` and `proverbs:*`) so front-end/RAG/random proverb views fetch fresh corrected data.
     5. Return updated `ProverbEntryOut`.
@@ -37,7 +35,7 @@ Admins and Editors will be able to inline-edit proverbs in the Dictionary Prover
   - `const isEditor = useIsEditor();`
 - **State Additions**:
   - `editingId: number | null` — tracks ID of proverb currently being inline-edited.
-  - `editForm: { text: string; volume: string | number; page_number: string | number } | null` — holds transient form state.
+  - `editForm: { text: string }` — holds transient form state (text only).
   - `isSaving: boolean` — tracks saving request in progress.
 
 - **UI & Layout (Matching Book Management `AdminView.tsx` Style)**:
@@ -46,7 +44,7 @@ Admins and Editors will be able to inline-edit proverbs in the Dictionary Prover
       `p-2 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-xl transition-all`
   - **Editing State** (`entry.id === editingId`):
     - `text`: `<textarea>` or `<input type="text">` styled with `uyghur-text text-[16px] md:text-xl border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 p-2.5 w-full outline-none`.
-    - `volume` & `page_number`: optional numeric inputs styled consistently.
+    - `volume` & `page_number`: not editable. Shown as read-only reference text below the textarea (same as the non-editing row).
     - **Action Controls**:
       - **Save Button**: `<Save size={18} />` (`p-2.5 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl...`)
       - **Cancel Button**: `<X size={20} />` (`p-2 bg-slate-100 dark:bg-slate-800 text-slate-400...`)

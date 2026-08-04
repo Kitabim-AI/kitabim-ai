@@ -15,8 +15,29 @@ vi.mock('@/src/hooks/useAuth', () => ({
   })),
 }));
 
+vi.mock('@/src/services/authService', () => ({
+  getCollectionPageSize: vi.fn(() => 55),
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+test('useBooks uses the configured collection page size for shelf views', async () => {
+  vi.mocked(PersistenceService.getGlobalLibrary).mockResolvedValue({
+    books: [],
+    total: 0,
+    totalReady: 0,
+  } as any);
+
+  renderHook(() => useBooks('library', '', 10, 1));
+
+  await waitFor(() => {
+    expect(PersistenceService.getGlobalLibrary).toHaveBeenCalled();
+  });
+
+  const [, pageSizeArg] = vi.mocked(PersistenceService.getGlobalLibrary).mock.calls[0];
+  expect(pageSizeArg).toBe(55);
 });
 
 test('useBooks fetches library data on refresh', async () => {

@@ -1,9 +1,15 @@
 import App from '@/src/App';
 import * as AppContextModule from '@/src/context/AppContext';
+import { AuthProvider } from '@/src/hooks/useAuth';
 import { PersistenceService } from '@/src/services/persistenceService';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { beforeEach, expect, test, vi } from 'vitest';
+
+// App.tsx calls useAuth()/useIsEditor() directly, so it needs a real AuthProvider —
+// these two views (reader/library) aren't gated behind the auth-loading shield, so
+// rendering doesn't need to wait for the async auth check to settle.
+const renderApp = (ui: React.ReactElement) => render(<AuthProvider>{ui}</AuthProvider>);
 
 vi.mock('@/src/context/AppContext', () => ({
   AppProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -102,6 +108,34 @@ test('App renders the active view from app context', () => {
   } as any);
   rerender(<App />);
   expect(screen.getByText('reader-view')).toBeInTheDocument();
+});
+
+test('App keeps HomeView mounted (hidden) behind the reader when opened from home, so search state and fetched results are not lost', () => {
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue({
+    ...baseContext,
+    view: 'reader',
+    previousView: 'home',
+    selectedBook: { id: '1' },
+  } as any);
+  renderApp(<App />);
+
+  expect(screen.getByText('reader-view')).toBeInTheDocument();
+  const homeView = screen.getByText('home-view');
+  expect(homeView).toBeInTheDocument();
+  // Hidden, not removed — HomeView's own state (tab, query, fetched results) survives underneath.
+  expect(homeView.closest('.hidden')).not.toBeNull();
+});
+
+test('App does not keep HomeView mounted when navigating to a different main view', () => {
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue({
+    ...baseContext,
+    view: 'library',
+    previousView: 'home',
+  } as any);
+  renderApp(<App />);
+
+  expect(screen.getByText('library-view')).toBeInTheDocument();
+  expect(screen.queryByText('home-view')).not.toBeInTheDocument();
 });
 
 test('App closes global chat back to the previous view', () => {

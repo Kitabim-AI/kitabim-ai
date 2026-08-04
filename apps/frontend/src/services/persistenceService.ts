@@ -273,6 +273,20 @@ export const PersistenceService = {
     }
   },
 
+  async reprocessHistory(bookId: string, minSignificance = 5): Promise<void> {
+    const response = await authFetch(`${API_BASE}/admin/books/${bookId}/extract-history`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ min_significance: minSignificance }),
+    });
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Admin access required");
+      }
+      throw new Error("Failed to start history extraction");
+    }
+  },
+
   async reprocessSummary(bookId: string): Promise<void> {
     const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/summary`, {
       method: 'POST',

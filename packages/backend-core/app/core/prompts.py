@@ -167,3 +167,90 @@ Conversation history:
 Follow-up question: {question}
 
 Rewritten question:"""
+
+# Used by: HistoryExtractionService._call_llm_extraction (worker + batch extraction)
+# Model: system_configs["history_extraction_model"], temperature default, thinking_budget default
+EXTRACTION_PROMPT_TEMPLATE = """You are an expert Uyghur historical researcher and scholar.
+The provided book pages are written in the Uyghur language (using Uyghur Arabic script). Your task is to analyze these pages and extract important historical entities, including historical figures, key events, dynasties/kingdoms, and historical geographical locations or concepts.
+
+CRITICAL LANGUAGE & SCRIPT REQUIREMENTS:
+1. INPUT: The input book pages are written in Uyghur.
+2. OUTPUT LANGUAGE: All extracted text fields — specifically `term`, fact `text`, and `significance_reason` — MUST be strictly written in modern Uyghur using Uyghur Arabic script.
+3. TRANSLITERATION: `transliteration` must contain Latin script transliteration or dates/era (e.g. "Sultan Sutuk Bughra Khan, ? - 955").
+
+For each extracted entity, return a JSON object with the following fields:
+- term: Historical entity name in Uyghur Arabic script (e.g., "سۇلتان سۇتۇق بۇغراخان", "قاراخانىيلار خاندانلىقى")
+- transliteration: Latin script transliteration or dates/era (e.g., "Sultan Sutuk Bughra Khan, ? - 955")
+- category: One of "figure", "event", "dynasty", or "concept"
+- significance_score: Historical significance score from 1 to 10 (10: major ruler/historical event/classic work; 1-4: minor mention or common word - exclude these)
+- significance_reason: A 1-sentence reason for the historical significance score, strictly written in Uyghur
+- facts: Array of atomic facts about this entity found on these pages. Each fact must:
+  - State exactly ONE piece of information (one relationship, one date, one achievement, one event) — never a multi-clause narrative sentence.
+  - NOT restate the same fact twice within your own output, even in different words.
+  - Carry its own `pages` array — the specific page number(s) that fact was found on (a single entity's facts on the same pages can come from different specific pages within the window).
+
+Book Pages:
+{pages_text}
+
+JSON FORMAT REQUIRED:
+{{
+  "entities": [
+    {{
+      "term": "...",
+      "transliteration": "...",
+      "category": "figure",
+      "significance_score": 9,
+      "significance_reason": "...",
+      "facts": [
+        {{"text": "ياركەند خانلىقىنىڭ خانى، سۇلتان سەئىدخاننىڭ ئوغلى.", "pages": [40, 42]}},
+        {{"text": "ھىجرىيە 915-يىلى (مىلادىيە 1509-1510) تۇغۇلغان.", "pages": [343]}}
+      ]
+    }}
+  ]
+}}
+"""
+
+# Used by: HistoryExtractionService._classify_facts
+# Model: system_configs["history_extraction_model"], temperature default
+FACT_CLASSIFICATION_PROMPT_TEMPLATE = """You are an expert Uyghur historical editor and scholar.
+Compare the NEW CANDIDATE FACTS against the EXISTING FACTS about the historical term "{term}" and decide, for each candidate, one of:
+- "new": the candidate states information not already covered by any existing fact.
+- "duplicate": the candidate restates an existing fact's information (possibly reworded or with different spelling) with no new detail.
+- "conflict": the candidate contradicts a specific detail in an existing fact (e.g. a different date, a different relationship, a different outcome for the same event).
+
+All reasoning and the `reason` field must be in Uyghur. Return the id of the existing fact each "duplicate"/"conflict" decision refers to.
+
+EXISTING FACTS (numbered by id):
+{existing_facts}
+
+NEW CANDIDATE FACTS (numbered by index, starting at 0):
+{candidate_facts}
+
+JSON FORMAT REQUIRED:
+{{
+  "decisions": [
+    {{"candidate_index": 0, "decision": "new", "existing_fact_id": null, "reason": "..."}},
+    {{"candidate_index": 1, "decision": "duplicate", "existing_fact_id": 3, "reason": "..."}},
+    {{"candidate_index": 2, "decision": "conflict", "existing_fact_id": 5, "reason": "..."}}
+  ]
+}}
+"""
+
+# Used by: HistoryExtractionService._synthesize_definition (on-demand preview + approve time)
+# Model: system_configs["history_extraction_model"], temperature default
+SYNTHESIS_PROMPT_TEMPLATE = """You are an expert Uyghur historical editor and scholar.
+Write a single, cohesive historical definition for "{term}" strictly in modern Uyghur (Uyghur Arabic script), based only on the facts listed below.
+
+CRITICAL REQUIREMENTS:
+1. Preserve every fact's page citation using the format [N] (or [N, M] when a fact cites multiple pages).
+2. Do NOT invent information beyond what is listed below.
+3. Organize related facts into natural sentences and paragraphs (1 to 3 paragraphs) — do not just list the facts as bullet points.
+
+FACTS:
+{facts_text}
+
+JSON FORMAT REQUIRED:
+{{
+  "definition": "..."
+}}
+"""
