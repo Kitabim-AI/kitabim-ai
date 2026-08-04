@@ -2,7 +2,9 @@
 
 ## Summary
 
-Turn the AI-extracted historical facts currently sitting in `history_dictionary` / `history_dictionary_staging` into a first-class, top-level, user-facing feature: **تارىخنامە (History Book)**. Today, published entries are only reachable through a plain alphabetical "history" tab buried inside the Dictionary page, showing nothing but a synthesized prose definition — the individual facts and their book/page provenance (the most valuable part of the extraction pipeline) are invisible to end users.
+Turn the AI-extracted Uyghur history facts currently sitting in `history_dictionary` / `history_dictionary_staging` into a first-class, top-level, user-facing feature: **تارىخنامە (History Book)**. Today, published entries are only reachable through a plain alphabetical "history" tab buried inside the Dictionary page, showing nothing but a synthesized prose definition — the individual facts and their book/page provenance (the most valuable part of the extraction pipeline) are invisible to end users.
+
+`history_dictionary` actually holds two distinct populations that happen to share a table: a legacy, manually-seeded world-history corpus (`is_ai_generated = FALSE`, e.g. "Abbas I, Safavid king of Iran" — migration `061_import_history_dictionary_data.sql`) and AI-extracted Uyghur-history entries produced by the book extraction pipeline (`is_ai_generated = TRUE`). Facts are, and will only ever be, populated for the AI-extracted population — there is no plan to populate `facts` for the legacy world-history terms. History Book therefore scopes to `is_ai_generated = TRUE` only; the existing Dictionary "history" tab is explicitly **out of scope and untouched** (see Non-goals).
 
 This spec covers the read-side feature only: a new top-level nav item, richer entry detail pages, and full-text/category/source-book search. The existing extraction pipeline, staging/review workflow, and admin approval flow (`HistoryExtractionService`, `DictionaryStagingService`, `HistoryStagingQueuePanel.tsx`, admin endpoints) are **unchanged** — this only changes what happens to a fact once it's approved and published.
 
@@ -13,13 +15,15 @@ This spec covers the read-side feature only: a new top-level nav item, richer en
 - Full-text search across entry name, transliteration, **and fact text** (e.g. searching "Kashgar" surfaces entries whose facts mention Kashgar, not just entries named Kashgar).
 - Filter/browse entries by source book.
 - Citations deep-link into the book reader at the cited page.
-- Replace the existing Dictionary "history" tab entirely — this becomes its own top-level menu item.
+- Add History Book as a new top-level menu item, additive alongside Dictionary.
 
 ## Non-goals
 
 - No changes to the extraction pipeline, fact merge/dedup logic, or admin staging review workflow.
 - No timeline/chronological view — there's no structured date field today (dates live loosely inside `transliteration`/fact text); adding one is a separate future effort if pursued.
 - No changes to the Neo4j knowledge graph — history extraction and the graph pipeline remain independent, as they are today.
+- **No changes to the existing Dictionary "history" tab** (`HistoryDictionaryPanel.tsx`, `/history-dictionary` router). It keeps querying `history_dictionary` fully unfiltered, exactly as today. Since some AI-extracted Uyghur entries already exist live, this means those entries will appear in **both** Dictionary and History Book — that overlap is an accepted, explicit decision, not an oversight.
+- No physical separation of `history_dictionary` into per-feature tables. `is_ai_generated` is a fully reliable discriminator given facts are never populated for world-history terms, and the new `history_facts`/`history_fact_citations` tables (below) already contain only Uyghur-history data by construction, since world-history rows never pass through `approve_staging_term`. A real table split was considered and deferred: `history_dictionary`/`history_dictionary_staging` are targeted by actively-changing pipeline code (`HistoryExtractionService`, `DictionaryStagingService`, batch extraction, admin endpoints), and a rename/migration there is not worth the risk for a naming/purity win with no new capability. Revisit if History Book ever needs a field that must never exist on world-history rows.
 
 ## Data model
 
@@ -77,17 +81,19 @@ A one-time script materializes every existing published `history_dictionary` row
 
 New public, unauthenticated read endpoints (mirrors the existing public `/history-dictionary` endpoints' auth posture — read-only historical content, no login required):
 
+Every endpoint filters `history_dictionary.is_ai_generated = TRUE` — this is the Uyghur History Book scope boundary, applied at the query level, not left implicit.
+
 - `GET /history-book/entries?category=&book_id=&q=&sort=significance|alphabetical&page=&page_size=`
-  Paginated list. `q` searches `term`/`transliteration` (existing trigram index) OR fact `search_vector`, deduped. `book_id` filters via `history_fact_citations`. Default sort: `significance` desc.
+  Paginated list, `WHERE is_ai_generated = TRUE`. `q` searches `term`/`transliteration` (existing trigram index) OR fact `search_vector`, deduped. `book_id` filters via `history_fact_citations`. Default sort: `significance` desc.
 - `GET /history-book/entries/{id}`
-  Full detail: `term`, `transliteration`, `category`, `significance_score`, `significance_reason`, synthesized `definition`, and `facts: [{id, text, citations: [{book_id, book_title, volume, pages}]}]`.
-- Letter-group/stats endpoints reused or mirrored from the existing `/history-dictionary` router as needed for the landing grid facets.
+  Full detail (404 if `is_ai_generated = FALSE`, i.e. a world-history id): `term`, `transliteration`, `category`, `significance_score`, `significance_reason`, synthesized `definition`, and `facts: [{id, text, citations: [{book_id, book_title, volume, pages}]}]`.
+- Letter-group/stats equivalents, scoped to `is_ai_generated = TRUE`, needed for the landing grid facets — these are new, `is_ai_generated`-scoped queries, not a reuse of the existing unfiltered `/history-dictionary/letter-groups`/`/stats`.
 
 The existing admin endpoints (`admin_history_dictionary_router.py`) and the public `/history-dictionary` router are unaffected — this is an additive new router.
 
 ## Frontend
 
-- **New top-level nav item**: تارىخنامە (History Book), replacing the "history" tab currently inside `DictionaryView.tsx`. `HistoryDictionaryPanel.tsx` is removed/replaced by the new views below. Dictionary keeps only its non-history (glossary) content.
+- **New top-level nav item**: تارىخنامە (History Book), added alongside Dictionary. `DictionaryView.tsx` and its "history" tab (`HistoryDictionaryPanel.tsx`) are **not modified or removed** — see Non-goals.
 - **`HistoryBookView.tsx`** — landing page: category filter (figure/event/dynasty/concept), significance-sorted grid, search bar (term + transliteration + fact text), source-book filter.
 - **`HistoryBookEntryView.tsx`** — detail page: synthesized prose definition, plus an expandable structured list of individual facts. Each fact's citation(s) deep-link into the book reader at the cited page.
   - *Open item to confirm during planning*: verify the book reader supports a page-anchor route (likely already used by RAG chat citations) so the deep link can reuse existing routing rather than adding new reader capability.
@@ -96,10 +102,9 @@ The existing admin endpoints (`admin_history_dictionary_router.py`) and the publ
 
 - Repository/service tests for the `approve_staging_term` sync step: first publish, re-publish via enrichment (facts fully replaced, no duplicates/orphans), rejected/conflict facts never materialized.
 - Backfill script test: idempotent on re-run, correct row counts against a fixture set of published entries.
-- API tests: pagination, category filter, book filter, combined term+fact-text search, detail endpoint shape.
+- API tests: pagination, category filter, book filter, combined term+fact-text search, detail endpoint shape, and the `is_ai_generated` scope boundary (a world-history entry never appears in list/search results and its detail id 404s).
 - Frontend tests: grid rendering/filtering, search-as-you-type, citation deep-link generation.
 
 ## Open questions for implementation planning
 
 1. Exact book-reader deep-link route/mechanism (confirm reuse vs. net-new).
-2. Whether `GET /history-dictionary/letter-groups`/`/stats` are reused as-is or need `/history-book`-scoped equivalents once the tab moves.
