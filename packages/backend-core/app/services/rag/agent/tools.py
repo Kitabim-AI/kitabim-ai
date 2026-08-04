@@ -129,7 +129,7 @@ async def find_books_by_title(
 ) -> dict:
     """Return book IDs and metadata (including title, author, and volume) for titles explicitly mentioned in the question.
 
-    Handles both «quoted» exact match and fuzzy word-prefix match.
+    Uses fuzzy word-prefix matching (Uyghur agglutinative-suffix aware).
     Returns an empty list if no recognisable title is found.
 
     Args:
@@ -580,7 +580,18 @@ async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
     # fetch, no LLM call. Rides this same search_chunks call rather than adding a
     # second retrieval round-trip; on no match this is a no-op.
     try:
-        graph_results = await graph_entity_lookup(query)
+        from app.db.repositories.system_configs_repository import (
+            SystemConfigsRepository,
+        )
+
+        configs_repo = SystemConfigsRepository(ctx.session)
+        rag_graph_top_k_str = await configs_repo.get_value("rag_graph_top_k", "10")
+        try:
+            rag_graph_top_k = int(rag_graph_top_k_str)
+        except ValueError:
+            rag_graph_top_k = 10
+
+        graph_results = await graph_entity_lookup(query, top_k=rag_graph_top_k)
         if graph_results:
             results = [*results, *graph_results]
     except Exception as exc:
@@ -616,7 +627,7 @@ async def _run_search_books_by_summary(args: dict, ctx: QueryContext) -> List[st
         book_ids=char_book_ids,
         categories=ctx.character_categories or None,
         threshold=settings.summary_threshold,
-        limit=20,
+        limit=30,
     )
 
     log_json(
@@ -1436,7 +1447,7 @@ async def _run_search_quran(args: dict, ctx: QueryContext) -> dict:
         elif q:
             configs_repo = SystemConfigsRepository(session)
             rag_top_k_str = await configs_repo.get_value(
-                "rag_top_k", str(settings.rag_top_k)
+                "rag_vector_top_k", str(settings.rag_top_k)
             )
             try:
                 rag_top_k = int(rag_top_k_str)

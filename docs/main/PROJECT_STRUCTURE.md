@@ -68,7 +68,7 @@ packages/backend-core/app/
 │   ├── prompts.py             # Base prompt templates
 │   └── providers.py           # LLM/storage provider protocols
 ├── db/
-│   ├── models.py               # SQLAlchemy ORM models (25 tables)
+│   ├── models.py               # SQLAlchemy ORM models (28 tables)
 │   ├── session.py               # Async engine/session factory, init/close hooks
 │   ├── seeds.py                   # Default system_configs seeding
 │   └── repositories/               # 17 repository modules, ~one per table, incl. graph_repository.py (Neo4j)
@@ -115,7 +115,10 @@ app/services/rag/
 ├── context.py                 # QueryContext dataclass — per-request state threaded through both handlers
 ├── answer_builder.py            # Shared instruction-building + generate_answer(_stream)()
 ├── query_rewriter.py              # Standalone pronoun-resolution helper
-├── retrieval.py                     # vector_search, embed_query, find_books_by_title_in_question
+├── retrieval.py                     # vector_search, embed_query, find_books_by_title_in_question,
+│                                        exact_phrase_chunk_search (keyword-only leg)
+├── phrase_intent.py                    # detect_phrase_intent() — classifies quoted/"Exact phrase" questions
+│                                          (keyword-search-rework-plan.md Phase 1)
 ├── keywords.py                        # Keyword lists used by fallback heuristics
 ├── llm_resources.py                     # Builds/caches the answer-generation LLM chain per model name
 ├── utils.py                               # normalize_uyghur, format_chat_history, empty-response text
@@ -141,10 +144,12 @@ app/services/chat/
 ├── answer_prompts.py          # build_answer_instructions() — a separate fork of answer_builder.py's citation prompt
 ├── answer_agent.py               # build_answer_agent() — tools-less ADK Agent for answer synthesis
 ├── retrieval_agent.py               # build_retrieval_agent() — reuses AGENT_SYSTEM_PROMPT + all 19 tools from rag/agent/
+├── exact_phrase.py                     # run_exact_phrase_retrieval() + page-hit formatting for the keyword-only leg
+│                                          (Phase 1 of keyword-search-rework-plan.md), driven by rag/phrase_intent.py
 └── orchestrator.py                     # ChatOrchestrator — the pipeline itself, see below
 ```
 
-`ChatOrchestrator` does **not** go through `HandlerRegistry` or `RAGService` — it runs its own two-agent pipeline (retrieval agent → grading → answer agent) directly on an ADK `Runner`, persists every turn to `conversations`/`conversation_messages` via `ConversationRepository`, and is what backs the frontend's conversation-history sidebar. The streaming chat endpoint (`services/backend/api/endpoints/chat_router.py`) routes a request here whenever the `use_adk_chat_v2` system config is `true` (seeded on) or the request carries a `conversationId`; otherwise it falls through to `RAGService`/`HandlerRegistry` above, which has no conversation persistence. It reuses the `rag/agent/` tool implementations, system prompt, and grading helpers, but has its own copy of the answer-synthesis citation prompt (`answer_prompts.py`) rather than sharing `rag/answer_builder.py`.
+`ChatOrchestrator` does **not** go through `HandlerRegistry` or `RAGService` — it runs its own two-agent pipeline (retrieval agent → grading → answer agent) directly on an ADK `Runner`, persists every turn to `conversations`/`conversation_messages` via `ConversationRepository`, and is what backs the frontend's conversation-history sidebar. The streaming chat endpoint (`services/backend/api/endpoints/chat_router.py`) routes a request here whenever the `use_adk_chat_v2` system config is `true` (seeded on) or the request carries a `conversationId`; otherwise it falls through to `RAGService`/`HandlerRegistry` above, which has no conversation persistence. It reuses the `rag/agent/` tool implementations, system prompt, and grading helpers, but has its own copy of the answer-synthesis citation prompt (`answer_prompts.py`) rather than sharing `rag/answer_builder.py`. Before any of that, `detect_phrase_intent()` (`rag/phrase_intent.py`) checks the question for a quoted phrase or the explicit "Exact phrase" UI flag; if it matches, the turn is answered by `chat/exact_phrase.py`'s keyword-only leg instead (no vector/graph fusion), with page-finding phrasing ("find pages with...") rendered as raw page hits rather than an LLM-synthesized answer.
 
 ---
 
@@ -177,15 +182,17 @@ The worker adds `services/worker/requirements.worker.txt` on top of these two fi
 services/worker/
 ├── worker.py                # ARQ WorkerSettings entrypoint (arq worker.WorkerSettings)
 ├── manual_scan.py             # CLI to trigger a scanner pass on demand
-├── jobs/                        # Per-unit-of-work executors (7)
+├── jobs/                        # Per-unit-of-work executors (9)
 │   ├── ocr_job.py                  # Renders a page, calls Gemini Vision (or submits a batch_ocr_job if gemini_batch_ocr_enabled)
 │   ├── chunking_job.py               # Cleans text, writes chunk rows
 │   ├── embedding_job.py                # Vectorizes chunks (synchronous path; batch path is submitted inline by embedding_scanner)
 │   ├── spell_check_job.py                # Flags likely OCR errors per page
 │   ├── auto_correct_job.py                 # Applies bulk auto-correction rules
 │   ├── summary_job.py                        # Generates + embeds a book summary
-│   └── knowledge_graph_job.py                  # Extracts entities/relations, writes to Neo4j
-└── scanners/                             # Periodic pollers + the event-driven dispatcher (14)
+│   ├── knowledge_graph_job.py                  # Extracts entities/relations, writes to Neo4j
+│   ├── graph_resolution_job.py                   # Resolves/merges duplicate graph entities against Neo4j fuzzy-match candidates
+│   └── rag_eval_job.py                             # Post-turn async judge scoring for rag_evaluations (enqueued by ChatOrchestrator, not a scanner)
+└── scanners/                             # Periodic pollers + the event-driven dispatcher (15)
     ├── ocr_scanner.py                        # Leases idle pages, enqueues ocr_job
     ├── batch_ocr_poller_scanner.py              # Polls in-flight batch_ocr_jobs, ingests results when Gemini finishes
     ├── chunking_scanner.py                        # Leases OCR'd pages, enqueues chunking_job
@@ -195,6 +202,7 @@ services/worker/
     ├── auto_correct_scanner.py                             # Enqueues auto_correct_job
     ├── summary_scanner.py                                    # Leases ready books, enqueues summary_job
     ├── graph_scanner.py                                        # Leases ready books, enqueues knowledge_graph_job (implemented but NOT wired into WorkerSettings.cron_jobs — see WORKER_DESIGN.md)
+    ├── graph_resolution_scanner.py                               # Claims graph_resolution_queue rows, dispatches one graph_resolution_job per scope
     ├── event_dispatcher.py                                       # Reacts to pipeline_events for immediate next-step triggering
     ├── gcs_discovery_scanner.py                                    # Discovers books uploaded directly to GCS
     ├── pipeline_driver.py                                            # Coordinates scanner scheduling
@@ -202,7 +210,7 @@ services/worker/
     └── maintenance_scanner.py                                            # Cleans up processed pipeline_events
 ```
 
-13 of these 14 scanners are wired into `WorkerSettings.cron_jobs` — `graph_scanner.py` is the one exception (see [WORKER_DESIGN.md](WORKER_DESIGN.md)). Each scanner uses a fresh `async with async_session_factory()` per page/batch it processes — no session is held or shared across pages within a run. `ocr_job`, `chunking_job`, `embedding_job`, and `spell_check_job` additionally take a Redis `MultiPageLock` (namespaced per stage via a `prefix` argument) around their claimed page IDs as a second line of defense against double-processing.
+14 of these 15 scanners are wired into `WorkerSettings.cron_jobs` — `graph_scanner.py` is the one exception (see [WORKER_DESIGN.md](WORKER_DESIGN.md)). Each scanner uses a fresh `async with async_session_factory()` per page/batch it processes — no session is held or shared across pages within a run. `ocr_job`, `chunking_job`, `embedding_job`, and `spell_check_job` additionally take a Redis `MultiPageLock` (namespaced per stage via a `prefix` argument) around their claimed page IDs as a second line of defense against double-processing.
 
 ---
 
@@ -212,15 +220,31 @@ services/worker/
 apps/frontend/src/
 ├── components/       # admin/ auth/ chat/ common/ graph/ layout/ library/ pages/ reader/ share/ spell-check/ ui/
 │                        chat/: AgentThinkingSteps, ChatInterface, ReferenceModal
+│                        library/: SearchTabBar + searchTabsConfig.ts drive the home search box's fixed, paginated
+│                                   tab bar (Ask/Books/Content/Dictionary/Quran/Names/History/Proverbs/Spell-check/
+│                                   Synonyms/English-Uyghur); per-tab result rendering lives in HomeSearchTabResults,
+│                                   LookupResultsList (dictionary/names/history/synonyms/en-ug), QuranResultsList,
+│                                   and SpellCheckResult
 │                        share/: ShareModal (whole-book share), ShareChatModal (single Q&A share — implemented,
 │                                 backed by a working `/api/share/qa` endpoint, but not currently rendered from
 │                                 any component; there is no "share this answer" entry point in the chat UI today)
-├── hooks/               # useAuth, useBooks, useBookActions, useChat, usePendingCorrections, useSpellCheck, useUyghurInput (7)
-├── services/              # authService, contactService, geminiService, pdfService, persistenceService, userService (6)
+├── hooks/               # useAuth, useBookActions, useBooks, useChat, useContentSearch, useLookupSearch,
+│                            usePendingCorrections, useScrollStabilizer, useScrollToPage, useSpellCheck,
+│                            useSpellingCheck, useUyghurInput (12)
+│                            useScrollStabilizer: keeps the visible reader page stationary while
+│                            off-screen-above placeholders resolve to real content during ordinary
+│                            scrolling; useScrollToPage handles the equivalent for the initial
+│                            jump-to-page settle window
+├── services/              # authService, contactService, geminiService, pdfService, persistenceService,
+│                             searchTabsService, userService (7)
 │                             geminiService.ts is legacy-named — despite the name, it calls the Kitabim backend
 │                             (/api/chat/*, /api/ai/ocr/), never Gemini directly; it owns chatWithBookStream()
 │                             (the SSE transport) and the conversation CRUD calls (getUserConversations,
 │                             getConversationMessages, deleteConversation, createConversation)
+│                             searchTabsService.ts is the client for the non-"Ask" home search tabs — thin wrappers
+│                             over the existing dictionary/names/history/proverbs/synonyms/english-uyghur/quran
+│                             search endpoints plus the new `/api/books/content-search` and
+│                             `/api/dictionary/check-spelling` endpoints
 ├── context/                 # React context providers
 ├── constants/                  # Static config
 ├── i18n/, locales/               # Frontend translations

@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 from typing import List, Optional
 
-from sqlalchemy import select, delete, func
+from sqlalchemy import select, delete, func, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Page
 from app.db.repositories.base_repository import BaseRepository
+
+logger = logging.getLogger(__name__)
+
+_KEYWORD_SEARCH_WORK_MEM = "64MB"
+_KEYWORD_SEARCH_STATEMENT_TIMEOUT_MS = "15000ms"
 
 
 class PagesRepository(BaseRepository[Page]):
@@ -16,6 +22,105 @@ class PagesRepository(BaseRepository[Page]):
 
     def __init__(self, session: AsyncSession):
         super().__init__(session, Page)
+
+    async def search_content_pages(
+        self,
+        phrase: str,
+        skip: int = 0,
+        limit: int = 40,
+        restrict_to_public: bool = True,
+    ) -> tuple[List[dict], int]:
+        """Home 'Content' tab: exact-phrase search over page text returning paginated
+        page hits with full page text snippets, page numbers, book title, author, volume, and cover.
+        """
+        vis_clause = (
+            "b.status = 'ready' AND (b.visibility = 'public' OR b.visibility IS NULL)"
+            if restrict_to_public
+            else "b.status != 'error'"
+        )
+
+        is_single_token = len(phrase.strip().split()) == 1
+        rank_projection = (
+            "0.0 AS rank"
+            if is_single_token
+            else "ts_rank(p.text_search, phraseto_tsquery('simple', :phrase)) AS rank"
+        )
+        order_clause = (
+            "ORDER BY b.title ASC, p.page_number ASC"
+            if is_single_token
+            else "ORDER BY rank DESC, b.title ASC, p.page_number ASC"
+        )
+
+        count_query = text(f"""
+            SELECT COUNT(*)
+            FROM pages p
+            JOIN books b ON p.book_id = b.id
+            WHERE p.text_search @@ phraseto_tsquery('simple', :phrase)
+              AND (p.is_toc IS NOT TRUE OR p.id IS NULL)
+              AND {vis_clause}
+        """)
+
+        hits_query = text(f"""
+            SELECT
+                p.book_id,
+                p.page_number,
+                p.text,
+                b.title,
+                b.volume,
+                b.author,
+                b.cover_url,
+                {rank_projection}
+            FROM pages p
+            JOIN books b ON p.book_id = b.id
+            WHERE p.text_search @@ phraseto_tsquery('simple', :phrase)
+              AND (p.is_toc IS NOT TRUE OR p.id IS NULL)
+              AND {vis_clause}
+            {order_clause}
+            OFFSET :skip LIMIT :limit
+        """)
+
+        params = {"phrase": phrase, "skip": skip, "limit": limit}
+
+        try:
+            await self.session.execute(
+                text(f"SET LOCAL work_mem = '{_KEYWORD_SEARCH_WORK_MEM}'")
+            )
+            await self.session.execute(
+                text(
+                    f"SET LOCAL statement_timeout = '{_KEYWORD_SEARCH_STATEMENT_TIMEOUT_MS}'"
+                )
+            )
+
+            count_res = await self.session.execute(count_query, {"phrase": phrase})
+            total = count_res.scalar_one()
+
+            hits_res = await self.session.execute(hits_query, params)
+            rows = hits_res.fetchall()
+        except Exception as e:
+            logger.warning(
+                "Pages content search query timed out or failed for phrase '%s': %s",
+                phrase,
+                e,
+            )
+            return [], 0
+
+        hits = [
+            {
+                "id": f"{row.book_id}_{row.page_number}",
+                "book_id": str(row.book_id),
+                "book_title": row.title,
+                "book_author": row.author,
+                "book_volume": row.volume,
+                "book_cover_url": row.cover_url,
+                "page_number": row.page_number,
+                "page": row.page_number,
+                "snippet": row.text or "",
+                "rank": float(row.rank),
+            }
+            for row in rows
+        ]
+
+        return hits, total
 
     async def find_by_book(
         self, book_id: str, skip: int = 0, limit: int = 10000

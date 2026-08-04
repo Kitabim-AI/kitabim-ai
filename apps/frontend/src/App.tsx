@@ -94,9 +94,16 @@ const AppContent: React.FC = () => {
   // Determine authorized content
   const isAuthorizedToView = !(['admin', 'spell-check'].includes(view)) || isEditor;
 
+  // Keep HomeView mounted (just hidden) while the reader is open on top of it, instead of
+  // unmounting it — so the active search tab, typed query, AND already-fetched results
+  // (content hits, dictionary/quran/etc. lookups) survive closing the book instead of
+  // resetting and re-fetching from scratch.
+  const showHome = view === 'home';
+  const keepHomeMounted = showHome || (view === 'reader' && previousView === 'home');
+
   return (
     <Shell>
-      {view === 'home' && <HomeView />}
+      {keepHomeMounted && <div className={showHome ? 'contents' : 'hidden'}><HomeView /></div>}
       {view === 'library' && <LibraryView />}
       {view === 'graph' && <GraphView />}
       

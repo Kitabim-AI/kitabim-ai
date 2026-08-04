@@ -33,10 +33,17 @@ async def test_update_proverb():
     mock_res.scalar_one_or_none.return_value = mock_proverb
     mock_session.execute.return_value = mock_res
 
-    mock_editor = User(id=10, email="editor@example.com", role=UserRole.EDITOR)
-    update_body = ProverbUpdate(
-        text="Corrected Uyghur Proverb", volume=2, page_number=15
+    mock_editor = User(
+        id="editor-10",
+        email="editor@example.com",
+        display_name="Editor",
+        role=UserRole.EDITOR,
+        provider="google",
+        provider_id="editor-10",
+        created_at="2024-01-01T00:00:00Z",
+        updated_at="2024-01-01T00:00:00Z",
     )
+    update_body = ProverbUpdate(text="Corrected Uyghur Proverb")
 
     with patch(
         "app.services.cache_service.cache_service.delete_pattern",
@@ -50,8 +57,67 @@ async def test_update_proverb():
         )
 
         assert result.text == "Corrected Uyghur Proverb"
-        assert result.volume == 2
-        assert result.page_number == 15
+        assert result.volume == 1
+        assert result.page_number == 10
         mock_session.commit.assert_called_once()
         mock_delete.assert_any_call("proverb:*")
         mock_delete.assert_any_call("proverbs:*")
+
+
+def _mock_admin():
+    from app.models.user import User, UserRole
+
+    return User(
+        id="admin-1",
+        email="admin@example.com",
+        display_name="Admin",
+        role=UserRole.ADMIN,
+        provider="google",
+        provider_id="admin-1",
+        created_at="2024-01-01T00:00:00Z",
+        updated_at="2024-01-01T00:00:00Z",
+    )
+
+
+@pytest.mark.asyncio
+async def test_delete_proverb():
+    setup_paths()
+    from api.endpoints.proverbs_router import delete_proverb
+
+    mock_session = AsyncMock()
+    mock_res = MagicMock()
+    mock_res.fetchone.return_value = (1,)
+    mock_session.execute.return_value = mock_res
+
+    with patch(
+        "app.services.cache_service.cache_service.delete_pattern",
+        new_callable=AsyncMock,
+    ) as mock_delete:
+        result = await delete_proverb(
+            proverb_id=1, session=mock_session, current_user=_mock_admin()
+        )
+
+        assert result is None
+        mock_session.commit.assert_called_once()
+        mock_delete.assert_any_call("proverb:*")
+        mock_delete.assert_any_call("proverbs:*")
+
+
+@pytest.mark.asyncio
+async def test_delete_proverb_not_found():
+    setup_paths()
+    from api.endpoints.proverbs_router import delete_proverb
+    from fastapi import HTTPException
+
+    mock_session = AsyncMock()
+    mock_res = MagicMock()
+    mock_res.fetchone.return_value = None
+    mock_session.execute.return_value = mock_res
+
+    with pytest.raises(HTTPException) as exc_info:
+        await delete_proverb(
+            proverb_id=999, session=mock_session, current_user=_mock_admin()
+        )
+
+    assert exc_info.value.status_code == 404
+    mock_session.commit.assert_not_called()

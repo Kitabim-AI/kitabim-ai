@@ -616,3 +616,79 @@ async def test_gray_zone_judge_defaults_to_unsure_on_exception():
         verdict = await _gray_zone_judge({}, {}, {}, {}, config_repo)
         assert verdict.verdict == "unsure"
         assert verdict.confidence == 0.0
+
+
+def test_expand_name_components_decomposes_names_and_filters_titles():
+    from app.services.entity_resolution_service import _expand_name_components
+
+    raw = ["زەھىرىددىن مۇھەممەد بابۇر", "سۇلتان بابۇر خان"]
+    expanded = _expand_name_components(raw)
+
+    # Full names should be preserved
+    assert "زەھىرىددىن مۇھەممەد بابۇر" in expanded
+    assert "سۇلتان بابۇر خان" in expanded
+
+    # Distinctive name components should be included
+    assert "زەھىرىددىن" in expanded
+    assert "مۇھەممەد" in expanded
+    assert "بابۇر" in expanded
+
+    # Titles ("سۇلتان", "خان") should be excluded from standalone component tokens
+    assert "سۇلتان" not in expanded
+    assert "خان" not in expanded
+
+
+@pytest.mark.asyncio
+async def test_execute_merge_cleans_up_removed_entity_alias_keys():
+    session = AsyncMock()
+    graph_repo = AsyncMock()
+    graph_repo.get_entity_by_id.side_effect = [
+        {"id": "keep-1", "canonical_name": "Keep Node", "aliases": []},
+        {"id": "remove-1", "canonical_name": "Remove Node", "aliases": []},
+    ]
+    graph_repo.get_entity_edges_snapshot.return_value = []
+    graph_repo.get_children_via_child_of.return_value = []
+
+    with (
+        patch("app.services.entity_resolution_service.cache_service") as mock_cache,
+        patch(
+            "app.services.entity_resolution_service.GraphMergeLogRepository"
+        ) as MockMergeLogRepo,
+        patch(
+            "app.services.entity_resolution_service.GraphResolutionQueueRepository"
+        ) as MockQueueRepo,
+        patch(
+            "app.services.entity_resolution_service.GraphResolutionReviewsRepository"
+        ) as MockReviewsRepo,
+        patch(
+            "app.services.entity_resolution_service.SystemConfigsRepository"
+        ) as MockConfigRepo,
+        patch(
+            "app.services.entity_resolution_service.update_alias_cache", new=AsyncMock()
+        ),
+    ):
+        merge_log_repo = AsyncMock()
+        merge_log_entry = MagicMock(id=42)
+        merge_log_repo.log_merge.return_value = merge_log_entry
+        MockMergeLogRepo.return_value = merge_log_repo
+
+        queue_repo = AsyncMock()
+        MockQueueRepo.return_value = queue_repo
+        reviews_repo = AsyncMock()
+        MockReviewsRepo.return_value = reviews_repo
+        config_repo = AsyncMock()
+        config_repo.get_value.return_value = "5"
+        MockConfigRepo.return_value = config_repo
+
+        mock_cache.get = AsyncMock(return_value=["remove-1", "other-id"])
+        mock_cache.set = AsyncMock()
+        mock_cache.delete = AsyncMock()
+
+        await execute_merge(
+            session, graph_repo, "keep-1", "remove-1", "admin@example.com"
+        )
+
+        # mock_cache.set should be called with "remove-1" pruned
+        mock_cache.set.assert_called()
+        set_ids = mock_cache.set.call_args_list[0][0][1]
+        assert set_ids == ["other-id"]

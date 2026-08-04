@@ -392,7 +392,7 @@ async def test_search_chunks_falls_back_to_current_book_in_reader_mode():
 
     searched_book_ids = None
 
-    async def fake_vector_search(ctx, book_ids, query_vector=None):
+    async def fake_vector_search(ctx, book_ids, query_vector=None, keywords=None):
         nonlocal searched_book_ids
         searched_book_ids = book_ids
         return [{"text": "matching chunk", "score": 0.8}]
@@ -539,4 +539,4 @@ async def test_search_quran_uses_rag_top_k():
         await _run_search_quran({"q": "ئاللاھ"}, ctx)
 
     # Check that system_configs_repository was queried for rag_top_k
-    mock_config_repo.get_value.assert_called_with("rag_top_k", "25")
+    mock_config_repo.get_value.assert_called_with("rag_vector_top_k", "25")

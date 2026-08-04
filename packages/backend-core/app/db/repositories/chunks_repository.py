@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import List, Optional
 
 from sqlalchemy import select, delete, text
@@ -9,6 +10,14 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Chunk
 from app.db.repositories.base_repository import BaseRepository
+
+logger = logging.getLogger("app.db.repositories.chunks_repository")
+
+# Tuned against a production case where a common word matched ~194K rows and
+# took 40-60s: work_mem avoids the disk-bound fallback strategies, the
+# timeout bounds whatever it doesn't fix. See keyword_search() below.
+_KEYWORD_SEARCH_WORK_MEM = "128MB"
+_KEYWORD_SEARCH_STATEMENT_TIMEOUT_MS = "5000"
 
 
 class ChunksRepository(BaseRepository[Chunk]):
@@ -221,26 +230,34 @@ class ChunksRepository(BaseRepository[Chunk]):
 
     async def keyword_search(
         self,
-        query_text: str,
+        phrase: str,
         book_ids: Optional[List[str]] = None,
         categories: Optional[List[str]] = None,
-        limit: int = 12,
+        limit: int = 10,
     ) -> List[dict]:
         """
-        Postgres full-text keyword search over `chunks.text_search`
-        (a generated tsvector column, migration 074).
+        Postgres full-text EXACT PHRASE search over `pages.text_search`
+        (a generated tsvector column, migration 076).
 
-        Uses the 'simple' text search config — matching the column's
-        generation expression — deliberately not 'english', since book
-        content is substantially Uyghur-language and 'english' stemming
-        rules don't meaningfully apply.
+        Uses `phraseto_tsquery('simple', ...)` — a contiguous-phrase match
+        (word order and adjacency matter), not the old OR-based
+        any-word-prefix match. This is FTS phrase-exact, not raw substring
+        exact: tokenization, punctuation, normalization, and script-specific
+        behavior can still affect matches. Uses the 'simple' text search
+        config — matching the column's generation expression — deliberately
+        not 'english', since book content is substantially Uyghur-language
+        and 'english' stemming rules don't meaningfully apply.
 
-        Mirrors similarity_search's two-branch (scoped/unscoped) shape and
-        dict keys (plus a `rank` score in place of `similarity`) so results
-        from both legs can be fused by (book_id, page_number, chunk_index).
+        Sources from `pages` (one row per page) rather than `chunks` — the
+        chat-retrieval keyword leg moved here when `chunks.text_search` was
+        retired (migration 083) in favor of `pages.text_search`, which the
+        home Content-tab search (`PagesRepository.search_content_pages`)
+        already used. Mirrors similarity_search's two-branch (scoped/
+        unscoped) shape and dict keys (plus a `rank` score in place of
+        `similarity`) — `chunk_index` is gone since a hit is now a whole page.
         """
         cat_filter = (
-            "AND b.categories && CAST(:categories AS text[])" if categories else ""
+            "WHERE b.categories && CAST(:categories AS text[])" if categories else ""
         )
 
         if book_ids is not None:
@@ -249,19 +266,18 @@ class ChunksRepository(BaseRepository[Chunk]):
             query = text(f"""
                 WITH keyword_matches AS (
                     SELECT
-                        c.book_id,
-                        c.page_number,
-                        c.chunk_index,
-                        c.text,
-                        ts_rank(c.text_search, plainto_tsquery('simple', :query_text)) AS rank
-                    FROM chunks c
-                    WHERE c.book_id = ANY(:book_ids)
-                      AND c.text_search @@ plainto_tsquery('simple', :query_text)
+                        p.book_id,
+                        p.page_number,
+                        p.text,
+                        ts_rank(p.text_search, phraseto_tsquery('simple', :phrase)) AS rank
+                    FROM pages p
+                    WHERE p.book_id = ANY(:book_ids)
+                      AND p.text_search @@ phraseto_tsquery('simple', :phrase)
+                      AND p.is_toc IS NOT TRUE
                 )
                 SELECT
                     km.book_id,
                     km.page_number,
-                    km.chunk_index,
                     km.text,
                     b.title,
                     b.volume,
@@ -269,14 +285,12 @@ class ChunksRepository(BaseRepository[Chunk]):
                     km.rank
                 FROM keyword_matches km
                 JOIN books b ON km.book_id = b.id
-                LEFT JOIN pages p ON km.book_id = p.book_id AND km.page_number = p.page_number
-                WHERE (p.is_toc IS NOT TRUE OR p.id IS NULL)
-                  {cat_filter}
+                {cat_filter}
                 ORDER BY km.rank DESC
                 LIMIT :limit
             """)
             params = {
-                "query_text": query_text,
+                "phrase": phrase,
                 "book_ids": [str(bid) for bid in book_ids],
                 "limit": limit,
             }
@@ -286,18 +300,17 @@ class ChunksRepository(BaseRepository[Chunk]):
             query = text(f"""
                 WITH keyword_matches AS (
                     SELECT
-                        c.book_id,
-                        c.page_number,
-                        c.chunk_index,
-                        c.text,
-                        ts_rank(c.text_search, plainto_tsquery('simple', :query_text)) AS rank
-                    FROM chunks c
-                    WHERE c.text_search @@ plainto_tsquery('simple', :query_text)
+                        p.book_id,
+                        p.page_number,
+                        p.text,
+                        ts_rank(p.text_search, phraseto_tsquery('simple', :phrase)) AS rank
+                    FROM pages p
+                    WHERE p.text_search @@ phraseto_tsquery('simple', :phrase)
+                      AND p.is_toc IS NOT TRUE
                 )
                 SELECT
                     km.book_id,
                     km.page_number,
-                    km.chunk_index,
                     km.text,
                     b.title,
                     b.volume,
@@ -305,16 +318,32 @@ class ChunksRepository(BaseRepository[Chunk]):
                     km.rank
                 FROM keyword_matches km
                 JOIN books b ON km.book_id = b.id
-                LEFT JOIN pages p ON km.book_id = p.book_id AND km.page_number = p.page_number
-                WHERE (p.is_toc IS NOT TRUE OR p.id IS NULL)
-                  {cat_filter}
+                {cat_filter}
                 ORDER BY km.rank DESC
                 LIMIT :limit
             """)
-            params = {"query_text": query_text, "limit": limit}
+            params = {"phrase": phrase, "limit": limit}
             if categories:
                 params["categories"] = categories
 
+        # A common word in a broad OR tsquery (e.g. a grammatical particle
+        # slipping through) can match a huge fraction of the table. Under the
+        # default work_mem, that forces a lossy bitmap recheck (re-fetching
+        # whole heap pages instead of exact tuples) plus a disk-spilled sort —
+        # confirmed in production to take 40-60s. LOCAL scoping keeps this
+        # bump to just this statement's transaction, not every connection.
+        await self.session.execute(
+            text(f"SET LOCAL work_mem = '{_KEYWORD_SEARCH_WORK_MEM}'")
+        )
+        # Backstop for whatever work_mem doesn't fix: caps the worst case so a
+        # single pathological term can't cost a user 40+ seconds. A canceled
+        # statement raises here; callers already treat a keyword-leg
+        # exception as "fall back to vector-only for this call."
+        await self.session.execute(
+            text(
+                f"SET LOCAL statement_timeout = '{_KEYWORD_SEARCH_STATEMENT_TIMEOUT_MS}'"
+            )
+        )
         result = await self.session.execute(query, params)
         rows = result.fetchall()
 
@@ -322,7 +351,7 @@ class ChunksRepository(BaseRepository[Chunk]):
             {
                 "book_id": str(row.book_id),
                 "page_number": row.page_number,
-                "chunk_index": row.chunk_index,
+                "page": row.page_number,
                 "text": row.text,
                 "title": row.title,
                 "volume": row.volume,

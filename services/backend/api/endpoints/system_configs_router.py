@@ -108,6 +108,7 @@ async def create_config(
         key=data.key, value=data.value, description=data.description
     )
     await session.commit()
+    await session.refresh(config)
 
     return SystemConfigResponse(
         key=config.key,
@@ -133,18 +134,13 @@ async def update_config(
             status_code=404, detail=t("errors.config_not_found", key=key)
         )
 
-    config.value = data.value
-    if data.description is not None:
-        config.description = data.description
-
-    await session.commit()
-    await session.refresh(config)
+    updated = await repo.set_value(key, data.value, description=data.description)
 
     return SystemConfigResponse(
-        key=config.key,
-        value=config.value,
-        description=config.description,
-        updated_at=config.updated_at.isoformat(),
+        key=updated.key,
+        value=updated.value,
+        description=updated.description,
+        updated_at=updated.updated_at.isoformat(),
     )
 
 

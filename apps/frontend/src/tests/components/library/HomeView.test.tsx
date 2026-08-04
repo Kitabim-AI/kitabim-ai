@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { HomeView } from '@/src/components/library/HomeView';
 import * as AppContextModule from '@/src/context/AppContext';
+import { SearchTabKey } from '@/src/components/library/searchTabsConfig';
 import { renderWithProviders as render } from '@/src/tests/test-utils';
 import { fireEvent, screen } from '@testing-library/react';
 import { expect, test, vi, beforeEach } from 'vitest';
@@ -25,6 +26,10 @@ const baseContext = {
   hasMoreShelf: false,
   homeSearchQuery: '',
   setHomeSearchQuery: vi.fn(),
+  homeActiveTab: 'ask' as SearchTabKey,
+  setHomeActiveTab: vi.fn(),
+  homeSearchText: '',
+  setHomeSearchText: vi.fn(),
   selectedCategory: '',
   setSelectedCategory: vi.fn(),
   bookActions: {
@@ -55,15 +60,71 @@ vi.mock('@/src/context/AppContext', async () => {
 });
 
 beforeEach(() => {
+  localStorage.clear();
   vi.clearAllMocks();
 });
+
+// `homeActiveTab` is real state owned by AppContext (so it survives HomeView remounts).
+// Tests that click between tabs need that state to actually update across renders, so this
+// mock implementation calls useState itself — it runs during HomeView's render (since HomeView
+// calls useAppContext() directly), so React tracks it like any other hook in that component.
+const mockAppContextWithTabState = (initialTab: SearchTabKey = 'ask') => {
+  vi.mocked(AppContextModule.useAppContext).mockImplementation(() => {
+    const [homeActiveTab, setHomeActiveTab] = useState<SearchTabKey>(initialTab);
+    return { ...baseContext, homeActiveTab, setHomeActiveTab } as any;
+  });
+};
 
 test('HomeView renders search input and default elements', () => {
   vi.mocked(AppContextModule.useAppContext).mockReturnValue(baseContext as any);
   render(<HomeView />);
   
-  expect(screen.getByPlaceholderText('home.searchOrChatPlaceholder')).toBeInTheDocument();
+  expect(screen.getByPlaceholderText('home.placeholders.ask')).toBeInTheDocument();
   expect(screen.getByTitle('home.keyboardMapTooltip')).toBeInTheDocument();
+});
+
+test('HomeView updates placeholder text and focuses search input when switching search tabs', () => {
+  mockAppContextWithTabState();
+  render(<HomeView />);
+
+  // Default 'ask' tab
+  const askInput = screen.getByPlaceholderText('home.placeholders.ask');
+  expect(askInput).toBeInTheDocument();
+  expect(askInput).toHaveFocus();
+
+  // Switch to 'books' tab
+  fireEvent.click(screen.getByText('home.tabs.books'));
+  const booksInput = screen.getByPlaceholderText('home.placeholders.books');
+  expect(booksInput).toBeInTheDocument();
+  expect(booksInput).toHaveFocus();
+
+  // Switch to 'dictionary' tab
+  fireEvent.click(screen.getByText('home.tabs.dictionary'));
+  const dictInput = screen.getByPlaceholderText('home.placeholders.dictionary');
+  expect(dictInput).toBeInTheDocument();
+  expect(dictInput).toHaveFocus();
+});
+
+test('HomeView sets LTR direction and data-latin mode for search input on en-ug tab', () => {
+  mockAppContextWithTabState();
+  render(<HomeView />);
+
+  // Default tab ('ask') has dir="rtl" and lang="ug"
+  const askInput = screen.getByPlaceholderText('home.placeholders.ask');
+  expect(askInput).toHaveAttribute('dir', 'rtl');
+  expect(askInput).toHaveAttribute('lang', 'ug');
+  expect(askInput).not.toHaveAttribute('data-latin');
+
+  // Switch to 'en-ug' tab directly (all tabs are on page 1)
+  fireEvent.click(screen.getByText('home.tabs.enUg'));
+  const enUgInput = screen.getByPlaceholderText('home.placeholders.enUg');
+  expect(enUgInput).toHaveAttribute('dir', 'ltr');
+  expect(enUgInput).toHaveAttribute('lang', 'en');
+  expect(enUgInput).toHaveAttribute('data-latin', 'true');
+  expect(enUgInput).toHaveFocus();
+
+  // Software keyboard button should not be displayed on en-ug tab
+  expect(screen.queryByTitle('home.keyboardMapTooltip')).not.toBeInTheDocument();
 });
 
 test('HomeView toggles keyboard map when clicking the toggle button', () => {
@@ -93,7 +154,7 @@ test('HomeView types characters when visual keyboard keys are clicked', () => {
   fireEvent.click(screen.getByTitle('home.keyboardMapTooltip'));
   
   // Get input
-  const input = screen.getByPlaceholderText('home.searchOrChatPlaceholder') as HTMLInputElement;
+  const input = screen.getByPlaceholderText('home.placeholders.ask') as HTMLInputElement;
   expect(input.value).toBe('');
   
   // Click virtual 'q' key which maps to 'چ'
@@ -116,7 +177,7 @@ test('HomeView inputs space when Space key is clicked', () => {
   // Open keyboard
   fireEvent.click(screen.getByTitle('home.keyboardMapTooltip'));
   
-  const input = screen.getByPlaceholderText('home.searchOrChatPlaceholder') as HTMLInputElement;
+  const input = screen.getByPlaceholderText('home.placeholders.ask') as HTMLInputElement;
   
   // Click virtual 'q' (چ)
   fireEvent.click(screen.getByText('چ'));
@@ -138,7 +199,7 @@ test('HomeView backspaces characters when Backspace key is clicked', () => {
   // Open keyboard
   fireEvent.click(screen.getByTitle('home.keyboardMapTooltip'));
   
-  const input = screen.getByPlaceholderText('home.searchOrChatPlaceholder') as HTMLInputElement;
+  const input = screen.getByPlaceholderText('home.placeholders.ask') as HTMLInputElement;
   
   // Type 'چۋ'
   fireEvent.click(screen.getByText('چ'));
@@ -166,4 +227,50 @@ test('HomeView closes keyboard map on Escape key press', () => {
   // Press Escape
   fireEvent.keyDown(window, { key: 'Escape' });
   expect(screen.queryByText('home.keyboardMapTitle')).not.toBeInTheDocument();
+});
+
+test('pressing Enter on search box starts global chat when on ask tab', () => {
+  const setViewMock = vi.fn();
+  const setChatInputMock = vi.fn();
+  const clearChatMock = vi.fn();
+  const context = {
+    ...baseContext,
+    homeActiveTab: 'ask' as SearchTabKey,
+    setView: setViewMock,
+    chat: {
+      ...baseContext.chat,
+      setChatInput: setChatInputMock,
+      clearChat: clearChatMock,
+    },
+  };
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue(context as any);
+  render(<HomeView />);
+
+  const input = screen.getByPlaceholderText('home.placeholders.ask');
+  fireEvent.change(input, { target: { value: 'تارىختىن بىر سوئال' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+
+  expect(clearChatMock).toHaveBeenCalled();
+  expect(setChatInputMock).toHaveBeenCalledWith('تارىختىن بىر سوئال');
+  expect(setViewMock).toHaveBeenCalledWith('global-chat');
+});
+
+test('pressing Enter on search box does not start global chat when on books tab', () => {
+  const setViewMock = vi.fn();
+  const setSearchQueryMock = vi.fn();
+  const context = {
+    ...baseContext,
+    homeActiveTab: 'books' as SearchTabKey,
+    setView: setViewMock,
+    setHomeSearchQuery: setSearchQueryMock,
+  };
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue(context as any);
+  render(<HomeView />);
+
+  const input = screen.getByPlaceholderText('home.placeholders.books');
+  fireEvent.change(input, { target: { value: 'تارىخىي كىتاب' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+
+  expect(setViewMock).not.toHaveBeenCalled();
+  expect(setSearchQueryMock).toHaveBeenCalledWith('تارىخىي كىتاب');
 });

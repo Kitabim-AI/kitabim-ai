@@ -1,5 +1,6 @@
 import { Book } from '@shared/types';
 import React, { createContext, ReactNode, useContext, useEffect, useRef, useState } from 'react';
+import { DEFAULT_SEARCH_TAB, SearchTabKey } from '../components/library/searchTabsConfig';
 import { useBookActions } from '../hooks/useBookActions';
 import { useBooks } from '../hooks/useBooks';
 import { useChat } from '../hooks/useChat';
@@ -14,6 +15,10 @@ interface AppContextType {
   setSearchQuery: (query: string) => void;
   homeSearchQuery: string;
   setHomeSearchQuery: (query: string) => void;
+  homeActiveTab: SearchTabKey;
+  setHomeActiveTab: (tab: SearchTabKey) => void;
+  homeSearchText: string;
+  setHomeSearchText: (text: string) => void;
   selectedCategory: string;
   setSelectedCategory: (category: string) => void;
   currentPage: number | null;
@@ -116,6 +121,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setSearchQuery('');
         setHomeSearchQuery('');
         setSelectedCategory('');
+        setHomeActiveTab(DEFAULT_SEARCH_TAB);
+        setHomeSearchText('');
       }
 
       if (view !== 'reader' && view !== 'global-chat') {
@@ -152,6 +159,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [globalSearchQuery, setGlobalSearchQuery] = useState('');
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
   const [homeSearchQuery, setHomeSearchQuery] = useState('');
+  const [homeActiveTab, setHomeActiveTab] = useState<SearchTabKey>(DEFAULT_SEARCH_TAB);
+  const [homeSearchText, setHomeSearchText] = useState('');
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [selectedCategory, setSelectedCategory] = useState('');
   const [currentPage, setCurrentPage] = useState<number | null>(null);
@@ -224,6 +233,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setSearchQuery,
     homeSearchQuery,
     setHomeSearchQuery,
+    homeActiveTab,
+    setHomeActiveTab,
+    homeSearchText,
+    setHomeSearchText,
     selectedCategory,
     setSelectedCategory,
     currentPage,

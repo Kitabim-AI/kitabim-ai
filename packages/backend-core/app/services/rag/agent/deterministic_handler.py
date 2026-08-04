@@ -1334,7 +1334,7 @@ Return ONLY valid JSON matching this schema:
         # intent routing for global searches
         # search_books_by_summary returns up to 20 books; all of them are passed to
         # search_chunks. vector_search already gives each book its own quota
-        # (max(rag_top_k // len(book_ids), 3)), so a book-level cutoff here isn't
+        # (max(rag_vector_top_k // len(book_ids), 3)), so a book-level cutoff here isn't
         # needed to avoid dilution — it was silently dropping books that ranked
         # 6th-20th by the coarser book-summary signal even when the correct passage
         # lived in one of them. The universal fallback widens to global scope if

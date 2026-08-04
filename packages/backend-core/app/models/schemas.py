@@ -79,6 +79,7 @@ class Book(BaseModel):
     )  # DB: pipeline_stats, API: pipelineStats
     has_summary: bool = False  # API: hasSummary
     has_graph: bool = False  # API: hasGraph
+    has_history: bool = False  # API: hasHistory
     # Book-level milestones (denormalized from pages for performance)
     ocr_milestone: str = "idle"  # DB: ocr_milestone, API: ocrMilestone
     chunking_milestone: str = "idle"  # DB: chunking_milestone, API: chunkingMilestone
@@ -118,6 +119,9 @@ class ChatRequest(BaseModel):
     context_book_ids: List[
         str
     ] = []  # API: contextBookIds — book IDs from the previous response, sent by frontend
+    exact_phrase: bool = (
+        False  # API: exactPhrase — explicit UI "Exact phrase" search mode
+    )
 
     @field_validator("question")
     @classmethod
@@ -233,3 +237,82 @@ class RagQuestionToggleResponse(BaseModel):
 
     id: int
     show_on_homepage: bool
+
+
+class ContentSearchHit(BaseModel):
+    """Single page content hit for Home 'Content' search tab."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
+    )
+
+    id: str
+    book_id: str
+    book_title: str
+    book_author: Optional[str] = None
+    book_volume: Optional[int] = None
+    book_cover_url: Optional[str] = None
+    page_number: int
+    snippet: str
+    rank: Optional[float] = 0.0
+
+
+class PaginatedContentHits(BaseModel):
+    """Paginated response for Home 'Content' search hits."""
+
+    hits: List[ContentSearchHit]
+    total: int
+    page: int
+    page_size: int
+
+
+class FactCitation(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    book_id: str
+    book_title: str
+    volume: Optional[int] = None
+    pages: List[int] = Field(default_factory=list)
+
+
+class HistoryFact(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    id: int
+    text: str
+    citations: List[FactCitation] = Field(default_factory=list)
+    status: str = "active"
+    conflict_group: Optional[int] = None
+
+
+class HistoryStagingItem(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
+    )
+
+    id: int
+    existing_dictionary_id: Optional[int] = None
+    book_id: str
+    term: str
+    transliteration: Optional[str] = None
+    definition: Optional[str] = None
+    original_definition: Optional[str] = None
+    category: str = "general"
+    significance_score: int = 5
+    significance_reason: Optional[str] = None
+    is_ai_generated: bool = True
+    entry_type: str = "new"
+    letter_group: str
+    facts: List[HistoryFact] = Field(default_factory=list)
+    status: str = "pending"
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class PaginatedHistoryStagingItems(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    items: List[HistoryStagingItem]
+    total: int
+    page: int
+    page_size: int

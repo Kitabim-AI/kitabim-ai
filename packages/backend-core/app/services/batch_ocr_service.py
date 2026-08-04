@@ -26,6 +26,7 @@ from app.db.repositories.auto_correct_rules_repository import (
     AutoCorrectRulesRepository,
 )
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
+from app.llm.models import disabled_thinking_config
 from app.services.book_milestone_service import BookMilestoneService
 from app.services.storage_service import storage
 from app.utils.observability import log_json, make_pipeline_event_payload
@@ -89,11 +90,7 @@ async def submit_batch_ocr_job(
                 ],
                 "generation_config": {
                     "temperature": 0.0,
-                    # OCR is pure transcription, not a reasoning task — without
-                    # this, the model can burn its entire output budget on
-                    # hidden "thinking" and return finishReason=STOP with zero
-                    # actual output tokens (silent, no error surfaced).
-                    "thinking_config": {"thinking_budget": 0},
+                    "thinking_config": disabled_thinking_config(gemini_ocr_model),
                 },
             },
         }

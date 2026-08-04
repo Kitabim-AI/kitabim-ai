@@ -158,6 +158,7 @@ async def chat_with_book_stream(
                     character_id=req.character_id,
                     conversation_id=req.conversation_id,
                     context_book_ids=req.context_book_ids,
+                    exact_phrase=req.exact_phrase,
                 )
 
                 async for event in orchestrator.stream_response(dto, session):

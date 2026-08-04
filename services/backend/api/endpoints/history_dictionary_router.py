@@ -1,18 +1,20 @@
 """
-History Dictionary API — read-only access to Uyghur historical vocabulary entries.
+History Dictionary API — access to Uyghur historical vocabulary entries, admin delete.
 """
 
 from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, func, distinct
+from sqlalchemy import select, func, distinct, delete, or_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
 from app.db.models import HistoryDictionary
+from app.models.user import User
+from auth.dependencies import require_admin
 
 router = APIRouter()
 
@@ -69,10 +71,20 @@ async def search_history_dictionary(
     q = q.strip()
     if not q:
         return []
+    pattern = f"%{q}%"
     stmt = (
         select(HistoryDictionary)
-        .where(HistoryDictionary.term.ilike(f"%{q}%"))
-        .order_by(func.length(HistoryDictionary.term), HistoryDictionary.term)
+        .where(
+            or_(
+                HistoryDictionary.term.ilike(pattern),
+                HistoryDictionary.definition.ilike(pattern),
+            )
+        )
+        .order_by(
+            case((HistoryDictionary.term.ilike(pattern), 0), else_=1),
+            func.length(HistoryDictionary.term),
+            HistoryDictionary.term,
+        )
         .limit(limit)
     )
     res = await session.execute(stmt)
@@ -92,3 +104,21 @@ async def list_history_entries(
     stmt = stmt.offset(skip).limit(limit)
     res = await session.execute(stmt)
     return res.scalars().all()
+
+
+@router.delete("/history-dictionary/{entry_id}", status_code=204)
+async def delete_history_entry(
+    entry_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_admin),
+):
+    """Delete a history dictionary entry (Admin only)."""
+    result = await session.execute(
+        delete(HistoryDictionary)
+        .where(HistoryDictionary.id == entry_id)
+        .returning(HistoryDictionary.id)
+    )
+    if not result.fetchone():
+        raise HTTPException(status_code=404, detail="Entry not found")
+    await session.commit()
+    return None

@@ -1,7 +1,3 @@
-/**
- * Admin Tabs - Tabbed interface for admin panels
- */
-
 import { BarChart3, Mail, MessageSquare, Settings, Sparkles, TableOfContents, Users } from 'lucide-react';
 import React from 'react';
 import { useAppContext } from '../../context/AppContext';
@@ -67,7 +63,7 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
           {visibleTabs.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => setActiveTab(tab.id as any)}
               className={`
                 flex items-center gap-2 md:gap-2.5 px-4 sm:px-5 md:px-6 py-2.5 md:py-3 transition-all duration-200
                 text-[13px] md:text-[14px] whitespace-nowrap rounded-t-xl font-normal

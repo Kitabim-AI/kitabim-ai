@@ -34,7 +34,7 @@ describe('QuestionRotator', () => {
     expect(PersistenceService.getFeaturedQuestions).toHaveBeenCalledWith(20);
 
     await waitFor(() => {
-      expect(screen.getByText('ئەڭ يېڭى جاۋاب بېرىلگەن سۇئاللار')).toBeInTheDocument();
+      expect(screen.getByText('ئەڭ يېڭى جاۋاب بېرىلگەن سوئاللار')).toBeInTheDocument();
       expect(screen.getByText('ئەڭ يېڭى سوئال 1')).toBeInTheDocument();
     });
   });

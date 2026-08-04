@@ -1,15 +1,17 @@
-import { BookA, ArrowLeftRight, SpellCheck, ScrollText, User, Languages, Quote } from 'lucide-react';
+import { BookA, ArrowLeftRight, SpellCheck, ScrollText, User, Languages, Quote, Sparkles } from 'lucide-react';
 import React, { useState } from 'react';
 import { DictionaryPanel } from '../admin/dictionary/DictionaryPanel';
 import { HistoryDictionaryPanel } from '../admin/dictionary/HistoryDictionaryPanel';
+import { HistoryStagingQueuePanel } from '../admin/dictionary/HistoryStagingQueuePanel';
 import { NamesDictionaryPanel } from '../admin/dictionary/NamesDictionaryPanel';
 import { EnglishUyghurPanel } from '../admin/dictionary/EnglishUyghurPanel';
 import { WordsPanel } from '../admin/words/WordsPanel';
 import { SynonymsPanel } from '../admin/synonyms/SynonymsPanel';
 import { ProverbsPanel } from '../admin/dictionary/ProverbsPanel';
 import { useI18n } from '../../i18n/I18nContext';
+import { useIsAdmin } from '../../hooks/useAuth';
 
-type TabId = 'words' | 'dictionary' | 'synonyms' | 'history' | 'names' | 'english-uyghur' | 'proverbs';
+type TabId = 'words' | 'dictionary' | 'synonyms' | 'history' | 'history-staging' | 'names' | 'english-uyghur' | 'proverbs';
 
 interface Tab {
   id: TabId;
@@ -19,12 +21,14 @@ interface Tab {
 
 const DictionaryView: React.FC = () => {
   const { t } = useI18n();
+  const isAdmin = useIsAdmin();
   const [activeTab, setActiveTab] = useState<TabId>('dictionary');
 
   const tabs: Tab[] = [
     { id: 'dictionary', label: t('admin.dictionary.title') || 'ئىزاھلىق لۇغەت', icon: <BookA size={18} /> },
     { id: 'proverbs', label: t('admin.proverbs.title') || 'ماقال-تەمسىللەر', icon: <Quote size={18} /> },
     { id: 'history', label: t('admin.historyDictionary.title') || 'تارىخ لۇغىتى', icon: <ScrollText size={18} /> },
+    ...(isAdmin ? [{ id: 'history-staging' as TabId, label: t('admin.historyStagingLabel') || 'تارىخىي ئاتالغۇلار باھالاش', icon: <Sparkles size={18} /> }] : []),
     { id: 'names', label: t('admin.namesDictionary.title') || 'كىشى ئىسىملىرى', icon: <User size={18} /> },
     { id: 'english-uyghur', label: t('admin.englishUyghurDictionary.title') || 'English-Uyghur', icon: <Languages size={18} /> },
     { id: 'synonyms', label: t('admin.synonyms.title') || 'مەنىداش سۆزلەر', icon: <ArrowLeftRight size={18} /> },
@@ -67,6 +71,7 @@ const DictionaryView: React.FC = () => {
         {activeTab === 'dictionary' && <DictionaryPanel />}
         {activeTab === 'proverbs' && <ProverbsPanel />}
         {activeTab === 'history' && <HistoryDictionaryPanel />}
+        {activeTab === 'history-staging' && isAdmin && <HistoryStagingQueuePanel />}
         {activeTab === 'names' && <NamesDictionaryPanel />}
         {activeTab === 'english-uyghur' && <EnglishUyghurPanel />}
         {activeTab === 'synonyms' && <SynonymsPanel />}

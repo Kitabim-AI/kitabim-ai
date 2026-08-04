@@ -1,5 +1,8 @@
 import { Loader2 } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useAuth } from '../../hooks/useAuth';
+import { useScrollStabilizer } from '../../hooks/useScrollStabilizer';
+import { useScrollToPage } from '../../hooks/useScrollToPage';
 import { useI18n } from '../../i18n/I18nContext';
 import { PersistenceService } from '../../services/persistenceService';
 import { PageItem } from './PageItem';
@@ -15,6 +18,15 @@ interface VirtualScrollReaderProps {
   scrollParentRef?: React.RefObject<HTMLDivElement>;
   isFullscreen?: boolean;
   isChatCollapsed?: boolean;
+  editingPageNum?: number | null;
+  tempPageText?: string;
+  onEdit?: (pageNum: number, text: string) => void;
+  onReprocess?: (pageNum: number) => void;
+  onTempTextChange?: (text: string) => void;
+  onSave?: (pageNum: number, text: string) => void;
+  onCancel?: () => void;
+  isSaving?: boolean;
+  selectedBookPages?: any[];
 }
 
 const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
@@ -28,10 +40,40 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
   scrollParentRef,
   isFullscreen = false,
   isChatCollapsed = false,
+  editingPageNum = null,
+  tempPageText = '',
+  onEdit,
+  onReprocess,
+  onTempTextChange,
+  onSave,
+  onCancel,
+  isSaving = false,
+  selectedBookPages = [],
 }) => {
   const { t } = useI18n();
+  const { isAuthenticated } = useAuth();
+  const isGuest = !isAuthenticated;
   const [pages, setPages] = useState<Map<number, any>>(new Map());
   const [currentCenterPage, setCurrentCenterPage] = useState(initialPage);
+
+  // Sync updated pages from selectedBook into cache map
+  useEffect(() => {
+    if (selectedBookPages && selectedBookPages.length > 0) {
+      setPages(prev => {
+        const next = new Map(prev);
+        let changed = false;
+        selectedBookPages.forEach((p: any) => {
+          const existing = next.get(p.pageNumber);
+          if (!existing || existing.text !== p.text || existing.status !== p.status) {
+            next.set(p.pageNumber, p);
+            loadedPagesRef.current.add(p.pageNumber);
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+    }
+  }, [selectedBookPages]);
 
   // Refs for transient tracking — mutations here never cause observer rebuilds
   const loadingPagesRef = useRef<Set<number>>(new Set());
@@ -40,7 +82,30 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const lastFetchTimeRef = useRef<Map<number, number>>(new Map());
   const isInitialMount = useRef(true);
-  const isProgrammaticScroll = useRef(false);
+
+  // Jump & initial scroll support — see useScrollToPage for how it stays aligned
+  // while nearby placeholder pages resolve to real content after the jump.
+  const targetPage = initialPage || 1;
+  const isScrollingToTargetRef = useScrollToPage({
+    containerRef: scrollParentRef as React.RefObject<HTMLElement>,
+    getPageElement: useCallback((page: number) => pageRefs.current.get(page), []),
+    targetPage,
+    targetKey: `${bookId}:${targetPage}`,
+    onScrolled: useCallback((page: number) => {
+      currentCenterPageRef.current = page;
+      setCurrentCenterPage(page);
+    }, []),
+  });
+
+  // Keeps the visible page stationary as off-screen-above placeholders resolve
+  // to real content during ordinary scrolling (useScrollToPage handles the
+  // equivalent for the initial jump-to-page settle window, hence the suppression).
+  useScrollStabilizer({
+    containerRef: scrollParentRef as React.RefObject<HTMLElement>,
+    itemsRef: pageRefs,
+    suppressedRef: isScrollingToTargetRef,
+    resubscribeKey: totalPages,
+  });
 
   const RATE_LIMIT_MS = 300;
 
@@ -93,7 +158,7 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
   // to be rebuilt when the visible page changes (no currentCenterPage in deps)
   useEffect(() => {
     const centerObserver = new IntersectionObserver((entries) => {
-      if (isProgrammaticScroll.current) return;
+      if (isScrollingToTargetRef.current) return;
 
       let mostVisiblePage = -1;
       let maxRatio = 0;
@@ -124,37 +189,82 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
     return () => centerObserver.disconnect();
   }, [totalPages, scrollParentRef, onPageChange]);
 
-  // Handle initialPage changes (Jump support)
+  // Reset pages cache when bookId changes
   useEffect(() => {
-    if (isInitialMount.current || initialPage !== currentCenterPageRef.current) {
-      const target = pageRefs.current.get(initialPage);
-      if (target) {
-        isProgrammaticScroll.current = true;
-        target.scrollIntoView({ behavior: isInitialMount.current ? 'auto' : 'smooth', block: 'start' });
-        currentCenterPageRef.current = initialPage;
-        setCurrentCenterPage(initialPage);
+    setPages(new Map());
+    loadingPagesRef.current.clear();
+    loadedPagesRef.current.clear();
+    lastFetchTimeRef.current.clear();
+    currentCenterPageRef.current = initialPage;
+    setCurrentCenterPage(initialPage);
+    isInitialMount.current = true;
+  }, [bookId]);
 
-        setTimeout(() => {
-          isProgrammaticScroll.current = false;
-        }, 1000);
-      }
-      isInitialMount.current = false;
+  // Ensure target page is fetched if editing starts
+  useEffect(() => {
+    if (editingPageNum !== null && !pages.has(editingPageNum)) {
+      fetchPage(editingPageNum);
     }
-  }, [initialPage]);
+  }, [editingPageNum, pages, fetchPage]);
+
+  // Scroll back to edited page when page editing ends (save or cancel)
+  const lastEditingPageRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (editingPageNum !== null) {
+      lastEditingPageRef.current = editingPageNum;
+    } else if (lastEditingPageRef.current !== null) {
+      const targetPage = lastEditingPageRef.current;
+      lastEditingPageRef.current = null;
+
+      let attempts = 0;
+      const tryScroll = () => {
+        const el = pageRefs.current.get(targetPage);
+        const container = scrollParentRef?.current;
+        if (el && container) {
+          const containerTop = container.getBoundingClientRect().top;
+          const elTop = el.getBoundingClientRect().top;
+          container.scrollTo({
+            top: container.scrollTop + (elTop - containerTop) - 24,
+            behavior: 'instant'
+          });
+          currentCenterPageRef.current = targetPage;
+          setCurrentCenterPage(targetPage);
+          onPageChange?.(targetPage);
+        } else if (attempts < 10) {
+          attempts++;
+          setTimeout(tryScroll, 30);
+        }
+      };
+
+      setTimeout(tryScroll, 40);
+    }
+  }, [editingPageNum, scrollParentRef, onPageChange]);
 
   const allPageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
+  const isEditingAny = editingPageNum !== null;
+  const pageNumbersToRender = isEditingAny ? [editingPageNum] : allPageNumbers;
 
   return (
-    <div className={`w-full mx-auto select-none flex flex-col items-center transition-all duration-300 ${isChatCollapsed ? 'max-w-6xl' : 'max-w-4xl'}`} onContextMenu={(e) => e.preventDefault()}>
-      <div className="w-full space-y-4 pb-64 flex flex-col items-center">
-        {allPageNumbers.map(pageNum => {
+    <div
+      data-testid="reader-container"
+      className={`w-full mx-auto flex flex-col items-center transition-all duration-300 ${
+        isGuest ? 'select-none' : ''
+      } ${isChatCollapsed ? 'max-w-6xl' : 'max-w-4xl'} ${
+        isEditingAny ? 'h-full flex-1 flex flex-col min-h-0' : ''
+      }`}
+      onContextMenu={isGuest ? (e) => e.preventDefault() : undefined}
+      onCopy={isGuest ? (e) => e.preventDefault() : undefined}
+    >
+      <div className={`w-full flex flex-col items-center ${isEditingAny ? 'h-full flex-1 flex flex-col min-h-0' : 'space-y-4 pb-64'}`}>
+        {pageNumbersToRender.map(pageNum => {
           const page = pages.get(pageNum);
+          const isEditingThisPage = editingPageNum === pageNum;
           return (
             <div
               key={`page-${pageNum}`}
               ref={el => { if (el) pageRefs.current.set(pageNum, el); else pageRefs.current.delete(pageNum); }}
               data-page-number={pageNum}
-              className="scroll-mt-32 min-h-[300px] w-full"
+              className={`scroll-mt-32 w-full ${isEditingThisPage ? 'h-full flex-1 flex flex-col min-h-0' : 'min-h-[300px]'}`}
             >
               {page ? (
                 <PageItem
@@ -163,16 +273,22 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
                   contentFontFamily={contentFontFamily}
                   contentFontClassName={contentFontClassName}
                   isActive={pageNum === currentCenterPage}
-                  isEditing={false}
+                  isEditing={isEditingThisPage}
                   onSetActive={() => { }}
-                  onEdit={() => { }}
-                  onReprocess={() => { }}
-                  tempText=""
-                  onTempTextChange={() => { }}
-                  onSave={() => { }}
-                  onCancel={() => { }}
-                  isLoading={false}
-                  isSaving={false}
+                  onEdit={() => onEdit?.(pageNum, page.text || '')}
+                  onReprocess={() => onReprocess?.(pageNum)}
+                  tempText={isEditingThisPage ? tempPageText : ''}
+                  onTempTextChange={(text) => onTempTextChange?.(text)}
+                  onSave={() => {
+                    setPages(prev => {
+                      const existing = prev.get(pageNum) || page;
+                      return new Map(prev).set(pageNum, { ...existing, text: tempPageText });
+                    });
+                    onSave?.(pageNum, tempPageText);
+                  }}
+                  onCancel={() => onCancel?.()}
+                  isLoading={page.status === 'processing' || page.status === 'indexing'}
+                  isSaving={isSaving}
                   isFullscreen={isFullscreen}
                 />
               ) : (
@@ -191,4 +307,5 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
   );
 };
 
+export { VirtualScrollReader };
 export default VirtualScrollReader;

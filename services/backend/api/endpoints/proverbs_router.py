@@ -8,12 +8,12 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
 from app.db.models import Proverb
-from auth.dependencies import require_editor
+from auth.dependencies import require_editor, require_admin
 from app.models.user import User
 from app.services.cache_service import cache_service
 
@@ -38,8 +38,6 @@ class ProverbEntryOut(BaseModel):
 
 class ProverbUpdate(BaseModel):
     text: Optional[str] = None
-    volume: Optional[int] = None
-    page_number: Optional[int] = None
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -106,7 +104,8 @@ async def update_proverb(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(require_editor),
 ):
-    """Update a proverb (Admin / Editor only)."""
+    """Update a proverb's text (Admin / Editor only). Volume and page number are
+    source references and are never changed by this endpoint."""
     stmt = select(Proverb).where(Proverb.id == proverb_id)
     res = await session.execute(stmt)
     proverb = res.scalar_one_or_none()
@@ -115,10 +114,6 @@ async def update_proverb(
 
     if body.text is not None:
         proverb.text = body.text.strip()
-    if body.volume is not None:
-        proverb.volume = body.volume
-    if body.page_number is not None:
-        proverb.page_number = body.page_number
 
     await session.commit()
     await session.refresh(proverb)
@@ -128,3 +123,24 @@ async def update_proverb(
     await cache_service.delete_pattern("proverbs:*")
 
     return proverb
+
+
+@router.delete("/proverbs/{proverb_id}", status_code=204)
+async def delete_proverb(
+    proverb_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_admin),
+):
+    """Delete a proverb (Admin only)."""
+    result = await session.execute(
+        delete(Proverb).where(Proverb.id == proverb_id).returning(Proverb.id)
+    )
+    if not result.fetchone():
+        raise HTTPException(status_code=404, detail="Proverb not found")
+
+    await session.commit()
+
+    await cache_service.delete_pattern("proverb:*")
+    await cache_service.delete_pattern("proverbs:*")
+
+    return None

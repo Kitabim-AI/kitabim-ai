@@ -8,9 +8,13 @@ import {
   Loader2,
   RefreshCw,
   Search,
+  Trash2,
   X,
 } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useAppContext } from '../../../context/AppContext';
+import { useNotification } from '../../../context/NotificationContext';
+import { useIsAdmin } from '../../../hooks/useAuth';
 import { useI18n } from '../../../i18n/I18nContext';
 import { authFetch } from '../../../services/authService';
 import { UYGHUR_ALPHABET, sortByUyghurAlphabet } from '../../../utils/uyghurAlphabet';
@@ -25,6 +29,9 @@ const PAGE_SIZE = 20;
 
 export const NamesDictionaryPanel: React.FC = () => {
   const { t } = useI18n();
+  const isAdmin = useIsAdmin();
+  const { setModal } = useAppContext();
+  const { addNotification } = useNotification();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState<NameEntry[]>([]);
@@ -138,6 +145,33 @@ export const NamesDictionaryPanel: React.FC = () => {
 
   const activeEntries = searchQuery.trim() ? suggestions : allEntries;
 
+  const handleDeleteEntry = (entry: NameEntry) => {
+    setModal({
+      isOpen: true,
+      title: t('common.delete'),
+      message: t('admin.namesDictionary.confirmDelete', { word: entry.name }),
+      type: 'confirm',
+      confirmText: t('common.delete'),
+      destructive: true,
+      onConfirm: async () => {
+        setModal((prev: any) => ({ ...prev, isLoading: true }));
+        try {
+          const resp = await authFetch(`/api/names-dictionary/${entry.id}`, { method: 'DELETE' });
+          if (!resp.ok) throw new Error('Failed to delete entry');
+          setAllEntries(prev => prev.filter(e => e.id !== entry.id));
+          setSuggestions(prev => prev.filter(e => e.id !== entry.id));
+          fetchStats();
+          setModal((prev: any) => ({ ...prev, isOpen: false }));
+          addNotification(t('admin.namesDictionary.deleteSuccess'), 'success');
+        } catch (e) {
+          console.error('Failed to delete names dictionary entry', e);
+          setModal((prev: any) => ({ ...prev, isOpen: false }));
+          addNotification(t('admin.namesDictionary.deleteError'), 'error');
+        }
+      },
+    });
+  };
+
   return (
     <div className="space-y-6 md:space-y-8 animate-fade-in pb-20" dir="rtl" lang="ug">
       {/* Search + Stats row */}
@@ -244,14 +278,25 @@ export const NamesDictionaryPanel: React.FC = () => {
                 {activeEntries.map((entry) => (
                   <div
                     key={entry.id}
-                    className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 rounded-2xl transition-all group hover:bg-slate-50/50 dark:hover:bg-slate-800/30"
+                    className="flex items-center justify-between gap-3 px-4 md:px-6 py-3 md:py-4 rounded-2xl transition-all group hover:bg-slate-50/50 dark:hover:bg-slate-800/30"
                   >
-                    <span className="uyghur-text text-[16px] md:text-xl font-bold text-slate-800 dark:text-slate-100">
+                    <span className="uyghur-text text-sm sm:text-lg font-bold text-slate-800 dark:text-slate-100">
                       {entry.name}
                     </span>
-                    <span className="uyghur-text text-[12px] md:text-[13px] text-[#0369a1]/60 dark:text-[#38bdf8]/60 bg-[#0369a1]/5 dark:bg-[#38bdf8]/5 px-2.5 py-0.5 rounded-full border border-[#0369a1]/10 dark:border-[#38bdf8]/10">
-                      {entry.letter_group}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="uyghur-text text-sm sm:text-lg text-[#0369a1]/60 dark:text-[#38bdf8]/60 bg-[#0369a1]/5 dark:bg-[#38bdf8]/5 px-2.5 py-0.5 rounded-full border border-[#0369a1]/10 dark:border-[#38bdf8]/10">
+                        {entry.letter_group}
+                      </span>
+                      {isAdmin && (
+                        <button
+                          onClick={() => handleDeleteEntry(entry)}
+                          className="p-2 bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400 rounded-xl hover:bg-red-500 dark:hover:bg-red-600 hover:text-white transition-all"
+                          title={t('common.delete')}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

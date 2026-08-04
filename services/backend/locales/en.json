@@ -47,6 +47,11 @@
     "queue_unavailable": "Processing queue is temporarily unavailable. Please try again in a moment.",
     "graph_enqueue_failed": "Failed to enqueue Knowledge Graph job. Please try again.",
     "summary_enqueue_failed": "Failed to enqueue Summary job. Please try again.",
+    "staging_candidate_not_found": "Staging candidate not found or already processed",
+    "staging_fact_not_found": "Fact not found on this staging candidate",
+    "staging_conflicts_unresolved": "This term has unresolved fact conflicts. Resolve them before approving.",
+    "staging_synthesis_failed": "Could not generate the definition preview. Please try again.",
+    "invalid_fact_status": "Fact status must be 'active' or 'rejected'",
     "ai": {
       "gemini_busy": "Oops, the book service is a bit busy. Would you like to try again in a moment?",
       "gemini_api_key_missing": "Gemini API key not configured",
@@ -57,7 +62,8 @@
   "messages": {
     "logged_out": "Logged out successfully",
     "corrections_applied": "Corrections applied successfully. Embeddings will be regenerated.",
-    "new_conversation_title": "New conversation"
+    "new_conversation_title": "New conversation",
+    "history_extraction_started": "History term extraction task started successfully."
   },
   "rag": {
     "identity_intro": "I am {name}.",
@@ -68,6 +74,10 @@
     "volume_label": "Volume {volume}",
     "volume_unknown": "Volume information not available",
     "pages_suffix": ", {pages} pages",
-    "followup_context_prefix": "[Previous answer: {context}]"
+    "followup_context_prefix": "[Previous answer: {context}]",
+    "exact_phrase_no_matches": "No exact matches found for \"{phrase}\".",
+    "exact_phrase_page_hits_header": "Found {count} exact match(es):",
+    "exact_phrase_page_hit_line": "{title} — page {page}",
+    "exact_phrase_page_hit_line_no_page": "{title}"
   }
 }

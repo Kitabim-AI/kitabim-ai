@@ -19,6 +19,7 @@ class ChatRequestDTO:
     character_id: Optional[str] = None
     conversation_id: Optional[str] = None
     context_book_ids: Optional[List[str]] = None
+    exact_phrase: bool = False
 
 
 @dataclass

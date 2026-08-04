@@ -178,7 +178,7 @@ flowchart TD
 | `gemini_chat_model` (`system_configs`) | `"gemini-3.1-flash-lite"` (seeded by `seed_system_configs()`) | `summary_job` — chat model used for summary generation; no code-level fallback if the key is unset, raises `RuntimeError`. |
 | `gemini_embedding_model` (`system_configs`) | `"gemini-embedding-2"` (seeded by `seed_system_configs()`; see [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md#configuration-reference)) | `summary_job` — embedding model for the summary vector; no code-level fallback if the key is unset, raises `RuntimeError`. |
 | `gemini_summary_timeout` (`system_configs`) | `"300"` (seconds; seeded by migration `054_add_gemini_summary_timeout_config.sql`) | `build_text_chain(...).ainvoke(..., timeout_config_key="gemini_summary_timeout")` — per-call LLM timeout for summary generation specifically (separate budget from `gemini_chat_timeout`/`gemini_ocr_timeout`). |
-| `summary_threshold` (env `SUMMARY_THRESHOLD`) | `0.45` | Not part of generation — read by the RAG agent's `search_books_by_summary` tool (`tools.py`) as the minimum cosine similarity for a book to be considered a routing match; included here since it's the other side of the `summary_search` cosine query defined in `book_summaries_repository.py`. |
+| `summary_threshold` (env `SUMMARY_THRESHOLD`) | `0.30` | Not part of generation — read by the RAG agent's `search_books_by_summary` tool (`tools.py`) as the minimum cosine similarity for a book to be considered a routing match; included here since it's the other side of the `summary_search` cosine query defined in `book_summaries_repository.py`. |
 
 ## API Endpoints
 

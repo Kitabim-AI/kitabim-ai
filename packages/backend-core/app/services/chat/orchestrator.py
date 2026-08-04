@@ -22,6 +22,11 @@ from app.db.repositories.system_configs_repository import SystemConfigsRepositor
 from app.services.rag.llm_resources import llm_resources
 from app.services.chat.answer_agent import build_answer_agent
 from app.services.chat.context import ChatRequestDTO
+from app.services.chat.exact_phrase import (
+    format_page_hits,
+    run_exact_phrase_retrieval,
+    summarize_page_hits_as_text,
+)
 from app.services.chat.history import format_history_for_analysis
 from app.services.chat.retrieval_agent import build_retrieval_agent
 from app.services.rag.agent.deterministic_handler import DeterministicRAGHandler
@@ -32,8 +37,12 @@ from app.services.rag.agent.llm_routed_handler import (
 )
 from app.services.rag.agent.reranker import rerank_context
 from app.services.rag.context import QueryContext, set_current_query_context
+from app.services.rag.phrase_intent import detect_phrase_intent
 from app.utils.citation_fixer import fix_malformed_citations
 from app.utils.observability import log_json
+
+# Fallback default when the rag_keyword_top_k system_config row is missing.
+_EXACT_PHRASE_DEFAULT_LIMIT = 10
 
 
 logger = logging.getLogger("app.services.chat.orchestrator")
@@ -149,15 +158,14 @@ class ChatOrchestrator:
         )
         set_current_query_context(ctx)
 
-        # 2. Fast signal pre-processing via DeterministicRAGHandler
-
-        deterministic_handler = DeterministicRAGHandler()
-        signals = await deterministic_handler._llm_analyze_query(
-            request_dto.question, ctx
+        # 2. Phrase-intent gate (keyword-search-rework-plan.md Phase 1): a
+        # quoted / explicit-exact-phrase question skips the LLM-driven
+        # retrieval agent (and its vector+graph tool calls) entirely and
+        # goes straight to the keyword-only exact-phrase leg. Everything
+        # else keeps going through fast-signal pre-processing as before.
+        phrase_intent = detect_phrase_intent(
+            request_dto.question, exact_phrase_flag=request_dto.exact_phrase
         )
-
-        intent = signals.get("intent", "open")
-        yield {"type": "planning", "intent": intent}
 
         # Enforce Reader Mode scope limit if not global; otherwise carry forward
         # the prior turn's book IDs so _build_human_message can surface them.
@@ -166,154 +174,204 @@ class ChatOrchestrator:
         elif request_dto.is_global and request_dto.context_book_ids:
             ctx.context_book_ids = request_dto.context_book_ids
 
-        # 3. Retrieval Agent Execution
-        retrieval_agent = build_retrieval_agent(
-            model=agent_model,
-            intent_signals=signals,
-        )
+        observations: list[dict] = []
 
-        # Runner configuration
-        if self.session_service:
-            runner = Runner(
-                agent=retrieval_agent,
-                app_name="kitabim-retrieval",
-                session_service=self.session_service,
-                auto_create_session=True,
+        if phrase_intent.is_exact:
+            yield {"type": "planning", "intent": "exact_phrase"}
+
+            yield {
+                "type": "tool_call",
+                "tool": "exact_phrase_search",
+                "name": "exact_phrase_search",
+            }
+            rag_keyword_top_k_str = await configs_repo.get_value(
+                "rag_keyword_top_k", str(_EXACT_PHRASE_DEFAULT_LIMIT)
             )
-            adk_session = await self.session_service.get_session(
-                app_name="kitabim-retrieval",
-                user_id=request_dto.user_id,
-                session_id=conv_id,
+            try:
+                rag_keyword_top_k = int(rag_keyword_top_k_str)
+            except ValueError:
+                rag_keyword_top_k = _EXACT_PHRASE_DEFAULT_LIMIT
+
+            hits, observation = await run_exact_phrase_retrieval(
+                db_session,
+                phrase_intent,
+                book_ids=ctx.context_book_ids,
+                categories=ctx.character_categories or None,
+                limit=rag_keyword_top_k,
+                is_global=request_dto.is_global,
             )
-            if adk_session is None:
-                adk_session = await self.session_service.create_session(
+            observations.append(observation)
+            yield {
+                "type": "tool_result",
+                "tool": "exact_phrase_search",
+                "found": len(hits),
+            }
+        else:
+            # 2b. Fast signal pre-processing via DeterministicRAGHandler
+            deterministic_handler = DeterministicRAGHandler()
+            signals = await deterministic_handler._llm_analyze_query(
+                request_dto.question, ctx
+            )
+
+            intent = signals.get("intent", "open")
+            yield {"type": "planning", "intent": intent}
+
+            # 3. Retrieval Agent Execution
+            retrieval_agent = build_retrieval_agent(
+                model=agent_model,
+                intent_signals=signals,
+            )
+
+            # Runner configuration
+            if self.session_service:
+                runner = Runner(
+                    agent=retrieval_agent,
+                    app_name="kitabim-retrieval",
+                    session_service=self.session_service,
+                    auto_create_session=True,
+                )
+                adk_session = await self.session_service.get_session(
                     app_name="kitabim-retrieval",
                     user_id=request_dto.user_id,
                     session_id=conv_id,
                 )
-        else:
-            session_service = InMemorySessionService()
-            adk_session = await session_service.create_session(
-                app_name="kitabim-retrieval",
+                if adk_session is None:
+                    adk_session = await self.session_service.create_session(
+                        app_name="kitabim-retrieval",
+                        user_id=request_dto.user_id,
+                        session_id=conv_id,
+                    )
+            else:
+                session_service = InMemorySessionService()
+                adk_session = await session_service.create_session(
+                    app_name="kitabim-retrieval",
+                    user_id=request_dto.user_id,
+                    session_id=conv_id,
+                )
+                runner = Runner(
+                    agent=retrieval_agent,
+                    app_name="kitabim-retrieval",
+                    session_service=session_service,
+                    auto_create_session=True,
+                )
+
+            adk_session.state["query_context"] = ctx
+            adk_session.state["observations"] = []
+
+            # AGENT_SYSTEM_PROMPT's routing rules (current book_id, current_page,
+            # chat history availability, prior response book IDs) all key off an
+            # explicit [Context] block in the user turn — without it the retrieval
+            # agent can't tell it's in reader mode and falls back to book-discovery
+            # tools it doesn't need.
+            retrieval_content = types.Content(
+                role="user",
+                parts=[
+                    types.Part.from_text(
+                        text=_build_human_message(ctx, request_dto.question)
+                    )
+                ],
+            )
+
+            pending_calls: dict[str, str] = {}
+
+            async for event in runner.run_async(
                 user_id=request_dto.user_id,
                 session_id=conv_id,
-            )
-            runner = Runner(
-                agent=retrieval_agent,
-                app_name="kitabim-retrieval",
-                session_service=session_service,
-                auto_create_session=True,
-            )
+                new_message=retrieval_content,
+                run_config=RunConfig(streaming_mode=StreamingMode.SSE),
+            ):
+                if not event.partial and event.content and event.content.parts:
+                    for part in event.content.parts:
+                        if part.function_call:
+                            call_id = (
+                                getattr(part.function_call, "id", None)
+                                or part.function_call.name
+                            )
+                            pending_calls[call_id] = part.function_call.name
+                            yield {
+                                "type": "tool_call",
+                                "tool": part.function_call.name,
+                                "name": part.function_call.name,
+                            }
+                        elif part.text:
+                            yield {"type": "agent_thinking", "text": part.text}
 
-        adk_session.state["query_context"] = ctx
-        adk_session.state["observations"] = []
+                function_responses = event.get_function_responses()
+                if function_responses:
+                    for fr in function_responses:
+                        response_data = fr.response or {}
+                        call_id = getattr(fr, "id", None) or fr.name
+                        tool_name = pending_calls.pop(call_id, fr.name)
+                        observations.append(
+                            {
+                                "tool": tool_name,
+                                "result": response_data,
+                            }
+                        )
+                        found = (
+                            response_data.get("found_count", 0)
+                            if isinstance(response_data, dict)
+                            else 0
+                        )
+                        yield {
+                            "type": "tool_result",
+                            "tool": tool_name,
+                            "found": found,
+                        }
 
-        # AGENT_SYSTEM_PROMPT's routing rules (current book_id, current_page,
-        # chat history availability, prior response book IDs) all key off an
-        # explicit [Context] block in the user turn — without it the retrieval
-        # agent can't tell it's in reader mode and falls back to book-discovery
-        # tools it doesn't need.
-        retrieval_content = types.Content(
-            role="user",
-            parts=[
-                types.Part.from_text(
-                    text=_build_human_message(ctx, request_dto.question)
-                )
-            ],
-        )
         content = types.Content(
             role="user", parts=[types.Part.from_text(text=request_dto.question)]
         )
 
-        observations: list[dict] = []
-        pending_calls: dict[str, str] = {}
-
-        async for event in runner.run_async(
-            user_id=request_dto.user_id,
-            session_id=conv_id,
-            new_message=retrieval_content,
-            run_config=RunConfig(streaming_mode=StreamingMode.SSE),
-        ):
-            if not event.partial and event.content and event.content.parts:
-                for part in event.content.parts:
-                    if part.function_call:
-                        call_id = (
-                            getattr(part.function_call, "id", None)
-                            or part.function_call.name
-                        )
-                        pending_calls[call_id] = part.function_call.name
-                        yield {
-                            "type": "tool_call",
-                            "tool": part.function_call.name,
-                            "name": part.function_call.name,
-                        }
-                    elif part.text:
-                        yield {"type": "agent_thinking", "text": part.text}
-
-            function_responses = event.get_function_responses()
-            if function_responses:
-                for fr in function_responses:
-                    response_data = fr.response or {}
-                    call_id = getattr(fr, "id", None) or fr.name
-                    tool_name = pending_calls.pop(call_id, fr.name)
-                    observations.append(
-                        {
-                            "tool": tool_name,
-                            "result": response_data,
-                        }
-                    )
-                    found = (
-                        response_data.get("found_count", 0)
-                        if isinstance(response_data, dict)
-                        else 0
-                    )
-                    yield {
-                        "type": "tool_result",
-                        "tool": tool_name,
-                        "found": found,
-                    }
+        # Page-finding exact-phrase requests are formatted as raw page hits,
+        # not a synthesized answer — skip grading/reranking and the LLM
+        # answer agent entirely.
+        skip_answer_synthesis = phrase_intent.is_exact and phrase_intent.is_page_finding
 
         # 4. Context Grading
         used_book_ids = _extract_used_book_ids(observations)
-        reranker_enabled = (
-            await configs_repo.get_value("rag_reranker_enabled", "true")
-        ).lower() == "true"
-        rag_top_k_str = await configs_repo.get_value(
-            "rag_top_k", str(settings.rag_top_k)
-        )
-        try:
-            rag_top_k = int(rag_top_k_str)
-        except ValueError:
-            rag_top_k = settings.rag_top_k
-
-        if reranker_enabled:
+        if skip_answer_synthesis:
+            graded_context, before_count, after_count = "", 0, 0
+        else:
+            reranker_enabled = (
+                await configs_repo.get_value("rag_reranker_enabled", "true")
+            ).lower() == "true"
+            rag_top_k_str = await configs_repo.get_value(
+                "rag_vector_top_k", str(settings.rag_top_k)
+            )
             try:
-                reranker_model = await configs_repo.get_value(
-                    "gemini_reranker_model", "gemini-3.1-flash-lite"
-                )
-                effective_question = _extract_effective_question(
-                    request_dto.question, observations
-                )
-                graded_context, before_count, after_count = await rerank_context(
-                    effective_question,
-                    observations,
-                    reranker_model,
-                    max_chunks=rag_top_k,
-                )
-            except Exception as exc:
-                log_json(
-                    logger,
-                    logging.WARNING,
-                    "reranker failed, falling back to _grade_context",
-                    error=str(exc),
-                )
+                rag_top_k = int(rag_top_k_str)
+            except ValueError:
+                rag_top_k = settings.rag_top_k
+
+            if reranker_enabled:
+                try:
+                    reranker_model = await configs_repo.get_value(
+                        "gemini_reranker_model", "gemini-3.1-flash-lite"
+                    )
+                    effective_question = _extract_effective_question(
+                        request_dto.question, observations
+                    )
+                    graded_context, before_count, after_count = await rerank_context(
+                        effective_question,
+                        observations,
+                        reranker_model,
+                        max_chunks=rag_top_k,
+                    )
+                except Exception as exc:
+                    log_json(
+                        logger,
+                        logging.WARNING,
+                        "reranker failed, falling back to _grade_context",
+                        error=str(exc),
+                    )
+                    graded_context, before_count, after_count = _grade_context(
+                        observations, max_chunks=rag_top_k
+                    )
+            else:
                 graded_context, before_count, after_count = _grade_context(
                     observations, max_chunks=rag_top_k
                 )
-        else:
-            graded_context, before_count, after_count = _grade_context(
-                observations, max_chunks=rag_top_k
-            )
 
         if before_count > 0:
             yield {"type": "grading", "before": before_count, "after": after_count}
@@ -324,46 +382,54 @@ class ChatOrchestrator:
 
         # 5. Answer Agent Execution
         yield {"type": "answer_start"}
-        answer_agent = build_answer_agent(
-            model=chat_model,
-            graded_context=graded_context,
-            persona_prompt=ctx.persona_prompt,
-            is_global=request_dto.is_global,
-            has_categories=bool(ctx.character_categories),
-        )
 
-        if self.session_service:
-            answer_runner = Runner(
-                agent=answer_agent,
-                app_name="kitabim-answer",
-                session_service=self.session_service,
-                auto_create_session=True,
+        if skip_answer_synthesis:
+            page_hits = format_page_hits(hits)
+            yield {"type": "page_hits", "hits": page_hits}
+            accumulated_text = summarize_page_hits_as_text(
+                hits, phrase=", ".join(phrase_intent.phrases)
             )
         else:
-            answer_runner = InMemoryRunner(
-                agent=answer_agent,
-                app_name="kitabim-answer",
+            answer_agent = build_answer_agent(
+                model=chat_model,
+                graded_context=graded_context,
+                persona_prompt=ctx.persona_prompt,
+                is_global=request_dto.is_global,
+                has_categories=bool(ctx.character_categories),
             )
 
-        accumulated_text = ""
-        async for event in answer_runner.run_async(
-            user_id=request_dto.user_id,
-            session_id=conv_id,
-            new_message=content,
-            run_config=RunConfig(streaming_mode=StreamingMode.SSE),
-        ):
-            if event.partial and event.content and event.content.parts:
-                for part in event.content.parts:
-                    if part.text:
-                        accumulated_text += part.text
-                        yield {"type": "chunk", "text": part.text}
-            elif not event.partial and event.content and event.content.parts:
-                # Fallback if no partial events were emitted
-                if not accumulated_text:
+            if self.session_service:
+                answer_runner = Runner(
+                    agent=answer_agent,
+                    app_name="kitabim-answer",
+                    session_service=self.session_service,
+                    auto_create_session=True,
+                )
+            else:
+                answer_runner = InMemoryRunner(
+                    agent=answer_agent,
+                    app_name="kitabim-answer",
+                )
+
+            accumulated_text = ""
+            async for event in answer_runner.run_async(
+                user_id=request_dto.user_id,
+                session_id=conv_id,
+                new_message=content,
+                run_config=RunConfig(streaming_mode=StreamingMode.SSE),
+            ):
+                if event.partial and event.content and event.content.parts:
                     for part in event.content.parts:
                         if part.text:
                             accumulated_text += part.text
                             yield {"type": "chunk", "text": part.text}
+                elif not event.partial and event.content and event.content.parts:
+                    # Fallback if no partial events were emitted
+                    if not accumulated_text:
+                        for part in event.content.parts:
+                            if part.text:
+                                accumulated_text += part.text
+                                yield {"type": "chunk", "text": part.text}
 
         yield {"type": "answer_end"}
 

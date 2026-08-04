@@ -79,44 +79,43 @@ def entity_matches_question(entity: str, question: str) -> bool:
 
     # Structural rule for single-word titles in multi-word questions (>= 3 words):
     # Single-word titles are matched if:
-    # 1. Enclosed in quotes (e.g. «ھايات»), OR
-    # 2. Positioned at sentence start (subject position), OR
-    # 3. Followed by a title indicator (e.g. كىتابى, ناملىق, رومانى) or topic postposition (e.g. ھەققىدە, توغرىسىدا)
+    # 1. Positioned at sentence start (subject position), OR
+    # 2. Followed by a title indicator (e.g. كىتابى, ناملىق, رومانى) or topic postposition (e.g. ھەققىدە, توغرىسىدا)
+    # `«...»` no longer grants a match on its own — it now signals
+    # phrase-search intent elsewhere in the RAG pipeline, not a title quote.
     if len(q_words) >= 3 and len(entity_words) == 1:
         e_word = entity_words[0]
-        is_quoted = f"«{e_word}»" in norm_q or f'"{e_word}"' in norm_q
-        if not is_quoted:
-            is_sentence_start = q_words[0].startswith(e_word) or (
-                e_word.endswith("ە") and q_words[0].startswith(e_word[:-1] + "ی")
+        is_sentence_start = q_words[0].startswith(e_word) or (
+            e_word.endswith("ە") and q_words[0].startswith(e_word[:-1] + "ی")
+        )
+        if not is_sentence_start:
+            valid_followers = (
+                "كىتاب",
+                "ناملىق",
+                "رومان",
+                "ئەسەر",
+                "داستان",
+                "ھېكايە",
+                "پوۋېست",
+                "ژۇرنال",
+                "ھەققىدە",
+                "تۆغرىسىدا",
+                "توغرىسىدا",
+                "بىلەن",
+                "ئۈستىدە",
+                "دەپ",
             )
-            if not is_sentence_start:
-                valid_followers = (
-                    "كىتاب",
-                    "ناملىق",
-                    "رومان",
-                    "ئەسەر",
-                    "داستان",
-                    "ھېكايە",
-                    "پوۋېست",
-                    "ژۇرنال",
-                    "ھەققىدە",
-                    "تۆغرىسىدا",
-                    "توغرىسىدا",
-                    "بىلەن",
-                    "ئۈستىدە",
-                    "دەپ",
-                )
-                followed_by_indicator = False
-                for idx, w in enumerate(q_words[:-1]):
-                    if w.startswith(e_word) or (
-                        e_word.endswith("ە") and w.startswith(e_word[:-1] + "ی")
-                    ):
-                        next_w = q_words[idx + 1]
-                        if any(next_w.startswith(ind) for ind in valid_followers):
-                            followed_by_indicator = True
-                            break
-                if not followed_by_indicator:
-                    return False
+            followed_by_indicator = False
+            for idx, w in enumerate(q_words[:-1]):
+                if w.startswith(e_word) or (
+                    e_word.endswith("ە") and w.startswith(e_word[:-1] + "ی")
+                ):
+                    next_w = q_words[idx + 1]
+                    if any(next_w.startswith(ind) for ind in valid_followers):
+                        followed_by_indicator = True
+                        break
+            if not followed_by_indicator:
+                return False
 
     def _word_matches(e_word: str) -> bool:
         alt = e_word[:-1] + "ی" if e_word.endswith("ە") else None

@@ -22,6 +22,7 @@ from . import (
     questions_router,
     proverbs_router,
     quran_router,
+    admin_history_dictionary_router,
 )
 
 __all__ = [
@@ -46,4 +47,5 @@ __all__ = [
     "questions_router",
     "proverbs_router",
     "quran_router",
+    "admin_history_dictionary_router",
 ]

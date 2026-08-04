@@ -44,11 +44,20 @@ class SystemConfigsRepository(BaseRepository[SystemConfig]):
             if description:
                 config.description = description
             await self.session.commit()
+            await self.session.refresh(config)
             await cache_service.delete(f"config:{key}")
-            return config
+        else:
+            config = await self.create(key=key, value=value, description=description)
+            await self.session.commit()
+            await self.session.refresh(config)
+            await cache_service.delete(f"config:{key}")
 
-        config = await self.create(key=key, value=value, description=description)
-        await cache_service.delete(f"config:{key}")
+        if key == "log_level" and value:
+            import logging
+
+            level = getattr(logging, value.upper(), logging.INFO)
+            logging.getLogger().setLevel(level)
+
         return config
 
 

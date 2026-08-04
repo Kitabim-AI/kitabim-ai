@@ -5,6 +5,53 @@ from app.services.rag.retrieval import embed_query, vector_search
 
 
 @pytest.mark.asyncio
+async def test_vector_search_is_vector_only_never_calls_keyword_search():
+    """The keyword leg no longer blends with vector results (removed in the
+    keyword-search rework, Phase 1) — vector_search must never call
+    keyword_search at all."""
+    ctx = MagicMock()
+    ctx.session = AsyncMock()
+    ctx.query_vector = [0.1] * 3072
+    ctx.character_categories = []
+    ctx.is_global = False
+    ctx.question = "بابۇر پادىشاھنىڭ قانچە بالىسى بار؟"
+    ctx.enriched_question = None
+
+    chunks_repo_mock = AsyncMock()
+    chunks_repo_mock.similarity_search = AsyncMock(
+        return_value=[
+            {
+                "book_id": "b1",
+                "text": "t",
+                "similarity": 0.9,
+                "page_number": 1,
+                "title": "T",
+                "volume": None,
+                "author": "A",
+            }
+        ]
+    )
+    chunks_repo_mock.keyword_search = AsyncMock(return_value=[])
+
+    mock_config_repo = AsyncMock()
+    mock_config_repo.get_value = AsyncMock(return_value="25")
+
+    with (
+        patch("app.core.providers.get_vector_store", return_value=chunks_repo_mock),
+        patch("app.services.cache_service.cache_service.get", return_value=None),
+        patch("app.services.cache_service.cache_service.set", return_value=None),
+        patch(
+            "app.db.repositories.system_configs_repository.SystemConfigsRepository",
+            return_value=mock_config_repo,
+        ),
+    ):
+        results = await vector_search(ctx, book_ids=["b1"])
+
+    chunks_repo_mock.keyword_search.assert_not_awaited()
+    assert results and results[0]["text"] == "t"
+
+
+@pytest.mark.asyncio
 async def test_embed_query_uses_and_sets_cache(monkeypatch):
     mock_cache = AsyncMock()
     mock_cache.get = AsyncMock(return_value=None)  # Cache miss
@@ -227,16 +274,19 @@ async def test_vector_search_multi_book_guarantees_per_book_quota(monkeypatch):
         assert limit == 8  # rag_top_k(25) // 3 books
         return book_results[book_ids[0]]
 
+    mock_factory = MagicMock()
+    mock_factory.return_value.__aenter__.return_value = MagicMock()
+
     with patch(
         "app.db.repositories.chunks_repository.ChunksRepository"
     ) as mock_cls, patch(
         "app.db.repositories.system_configs_repository.SystemConfigsRepository"
-    ) as mock_config_cls:
+    ) as mock_config_cls, patch("app.db.session.async_session_factory", mock_factory):
         mock_repo = mock_cls.return_value
         mock_repo.similarity_search = AsyncMock(side_effect=fake_similarity_search)
 
         async def mock_get_value(key, default=""):
-            if key == "rag_top_k":
+            if key == "rag_vector_top_k":
                 return "25"
             if key == "rag_hybrid_search_enabled":
                 return "false"

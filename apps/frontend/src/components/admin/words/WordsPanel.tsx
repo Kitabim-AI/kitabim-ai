@@ -9,9 +9,13 @@ import {
   Loader2,
   RefreshCw,
   Search,
+  Trash2,
   X
 } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useAppContext } from '../../../context/AppContext';
+import { useNotification } from '../../../context/NotificationContext';
+import { useIsAdmin } from '../../../hooks/useAuth';
 import { useI18n } from '../../../i18n/I18nContext';
 import { authFetch } from '../../../services/authService';
 import { UYGHUR_ALPHABET, sortByUyghurAlphabet } from '../../../utils/uyghurAlphabet';
@@ -23,6 +27,9 @@ interface WordsWord {
 
 export const WordsPanel: React.FC = () => {
   const { t } = useI18n();
+  const isAdmin = useIsAdmin();
+  const { setModal } = useAppContext();
+  const { addNotification } = useNotification();
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState<WordsWord[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -142,6 +149,33 @@ export const WordsPanel: React.FC = () => {
 
   const activeWords = searchQuery.trim() ? suggestions : allWords;
 
+  const handleDeleteWord = (entry: WordsWord) => {
+    setModal({
+      isOpen: true,
+      title: t('common.delete'),
+      message: t('admin.words.confirmDelete', { word: entry.word }),
+      type: 'confirm',
+      confirmText: t('common.delete'),
+      destructive: true,
+      onConfirm: async () => {
+        setModal((prev: any) => ({ ...prev, isLoading: true }));
+        try {
+          const resp = await authFetch(`/api/spell-check/words/${entry.id}`, { method: 'DELETE' });
+          if (!resp.ok) throw new Error('Failed to delete word');
+          setAllWords(prev => prev.filter(w => w.id !== entry.id));
+          setSuggestions(prev => prev.filter(w => w.id !== entry.id));
+          fetchStats();
+          setModal((prev: any) => ({ ...prev, isOpen: false }));
+          addNotification(t('admin.words.deleteSuccess'), 'success');
+        } catch (e) {
+          console.error('Failed to delete word', e);
+          setModal((prev: any) => ({ ...prev, isOpen: false }));
+          addNotification(t('admin.words.deleteError'), 'error');
+        }
+      },
+    });
+  };
+
   return (
     <div className="space-y-6 md:space-y-8 animate-fade-in pb-20" dir="rtl" lang="ug">
       {/* Main Search & Tool Section */}
@@ -240,18 +274,18 @@ export const WordsPanel: React.FC = () => {
             <div className="glass-panel rounded-[32px] p-2 overflow-hidden shadow-xl animate-fade-in border border-[#0369a1]/5 dark:border-[#38bdf8]/10">
               <div className="grid grid-cols-1 gap-1">
                   {activeWords.map((entry) => (
-                    <div 
-                      key={entry.id} 
+                    <div
+                      key={entry.id}
                       className={`
-                        flex items-center justify-between px-4 md:px-6 py-3 md:py-4 rounded-2xl transition-all group
+                        flex items-center justify-between gap-3 px-4 md:px-6 py-3 md:py-4 rounded-2xl transition-all group
                         ${entry.word === searchQuery.trim() ? 'bg-[#0369a1]/5 dark:bg-[#38bdf8]/5 ring-1 ring-[#0369a1]/10 dark:ring-[#38bdf8]/20' : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/30'}
                       `}
                     >
-                      <div className="flex items-center gap-3 md:gap-4">
+                      <div className="flex items-center gap-3 md:gap-4 min-w-0">
                         <div className={`p-1.5 md:p-2 rounded-lg ${entry.word === searchQuery.trim() ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500'}`}>
                            <Check size={14} strokeWidth={3} className="w-3 h-3 md:w-3.5 md:h-3.5" />
                         </div>
-                        <span className={`uyghur-text text-[15px] md:text-xl ${entry.word === searchQuery.trim() ? 'font-bold text-[#0369a1] dark:text-[#38bdf8]' : 'text-slate-700 dark:text-slate-200 font-normal'}`}>
+                        <span className={`uyghur-text text-sm sm:text-lg ${entry.word === searchQuery.trim() ? 'font-bold text-[#0369a1] dark:text-[#38bdf8]' : 'text-slate-700 dark:text-slate-200 font-normal'}`}>
                            {entry.word}
                         </span>
                         {entry.word === searchQuery.trim() && (
@@ -260,6 +294,15 @@ export const WordsPanel: React.FC = () => {
                           </span>
                         )}
                       </div>
+                      {isAdmin && (
+                        <button
+                          onClick={() => handleDeleteWord(entry)}
+                          className="p-2 shrink-0 bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400 rounded-xl hover:bg-red-500 dark:hover:bg-red-600 hover:text-white transition-all"
+                          title={t('common.delete')}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
                     </div>
                   ))}
               </div>

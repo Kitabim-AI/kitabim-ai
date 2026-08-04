@@ -27,14 +27,13 @@ async def test_find_books_by_title_subset_filtering():
 
     # We expect to match:
     # - "لېيىغان بۇلاق" (7 books)
-    # - "مۇرات" (1 book)
     # "بۇلاق" must be filtered out because it is a strict subset of "لېيىغان بۇلاق".
     # "باشقا كىتاب" must not match.
     assert res is not None
     matched_ids = {r["id"] for r in res}
 
-    # b1-b7 (لېيىغان بۇلاق) and b9 (مۇرات) should be in matches
-    expected_ids = {"b1", "b2", "b3", "b4", "b5", "b6", "b7", "b9"}
+    # b1-b7 (لېيىغان بۇلاق) should be in matches
+    expected_ids = {"b1", "b2", "b3", "b4", "b5", "b6", "b7"}
     assert matched_ids == expected_ids
 
     # b8 (بۇلاق) must NOT be present
@@ -77,6 +76,54 @@ async def test_find_books_by_title_quoted_no_match_returns_none():
     res = await find_books_by_title_in_question(question, session)
 
     assert res is None
+
+
+@pytest.mark.asyncio
+async def test_find_books_by_title_quoted_title_with_suffix_still_matches():
+    """`«...»` no longer triggers exact-string title matching (it now means
+    phrase-search intent — see keyword-search-rework-plan.md 1.7). A quoted
+    title carrying a natural Uyghur suffix must still resolve via the same
+    fuzzy word-prefix matching used for unquoted questions, instead of
+    failing an exact-string comparison."""
+    session = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.fetchall.return_value = [
+        ("b1", "ئانا يۇرت", "Author A", None),
+    ]
+    session.execute.return_value = mock_result
+
+    question = "«ئانا يۇرتنى» ئوقۇدۇم، قانداق كىتاب ئۇ؟"
+    res = await find_books_by_title_in_question(question, session)
+
+    assert res is not None
+    assert {r["id"] for r in res} == {"b1"}
+
+
+@pytest.mark.asyncio
+async def test_find_books_by_title_quoted_and_unquoted_give_same_result():
+    """Quoting a title must not change the match result at all — «»
+    carries no title-matching meaning anymore."""
+    session = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.fetchall.return_value = [
+        ("b1", "ئانا يۇرت", "Author A", None),
+    ]
+    session.execute.return_value = mock_result
+    quoted_res = await find_books_by_title_in_question(
+        "«ئانا يۇرت» ھەققىدە ئېيتىپ بەر", session
+    )
+
+    session2 = AsyncMock()
+    mock_result2 = MagicMock()
+    mock_result2.fetchall.return_value = [
+        ("b1", "ئانا يۇرت", "Author A", None),
+    ]
+    session2.execute.return_value = mock_result2
+    unquoted_res = await find_books_by_title_in_question(
+        "ئانا يۇرت ھەققىدە ئېيتىپ بەر", session2
+    )
+
+    assert {r["id"] for r in quoted_res} == {r["id"] for r in unquoted_res} == {"b1"}
 
 
 @pytest.mark.asyncio

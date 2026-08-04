@@ -45,6 +45,7 @@ from scanners.batch_ocr_poller_scanner import run_batch_ocr_poller_scanner
 from scanners.batch_embedding_poller_scanner import (
     run_batch_embedding_poller_scanner,
 )
+from scanners.batch_history_poller_scanner import run_batch_history_poller_scanner
 from scanners.graph_resolution_scanner import run_graph_resolution_scanner
 from jobs.ocr_job import ocr_job
 from jobs.chunking_job import chunking_job
@@ -55,6 +56,7 @@ from jobs.auto_correct_job import auto_correct_job
 from jobs.knowledge_graph_job import knowledge_graph_job
 from jobs.graph_resolution_job import graph_resolution_job
 from jobs.rag_eval_job import rag_eval_job
+from jobs.history_extraction_job import extract_book_history_terms_task
 
 
 class WorkerSettings:
@@ -70,6 +72,7 @@ class WorkerSettings:
         knowledge_graph_job,
         graph_resolution_job,
         rag_eval_job,
+        extract_book_history_terms_task,
     ]
 
     # Build cron jobs list conditionally based on feature flags
@@ -86,6 +89,7 @@ class WorkerSettings:
         cron(run_embedding_scanner),
         cron(run_batch_embedding_poller_scanner),
         cron(run_spell_check_scanner),
+        cron(run_batch_history_poller_scanner),
         cron(run_stale_watchdog, minute={0, 30}),
         cron(
             run_summary_scanner, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}

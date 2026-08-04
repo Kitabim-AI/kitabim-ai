@@ -11,7 +11,6 @@ from sqlalchemy import (
     ARRAY,
     Boolean,
     CheckConstraint,
-    Computed,
     DateTime,
     Float,
     ForeignKey,
@@ -24,7 +23,6 @@ from sqlalchemy import (
     text,
     Date,
 )
-from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
@@ -346,6 +344,76 @@ class BatchEmbeddingJob(Base):
     )
 
 
+class BatchHistoryExtractionJob(Base):
+    """Batch History Extraction Job model tracking Gemini Batch API history extraction requests"""
+
+    __tablename__ = "batch_history_extraction_jobs"
+
+    id: Mapped[str] = mapped_column(
+        String(64),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    gemini_batch_id: Mapped[Optional[str]] = mapped_column(
+        String(255), unique=True, nullable=True
+    )
+    book_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("books.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default="submitting",
+        server_default="submitting",
+        index=True,
+        nullable=False,
+    )
+
+    gcs_input_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    gcs_output_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    total_batches: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    min_significance: Mapped[int] = mapped_column(
+        Integer, default=5, server_default="5"
+    )
+    model_name: Mapped[str] = mapped_column(
+        String(100), default="gemini-2.5-flash", server_default="gemini-2.5-flash"
+    )
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        onupdate=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    # Relationships
+    book: Mapped["Book"] = relationship("Book")
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('submitting', 'submitted', 'running', 'succeeded', 'failed', 'cancelled')",
+            name="check_batch_history_jobs_status",
+        ),
+    )
+
+
 class Chunk(Base):
     """Chunk model for RAG with semantic embeddings"""
 
@@ -364,14 +432,6 @@ class Chunk(Base):
     text: Mapped[str] = mapped_column(Text, nullable=False)
     embedding: Mapped[Optional[List[float]]] = mapped_column(
         Vector(3072),  # pgvector type
-        nullable=True,
-    )
-    # Server-computed (GENERATED ALWAYS AS ... STORED, migration 074) — read-only
-    # from the ORM's perspective. 'simple' config, not 'english': content is
-    # substantially Uyghur-language and 'simple' avoids English-specific stemming.
-    text_search: Mapped[Optional[str]] = mapped_column(
-        TSVECTOR,
-        Computed("to_tsvector('simple', text)", persisted=True),
         nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -866,6 +926,65 @@ class HistoryDictionary(Base):
     transliteration: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     definition: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     letter_group: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    category: Mapped[str] = mapped_column(
+        String(30),
+        default="general",
+        server_default="general",
+        nullable=False,
+        index=True,
+    )
+    significance_score: Mapped[int] = mapped_column(
+        Integer, default=5, server_default="5", nullable=False, index=True
+    )
+    is_ai_generated: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False, index=True
+    )
+    facts: Mapped[list] = mapped_column(
+        JSON, default=list, server_default=text("'[]'::jsonb"), nullable=False
+    )
+
+
+class HistoryDictionaryStaging(Base):
+    """Staging queue for extracted history dictionary candidates awaiting admin review"""
+
+    __tablename__ = "history_dictionary_staging"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    existing_dictionary_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("history_dictionary.id", ondelete="SET NULL"), nullable=True
+    )
+    book_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    term: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
+    transliteration: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    definition: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    original_definition: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    category: Mapped[str] = mapped_column(String(30), default="general", nullable=False)
+    significance_score: Mapped[int] = mapped_column(
+        Integer, default=5, nullable=False, index=True
+    )
+    significance_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_ai_generated: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    entry_type: Mapped[str] = mapped_column(
+        String(20), default="new", nullable=False, index=True
+    )
+    letter_group: Mapped[str] = mapped_column(String(10), nullable=False)
+    facts: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), default="pending", nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
 
 
 class NamesDictionary(Base):

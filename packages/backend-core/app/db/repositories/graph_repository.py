@@ -373,62 +373,68 @@ class GraphRepository:
             "neighbors": [n for n in record["neighbors"] if n is not None][:20],
         }
 
-    async def get_entity_facts_for_citation(
-        self, entity_id: str
-    ) -> List[Dict[str, Any]]:
-        """Returns this entity's facts as flat, citable rows for query-time RAG use
-        (design v2 §6): each RELATED_TO edge becomes one fact sentence, tagged with the
-        book_id/page of its first supporting `chunk_ref` so it carries a citation like
-        any other retrieved chunk. Returns a bare name/type fact if the entity has no
-        edges at all, so a matched entity is never dropped silently.
-        """
+    async def get_entities_facts_for_citation_bulk(
+        self, entity_ids: List[str]
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Returns facts for multiple entity IDs in a single bulk Cypher query (design v2 §6)."""
+        if not entity_ids:
+            return {}
         query = """
-        MATCH (e:Entity {id: $id})
+        MATCH (e:Entity) WHERE e.id IN $ids
         OPTIONAL MATCH (e)-[r:RELATED_TO]-(other:Entity)
-        RETURN e.canonical_name AS entity_name, e.type AS entity_type,
+        RETURN e.id AS entity_id, e.canonical_name AS entity_name, e.type AS entity_type,
                collect(CASE WHEN r IS NULL THEN NULL ELSE {
                    rel_type: r.rel_type, book_id: r.book_id, chunk_refs: r.chunk_refs,
-                   other_name: other.canonical_name, is_outgoing: startNode(r).id = $id
+                   other_name: other.canonical_name, is_outgoing: startNode(r).id = e.id
                } END) AS facts
         """
         async with self._driver.session() as session:
-            result = await session.run(query, id=entity_id)
-            record = await result.single()
-        if not record:
-            return []
+            result = await session.run(query, ids=entity_ids)
+            records = await result.data()
 
-        entity_name = record["entity_name"]
-        rows: List[Dict[str, Any]] = []
-        for f in record["facts"]:
-            if f is None:
-                continue
-            chunk_refs = f.get("chunk_refs") or []
-            book_id = f.get("book_id")
-            page = None
-            if chunk_refs:
-                parts = str(chunk_refs[0]).split(":")
-                if len(parts) == 3:
-                    book_id = book_id or parts[0]
-                    try:
-                        page = int(parts[1])
-                    except ValueError:
-                        page = None
-            other_name = f.get("other_name") or ""
-            if f.get("is_outgoing"):
-                text = f"{entity_name} {f['rel_type']} {other_name}".strip()
-            else:
-                text = f"{other_name} {f['rel_type']} {entity_name}".strip()
-            rows.append({"text": text, "book_id": book_id, "page": page})
+        facts_by_entity: Dict[str, List[Dict[str, Any]]] = {}
+        for record in records:
+            entity_id = record["entity_id"]
+            entity_name = record["entity_name"]
+            rows: List[Dict[str, Any]] = []
+            for f in record["facts"]:
+                if f is None:
+                    continue
+                chunk_refs = f.get("chunk_refs") or []
+                book_id = f.get("book_id")
+                page = None
+                if chunk_refs:
+                    parts = str(chunk_refs[0]).split(":")
+                    if len(parts) == 3:
+                        book_id = book_id or parts[0]
+                        try:
+                            page = int(parts[1])
+                        except ValueError:
+                            page = None
+                other_name = f.get("other_name") or ""
+                if f.get("is_outgoing"):
+                    text = f"{entity_name} {f['rel_type']} {other_name}".strip()
+                else:
+                    text = f"{other_name} {f['rel_type']} {entity_name}".strip()
+                rows.append({"text": text, "book_id": book_id, "page": page})
 
-        if not rows:
-            rows.append(
-                {
-                    "text": f"{entity_name} ({record['entity_type']})",
-                    "book_id": None,
-                    "page": None,
-                }
-            )
-        return rows
+            if not rows:
+                rows.append(
+                    {
+                        "text": f"{entity_name} ({record['entity_type']})",
+                        "book_id": None,
+                        "page": None,
+                    }
+                )
+            facts_by_entity[entity_id] = rows
+        return facts_by_entity
+
+    async def get_entity_facts_for_citation(
+        self, entity_id: str
+    ) -> List[Dict[str, Any]]:
+        """Returns this entity's facts as flat, citable rows for query-time RAG use."""
+        facts_map = await self.get_entities_facts_for_citation_bulk([entity_id])
+        return facts_map.get(entity_id, [])
 
     async def find_resolution_candidates(
         self,
@@ -473,6 +479,34 @@ class GraphRepository:
                 entity_id=entity_id,
                 scope=scope,
                 book_id=book_id,
+                edit_distance=str(edit_distance),
+                limit=limit,
+            )
+            return await result.data()
+
+    async def search_entities_fulltext(
+        self, query_terms: List[str], edit_distance: int = 1, limit: int = 5
+    ) -> List[Dict[str, Any]]:
+        """Invoked as miss-only fallback when exact/prefix alias lookup in Redis yields 0 hits."""
+        terms = list(
+            dict.fromkeys([t.strip() for t in query_terms if t and len(t.strip()) >= 3])
+        )
+        if not terms:
+            return []
+        query = """
+        UNWIND $terms AS term
+        CALL db.index.fulltext.queryNodes("entity_search_idx", term + "~" + $edit_distance) YIELD node, score
+        WHERE coalesce(node.resolution_status, 'unresolved') <> 'resolving'
+        WITH node, max(score) AS best_score
+        RETURN node.id AS id, node.canonical_name AS canonical_name, node.aliases AS aliases,
+               node.type AS type, node.subtype AS subtype, best_score AS score
+        ORDER BY best_score DESC
+        LIMIT $limit
+        """
+        async with self._driver.session() as session:
+            result = await session.run(
+                query,
+                terms=terms,
                 edit_distance=str(edit_distance),
                 limit=limit,
             )
