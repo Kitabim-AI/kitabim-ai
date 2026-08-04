@@ -47,10 +47,11 @@ Key characteristics:
 | `chunk_index` | `integer`, default `0`, not null | Position of this chunk within the page's split output. |
 | `text` | `text`, not null | The chunk's text content. |
 | `embedding` | `vector(3072)`, nullable | pgvector embedding; `NULL` until `EmbeddingJob` (next stage) fills it in. Reset to `NULL` by `ChunkingJob` whenever an existing chunk's `text` is updated. |
-| `text_search` | `tsvector`, generated (`GENERATED ALWAYS AS to_tsvector('simple', text) STORED`, migration 074) | Read-only from the ORM; powers keyword search. `'simple'` config (not `'english'`) since content is substantially Uyghur-language. |
 | `created_at` | `timestamptz` | Row creation timestamp; not updated on conflict-upsert. |
 
 Unique constraint `chunks_book_id_page_number_chunk_index_key` on `(book_id, page_number, chunk_index)` is the conflict target for `ChunkingJob`'s upsert.
+
+`chunks` no longer has a `text_search` column — the generated `tsvector` + GIN index added by migration `074_add_chunks_text_search.sql` was dropped by migration `083_drop_chunks_text_search.sql` once keyword search (both the home Content-tab search and the RAG chat exact-phrase leg) moved to `pages.text_search` instead (added by migration `076_add_pages_text_search.sql`, mirroring 074's shape: `GENERATED ALWAYS AS (to_tsvector('simple', text)) STORED` + GIN index `idx_pages_text_search`). A `pages.text_search` hit is one whole page rather than one chunk, so it needs no chunk-side dedup for phrases matching multiple chunks on the same page. This column is not read or written by chunking itself — see [CHAT_RAG_DESIGN.md](CHAT_RAG_DESIGN.md#schema) and `PagesRepository.search_content_pages` / `ChunksRepository.keyword_search` for its consumers.
 
 ## Architecture
 
@@ -60,8 +61,8 @@ Unique constraint `chunks_book_id_page_number_chunk_index_key` on `(book_id, pag
 | `services/worker/jobs/chunking_job.py` | `chunking_job` — splits each claimed page's text into chunks and upserts them into `chunks`, one page at a time in its own session. |
 | `services/worker/scanners/event_dispatcher.py` | `run_event_dispatcher` — reactively claims and dispatches `chunking_job` immediately off `ocr_succeeded` (or, when spell check is enabled, `spell_check_succeeded`/`spell_check_failed`) outbox events, instead of waiting for `ChunkingScanner`'s next 1‑minute poll. |
 | `packages/backend-core/app/services/chunking_service.py` | `chunking_service` (a `ChunkingService` instance) — wraps `RecursiveCharacterTextSplitter`, configured from `settings.chunk_size` / `settings.chunk_overlap`; `split_text()` is the only method `ChunkingJob` calls. |
-| `packages/backend-core/app/db/repositories/chunks_repository.py` | `ChunksRepository` — generic chunk CRUD, similarity/keyword search (used by RAG retrieval). **Not used by `ChunkingJob`**, which upserts/deletes chunk rows directly via raw SQLAlchemy `insert(...).on_conflict_do_update(...)` / `delete(...)` for per-page transactional control. |
-| `packages/backend-core/app/db/repositories/pages_repository.py` | `PagesRepository` — generic page CRUD/upsert. **Not used by chunking's page-claiming or update logic either** — `chunking_scanner.py` and `chunking_job.py` both issue raw `select`/`update` statements against `Page` directly. |
+| `packages/backend-core/app/db/repositories/chunks_repository.py` | `ChunksRepository` — generic chunk CRUD, similarity search (used by RAG retrieval). **Not used by `ChunkingJob`**, which upserts/deletes chunk rows directly via raw SQLAlchemy `insert(...).on_conflict_do_update(...)` / `delete(...)` for per-page transactional control. Its `keyword_search` method lives on this class for historical reasons but no longer queries `chunks` at all — it queries `pages.text_search` (see [CHAT_RAG_DESIGN.md](CHAT_RAG_DESIGN.md)). |
+| `packages/backend-core/app/db/repositories/pages_repository.py` | `PagesRepository` — generic page CRUD/upsert, plus `search_content_pages` (the home Content-tab keyword search over `pages.text_search`). **Not used by chunking's page-claiming or update logic** — `chunking_scanner.py` and `chunking_job.py` both issue raw `select`/`update` statements against `Page` directly. |
 | `packages/backend-core/app/services/auto_correct_service.py` | `apply_auto_corrections_to_page` — not a chunking-stage file, but the reason `ready` books stay eligible for chunking: it resets `chunking_milestone`/`embedding_milestone` to `idle` on corrected pages. |
 | `services/backend/api/endpoints/books_router.py` | Hosts `POST /{book_id}/reprocess/chunking`, the admin-facing chunking recovery endpoint. |
 

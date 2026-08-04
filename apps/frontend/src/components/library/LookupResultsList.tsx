@@ -1,6 +1,7 @@
 import { RefreshCw, Search } from 'lucide-react';
 import React from 'react';
 import { useI18n } from '../../i18n/I18nContext';
+import { highlightText } from '../../utils/highlightText';
 import { parseDefinition } from '../../utils/uyghurAlphabet';
 
 export interface LookupItem {
@@ -17,10 +18,11 @@ interface LookupResultsListProps {
   items: LookupItem[];
   isLoading: boolean;
   hasQuery: boolean;
+  query: string;
   noResultsTitleKey?: string;
 }
 
-export const LookupResultsList: React.FC<LookupResultsListProps> = ({ items, isLoading, hasQuery, noResultsTitleKey }) => {
+export const LookupResultsList: React.FC<LookupResultsListProps> = ({ items, isLoading, hasQuery, query, noResultsTitleKey }) => {
   const { t } = useI18n();
 
   if (isLoading && items.length === 0) {
@@ -62,7 +64,7 @@ export const LookupResultsList: React.FC<LookupResultsListProps> = ({ items, isL
             className={item.primaryClassName ?? 'text-base font-bold text-[#1a1a1a] dark:text-slate-100 uyghur-text'}
             dir={item.primaryDir}
           >
-            {item.primary}
+            {highlightText(item.primary, query)}
           </p>
           {item.secondary && (
             <p
@@ -80,7 +82,7 @@ export const LookupResultsList: React.FC<LookupResultsListProps> = ({ items, isL
                     </strong>
                   );
                 }
-                return <span key={idx}>{chunk.content}</span>;
+                return <span key={idx}>{highlightText(chunk.content, query)}</span>;
               })}
             </p>
           )}

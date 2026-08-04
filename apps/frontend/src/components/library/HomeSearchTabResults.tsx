@@ -98,17 +98,17 @@ export const HomeSearchTabResults: React.FC<HomeSearchTabResultsProps> = ({ acti
 
   switch (activeTab) {
     case 'dictionary':
-      return <LookupResultsList items={dictionary.results.map(mapDictionary)} isLoading={dictionary.isLoading} hasQuery={hasQuery} noResultsTitleKey={noResultsTitleKey} />;
+      return <LookupResultsList items={dictionary.results.map(mapDictionary)} isLoading={dictionary.isLoading} hasQuery={hasQuery} query={trimmedQuery} noResultsTitleKey={noResultsTitleKey} />;
     case 'names':
-      return <LookupResultsList items={names.results.map(mapName)} isLoading={names.isLoading} hasQuery={hasQuery} noResultsTitleKey={noResultsTitleKey} />;
+      return <LookupResultsList items={names.results.map(mapName)} isLoading={names.isLoading} hasQuery={hasQuery} query={trimmedQuery} noResultsTitleKey={noResultsTitleKey} />;
     case 'history':
-      return <LookupResultsList items={history.results.map(mapHistory)} isLoading={history.isLoading} hasQuery={hasQuery} noResultsTitleKey={noResultsTitleKey} />;
+      return <LookupResultsList items={history.results.map(mapHistory)} isLoading={history.isLoading} hasQuery={hasQuery} query={trimmedQuery} noResultsTitleKey={noResultsTitleKey} />;
     case 'proverbs':
-      return <LookupResultsList items={proverbs.results.map(mapProverb)} isLoading={proverbs.isLoading} hasQuery={hasQuery} noResultsTitleKey={noResultsTitleKey} />;
+      return <LookupResultsList items={proverbs.results.map(mapProverb)} isLoading={proverbs.isLoading} hasQuery={hasQuery} query={trimmedQuery} noResultsTitleKey={noResultsTitleKey} />;
     case 'synonyms':
-      return <LookupResultsList items={synonyms.results.map(mapSynonyms)} isLoading={synonyms.isLoading} hasQuery={hasQuery} noResultsTitleKey={noResultsTitleKey} />;
+      return <LookupResultsList items={synonyms.results.map(mapSynonyms)} isLoading={synonyms.isLoading} hasQuery={hasQuery} query={trimmedQuery} noResultsTitleKey={noResultsTitleKey} />;
     case 'en-ug':
-      return <LookupResultsList items={enUg.results.map(mapEnUg)} isLoading={enUg.isLoading} hasQuery={hasQuery} noResultsTitleKey={noResultsTitleKey} />;
+      return <LookupResultsList items={enUg.results.map(mapEnUg)} isLoading={enUg.isLoading} hasQuery={hasQuery} query={trimmedQuery} noResultsTitleKey={noResultsTitleKey} />;
     case 'quran':
       return <QuranResultsList items={quran.results} isLoading={quran.isLoading} hasQuery={hasQuery} noResultsTitleKey={noResultsTitleKey} />;
     case 'spell-check':

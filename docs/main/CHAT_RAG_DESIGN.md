@@ -16,7 +16,7 @@ Key characteristics:
 - **The two pipelines share retrieval, not orchestration.** Both build a `QueryContext` (`rag/context.py`), both drive the same 19 ADK tools (`rag/agent/tools.py`) over the same shared primitives (`rag/retrieval.py`: `embed_query`, `vector_search`, `find_books_by_title_in_question`, `graph_entity_lookup`), and both use the same `AGENT_SYSTEM_PROMPT` (`rag/agent/prompts.py`) and the same observation-envelope shape. They diverge in who chooses the tool calls, how context is condensed before answer synthesis, which answer-prompt module is used, and whether the turn is persisted and scored.
 - **`ChatOrchestrator` reuses `DeterministicRAGHandler` as a utility, not as a handler.** It calls `DeterministicRAGHandler()._llm_analyze_query()` directly on every request for signal extraction, regardless of `use_deterministic_router`. It never calls `execute_path()`, `graph_router.py`, `handle()`, or `handle_stream()`.
 - **Only `ChatOrchestrator` reranks.** `rerank_context` (`rag/agent/reranker.py`) is imported and called from exactly one place: `orchestrator.py`. Both registry-path handlers use the relative-score heuristic `_grade_context` unconditionally.
-- **Only `ChatOrchestrator` handles exact-phrase questions.** `phrase_intent.detect_phrase_intent()` classifies a quoted phrase (`"..."` / `«...»` / `"..."`) or the explicit `ChatRequest.exact_phrase` flag as exact-phrase intent; when it fires, `ChatOrchestrator` skips the retrieval agent entirely and answers from a keyword-only leg (`chat/exact_phrase.py` → `retrieval.exact_phrase_chunk_search` → `ChunksRepository.keyword_search`'s `phraseto_tsquery` match). The registry path (`RAGService`/`HandlerRegistry`) never calls `detect_phrase_intent` and has no exact-phrase behavior — a quoted question there is just ordinary question text. Vector search itself (`vector_search` in `retrieval.py`) is vector-only on both pipelines; there is no hybrid vector+keyword fusion anymore (removed along with `rag_hybrid_search_enabled` — see Feature Flags).
+- **Only `ChatOrchestrator` handles exact-phrase questions.** `phrase_intent.detect_phrase_intent()` classifies a quoted phrase (`"..."` / `«...»` / `"..."`) or the explicit `ChatRequest.exact_phrase` flag as exact-phrase intent; when it fires, `ChatOrchestrator` skips the retrieval agent entirely and answers from a keyword-only leg (`chat/exact_phrase.py` → `retrieval.exact_phrase_chunk_search` → `ChunksRepository.keyword_search`'s `phraseto_tsquery` match against `pages.text_search` — a hit is a whole page, not a chunk, despite the method living on `ChunksRepository`). The registry path (`RAGService`/`HandlerRegistry`) never calls `detect_phrase_intent` and has no exact-phrase behavior — a quoted question there is just ordinary question text. Vector search itself (`vector_search` in `retrieval.py`) is vector-only on both pipelines; there is no hybrid vector+keyword fusion anymore (removed along with `rag_hybrid_search_enabled` — see Feature Flags).
 - **Only `ChatOrchestrator` triggers the judge.** It writes `rag_evaluations.eval_status = 'queued'` and enqueues `rag_eval_job`. `RAGService._record_eval()` always writes `eval_status = 'skipped'` and never enqueues anything — and it writes no row at all unless `system_configs.rag_eval_enabled == "true"` (migration `044_eval_status_constraint_and_config_seed.sql` seeds it `'false'`).
 - **`is_global` is derived differently on each path.** `ChatOrchestrator`'s caller computes `is_global = req.is_global or req.book_id == "global"`; `RAGService._build_context()` uses `is_global = req.book_id == "global"` only, ignoring `req.is_global`. A request with `isGlobal: true` and a real `bookId` is global on the orchestrator path and book-scoped on the registry path.
 - **Book summaries drive book routing, not answer content.** `search_books_by_summary` / `get_book_summary` (see [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md)) narrow *which* books to search before `search_chunks` runs; chunk passages remain the citable evidence.
@@ -37,7 +37,7 @@ All are `system_configs` rows read per request (hot-reloadable, no deploy).
 
 ## Schema
 
-This stage **writes** four tables and **reads** the artifacts of every prior stage (`books`, `pages`, `chunks`, `book_summaries`, `quran`, and the dictionary/proverb/synonym tables via the dictionary tools).
+This stage **writes** four tables and **reads** the artifacts of every prior stage (`books`, `pages`, `chunks`, `book_summaries`, `quran`, and the dictionary/proverb/synonym tables via the dictionary tools). It also reads `pages.text_search` — a generated `tsvector` column (migration `076_add_pages_text_search.sql`, GIN index `idx_pages_text_search`) that the exact-phrase leg (`ChunksRepository.keyword_search`) matches via `phraseto_tsquery('simple', phrase)`. `chunks` no longer has an equivalent column — keyword search moved off `chunks.text_search` when it was dropped by migration `083_drop_chunks_text_search.sql`; see [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md#schema).
 
 ### `conversations` (written by `ChatOrchestrator` only)
 
@@ -194,7 +194,7 @@ flowchart TD
         CONV[("conversations:<br/>get-or-create + title,<br/>load last 6 messages")]
         OCTX["Build QueryContext<br/>+ set_current_query_context"]
         PGATE{"phrase_intent.is_exact?<br/>(quoted text, or<br/>exactPhrase flag)"}
-        EXACT["exact_phrase_chunk_search<br/>(keyword-only leg, phrases<br/>ANDed via chunks.text_search)"]
+        EXACT["exact_phrase_chunk_search<br/>(keyword-only leg, phrases<br/>ANDed via pages.text_search)"]
         PAGEQ{"phrase_intent.is_page_finding?"}
         PAGEHITS["format_page_hits →<br/>{type:page_hits} SSE event;<br/>summarize_page_hits_as_text<br/>— no answer-agent call"]
         SIG["_llm_analyze_query<br/>(DeterministicRAGHandler used<br/>as a utility) → planning"]
@@ -342,7 +342,7 @@ flowchart TD
       categories=ctx.character_categories, limit=rag_keyword_top_k,
       is_global=is_global) — wraps retrieval.exact_phrase_chunk_search
       (one ChunksRepository.keyword_search call per phrase, intersected
-      by (book_id, page, chunk_index)); when the book-scoped search finds
+      by (book_id, page)); when the book-scoped search finds
       nothing and the turn is global, retries once with book_ids=None.
       Packages the hits as a single search_chunks-shaped observation so
       the existing grading/rerank/answer pipeline can consume them
@@ -746,13 +746,14 @@ The agent's tool-selection order is governed entirely by prose in `AGENT_SYSTEM_
 ```
 1. Run one ChunksRepository.keyword_search(phrase=...) call per phrase
    concurrently (asyncio.gather) — keyword-only, no vector or graph
-   fusion. keyword_search itself matches `chunks.text_search` (a
-   generated tsvector column, migration 074) against
+   fusion. keyword_search itself matches `pages.text_search` (a
+   generated tsvector column, migration 076; chunks.text_search was
+   dropped by migration 083 once this leg moved to pages) against
    phraseto_tsquery('simple', phrase) — a contiguous phrase match, not
-   an OR-based any-word match.
+   an OR-based any-word match. A hit is one whole page, not a chunk.
 2. Multiple phrases are ANDed: intersect each leg's results by
-   (book_id, page, chunk_index) rather than concatenating/de-duping —
-   a result must contain every quoted phrase.
+   (book_id, page) rather than concatenating/de-duping — a result must
+   contain every quoted phrase.
 3. Sort the intersection by rank (Postgres ts_rank) descending, and
    truncate to limit (from rag_keyword_top_k, default 10).
 ```
@@ -896,7 +897,7 @@ All chat routes are mounted at `/api/chat` (`services/backend/main.py`), `questi
 - **Prompt-injection surface: book content flows into LLM context.** OCR'd book text is untrusted input from a third-party document, and it reaches the model verbatim through `search_chunks` → `_grade_context`/`rerank_context` → the answer prompt, and through `get_current_page` (raw `pages.text`, markdown-stripped). There is no sanitization, escaping, or instruction-hierarchy marker on retrieved passages; the only structural separation is the `[BookID: …, Book: …, Page: N]` header `format_document` prepends and the `\n\n---\n\n` joiner. Three consequences are worth naming explicitly:
   - The **answer agent** receives the retrieved context *inside its own system instruction* (`build_answer_agent` concatenates `f"{base_instructions}\n\nRetrieved Library Context:\n{graded_context}"`), so book text sits at the same prompt level as the citation and grammar rules rather than in a user turn.
   - The **reranker** and the **judge** both interpolate retrieved passages into their prompts (`RAG_RERANK_PROMPT`, `RAG_JUDGE_PROMPT`), so a crafted passage could influence its own relevance ranking or its turn's quality score. Both parse strictly-typed output (`response_schema=list[int]`; three clamped floats) and raise on anything unexpected, which bounds the damage to a fallback or a `failed` row rather than arbitrary behavior.
-  - Tool *arguments* are model-chosen, but no tool takes free-form SQL. Every retrieval path goes through SQLAlchemy bound parameters, including the raw-SQL Quran query in `retrieval.py` (`sa_text(...)` with `:embedding` / `:limit` bind params), the category filter (`sa_text("categories && CAST(:cats AS text[])").bindparams(...)`), and `ChunksRepository.keyword_search`'s `phraseto_tsquery('simple', :phrase)` used by the exact-phrase leg — a user-supplied phrase becomes a bound tsquery parameter, not interpolated SQL. `book_ids` from the model are coerced with `str()` and used only as bound `IN` values.
+  - Tool *arguments* are model-chosen, but no tool takes free-form SQL. Every retrieval path goes through SQLAlchemy bound parameters, including the raw-SQL Quran query in `retrieval.py` (`sa_text(...)` with `:embedding` / `:limit` bind params), the category filter (`sa_text("categories && CAST(:cats AS text[])").bindparams(...)`), and `ChunksRepository.keyword_search`'s `phraseto_tsquery('simple', :phrase)` (matched against `pages.text_search`) used by the exact-phrase leg — a user-supplied phrase becomes a bound tsquery parameter, not interpolated SQL. `book_ids` from the model are coerced with `str()` and used only as bound `IN` values.
 - **Cross-user data access is checked per row, not just per role.** `POST /api/chat/feedback` re-reads the `RAGEvaluation` and compares `user_id` before updating (the code comments call out the sequential-integer enumeration risk). Conversation read/delete both scope by `current_user.id`. Note that `RAGEvaluation.user_id` is a nullable `SET NULL` FK, so rows whose user was deleted can never be matched by the feedback ownership check.
 - **Admin-only curation surface.** `GET/PATCH /api/questions/admin/questions*` require `require_admin` — these expose every user's raw questions, so the role gate is the only thing preventing cross-user question disclosure through the admin list.
 - **Answer-side output handling.** `fix_malformed_citations` rewrites model-emitted citation links into the expected `ref:book_id:page` form; it is a formatting repair, not a sanitizer. Rendering safety for markdown/links is the frontend's responsibility.
@@ -944,7 +945,7 @@ No dedicated test file exists for `HandlerRegistry` selection itself, for `RAGSe
 
 - [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md) — produces `book_summaries`, which this stage consumes through `search_books_by_summary` (vector search over summary embeddings, `settings.summary_threshold` = 0.30, `limit=30`) and `get_book_summary` (full summary text, server-side sister-volume expansion, intro-excerpt fallback when no summary row exists). This is the "which book(s) is the question about" step that precedes chunk retrieval.
 - [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md) — produces the `chunks.embedding` vectors `vector_search` queries; the `gemini_embedding_model` used here must match the one used there.
-- [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md) — defines the chunk boundaries and `chunks.text` that become the citable passages, the generated `chunks.text_search` tsvector column (migration `074_add_chunks_text_search.sql`) this stage's exact-phrase leg queries, and the TOC exclusion this stage also honors.
+- [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md) — defines the chunk boundaries and `chunks.text` that become the citable passages (vector-search evidence), the generated `pages.text_search` tsvector column (migration `076_add_pages_text_search.sql`) this stage's exact-phrase leg queries, and the TOC exclusion this stage also honors. `chunks.text_search` (migration `074_add_chunks_text_search.sql`) was retired by migration `083_drop_chunks_text_search.sql`.
 - [OCR_DESIGN.md](OCR_DESIGN.md) — produces `pages.text`, read directly by `get_current_page` and by the dev-only fuzzy fallback in `vector_search`. Also the actual home of `POST /api/ai/ocr`.
 - [SPELLCHECK_DESIGN.md](SPELLCHECK_DESIGN.md) — the auto-correct pass that improves the text this stage retrieves; `check_word_spelling` reuses the same word/dictionary tables from the read side.
 - [DOCUMENT_DISCOVERY_DESIGN.md](DOCUMENT_DISCOVERY_DESIGN.md) — how a book enters the library in the first place.

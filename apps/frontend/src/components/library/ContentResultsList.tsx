@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
 import { ContentSearchHit } from '../../services/searchTabsService';
+import { highlightText } from '../../utils/highlightText';
 
 interface ContentResultsListProps {
   hits: ContentSearchHit[];
@@ -35,30 +36,6 @@ const BookCoverThumbnail: React.FC<{ src?: string | null; alt: string }> = ({ sr
       <BookOpen size={14} strokeWidth={2} />
     </div>
   );
-};
-
-const highlightSnippet = (snippet: string, query: string): React.ReactNode => {
-  const trimmed = query.trim();
-  if (!trimmed) return snippet;
-
-  try {
-    const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const parts = snippet.split(new RegExp(`(${escaped})`, 'gi'));
-    return parts.map((part, index) =>
-      part.toLowerCase() === trimmed.toLowerCase() ? (
-        <mark
-          key={index}
-          className="bg-amber-200/90 dark:bg-amber-500/30 text-[#1a1a1a] dark:text-amber-200 font-semibold px-1 py-0.5 rounded shadow-sm"
-        >
-          {part}
-        </mark>
-      ) : (
-        part
-      )
-    );
-  } catch {
-    return snippet;
-  }
 };
 
 export const ContentResultsList: React.FC<ContentResultsListProps> = ({
@@ -154,7 +131,7 @@ export const ContentResultsList: React.FC<ContentResultsListProps> = ({
               onCopy={isGuest ? (e) => e.preventDefault() : undefined}
               onContextMenu={isGuest ? (e) => e.preventDefault() : undefined}
             >
-              {highlightSnippet(hit.snippet, query)}
+              {highlightText(hit.snippet, query)}
             </div>
 
             {/* Footer action */}

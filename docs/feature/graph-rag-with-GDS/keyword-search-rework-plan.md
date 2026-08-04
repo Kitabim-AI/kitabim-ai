@@ -43,7 +43,7 @@ Goal: keyword leg is OFF by default; ON only for exact-match intent. Non-phrase 
   - [x] `vector_search`/(removed) `_search_chunks` in `services/rag/retrieval.py` are now vector-only, unconditionally — the keyword leg no longer blends with vector results at all (not gated by a flag; the fusion mechanism itself was removed, see 1.4).
   - [x] `ChatOrchestrator.stream_response` (`services/chat/orchestrator.py`) — the real chat entry point (`DeterministicRAGHandler` handles only fast-signal pre-processing, not full retrieval/answer generation) — gates on `detect_phrase_intent()` right after building `QueryContext`: exact-phrase questions skip the ADK retrieval agent's LLM-driven tool loop (no vector/graph tool calls at all) and go straight to `run_exact_phrase_retrieval()` (new `services/chat/exact_phrase.py`), which calls the keyword-only leg and packages hits as a `search_chunks`-shaped observation.
   - [x] Page-finding exact requests (`PhraseIntent.is_page_finding`) skip reranking/grading and the LLM answer agent entirely; a new `page_hits` SSE event carries structured hits (`format_page_hits`), with a plain-text summary (`summarize_page_hits_as_text`) persisted to conversation history. Non-page-finding exact-phrase questions still get an LLM-synthesized answer, built only from the exact-phrase leg's `graded_context`.
-  - [x] Multiple quoted phrases are ANDed via `exact_phrase_chunk_search` (intersecting per-phrase `keyword_search` results by `(book_id, page_number, chunk_index)`).
+  - [x] Multiple quoted phrases are ANDed via `exact_phrase_chunk_search` (intersecting per-phrase `keyword_search` results by `(book_id, page_number, chunk_index)` at the time). **Superseded 2026-08-04**: `keyword_search` was migrated from `chunks.text_search` to `pages.text_search` (see the Post-launch update at the end of this doc), so the intersection key is now `(book_id, page_number)` — a hit is a whole page, not a chunk.
   - [x] **Scope = current scope**: reader mode passes `[book_id]`; global mode passes `ctx.context_book_ids` (or `None` for all books) — same scope resolution the rest of the turn already uses.
   - [x] Graph lookup (`graph_entity_lookup`) rides along with the ADK `search_chunks` tool (`_run_search_chunks`) for non-phrase questions, unchanged; it's structurally unreachable for exact-phrase questions since the ADK retrieval agent loop (which is what calls that tool) never runs for them.
   - [x] New API surface: `ChatRequestDTO.exact_phrase` / `ChatRequest.exactPhrase` (defaults `false`) thread the explicit UI "Exact phrase" mode flag from `chat_router.py` through to `detect_phrase_intent()`.
@@ -109,7 +109,7 @@ Goal: turn the home search box into a multi-tab search surface with a **fixed ta
 | 1 | **Ask** | Natural-language question → RAG (vector + graph) | chat/RAG flow | ✅ exists |
 | 2 | **Books** | Find books by **title / author / category** | `books_repository` full-text | ✅ exists |
 | 3 | **Quran** | Search by surah/ayah or verse text | `search_quran` | ✅ exists |
-| 4 | **Content** | **Exact phrase inside book content** → matching books/pages | `phraseto_tsquery` over `chunks` (Phase 1) | 🆕 new |
+| 4 | **Content** | **Exact phrase inside book content** → matching books/pages | `phraseto_tsquery` over `chunks` (Phase 1), later migrated to `pages` (see Post-launch update) | 🆕 new |
 | 5 | **Dictionary** | Uyghur word meaning | `lookup_uyghur_word` | ✅ exists |
 | 6 | **Names** | Uyghur name origin/meaning | `lookup_uyghur_name` | ✅ exists |
 | 7 | **History Terms** | Historical term lookup | `lookup_history_term` | ✅ exists |
@@ -131,7 +131,7 @@ Goal: turn the home search box into a multi-tab search surface with a **fixed ta
   - [x] **Proverbs**: `find a proverb about ...` → `lookup_proverbs`.
   - [x] **Spell Check**: `is ... spelled correctly?` → `check_word_spelling` (chat tool already existed; the tab itself needed a new public REST endpoint — see 3.3).
   - [x] **EN↔UG**: `translate ... to Uyghur` → `translate_english_to_uyghur`.
-- [x] **3.2 "Content" tab (new) — backend**: `GET /api/books/content-search` (`services/backend/api/endpoints/books_router.py`) — exact-phrase search over `chunks.text` via `ChunksRepository.find_books_by_exact_phrase()` (new; `phraseto_tsquery` `EXISTS` subquery against `books`, grouped/deduped naturally since it selects `Book` rows directly), paginated (`page`/`pageSize` → `PaginatedBooks` with `total`). Guest/reader requests are restricted to `status == "ready"` and public/legacy-NULL visibility, matching every other book-listing endpoint in this router — admins/editors see private/draft book content too.
+- [x] **3.2 "Content" tab (new) — backend**: `GET /api/books/content-search` (`services/backend/api/endpoints/books_router.py`) — exact-phrase search over `chunks.text` via `ChunksRepository.find_books_by_exact_phrase()` (new; `phraseto_tsquery` `EXISTS` subquery against `books`, grouped/deduped naturally since it selects `Book` rows directly), paginated (`page`/`pageSize` → `PaginatedBooks` with `total`). Guest/reader requests are restricted to `status == "ready"` and public/legacy-NULL visibility, matching every other book-listing endpoint in this router — admins/editors see private/draft book content too. **Superseded 2026-08-04**: `find_books_by_exact_phrase()` and the chunk-grouped `search_content_chunks()` it grew into were deleted; the endpoint now calls `PagesRepository.search_content_pages()` instead — see the Post-launch update below and `docs/superpowers/specs/2026-08-04-pages-content-keyword-search-design.md`.
   - [x] **Note**: this browse/discovery search is **separate** from the in-chat keyword retrieval leg. The `rag_keyword_top_k` cap applies **only to chat retrieval** to bound LLM context — it does **not** apply here; the endpoint paginates (infinite scroll) instead.
   - Frontend wiring (the tab UI calling this endpoint) is part of 3.1, not started.
 - [x] **3.3 Existing tabs**: "Ask" and "Books" wire straight through the existing `AppContext`/`useBooks` book-search path (unchanged). "Quran", "Dictionary", "Names", "History Terms", "Proverbs", "EN↔UG" call their pre-existing `GET .../search?q=&limit=` routers via the new `searchTabsService.ts`. The one gap found in 3.1A's audit — `check_word_spelling` had no public REST route, only the chat tool — is closed by the new `GET /api/dictionary/check-spelling?word=` endpoint (`dictionary_router.py`), used by both the "Spell Check" tab and available for any future non-chat caller.
@@ -165,3 +165,16 @@ Goal: turn the home search box into a multi-tab search surface with a **fixed ta
 - BM25 / ParadeDB `pg_search` – **not possible on Cloud SQL**.
 - LLM-based keyword extraction for general questions – dropped in favor of the explicit exact-phrase trigger.
 - Corpus-statistics stopword table (`ts_stat` / IDF) – not needed once the keyword leg only runs on exact phrases; revisit only if broad keyword search returns.
+
+---
+
+## Post-launch update (2026-08-04): keyword search moved from `chunks` to `pages`
+
+Everything above (Phase 1–3) shipped against `chunks.text_search` (migration `074_add_chunks_text_search.sql`). A single OCR'd page is split into multiple `chunks` rows, so both keyword legs described above returned multiple hits for the same page — the Content tab needed a chunk-grouping/dedup step, and the exact-phrase chat leg diluted `ts_rank` across chunk-level fragments. This was reworked to query `pages` directly instead, one row per page:
+
+- Migration `076_add_pages_text_search.sql` added the same generated `tsvector` shape (`GENERATED ALWAYS AS to_tsvector('simple', text) STORED`) + GIN index (`idx_pages_text_search`) to `pages`.
+- `PagesRepository.search_content_pages()` replaced `ChunksRepository.find_books_by_exact_phrase()` / `search_content_chunks()` (both deleted) for the home Content tab — see `docs/superpowers/specs/2026-08-04-pages-content-keyword-search-design.md` for the full design.
+- `ChunksRepository.keyword_search()` — still that name, still that class, for historical/organizational reasons only — was rewritten to query `pages.text_search` instead of `chunks.text_search` for the chat exact-phrase leg (`retrieval.exact_phrase_chunk_search`). Its multi-phrase AND intersection key dropped `chunk_index`: it's now `(book_id, page_number)`.
+- Migration `083_drop_chunks_text_search.sql` dropped `chunks.text_search` and `idx_chunks_text_search` once nothing queried them anymore.
+
+See [CHAT_RAG_DESIGN.md](../../main/CHAT_RAG_DESIGN.md) and [CHUNKING_DESIGN.md](../../main/CHUNKING_DESIGN.md) for the living architecture docs.
