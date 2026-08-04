@@ -37,8 +37,8 @@ const mapDictionary = (e: DictionaryEntry): LookupItem => ({ id: e.id, primary: 
 const mapName = (e: NameEntry): LookupItem => ({ id: e.id, primary: e.name });
 const mapHistory = (e: HistoryTermEntry): LookupItem => ({
   id: e.id,
-  primary: e.term,
-  secondary: e.definition || e.transliteration,
+  primary: e.transliteration ? `${e.term} (${e.transliteration})` : e.term,
+  secondary: e.definition,
 });
 const mapSynonyms = (e: SynonymEntry): LookupItem => ({
   id: e.id,

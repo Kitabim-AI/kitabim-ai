@@ -70,3 +70,39 @@ async def test_delete_history_entry_not_found():
 
     assert exc_info.value.status_code == 404
     mock_session.commit.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_search_history_dictionary():
+    setup_paths()
+    from api.endpoints.history_dictionary_router import search_history_dictionary
+
+    mock_session = AsyncMock()
+    mock_res = MagicMock()
+    mock_item = MagicMock()
+    mock_item.id = 1
+    mock_item.term = "كاسى"
+    mock_item.transliteration = "Kasi"
+    mock_item.definition = "ھىندىستاندىكى قەدىمكى دۆلەت"
+    mock_item.letter_group = "ك"
+
+    mock_res.scalars.return_value.all.return_value = [mock_item]
+    mock_session.execute.return_value = mock_res
+
+    res = await search_history_dictionary(q="دۆلەت", limit=10, session=mock_session)
+
+    assert len(res) == 1
+    assert res[0].term == "كاسى"
+    mock_session.execute.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_search_history_dictionary_empty_query():
+    setup_paths()
+    from api.endpoints.history_dictionary_router import search_history_dictionary
+
+    mock_session = AsyncMock()
+    res = await search_history_dictionary(q="   ", limit=10, session=mock_session)
+
+    assert res == []
+    mock_session.execute.assert_not_called()

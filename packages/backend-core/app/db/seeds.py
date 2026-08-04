@@ -149,6 +149,11 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Timeout threshold in hours after which a pending/running batch embedding job is marked stale and retried.",
         },
         {
+            "key": "history_extraction_enabled",
+            "value": "true",
+            "description": "Globally enable/disable Uyghur history dictionary term extraction feature. Set to 'true' to enable or 'false' to disable.",
+        },
+        {
             "key": "history_extraction_model",
             "value": "gemini-2.5-flash",
             "description": "Gemini model used for structured Uyghur history dictionary term extraction and factual synthesis.",

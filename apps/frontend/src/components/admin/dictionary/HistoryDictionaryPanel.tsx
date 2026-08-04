@@ -110,7 +110,7 @@ export const HistoryDictionaryPanel: React.FC = () => {
     setIsSearching(true);
     try {
       const resp = await authFetch(
-        `/api/history-dictionary/search?q=${encodeURIComponent(q)}&limit=10`,
+        `/api/history-dictionary/search?q=${encodeURIComponent(q)}&limit=30`,
       );
       if (resp.ok) setSuggestions(await resp.json());
     } catch (e) {

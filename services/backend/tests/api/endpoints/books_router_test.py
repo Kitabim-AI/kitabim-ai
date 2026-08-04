@@ -158,35 +158,28 @@ async def test_get_books():
 
 
 @pytest.mark.asyncio
-async def test_search_book_content_returns_paginated_books():
+async def test_search_book_content_returns_paginated_hits():
     setup_paths()
     from api.endpoints.books_router import search_book_content
-    from app.db.models import Book as BookDB
-    from datetime import datetime, timezone
 
     mock_session = AsyncMock()
 
-    mock_book = BookDB(
-        id="book-1",
-        content_hash="hash-1",
-        title="Test Book",
-        author="Test Author",
-        total_pages=10,
-        status="ready",
-        upload_date=datetime.now(timezone.utc),
-        visibility="public",
-        categories=[],
-        read_count=0,
-        ocr_milestone="succeeded",
-        chunking_milestone="succeeded",
-        embedding_milestone="succeeded",
-        spell_check_milestone="succeeded",
-    )
+    mock_hit = {
+        "id": "book-1_5",
+        "book_id": "book-1",
+        "book_title": "Test Book",
+        "book_author": "Test Author",
+        "book_volume": 1,
+        "book_cover_url": "/covers/1.jpg",
+        "page_number": 5,
+        "snippet": "Test snippet page content",
+        "rank": 0.5,
+    }
 
     mock_repo = AsyncMock()
-    mock_repo.find_books_by_exact_phrase = AsyncMock(return_value=([mock_book], 1))
+    mock_repo.search_content_pages = AsyncMock(return_value=([mock_hit], 1))
 
-    with patch("api.endpoints.books_router.ChunksRepository", return_value=mock_repo):
+    with patch("api.endpoints.books_router.PagesRepository", return_value=mock_repo):
         result = await search_book_content(
             q="king Babur",
             page=1,
@@ -196,9 +189,9 @@ async def test_search_book_content_returns_paginated_books():
         )
 
     assert result.total == 1
-    assert len(result.books) == 1
-    assert result.books[0].id == "book-1"
-    mock_repo.find_books_by_exact_phrase.assert_awaited_once_with(
+    assert len(result.hits) == 1
+    assert result.hits[0].id == "book-1_5"
+    mock_repo.search_content_pages.assert_awaited_once_with(
         "king Babur", skip=0, limit=40, restrict_to_public=True
     )
 
@@ -213,9 +206,9 @@ async def test_search_book_content_admin_sees_private_books():
     mock_user.role = "admin"
 
     mock_repo = AsyncMock()
-    mock_repo.find_books_by_exact_phrase = AsyncMock(return_value=([], 0))
+    mock_repo.search_content_pages = AsyncMock(return_value=([], 0))
 
-    with patch("api.endpoints.books_router.ChunksRepository", return_value=mock_repo):
+    with patch("api.endpoints.books_router.PagesRepository", return_value=mock_repo):
         await search_book_content(
             q="king Babur",
             page=2,
@@ -224,7 +217,7 @@ async def test_search_book_content_admin_sees_private_books():
             session=mock_session,
         )
 
-    mock_repo.find_books_by_exact_phrase.assert_awaited_once_with(
+    mock_repo.search_content_pages.assert_awaited_once_with(
         "king Babur", skip=20, limit=20, restrict_to_public=False
     )
 

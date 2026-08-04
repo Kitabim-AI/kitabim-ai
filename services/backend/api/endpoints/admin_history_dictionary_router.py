@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.core.i18n import t
 from app.db.session import get_session
 from app.db.repositories.dictionary_repository import DictionaryRepository
+from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.services.dictionary_staging_service import (
     DictionaryStagingService,
     StagingConflictsUnresolvedError,
@@ -61,9 +62,18 @@ ResolveFactRequest.model_rebuild()
 async def trigger_history_extraction(
     book_id: str,
     req: ExtractHistoryRequest,
+    db: AsyncSession = Depends(get_session),
     current_admin: User = Depends(require_admin),
 ):
     """Trigger background ARQ extraction task for a specific book ("تارىخىي ئاتالغۇلارنى تېپىش")."""
+    config_repo = SystemConfigsRepository(db)
+    enabled = await config_repo.get_value("history_extraction_enabled", "true")
+    if enabled.strip().lower() != "true":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="History dictionary extraction feature is currently disabled via system_configs.",
+        )
+
     job_id = await enqueue_task(
         "extract_book_history_terms_task",
         book_id,

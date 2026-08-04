@@ -8,7 +8,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, func, distinct, delete
+from sqlalchemy import select, func, distinct, delete, or_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
@@ -71,10 +71,20 @@ async def search_history_dictionary(
     q = q.strip()
     if not q:
         return []
+    pattern = f"%{q}%"
     stmt = (
         select(HistoryDictionary)
-        .where(HistoryDictionary.term.ilike(f"%{q}%"))
-        .order_by(func.length(HistoryDictionary.term), HistoryDictionary.term)
+        .where(
+            or_(
+                HistoryDictionary.term.ilike(pattern),
+                HistoryDictionary.definition.ilike(pattern),
+            )
+        )
+        .order_by(
+            case((HistoryDictionary.term.ilike(pattern), 0), else_=1),
+            func.length(HistoryDictionary.term),
+            HistoryDictionary.term,
+        )
         .limit(limit)
     )
     res = await session.execute(stmt)

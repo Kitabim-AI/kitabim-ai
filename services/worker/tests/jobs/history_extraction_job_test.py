@@ -17,7 +17,9 @@ async def test_extract_book_history_terms_task_realtime():
         "services.worker.jobs.history_extraction_job.HistoryExtractionService"
     ) as mock_service_cls:
         mock_config = AsyncMock()
-        mock_config.get_value.return_value = "false"
+        mock_config.get_value.side_effect = lambda key, default="true": (
+            "false" if key == "gemini_batch_history_extraction_enabled" else "true"
+        )
         mock_config_cls.return_value = mock_config
 
         mock_instance = AsyncMock()
@@ -83,7 +85,9 @@ async def test_extract_book_history_terms_task_no_pages():
         "services.worker.jobs.history_extraction_job.SystemConfigsRepository"
     ) as mock_config_cls:
         mock_config = AsyncMock()
-        mock_config.get_value.return_value = "false"
+        mock_config.get_value.side_effect = lambda key, default="true": (
+            "false" if key == "gemini_batch_history_extraction_enabled" else "true"
+        )
         mock_config_cls.return_value = mock_config
 
         with patch(
@@ -98,6 +102,29 @@ async def test_extract_book_history_terms_task_no_pages():
             )
             assert res["status"] == "warning"
             assert res["stagedCount"] == 0
+
+
+@pytest.mark.asyncio
+async def test_extract_book_history_terms_task_disabled():
+    mock_session = AsyncMock()
+    mock_session_factory = MagicMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_session
+
+    ctx = {"db_session_factory": mock_session_factory}
+
+    with patch(
+        "services.worker.jobs.history_extraction_job.SystemConfigsRepository"
+    ) as mock_config_cls:
+        mock_config = AsyncMock()
+        mock_config.get_value.side_effect = lambda key, default="true": (
+            "false" if key == "history_extraction_enabled" else "false"
+        )
+        mock_config_cls.return_value = mock_config
+
+        res = await extract_book_history_terms_task(
+            ctx, book_id="book-99", min_significance=5
+        )
+        assert res["status"] == "skipped"
 
 
 @pytest.mark.asyncio

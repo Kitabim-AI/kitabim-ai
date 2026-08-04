@@ -26,10 +26,17 @@ def load_router():
 @pytest.mark.asyncio
 async def test_trigger_history_extraction():
     mod = load_router()
-    with patch.object(mod, "enqueue_task", return_value="job-123"):
+    mock_db = AsyncMock()
+    with patch.object(mod, "enqueue_task", return_value="job-123"), patch.object(
+        mod, "SystemConfigsRepository"
+    ) as mock_config_cls:
+        mock_config = AsyncMock()
+        mock_config.get_value.return_value = "true"
+        mock_config_cls.return_value = mock_config
+
         req = mod.ExtractHistoryRequest(min_significance=5)
         res = await mod.trigger_history_extraction(
-            book_id="book-123", req=req, current_admin=None
+            book_id="book-123", req=req, db=mock_db, current_admin=None
         )
         assert res["status"] == "queued"
         assert res["jobId"] == "job-123"

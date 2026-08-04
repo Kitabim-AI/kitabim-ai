@@ -72,6 +72,20 @@ async def _run_extraction(
     session: Any, book_id: str, min_significance: int
 ) -> Dict[str, Any]:
     config_repo = SystemConfigsRepository(session)
+    enabled = await config_repo.get_value("history_extraction_enabled", "true")
+    if enabled.strip().lower() != "true":
+        log_json(
+            logger,
+            logging.INFO,
+            "History extraction skipped: feature is disabled via system_configs",
+            book_id=book_id,
+        )
+        return {
+            "status": "skipped",
+            "bookId": book_id,
+            "reason": "history_extraction_enabled is false",
+        }
+
     batch_enabled = await config_repo.get_value(
         "gemini_batch_history_extraction_enabled", "false"
     )

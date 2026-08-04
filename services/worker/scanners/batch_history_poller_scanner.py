@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 
 from app.db import session as db_session
+from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.services.batch_history_extraction_service import (
     poll_and_process_batch_history_jobs,
 )
@@ -20,6 +21,16 @@ async def run_batch_history_poller_scanner(ctx) -> None:
     log_json(logger, logging.INFO, "Batch History poller scanner started")
     try:
         async with db_session.async_session_factory() as session:
+            config_repo = SystemConfigsRepository(session)
+            enabled = await config_repo.get_value("history_extraction_enabled", "true")
+            if enabled.strip().lower() != "true":
+                log_json(
+                    logger,
+                    logging.INFO,
+                    "Batch History poller scanner skipped: feature is disabled via system_configs",
+                )
+                return
+
             processed = await poll_and_process_batch_history_jobs(session)
 
         if processed:

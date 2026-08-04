@@ -91,8 +91,7 @@ async def exact_phrase_chunk_search(
 
     Multiple phrases are ANDed together (a result must contain all of them),
     per the resolved decision on multi-phrase queries — implemented as one
-    `keyword_search` call per phrase, intersected by
-    (book_id, page_number, chunk_index).
+    `keyword_search` call per phrase, intersected by (book_id, page_number).
     """
     if not phrases:
         return []
@@ -111,7 +110,7 @@ async def exact_phrase_chunk_search(
 
     def key_of(c: dict) -> tuple:
         page_val = c.get("page") if c.get("page") is not None else c.get("page_number")
-        return (c.get("book_id"), page_val, c.get("chunk_index"))
+        return (c.get("book_id"), page_val)
 
     common_keys = None
     docs: dict = {}

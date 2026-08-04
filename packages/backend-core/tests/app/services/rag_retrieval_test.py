@@ -10,11 +10,10 @@ from unittest.mock import AsyncMock, patch
 from app.services.rag.retrieval import exact_phrase_chunk_search
 
 
-def _doc(book_id, page, chunk_index=0, **kw):
+def _doc(book_id, page, **kw):
     d = {
         "book_id": book_id,
         "page_number": page,
-        "chunk_index": chunk_index,
         "text": "t",
     }
     d.update(kw)

@@ -35,7 +35,6 @@ from app.core.pipeline import (
 )
 from app.db.session import get_session
 from app.db.repositories.books_repository import BooksRepository
-from app.db.repositories.chunks_repository import ChunksRepository
 from app.db.repositories.pages_repository import PagesRepository
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.db.models import (
@@ -722,8 +721,8 @@ async def search_book_content(
         "editor",
     )
 
-    chunks_repo = ChunksRepository(session)
-    hits, total = await chunks_repo.search_content_chunks(
+    pages_repo = PagesRepository(session)
+    hits, total = await pages_repo.search_content_pages(
         q, skip=skip, limit=pageSize, restrict_to_public=restrict_to_public
     )
 

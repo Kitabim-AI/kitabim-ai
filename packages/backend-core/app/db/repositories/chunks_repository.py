@@ -5,10 +5,10 @@ from __future__ import annotations
 import logging
 from typing import List, Optional
 
-from sqlalchemy import select, delete, func, or_, text
+from sqlalchemy import select, delete, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.models import Book, Chunk
+from app.db.models import Chunk
 from app.db.repositories.base_repository import BaseRepository
 
 logger = logging.getLogger("app.db.repositories.chunks_repository")
@@ -236,8 +236,8 @@ class ChunksRepository(BaseRepository[Chunk]):
         limit: int = 10,
     ) -> List[dict]:
         """
-        Postgres full-text EXACT PHRASE search over `chunks.text_search`
-        (a generated tsvector column, migration 074).
+        Postgres full-text EXACT PHRASE search over `pages.text_search`
+        (a generated tsvector column, migration 076).
 
         Uses `phraseto_tsquery('simple', ...)` — a contiguous-phrase match
         (word order and adjacency matter), not the old OR-based
@@ -248,11 +248,16 @@ class ChunksRepository(BaseRepository[Chunk]):
         not 'english', since book content is substantially Uyghur-language
         and 'english' stemming rules don't meaningfully apply.
 
-        Mirrors similarity_search's two-branch (scoped/unscoped) shape and
-        dict keys (plus a `rank` score in place of `similarity`).
+        Sources from `pages` (one row per page) rather than `chunks` — the
+        chat-retrieval keyword leg moved here when `chunks.text_search` was
+        retired (migration 083) in favor of `pages.text_search`, which the
+        home Content-tab search (`PagesRepository.search_content_pages`)
+        already used. Mirrors similarity_search's two-branch (scoped/
+        unscoped) shape and dict keys (plus a `rank` score in place of
+        `similarity`) — `chunk_index` is gone since a hit is now a whole page.
         """
         cat_filter = (
-            "AND b.categories && CAST(:categories AS text[])" if categories else ""
+            "WHERE b.categories && CAST(:categories AS text[])" if categories else ""
         )
 
         if book_ids is not None:
@@ -261,19 +266,18 @@ class ChunksRepository(BaseRepository[Chunk]):
             query = text(f"""
                 WITH keyword_matches AS (
                     SELECT
-                        c.book_id,
-                        c.page_number,
-                        c.chunk_index,
-                        c.text,
-                        ts_rank(c.text_search, phraseto_tsquery('simple', :phrase)) AS rank
-                    FROM chunks c
-                    WHERE c.book_id = ANY(:book_ids)
-                      AND c.text_search @@ phraseto_tsquery('simple', :phrase)
+                        p.book_id,
+                        p.page_number,
+                        p.text,
+                        ts_rank(p.text_search, phraseto_tsquery('simple', :phrase)) AS rank
+                    FROM pages p
+                    WHERE p.book_id = ANY(:book_ids)
+                      AND p.text_search @@ phraseto_tsquery('simple', :phrase)
+                      AND p.is_toc IS NOT TRUE
                 )
                 SELECT
                     km.book_id,
                     km.page_number,
-                    km.chunk_index,
                     km.text,
                     b.title,
                     b.volume,
@@ -281,9 +285,7 @@ class ChunksRepository(BaseRepository[Chunk]):
                     km.rank
                 FROM keyword_matches km
                 JOIN books b ON km.book_id = b.id
-                LEFT JOIN pages p ON km.book_id = p.book_id AND km.page_number = p.page_number
-                WHERE (p.is_toc IS NOT TRUE OR p.id IS NULL)
-                  {cat_filter}
+                {cat_filter}
                 ORDER BY km.rank DESC
                 LIMIT :limit
             """)
@@ -298,18 +300,17 @@ class ChunksRepository(BaseRepository[Chunk]):
             query = text(f"""
                 WITH keyword_matches AS (
                     SELECT
-                        c.book_id,
-                        c.page_number,
-                        c.chunk_index,
-                        c.text,
-                        ts_rank(c.text_search, phraseto_tsquery('simple', :phrase)) AS rank
-                    FROM chunks c
-                    WHERE c.text_search @@ phraseto_tsquery('simple', :phrase)
+                        p.book_id,
+                        p.page_number,
+                        p.text,
+                        ts_rank(p.text_search, phraseto_tsquery('simple', :phrase)) AS rank
+                    FROM pages p
+                    WHERE p.text_search @@ phraseto_tsquery('simple', :phrase)
+                      AND p.is_toc IS NOT TRUE
                 )
                 SELECT
                     km.book_id,
                     km.page_number,
-                    km.chunk_index,
                     km.text,
                     b.title,
                     b.volume,
@@ -317,9 +318,7 @@ class ChunksRepository(BaseRepository[Chunk]):
                     km.rank
                 FROM keyword_matches km
                 JOIN books b ON km.book_id = b.id
-                LEFT JOIN pages p ON km.book_id = p.book_id AND km.page_number = p.page_number
-                WHERE (p.is_toc IS NOT TRUE OR p.id IS NULL)
-                  {cat_filter}
+                {cat_filter}
                 ORDER BY km.rank DESC
                 LIMIT :limit
             """)
@@ -353,7 +352,6 @@ class ChunksRepository(BaseRepository[Chunk]):
                 "book_id": str(row.book_id),
                 "page_number": row.page_number,
                 "page": row.page_number,
-                "chunk_index": row.chunk_index,
                 "text": row.text,
                 "title": row.title,
                 "volume": row.volume,
@@ -362,163 +360,6 @@ class ChunksRepository(BaseRepository[Chunk]):
             }
             for row in rows
         ]
-
-    async def find_books_by_exact_phrase(
-        self,
-        phrase: str,
-        skip: int = 0,
-        limit: int = 40,
-        restrict_to_public: bool = True,
-    ) -> tuple[List[Book], int]:
-        """Home 'Content' tab: exact-phrase search over chunk text, grouped by
-        book, paginated (infinite scroll — see keyword-search-rework-plan.md
-        Phase 3). This is a browse/discovery search over the whole library,
-        not the chat-retrieval keyword leg (`keyword_search`), so it isn't
-        capped by `rag_keyword_top_k` — the caller paginates instead.
-
-        *restrict_to_public* mirrors the same guest-visibility rule used
-        throughout `books_router.py` (status == "ready" and
-        visibility public/legacy-NULL) — callers pass False only for
-        admin/editor users who should see private/draft book content too.
-        """
-        exists_clause = text(
-            """EXISTS (
-                SELECT 1 FROM chunks c
-                WHERE c.book_id = books.id
-                  AND c.text_search @@ phraseto_tsquery('simple', :phrase)
-            )"""
-        ).bindparams(phrase=phrase)
-
-        conditions = [exists_clause]
-        if restrict_to_public:
-            conditions.append(Book.status == "ready")
-            conditions.append(
-                or_(Book.visibility == "public", Book.visibility.is_(None))
-            )
-        else:
-            conditions.append(Book.status != "error")
-
-        count_stmt = select(func.count()).select_from(Book).where(*conditions)
-        count_result = await self.session.execute(count_stmt)
-        total = count_result.scalar_one()
-
-        books_stmt = (
-            select(Book)
-            .where(*conditions)
-            .order_by(Book.title.asc())
-            .offset(skip)
-            .limit(limit)
-        )
-        books_result = await self.session.execute(books_stmt)
-        books = list(books_result.scalars().all())
-
-        return books, total
-
-    async def search_content_chunks(
-        self,
-        phrase: str,
-        skip: int = 0,
-        limit: int = 40,
-        restrict_to_public: bool = True,
-    ) -> tuple[List[dict], int]:
-        """Home 'Content' tab: exact-phrase search over chunk text returning paginated
-        chunk hits with text snippets, page numbers, book title, author, volume, and cover.
-        """
-        vis_clause = (
-            "b.status = 'ready' AND (b.visibility = 'public' OR b.visibility IS NULL)"
-            if restrict_to_public
-            else "b.status != 'error'"
-        )
-
-        # Single-token terms (e.g. "ياش") can match thousands of chunks. Evaluating
-        # ts_rank() for thousands of hits incurs huge CPU overhead with virtually
-        # no ranking benefit. Skip ts_rank for single-word queries to allow Postgres
-        # to satisfy the query using fast index scans.
-        is_single_token = len(phrase.strip().split()) == 1
-        rank_projection = (
-            "0.0 AS rank"
-            if is_single_token
-            else "ts_rank(c.text_search, phraseto_tsquery('simple', :phrase)) AS rank"
-        )
-        order_clause = (
-            "ORDER BY b.title ASC, c.page_number ASC, c.chunk_index ASC"
-            if is_single_token
-            else "ORDER BY rank DESC, b.title ASC, c.page_number ASC"
-        )
-
-        count_query = text(f"""
-            SELECT COUNT(*)
-            FROM chunks c
-            JOIN books b ON c.book_id = b.id
-            LEFT JOIN pages p ON c.book_id = p.book_id AND c.page_number = p.page_number
-            WHERE c.text_search @@ phraseto_tsquery('simple', :phrase)
-              AND (p.is_toc IS NOT TRUE OR p.id IS NULL)
-              AND {vis_clause}
-        """)
-
-        hits_query = text(f"""
-            SELECT
-                c.book_id,
-                c.page_number,
-                c.chunk_index,
-                c.text,
-                b.title,
-                b.volume,
-                b.author,
-                b.cover_url,
-                {rank_projection}
-            FROM chunks c
-            JOIN books b ON c.book_id = b.id
-            LEFT JOIN pages p ON c.book_id = p.book_id AND c.page_number = p.page_number
-            WHERE c.text_search @@ phraseto_tsquery('simple', :phrase)
-              AND (p.is_toc IS NOT TRUE OR p.id IS NULL)
-              AND {vis_clause}
-            {order_clause}
-            OFFSET :skip LIMIT :limit
-        """)
-
-        params = {"phrase": phrase, "skip": skip, "limit": limit}
-
-        try:
-            await self.session.execute(
-                text(f"SET LOCAL work_mem = '{_KEYWORD_SEARCH_WORK_MEM}'")
-            )
-            await self.session.execute(
-                text(
-                    f"SET LOCAL statement_timeout = '{_KEYWORD_SEARCH_STATEMENT_TIMEOUT_MS}'"
-                )
-            )
-
-            count_res = await self.session.execute(count_query, {"phrase": phrase})
-            total = count_res.scalar_one()
-
-            hits_res = await self.session.execute(hits_query, params)
-            rows = hits_res.fetchall()
-        except Exception as e:
-            logger.warning(
-                "Content search query timed out or failed for phrase '%s': %s",
-                phrase,
-                e,
-            )
-            return [], 0
-
-        hits = [
-            {
-                "id": f"{row.book_id}_{row.page_number}_{row.chunk_index}",
-                "book_id": str(row.book_id),
-                "book_title": row.title,
-                "book_author": row.author,
-                "book_volume": row.volume,
-                "book_cover_url": row.cover_url,
-                "page_number": row.page_number,
-                "page": row.page_number,
-                "snippet": row.text,
-                "rank": float(row.rank),
-            }
-            for row in rows
-        ]
-
-        return hits, total
 
 
 def get_chunks_repository(session: AsyncSession) -> ChunksRepository:
