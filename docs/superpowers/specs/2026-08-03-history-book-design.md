@@ -21,11 +21,60 @@ This spec covers the read-side feature only: a new top-level nav item, richer en
 
 ## Non-goals
 
-- No changes to the extraction pipeline, fact merge/dedup logic, or admin staging review workflow.
+- No changes to the extraction pipeline, fact merge/dedup logic, or admin staging review workflow, **except** the name-collision fix below — a targeted, isolated bug fix that directly blocks History Book data completeness, not a broader pipeline change.
 - No timeline/chronological view — there's no structured date field today (dates live loosely inside `transliteration`/fact text); adding one is a separate future effort if pursued.
 - No changes to the Neo4j knowledge graph — history extraction and the graph pipeline remain independent, as they are today.
 - **No changes to the existing Dictionary "history" tab** (`HistoryDictionaryPanel.tsx`, `/history-dictionary` router). It keeps querying `history_dictionary` fully unfiltered, exactly as today. Since some AI-extracted Uyghur entries already exist live, this means those entries will appear in **both** Dictionary and History Book — that overlap is an accepted, explicit decision, not an oversight.
 - No physical separation of `history_dictionary` into per-feature tables. The new `history_facts`/`history_fact_citations` tables (below) contain only Uyghur-history data by construction — world-history rows never pass through `approve_staging_term`, and the one-time backfill is explicitly scoped to `is_ai_generated = TRUE` — so History Book's own query surface never needs to reference `is_ai_generated` at all; it scopes by fact presence. A real table split was considered and deferred: `history_dictionary`/`history_dictionary_staging` are targeted by actively-changing pipeline code (`HistoryExtractionService`, `DictionaryStagingService`, batch extraction, admin endpoints), and a rename/migration there is not worth the risk for a naming/purity win with no new capability. Revisit if History Book ever needs a field that must never exist on world-history rows.
+
+## Name-collision bug fix (blocking dependency)
+
+### The bug
+
+`history_dictionary.term` has a single `UNIQUE INDEX` across the whole table (migration `060_create_history_dictionary.sql`), shared by both the legacy world-history corpus and AI-extracted Uyghur entries. Because of that constraint, `HistoryExtractionService._stage_entity` (`history_extraction_service.py:466-473`) cannot create a new AI-generated row whenever an extracted term's name collides with an existing non-AI (world-history) row — inserting one would violate the unique index. Today it defensively bails out instead:
+
+```python
+if existing_live and not existing_live.is_ai_generated:
+    logger.info(f"Skipping history extraction staging for non-AI generated term '{term}'")
+    if not existing_staging:
+        return None          # the newly-extracted entity is silently discarded
+    existing_live = None
+```
+
+Net effect: any real Uyghur historical figure/term whose name happens to match something in the ~thousands-strong legacy world-history seed corpus (migration `061_import_history_dictionary_data.sql`) is dropped during extraction — never staged, never retried, never reachable by History Book. This is active data loss, confirmed as the mechanism behind name conflicts already observed in the pipeline.
+
+### The fix
+
+1. **Migration `081_scope_history_dictionary_term_uniqueness.sql`** — replace the single global unique index with two partial unique indexes, so `term` stays unique *within* each population but the two can coexist under the same name:
+   ```sql
+   BEGIN;
+   DROP INDEX IF EXISTS public.idx_history_dictionary_term;
+   CREATE UNIQUE INDEX IF NOT EXISTS idx_history_dictionary_term_ai
+       ON public.history_dictionary (term) WHERE is_ai_generated = TRUE;
+   CREATE UNIQUE INDEX IF NOT EXISTS idx_history_dictionary_term_manual
+       ON public.history_dictionary (term) WHERE is_ai_generated = FALSE;
+   COMMIT;
+   ```
+   Safe against existing data — global uniqueness is strictly stronger than per-partition uniqueness, so nothing currently violates the relaxed constraint. (`history_dictionary_staging.term` has no unique index, so it's unaffected.)
+2. **`dictionary_repository.py::find_matching_history_term`** — scope the match itself to `is_ai_generated = TRUE`, so a non-AI row can never surface as a candidate in the first place:
+   ```python
+   stmt = (
+       select(HistoryDictionary)
+       .where(
+           HistoryDictionary.is_ai_generated == True,
+           _build_strict_term_where(HistoryDictionary.term, norm_term),
+       )
+       .order_by(...)
+       .limit(1)
+   )
+   ```
+   This isn't just cleaner — it's required for correctness once same-named AI/non-AI rows can coexist. Without it, `find_matching_history_term`'s `ORDER BY similarity DESC LIMIT 1` (no existing `is_ai_generated` tiebreak) is nondeterministic between two exact-match (similarity `1.0`) rows: a *repeat* extraction of the same Uyghur term could match the non-AI row again instead of the AI row created by the previous run, attempt to create a second same-named AI row, and violate the new partial unique index. Scoping the match to `is_ai_generated = TRUE` prevents that outright: the query can now only ever return the one AI row for a given term (guaranteed unique by the new partial index) or nothing.
+3. **`history_extraction_service.py:466-473`** — with step 2 in place, `existing_live` can now only ever be an AI-generated row or `None`; the defensive non-AI check is unreachable and is deleted rather than reworked:
+   ```python
+   existing_live = await self.repo.find_matching_history_term(term)
+   existing_staging = await self.repo.find_matching_staging_term(term)
+   # (no more "if existing_live and not existing_live.is_ai_generated" branch)
+   ```
 
 ## Data model
 
@@ -38,7 +87,7 @@ A denormalized-columns approach (tsvector + book-id array directly on `history_d
 ### Schema
 
 ```sql
--- 081_create_history_facts.sql
+-- 082_create_history_facts.sql
 
 CREATE TABLE history_facts (
     id            SERIAL PRIMARY KEY,
@@ -103,6 +152,7 @@ The existing admin endpoints (`admin_history_dictionary_router.py`) and the publ
 ## Testing
 
 - Repository/service tests for the `approve_staging_term` sync step: first publish, re-publish via enrichment (facts fully replaced, no duplicates/orphans), rejected/conflict facts never materialized.
+- Extraction tests for the name-collision fix: (1) a term matching an existing non-AI `history_dictionary` row is staged as `entry_type='new'` (not dropped, not treated as enrichment), coexisting with the non-AI row under the same `term`; (2) a *second* extraction of that same term correctly matches and enriches the AI row created in (1), not the non-AI row — the tie-break scenario `find_matching_history_term`'s `is_ai_generated` scoping is meant to prevent.
 - Backfill script test: idempotent on re-run, correct row counts against a fixture set of published entries.
 - API tests: pagination, category filter, book filter, combined term+fact-text search, detail endpoint shape, and the scope boundary (a world-history entry — which has a synthetic legacy `facts` JSONB entry but no `history_facts` row — never appears in list/search results and its detail id 404s).
 - Frontend tests: grid rendering/filtering, search-as-you-type, citation deep-link generation.
