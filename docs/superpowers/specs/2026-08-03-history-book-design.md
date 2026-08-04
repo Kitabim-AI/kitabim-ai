@@ -4,7 +4,9 @@
 
 Turn the AI-extracted Uyghur history facts currently sitting in `history_dictionary` / `history_dictionary_staging` into a first-class, top-level, user-facing feature: **تارىخنامە (History Book)**. Today, published entries are only reachable through a plain alphabetical "history" tab buried inside the Dictionary page, showing nothing but a synthesized prose definition — the individual facts and their book/page provenance (the most valuable part of the extraction pipeline) are invisible to end users.
 
-`history_dictionary` actually holds two distinct populations that happen to share a table: a legacy, manually-seeded world-history corpus (`is_ai_generated = FALSE`, e.g. "Abbas I, Safavid king of Iran" — migration `061_import_history_dictionary_data.sql`) and AI-extracted Uyghur-history entries produced by the book extraction pipeline (`is_ai_generated = TRUE`). Facts are, and will only ever be, populated for the AI-extracted population — there is no plan to populate `facts` for the legacy world-history terms. History Book therefore scopes to `is_ai_generated = TRUE` only; the existing Dictionary "history" tab is explicitly **out of scope and untouched** (see Non-goals).
+`history_dictionary` actually holds two distinct populations that happen to share a table: a legacy, manually-seeded world-history corpus (`is_ai_generated = FALSE`, e.g. "Abbas I, Safavid king of Iran" — migration `061_import_history_dictionary_data.sql`) and AI-extracted Uyghur-history entries produced by the book extraction pipeline (`is_ai_generated = TRUE`). Facts are, and will only ever be, populated for the AI-extracted population — there is no plan to backfill or otherwise populate real `history_facts` rows for the legacy world-history terms. History Book therefore scopes to entries that have at least one row in the new `history_facts` table (see Data model) — the existing Dictionary "history" tab is explicitly **out of scope and untouched** (see Non-goals).
+
+Note: `history_dictionary.facts` (the JSONB column) is *not* a safe proxy for this boundary — migration `080_add_history_facts.sql` bootstrapped a synthetic single fact onto every row with a non-empty `definition`, world-history included, when it introduced the `facts` model. The scope boundary lives in the new normalized `history_facts` table, not the legacy JSONB column, and depends on the backfill (below) only ever being run against `is_ai_generated = TRUE` rows.
 
 This spec covers the read-side feature only: a new top-level nav item, richer entry detail pages, and full-text/category/source-book search. The existing extraction pipeline, staging/review workflow, and admin approval flow (`HistoryExtractionService`, `DictionaryStagingService`, `HistoryStagingQueuePanel.tsx`, admin endpoints) are **unchanged** — this only changes what happens to a fact once it's approved and published.
 
@@ -23,7 +25,7 @@ This spec covers the read-side feature only: a new top-level nav item, richer en
 - No timeline/chronological view — there's no structured date field today (dates live loosely inside `transliteration`/fact text); adding one is a separate future effort if pursued.
 - No changes to the Neo4j knowledge graph — history extraction and the graph pipeline remain independent, as they are today.
 - **No changes to the existing Dictionary "history" tab** (`HistoryDictionaryPanel.tsx`, `/history-dictionary` router). It keeps querying `history_dictionary` fully unfiltered, exactly as today. Since some AI-extracted Uyghur entries already exist live, this means those entries will appear in **both** Dictionary and History Book — that overlap is an accepted, explicit decision, not an oversight.
-- No physical separation of `history_dictionary` into per-feature tables. `is_ai_generated` is a fully reliable discriminator given facts are never populated for world-history terms, and the new `history_facts`/`history_fact_citations` tables (below) already contain only Uyghur-history data by construction, since world-history rows never pass through `approve_staging_term`. A real table split was considered and deferred: `history_dictionary`/`history_dictionary_staging` are targeted by actively-changing pipeline code (`HistoryExtractionService`, `DictionaryStagingService`, batch extraction, admin endpoints), and a rename/migration there is not worth the risk for a naming/purity win with no new capability. Revisit if History Book ever needs a field that must never exist on world-history rows.
+- No physical separation of `history_dictionary` into per-feature tables. The new `history_facts`/`history_fact_citations` tables (below) contain only Uyghur-history data by construction — world-history rows never pass through `approve_staging_term`, and the one-time backfill is explicitly scoped to `is_ai_generated = TRUE` — so History Book's own query surface never needs to reference `is_ai_generated` at all; it scopes by fact presence. A real table split was considered and deferred: `history_dictionary`/`history_dictionary_staging` are targeted by actively-changing pipeline code (`HistoryExtractionService`, `DictionaryStagingService`, batch extraction, admin endpoints), and a rename/migration there is not worth the risk for a naming/purity win with no new capability. Revisit if History Book ever needs a field that must never exist on world-history rows.
 
 ## Data model
 
@@ -75,19 +77,19 @@ This runs in the same transaction/commit as the existing `history_dictionary` up
 
 ### Backfill
 
-A one-time script materializes every existing published `history_dictionary` row's `facts` JSONB into the new tables (same materialization logic as the sync step, run once against all rows with `status` implicitly "already published" — i.e. every row in `history_dictionary` today). Must be idempotent/safe to re-run (delete-and-reinsert per row, same as the live sync path).
+A one-time script materializes existing published `history_dictionary` rows' `facts` JSONB into the new tables — **scoped to `WHERE is_ai_generated = TRUE`**, not all rows. This filter is required, not optional: migration `080_add_history_facts.sql` bootstrapped a synthetic single fact (wrapping the prose `definition`) onto every row with a non-empty definition, including the entire legacy world-history corpus. Backfilling unfiltered would materialize a fake fact for every world-history entry — e.g. Abbas I of Persia — straight into History Book. Uses the same materialization logic as the sync step; must be idempotent/safe to re-run (delete-and-reinsert per row).
 
 ## Backend API
 
 New public, unauthenticated read endpoints (mirrors the existing public `/history-dictionary` endpoints' auth posture — read-only historical content, no login required):
 
-Every endpoint filters `history_dictionary.is_ai_generated = TRUE` — this is the Uyghur History Book scope boundary, applied at the query level, not left implicit.
+Every endpoint scopes to entries that have at least one `history_facts` row (`INNER JOIN`/`EXISTS`, not an `is_ai_generated` check) — this is the Uyghur History Book scope boundary, and it's guaranteed correct by the backfill/sync being the only writers to `history_facts` (see Data model).
 
 - `GET /history-book/entries?category=&book_id=&q=&sort=significance|alphabetical&page=&page_size=`
-  Paginated list, `WHERE is_ai_generated = TRUE`. `q` searches `term`/`transliteration` (existing trigram index) OR fact `search_vector`, deduped. `book_id` filters via `history_fact_citations`. Default sort: `significance` desc.
+  Paginated list, joined to `history_facts` so only entries with materialized facts appear. `q` searches `term`/`transliteration` (existing trigram index) OR fact `search_vector`, deduped. `book_id` filters via `history_fact_citations`. Default sort: `significance` desc.
 - `GET /history-book/entries/{id}`
-  Full detail (404 if `is_ai_generated = FALSE`, i.e. a world-history id): `term`, `transliteration`, `category`, `significance_score`, `significance_reason`, synthesized `definition`, and `facts: [{id, text, citations: [{book_id, book_title, volume, pages}]}]`.
-- Letter-group/stats equivalents, scoped to `is_ai_generated = TRUE`, needed for the landing grid facets — these are new, `is_ai_generated`-scoped queries, not a reuse of the existing unfiltered `/history-dictionary/letter-groups`/`/stats`.
+  Full detail (404 if the entry has no `history_facts` rows, i.e. a world-history id): `term`, `transliteration`, `category`, `significance_score`, `significance_reason`, synthesized `definition`, and `facts: [{id, text, citations: [{book_id, book_title, volume, pages}]}]`.
+- Letter-group/stats equivalents, scoped the same way (joined to `history_facts`), needed for the landing grid facets — these are new queries, not a reuse of the existing unfiltered `/history-dictionary/letter-groups`/`/stats`.
 
 The existing admin endpoints (`admin_history_dictionary_router.py`) and the public `/history-dictionary` router are unaffected — this is an additive new router.
 
@@ -102,7 +104,7 @@ The existing admin endpoints (`admin_history_dictionary_router.py`) and the publ
 
 - Repository/service tests for the `approve_staging_term` sync step: first publish, re-publish via enrichment (facts fully replaced, no duplicates/orphans), rejected/conflict facts never materialized.
 - Backfill script test: idempotent on re-run, correct row counts against a fixture set of published entries.
-- API tests: pagination, category filter, book filter, combined term+fact-text search, detail endpoint shape, and the `is_ai_generated` scope boundary (a world-history entry never appears in list/search results and its detail id 404s).
+- API tests: pagination, category filter, book filter, combined term+fact-text search, detail endpoint shape, and the scope boundary (a world-history entry — which has a synthetic legacy `facts` JSONB entry but no `history_facts` row — never appears in list/search results and its detail id 404s).
 - Frontend tests: grid rendering/filtering, search-as-you-type, citation deep-link generation.
 
 ## Open questions for implementation planning
