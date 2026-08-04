@@ -16,11 +16,13 @@ This spec covers the read-side feature (a new top-level nav item, a unified brow
 - Full-text search across term, transliteration, and (where present) fact text.
 - Filter/browse by source book — naturally only matches entries that carry citations.
 - Citations deep-link into the book reader at the cited page.
+- Admins can manually fix fact-level spelling issues and correct entity-matching mistakes (merge duplicate entries for the same person; split a wrongly-conflated entry into two) on **published** entries — today this is only possible pre-publish, inside the staging review queue.
 
 ## Non-goals
 
 - **No domain filter or domain classification.** No "Uyghur history / world history" toggle, no domain column, nothing that requires classifying an entry's subject matter. The unified page shows everything; facts (where present) are the only thing that varies per entry.
 - No changes to the extraction pipeline, fact merge/dedup logic, or admin staging review workflow, **except** the name-collision fix below — a targeted, isolated bug fix that directly blocks History Book data completeness, not a broader pipeline change.
+- **No automated entity-disambiguation or improved name-matching.** Two known, related failure modes are handled by manual admin correction instead of algorithmic fixes (see Admin fact & entry management): (1) the same real person getting two entries because their name was extracted in different forms (e.g. with/without an honorific, spelling variant) — `find_matching_history_term`'s matching logic is not being improved; (2) two different real people who happen to share an identical name getting incorrectly merged into one entry — no LLM- or embedding-based "is this really the same entity" check is being added at match time. Both are accepted as known limitations, correctable by hand when noticed, not solved at the pipeline level in this spec.
 - No timeline/chronological view — there's no structured date field today (dates live loosely inside `transliteration`/fact text); adding one is a separate future effort if pursued.
 - No changes to the Neo4j knowledge graph — history extraction and the graph pipeline remain independent, as they are today.
 - **No changes to Dictionary's other tabs** (`words`, `dictionary`, `proverbs`, `names`, `english-uyghur`, `synonyms` in `DictionaryView.tsx`) — these are unrelated to `history_dictionary` and stay exactly as they are. Only the `history` tab is being replaced; Dictionary remains a substantial standalone feature afterward.
@@ -109,7 +111,7 @@ CREATE INDEX idx_history_fact_citations_book_id ON history_fact_citations(book_i
 
 `history_facts` presence is a pure *display* concern here — whether an entry's detail page renders a facts+citations section — not a filter or scope boundary. The unified page never excludes or groups by it; every `history_dictionary` row is shown.
 
-**Sync strategy** — delete-and-reinsert on every `approve_staging_term` call (first publish or re-publish via `entry_type='enrichment'`): `DELETE FROM history_facts WHERE dictionary_id = :id` (cascades to citations), then re-insert one row per active fact/citation from `staging.facts`. Runs in the same transaction as the `history_dictionary` update — always an exact snapshot of what's live, no incremental upsert logic.
+**Sync strategy** — delete-and-reinsert, extracted as a shared helper (e.g. `materialize_history_facts(session, dictionary_id, facts)`) since it now has four call sites (see Admin fact & entry management): `DELETE FROM history_facts WHERE dictionary_id = :id` (cascades to citations), then re-insert one row per active fact/citation from the given `facts` list. Called in the same transaction as whatever `history_dictionary.facts` write triggered it — always an exact snapshot of what's live, no incremental upsert logic. Call sites: `approve_staging_term` (first publish or re-publish via `entry_type='enrichment'`), and each of the three admin fact-mutation endpoints below (edit/add/delete a fact) — manual entry creation itself starts with an empty `facts` array, so it doesn't need this call.
 
 **Backfill** — a one-time script materializes existing published rows' `facts` JSONB into the new tables, **scoped to `WHERE is_ai_generated = TRUE`**, not all rows. This filter is required, not optional: migration `080_add_history_facts.sql` bootstrapped a synthetic single fact (wrapping the prose `definition`) onto every row with a non-empty definition, world-history included. Backfilling unfiltered would materialize a fake fact — e.g. for Abbas I of Persia — into every world-history entry. `is_ai_generated` isn't used anywhere else in this feature; this one-time script is its only remaining relevance here. Must be idempotent/safe to re-run.
 
@@ -123,19 +125,32 @@ CREATE INDEX idx_history_fact_citations_book_id ON history_fact_citations(book_i
 - `GET /history-dictionary/letter-groups`, `/stats` — unchanged in shape, still useful as-is for the landing grid facets.
 - Existing admin endpoints (`admin_history_dictionary_router.py`) are unaffected.
 
+## Admin fact & entry management
+
+Today, facts can only be edited pre-publish, inside the staging review queue (`resolve_fact`, `HistoryStagingQueuePanel.tsx`). Once a term is approved and published, there's no way to fix a typo, merge a duplicate, or split a wrongly-conflated entry without going back through re-extraction. This adds that capability for **published** `history_dictionary` entries, admin-only, mirroring the existing staging-review pattern:
+
+- `PATCH /admin/history-dictionary/{id}/facts/{fact_id}` — edit an existing fact's `text` (fixes spelling issues). Updates `history_dictionary.facts` (source of truth), then calls `materialize_history_facts` to resync `history_facts`/`history_fact_citations`.
+- `POST /admin/history-dictionary/{id}/facts` — add a new fact (`text` + `citations`) to a published entry. Used when manually merging a duplicate entry's facts into the surviving one (issue: same person under two spellings/name-forms).
+- `DELETE /admin/history-dictionary/{id}/facts/{fact_id}` — remove a fact from a published entry. Used both to clean up after a merge, and to remove facts that turn out to belong to a *different* person than the entry they're currently on (issue: two different people sharing one name, wrongly merged).
+- `POST /admin/history-dictionary` (new) — manually create a new entry from scratch (`term`, `transliteration`, `category`, `significance_score`, `is_ai_generated`). This is what makes *splitting* an entry actually actionable: an admin who spots two different historical figures merged under one name creates a fresh entry for the second person, moves the misattributed facts to it (add + delete above), and gives it a distinguishing `term` (e.g. adding a birth/death year or epithet) so it doesn't collide with the surviving entry.
+  - The partial unique index from the name-collision fix (`idx_history_dictionary_term_ai`, unique on `term` where `is_ai_generated = TRUE`) will reject a second AI entry under the *identical* term — this is correct, expected behavior here, not a bug to work around: it's exactly what forces the admin to pick a distinguishing name when splitting two same-named-but-different people, which is also what makes the resulting list comprehensible to end users (two entries that look identical in a search result would be its own confusing UX).
+- `DELETE /admin/history-dictionary/{id}` (existing) — deletes the whole entry; already cascades to remove its `history_facts`/`history_fact_citations` via the `ON DELETE CASCADE` FKs, no additional work needed for the merge-then-delete-the-duplicate workflow.
+
 ## Frontend
 
 - **تارىخنامە becomes the top-level nav item**, replacing Dictionary's `history` tab. `HistoryDictionaryPanel.tsx` is removed from `DictionaryView.tsx`'s tab list. Dictionary's other six tabs are untouched.
 - **`HistoryBookView.tsx`** — landing page: category filter, significance-sorted grid, search bar (term + transliteration + fact text), source-book filter.
-- **`HistoryBookEntryView.tsx`** — detail page: synthesized prose definition always shown; an expandable structured facts list (with citations deep-linking into the book reader) renders only when `facts` is non-empty.
+- **`HistoryBookEntryView.tsx`** — detail page: synthesized prose definition always shown; an expandable structured facts list (with citations deep-linking into the book reader) renders only when `facts` is non-empty. When `isAdmin`, inline controls appear on each fact (edit text, delete) and on the facts list (add a fact) — mirrors the existing pattern where `HistoryDictionaryPanel.tsx` shows a delete button to admins inline today.
   - *Open item for planning*: verify the book reader supports a page-anchor route (likely already used by RAG chat citations) so the citation deep-link can reuse existing routing.
   - *Open item for planning*: where the admin `history-staging` tab (`HistoryStagingQueuePanel.tsx`, currently a sibling of `history` in `DictionaryView.tsx`) should live once `history` moves out — leaving it in Dictionary is the low-risk default since it's an unrelated admin curation workflow, not part of this consolidation's public-facing scope.
+  - *Open item for planning*: where the admin "create new entry" action (for splitting a conflated entry) lives in the UI — e.g. a button on `HistoryBookView.tsx`'s landing page, visible only to admins.
 
 ## Testing
 
 - Repository/service tests for the `approve_staging_term` sync step: first publish, re-publish via enrichment (facts fully replaced, no duplicates/orphans), rejected/conflict facts never materialized.
 - Extraction tests for the name-collision fix: (1) a term matching an existing non-AI `history_dictionary` row is staged as `entry_type='new'` (not dropped, not treated as enrichment), coexisting with the non-AI row under the same `term`; (2) a *second* extraction of that same term correctly matches and enriches the AI row from (1), not the non-AI row.
 - Backfill script test: idempotent on re-run, correct row counts against a fixture set of published entries, scoped correctly by `is_ai_generated`.
+- Admin fact/entry management tests: edit/add/delete a fact correctly updates both `history_dictionary.facts` and `history_facts`/`history_fact_citations`; deleting an entry cascades to remove its facts and citations; creating a second entry with a term that collides with an existing AI entry's term is rejected (partial unique index), while a distinguishing term succeeds.
 - API tests: pagination, category filter, book filter, combined term+fact-text search, detail endpoint returns for every valid id (never 404s), entries with no extracted facts return `facts: []`.
 - Frontend tests: grid rendering/filtering, search-as-you-type, conditional facts-section rendering, citation deep-link generation.
 
