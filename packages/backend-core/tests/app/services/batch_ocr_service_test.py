@@ -414,6 +414,69 @@ async def test_poll_and_process_batch_ocr_jobs_empty_response_marks_failed():
 
 
 @pytest.mark.asyncio
+async def test_poll_and_process_batch_ocr_jobs_degenerate_response_marks_failed():
+    mock_session = AsyncMock()
+    mock_job = MagicMock(spec=BatchOCRJob)
+    mock_job.id = "job_555"
+    mock_job.gemini_batch_id = "batches/555"
+    mock_job.book_id = "book_777"
+    mock_job.page_ids = [403]
+    mock_job.status = "submitted"
+    mock_job.created_at = datetime.now(timezone.utc)
+
+    mock_db_result = MagicMock()
+    mock_db_result.scalars().all.return_value = [mock_job]
+    mock_db_result.fetchall.return_value = [(403, 0)]
+    mock_session.execute.return_value = mock_db_result
+
+    jsonl_output = json.dumps(
+        {
+            "custom_id": "page_403",
+            "response": {
+                "candidates": [{"content": {"parts": [{"text": "سۆز " * 100}]}}]
+            },
+            "error": None,
+        }
+    )
+
+    with (
+        patch(
+            "app.services.batch_ocr_service.SystemConfigsRepository"
+        ) as mock_repo_cls,
+        patch("app.services.batch_ocr_service._get_genai_client") as mock_client_fn,
+        patch("app.services.batch_ocr_service.storage"),
+        patch(
+            "app.services.batch_ocr_service.BookMilestoneService"
+        ) as mock_milestone_svc,
+    ):
+        mock_repo = mock_repo_cls.return_value
+        mock_repo.get_value = AsyncMock(return_value="24")
+
+        mock_genai_client = MagicMock()
+        mock_batch_info = MagicMock()
+        mock_batch_info.state = "JOB_STATE_SUCCEEDED"
+        mock_batch_info.dest = MagicMock(gcs_uri=None, file_name="files/output-job-555")
+        mock_genai_client.batches.get.return_value = mock_batch_info
+        mock_genai_client.files.download.return_value = jsonl_output.encode("utf-8")
+        mock_client_fn.return_value = mock_genai_client
+
+        mock_milestone_svc.update_book_milestone_for_step = AsyncMock()
+
+        processed_count = await poll_and_process_batch_ocr_jobs(mock_session)
+
+        # The batch job itself completed; the runaway-repetition page is
+        # marked failed rather than being stored as real page content.
+        assert processed_count == 1
+        assert mock_job.status == "succeeded"
+        assert mock_job.processed_pages == 0
+
+        page_update_stmt = mock_session.execute.call_args_list[2].args[0]
+        compiled = str(page_update_stmt.compile(compile_kwargs={"literal_binds": True}))
+        assert "'failed'" in compiled
+        assert "retry_count" in compiled
+
+
+@pytest.mark.asyncio
 async def test_poll_and_process_batch_ocr_jobs_empty_response_exhausted_retries_skips_page():
     mock_session = AsyncMock()
     mock_job = MagicMock(spec=BatchOCRJob)

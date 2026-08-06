@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from collections import Counter
 
 # ── Arabic Presentation Forms Normalization ───────────────────────────────────
 # Pre-calculate mapping for performance. range(0xFB50, 0xFE00) and range(0xFE70, 0xFF00)
@@ -33,8 +34,12 @@ def normalize_uyghur_chars(text: str) -> str:
     )
 
 
-# Matches OCR structural marker lines: "[Header] ..." or "[Footer] ..."
-_OCR_MARKER_LINE = re.compile(r"^\s*\[(Header|Footer)\]", re.IGNORECASE)
+# Matches OCR structural markers ("[Header] ..." / "[Footer] ...") and
+# everything after them to end of line. Not anchored to line-start: OCR emits
+# these either alone on their own line or glued to the end of a real content
+# line (e.g. "...خانىسى.[Footer] 3"), and both cases are page furniture, not
+# retrievable content.
+_OCR_MARKER_RE = re.compile(r"\s*\[(?:Header|Footer)\].*", re.IGNORECASE)
 
 
 def clean_uyghur_text(text: str) -> str:
@@ -43,10 +48,9 @@ def clean_uyghur_text(text: str) -> str:
 
     text = normalize_uyghur_chars(text)
 
-    # 1. Strip OCR structural marker lines ([Header] ..., [Footer] ...)
-    text = "\n".join(
-        line for line in text.splitlines() if not _OCR_MARKER_LINE.match(line)
-    )
+    # 1. Strip OCR structural markers ([Header] ..., [Footer] ...) and any
+    # trailing page-furniture text after them, wherever they appear in a line.
+    text = "\n".join(_OCR_MARKER_RE.sub("", line) for line in text.splitlines())
 
     # 3. Join words split by hyphen/dash at line endings (standardizing line breaks)
     text = re.sub(r"(\w)[-—–_]\s*\n\s*(\w)", r"\1\2", text)
@@ -188,6 +192,34 @@ def is_toc_page(text: str) -> bool:
         return True
 
     return False
+
+
+# Generous upper bound for a single page's OCR text. Real pages in this
+# corpus top out in the low thousands of characters; anything past this is a
+# runaway-generation failure (the model repeating itself instead of stopping),
+# not real content.
+_MAX_SANE_OCR_CHARS = 10000
+
+
+def is_degenerate_ocr_output(text: str) -> bool:
+    """Detect OCR output that is a runaway repetition loop rather than a real
+    page -- e.g. the model getting stuck repeating a single word/punctuation
+    token instead of stopping, which can run to hundreds of thousands of
+    characters with no other error signal from the API.
+    """
+    if not text:
+        return False
+    if len(text) > _MAX_SANE_OCR_CHARS:
+        return True
+
+    # Punctuation-only tokens (pipe-table borders, dash dialogue markers,
+    # quote marks) legitimately repeat dozens of times in real content, so
+    # only real words count toward the repetition ratio.
+    words = [w for w in text.split() if any(ch.isalnum() for ch in w)]
+    if len(words) < 50:
+        return False
+    _, most_common_count = Counter(words).most_common(1)[0]
+    return most_common_count >= 50 and most_common_count / len(words) >= 0.3
 
 
 def generate_uyghur_regex(q: str) -> str:

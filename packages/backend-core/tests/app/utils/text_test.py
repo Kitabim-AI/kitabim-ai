@@ -39,6 +39,28 @@ def test_clean_uyghur_text():
     assert clean_uyghur_text("") == ""
 
 
+def test_clean_uyghur_text_strips_ocr_markers():
+    # Marker alone on its own line is dropped entirely
+    text = "line one\n[Footer] 3\nline two"
+    cleaned = clean_uyghur_text(text)
+    assert "[Footer]" not in cleaned
+    assert "line one" in cleaned
+    assert "line two" in cleaned
+
+    # Marker glued to the end of a real content line: content before it is
+    # kept, the marker and everything after it is dropped
+    text = "بۇ جۈملە.[Footer] 3"
+    cleaned = clean_uyghur_text(text)
+    assert "[Footer]" not in cleaned
+    assert "بۇ جۈملە." in cleaned
+
+    # [Header] variant, case-insensitive
+    text = "content[header] 12"
+    cleaned = clean_uyghur_text(text)
+    assert "[header]" not in cleaned.lower()
+    assert "content" in cleaned
+
+
 def test_generate_uyghur_regex():
     # Hamza seat mapping
     reg = generate_uyghur_regex("\u0626")

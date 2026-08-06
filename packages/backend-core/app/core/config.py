@@ -63,6 +63,12 @@ class Settings:
     # OCR Settings
     ocr_max_retries: int = int(os.getenv("OCR_MAX_RETRIES", "4"))
     ocr_page_zoom_factor: float = float(os.getenv("OCR_PAGE_ZOOM_FACTOR", "1.5"))
+    # Hard ceiling on a single OCR call's output. Without this, a model that
+    # fails to stop cleanly (repetition loop, leaked reasoning) generates --
+    # and bills -- until its own internal max, which can run to hundreds of
+    # thousands of tokens for one page. 4096 is generous headroom over any
+    # real page in this corpus (which top out in the low thousands of chars).
+    ocr_max_output_tokens: int = int(os.getenv("OCR_MAX_OUTPUT_TOKENS", "4096"))
 
     # RAG Settings
     rag_score_threshold: float = float(os.getenv("RAG_SCORE_THRESHOLD", "0.50"))
@@ -75,8 +81,14 @@ class Settings:
     summary_max_chars: int = int(os.getenv("SUMMARY_MAX_CHARS", "3000000"))
 
     # Chunking Settings
-    chunk_size: int = int(os.getenv("CHUNK_SIZE", "1500"))
-    chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "300"))
+    # chunk_size is the SOFT TARGET: multi-paragraph regions close a chunk once
+    # they pass this size at a paragraph boundary. Individual paragraphs (with
+    # their footnotes) are atomic and never split below the embedding-safety
+    # ceiling, so a large paragraph yields one large chunk while multi-paragraph
+    # regions yield several smaller ones. chunk_min_size folds away tiny chunks.
+    chunk_size: int = int(os.getenv("CHUNK_SIZE", "1000"))
+    chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "150"))
+    chunk_min_size: int = int(os.getenv("CHUNK_MIN_SIZE", "300"))
 
     # Logging
     log_level: str = os.getenv("LOG_LEVEL", "WARNING")  # DEBUG, INFO, WARNING, ERROR

@@ -3,6 +3,7 @@
 FROM python:3.13-slim AS builder
 
 WORKDIR /build
+ENV PATH=/root/.local/bin:$PATH
 
 # Install build dependencies
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
