@@ -204,6 +204,15 @@ export const HistoryDictionaryPanel: React.FC = () => {
     setIsAddModalOpen(true);
   };
 
+  const openEditModal = (entry: HistoryEntry) => {
+    setEditingEntry(entry);
+    setFormTerm(entry.term);
+    setFormTransliteration(entry.transliteration || '');
+    setFormDefinition(entry.definition || '');
+    setDuplicateError(null);
+    setIsAddModalOpen(true);
+  };
+
   const closeModal = () => {
     setIsAddModalOpen(false);
     setEditingEntry(null);
@@ -421,13 +430,22 @@ export const HistoryDictionaryPanel: React.FC = () => {
                       )}
                     </div>
                     {isAdmin && (
-                      <button
-                        onClick={() => handleDeleteEntry(entry)}
-                        className="p-2 shrink-0 bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400 rounded-xl hover:bg-red-500 dark:hover:bg-red-600 hover:text-white transition-all"
-                        title={t('common.delete')}
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
+                        <button
+                          onClick={() => openEditModal(entry)}
+                          className="p-2 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] rounded-xl hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 transition-all"
+                          title={t('common.edit')}
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteEntry(entry)}
+                          className="p-2 bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400 rounded-xl hover:bg-red-500 dark:hover:bg-red-600 hover:text-white transition-all"
+                          title={t('common.delete')}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
                     )}
                   </div>
                 ))}

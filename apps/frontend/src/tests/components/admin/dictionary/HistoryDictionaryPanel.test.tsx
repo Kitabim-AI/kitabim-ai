@@ -146,3 +146,34 @@ test('shows an inline error when the add modal gets a duplicate-term response', 
   await screen.findByText('An entry for this term already exists');
   expect(screen.getByPlaceholderText('admin.historyDictionary.term')).toBeInTheDocument();
 });
+
+test('admin can edit an existing entry via the edit modal', async () => {
+  vi.mocked(AuthModule.useIsAdmin).mockReturnValue(true);
+  mockListResponses({
+    ok: true,
+    json: async () => ({ id: 1, term: 'تارىخ سۆزى', transliteration: 'Tarikh sozi', definition: 'يېڭىلانغان', letter_group: 'ت' }),
+  } as Response);
+
+  render(<HistoryDictionaryPanel />);
+
+  await screen.findByText('تارىخ سۆزى');
+  fireEvent.click(screen.getByTitle('common.edit'));
+
+  const termInput = screen.getByPlaceholderText('admin.historyDictionary.term') as HTMLInputElement;
+  expect(termInput.value).toBe('تارىخ سۆزى');
+  expect(termInput).toBeDisabled();
+
+  const definitionInput = screen.getByPlaceholderText('admin.historyDictionary.definition');
+  fireEvent.change(definitionInput, { target: { value: 'يېڭىلانغان' } });
+  fireEvent.click(screen.getByText('common.save'));
+
+  await waitFor(() =>
+    expect(authService.authFetch).toHaveBeenCalledWith(
+      '/api/history-dictionary/1',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ transliteration: null, definition: 'يېڭىلانغان' }),
+      })
+    )
+  );
+});
