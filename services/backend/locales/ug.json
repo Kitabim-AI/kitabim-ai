@@ -52,6 +52,8 @@
     "staging_conflicts_unresolved": "بۇ ئاتالغۇدا بىر تەرەپ قىلىنمىغان زىددىيەتلىك پاكىتلار بار. تەستىقلاشتىن بۇرۇن ئۇلارنى بىر تەرەپ قىلىڭ.",
     "staging_synthesis_failed": "ئېنىقلىما سىناق نۇسخىسىنى قۇرالمىدى. قايتا سىناپ بېقىڭ.",
     "invalid_fact_status": "پاكىت ھالىتى 'active' ياكى 'rejected' بولۇشى كېرەك",
+    "history_entry_duplicate_term": "بۇ ئاتالغۇ ئۈچۈن خاتىرە ئاللىبۇرۇن مەۋجۇت",
+    "history_entry_not_found": "تارىخ لۇغىتى ئاتالغۇسى تېپىلمىدى",
     "ai": {
       "gemini_busy": "ئاپلا، زېرەكچاق ئالدىراشكەن، سەل تۇرۇپ سىناپ باقامسىز؟",
       "gemini_api_key_missing": "Gemini API ئاچقۇچى سەپلەنمىگەن",

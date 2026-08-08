@@ -73,6 +73,94 @@ async def test_delete_history_entry_not_found():
 
 
 @pytest.mark.asyncio
+async def test_create_history_entry():
+    setup_paths()
+    from unittest.mock import patch
+    from api.endpoints.history_dictionary_router import (
+        create_history_entry,
+        HistoryEntryCreate,
+    )
+
+    mock_session = AsyncMock()
+    mock_repo = AsyncMock()
+    mock_repo.find_matching_history_term.return_value = None
+    created = MagicMock()
+    created.id = 5
+    created.term = "كاسى"
+    created.transliteration = "Kasi"
+    created.definition = "ھىندىستاندىكى قەدىمكى دۆلەت"
+    created.letter_group = "ك"
+    mock_repo.create_history_dictionary_entry.return_value = created
+
+    with patch(
+        "api.endpoints.history_dictionary_router.DictionaryRepository",
+        return_value=mock_repo,
+    ):
+        result = await create_history_entry(
+            body=HistoryEntryCreate(
+                term="كاسى",
+                transliteration="Kasi",
+                definition="ھىندىستاندىكى قەدىمكى دۆلەت",
+            ),
+            session=mock_session,
+            current_user=_mock_admin(),
+        )
+
+    assert result is created
+    mock_repo.find_matching_history_term.assert_called_once_with("كاسى")
+    mock_repo.create_history_dictionary_entry.assert_called_once_with(
+        term="كاسى",
+        transliteration="Kasi",
+        definition="ھىندىستاندىكى قەدىمكى دۆلەت",
+        letter_group="ك",
+    )
+    mock_session.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_create_history_entry_duplicate_term():
+    setup_paths()
+    from unittest.mock import patch
+    from api.endpoints.history_dictionary_router import (
+        create_history_entry,
+        HistoryEntryCreate,
+    )
+    from fastapi import HTTPException
+
+    mock_session = AsyncMock()
+    mock_repo = AsyncMock()
+    existing = MagicMock()
+    existing.id = 3
+    existing.term = "كاسى"
+    mock_repo.find_matching_history_term.return_value = existing
+
+    with patch(
+        "api.endpoints.history_dictionary_router.DictionaryRepository",
+        return_value=mock_repo,
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            await create_history_entry(
+                body=HistoryEntryCreate(term="كاسى"),
+                session=mock_session,
+                current_user=_mock_admin(),
+            )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["existing_id"] == 3
+    mock_repo.create_history_dictionary_entry.assert_not_called()
+    mock_session.commit.assert_not_called()
+
+
+def test_history_entry_create_rejects_empty_term():
+    setup_paths()
+    from api.endpoints.history_dictionary_router import HistoryEntryCreate
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        HistoryEntryCreate(term="   ")
+
+
+@pytest.mark.asyncio
 async def test_search_history_dictionary():
     setup_paths()
     from api.endpoints.history_dictionary_router import search_history_dictionary
