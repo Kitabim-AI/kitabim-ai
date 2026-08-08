@@ -161,6 +161,112 @@ def test_history_entry_create_rejects_empty_term():
 
 
 @pytest.mark.asyncio
+async def test_update_history_entry():
+    setup_paths()
+    from unittest.mock import patch
+    from api.endpoints.history_dictionary_router import (
+        update_history_entry,
+        HistoryEntryUpdate,
+    )
+
+    mock_session = AsyncMock()
+    mock_repo = AsyncMock()
+    existing = MagicMock()
+    existing.id = 5
+    mock_repo.get_history_dictionary_by_id.return_value = existing
+    updated = MagicMock()
+    updated.id = 5
+    updated.term = "كاسى"
+    updated.transliteration = "Kaasi"
+    updated.definition = "يېڭىلانغان ئېنىقلىما"
+    updated.letter_group = "ك"
+    mock_repo.update_history_dictionary_entry.return_value = updated
+
+    with patch(
+        "api.endpoints.history_dictionary_router.DictionaryRepository",
+        return_value=mock_repo,
+    ):
+        result = await update_history_entry(
+            entry_id=5,
+            body=HistoryEntryUpdate(
+                transliteration="Kaasi", definition="يېڭىلانغان ئېنىقلىما"
+            ),
+            session=mock_session,
+            current_user=_mock_admin(),
+        )
+
+    assert result is updated
+    mock_repo.get_history_dictionary_by_id.assert_called_once_with(5)
+    mock_repo.update_history_dictionary_entry.assert_called_once_with(
+        existing, transliteration="Kaasi", definition="يېڭىلانغان ئېنىقلىما"
+    )
+    mock_session.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_update_history_entry_not_found():
+    setup_paths()
+    from unittest.mock import patch
+    from api.endpoints.history_dictionary_router import (
+        update_history_entry,
+        HistoryEntryUpdate,
+    )
+    from fastapi import HTTPException
+
+    mock_session = AsyncMock()
+    mock_repo = AsyncMock()
+    mock_repo.get_history_dictionary_by_id.return_value = None
+
+    with patch(
+        "api.endpoints.history_dictionary_router.DictionaryRepository",
+        return_value=mock_repo,
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            await update_history_entry(
+                entry_id=999,
+                body=HistoryEntryUpdate(definition="x"),
+                session=mock_session,
+                current_user=_mock_admin(),
+            )
+
+    assert exc_info.value.status_code == 404
+    mock_repo.update_history_dictionary_entry.assert_not_called()
+    mock_session.commit.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_update_history_entry_partial_update_only_sends_provided_fields():
+    setup_paths()
+    from unittest.mock import patch
+    from api.endpoints.history_dictionary_router import (
+        update_history_entry,
+        HistoryEntryUpdate,
+    )
+
+    mock_session = AsyncMock()
+    mock_repo = AsyncMock()
+    existing = MagicMock()
+    existing.id = 5
+    mock_repo.get_history_dictionary_by_id.return_value = existing
+    mock_repo.update_history_dictionary_entry.return_value = existing
+
+    with patch(
+        "api.endpoints.history_dictionary_router.DictionaryRepository",
+        return_value=mock_repo,
+    ):
+        await update_history_entry(
+            entry_id=5,
+            body=HistoryEntryUpdate(definition="only definition changed"),
+            session=mock_session,
+            current_user=_mock_admin(),
+        )
+
+    mock_repo.update_history_dictionary_entry.assert_called_once_with(
+        existing, definition="only definition changed"
+    )
+
+
+@pytest.mark.asyncio
 async def test_search_history_dictionary():
     setup_paths()
     from api.endpoints.history_dictionary_router import search_history_dictionary

@@ -51,6 +51,11 @@ class HistoryEntryCreate(BaseModel):
         return v.strip()
 
 
+class HistoryEntryUpdate(BaseModel):
+    transliteration: Optional[str] = None
+    definition: Optional[str] = None
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 
@@ -148,6 +153,24 @@ async def create_history_entry(
     )
     await session.commit()
     return entry
+
+
+@router.patch("/history-dictionary/{entry_id}", response_model=HistoryEntryOut)
+async def update_history_entry(
+    entry_id: int,
+    body: HistoryEntryUpdate,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_admin),
+):
+    """Update transliteration/definition of a live history dictionary entry (Admin only)."""
+    repo = DictionaryRepository(session)
+    entry = await repo.get_history_dictionary_by_id(entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=t("errors.history_entry_not_found"))
+    fields = body.model_dump(exclude_unset=True)
+    updated = await repo.update_history_dictionary_entry(entry, **fields)
+    await session.commit()
+    return updated
 
 
 @router.delete("/history-dictionary/{entry_id}", status_code=204)
