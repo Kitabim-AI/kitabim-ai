@@ -628,7 +628,15 @@
       "transliteration": "Romanization",
       "confirmDelete": "Are you sure you want to delete \"{{word}}\"?",
       "deleteSuccess": "Entry deleted.",
-      "deleteError": "Failed to delete entry."
+      "deleteError": "Failed to delete entry.",
+      "addEntry": "Add entry",
+      "editEntry": "Edit entry",
+      "term": "Term",
+      "definition": "Definition",
+      "createSuccess": "Entry created.",
+      "createError": "Failed to create entry.",
+      "updateSuccess": "Entry updated.",
+      "updateError": "Failed to update entry."
     },
     "namesDictionary": {
       "title": "Person Names",

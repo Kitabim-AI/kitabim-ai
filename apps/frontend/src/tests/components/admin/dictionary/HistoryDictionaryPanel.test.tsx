@@ -24,9 +24,12 @@ vi.mock('@/src/services/authService', async () => {
 
 const mockEntry = { id: 1, term: 'تارىخ سۆزى', letter_group: 'ت' };
 
-function mockListResponses() {
+function mockListResponses(writeResponse?: Response) {
   vi.mocked(authService.authFetch).mockImplementation(async (url: string, opts?: any) => {
     if (opts?.method === 'DELETE') return { ok: true } as Response;
+    if (opts?.method === 'POST' || opts?.method === 'PATCH') {
+      return writeResponse ?? ({ ok: true, json: async () => ({ id: 2, term: 'يېڭى سۆز', letter_group: 'ي' }) } as Response);
+    }
     if (url.includes('/api/history-dictionary/stats')) {
       return { ok: true, json: async () => ({ total_entries: 1 }) } as Response;
     }
@@ -79,4 +82,67 @@ test('admin can delete an entry after confirming', async () => {
 
   expect(authService.authFetch).toHaveBeenCalledWith('/api/history-dictionary/1', { method: 'DELETE' });
   await waitFor(() => expect(screen.queryByText('تارىخ سۆزى')).not.toBeInTheDocument());
+});
+
+test('does not show an add button for non-admin users', async () => {
+  vi.mocked(AuthModule.useIsAdmin).mockReturnValue(false);
+  mockListResponses();
+
+  render(<HistoryDictionaryPanel />);
+
+  await screen.findByText('تارىخ سۆزى');
+  expect(screen.queryByTitle('admin.historyDictionary.addEntry')).not.toBeInTheDocument();
+});
+
+test('admin can create a new entry via the add modal', async () => {
+  vi.mocked(AuthModule.useIsAdmin).mockReturnValue(true);
+  mockListResponses();
+
+  render(<HistoryDictionaryPanel />);
+
+  await screen.findByText('تارىخ سۆزى');
+  fireEvent.click(screen.getByTitle('admin.historyDictionary.addEntry'));
+
+  fireEvent.change(screen.getByPlaceholderText('admin.historyDictionary.term'), {
+    target: { value: 'يېڭى سۆز' },
+  });
+
+  fireEvent.click(screen.getByText('common.save'));
+
+  await waitFor(() =>
+    expect(authService.authFetch).toHaveBeenCalledWith(
+      '/api/history-dictionary',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ term: 'يېڭى سۆز', transliteration: null, definition: null }),
+      })
+    )
+  );
+
+  await waitFor(() =>
+    expect(screen.queryByPlaceholderText('admin.historyDictionary.term')).not.toBeInTheDocument()
+  );
+});
+
+test('shows an inline error when the add modal gets a duplicate-term response', async () => {
+  vi.mocked(AuthModule.useIsAdmin).mockReturnValue(true);
+  mockListResponses({
+    ok: false,
+    status: 409,
+    json: async () => ({
+      detail: { message: 'An entry for this term already exists', existing_id: 1, existing_term: 'تارىخ سۆزى' },
+    }),
+  } as Response);
+
+  render(<HistoryDictionaryPanel />);
+
+  await screen.findByText('تارىخ سۆزى');
+  fireEvent.click(screen.getByTitle('admin.historyDictionary.addEntry'));
+  fireEvent.change(screen.getByPlaceholderText('admin.historyDictionary.term'), {
+    target: { value: 'تارىخ سۆزى' },
+  });
+  fireEvent.click(screen.getByText('common.save'));
+
+  await screen.findByText('An entry for this term already exists');
+  expect(screen.getByPlaceholderText('admin.historyDictionary.term')).toBeInTheDocument();
 });

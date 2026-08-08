@@ -4,14 +4,17 @@
 
 import {
   AlertCircle,
+  Edit2,
   Hash,
   Loader2,
+  Plus,
   RefreshCw,
   Search,
   Trash2,
   X,
 } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useAppContext } from '../../../context/AppContext';
 import { useNotification } from '../../../context/NotificationContext';
 import { useIsAdmin } from '../../../hooks/useAuth';
@@ -56,6 +59,14 @@ export const HistoryDictionaryPanel: React.FC = () => {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const loaderRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<HistoryEntry | null>(null);
+  const [formTerm, setFormTerm] = useState('');
+  const [formTransliteration, setFormTransliteration] = useState('');
+  const [formDefinition, setFormDefinition] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [duplicateError, setDuplicateError] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -184,7 +195,84 @@ export const HistoryDictionaryPanel: React.FC = () => {
     });
   };
 
+  const openAddModal = () => {
+    setEditingEntry(null);
+    setFormTerm('');
+    setFormTransliteration('');
+    setFormDefinition('');
+    setDuplicateError(null);
+    setIsAddModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsAddModalOpen(false);
+    setEditingEntry(null);
+    setDuplicateError(null);
+  };
+
+  const refreshCurrentView = async () => {
+    if (searchQuery.trim()) {
+      await searchEntries(searchQuery);
+    } else {
+      setAllEntries([]);
+      setPage(0);
+      setHasMore(true);
+      await fetchEntries(0, true, activeGroup);
+    }
+    await fetchStats();
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formTerm.trim()) return;
+    setIsSubmitting(true);
+    setDuplicateError(null);
+    try {
+      const isEdit = !!editingEntry;
+      const url = isEdit ? `/api/history-dictionary/${editingEntry!.id}` : '/api/history-dictionary';
+      const method = isEdit ? 'PATCH' : 'POST';
+      const body = isEdit
+        ? { transliteration: formTransliteration.trim() || null, definition: formDefinition.trim() || null }
+        : {
+            term: formTerm.trim(),
+            transliteration: formTransliteration.trim() || null,
+            definition: formDefinition.trim() || null,
+          };
+
+      const resp = await authFetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (!resp.ok) {
+        if (resp.status === 409) {
+          const errorData = await resp.json();
+          setDuplicateError(errorData?.detail?.message || t('admin.historyDictionary.createError'));
+          return;
+        }
+        throw new Error(isEdit ? 'Failed to update entry' : 'Failed to create entry');
+      }
+
+      closeModal();
+      await refreshCurrentView();
+      addNotification(
+        t(isEdit ? 'admin.historyDictionary.updateSuccess' : 'admin.historyDictionary.createSuccess'),
+        'success',
+      );
+    } catch (e) {
+      console.error('Failed to save history dictionary entry', e);
+      addNotification(
+        t(editingEntry ? 'admin.historyDictionary.updateError' : 'admin.historyDictionary.createError'),
+        'error',
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
+    <>
     <div className="space-y-6 md:space-y-8 animate-fade-in pb-20" dir="rtl" lang="ug">
       {/* Search + Stats row */}
       <div className="flex flex-col-reverse md:flex-row items-center justify-between w-full gap-3 md:gap-4">
@@ -227,6 +315,17 @@ export const HistoryDictionaryPanel: React.FC = () => {
               count: stats.total_entries.toLocaleString(),
             })}
           </div>
+        )}
+
+        {isAdmin && (
+          <button
+            onClick={openAddModal}
+            title={t('admin.historyDictionary.addEntry')}
+            className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-2.5 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl hover:bg-[#0284c7] dark:hover:bg-[#38bdf8]/90 transition-all shadow-lg shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10 shrink-0"
+          >
+            <Plus size={14} className="md:w-4 md:h-4" />
+            <span className="text-xs md:text-sm font-normal">{t('admin.historyDictionary.addEntry')}</span>
+          </button>
         )}
       </div>
 
@@ -344,5 +443,105 @@ export const HistoryDictionaryPanel: React.FC = () => {
         )}
       </div>
     </div>
+
+    {isAddModalOpen && createPortal(
+      <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" dir="rtl" lang="ug">
+        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md animate-fade-in" onClick={closeModal} />
+        <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-[32px] overflow-hidden shadow-2xl animate-scale-up border border-[#0369a1]/10 dark:border-slate-800 flex flex-col">
+          <div className="px-8 py-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-[#0369a1]/5 dark:bg-[#38bdf8]/5">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-[#0369a1] text-white rounded-xl shadow-lg shadow-[#0369a1]/20">
+                {editingEntry ? <Edit2 size={20} /> : <Plus size={20} />}
+              </div>
+              <h3 className="text-xl font-bold text-[#1a1a1a] dark:text-slate-100">
+                {editingEntry ? t('admin.historyDictionary.editEntry') : t('admin.historyDictionary.addEntry')}
+              </h3>
+            </div>
+            <button
+              onClick={closeModal}
+              className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 dark:text-slate-500 hover:text-[#1a1a1a] dark:hover:text-slate-100 rounded-xl transition-all"
+            >
+              <X size={20} strokeWidth={2.5} />
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="p-8 space-y-6 overflow-y-auto max-h-[70vh]">
+            <div className="space-y-2">
+              <label className="block text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-1">
+                {t('admin.historyDictionary.term')} <span className="text-red-500">*</span>
+              </label>
+              <input
+                autoFocus
+                required
+                disabled={!!editingEntry}
+                type="text"
+                dir="rtl"
+                value={formTerm}
+                onChange={(e) => setFormTerm(e.target.value)}
+                className={`w-full px-5 py-3.5 border-2 rounded-2xl outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all uyghur-text text-xl ${
+                  editingEntry
+                    ? 'bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed'
+                    : 'bg-white dark:bg-slate-950 border-slate-100 dark:border-slate-800 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500'
+                }`}
+                placeholder={t('admin.historyDictionary.term')}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-1">
+                {t('admin.historyDictionary.transliteration')}
+              </label>
+              <input
+                type="text"
+                dir="ltr"
+                value={formTransliteration}
+                onChange={(e) => setFormTransliteration(e.target.value)}
+                className="w-full px-5 py-3.5 border-2 border-slate-100 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all font-mono text-lg"
+                placeholder={t('admin.historyDictionary.transliteration')}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-1">
+                {t('admin.historyDictionary.definition')}
+              </label>
+              <textarea
+                rows={4}
+                dir="rtl"
+                value={formDefinition}
+                onChange={(e) => setFormDefinition(e.target.value)}
+                className="w-full px-5 py-3.5 border-2 border-slate-100 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all uyghur-text text-base resize-none"
+                placeholder={t('admin.historyDictionary.definition')}
+              />
+            </div>
+
+            {duplicateError && (
+              <div className="px-4 py-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 text-red-600 dark:text-red-400 text-sm">
+                {duplicateError}
+              </div>
+            )}
+          </form>
+
+          <div className="px-8 py-6 bg-slate-50 dark:bg-slate-950/40 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={closeModal}
+              className="px-6 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-all font-bold uppercase tracking-widest text-xs"
+            >
+              {t('common.cancel')}
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting || !formTerm.trim()}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-8 py-2.5 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl shadow-lg shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10 hover:bg-[#0284c7] dark:hover:bg-[#38bdf8]/90 transition-all active:scale-95 disabled:opacity-50 font-bold uppercase tracking-widest text-xs"
+            >
+              {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : t('common.save')}
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+    </>
   );
 };
