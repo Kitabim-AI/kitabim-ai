@@ -53,6 +53,9 @@
     "pageResetSuccess": "Page {{pageNum}} reset and queued for re-processing.",
     "pageResetError": "Failed to reset page {{pageNum}}. Please try again.",
     "pageUpdated": "Page {{pageNum}} updated.",
+    "pageTocMarked": "Page {{pageNum}} marked as Table of Contents.",
+    "pageTocUnmarked": "Page {{pageNum}} unmarked as Table of Contents.",
+    "pageTocError": "Failed to update Table of Contents flag for page {{pageNum}}. Please try again.",
     "noPagesToSave": "No pages found to save. Please try reloading the book.",
     "saveSuccess": "Global corrections saved.",
     "deleteSuccess": "Book deleted successfully.",
@@ -781,6 +784,16 @@
       "title": "Reset Page",
       "message": "Are you sure you want to reset page {{pageNum}}? This will clear the current text and queue it for re-processing. Any unsaved edits will be lost.",
       "confirm": "Reset Page"
+    },
+    "markAsToc": {
+      "title": "Mark as Table of Contents",
+      "message": "Are you sure you want to mark page {{pageNum}} as a Table of Contents page? This will delete its existing chunks and exclude it from search/RAG.",
+      "confirm": "Mark as ToC"
+    },
+    "unmarkAsToc": {
+      "title": "Unmark Table of Contents",
+      "message": "Are you sure you want to unmark page {{pageNum}} as a Table of Contents page? It will be re-included in search/RAG. Existing chunks are not regenerated automatically — use Reprocess if needed.",
+      "confirm": "Unmark as ToC"
     },
     "reOcrError": {
       "title": "Re-OCR Error",
