@@ -26,6 +26,7 @@ interface VirtualScrollReaderProps {
   onSave?: (pageNum: number, text: string) => void;
   onCancel?: () => void;
   onSetStartPage?: (pageNum: number) => void;
+  onToggleToc?: (pageNum: number, nextIsToc: boolean) => void;
   isSaving?: boolean;
   selectedBookPages?: any[];
   contentPageOffset?: number;
@@ -51,6 +52,7 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
   onSave,
   onCancel,
   onSetStartPage,
+  onToggleToc,
   isSaving = false,
   selectedBookPages = [],
   contentPageOffset,
@@ -286,6 +288,7 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
                   onEdit={() => onEdit?.(pageNum, page.text || '')}
                   onReprocess={() => onReprocess?.(pageNum)}
                   onSetStartPage={() => onSetStartPage?.(pageNum)}
+                  onToggleToc={(nextIsToc) => onToggleToc?.(pageNum, nextIsToc)}
                   tempText={isEditingThisPage ? tempPageText : ''}
                   onTempTextChange={(text) => onTempTextChange?.(text)}
                   onSave={() => {

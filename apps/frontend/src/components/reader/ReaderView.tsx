@@ -619,6 +619,7 @@ export const ReaderView: React.FC = () => {
                   bookActions.handleReProcessPage(selectedBook.id, pageNum);
                 }}
                 onSetStartPage={(pageNum) => handleSetStartPage(pageNum)}
+                onToggleToc={(pageNum, nextIsToc) => bookActions.handleToggleToc(selectedBook.id, pageNum, nextIsToc)}
                 onTempTextChange={setTempPageText}
                 onSave={(pageNum, text) => {
                   handleUpdatePage(selectedBook.id, pageNum, text);
@@ -653,6 +654,7 @@ export const ReaderView: React.FC = () => {
                         onEdit={() => { setEditingPageNum(page.pageNumber); setTempPageText(page.text || ''); }}
                         onReprocess={() => bookActions.handleReProcessPage(selectedBook.id, page.pageNumber)}
                         onSetStartPage={() => handleSetStartPage(page.pageNumber)}
+                        onToggleToc={(nextIsToc) => bookActions.handleToggleToc(selectedBook.id, page.pageNumber, nextIsToc)}
                         tempText={tempPageText}
                         onTempTextChange={setTempPageText}
                         onSave={() => {
