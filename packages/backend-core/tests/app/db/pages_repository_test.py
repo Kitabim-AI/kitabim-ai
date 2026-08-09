@@ -110,6 +110,43 @@ async def test_update_status():
 
 
 @pytest.mark.asyncio
+async def test_set_is_toc_marks_page():
+    session = AsyncMock()
+    repo = PagesRepository(session)
+    mock_res = MagicMock()
+    mock_res.rowcount = 1
+    session.execute.return_value = mock_res
+
+    result = await repo.set_is_toc("b1", 5, True, "editor@example.com")
+    assert result is True
+    assert session.flush.called
+
+
+@pytest.mark.asyncio
+async def test_set_is_toc_unmarks_page():
+    session = AsyncMock()
+    repo = PagesRepository(session)
+    mock_res = MagicMock()
+    mock_res.rowcount = 1
+    session.execute.return_value = mock_res
+
+    result = await repo.set_is_toc("b1", 5, False, "editor@example.com")
+    assert result is True
+
+
+@pytest.mark.asyncio
+async def test_set_is_toc_returns_false_for_unknown_page():
+    session = AsyncMock()
+    repo = PagesRepository(session)
+    mock_res = MagicMock()
+    mock_res.rowcount = 0
+    session.execute.return_value = mock_res
+
+    result = await repo.set_is_toc("b1", 999, True, "editor@example.com")
+    assert result is False
+
+
+@pytest.mark.asyncio
 async def test_search_content_pages():
     session = AsyncMock()
     repo = PagesRepository(session)

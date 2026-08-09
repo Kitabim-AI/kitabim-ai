@@ -221,6 +221,21 @@ class PagesRepository(BaseRepository[Page]):
         await self.session.flush()
         return result.rowcount
 
+    async def set_is_toc(
+        self, book_id: str, page_number: int, is_toc: bool, updated_by: str
+    ) -> bool:
+        """Manually mark or unmark a page as a Table of Contents page"""
+        from sqlalchemy import update
+
+        stmt = (
+            update(Page)
+            .where(Page.book_id == book_id, Page.page_number == page_number)
+            .values(is_toc=is_toc, last_updated=func.now(), updated_by=updated_by)
+        )
+        result = await self.session.execute(stmt)
+        await self.session.flush()
+        return result.rowcount > 0
+
     async def delete_by_book(self, book_id: str) -> int:
         """Delete all pages for a book"""
         stmt = delete(Page).where(Page.book_id == book_id)
