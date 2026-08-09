@@ -312,6 +312,10 @@
     "setStartPageConfirmTitle": "Set Content Page 1",
     "setStartPageConfirmMessage": "Are you sure you want to mark physical page {{page}} as Content Page 1? (Offset: +{{offset}})",
     "setStartPageSuccess": "Physical page {{page}} marked as Content Page 1 (Offset: +{{offset}})",
+    "markAsToc": "Mark as ToC",
+    "unmarkAsToc": "Unmark as ToC",
+    "markAsTocTitle": "Mark this page as a Table of Contents page",
+    "unmarkAsTocTitle": "Remove Table of Contents flag from this page",
     "reprocess": {
       "title": "Reprocess Page",
       "message": "This page has your edits. Reprocessing will lose them. Are you sure?",

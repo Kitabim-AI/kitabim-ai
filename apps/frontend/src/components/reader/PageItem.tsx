@@ -1,4 +1,4 @@
-import { BookmarkCheck, Edit3, Loader2, RotateCcw, Save } from 'lucide-react';
+import { BookmarkCheck, Edit3, ListTree, ListX, Loader2, RotateCcw, Save } from 'lucide-react';
 import React from 'react';
 import { useIsEditor } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
@@ -24,6 +24,7 @@ interface PageItemProps {
   onEdit: () => void;
   onReprocess: () => void;
   onSetStartPage?: () => void;
+  onToggleToc?: (nextIsToc: boolean) => void;
 
   tempText: string;
   onTempTextChange: (text: string) => void;
@@ -37,7 +38,7 @@ interface PageItemProps {
 }
 
 export const PageItem: React.FC<PageItemProps> = ({
-  page, isActive, isEditing, fontSize, contentFontFamily, contentFontClassName, onSetActive, onEdit, onReprocess, onSetStartPage,
+  page, isActive, isEditing, fontSize, contentFontFamily, contentFontClassName, onSetActive, onEdit, onReprocess, onSetStartPage, onToggleToc,
   tempText, onTempTextChange, onSave, onCancel, isLoading, isSaving, isFullscreen, contentPageOffset, onTocPageClick
 }) => {
   const { t } = useI18n();
@@ -92,6 +93,16 @@ export const PageItem: React.FC<PageItemProps> = ({
                 >
                   <BookmarkCheck size={12} />
                   <span>{t('reader.setPageOne') || "Mark as Page 1"}</span>
+                </button>
+              )}
+              {onToggleToc && (
+                <button
+                  onClick={() => onToggleToc(!(page?.isToc ?? page?.is_toc))}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg text-xs font-bold uppercase"
+                  title={(page?.isToc ?? page?.is_toc) ? t('reader.unmarkAsTocTitle') : t('reader.markAsTocTitle')}
+                >
+                  {(page?.isToc ?? page?.is_toc) ? <ListX size={12} /> : <ListTree size={12} />}
+                  <span>{(page?.isToc ?? page?.is_toc) ? t('reader.unmarkAsToc') : t('reader.markAsToc')}</span>
                 </button>
               )}
             </div>

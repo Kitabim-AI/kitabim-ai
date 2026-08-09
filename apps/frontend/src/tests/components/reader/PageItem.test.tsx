@@ -91,4 +91,28 @@ test('PageItem renders display page number and PDF page number with spacing when
   expect(screen.getByText('(PDF 204)')).toBeInTheDocument();
 });
 
+test('PageItem shows Mark as ToC button and calls onToggleToc(true) when page is not ToC', () => {
+  const onToggleToc = vi.fn();
+  renderPageItem({ page: { ...mockPage, isToc: false }, onToggleToc });
+
+  const button = screen.getByText('reader.markAsToc');
+  fireEvent.click(button);
+  expect(onToggleToc).toHaveBeenCalledWith(true);
+});
+
+test('PageItem shows Unmark as ToC button and calls onToggleToc(false) when page is ToC', () => {
+  const onToggleToc = vi.fn();
+  renderPageItem({ page: { ...mockPage, isToc: true }, onToggleToc });
+
+  const button = screen.getByText('reader.unmarkAsToc');
+  fireEvent.click(button);
+  expect(onToggleToc).toHaveBeenCalledWith(false);
+});
+
+test('PageItem hides the ToC toggle button for non-editors', () => {
+  vi.mocked(AuthModule.useIsEditor).mockReturnValue(false);
+  renderPageItem({ page: { ...mockPage, isToc: false }, onToggleToc: vi.fn() });
+
+  expect(screen.queryByText('reader.markAsToc')).not.toBeInTheDocument();
+});
 
