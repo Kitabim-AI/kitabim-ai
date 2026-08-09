@@ -1,13 +1,12 @@
 """Detect exact-phrase search intent (Phase 1 of the keyword-search rework).
 
-The keyword (lexical) retrieval leg only runs when the user genuinely wants
-an exact match: a quoted phrase, or the explicit UI "Exact phrase" mode.
-Everything else is answered by vector + graph retrieval.
+The keyword (lexical) retrieval leg runs when the user genuinely wants an exact match:
+a quoted phrase, or the explicit UI "Exact phrase" mode.
 
-`«...»` used to also mark a quoted book title (see
-`find_books_by_title_in_question` / `entity_matches_question`); it is now
-reserved exclusively for phrase-search intent, and those call sites fall
-back to their non-quote heuristics instead.
+Catalog-first resolution: If a quoted phrase in a question matches a book title
+in the database catalog, it is scoped to that book and processed via vector + graph
+retrieval (is_exact = False). Unmatched quotes fall back to exact-phrase search.
+Explicit UI flags or page-finding phrasing always force exact-phrase search.
 """
 
 from __future__ import annotations

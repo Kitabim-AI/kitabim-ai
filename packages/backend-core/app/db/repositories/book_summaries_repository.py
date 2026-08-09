@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from sqlalchemy import func, select, update
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -98,24 +98,6 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
             },
         )
         await self.session.execute(stmt)
-        await self.session.flush()
-
-    async def upsert_draft(
-        self, book_id: str, summary: str, embedding: List[float]
-    ) -> None:
-        """Write regenerated summary + embedding to staging columns during migration 039→040.
-
-        Updates summary and embedding_draft only — the active 'embedding' column is
-        intentionally left unchanged so search keeps using old stable embeddings until
-        cutover migration 040 swaps them in bulk.
-
-        Remove this method and revert summary_job to upsert() after migration 040.
-        """
-        await self.session.execute(
-            update(BookSummary)
-            .where(BookSummary.book_id == book_id)
-            .values(summary=summary, embedding_draft=embedding, generated_at=func.now())
-        )
         await self.session.flush()
 
     async def get_summaries_for_books(

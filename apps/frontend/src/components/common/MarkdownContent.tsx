@@ -5,7 +5,11 @@ type MarkdownContentProps = {
   className?: string;
   style?: React.CSSProperties;
   onReferenceClick?: (bookId: string, pageNums: number[]) => void;
+  contentPageOffset?: number;
+  onTocPageClick?: (targetPhysicalPage: number) => void;
 };
+
+
 
 const ARABIC_DIACRITIC_RE = /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/;
 const ARABIC_SCRIPT_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/;
@@ -177,13 +181,78 @@ const isUnorderedList = (line: string) => {
   }
   return false;
 };
-const isTocLine = (line: string) => dotLeaderPattern.test(line);
+const isTocLine = (line: string) => {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  if (dotLeaderPattern.test(trimmed)) return true;
+
+  const clean = trimmed.replace(/^\s*[*+\-•]\s*/, '');
+
+  if (/^[\d\u0660-\u0669\u06F0-\u06F9]{1,4}\s+[\u0600-\u06FF\w]/.test(clean)) {
+    return true;
+  }
+
+  if (/[\u0600-\u06FF\w].{2,}\s+[\d\u0660-\u0669\u06F0-\u06F9]{1,4}$/.test(clean)) {
+    return true;
+  }
+
+  return false;
+};
+
+const parseDigitString = (str: string): number | null => {
+  if (!str) return null;
+  const normalized = str
+    .replace(/[\u0660-\u0669]/g, d => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[\u06F0-\u06F9]/g, d => String(d.charCodeAt(0) - 0x06F0));
+  const num = parseInt(normalized, 10);
+  return isNaN(num) || num <= 0 ? null : num;
+};
+
+const extractTocPageNumber = (line: string): number | null => {
+  const clean = line.replace(/^\s*[*+\-•]\s*/, '').trim();
+
+  const endMatch = clean.match(/([\d\u0660-\u0669\u06F0-\u06F9]+)\s*$/);
+  if (endMatch) {
+    const num = parseDigitString(endMatch[1]);
+    if (num !== null) return num;
+  }
+
+  const afterLeaderMatch = clean.match(/(?:[.\u00b7\u2022\u2219\u22c5\u2024\ufe52\u3002…]{2,})\s*([\d\u0660-\u0669\u06F0-\u06F9]+)/);
+  if (afterLeaderMatch) {
+    const num = parseDigitString(afterLeaderMatch[1]);
+    if (num !== null) return num;
+  }
+
+  const startMatch = clean.match(/^([\d\u0660-\u0669\u06F0-\u06F9]+)/);
+  if (startMatch) {
+    const num = parseDigitString(startMatch[1]);
+    if (num !== null) return num;
+  }
+
+  return null;
+};
+
+const extractRowPageNumber = (row: string[]): number | null => {
+  if (!row || row.length === 0) return null;
+  for (const cell of row) {
+    const num = parseDigitString(cell.trim());
+    if (num !== null && num > 0 && num < 5000) {
+      return num;
+    }
+  }
+  for (const cell of row) {
+    const num = extractTocPageNumber(cell);
+    if (num !== null) return num;
+  }
+  return null;
+};
+
 const isTableRow = (line: string) => /^\s*\|/.test(line);
 const isTableSeparator = (line: string) => /^\s*\|[\s|:=-]+\|?\s*$/.test(line);
 const isBlockStart = (line: string) =>
-  isHr(line) || isHeading(line) || isQuote(line) || isOrderedList(line) || isUnorderedList(line) || isTocLine(line) || isTableRow(line);
+  isHr(line) || isHeading(line) || isQuote(line) || isTocLine(line) || isOrderedList(line) || isUnorderedList(line) || isTableRow(line);
 
-export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ content, className, style, onReferenceClick }) => {
+export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ content, className, style, onReferenceClick, contentPageOffset, onTocPageClick }) => {
   const normalized = (content || '').replace(/\\n/g, '\n').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const lines = normalized
     .split('\n')
@@ -233,11 +302,38 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ con
         }
       }
 
+      const hasOffset = contentPageOffset !== undefined && contentPageOffset !== null && contentPageOffset > 0;
+
       blocks.push(
         <div key={`toc-${key++}`} className="space-y-1 whitespace-pre-wrap tabular-nums">
-          {mergedLines.map((tocLine, idx) => (
-            <div key={`toc-${key}-line-${idx}`}>{tocLine}</div>
-          ))}
+          {mergedLines.map((tocLine, idx) => {
+            const contentPageNum = hasOffset ? extractTocPageNumber(tocLine) : null;
+            const targetPhysicalPage = (contentPageNum !== null && hasOffset && contentPageOffset) ? contentPageNum + contentPageOffset : null;
+            const cleanDisplay = tocLine.replace(/^\s*[*+\-•]\s*/, '');
+
+            if (targetPhysicalPage !== null && (onTocPageClick || onReferenceClick)) {
+              return (
+                <button
+                  key={`toc-${key}-line-${idx}`}
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (onTocPageClick) {
+                      onTocPageClick(targetPhysicalPage);
+                    } else if (onReferenceClick) {
+                      onReferenceClick('', [targetPhysicalPage]);
+                    }
+                  }}
+                  className="w-full text-left rtl:text-right text-[#0369a1] dark:text-[#38bdf8] hover:underline cursor-pointer transition-colors block py-0.5 px-1 -mx-1 rounded hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 group"
+                  title={`Jump to page ${targetPhysicalPage}`}
+                >
+                  <span className="group-hover:opacity-90">{cleanDisplay}</span>
+                </button>
+              );
+            }
+
+            return <div key={`toc-${key}-line-${idx}`}>{cleanDisplay}</div>;
+          })}
         </div>
       );
       continue;
@@ -317,6 +413,8 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ con
         row.split('|').slice(1, -1).map(cell => cell.trim());
       const hasSeparator = tableLines.some(l => isTableSeparator(l));
       const dataLines = tableLines.filter(l => !isTableSeparator(l));
+      const hasOffset = contentPageOffset !== undefined && contentPageOffset !== null && contentPageOffset > 0;
+
       if (dataLines.length > 0) {
         if (hasSeparator) {
           const [headerLine, ...bodyLines] = dataLines;
@@ -335,15 +433,36 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ con
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row, rowIdx) => (
-                    <tr key={rowIdx} className={rowIdx % 2 === 1 ? 'bg-slate-50/50 dark:bg-slate-900/30' : ''}>
-                      {row.map((cell, cellIdx) => (
-                        <td key={cellIdx} className="border border-slate-200 dark:border-slate-800 px-3 py-2 text-right">
-                          {renderInline(cell, onReferenceClick)}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
+                  {rows.map((row, rowIdx) => {
+                    const contentPageNum = hasOffset ? extractRowPageNumber(row) : null;
+                    const targetPhysicalPage = (contentPageNum !== null && hasOffset && contentPageOffset) ? contentPageNum + contentPageOffset : null;
+                    const isClickable = targetPhysicalPage !== null && (onTocPageClick || onReferenceClick);
+
+                    return (
+                      <tr
+                        key={rowIdx}
+                        onClick={isClickable ? (e) => {
+                          e.preventDefault();
+                          if (onTocPageClick) {
+                            onTocPageClick(targetPhysicalPage);
+                          } else if (onReferenceClick) {
+                            onReferenceClick('', [targetPhysicalPage]);
+                          }
+                        } : undefined}
+                        className={`
+                          ${rowIdx % 2 === 1 ? 'bg-slate-50/50 dark:bg-slate-900/30' : ''}
+                          ${isClickable ? 'cursor-pointer hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/15 text-[#0369a1] dark:text-[#38bdf8] transition-colors group' : ''}
+                        `}
+                        title={isClickable ? `Jump to page ${targetPhysicalPage}` : undefined}
+                      >
+                        {row.map((cell, cellIdx) => (
+                          <td key={cellIdx} className={`border border-slate-200 dark:border-slate-800 px-3 py-2 text-right ${isClickable ? 'group-hover:underline' : ''}`}>
+                            {renderInline(cell, onReferenceClick)}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -354,15 +473,36 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ con
             <div key={`table-${key++}`} className="overflow-x-auto my-2" dir="rtl">
               <table className="w-full border-collapse text-sm text-slate-800 dark:text-slate-200">
                 <tbody>
-                  {rows.map((row, rowIdx) => (
-                    <tr key={rowIdx} className={rowIdx % 2 === 1 ? 'bg-slate-50/50 dark:bg-slate-900/30' : ''}>
-                      {row.map((cell, cellIdx) => (
-                        <td key={cellIdx} className="px-3 py-1.5 text-right">
-                          {renderInline(cell, onReferenceClick)}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
+                  {rows.map((row, rowIdx) => {
+                    const contentPageNum = hasOffset ? extractRowPageNumber(row) : null;
+                    const targetPhysicalPage = (contentPageNum !== null && hasOffset && contentPageOffset) ? contentPageNum + contentPageOffset : null;
+                    const isClickable = targetPhysicalPage !== null && (onTocPageClick || onReferenceClick);
+
+                    return (
+                      <tr
+                        key={rowIdx}
+                        onClick={isClickable ? (e) => {
+                          e.preventDefault();
+                          if (onTocPageClick) {
+                            onTocPageClick(targetPhysicalPage);
+                          } else if (onReferenceClick) {
+                            onReferenceClick('', [targetPhysicalPage]);
+                          }
+                        } : undefined}
+                        className={`
+                          ${rowIdx % 2 === 1 ? 'bg-slate-50/50 dark:bg-slate-900/30' : ''}
+                          ${isClickable ? 'cursor-pointer hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/15 text-[#0369a1] dark:text-[#38bdf8] transition-colors group' : ''}
+                        `}
+                        title={isClickable ? `Jump to page ${targetPhysicalPage}` : undefined}
+                      >
+                        {row.map((cell, cellIdx) => (
+                          <td key={cellIdx} className={`px-3 py-1.5 text-right ${isClickable ? 'group-hover:underline' : ''}`}>
+                            {renderInline(cell, onReferenceClick)}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

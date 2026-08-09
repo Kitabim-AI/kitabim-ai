@@ -19,15 +19,7 @@ const mockPage = {
 const i18nValue = {
   language: 'en' as const,
   setLanguage: vi.fn(),
-  t: (key: string, params?: Record<string, string | number>) => {
-    if (params) {
-      return Object.entries(params).reduce(
-        (value, [paramKey, paramValue]) => value.replace(`{{${paramKey}}}`, String(paramValue)),
-        key
-      );
-    }
-    return key;
-  },
+  t: (key: string, _params?: Record<string, string | number>) => key,
 };
 
 const renderPageItem = (props: Partial<React.ComponentProps<typeof PageItem>> = {}) => {
@@ -85,3 +77,18 @@ test('PageItem calls onSave and onCancel when buttons are clicked', () => {
   fireEvent.click(screen.getByText('common.cancel'));
   expect(onCancel).toHaveBeenCalledTimes(1);
 });
+
+test('PageItem renders display page number and PDF page number with spacing when displayPageNumber differs', () => {
+  renderPageItem({
+    page: {
+      pageNumber: 204,
+      displayPageNumber: '196',
+      text: 'Content with offset',
+      status: 'ocr_done',
+    },
+  });
+  expect(screen.getByText('chat.pageNumber')).toBeInTheDocument();
+  expect(screen.getByText('(PDF 204)')).toBeInTheDocument();
+});
+
+

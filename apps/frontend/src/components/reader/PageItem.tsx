@@ -1,4 +1,4 @@
-import { Edit3, Loader2, RotateCcw, Save } from 'lucide-react';
+import { BookmarkCheck, Edit3, Loader2, RotateCcw, Save } from 'lucide-react';
 import React from 'react';
 import { useIsEditor } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
@@ -23,6 +23,7 @@ interface PageItemProps {
   onSetActive: () => void;
   onEdit: () => void;
   onReprocess: () => void;
+  onSetStartPage?: () => void;
 
   tempText: string;
   onTempTextChange: (text: string) => void;
@@ -31,11 +32,13 @@ interface PageItemProps {
   isLoading: boolean;
   isSaving?: boolean;
   isFullscreen?: boolean;
+  contentPageOffset?: number;
+  onTocPageClick?: (targetPage: number) => void;
 }
 
 export const PageItem: React.FC<PageItemProps> = ({
-  page, isActive, isEditing, fontSize, contentFontFamily, contentFontClassName, onSetActive, onEdit, onReprocess,
-  tempText, onTempTextChange, onSave, onCancel, isLoading, isSaving, isFullscreen
+  page, isActive, isEditing, fontSize, contentFontFamily, contentFontClassName, onSetActive, onEdit, onReprocess, onSetStartPage,
+  tempText, onTempTextChange, onSave, onCancel, isLoading, isSaving, isFullscreen, contentPageOffset, onTocPageClick
 }) => {
   const { t } = useI18n();
   const isEditor = useIsEditor();
@@ -81,11 +84,26 @@ export const PageItem: React.FC<PageItemProps> = ({
             <div className={`flex items-center gap-2 transition-all ${isFullscreen ? 'hidden' : `${isActive ? 'opacity-100' : 'opacity-0'} sm:group-hover:opacity-100`}`}>
               <button onClick={onReprocess} className="p-2 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg" title={t('reader.reprocessPage')}><RotateCcw size={14} /></button>
               <button onClick={onEdit} className="flex items-center gap-2 px-3 py-1.5 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg text-xs font-bold uppercase"><Edit3 size={12} /> {t('reader.editPage')}</button>
+              {onSetStartPage && (
+                <button
+                  onClick={onSetStartPage}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg text-xs font-bold uppercase"
+                  title={t('reader.setStartPageTitle') || "Mark this physical page as Content Page 1"}
+                >
+                  <BookmarkCheck size={12} />
+                  <span>{t('reader.setPageOne') || "Mark as Page 1"}</span>
+                </button>
+              )}
             </div>
           )}
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs font-bold text-[#94a3b8] dark:text-slate-500 uppercase">{t('chat.pageNumber', { page: page.pageNumber })}</span>
+          <span className="text-xs font-bold text-[#94a3b8] dark:text-slate-500 uppercase flex items-center gap-1.5">
+            <span>{t('chat.pageNumber', { page: page.displayPageNumber || page.display_page_number || page.pageNumber })}</span>
+            {(page.displayPageNumber || page.display_page_number) && String(page.displayPageNumber || page.display_page_number) !== String(page.pageNumber) && (
+              <span className="text-[10px] opacity-60">(PDF {page.pageNumber})</span>
+            )}
+          </span>
         </div>
       </div>
 
@@ -127,6 +145,8 @@ export const PageItem: React.FC<PageItemProps> = ({
             content={contentFontClassName === 'reader-font-adobe' ? normalizeArabic(page.text || '') : (page.text || "...")} 
             className={`uyghur-text text-[#1a1a1a] dark:text-slate-100 ${contentFontClassName || ''}`} 
             style={{ fontSize: `${fontSize}px`, fontFamily: contentFontFamily }} 
+            contentPageOffset={contentPageOffset}
+            onTocPageClick={onTocPageClick}
           />
         )
       )}

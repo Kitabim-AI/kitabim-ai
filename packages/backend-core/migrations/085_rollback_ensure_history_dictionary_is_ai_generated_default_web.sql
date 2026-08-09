@@ -1,0 +1,2 @@
+-- Rollback Migration: 085_rollback_ensure_history_dictionary_is_ai_generated_default_web.sql
+-- Description: Rollback for 085 migration (no-op)

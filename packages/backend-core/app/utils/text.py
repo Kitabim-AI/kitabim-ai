@@ -1,6 +1,7 @@
 import re
 import unicodedata
 from collections import Counter
+from typing import Optional
 
 # ── Arabic Presentation Forms Normalization ───────────────────────────────────
 # Pre-calculate mapping for performance. range(0xFB50, 0xFE00) and range(0xFE70, 0xFF00)
@@ -245,3 +246,32 @@ def generate_uyghur_regex(q: str) -> str:
     pattern = re.compile("|".join(sorted(norm_map.keys(), key=len, reverse=True)))
 
     return pattern.sub(lambda m: norm_map[m.group(0)], res)
+
+
+def extract_standalone_page_number(text: str) -> Optional[int]:
+    """Extract printed page number from header or footer if it represents a standalone page number.
+
+    Supports ASCII, Uyghur, and Arabic numeral scripts (e.g., '1', '١', '- 1 -', '~ 15 ~').
+    """
+    if not text or not text.strip():
+        return None
+
+    lines = [line.strip() for line in text.strip().split("\n") if line.strip()]
+    if not lines:
+        return None
+
+    # Inspect first 2 lines (header) and last 2 lines (footer)
+    candidate_lines = lines[:2] + lines[-2:]
+    trans_table = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+
+    for line in candidate_lines:
+        ascii_line = line.translate(trans_table)
+        match = re.search(
+            r"^\s*(?:[-~—\s]*|page\s*)?(\d{1,4})\s*[-~—\s]*$", ascii_line, re.IGNORECASE
+        )
+        if match:
+            num = int(match.group(1))
+            if 1 <= num <= 5000:
+                return num
+
+    return None

@@ -33,6 +33,12 @@ class ExtractionResult(BaseModel):
     )
 
     page_number: int  # DB: page_number, API: pageNumber
+    content_page_number: Optional[str] = (
+        None  # DB: content_page_number, API: contentPageNumber
+    )
+    display_page_number: Optional[str] = (
+        None  # Property: display_page_number, API: displayPageNumber
+    )
     text: Optional[str] = None
     status: str
     error: Optional[str] = None
@@ -61,6 +67,7 @@ class Book(BaseModel):
     title: str
     author: str
     volume: Optional[int] = None
+    content_page_offset: int = 0  # DB: content_page_offset, API: contentPageOffset
     total_pages: int  # DB: total_pages, API: totalPages (auto-converted)
     pages: List[ExtractionResult] = Field(default_factory=list)
     status: str

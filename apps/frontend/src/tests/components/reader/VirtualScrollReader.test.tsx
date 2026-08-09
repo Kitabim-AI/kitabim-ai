@@ -103,3 +103,43 @@ test('observes every rendered page for resize, so async content loads cannot sil
 
   vi.stubGlobal('ResizeObserver', realResizeObserver);
 });
+
+test('re-observes all pages after exiting edit mode so scrolling down loads subsequent pages', () => {
+  const observe = vi.fn();
+  const realIntersectionObserver = global.IntersectionObserver;
+  vi.stubGlobal('IntersectionObserver', class {
+    observe = observe;
+    unobserve = vi.fn();
+    disconnect = vi.fn();
+  });
+
+  vi.mocked(AuthModule.useAuth).mockReturnValue({
+    isAuthenticated: true,
+    user: { id: 'user-1', role: 'reader' },
+  } as any);
+
+  const { rerender } = render(
+    <I18nContext.Provider value={i18nValue}>
+      <VirtualScrollReader bookId="book-1" totalPages={5} fontSize={16} editingPageNum={2} scrollParentRef={{ current: document.createElement('div') }} />
+    </I18nContext.Provider>
+  );
+
+  // During edit mode for page 2, only page 2 is rendered & observed
+  observe.mockClear();
+
+  // Exit edit mode
+  rerender(
+    <I18nContext.Provider value={i18nValue}>
+      <VirtualScrollReader bookId="book-1" totalPages={5} fontSize={16} editingPageNum={null} scrollParentRef={{ current: document.createElement('div') }} />
+    </I18nContext.Provider>
+  );
+
+  const reobservedPages = observe.mock.calls
+    .map(([el]) => el?.getAttribute?.('data-page-number'))
+    .filter(Boolean);
+
+  expect(new Set(reobservedPages)).toEqual(new Set(['1', '2', '3', '4', '5']));
+
+  vi.stubGlobal('IntersectionObserver', realIntersectionObserver);
+});
+

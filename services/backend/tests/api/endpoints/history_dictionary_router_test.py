@@ -112,7 +112,9 @@ async def test_create_history_entry():
         term="كاسى",
         transliteration="Kasi",
         definition="ھىندىستاندىكى قەدىمكى دۆلەت",
+        is_ai_generated=True,
         letter_group="ك",
+        aliases=[],
     )
     mock_session.commit.assert_called_once()
 

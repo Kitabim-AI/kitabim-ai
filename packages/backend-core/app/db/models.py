@@ -116,6 +116,9 @@ class Book(Base):
     )  # 'upload', 'gcs'
     updated_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    content_page_offset: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
 
     # Relationships
     pages: Mapped[List["Page"]] = relationship(
@@ -156,6 +159,9 @@ class Page(Base):
         nullable=False,
     )
     page_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    content_page_number: Mapped[Optional[str]] = mapped_column(
+        String(20), nullable=True
+    )
 
     text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(
@@ -205,6 +211,23 @@ class Page(Base):
 
     # Relationships
     book: Mapped["Book"] = relationship("Book", back_populates="pages")
+
+    @property
+    def display_page_number(self) -> str:
+        """Returns printed content page number string if explicitly set,
+        otherwise calculates based on book.content_page_offset if available,
+        or falls back to physical page_number as a string.
+        """
+        if self.content_page_number is not None:
+            return self.content_page_number
+        offset = (
+            getattr(self.book, "content_page_offset", 0)
+            if hasattr(self, "book") and self.book
+            else 0
+        )
+        if offset > 0 and self.page_number > offset:
+            return str(self.page_number - offset)
+        return str(self.page_number)
 
     __table_args__ = (
         UniqueConstraint(
@@ -942,6 +965,9 @@ class HistoryDictionary(Base):
     facts: Mapped[list] = mapped_column(
         JSON, default=list, server_default=text("'[]'::jsonb"), nullable=False
     )
+    aliases: Mapped[list] = mapped_column(
+        JSON, default=list, server_default=text("'[]'::jsonb"), nullable=False
+    )
 
 
 class HistoryDictionaryStaging(Base):
@@ -969,6 +995,9 @@ class HistoryDictionaryStaging(Base):
     )
     letter_group: Mapped[str] = mapped_column(String(10), nullable=False)
     facts: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    aliases: Mapped[list] = mapped_column(
+        JSON, default=list, server_default=text("'[]'::jsonb"), nullable=False
+    )
     status: Mapped[str] = mapped_column(
         String(20), default="pending", nullable=False, index=True
     )

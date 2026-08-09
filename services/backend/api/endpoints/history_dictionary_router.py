@@ -8,7 +8,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
-from sqlalchemy import select, func, distinct, delete, or_, case
+from sqlalchemy import select, func, distinct, delete, or_, case, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.i18n import t
@@ -30,6 +30,8 @@ class HistoryEntryOut(BaseModel):
     transliteration: Optional[str] = None
     definition: Optional[str] = None
     letter_group: str
+    is_ai_generated: bool = False
+    aliases: List[str] = []
 
     model_config = {"from_attributes": True}
 
@@ -42,6 +44,8 @@ class HistoryEntryCreate(BaseModel):
     term: str
     transliteration: Optional[str] = None
     definition: Optional[str] = None
+    is_ai_generated: bool = True
+    aliases: List[str] = []
 
     @field_validator("term")
     @classmethod
@@ -54,6 +58,8 @@ class HistoryEntryCreate(BaseModel):
 class HistoryEntryUpdate(BaseModel):
     transliteration: Optional[str] = None
     definition: Optional[str] = None
+    is_ai_generated: Optional[bool] = None
+    aliases: Optional[List[str]] = None
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -98,6 +104,7 @@ async def search_history_dictionary(
             or_(
                 HistoryDictionary.term.ilike(pattern),
                 HistoryDictionary.definition.ilike(pattern),
+                func.cast(HistoryDictionary.aliases, String).ilike(pattern),
             )
         )
         .order_by(
@@ -149,7 +156,9 @@ async def create_history_entry(
         term=body.term,
         transliteration=body.transliteration,
         definition=body.definition,
+        is_ai_generated=body.is_ai_generated,
         letter_group=letter_group,
+        aliases=body.aliases,
     )
     await session.commit()
     return entry
