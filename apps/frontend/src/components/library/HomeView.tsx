@@ -79,7 +79,7 @@ export const HomeView: React.FC = () => {
   } = useAppContext();
 
   const { t } = useI18n();
-  const isBookTab = activeTab === 'ask' || activeTab === 'books';
+  const isBookTab = activeTab === 'books';
   const isEnUg = activeTab === 'en-ug';
   // The typed query is persisted in `homeSearchText` (AppContext) for every tab, so it
   // survives HomeView unmounting (opening/closing the reader) and carries over when the
@@ -340,10 +340,10 @@ export const HomeView: React.FC = () => {
             onClick={handleSearchSubmit}
             className={`absolute inset-y-0 ${isEnUg ? 'left-0 pl-4 sm:pl-6' : 'right-0 pr-4 sm:pr-6'} flex items-center text-[#94a3b8] group-focus-within:text-[#0369a1] dark:group-focus-within:text-[#38bdf8] transition-colors z-10`}
           >
-            {isInitialLoading && localSearch ? (
-              <RefreshCw size={20} className="sm:w-[22px] sm:h-[22px] animate-spin" strokeWidth={3} />
-            ) : chatHint ? (
+            {activeTab === 'ask' ? (
               <Bot size={20} className="sm:w-[22px] sm:h-[22px] text-[#0369a1] dark:text-[#38bdf8]" strokeWidth={2.5} />
+            ) : isInitialLoading && localSearch ? (
+              <RefreshCw size={20} className="sm:w-[22px] sm:h-[22px] animate-spin" strokeWidth={3} />
             ) : (
               <Search size={20} className="sm:w-[22px] sm:h-[22px]" strokeWidth={3} />
             )}
@@ -595,7 +595,7 @@ export const HomeView: React.FC = () => {
           </div>
         )
       ) : (
-        hasSearch && (
+        activeTab !== 'ask' && hasSearch && (
           <div className="w-full max-w-none px-4 md:px-8 pb-24 sm:pb-32">
             <div className="flex flex-col mb-10 sm:mb-12 md:mb-16 gap-2">
               <h2 className="text-xl sm:text-2xl md:text-3xl font-normal text-[#1a1a1a] dark:text-slate-100">{t('home.searchResults')}</h2>

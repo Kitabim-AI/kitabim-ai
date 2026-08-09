@@ -540,3 +540,23 @@ async def test_search_quran_uses_rag_top_k():
 
     # Check that system_configs_repository was queried for rag_top_k
     mock_config_repo.get_value.assert_called_with("rag_vector_top_k", "25")
+
+
+def test_strip_hypothetical_questions():
+    from app.services.rag.agent.tools import _strip_hypothetical_questions
+
+    sample_summary = (
+        "1. تۈرى: رومان\n\n"
+        "2. ئومومى بايان: بۇ بىر مەشھۇر رومان.\n\n"
+        "6. تىپىك سوئاللار (Hypothetical Queries):\n"
+        "1) بۇ كىتابتا كىم بار؟\n"
+        "2) ئاساسى تېمىسى نېمە؟\n\n"
+        "7. ئاچقۇچلۇق سۆزلەر (Keywords): تارىخ، رومان"
+    )
+
+    cleaned = _strip_hypothetical_questions(sample_summary)
+    assert "6. تىپىك سوئاللار" not in cleaned
+    assert "بۇ كىتابتا كىم بار؟" not in cleaned
+    assert "1. تۈرى: رومان" in cleaned
+    assert "2. ئومومى بايان: بۇ بىر مەشھۇر رومان." in cleaned
+    assert "7. ئاچقۇچلۇق سۆزلەر (Keywords): تارىخ، رومان" in cleaned

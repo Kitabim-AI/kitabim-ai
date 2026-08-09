@@ -79,16 +79,23 @@ def entity_matches_question(entity: str, question: str) -> bool:
 
     # Structural rule for single-word titles in multi-word questions (>= 3 words):
     # Single-word titles are matched if:
-    # 1. Positioned at sentence start (subject position), OR
-    # 2. Followed by a title indicator (e.g. كىتابى, ناملىق, رومانى) or topic postposition (e.g. ھەققىدە, توغرىسىدا)
-    # `«...»` no longer grants a match on its own — it now signals
-    # phrase-search intent elsewhere in the RAG pipeline, not a title quote.
+    # 1. Enclosed in quotation marks («...», "...", “...”), OR
+    # 2. Positioned at sentence start (subject position), OR
+    # 3. Followed by a title indicator (e.g. كىتابى, ناملىق, رومانى) or topic postposition (e.g. ھەققىدە, توغرىسىدا)
     if len(q_words) >= 3 and len(entity_words) == 1:
         e_word = entity_words[0]
         is_sentence_start = q_words[0].startswith(e_word) or (
             e_word.endswith("ە") and q_words[0].startswith(e_word[:-1] + "ی")
         )
-        if not is_sentence_start:
+        quote_pattern = re.compile(r'"([^"]+)"|«([^»]+)»|“([^”]+)”')
+        extracted_quotes = [
+            normalize_uyghur(g.strip())
+            for match in quote_pattern.finditer(question)
+            for g in match.groups()
+            if g is not None and g.strip()
+        ]
+        is_quoted = any(q.startswith(e_word) for q in extracted_quotes)
+        if not (is_sentence_start or is_quoted):
             valid_followers = (
                 "كىتاب",
                 "ناملىق",

@@ -11,6 +11,10 @@ export interface ExtractionResult extends Omit<ExtractionResultSchema, 'status' 
   status: 'pending' | 'ocr_processing' | 'ocr_done' | 'indexing' | 'indexed' | 'error';
   pipelineStep?: 'ocr' | 'chunking' | 'embedding' | null;
   milestone?: 'idle' | 'running' | 'succeeded' | 'failed' | null;
+  contentPageNumber?: string | null;
+  content_page_number?: string | null;
+  displayPageNumber?: string | null;
+  display_page_number?: string | null;
 }
 
 export type BookSchema = components['schemas']['Book'];
@@ -32,6 +36,8 @@ export interface Book extends Omit<
   lastUpdated: Date | null;
   lastError?: ErrorEvent | null;
   pages: ExtractionResult[];
+  contentPageOffset?: number;
+  content_page_offset?: number;
   status: 'pending' | 'ocr_processing' | 'ocr_done' | 'indexing' | 'ready' | 'error';
   visibility?: 'public' | 'private';
   pipelineStep?: 'ocr' | 'chunking' | 'embedding' | 'spell_check' | 'ready' | null;

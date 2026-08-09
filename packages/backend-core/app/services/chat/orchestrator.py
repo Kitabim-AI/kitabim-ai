@@ -38,6 +38,7 @@ from app.services.rag.agent.llm_routed_handler import (
 from app.services.rag.agent.reranker import rerank_context
 from app.services.rag.context import QueryContext, set_current_query_context
 from app.services.rag.phrase_intent import detect_phrase_intent
+from app.services.rag.retrieval import find_books_by_title_in_question
 from app.utils.citation_fixer import fix_malformed_citations
 from app.utils.observability import log_json
 
@@ -158,11 +159,12 @@ class ChatOrchestrator:
         )
         set_current_query_context(ctx)
 
-        # 2. Phrase-intent gate (keyword-search-rework-plan.md Phase 1): a
-        # quoted / explicit-exact-phrase question skips the LLM-driven
-        # retrieval agent (and its vector+graph tool calls) entirely and
-        # goes straight to the keyword-only exact-phrase leg. Everything
-        # else keeps going through fast-signal pre-processing as before.
+        # 2. Phrase-intent gate (keyword-search-rework-plan.md Phase 1):
+        # A quoted / explicit-exact-phrase question checks the DB catalog first.
+        # If the quoted text or question references a known book title, it is scoped
+        # to that book and routed through normal RAG (vector + graph + LLM QA).
+        # Unmatched quotes fall back to exact-phrase search; explicit UI flags /
+        # page-finding phrasing always force exact-phrase search.
         phrase_intent = detect_phrase_intent(
             request_dto.question, exact_phrase_flag=request_dto.exact_phrase
         )
@@ -173,6 +175,22 @@ class ChatOrchestrator:
             ctx.context_book_ids = [request_dto.book_id]
         elif request_dto.is_global and request_dto.context_book_ids:
             ctx.context_book_ids = request_dto.context_book_ids
+
+        # Catalog-first phrase resolution:
+        if (
+            phrase_intent.is_exact
+            and not request_dto.exact_phrase
+            and not phrase_intent.is_page_finding
+        ):
+            matched_books = await find_books_by_title_in_question(
+                request_dto.question,
+                db_session,
+                categories=ctx.character_categories or None,
+            )
+            if matched_books:
+                matched_book_ids = list({b["id"] for b in matched_books})
+                ctx.context_book_ids = matched_book_ids
+                phrase_intent.is_exact = False
 
         observations: list[dict] = []
 

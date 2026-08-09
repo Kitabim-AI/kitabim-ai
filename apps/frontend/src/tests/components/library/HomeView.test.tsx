@@ -274,3 +274,23 @@ test('pressing Enter on search box does not start global chat when on books tab'
   expect(setViewMock).not.toHaveBeenCalled();
   expect(setSearchQueryMock).toHaveBeenCalledWith('تارىخىي كىتاب');
 });
+
+test('typing in search box on ask tab does not trigger book search', async () => {
+  const setSearchQueryMock = vi.fn();
+  const context = {
+    ...baseContext,
+    homeActiveTab: 'ask' as SearchTabKey,
+    setHomeSearchQuery: setSearchQueryMock,
+  };
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue(context as any);
+  render(<HomeView />);
+
+  const input = screen.getByPlaceholderText('home.placeholders.ask');
+  fireEvent.change(input, { target: { value: 'ئۇيغۇر تارىخى ھەققىدە' } });
+
+  // Wait for 400ms debounce
+  await new Promise((resolve) => setTimeout(resolve, 400));
+
+  expect(setSearchQueryMock).not.toHaveBeenCalled();
+});
+

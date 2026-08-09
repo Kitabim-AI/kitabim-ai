@@ -170,6 +170,13 @@ _OCR_INVOKE_TIMEOUT = (
 )
 
 
+class DegenerateOcrOutputError(Exception):
+    """Raised when an OCR call returns output that looks like a runaway
+    repetition/reasoning-leak loop rather than a real page. Treated as
+    retryable, same as a transient API error.
+    """
+
+
 def is_transient_error(exc: Exception) -> bool:
     """Check if the exception represents a transient API error (429, 503, overloaded)."""
     err_msg = str(exc)
@@ -372,6 +379,7 @@ async def generate_text_with_image(
         temperature=0.0,
         system_instruction=prompt,
         thinking_config=types.ThinkingConfig(**disabled_thinking_config(model)),
+        max_output_tokens=settings.ocr_max_output_tokens,
     )
     effective_timeout = timeout or await get_system_config_timeout(
         "gemini_ocr_timeout", _OCR_INVOKE_TIMEOUT

@@ -6,6 +6,7 @@ Each tool wraps existing retrieval code — no new retrieval logic lives here.
 from __future__ import annotations
 
 import logging
+import re
 from typing import List, Optional
 import socket
 import asyncio
@@ -640,6 +641,20 @@ async def _run_search_books_by_summary(args: dict, ctx: QueryContext) -> List[st
     return book_ids
 
 
+def _strip_hypothetical_questions(summary_text: str) -> str:
+    """Remove Section 6 (Hypothetical Queries / تىپىك سوئاللار) from summary text to save tokens in RAG LLM context."""
+    if not summary_text:
+        return ""
+    cleaned = re.sub(
+        r"6\.\s*تىپىك سوئاللار.*?(?=7\.\s*ئاچقۇچلۇق سۆزلەر|\Z)",
+        "",
+        summary_text,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
 async def _run_get_book_summary(args: dict, ctx: QueryContext) -> dict:
     from app.db.repositories.book_summaries_repository import BookSummariesRepository
     from app.db.repositories.books_repository import BooksRepository
@@ -715,7 +730,8 @@ async def _run_get_book_summary(args: dict, ctx: QueryContext) -> dict:
         if s.get("volume") is not None:
             header_parts.append(f"Volume: {s['volume']}")
         header_parts.append("SUMMARY")
-        lines.append(f"[{', '.join(header_parts)}]\n{s['summary']}")
+        clean_summary = _strip_hypothetical_questions(s["summary"])
+        lines.append(f"[{', '.join(header_parts)}]\n{clean_summary}")
 
     context_text = "\n\n".join(lines)
     log_json(logger, logging.INFO, "Agent tool get_book_summary", count=len(summaries))

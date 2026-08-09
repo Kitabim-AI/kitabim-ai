@@ -52,6 +52,8 @@
     "staging_conflicts_unresolved": "This term has unresolved fact conflicts. Resolve them before approving.",
     "staging_synthesis_failed": "Could not generate the definition preview. Please try again.",
     "invalid_fact_status": "Fact status must be 'active' or 'rejected'",
+    "history_entry_duplicate_term": "An entry for this term already exists",
+    "history_entry_not_found": "History dictionary entry not found",
     "ai": {
       "gemini_busy": "Oops, the book service is a bit busy. Would you like to try again in a moment?",
       "gemini_api_key_missing": "Gemini API key not configured",

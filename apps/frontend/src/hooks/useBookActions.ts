@@ -396,6 +396,7 @@ export const useBookActions = (
       title?: string;
       author?: string;
       volume?: number | null;
+      contentPageOffset?: number;
       categories?: string[];
     }
   ) => {

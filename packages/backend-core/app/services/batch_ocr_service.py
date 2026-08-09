@@ -30,7 +30,7 @@ from app.llm.models import disabled_thinking_config
 from app.services.book_milestone_service import BookMilestoneService
 from app.services.storage_service import storage
 from app.utils.observability import log_json, make_pipeline_event_payload
-from app.utils.text import clean_uyghur_text, is_toc_page
+from app.utils.text import clean_uyghur_text, is_degenerate_ocr_output, is_toc_page
 
 logger = logging.getLogger("app.services.batch_ocr_service")
 
@@ -91,6 +91,7 @@ async def submit_batch_ocr_job(
                 "generation_config": {
                     "temperature": 0.0,
                     "thinking_config": disabled_thinking_config(gemini_ocr_model),
+                    "max_output_tokens": settings.ocr_max_output_tokens,
                 },
             },
         }
@@ -508,6 +509,18 @@ async def _ingest_batch_ocr_results(
                         retry_counts.get(page_id, 0),
                         ocr_max_retry_count,
                         "empty response",
+                    )
+                    if skipped:
+                        succeeded_pages += 1
+                    continue
+
+                if is_degenerate_ocr_output(cleaned_text):
+                    skipped = await _record_page_ocr_failure(
+                        session,
+                        page_id,
+                        retry_counts.get(page_id, 0),
+                        ocr_max_retry_count,
+                        f"degenerate/repetitive OCR output ({len(cleaned_text)} chars)",
                     )
                     if skipped:
                         succeeded_pages += 1

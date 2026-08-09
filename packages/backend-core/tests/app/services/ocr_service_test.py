@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+from app.llm.models import DegenerateOcrOutputError
 from app.services.ocr_service import ocr_page_with_gemini, _build_ocr_prompt
 
 
@@ -61,6 +62,64 @@ async def test_ocr_page_with_gemini_retry():
         assert text == "success text"
         assert mock_gen.call_count == 2
         mock_sleep.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_ocr_page_with_gemini_retries_on_degenerate_output():
+    mock_page = MagicMock()
+    mock_pix = MagicMock()
+    mock_pix.tobytes.return_value = b"image_data"
+    mock_page.get_pixmap.return_value = mock_pix
+
+    with (
+        patch(
+            "app.services.ocr_service.generate_text_with_image", new_callable=AsyncMock
+        ) as mock_gen,
+        patch("app.services.ocr_service.settings") as mock_settings,
+        patch(
+            "app.services.ocr_service.asyncio.sleep", new_callable=AsyncMock
+        ) as mock_sleep,
+        patch(
+            "app.services.ocr_service._build_ocr_prompt", new_callable=AsyncMock
+        ) as mock_prompt,
+    ):
+        mock_settings.ocr_max_retries = 2
+        mock_prompt.return_value = "built prompt"
+        # First call is a runaway repetition loop, second is a real page
+        mock_gen.side_effect = ["سۆز " * 100, "بۇ ھەقىقىي بەت مەزمۇنى."]
+
+        text = await ocr_page_with_gemini(mock_page)
+
+        assert text == "بۇ ھەقىقىي بەت مەزمۇنى."
+        assert mock_gen.call_count == 2
+        mock_sleep.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_ocr_page_with_gemini_raises_after_exhausting_retries_on_degenerate_output():
+    mock_page = MagicMock()
+    mock_pix = MagicMock()
+    mock_pix.tobytes.return_value = b"image_data"
+    mock_page.get_pixmap.return_value = mock_pix
+
+    with (
+        patch(
+            "app.services.ocr_service.generate_text_with_image", new_callable=AsyncMock
+        ) as mock_gen,
+        patch("app.services.ocr_service.settings") as mock_settings,
+        patch("app.services.ocr_service.asyncio.sleep", new_callable=AsyncMock),
+        patch(
+            "app.services.ocr_service._build_ocr_prompt", new_callable=AsyncMock
+        ) as mock_prompt,
+    ):
+        mock_settings.ocr_max_retries = 2
+        mock_prompt.return_value = "built prompt"
+        mock_gen.return_value = "سۆز " * 100
+
+        with pytest.raises(DegenerateOcrOutputError):
+            await ocr_page_with_gemini(mock_page)
+
+        assert mock_gen.call_count == 2
 
 
 @pytest.mark.asyncio

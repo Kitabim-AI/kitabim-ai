@@ -7,12 +7,14 @@ from __future__ import annotations
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from sqlalchemy import select, func, distinct, delete, or_, case
+from pydantic import BaseModel, field_validator
+from sqlalchemy import select, func, distinct, delete, or_, case, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.i18n import t
 from app.db.session import get_session
 from app.db.models import HistoryDictionary
+from app.db.repositories.dictionary_repository import DictionaryRepository
 from app.models.user import User
 from auth.dependencies import require_admin
 
@@ -28,12 +30,36 @@ class HistoryEntryOut(BaseModel):
     transliteration: Optional[str] = None
     definition: Optional[str] = None
     letter_group: str
+    is_ai_generated: bool = False
+    aliases: List[str] = []
 
     model_config = {"from_attributes": True}
 
 
 class HistoryStatsOut(BaseModel):
     total_entries: int
+
+
+class HistoryEntryCreate(BaseModel):
+    term: str
+    transliteration: Optional[str] = None
+    definition: Optional[str] = None
+    is_ai_generated: bool = True
+    aliases: List[str] = []
+
+    @field_validator("term")
+    @classmethod
+    def validate_term_not_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Term cannot be empty")
+        return v.strip()
+
+
+class HistoryEntryUpdate(BaseModel):
+    transliteration: Optional[str] = None
+    definition: Optional[str] = None
+    is_ai_generated: Optional[bool] = None
+    aliases: Optional[List[str]] = None
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -78,6 +104,7 @@ async def search_history_dictionary(
             or_(
                 HistoryDictionary.term.ilike(pattern),
                 HistoryDictionary.definition.ilike(pattern),
+                func.cast(HistoryDictionary.aliases, String).ilike(pattern),
             )
         )
         .order_by(
@@ -104,6 +131,55 @@ async def list_history_entries(
     stmt = stmt.offset(skip).limit(limit)
     res = await session.execute(stmt)
     return res.scalars().all()
+
+
+@router.post("/history-dictionary", response_model=HistoryEntryOut, status_code=201)
+async def create_history_entry(
+    body: HistoryEntryCreate,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_admin),
+):
+    """Create a new live history dictionary entry (Admin only)."""
+    repo = DictionaryRepository(session)
+    existing = await repo.find_matching_history_term(body.term)
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": t("errors.history_entry_duplicate_term"),
+                "existing_id": existing.id,
+                "existing_term": existing.term,
+            },
+        )
+    letter_group = body.term[0].upper()
+    entry = await repo.create_history_dictionary_entry(
+        term=body.term,
+        transliteration=body.transliteration,
+        definition=body.definition,
+        is_ai_generated=body.is_ai_generated,
+        letter_group=letter_group,
+        aliases=body.aliases,
+    )
+    await session.commit()
+    return entry
+
+
+@router.patch("/history-dictionary/{entry_id}", response_model=HistoryEntryOut)
+async def update_history_entry(
+    entry_id: int,
+    body: HistoryEntryUpdate,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_admin),
+):
+    """Update transliteration/definition of a live history dictionary entry (Admin only)."""
+    repo = DictionaryRepository(session)
+    entry = await repo.get_history_dictionary_by_id(entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=t("errors.history_entry_not_found"))
+    fields = body.model_dump(exclude_unset=True)
+    updated = await repo.update_history_dictionary_entry(entry, **fields)
+    await session.commit()
+    return updated
 
 
 @router.delete("/history-dictionary/{entry_id}", status_code=204)
