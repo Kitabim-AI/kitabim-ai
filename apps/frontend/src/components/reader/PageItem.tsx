@@ -84,14 +84,14 @@ export const PageItem: React.FC<PageItemProps> = ({
           {isEditor && !isEditing && (
             <div className={`flex items-center gap-2 transition-all ${isFullscreen ? 'hidden' : `${isActive ? 'opacity-100' : 'opacity-0'} sm:group-hover:opacity-100`}`}>
               <button onClick={onReprocess} className="p-2 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg" title={t('reader.reprocessPage')}><RotateCcw size={14} /></button>
-              <button onClick={onEdit} className="flex items-center gap-2 px-3 py-1.5 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg text-xs font-bold uppercase"><Edit3 size={12} /> <span className="hidden sm:inline">{t('reader.editPage')}</span></button>
+              <button onClick={onEdit} className="flex items-center gap-2 px-3 py-1.5 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg text-xs font-bold uppercase"><Edit3 size={14} /> <span className="hidden sm:inline">{t('reader.editPage')}</span></button>
               {onSetStartPage && (
                 <button
                   onClick={onSetStartPage}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg text-xs font-bold uppercase"
                   title={t('reader.setStartPageTitle') || "Mark this physical page as Content Page 1"}
                 >
-                  <BookmarkCheck size={12} />
+                  <BookmarkCheck size={14} />
                   <span className="hidden sm:inline">{t('reader.setPageOne') || "Mark as Page 1"}</span>
                 </button>
               )}
@@ -101,7 +101,7 @@ export const PageItem: React.FC<PageItemProps> = ({
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg text-xs font-bold uppercase"
                   title={(page?.isToc ?? page?.is_toc) ? t('reader.unmarkAsTocTitle') : t('reader.markAsTocTitle')}
                 >
-                  {(page?.isToc ?? page?.is_toc) ? <ListX size={12} /> : <ListTree size={12} />}
+                  {(page?.isToc ?? page?.is_toc) ? <ListX size={14} /> : <ListTree size={14} />}
                   <span className="hidden sm:inline">{(page?.isToc ?? page?.is_toc) ? t('reader.unmarkAsToc') : t('reader.markAsToc')}</span>
                 </button>
               )}
