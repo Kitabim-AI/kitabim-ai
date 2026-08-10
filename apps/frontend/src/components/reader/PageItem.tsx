@@ -84,11 +84,11 @@ export const PageItem: React.FC<PageItemProps> = ({
           {isEditor && !isEditing && (
             <div className={`flex items-center gap-2 transition-all ${isFullscreen ? 'hidden' : `${isActive ? 'opacity-100' : 'opacity-0'} sm:group-hover:opacity-100`}`}>
               <button onClick={onReprocess} className="flex items-center justify-center h-8 w-8 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg" title={t('reader.reprocessPage')}><RotateCcw size={14} /></button>
-              <button onClick={onEdit} className="flex items-center gap-2 h-8 px-3 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg text-xs font-bold uppercase"><Edit3 size={14} /> <span className="hidden sm:inline">{t('reader.editPage')}</span></button>
+              <button onClick={onEdit} className="flex items-center justify-center sm:justify-start gap-2 h-8 w-8 sm:w-auto sm:px-3 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg text-xs font-bold uppercase"><Edit3 size={14} /> <span className="hidden sm:inline">{t('reader.editPage')}</span></button>
               {onSetStartPage && (
                 <button
                   onClick={onSetStartPage}
-                  className="flex items-center gap-1.5 h-8 px-3 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg text-xs font-bold uppercase"
+                  className="flex items-center justify-center sm:justify-start gap-1.5 h-8 w-8 sm:w-auto sm:px-3 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg text-xs font-bold uppercase"
                   title={t('reader.setStartPageTitle') || "Mark this physical page as Content Page 1"}
                 >
                   <BookmarkCheck size={14} />
@@ -98,7 +98,7 @@ export const PageItem: React.FC<PageItemProps> = ({
               {onToggleToc && (
                 <button
                   onClick={() => onToggleToc(!(page?.isToc ?? page?.is_toc))}
-                  className="flex items-center gap-1.5 h-8 px-3 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg text-xs font-bold uppercase"
+                  className="flex items-center justify-center sm:justify-start gap-1.5 h-8 w-8 sm:w-auto sm:px-3 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg text-xs font-bold uppercase"
                   title={(page?.isToc ?? page?.is_toc) ? t('reader.unmarkAsTocTitle') : t('reader.markAsTocTitle')}
                 >
                   {(page?.isToc ?? page?.is_toc) ? <ListX size={14} /> : <ListTree size={14} />}
