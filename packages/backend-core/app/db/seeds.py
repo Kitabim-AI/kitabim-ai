@@ -218,6 +218,11 @@ async def seed_system_configs(session: AsyncSession):
             "value": "40",
             "description": "Batch size for infinite-scroll pagination on the library shelves and home search results.",
         },
+        {
+            "key": "content_search_snippet_max_chars",
+            "value": "500",
+            "description": "Maximum character length of content search result snippets displayed in the Home 'Content' search tab.",
+        },
     ]
 
     for item in defaults:

@@ -269,18 +269,18 @@ export const HistoryDictionaryPanel: React.FC = () => {
       const method = isEdit ? 'PATCH' : 'POST';
       const body = isEdit
         ? {
-            transliteration: formTransliteration.trim() || null,
-            definition: formDefinition.trim() || null,
-            is_ai_generated: formSource === 'ai',
-            aliases: formAliases,
-          }
+          transliteration: formTransliteration.trim() || null,
+          definition: formDefinition.trim() || null,
+          is_ai_generated: formSource === 'ai',
+          aliases: formAliases,
+        }
         : {
-            term: formTerm.trim(),
-            transliteration: formTransliteration.trim() || null,
-            definition: formDefinition.trim() || null,
-            is_ai_generated: formSource === 'ai',
-            aliases: formAliases,
-          };
+          term: formTerm.trim(),
+          transliteration: formTransliteration.trim() || null,
+          definition: formDefinition.trim() || null,
+          is_ai_generated: formSource === 'ai',
+          aliases: formAliases,
+        };
 
       const resp = await authFetch(url, {
         method,
@@ -331,9 +331,8 @@ export const HistoryDictionaryPanel: React.FC = () => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             ref={inputRef}
-            className={`w-full pr-11 md:pr-14 py-2.5 md:py-3 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl uyghur-text outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] text-slate-800 dark:text-slate-100 transition-all shadow-sm placeholder:text-slate-300 dark:placeholder:text-slate-500 text-base md:pl-14 ${
-              searchQuery ? 'pl-11' : 'pl-4'
-            }`}
+            className={`w-full pr-11 md:pr-14 py-2.5 md:py-3 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl uyghur-text outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] text-slate-800 dark:text-slate-100 transition-all shadow-sm placeholder:text-slate-300 dark:placeholder:text-slate-500 text-base md:pl-14 ${searchQuery ? 'pl-11' : 'pl-4'
+              }`}
             placeholder={t('admin.historyDictionary.searchPlaceholder')}
             dir="rtl"
           />
@@ -381,11 +380,10 @@ export const HistoryDictionaryPanel: React.FC = () => {
         <div className="flex flex-wrap gap-1.5 justify-center sm:justify-start" dir="rtl">
           <button
             onClick={() => handleGroupSelect(null)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all uyghur-text ${
-              activeGroup === null
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all uyghur-text ${activeGroup === null
                 ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 shadow-sm'
                 : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-            }`}
+              }`}
           >
             {t('common.all')}
           </button>
@@ -393,11 +391,10 @@ export const HistoryDictionaryPanel: React.FC = () => {
             <button
               key={g}
               onClick={() => handleGroupSelect(g)}
-              className={`w-9 h-9 rounded-xl text-sm font-bold transition-all uyghur-text flex items-center justify-center ${
-                activeGroup === g
+              className={`w-9 h-9 rounded-xl text-sm font-bold transition-all uyghur-text flex items-center justify-center ${activeGroup === g
                   ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 shadow-sm'
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-              }`}
+                }`}
             >
               {g}
             </button>
@@ -432,11 +429,10 @@ export const HistoryDictionaryPanel: React.FC = () => {
                         </span>
                       )}
                       <span
-                        className={`px-2 py-0.5 rounded-md text-[11px] font-bold font-sans tracking-wide uppercase border ${
-                          entry.is_ai_generated
+                        className={`px-2 py-0.5 rounded-md text-[11px] font-bold font-sans tracking-wide uppercase border ${entry.is_ai_generated
                             ? 'bg-sky-500/10 text-[#0369a1] dark:text-[#38bdf8] border-[#0369a1]/20 dark:border-[#38bdf8]/20'
                             : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-                        }`}
+                          }`}
                       >
                         {entry.is_ai_generated ? t('admin.historyDictionary.sourceAi') : t('admin.historyDictionary.sourceWeb')}
                       </span>
@@ -471,24 +467,24 @@ export const HistoryDictionaryPanel: React.FC = () => {
                       </p>
                     )}
                   </div>
-                    {isAdmin && (
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
-                        <button
-                          onClick={() => openEditModal(entry)}
-                          title={t('common.edit')}
-                          className="p-2 rounded-xl text-slate-400 hover:text-[#0369a1] hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteEntry(entry)}
-                          title={t('common.delete')}
-                          className="p-2 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    )}
+                  {isAdmin && (
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <button
+                        onClick={() => openEditModal(entry)}
+                        title={t('common.edit')}
+                        className="p-2 rounded-xl text-slate-400 hover:text-[#0369a1] hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                      >
+                        <Edit2 size={16} />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteEntry(entry)}
+                        title={t('common.delete')}
+                        className="p-2 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -511,11 +507,10 @@ export const HistoryDictionaryPanel: React.FC = () => {
                       </span>
                     )}
                     <span
-                      className={`px-2 py-0.5 rounded-md text-[11px] font-bold font-sans tracking-wide uppercase border ${
-                        entry.is_ai_generated
+                      className={`px-2 py-0.5 rounded-md text-[11px] font-bold font-sans tracking-wide uppercase border ${entry.is_ai_generated
                           ? 'bg-sky-500/10 text-[#0369a1] dark:text-[#38bdf8] border-[#0369a1]/20 dark:border-[#38bdf8]/20'
                           : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-                      }`}
+                        }`}
                     >
                       {entry.is_ai_generated ? t('admin.historyDictionary.sourceAi') : t('admin.historyDictionary.sourceWeb')}
                     </span>
@@ -616,11 +611,10 @@ export const HistoryDictionaryPanel: React.FC = () => {
                     dir="rtl"
                     value={formTerm}
                     onChange={(e) => setFormTerm(e.target.value)}
-                    className={`w-full px-5 py-3.5 border-2 rounded-2xl outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all uyghur-text text-xl ${
-                      editingEntry
+                    className={`w-full px-5 py-3.5 border-2 rounded-2xl outline-none focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all uyghur-text text-xl ${editingEntry
                         ? 'bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed'
                         : 'bg-white dark:bg-slate-950 border-slate-100 dark:border-slate-800 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500'
-                    }`}
+                      }`}
                     placeholder={t('admin.historyDictionary.term')}
                   />
                 </div>
@@ -733,11 +727,10 @@ export const HistoryDictionaryPanel: React.FC = () => {
                               setFormSource(option.id as 'ai' | 'web');
                               setIsSourceDropdownOpen(false);
                             }}
-                            className={`w-full flex items-center px-5 py-3 text-sm font-bold uppercase transition-all ${
-                              option.id === formSource
+                            className={`w-full flex items-center px-5 py-3 text-sm font-bold uppercase transition-all ${option.id === formSource
                                 ? 'bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8]'
                                 : 'text-[#1a1a1a] dark:text-slate-200 hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/10'
-                            }`}
+                              }`}
                           >
                             {option.label}
                           </button>

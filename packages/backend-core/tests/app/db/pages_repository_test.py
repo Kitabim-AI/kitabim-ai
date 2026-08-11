@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from app.db.repositories.pages_repository import PagesRepository
 from app.db.models import Page
 
@@ -157,7 +157,8 @@ async def test_search_content_pages():
     mock_row = MagicMock()
     mock_row.book_id = "b1"
     mock_row.page_number = 5
-    mock_row.text = "مۇھىم تېكىست"
+    mock_row.snippet = "مۇھىم تېكىست"
+    mock_row.full_text = "مۇھىم تېكىست"
     mock_row.title = "تارىخىي كىتاب"
     mock_row.volume = 1
     mock_row.author = "مۇئەللىپ"
@@ -174,7 +175,11 @@ async def test_search_content_pages():
         mock_hits_res,
     ]
 
-    hits, total = await repo.search_content_pages("تېكىست", skip=0, limit=20)
+    with patch(
+        "app.db.repositories.system_configs_repository.SystemConfigsRepository.get_value",
+        return_value="500",
+    ):
+        hits, total = await repo.search_content_pages("تېكىست", skip=0, limit=20)
 
     assert total == 1
     assert len(hits) == 1

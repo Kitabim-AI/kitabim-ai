@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Page
 from app.db.repositories.base_repository import BaseRepository
 
+from app.db.repositories.system_configs_repository import SystemConfigsRepository
+
 logger = logging.getLogger(__name__)
 
 _KEYWORD_SEARCH_WORK_MEM = "64MB"
@@ -31,7 +33,7 @@ class PagesRepository(BaseRepository[Page]):
         restrict_to_public: bool = True,
     ) -> tuple[List[dict], int]:
         """Home 'Content' tab: exact-phrase search over page text returning paginated
-        page hits with full page text snippets, page numbers, book title, author, volume, and cover.
+        page hits with contextual page text snippets, page numbers, book title, author, volume, and cover.
         """
         vis_clause = (
             "b.status = 'ready' AND (b.visibility = 'public' OR b.visibility IS NULL)"
@@ -51,6 +53,20 @@ class PagesRepository(BaseRepository[Page]):
             else "ORDER BY rank DESC, b.title ASC, p.page_number ASC"
         )
 
+        max_snippet_len = 500
+        try:
+            config_repo = SystemConfigsRepository(self.session)
+            val = await config_repo.get_value(
+                "content_search_snippet_max_chars", default="500"
+            )
+            if val is not None:
+                max_snippet_len = int(val)
+        except Exception as e:
+            logger.warning(
+                "Failed to load content_search_snippet_max_chars config: %s", e
+            )
+            max_snippet_len = 500
+
         count_query = text(f"""
             SELECT COUNT(*)
             FROM pages p
@@ -64,7 +80,9 @@ class PagesRepository(BaseRepository[Page]):
             SELECT
                 p.book_id,
                 p.page_number,
-                p.text,
+                ts_headline('simple', p.text, phraseto_tsquery('simple', :phrase),
+                    'MaxWords=75, MinWords=35, ShortWord=2, StartSel="", StopSel=""') AS snippet,
+                p.text AS full_text,
                 b.title,
                 b.volume,
                 b.author,
@@ -104,21 +122,31 @@ class PagesRepository(BaseRepository[Page]):
             )
             return [], 0
 
-        hits = [
-            {
-                "id": f"{row.book_id}_{row.page_number}",
-                "book_id": str(row.book_id),
-                "book_title": row.title,
-                "book_author": row.author,
-                "book_volume": row.volume,
-                "book_cover_url": row.cover_url,
-                "page_number": row.page_number,
-                "page": row.page_number,
-                "snippet": row.text or "",
-                "rank": float(row.rank),
-            }
-            for row in rows
-        ]
+        hits = []
+        for row in rows:
+            raw_text = row.snippet or row.full_text or ""
+            if max_snippet_len and len(raw_text) > max_snippet_len:
+                cut = raw_text[:max_snippet_len]
+                if " " in cut:
+                    cut = cut.rsplit(" ", 1)[0]
+                snippet = cut + "..."
+            else:
+                snippet = raw_text
+
+            hits.append(
+                {
+                    "id": f"{row.book_id}_{row.page_number}",
+                    "book_id": str(row.book_id),
+                    "book_title": row.title,
+                    "book_author": row.author,
+                    "book_volume": row.volume,
+                    "book_cover_url": row.cover_url,
+                    "page_number": row.page_number,
+                    "page": row.page_number,
+                    "snippet": snippet,
+                    "rank": float(row.rank),
+                }
+            )
 
         return hits, total
 

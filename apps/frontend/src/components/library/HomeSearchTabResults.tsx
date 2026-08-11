@@ -39,6 +39,10 @@ const mapHistory = (e: HistoryTermEntry): LookupItem => ({
   id: e.id,
   primary: e.transliteration ? `${e.term} (${e.transliteration})` : e.term,
   secondary: e.definition,
+  badge: e.isAiGenerated !== undefined ? {
+    text: e.isAiGenerated ? 'AI' : 'Web',
+    variant: e.isAiGenerated ? 'ai' : 'web',
+  } : undefined,
 });
 const mapSynonyms = (e: SynonymEntry): LookupItem => ({
   id: e.id,

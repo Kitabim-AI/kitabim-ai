@@ -45,7 +45,7 @@ beforeEach(() => {
   vi.mocked(AppContextModule.useAppContext).mockReturnValue({ setModal: vi.fn() } as any);
 });
 
-test('does not show a delete button for non-admin users', async () => {
+test('does not show a delete button for non-admin users but displays record source badge', async () => {
   vi.mocked(AuthModule.useIsAdmin).mockReturnValue(false);
   mockListResponses();
 
@@ -53,6 +53,7 @@ test('does not show a delete button for non-admin users', async () => {
 
   await screen.findByText('تارىخ سۆزى');
   expect(screen.queryByTitle('common.delete')).not.toBeInTheDocument();
+  expect(screen.getByText('admin.historyDictionary.sourceWeb')).toBeInTheDocument();
 });
 
 test('admin can delete an entry after confirming', async () => {
@@ -117,11 +118,10 @@ test('admin can create a new entry via the add modal', async () => {
       '/api/history-dictionary',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ term: 'يېڭى سۆز', transliteration: null, definition: 'تارىخىي مەنىسى', is_ai_generated: true }),
+        body: JSON.stringify({ term: 'يېڭى سۆز', transliteration: null, definition: 'تارىخىي مەنىسى', is_ai_generated: true, aliases: [] }),
       })
     )
   );
-
   await waitFor(() =>
     expect(screen.queryByPlaceholderText('admin.historyDictionary.term')).not.toBeInTheDocument()
   );
@@ -157,7 +157,7 @@ test('admin can edit an existing entry via the edit modal', async () => {
   vi.mocked(AuthModule.useIsAdmin).mockReturnValue(true);
   mockListResponses({
     ok: true,
-    json: async () => ({ id: 1, term: 'تارىخ سۆزى', transliteration: 'Tarikh sozi', definition: 'يېڭىلانغان', letter_group: 'ت', is_ai_generated: false }),
+    json: async () => ({ id: 1, term: 'تارىخ سۆزى', transliteration: 'Tarikh sozi', definition: 'يېڭىلانغان', letter_group: 'ت', is_ai_generated: false, aliases: [] }),
   } as Response);
 
   render(<HistoryDictionaryPanel />);
@@ -178,7 +178,7 @@ test('admin can edit an existing entry via the edit modal', async () => {
       '/api/history-dictionary/1',
       expect.objectContaining({
         method: 'PATCH',
-        body: JSON.stringify({ transliteration: null, definition: 'يېڭىلانغان', is_ai_generated: false }),
+        body: JSON.stringify({ transliteration: null, definition: 'يېڭىلانغان', is_ai_generated: false, aliases: [] }),
       })
     )
   );

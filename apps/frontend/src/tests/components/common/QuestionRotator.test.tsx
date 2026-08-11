@@ -6,7 +6,7 @@ import { PersistenceService } from '../../../services/persistenceService';
 
 vi.mock('../../../i18n/I18nContext', () => ({
   useI18n: () => ({
-    t: (key: string) => (key === 'home.recentQuestions' ? 'ئەڭ يېڭى جاۋاب بېرىلگەن سۇئاللار' : key),
+    t: (key: string) => (key === 'home.recentQuestions' ? 'ئەڭ يېڭى جاۋاب بېرىلگەن سوئاللار' : key),
   }),
 }));
 

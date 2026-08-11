@@ -158,6 +158,7 @@ export const PageItem: React.FC<PageItemProps> = ({
             style={{ fontSize: `${fontSize}px`, fontFamily: contentFontFamily }} 
             contentPageOffset={contentPageOffset}
             onTocPageClick={onTocPageClick}
+            isTocPage={page?.isToc ?? page?.is_toc}
           />
         )
       )}
