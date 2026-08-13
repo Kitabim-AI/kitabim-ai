@@ -89,16 +89,6 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Maximum number of concurrent LLM batch calls during knowledge graph extraction. Each call processes kg_chunk_batch_size chunks.",
         },
         {
-            "key": "agent_max_steps",
-            "value": "6",
-            "description": "Maximum ReAct iterations/steps per round in the agent loop.",
-        },
-        {
-            "key": "agent_enough_chunks",
-            "value": "8",
-            "description": "Early-exit threshold: stop agent loop once this many chunks are collected.",
-        },
-        {
             "key": "knowledge_graph_enabled",
             "value": "false",
             "description": "Globally enable/disable knowledge graph extraction and the graph scanner. Set to 'true' to activate.",
@@ -107,11 +97,6 @@ async def seed_system_configs(session: AsyncSession):
             "key": "fictional_categories",
             "value": "رومان, تارىخىي رومان, بالىلار رومانى, ساتىرىك رومان, پەلسەپىۋىي رومان, پوۋېست, پوۋېستلار, تارىخىي پوۋېست, ھېكايىلەر, تارىخىي ھېكايىلەر, بالىلار ھېكايىلېرى, چۆچەكلەر, قىسسە, تارىخىي قىسسە, داستان, داستانلار, تارىخىي داستان, رىۋايەتلەر, مەسەللەر, لەتىپىلەر, يۇمۇرلار, شېئىرلار, سەھنە ئەسەرلېرى, كىنو سېنارىيىلىرى",
             "description": "Comma-separated list of categories that indicate a book is fictional. If a book's categories match any in this list, its Person entities will be namespaced to prevent cross-book duplication. Otherwise, it defaults to non-fictional.",
-        },
-        {
-            "key": "use_deterministic_router",
-            "value": "false",
-            "description": "Globally enable/disable the deterministic Python RAG router instead of the LLM-driven ADK ReAct agent. Set to 'true' to activate.",
         },
         {
             "key": "ocr_scanner_batch_size",
