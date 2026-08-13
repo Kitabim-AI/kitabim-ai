@@ -25,8 +25,12 @@ interface VirtualScrollReaderProps {
   onTempTextChange?: (text: string) => void;
   onSave?: (pageNum: number, text: string) => void;
   onCancel?: () => void;
+  onSetStartPage?: (pageNum: number) => void;
+  onToggleToc?: (pageNum: number, nextIsToc: boolean) => void;
   isSaving?: boolean;
   selectedBookPages?: any[];
+  contentPageOffset?: number;
+  onTocPageClick?: (targetPage: number) => void;
 }
 
 const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
@@ -47,8 +51,12 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
   onTempTextChange,
   onSave,
   onCancel,
+  onSetStartPage,
+  onToggleToc,
   isSaving = false,
   selectedBookPages = [],
+  contentPageOffset,
+  onTocPageClick,
 }) => {
   const { t } = useI18n();
   const { isAuthenticated } = useAuth();
@@ -91,11 +99,14 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
     getPageElement: useCallback((page: number) => pageRefs.current.get(page), []),
     targetPage,
     targetKey: `${bookId}:${targetPage}`,
+    currentCenterPage,
     onScrolled: useCallback((page: number) => {
       currentCenterPageRef.current = page;
       setCurrentCenterPage(page);
     }, []),
   });
+
+  const isEditingAny = editingPageNum !== null;
 
   // Keeps the visible page stationary as off-screen-above placeholders resolve
   // to real content during ordinary scrolling (useScrollToPage handles the
@@ -104,7 +115,7 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
     containerRef: scrollParentRef as React.RefObject<HTMLElement>,
     itemsRef: pageRefs,
     suppressedRef: isScrollingToTargetRef,
-    resubscribeKey: totalPages,
+    resubscribeKey: `${totalPages}:${isEditingAny}`,
   });
 
   const RATE_LIMIT_MS = 300;
@@ -134,7 +145,7 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
     }
   }, [bookId]);
 
-  // Loading observer — only rebuilt when scroll root or page count changes
+  // Loading observer — rebuilt when scroll root, page count, or edit mode state changes
   useEffect(() => {
     const loadObserver = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
@@ -152,7 +163,7 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
     const currentRefs = pageRefs.current;
     currentRefs.forEach(el => { if (el) loadObserver.observe(el); });
     return () => loadObserver.disconnect();
-  }, [totalPages, scrollParentRef, fetchPage]);
+  }, [totalPages, scrollParentRef, fetchPage, isEditingAny]);
 
   // Center detection observer — reads currentCenterPageRef so it never needs
   // to be rebuilt when the visible page changes (no currentCenterPage in deps)
@@ -187,7 +198,30 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
     const currentRefs = pageRefs.current;
     currentRefs.forEach(el => { if (el) centerObserver.observe(el); });
     return () => centerObserver.disconnect();
-  }, [totalPages, scrollParentRef, onPageChange]);
+  }, [totalPages, scrollParentRef, onPageChange, isEditingAny]);
+
+  // Evict pages far from the current viewport back to unloaded placeholders. Without
+  // this, `pages` only ever grows over a reading session — every page ever scrolled
+  // past stays fully mounted (and gets fully re-rendered on every subsequent scroll
+  // update), which is what drives sustained CPU/battery cost on long books. The window
+  // is far wider than the loadObserver's rootMargin so it can't fight with eager-loading.
+  const EVICTION_WINDOW = 40;
+  useEffect(() => {
+    if (isEditingAny || isScrollingToTargetRef.current) return;
+    setPages(prev => {
+      if (prev.size === 0) return prev;
+      let changed = false;
+      const next = new Map(prev);
+      prev.forEach((_, pageNum) => {
+        if (Math.abs(pageNum - currentCenterPage) > EVICTION_WINDOW) {
+          next.delete(pageNum);
+          loadedPagesRef.current.delete(pageNum);
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [currentCenterPage, isEditingAny, isScrollingToTargetRef]);
 
   // Reset pages cache when bookId changes
   useEffect(() => {
@@ -241,7 +275,6 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
   }, [editingPageNum, scrollParentRef, onPageChange]);
 
   const allPageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
-  const isEditingAny = editingPageNum !== null;
   const pageNumbersToRender = isEditingAny ? [editingPageNum] : allPageNumbers;
 
   return (
@@ -277,6 +310,8 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
                   onSetActive={() => { }}
                   onEdit={() => onEdit?.(pageNum, page.text || '')}
                   onReprocess={() => onReprocess?.(pageNum)}
+                  onSetStartPage={() => onSetStartPage?.(pageNum)}
+                  onToggleToc={(nextIsToc) => onToggleToc?.(pageNum, nextIsToc)}
                   tempText={isEditingThisPage ? tempPageText : ''}
                   onTempTextChange={(text) => onTempTextChange?.(text)}
                   onSave={() => {
@@ -290,6 +325,8 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
                   isLoading={page.status === 'processing' || page.status === 'indexing'}
                   isSaving={isSaving}
                   isFullscreen={isFullscreen}
+                  contentPageOffset={contentPageOffset}
+                  onTocPageClick={onTocPageClick}
                 />
               ) : (
                 <div className="flex flex-col items-center justify-center min-h-[400px] bg-white/30 rounded-[32px] border border-dashed border-[#0369a1]/10 animate-pulse">

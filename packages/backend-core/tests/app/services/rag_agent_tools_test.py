@@ -540,3 +540,72 @@ async def test_search_quran_uses_rag_top_k():
 
     # Check that system_configs_repository was queried for rag_top_k
     mock_config_repo.get_value.assert_called_with("rag_vector_top_k", "25")
+
+
+def test_strip_hypothetical_questions():
+    from app.services.rag.agent.tools import _strip_hypothetical_questions
+
+    sample_summary = (
+        "1. تۈرى: رومان\n\n"
+        "2. ئومومى بايان: بۇ بىر مەشھۇر رومان.\n\n"
+        "6. تىپىك سوئاللار (Hypothetical Queries):\n"
+        "1) بۇ كىتابتا كىم بار؟\n"
+        "2) ئاساسى تېمىسى نېمە؟\n\n"
+        "7. ئاچقۇچلۇق سۆزلەر (Keywords): تارىخ، رومان"
+    )
+
+    cleaned = _strip_hypothetical_questions(sample_summary)
+    assert "6. تىپىك سوئاللار" not in cleaned
+    assert "بۇ كىتابتا كىم بار؟" not in cleaned
+    assert "1. تۈرى: رومان" in cleaned
+    assert "2. ئومومى بايان: بۇ بىر مەشھۇر رومان." in cleaned
+    assert "7. ئاچقۇچلۇق سۆزلەر (Keywords): تارىخ، رومان" in cleaned
+
+
+def test_extract_book_ids():
+    from app.services.rag.agent.tools import _extract_book_ids
+
+    assert _extract_book_ids({"book_ids": "2ccc5b69363c"}) == ["2ccc5b69363c"]
+    assert _extract_book_ids({"book_id": "2ccc5b69363c"}) == ["2ccc5b69363c"]
+    assert _extract_book_ids({"book_ids": ["book-1", "book-2"]}) == ["book-1", "book-2"]
+    assert _extract_book_ids({}) is None
+    assert _extract_book_ids({"book_ids": []}) == []
+
+
+@pytest.mark.asyncio
+async def test_get_book_summary_handles_single_string_and_singular_book_id():
+    from app.services.rag.agent.tools import _run_get_book_summary
+
+    ctx = MagicMock()
+    ctx.session = AsyncMock()
+
+    async def fake_find_sister_volumes(self, book_id):
+        return []
+
+    async def fake_get_summaries_for_books(self, book_ids, text_filter=None):
+        return [
+            {
+                "book_id": bid,
+                "summary": "Summary text for " + bid,
+                "title": "Test Title",
+                "author": "Author",
+                "volume": 1,
+            }
+            for bid in book_ids
+        ]
+
+    with (
+        patch.object(BooksRepository, "find_sister_volumes", fake_find_sister_volumes),
+        patch.object(
+            BookSummariesRepository,
+            "get_summaries_for_books",
+            fake_get_summaries_for_books,
+        ),
+    ):
+        res_string = await _run_get_book_summary({"book_ids": "2ccc5b69363c"}, ctx)
+        assert len(res_string["summaries"]) == 1
+        assert res_string["summaries"][0]["book_id"] == "2ccc5b69363c"
+
+        res_singular = await _run_get_book_summary({"book_id": "2ccc5b69363c"}, ctx)
+        assert len(res_singular["summaries"]) == 1
+        assert res_singular["summaries"][0]["book_id"] == "2ccc5b69363c"

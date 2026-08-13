@@ -8,6 +8,8 @@ interface UseScrollToPageOptions {
   targetKey: string;
   topOffset?: number;
   onScrolled?: (page: number) => void;
+  /** The page currently centered under the reader's viewport. */
+  currentCenterPage?: number;
 }
 
 const FIND_RETRY_MS = 40;
@@ -31,6 +33,7 @@ export function useScrollToPage({
   targetKey,
   topOffset = 24,
   onScrolled,
+  currentCenterPage,
 }: UseScrollToPageOptions) {
   const isScrollingRef = useRef(false);
   const lastKeyRef = useRef<string | null>(null);
@@ -39,9 +42,21 @@ export function useScrollToPage({
   getPageElementRef.current = getPageElement;
   const onScrolledRef = useRef(onScrolled);
   onScrolledRef.current = onScrolled;
+  const currentCenterPageRef = useRef(currentCenterPage);
+  currentCenterPageRef.current = currentCenterPage;
 
   useEffect(() => {
     if (lastKeyRef.current === targetKey) return;
+    // If we've already completed initial mount and the target matches where the user
+    // is currently centered (e.g. from passive manual scrolling), do not trigger an auto-scroll snap.
+    if (
+      lastKeyRef.current !== null &&
+      currentCenterPageRef.current !== undefined &&
+      targetPage === currentCenterPageRef.current
+    ) {
+      lastKeyRef.current = targetKey;
+      return;
+    }
 
     let cancelled = false;
     let findTimer: ReturnType<typeof setTimeout>;

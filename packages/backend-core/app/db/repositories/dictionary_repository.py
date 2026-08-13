@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import func, literal, select
+from sqlalchemy import Text, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
@@ -132,9 +132,13 @@ class DictionaryRepository:
                 HistoryDictionary.transliteration,
                 HistoryDictionary.definition,
                 HistoryDictionary.letter_group,
+                HistoryDictionary.aliases,
                 literal(1.0).label("score"),
             )
-            .where(HistoryDictionary.term == term)
+            .where(
+                (HistoryDictionary.term == term)
+                | (HistoryDictionary.aliases.cast(Text).ilike(f'%"{term}"%'))
+            )
             .limit(limit)
         )
         exact = await self.session.execute(exact_stmt)
@@ -150,11 +154,17 @@ class DictionaryRepository:
                 HistoryDictionary.transliteration,
                 HistoryDictionary.definition,
                 HistoryDictionary.letter_group,
+                HistoryDictionary.aliases,
                 func.similarity(
                     _sql_normalize_uyghur(HistoryDictionary.term), norm_term
                 ).label("score"),
             )
-            .where(_build_fuzzy_term_where(HistoryDictionary.term, norm_term))
+            .where(
+                _build_fuzzy_term_where(HistoryDictionary.term, norm_term)
+                | _sql_normalize_uyghur(HistoryDictionary.aliases.cast(Text)).ilike(
+                    f"%{norm_term}%"
+                )
+            )
             .order_by(
                 func.similarity(
                     _sql_normalize_uyghur(HistoryDictionary.term), norm_term
@@ -446,7 +456,7 @@ class DictionaryRepository:
         return res.scalar_one_or_none()
 
     async def find_matching_history_term(self, term: str) -> HistoryDictionary | None:
-        """Find an existing published HistoryDictionary entry using normalized spelling and similarity.
+        """Find an existing published HistoryDictionary entry using normalized spelling, aliases, and similarity.
 
         Uses the strict matcher, not the search-tolerant one — a false match
         here silently discards legitimate extraction output (see
@@ -454,7 +464,14 @@ class DictionaryRepository:
         norm_term = normalize_uyghur_spelling(term)
         stmt = (
             select(HistoryDictionary)
-            .where(_build_strict_term_where(HistoryDictionary.term, norm_term))
+            .where(
+                _build_strict_term_where(HistoryDictionary.term, norm_term)
+                | (
+                    _sql_normalize_uyghur(HistoryDictionary.aliases.cast(Text)).ilike(
+                        f"%{norm_term}%"
+                    )
+                )
+            )
             .order_by(
                 func.similarity(
                     _sql_normalize_uyghur(HistoryDictionary.term), norm_term
@@ -468,7 +485,7 @@ class DictionaryRepository:
     async def find_matching_staging_term(
         self, term: str
     ) -> HistoryDictionaryStaging | None:
-        """Find an existing pending staging term using normalized spelling and similarity.
+        """Find an existing pending staging term using normalized spelling, aliases, and similarity.
 
         Uses the strict matcher, not the search-tolerant one — see
         _build_strict_term_where."""
@@ -477,7 +494,12 @@ class DictionaryRepository:
             select(HistoryDictionaryStaging)
             .where(
                 HistoryDictionaryStaging.status == "pending",
-                _build_strict_term_where(HistoryDictionaryStaging.term, norm_term),
+                _build_strict_term_where(HistoryDictionaryStaging.term, norm_term)
+                | (
+                    _sql_normalize_uyghur(
+                        HistoryDictionaryStaging.aliases.cast(Text)
+                    ).ilike(f"%{norm_term}%")
+                ),
             )
             .order_by(
                 func.similarity(
@@ -499,7 +521,10 @@ class DictionaryRepository:
     async def get_history_dictionary_by_term(
         self, term: str
     ) -> HistoryDictionary | None:
-        stmt = select(HistoryDictionary).where(HistoryDictionary.term == term)
+        stmt = select(HistoryDictionary).where(
+            (HistoryDictionary.term == term)
+            | (HistoryDictionary.aliases.cast(Text).ilike(f'%"{term}"%'))
+        )
         res = await self.session.execute(stmt)
         return res.scalar_one_or_none()
 

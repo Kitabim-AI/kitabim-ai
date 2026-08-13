@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useNotification } from '../../context/NotificationContext';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth, useIsEditor } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
@@ -31,6 +32,7 @@ const normalizeReaderCategory = (category: string) =>
     .replace(/^['"\s]+|['"\s]+$/g, '');
 
 export const ReaderView: React.FC = () => {
+  const { addNotification } = useNotification();
   const {
     selectedBook,
     view,
@@ -186,10 +188,10 @@ export const ReaderView: React.FC = () => {
         if (el && container) {
           const containerTop = container.getBoundingClientRect().top;
           const elTop = el.getBoundingClientRect().top;
-          
+
           container.scrollTo({
-             top: container.scrollTop + (elTop - containerTop) - 24,
-             behavior: 'instant'
+            top: container.scrollTop + (elTop - containerTop) - 24,
+            behavior: 'instant'
           });
         }
       }, 50);
@@ -367,6 +369,51 @@ export const ReaderView: React.FC = () => {
     }
   };
 
+  const handleSetStartPage = (pageNumber: number) => {
+    const newOffset = Math.max(0, pageNumber - 1);
+    setModal({
+      isOpen: true,
+      title: t('reader.setStartPageConfirmTitle') || "باش بەت قىلىپ بەلگىلەش",
+      message: t('reader.setStartPageConfirmMessage', { page: pageNumber, offset: newOffset }) || `بۇ بەتنى (PDF ${pageNumber}-بەت) كىتاب مەزمۇنىنىڭ 1-بىتى قىلىپ بەلگىلەمسىز؟ (بەت پەرق سالغۇچى: +${newOffset})`,
+      type: 'confirm',
+      confirmText: t('common.confirm') || "مۇئەييەنلەشتۈرۈش",
+      onConfirm: async () => {
+        setModal((prev: any) => ({ ...prev, isLoading: true }));
+        try {
+          const success = await bookActions.handleSaveBookRow(selectedBook.id, {
+            contentPageOffset: newOffset
+          });
+          if (success) {
+            addNotification(
+              t('reader.setStartPageSuccess', { page: pageNumber, offset: newOffset }) ||
+              `Physical page ${pageNumber} marked as Content Page 1 (Offset: +${newOffset})`,
+              "success"
+            );
+          }
+        } finally {
+          setModal((prev: any) => ({ ...prev, isOpen: false, isLoading: false }));
+        }
+      }
+    });
+  };
+
+  const contentPageOffset = selectedBook.contentPageOffset ?? (selectedBook as any).content_page_offset ?? 0;
+
+  const handleTocPageClick = useCallback((targetPage: number) => {
+    setCurrentPage(targetPage);
+    setPageInput(targetPage.toString());
+    const el = pageRefs.current.get(targetPage);
+    const container = mainScrollRef.current;
+    if (el && container) {
+      const containerTop = container.getBoundingClientRect().top;
+      const elTop = el.getBoundingClientRect().top;
+      container.scrollTo({
+        top: container.scrollTop + (elTop - containerTop) - 24,
+        behavior: 'smooth'
+      });
+    }
+  }, [setCurrentPage]);
+
   const [isDownloading, setIsDownloading] = useState(false);
   const handleDownload = async () => {
     if (isDownloading) return;
@@ -385,280 +432,102 @@ export const ReaderView: React.FC = () => {
 
   return (
     <>
-    {showShare && <ShareModal book={selectedBook} onClose={() => setShowShare(false)} />}
-    <div className={isFullscreen
-      ? 'fixed inset-0 z-50 flex flex-col bg-[#f0f4f8] dark:bg-slate-950 notranslate'
-      : `h-[calc(100dvh-72px)] sm:h-[calc(100dvh-88px)] md:h-[calc(100dvh-120px)] xl:h-[calc(100dvh-96px)] flex flex-col xl:flex-row-reverse ${mobileTab === 'chat' ? 'gap-3' : 'gap-4'} xl:gap-6 py-0 md:py-4 notranslate`
-    } lang="ug" translate="no">
+      {showShare && <ShareModal book={selectedBook} onClose={() => setShowShare(false)} />}
+      <div className={isFullscreen
+        ? 'fixed inset-0 z-50 flex flex-col bg-[#f0f4f8] dark:bg-slate-950 notranslate'
+        : `h-[calc(100dvh-72px)] sm:h-[calc(100dvh-88px)] md:h-[calc(100dvh-120px)] xl:h-[calc(100dvh-96px)] flex flex-col xl:flex-row-reverse ${mobileTab === 'chat' ? 'gap-3' : 'gap-4'} xl:gap-6 py-0 md:py-4 notranslate`
+      } lang="ug" translate="no">
 
-      {/* Main Content Area */}
-      <div className={`flex-grow glass-panel flex-col overflow-hidden rounded-[32px] border border-[#0369a1]/10 dark:border-[#38bdf8]/10 shadow-2xl relative ${mobileTab === 'reader' ? 'flex' : 'hidden xl:flex'}`}>
-        {/* Floating minimize button — fullscreen only */}
-        {isFullscreen && (
-          <button
-            onClick={() => setIsFullscreen(false)}
-            className="absolute top-4 left-4 z-20 p-2.5 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm text-[#0369a1] dark:text-[#38bdf8] hover:bg-white dark:hover:bg-slate-800 rounded-2xl shadow-lg border border-[#0369a1]/10 dark:border-[#38bdf8]/10 transition-all"
-            title="Exit fullscreen"
-          >
-            <Minimize2 size={20} />
-          </button>
-        )}
-        {/* Header Ribbon */}
-        <div className={`px-3 sm:px-6 py-2 sm:py-4 border-b border-[#0369a1]/10 dark:border-[#38bdf8]/10 flex flex-row items-center justify-between gap-1 sm:gap-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm ${isFullscreen ? 'hidden' : ''}`}>
-          <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-shrink">
-            <div className="flex items-center justify-center min-w-[40px] min-h-[40px] w-10 h-10 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl shadow-lg shrink-0">
-              <BookOpen size={20} />
-            </div>
-            <div className="min-w-0 flex flex-col justify-center">
-              <h2
-                className="font-bold text-[#1a1a1a] dark:text-slate-100 truncate"
-                style={{ fontSize: '18px' }}
-              >
-                {selectedBook.title}
-                {selectedBook.volume ? ` (${t('book.volume', { volume: selectedBook.volume })})` : ''}
-              </h2>
-              {selectedBook.author && (
-                <p
-                  className="text-[#64748b] dark:text-slate-400 mt-0.5 truncate hidden sm:block"
-                  style={{ fontSize: '14px' }}
+        {/* Main Content Area */}
+        <div className={`flex-grow glass-panel flex-col overflow-hidden rounded-[32px] border border-[#0369a1]/10 dark:border-[#38bdf8]/10 shadow-2xl relative ${mobileTab === 'reader' ? 'flex' : 'hidden xl:flex'}`}>
+          {/* Floating minimize button — fullscreen only */}
+          {isFullscreen && (
+            <button
+              onClick={() => setIsFullscreen(false)}
+              className="absolute top-4 left-4 z-20 p-2.5 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm text-[#0369a1] dark:text-[#38bdf8] hover:bg-white dark:hover:bg-slate-800 rounded-2xl shadow-lg border border-[#0369a1]/10 dark:border-[#38bdf8]/10 transition-all"
+              title="Exit fullscreen"
+            >
+              <Minimize2 size={20} />
+            </button>
+          )}
+          {/* Header Ribbon */}
+          <div className={`px-3 sm:px-6 py-2 sm:py-4 border-b border-[#0369a1]/10 dark:border-[#38bdf8]/10 flex flex-row items-center justify-between gap-1 sm:gap-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm ${isFullscreen ? 'hidden' : ''}`}>
+            <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-shrink">
+              <div className="flex items-center justify-center min-w-[40px] min-h-[40px] w-10 h-10 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl shadow-lg shrink-0">
+                <BookOpen size={20} />
+              </div>
+              <div className="min-w-0 flex flex-col justify-center">
+                <h2
+                  className="font-bold text-[#1a1a1a] dark:text-slate-100 truncate"
+                  style={{ fontSize: '18px' }}
                 >
-                  {selectedBook.author}
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-0.5 sm:gap-2 shrink-0">
-            {isEditor && (
-              <div className="flex items-center gap-1 sm:gap-2">
-                {!isEditing ? (
-                  <>
-                    <button onClick={handleEnterGlobalEdit} className="flex items-center gap-2 px-2 sm:px-4 py-2 min-h-[36px] sm:min-h-[44px] bg-[#0369a1] text-white text-xs sm:text-sm rounded-xl sm:rounded-2xl hover:bg-[#0284c7] transition-all">
-                      <Edit3 size={14} className="sm:w-4 sm:h-4" />
-                      <span className="hidden sm:inline">{t('reader.editBook')}</span>
-                    </button>
-                    {!isFullDocumentMode && (
-                      <button
-                        onClick={() => setIsFullDocumentMode(true)}
-                        className="hidden sm:flex items-center justify-center p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10"
-                        title={t('reader.loadFullDocument')}
-                      >
-                        <FileText size={18} className="sm:w-5 sm:h-5" />
-                      </button>
-                    )}
-                    {selectedBook.fileType === 'pdf' && (
-                      <button
-                        onClick={handleDownload}
-                        disabled={isDownloading}
-                        className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 disabled:opacity-50"
-                        title={t('common.download')}
-                      >
-                        {isDownloading ? (
-                          <Loader2 size={18} className="animate-spin sm:w-5 sm:h-5" />
-                        ) : (
-                          <Download size={18} className="sm:w-5 sm:h-5" />
-                        )}
-                      </button>
-                    )}
-                  </>
-                ) : (
-                  <button onClick={handleSaveCorrections} className="flex items-center gap-2 px-2 sm:px-4 py-2 min-h-[36px] sm:min-h-[44px] bg-[#0369a1] text-white text-xs sm:text-sm rounded-xl sm:rounded-2xl hover:bg-[#0284c7] transition-all">
-                    <Save size={14} className="sm:w-4 sm:h-4" />
-                    <span className="hidden sm:inline">{t('common.save')}</span>
-                  </button>
+                  {selectedBook.title}
+                  {selectedBook.volume ? ` (${t('book.volume', { volume: selectedBook.volume })})` : ''}
+                </h2>
+                {selectedBook.author && (
+                  <p
+                    className="text-[#64748b] dark:text-slate-400 mt-0.5 truncate hidden sm:block"
+                    style={{ fontSize: '14px' }}
+                  >
+                    {selectedBook.author}
+                  </p>
                 )}
               </div>
-            )}
-
-            {selectedBook.status === 'ready' && (
-              <button
-                onClick={() => setShowShare(true)}
-                title={t('share.shareBook')}
-                className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-[#1877F2]/20 dark:border-[#1877F2]/30 text-[#1877F2] dark:text-[#38bdf8] hover:bg-[#1877F2]/10 dark:hover:bg-[#38bdf8]/10"
-              >
-                <Share2 size={18} className="sm:w-5 sm:h-5" />
-              </button>
-            )}
-
-            <div className="relative flex items-center">
-              <button
-                ref={fontButtonRef}
-                onClick={() => {
-                  if (!showFontSlider && fontButtonRef.current) {
-                    const r = fontButtonRef.current.getBoundingClientRect();
-                    setSliderPos({ top: r.bottom + 8, left: r.left });
-                  }
-                  setShowFontSlider(prev => !prev);
-                }}
-                className={`p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all focus:outline-none ${showFontSlider ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 shadow-md' : 'bg-white/60 dark:bg-slate-800/80 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10'}`}
-              >
-                <ALargeSmall size={21} className="sm:w-[23px] sm:h-[23px] -translate-x-[1px]" />
-              </button>
-              {showFontSlider && createPortal(
-                <div
-                  ref={fontSliderRef}
-                  className="fixed flex flex-col items-center gap-2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-[#0369a1]/20 dark:border-[#38bdf8]/20 rounded-2xl shadow-2xl px-3 py-4 z-[9999]"
-                  style={{ top: sliderPos.top, left: sliderPos.left }}
-                >
-                  <button onClick={() => setFontSize(f => Math.max(14, f - 2))} className="text-[11px] font-bold text-[#94a3b8] dark:text-slate-500 select-none px-2 py-1 rounded-lg hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 active:scale-90 transition-all">A-</button>
-                  <div style={{ height: '120px', width: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'visible' }}>
-                    <input
-                      type="range"
-                      min={14}
-                      max={64}
-                      step={2}
-                      value={fontSize}
-                      onChange={(e) => setFontSize(Number(e.target.value))}
-                      style={{ width: '120px', transform: 'rotate(-90deg)', cursor: 'pointer', accentColor: 'var(--primary-blue)', flexShrink: 0 }}
-                    />
-                  </div>
-                  <button onClick={() => setFontSize(f => Math.min(64, f + 2))} className="text-[11px] font-bold text-[#0369a1] dark:text-[#38bdf8] select-none px-2 py-1 rounded-lg hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 active:scale-90 transition-all">A+</button>
-                  <span className="text-[11px] font-mono font-bold text-[#0369a1] dark:text-[#38bdf8] select-none">{fontSize}</span>
-                </div>,
-                document.body
-              )}
             </div>
 
-
-            <button
-              onClick={() => setIsFullscreen(prev => !prev)}
-              className="lg:hidden p-1.5 sm:p-2.5 min-w-[32px] sm:min-w-[44px] min-h-[32px] sm:min-h-[44px] text-[#94a3b8] dark:text-slate-400 hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 hover:text-[#0369a1] dark:hover:text-[#38bdf8] rounded-xl transition-all"
-              title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-            >
-              {isFullscreen ? <Minimize2 size={18} className="sm:w-5 sm:h-5" /> : <Maximize2 size={18} className="sm:w-5 sm:h-5" />}
-            </button>
-            <button
-              onClick={() => isEditing ? setIsEditing(false) : (editingPageNum !== null ? setEditingPageNum(null) : onClose())}
-              title={isEditing || editingPageNum !== null ? t('reader.cancel') : t('reader.backToLibrary')}
-              className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-red-200 dark:border-red-900/30 text-red-400 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 hover:text-red-500 dark:hover:text-red-400"
-            >
-              <X size={18} className="sm:w-5 sm:h-5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Reading Canvas */}
-        <div ref={mainScrollRef} dir="rtl" className={`flex-grow overflow-y-auto custom-scrollbar paper-background ${isEditing ? 'p-3 sm:p-4' : 'p-4 sm:p-6'} flex flex-col`}>
-          {isEditing ? (
-            <div className="h-full relative w-full max-w-4xl mx-auto">
-              {isFetchingContent && <div className="absolute inset-0 bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm z-20 flex items-center justify-center"><Loader2 className="w-8 h-8 text-[#0369a1] dark:text-[#38bdf8] animate-spin" /></div>}
-              <textarea 
-                value={editContent} 
-                onChange={(e) => setEditContent(e.target.value)} 
-                className={`w-full h-full p-6 uyghur-text border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-3xl outline-none resize-none bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-600 shadow-inner ${readerContentFontClassName || ''}`} 
-                style={{ fontSize: `${fontSize}px`, fontFamily: readerContentFontFamily }} 
-                placeholder={t('common.enterContent')} 
-              />
-            </div>
-          ) : isVirtualScroll ? (
-            <VirtualScrollReader
-              bookId={selectedBook.id}
-              totalPages={selectedBook.totalPages || (selectedBook as any).total_pages || 0}
-              fontSize={fontSize}
-              contentFontFamily={readerContentFontFamily}
-              contentFontClassName={readerContentFontClassName}
-              initialPage={currentPage || 1}
-              onPageChange={setCurrentPage}
-              scrollParentRef={mainScrollRef}
-              isFullscreen={isFullscreen}
-              isChatCollapsed={isSidebarCollapsed}
-              editingPageNum={editingPageNum}
-              tempPageText={tempPageText}
-              onEdit={(pageNum, text) => {
-                setEditingPageNum(pageNum);
-                setTempPageText(text);
-              }}
-              onReprocess={(pageNum) => {
-                bookActions.handleReProcessPage(selectedBook.id, pageNum);
-              }}
-              onTempTextChange={setTempPageText}
-              onSave={(pageNum, text) => {
-                handleUpdatePage(selectedBook.id, pageNum, text);
-              }}
-              onCancel={() => setEditingPageNum(null)}
-              isSaving={isSaving}
-              selectedBookPages={selectedBook.pages}
-            />
-          ) : (
-            <div className={`w-full mx-auto transition-all duration-300 ${isSidebarCollapsed ? 'max-w-6xl' : 'max-w-4xl'} ${editingPageNum !== null ? 'h-full flex flex-col' : 'space-y-4 pb-40'}`}>
-              {[...loadedPages]
-                .sort((a, b) => a.pageNumber - b.pageNumber)
-                .filter(page => (editingPageNum === null || Number(page.pageNumber) === Number(editingPageNum)))
-                .map(page => (
-                  <div
-                    key={page.pageNumber}
-                    ref={el => { if (el) pageRefs.current.set(page.pageNumber, el); else pageRefs.current.delete(page.pageNumber); }}
-                    data-page-number={page.pageNumber}
-                    className={editingPageNum === page.pageNumber ? 'h-full flex flex-col' : ''}
-                  >
-                    <PageItem
-                      key={page.pageNumber}
-                      page={page}
-                      isActive={currentPage === page.pageNumber}
-                      isEditing={editingPageNum === page.pageNumber}
-                      fontSize={fontSize}
-                      contentFontFamily={readerContentFontFamily}
-                      contentFontClassName={readerContentFontClassName}
-                      onSetActive={() => setCurrentPage(page.pageNumber)}
-                      onEdit={() => { setEditingPageNum(page.pageNumber); setTempPageText(page.text || ''); }}
-                      onReprocess={() => bookActions.handleReProcessPage(selectedBook.id, page.pageNumber)}
-                      tempText={tempPageText}
-                      onTempTextChange={setTempPageText}
-                      onSave={() => {
-                        handleUpdatePage(selectedBook.id, page.pageNumber, tempPageText);
-                        window.scrollTo(0, 0);
-                      }}
-                      onCancel={() => {
-                        setEditingPageNum(null);
-                        window.scrollTo(0, 0);
-                      }}
-                      isLoading={!page.text && ((!page.pipelineStep && (page.status === 'ocr_processing' || page.status === 'indexing' || page.status === 'pending')) || (page.pipelineStep === 'ocr' && page.milestone !== 'succeeded'))}
-                      isSaving={isSaving}
-                      isFullscreen={isFullscreen}
-                    />
-                  </div>
-                ))}
-              {!isEditing && hasMorePages && <div ref={observerTarget} className="h-20 flex items-center justify-center">{isLoadingMore && <Loader2 className="animate-spin text-[#0369a1]" />}</div>}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Sidebar Area */}
-      <div className={`w-full ${isSidebarCollapsed ? 'xl:w-16' : 'xl:w-[500px] 2xl:w-[600px]'} flex-col gap-4 xl:gap-6 min-h-0 transition-all duration-300 ${isFullscreen ? 'hidden' : mobileTab === 'chat' ? 'flex flex-grow' : 'hidden xl:flex'}`}>
-        <GlassPanel className={`flex-1 min-h-0 flex flex-col ${mobileTab === 'chat' ? 'rounded-[24px] border' : 'rounded-none xl:rounded-[32px] border'} shadow-xl border-[#0369a1]/10 overflow-hidden`}>
-          {/* Chat tab header — mobile only, mirrors reader header without edit button */}
-          {mobileTab === 'chat' && (
-            <div className="xl:hidden flex-shrink-0 px-3 sm:px-6 py-2 sm:py-4 border-b border-[#0369a1]/10 dark:border-[#38bdf8]/10 flex flex-row items-center justify-between gap-1 sm:gap-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm mb-0">
-              {/* Book title — left in RTL */}
-              <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-shrink">
-                <div className="hidden sm:flex items-center justify-center min-w-[40px] min-h-[40px] bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl shadow-lg shrink-0">
-                  <BookOpen size={20} />
-                </div>
-                <div className="min-w-0 flex flex-col justify-center">
-                  <h2 className="font-bold text-[#1a1a1a] dark:text-slate-100 truncate" style={{ fontSize: '18px' }}>
-                    {selectedBook.title}
-                    {selectedBook.volume ? ` (${t('book.volume', { volume: selectedBook.volume })})` : ''}
-                  </h2>
-                  {selectedBook.author && (
-                    <p className="text-[#64748b] dark:text-slate-400 mt-0.5 truncate hidden sm:block" style={{ fontSize: '14px' }}>
-                      {selectedBook.author}
-                    </p>
+            <div className="flex items-center gap-0.5 sm:gap-2 shrink-0">
+              {isEditor && (
+                <div className="flex items-center gap-1 sm:gap-2">
+                  {!isEditing ? (
+                    <>
+                      <button onClick={handleEnterGlobalEdit} className="flex items-center gap-2 px-2 sm:px-4 py-2 min-h-[36px] sm:min-h-[44px] bg-[#0369a1] text-white text-xs sm:text-sm rounded-xl sm:rounded-2xl hover:bg-[#0284c7] transition-all">
+                        <Edit3 size={14} className="sm:w-4 sm:h-4" />
+                        <span className="hidden sm:inline">{t('reader.editBook')}</span>
+                      </button>
+                      {!isFullDocumentMode && (
+                        <button
+                          onClick={() => setIsFullDocumentMode(true)}
+                          className="hidden sm:flex items-center justify-center p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10"
+                          title={t('reader.loadFullDocument')}
+                        >
+                          <FileText size={18} className="sm:w-5 sm:h-5" />
+                        </button>
+                      )}
+                      {selectedBook.fileType === 'pdf' && (
+                        <button
+                          onClick={handleDownload}
+                          disabled={isDownloading}
+                          className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 disabled:opacity-50"
+                          title={t('common.download')}
+                        >
+                          {isDownloading ? (
+                            <Loader2 size={18} className="animate-spin sm:w-5 sm:h-5" />
+                          ) : (
+                            <Download size={18} className="sm:w-5 sm:h-5" />
+                          )}
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <button onClick={handleSaveCorrections} className="flex items-center gap-2 px-2 sm:px-4 py-2 min-h-[36px] sm:min-h-[44px] bg-[#0369a1] text-white text-xs sm:text-sm rounded-xl sm:rounded-2xl hover:bg-[#0284c7] transition-all">
+                      <Save size={14} className="sm:w-4 sm:h-4" />
+                      <span className="hidden sm:inline">{t('common.save')}</span>
+                    </button>
                   )}
                 </div>
-              </div>
-              {/* Controls — right in RTL */}
-              <div className="flex items-center gap-0.5 sm:gap-2 shrink-0">
-                {isEditor && selectedBook.fileType === 'pdf' && (
-                  <button
-                    onClick={handleDownload}
-                    disabled={isDownloading}
-                    className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 disabled:opacity-50"
-                    title={t('common.download')}
-                  >
-                    {isDownloading ? <Loader2 size={18} /> : <Download size={18} />}
-                  </button>
-                )}
+              )}
+
+              {selectedBook.status === 'ready' && (
+                <button
+                  onClick={() => setShowShare(true)}
+                  title={t('share.shareBook')}
+                  className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-[#1877F2]/20 dark:border-[#1877F2]/30 text-[#1877F2] dark:text-[#38bdf8] hover:bg-[#1877F2]/10 dark:hover:bg-[#38bdf8]/10"
+                >
+                  <Share2 size={18} className="sm:w-5 sm:h-5" />
+                </button>
+              )}
+
+              <div className="relative flex items-center">
                 <button
                   ref={fontButtonRef}
                   onClick={() => {
@@ -672,69 +541,255 @@ export const ReaderView: React.FC = () => {
                 >
                   <ALargeSmall size={21} className="sm:w-[23px] sm:h-[23px] -translate-x-[1px]" />
                 </button>
-                <button onClick={onClose} className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-red-200 dark:border-red-900/30 text-red-400 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 hover:text-red-500 dark:hover:text-red-400">
-                  <X size={18} className="sm:w-5 sm:h-5" />
-                </button>
+                {showFontSlider && createPortal(
+                  <div
+                    ref={fontSliderRef}
+                    className="fixed flex flex-col items-center gap-2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-[#0369a1]/20 dark:border-[#38bdf8]/20 rounded-2xl shadow-2xl px-3 py-4 z-[9999]"
+                    style={{ top: sliderPos.top, left: sliderPos.left }}
+                  >
+                    <button onClick={() => setFontSize(f => Math.max(14, f - 2))} className="text-[11px] font-bold text-[#94a3b8] dark:text-slate-500 select-none px-2 py-1 rounded-lg hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 active:scale-90 transition-all">A-</button>
+                    <div style={{ height: '120px', width: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'visible' }}>
+                      <input
+                        type="range"
+                        min={14}
+                        max={64}
+                        step={2}
+                        value={fontSize}
+                        onChange={(e) => setFontSize(Number(e.target.value))}
+                        style={{ width: '120px', transform: 'rotate(-90deg)', cursor: 'pointer', accentColor: 'var(--primary-blue)', flexShrink: 0 }}
+                      />
+                    </div>
+                    <button onClick={() => setFontSize(f => Math.min(64, f + 2))} className="text-[11px] font-bold text-[#0369a1] dark:text-[#38bdf8] select-none px-2 py-1 rounded-lg hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 active:scale-90 transition-all">A+</button>
+                    <span className="text-[11px] font-mono font-bold text-[#0369a1] dark:text-[#38bdf8] select-none">{fontSize}</span>
+                  </div>,
+                  document.body
+                )}
               </div>
-            </div>
-          )}
-          {/* Panel content */}
-          {isSidebarCollapsed && mobileTab !== 'chat' ? (
-            <div className="hidden xl:flex flex-col items-center w-full gap-3 py-4">
+
+
               <button
-                onClick={() => setIsSidebarCollapsed(false)}
-                className="flex items-center justify-center p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10"
-                title={t('reader.showChat')}
+                onClick={() => setIsFullscreen(prev => !prev)}
+                className="lg:hidden p-1.5 sm:p-2.5 min-w-[32px] sm:min-w-[44px] min-h-[32px] sm:min-h-[44px] text-[#94a3b8] dark:text-slate-400 hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 hover:text-[#0369a1] dark:hover:text-[#38bdf8] rounded-xl transition-all"
+                title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
               >
-                <PanelLeftOpen size={18} className="sm:w-5 sm:h-5" />
+                {isFullscreen ? <Minimize2 size={18} className="sm:w-5 sm:h-5" /> : <Maximize2 size={18} className="sm:w-5 sm:h-5" />}
+              </button>
+              <button
+                onClick={() => isEditing ? setIsEditing(false) : (editingPageNum !== null ? setEditingPageNum(null) : onClose())}
+                title={isEditing || editingPageNum !== null ? t('reader.cancel') : t('reader.backToLibrary')}
+                className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-red-200 dark:border-red-900/30 text-red-400 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 hover:text-red-500 dark:hover:text-red-400"
+              >
+                <X size={18} className="sm:w-5 sm:h-5" />
               </button>
             </div>
-          ) : (
-            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-              {!isFullscreen && (
-                <ChatInterface
-                  type="book"
-                  bookId={selectedBook.id}
-                  bookTitle={selectedBook.title ?? undefined}
-                  bookAuthor={selectedBook.author ?? undefined}
-                  chatMessages={chat.chatMessages}
-                  chatInput={chat.chatInput}
-                  setChatInput={chat.setChatInput}
-                  onSendMessage={chat.handleSendMessage}
-                  isChatting={chat.isChatting}
-                  streamingMessage={chat.streamingMessage}
-                  streamingPartialResult={chat.streamingPartialResult}
-                  agentSteps={chat.agentSteps}
-                  currentPage={currentPage}
-                  usageStatus={chat.usageStatus}
-                  chatContainerRef={chat.chatContainerRef}
-                  submitFeedback={chat.submitFeedback}
-                  conversationId={chat.conversationId}
-                  conversations={chat.conversations}
-                  isLoadingConversations={chat.isLoadingConversations}
-                  isLoadingMessages={chat.isLoadingMessages}
-                  onSelectConversation={chat.selectConversation}
-                  onStartNewChat={chat.startNewChat}
-                  onDeleteConversation={chat.deleteConversationHandler}
-                  onHideChat={() => setIsSidebarCollapsed(true)}
-                />
-              )}
-            </div>
-          )}
-        </GlassPanel>
-      </div>
+          </div>
 
-      {/* Floating reader/chat toggle — mobile only */}
-      {!isFullscreen && createPortal(
-        <button
-          className="xl:hidden fixed bottom-[112px] left-6 z-50 transition-all active:scale-90 hover:opacity-70 text-[#FF9800] animate-[bob_10s_ease-in-out_infinite]"
-          onClick={() => setMobileTab(prev => prev === 'reader' ? 'chat' : 'reader')}
-        >
-          {mobileTab === 'reader' ? <Bot size={38} strokeWidth={2} /> : <BookOpen size={38} strokeWidth={2} />}
-        </button>,
-        document.body
-      )}
-    </div>
+          {/* Reading Canvas */}
+          <div ref={mainScrollRef} dir="rtl" className={`flex-grow overflow-y-auto custom-scrollbar paper-background ${isEditing ? 'p-3 sm:p-4' : 'p-4 sm:p-6'} flex flex-col`}>
+            {isEditing ? (
+              <div className="h-full relative w-full max-w-4xl mx-auto">
+                {isFetchingContent && <div className="absolute inset-0 bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm z-20 flex items-center justify-center"><Loader2 className="w-8 h-8 text-[#0369a1] dark:text-[#38bdf8] animate-spin" /></div>}
+                <textarea
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  className={`w-full h-full p-6 uyghur-text border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-3xl outline-none resize-none bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-600 shadow-inner ${readerContentFontClassName || ''}`}
+                  style={{ fontSize: `${fontSize}px`, fontFamily: readerContentFontFamily }}
+                  placeholder={t('common.enterContent')}
+                />
+              </div>
+            ) : isVirtualScroll ? (
+              <VirtualScrollReader
+                bookId={selectedBook.id}
+                totalPages={selectedBook.totalPages || (selectedBook as any).total_pages || 0}
+                fontSize={fontSize}
+                contentFontFamily={readerContentFontFamily}
+                contentFontClassName={readerContentFontClassName}
+                initialPage={currentPage || 1}
+                onPageChange={setCurrentPage}
+                scrollParentRef={mainScrollRef}
+                isFullscreen={isFullscreen}
+                isChatCollapsed={isSidebarCollapsed}
+                editingPageNum={editingPageNum}
+                tempPageText={tempPageText}
+                onEdit={(pageNum, text) => {
+                  setEditingPageNum(pageNum);
+                  setTempPageText(text);
+                }}
+                onReprocess={(pageNum) => {
+                  bookActions.handleReProcessPage(selectedBook.id, pageNum);
+                }}
+                onSetStartPage={isEditor ? (pageNum) => handleSetStartPage(pageNum) : undefined}
+                onToggleToc={isEditor ? (pageNum, nextIsToc) => bookActions.handleToggleToc(selectedBook.id, pageNum, nextIsToc) : undefined}
+                onTempTextChange={setTempPageText}
+                onSave={(pageNum, text) => {
+                  handleUpdatePage(selectedBook.id, pageNum, text);
+                }}
+                onCancel={() => setEditingPageNum(null)}
+                isSaving={isSaving}
+                selectedBookPages={selectedBook.pages}
+                contentPageOffset={contentPageOffset}
+                onTocPageClick={handleTocPageClick}
+              />
+            ) : (
+              <div className={`w-full mx-auto transition-all duration-300 ${isSidebarCollapsed ? 'max-w-6xl' : 'max-w-4xl'} ${editingPageNum !== null ? 'h-full flex flex-col' : 'space-y-4 pb-40'}`}>
+                {[...loadedPages]
+                  .sort((a, b) => a.pageNumber - b.pageNumber)
+                  .filter(page => (editingPageNum === null || Number(page.pageNumber) === Number(editingPageNum)))
+                  .map(page => (
+                    <div
+                      key={page.pageNumber}
+                      ref={el => { if (el) pageRefs.current.set(page.pageNumber, el); else pageRefs.current.delete(page.pageNumber); }}
+                      data-page-number={page.pageNumber}
+                      className={editingPageNum === page.pageNumber ? 'h-full flex flex-col' : ''}
+                    >
+                      <PageItem
+                        key={page.pageNumber}
+                        page={page}
+                        isActive={currentPage === page.pageNumber}
+                        isEditing={editingPageNum === page.pageNumber}
+                        fontSize={fontSize}
+                        contentFontFamily={readerContentFontFamily}
+                        contentFontClassName={readerContentFontClassName}
+                        onSetActive={() => setCurrentPage(page.pageNumber)}
+                        onEdit={() => { setEditingPageNum(page.pageNumber); setTempPageText(page.text || ''); }}
+                        onReprocess={() => bookActions.handleReProcessPage(selectedBook.id, page.pageNumber)}
+                        onSetStartPage={isEditor ? () => handleSetStartPage(page.pageNumber) : undefined}
+                        onToggleToc={isEditor ? (nextIsToc) => bookActions.handleToggleToc(selectedBook.id, page.pageNumber, nextIsToc) : undefined}
+                        tempText={tempPageText}
+                        onTempTextChange={setTempPageText}
+                        onSave={() => {
+                          handleUpdatePage(selectedBook.id, page.pageNumber, tempPageText);
+                          window.scrollTo(0, 0);
+                        }}
+                        onCancel={() => {
+                          setEditingPageNum(null);
+                          window.scrollTo(0, 0);
+                        }}
+                        isLoading={!page.text && ((!page.pipelineStep && (page.status === 'ocr_processing' || page.status === 'indexing' || page.status === 'pending')) || (page.pipelineStep === 'ocr' && page.milestone !== 'succeeded'))}
+                        isSaving={isSaving}
+                        isFullscreen={isFullscreen}
+                        contentPageOffset={contentPageOffset}
+                        onTocPageClick={handleTocPageClick}
+                      />
+                    </div>
+                  ))}
+                {!isEditing && hasMorePages && <div ref={observerTarget} className="h-20 flex items-center justify-center">{isLoadingMore && <Loader2 className="animate-spin text-[#0369a1]" />}</div>}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Sidebar Area */}
+        <div className={`w-full ${isSidebarCollapsed ? 'xl:w-16' : 'xl:w-[500px] 2xl:w-[600px]'} flex-col gap-4 xl:gap-6 min-h-0 transition-all duration-300 ${isFullscreen ? 'hidden' : mobileTab === 'chat' ? 'flex flex-grow' : 'hidden xl:flex'}`}>
+          <GlassPanel className={`flex-1 min-h-0 flex flex-col ${mobileTab === 'chat' ? 'rounded-[24px] border' : 'rounded-none xl:rounded-[32px] border'} shadow-xl border-[#0369a1]/10 overflow-hidden`}>
+            {/* Chat tab header — mobile only, mirrors reader header without edit button */}
+            {mobileTab === 'chat' && (
+              <div className="xl:hidden flex-shrink-0 px-3 sm:px-6 py-2 sm:py-4 border-b border-[#0369a1]/10 dark:border-[#38bdf8]/10 flex flex-row items-center justify-between gap-1 sm:gap-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm mb-0">
+                {/* Book title — left in RTL */}
+                <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-shrink">
+                  <div className="hidden sm:flex items-center justify-center min-w-[40px] min-h-[40px] bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl shadow-lg shrink-0">
+                    <BookOpen size={20} />
+                  </div>
+                  <div className="min-w-0 flex flex-col justify-center">
+                    <h2 className="font-bold text-[#1a1a1a] dark:text-slate-100 truncate" style={{ fontSize: '18px' }}>
+                      {selectedBook.title}
+                      {selectedBook.volume ? ` (${t('book.volume', { volume: selectedBook.volume })})` : ''}
+                    </h2>
+                    {selectedBook.author && (
+                      <p className="text-[#64748b] dark:text-slate-400 mt-0.5 truncate hidden sm:block" style={{ fontSize: '14px' }}>
+                        {selectedBook.author}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                {/* Controls — right in RTL */}
+                <div className="flex items-center gap-0.5 sm:gap-2 shrink-0">
+                  {isEditor && selectedBook.fileType === 'pdf' && (
+                    <button
+                      onClick={handleDownload}
+                      disabled={isDownloading}
+                      className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 disabled:opacity-50"
+                      title={t('common.download')}
+                    >
+                      {isDownloading ? <Loader2 size={18} /> : <Download size={18} />}
+                    </button>
+                  )}
+                  <button
+                    ref={fontButtonRef}
+                    onClick={() => {
+                      if (!showFontSlider && fontButtonRef.current) {
+                        const r = fontButtonRef.current.getBoundingClientRect();
+                        setSliderPos({ top: r.bottom + 8, left: r.left });
+                      }
+                      setShowFontSlider(prev => !prev);
+                    }}
+                    className={`p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all focus:outline-none ${showFontSlider ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 shadow-md' : 'bg-white/60 dark:bg-slate-800/80 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10'}`}
+                  >
+                    <ALargeSmall size={21} className="sm:w-[23px] sm:h-[23px] -translate-x-[1px]" />
+                  </button>
+                  <button onClick={onClose} className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-red-200 dark:border-red-900/30 text-red-400 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 hover:text-red-500 dark:hover:text-red-400">
+                    <X size={18} className="sm:w-5 sm:h-5" />
+                  </button>
+                </div>
+              </div>
+            )}
+            {/* Panel content */}
+            {isSidebarCollapsed && mobileTab !== 'chat' ? (
+              <div className="hidden xl:flex flex-col items-center w-full gap-3 py-4">
+                <button
+                  onClick={() => setIsSidebarCollapsed(false)}
+                  className="flex items-center justify-center p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10"
+                  title={t('reader.showChat')}
+                >
+                  <PanelLeftOpen size={18} className="sm:w-5 sm:h-5" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+                {!isFullscreen && (
+                  <ChatInterface
+                    type="book"
+                    bookId={selectedBook.id}
+                    bookTitle={selectedBook.title ?? undefined}
+                    bookAuthor={selectedBook.author ?? undefined}
+                    chatMessages={chat.chatMessages}
+                    chatInput={chat.chatInput}
+                    setChatInput={chat.setChatInput}
+                    onSendMessage={chat.handleSendMessage}
+                    isChatting={chat.isChatting}
+                    streamingMessage={chat.streamingMessage}
+                    streamingPartialResult={chat.streamingPartialResult}
+                    agentSteps={chat.agentSteps}
+                    currentPage={currentPage}
+                    usageStatus={chat.usageStatus}
+                    chatContainerRef={chat.chatContainerRef}
+                    submitFeedback={chat.submitFeedback}
+                    conversationId={chat.conversationId}
+                    conversations={chat.conversations}
+                    isLoadingConversations={chat.isLoadingConversations}
+                    isLoadingMessages={chat.isLoadingMessages}
+                    onSelectConversation={chat.selectConversation}
+                    onStartNewChat={chat.startNewChat}
+                    onDeleteConversation={chat.deleteConversationHandler}
+                    onHideChat={() => setIsSidebarCollapsed(true)}
+                  />
+                )}
+              </div>
+            )}
+          </GlassPanel>
+        </div>
+
+        {/* Floating reader/chat toggle — mobile only */}
+        {!isFullscreen && createPortal(
+          <button
+            className="xl:hidden fixed bottom-[112px] left-6 z-50 transition-all active:scale-90 hover:opacity-70 text-[#FF9800] animate-[bob_10s_ease-in-out_infinite]"
+            onClick={() => setMobileTab(prev => prev === 'reader' ? 'chat' : 'reader')}
+          >
+            {mobileTab === 'reader' ? <Bot size={38} strokeWidth={2} /> : <BookOpen size={38} strokeWidth={2} />}
+          </button>,
+          document.body
+        )}
+      </div>
     </>
   );
 };

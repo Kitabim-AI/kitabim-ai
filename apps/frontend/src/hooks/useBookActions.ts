@@ -119,6 +119,44 @@ export const useBookActions = (
   };
 
 
+  const handleToggleToc = (bookId: string, pageNum: number, nextIsToc: boolean) => {
+    const copy = nextIsToc ? 'markAsToc' : 'unmarkAsToc';
+    setModal({
+      isOpen: true,
+      title: t(`modal.${copy}.title`),
+      message: t(`modal.${copy}.message`, { pageNum }),
+      type: 'confirm',
+      confirmText: t(`modal.${copy}.confirm`),
+      onConfirm: async () => {
+        setModal((prev: any) => ({ ...prev, isOpen: false }));
+        try {
+          const res = await PersistenceService.setPageToc(bookId, pageNum, nextIsToc);
+
+          setSelectedBook(prev => {
+            if (!prev || prev.id !== bookId) return prev;
+            const updatedOffset = res?.contentPageOffset !== undefined ? res.contentPageOffset : prev.contentPageOffset;
+            return {
+              ...prev,
+              contentPageOffset: updatedOffset,
+              content_page_offset: updatedOffset,
+              pages: (prev.pages || []).map(r =>
+                r.pageNumber === pageNum ? { ...r, isToc: nextIsToc } : r
+              ),
+            };
+          });
+
+          addNotification(
+            t(nextIsToc ? 'common.pageTocMarked' : 'common.pageTocUnmarked', { pageNum }),
+            'success'
+          );
+        } catch (err) {
+          console.error("Failed to update page ToC flag", err);
+          addNotification(t('common.pageTocError', { pageNum }), 'error');
+        }
+      }
+    });
+  };
+
 
   const handleTriggerSpellCheck = (bookId: string) => {
     setModal({
@@ -396,6 +434,7 @@ export const useBookActions = (
       title?: string;
       author?: string;
       volume?: number | null;
+      contentPageOffset?: number;
       categories?: string[];
     }
   ) => {
@@ -529,6 +568,7 @@ export const useBookActions = (
     handleRetryFailedPages,
     handleReprocessStep,
     handleReProcessPage,
+    handleToggleToc,
     handleTriggerSpellCheck,
     handleUpdatePage,
     openReader,

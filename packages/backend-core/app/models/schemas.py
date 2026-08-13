@@ -33,6 +33,12 @@ class ExtractionResult(BaseModel):
     )
 
     page_number: int  # DB: page_number, API: pageNumber
+    content_page_number: Optional[str] = (
+        None  # DB: content_page_number, API: contentPageNumber
+    )
+    display_page_number: Optional[str] = (
+        None  # Property: display_page_number, API: displayPageNumber
+    )
     text: Optional[str] = None
     status: str
     error: Optional[str] = None
@@ -40,6 +46,14 @@ class ExtractionResult(BaseModel):
     pipeline_step: Optional[str] = None  # DB: pipeline_step, API: pipelineStep
     milestone: Optional[str] = None  # DB: milestone, API: milestone
     is_toc: bool = False  # API: isToc
+
+
+class PageTocUpdate(BaseModel):
+    """Request body for manually marking/unmarking a page as ToC"""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    is_toc: bool  # API: isToc
 
 
 class Book(BaseModel):
@@ -61,6 +75,7 @@ class Book(BaseModel):
     title: str
     author: str
     volume: Optional[int] = None
+    content_page_offset: int = 0  # DB: content_page_offset, API: contentPageOffset
     total_pages: int  # DB: total_pages, API: totalPages (auto-converted)
     pages: List[ExtractionResult] = Field(default_factory=list)
     status: str

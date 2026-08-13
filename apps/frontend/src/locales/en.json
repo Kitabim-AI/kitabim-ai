@@ -53,6 +53,9 @@
     "pageResetSuccess": "Page {{pageNum}} reset and queued for re-processing.",
     "pageResetError": "Failed to reset page {{pageNum}}. Please try again.",
     "pageUpdated": "Page {{pageNum}} updated.",
+    "pageTocMarked": "Page {{pageNum}} marked as Table of Contents.",
+    "pageTocUnmarked": "Page {{pageNum}} unmarked as Table of Contents.",
+    "pageTocError": "Failed to update Table of Contents flag for page {{pageNum}}. Please try again.",
     "noPagesToSave": "No pages found to save. Please try reloading the book.",
     "saveSuccess": "Global corrections saved.",
     "deleteSuccess": "Book deleted successfully.",
@@ -112,7 +115,7 @@
     "searchOrChatPlaceholder": "Ask questions or search books, authors or topics...",
     "searchPlaceholder": "Search books, authors or topics...",
     "placeholders": {
-      "ask": "Ask questions or search books, authors or topics...",
+      "ask": "Ask questions about any book in our library...",
       "books": "Search by book title, author, or category...",
       "content": "Search for an exact phrase inside book content...",
       "history": "Search historical terms, figures, or events...",
@@ -125,7 +128,7 @@
       "enUg": "Enter an English or Uyghur word to translate..."
     },
     "noResults": {
-      "ask": "Sorry, no matching books found.",
+      "ask": "Sorry, no matching answers found.",
       "books": "Sorry, no books found.",
       "content": "Sorry, no content found.",
       "history": "Sorry, no historical terms found.",
@@ -141,9 +144,9 @@
     "searchResults": "Search Results",
     "resultsFor": "Results for",
     "totalBooks": "books",
-    "pressEnterToChat": "No books found — press Enter to ask the assistant",
-    "pressReturnToChat": "No books found — press Return to ask the assistant",
-    "tapToChat": "No books found — tap the search icon to ask the assistant",
+    "pressEnterToChat": "Press Enter to ask the assistant",
+    "pressReturnToChat": "Press Return to ask the assistant",
+    "tapToChat": "Tap the search icon to ask the assistant",
     "recentQuestions": "Recently answered questions",
     "keyboardMapTooltip": "Show Uyghur keyboard map",
     "keyboardMapTitle": "Uyghur Keyboard Layout Map",
@@ -307,6 +310,15 @@
     "showChat": "Show chat panel",
     "activeRecognizing": "Actively recognizing...",
     "goToPage": "Go to Page {{page}}",
+    "setPageOne": "Mark as Page 1",
+    "setStartPageTitle": "Mark this physical page as Content Page 1",
+    "setStartPageConfirmTitle": "Set Content Page 1",
+    "setStartPageConfirmMessage": "Are you sure you want to mark physical page {{page}} as Content Page 1? (Offset: +{{offset}})",
+    "setStartPageSuccess": "Physical page {{page}} marked as Content Page 1 (Offset: +{{offset}})",
+    "markAsToc": "Mark as ToC",
+    "unmarkAsToc": "Unmark as ToC",
+    "markAsTocTitle": "Mark this page as a Table of Contents page",
+    "unmarkAsTocTitle": "Remove Table of Contents flag from this page",
     "reprocess": {
       "title": "Reprocess Page",
       "message": "This page has your edits. Reprocessing will lose them. Are you sure?",
@@ -628,7 +640,21 @@
       "transliteration": "Romanization",
       "confirmDelete": "Are you sure you want to delete \"{{word}}\"?",
       "deleteSuccess": "Entry deleted.",
-      "deleteError": "Failed to delete entry."
+      "deleteError": "Failed to delete entry.",
+      "addEntry": "Add Entry",
+      "newEntry": "New Term",
+      "editEntry": "Edit entry",
+      "term": "Term",
+      "definition": "Definition",
+      "aliases": "Aliases / Other Names",
+      "aliasesPlaceholder": "Add alias (e.g. Babur, Sultan Babur) and press Enter...",
+      "createSuccess": "Entry created.",
+      "createError": "Failed to create entry.",
+      "updateSuccess": "Entry updated.",
+      "updateError": "Failed to update entry.",
+      "source": "Source",
+      "sourceWeb": "Web",
+      "sourceAi": "AI"
     },
     "namesDictionary": {
       "title": "Person Names",
@@ -758,6 +784,16 @@
       "title": "Reset Page",
       "message": "Are you sure you want to reset page {{pageNum}}? This will clear the current text and queue it for re-processing. Any unsaved edits will be lost.",
       "confirm": "Reset Page"
+    },
+    "markAsToc": {
+      "title": "Mark as Table of Contents",
+      "message": "Are you sure you want to mark page {{pageNum}} as a Table of Contents page? This will delete its existing chunks and exclude it from search/RAG.",
+      "confirm": "Mark as ToC"
+    },
+    "unmarkAsToc": {
+      "title": "Unmark Table of Contents",
+      "message": "Are you sure you want to unmark page {{pageNum}} as a Table of Contents page? It will be re-included in search/RAG. Existing chunks are not regenerated automatically — use Reprocess if needed.",
+      "confirm": "Unmark as ToC"
     },
     "reOcrError": {
       "title": "Re-OCR Error",

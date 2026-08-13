@@ -36,6 +36,7 @@ from app.core.pipeline import (
 from app.db.session import get_session
 from app.db.repositories.books_repository import BooksRepository
 from app.db.repositories.pages_repository import PagesRepository
+from app.db.repositories.chunks_repository import ChunksRepository
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.db.models import (
     Book as BookDB,
@@ -50,6 +51,7 @@ from app.models.schemas import (
     ContentSearchHit,
     PaginatedContentHits,
     ExtractionResult,
+    PageTocUpdate,
     to_camel,
 )
 from app.models.user import User
@@ -577,6 +579,7 @@ async def get_books(
             "author": b.author or "",
             "volume": b.volume,
             "total_pages": b.total_pages or 0,
+            "content_page_offset": getattr(b, "content_page_offset", 0) or 0,
             "pages": [],
             "status": b.status,
             "pipeline_step": b.pipeline_step,
@@ -1324,6 +1327,7 @@ async def get_book(
         "author": book_model.author or "",
         "volume": book_model.volume,
         "total_pages": book_model.total_pages or 0,
+        "content_page_offset": getattr(book_model, "content_page_offset", 0) or 0,
         "pages": [],  # Empty list as we don't load pages here anymore
         "status": book_model.status,
         "pipeline_step": book_model.pipeline_step,
@@ -2357,6 +2361,33 @@ async def update_page_text(
     }
 
 
+@router.post("/{book_id}/pages/{page_num}/toc")
+async def set_page_toc(
+    book_id: str,
+    page_num: int,
+    body: PageTocUpdate,
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """Manually mark or unmark a page as a Table of Contents page"""
+    pages_repo = PagesRepository(session)
+    chunks_repo = ChunksRepository(session)
+
+    updated = await pages_repo.set_is_toc(
+        book_id, page_num, body.is_toc, current_user.email
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=t("errors.page_not_found"))
+
+    if body.is_toc:
+        await chunks_repo.delete_by_page(book_id, page_num)
+
+    new_offset = await pages_repo.sync_content_page_offset(book_id)
+
+    await session.commit()
+    return {"status": "ok", "isToc": body.is_toc, "contentPageOffset": new_offset}
+
+
 @router.post("/admin/bulk-reset-incomplete-ocr")
 async def bulk_reset_incomplete_ocr(
     include_error: bool = Query(
@@ -2539,10 +2570,14 @@ async def update_book_details(
                 new_text = result.get("text")
 
                 # Only update v2 state if text actually changed (kick off re-chunking)
+                content_page_number = result.get("contentPageNumber") or result.get(
+                    "content_page_number"
+                )
                 await session.execute(
                     text("""
                         UPDATE pages
                         SET text = COALESCE(:text, text),
+                            content_page_number = COALESCE(:content_page_number, content_page_number),
                             status = COALESCE(:status, status),
                             is_indexed = CASE
                                 WHEN :text IS NOT NULL AND text IS DISTINCT FROM :text
@@ -2571,6 +2606,7 @@ async def update_book_details(
                     {
                         "book_id": book_id,
                         "page_number": page_number,
+                        "content_page_number": content_page_number,
                         "text": normalize_uyghur_chars(new_text)
                         if new_text is not None
                         else None,

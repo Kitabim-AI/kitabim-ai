@@ -376,6 +376,14 @@ class BooksRepository(BaseRepository[Book]):
             has_summary = (summary_res.scalar() or 0) > 0
 
         has_graph = book.graph_milestone == "complete"
+        has_history = False
+        if not step or step == "history":
+            history_stmt = select(func.count(BatchHistoryExtractionJob.id)).where(
+                BatchHistoryExtractionJob.book_id == book_id,
+                BatchHistoryExtractionJob.status == "succeeded",
+            )
+            history_res = await self.session.execute(history_stmt)
+            has_history = (history_res.scalar() or 0) > 0
 
         # Handle single-step response
         if step and step != PIPELINE_STEP_SUMMARY:
@@ -390,6 +398,7 @@ class BooksRepository(BaseRepository[Book]):
                     },
                     "has_summary": False,
                     "has_graph": has_graph if step == "graph" else False,
+                    "has_history": has_history if step == "history" else False,
                     "ocr_done_count": 0,
                     "error_count": 0,
                     "pending_count": 0,
@@ -406,6 +415,7 @@ class BooksRepository(BaseRepository[Book]):
                 },
                 "has_summary": False,
                 "has_graph": has_graph if step == "graph" else False,
+                "has_history": has_history if step == "history" else False,
                 "ocr_done_count": 0,
                 "error_count": 0,
                 "pending_count": 0,
@@ -434,6 +444,7 @@ class BooksRepository(BaseRepository[Book]):
                 },
                 "has_summary": has_summary,
                 "has_graph": has_graph,
+                "has_history": has_history,
                 "ocr_done_count": 0,
                 "error_count": 0,
                 "pending_count": 0,

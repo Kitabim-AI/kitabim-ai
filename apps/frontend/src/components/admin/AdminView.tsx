@@ -196,6 +196,7 @@ export const AdminView: React.FC = () => {
     title: string;
     author: string;
     volume: string;
+    contentPageOffset: string;
     categories: string[];
     tempCategory: string;
   } | null>(null);
@@ -256,6 +257,7 @@ export const AdminView: React.FC = () => {
       title: book.title || '',
       author: book.author || '',
       volume: book.volume?.toString() || '',
+      contentPageOffset: (book.contentPageOffset ?? book.content_page_offset ?? 0).toString(),
       categories: book.categories || [],
       tempCategory: ''
     });
@@ -271,6 +273,10 @@ export const AdminView: React.FC = () => {
       if (isNaN(volume)) volume = null;
     }
 
+    const offsetValue = editData.contentPageOffset.toString().trim();
+    let contentPageOffset = parseInt(offsetValue, 10);
+    if (isNaN(contentPageOffset)) contentPageOffset = 0;
+
     // Capture the latest temp category and existing categories
     const currentTemp = editData.tempCategory.trim();
     const currentCategories = [...editData.categories];
@@ -284,6 +290,7 @@ export const AdminView: React.FC = () => {
       title: editData.title.trim(),
       author: editData.author.trim(),
       volume,
+      contentPageOffset,
       categories: currentCategories
     });
 

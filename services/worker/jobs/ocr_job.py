@@ -18,6 +18,7 @@ from app.core.config import settings
 from app.db import session as db_session
 from app.db.models import Book, Page, PipelineEvent
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
+from app.db.repositories.pages_repository import PagesRepository
 from app.services.batch_ocr_service import submit_batch_ocr_job
 from app.services.ocr_service import ocr_page_with_gemini
 from app.utils.text import is_toc_page
@@ -356,11 +357,13 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
         finally:
             doc.close()
 
-        # Update book-level OCR milestone after processing batch
+        # Update book-level OCR milestone and sync content_page_offset after processing batch
         async with db_session.async_session_factory() as session:
             await BookMilestoneService.update_book_milestone_for_step(
                 session, book_id, "ocr"
             )
+            pages_repo = PagesRepository(session)
+            await pages_repo.sync_content_page_offset(book_id)
             await session.commit()
 
         log_json(

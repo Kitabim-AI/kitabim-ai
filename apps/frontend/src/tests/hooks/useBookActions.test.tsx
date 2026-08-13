@@ -13,6 +13,7 @@ vi.mock('@/src/services/persistenceService', () => ({
     updateBookMetadata: vi.fn(),
     updatePage: vi.fn(),
     resetPage: vi.fn(),
+    setPageToc: vi.fn(),
   }
 }));
 
@@ -172,6 +173,44 @@ test('useBookActions handles page reset confirmation flow', async () => {
   });
 
   expect(PersistenceService.resetPage).toHaveBeenCalledWith('1', 3);
+});
+
+test('useBookActions marks a page as ToC through confirm modal', async () => {
+  vi.mocked(PersistenceService.setPageToc).mockResolvedValue(undefined as any);
+  const { result, setModal, setSelectedBook } = createHook();
+
+  act(() => {
+    result.current.handleToggleToc('1', 1, true);
+  });
+
+  expect(setModal).toHaveBeenCalledWith(expect.objectContaining({
+    isOpen: true,
+    type: 'confirm'
+  }));
+
+  const config = setModal.mock.calls[0][0];
+  await act(async () => {
+    await config.onConfirm();
+  });
+
+  expect(PersistenceService.setPageToc).toHaveBeenCalledWith('1', 1, true);
+  expect(setSelectedBook).toHaveBeenCalled();
+});
+
+test('useBookActions unmarks a page as ToC and reports errors', async () => {
+  vi.mocked(PersistenceService.setPageToc).mockRejectedValue(new Error('boom'));
+  const { result, setModal } = createHook();
+
+  act(() => {
+    result.current.handleToggleToc('1', 1, false);
+  });
+
+  const config = setModal.mock.calls[0][0];
+  await act(async () => {
+    await config.onConfirm();
+  });
+
+  expect(PersistenceService.setPageToc).toHaveBeenCalledWith('1', 1, false);
 });
 
 test('useBookActions updates page text and saves corrections', async () => {
