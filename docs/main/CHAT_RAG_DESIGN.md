@@ -188,16 +188,16 @@ flowchart TD
     LIMIT{"chat_limit_service:<br/>has_reached_limit?"}
     L429["429 (POST /) or<br/>SSE {error} (POST /stream)"]
     EP{"which endpoint?"}
-    V2{"use_adk_chat_v2 == 'true'<br/>OR conversationId present?"}
+    V2{"🗑️ DELETE (Task 4)<br/>use_adk_chat_v2 == 'true'<br/>OR conversationId present?"}
 
-    subgraph Orchestrator ["ChatOrchestrator — orchestrator.py"]
+    subgraph Orchestrator ["ChatOrchestrator — orchestrator.py (KEPT — becomes the only pipeline)"]
         CONV[("conversations:<br/>get-or-create + title,<br/>load last 6 messages")]
         OCTX["Build QueryContext<br/>+ set_current_query_context"]
         PGATE{"phrase_intent.is_exact?<br/>(quoted text, or<br/>exactPhrase flag)"}
         EXACT["exact_phrase_chunk_search<br/>(keyword-only leg, phrases<br/>ANDed via chunks.text_search)"]
         PAGEQ{"phrase_intent.is_page_finding?"}
         PAGEHITS["format_page_hits →<br/>{type:page_hits} SSE event;<br/>summarize_page_hits_as_text<br/>— no answer-agent call"]
-        SIG["_llm_analyze_query<br/>(DeterministicRAGHandler used<br/>as a utility) → planning"]
+        SIG["analyze_query_signals<br/>(moves to chat/query_signals.py,<br/>Task 2 — no longer borrowed from<br/>DeterministicRAGHandler) → planning"]
         RETR["KitabimRetrievalAgent<br/>ADK Runner (SSE) over 19 tools<br/>→ tool_call / tool_result / agent_thinking"]
         RERANK{"rag_reranker_enabled?"}
         RR["rerank_context<br/>(LLM, max_chunks = rag_vector_top_k)"]
@@ -208,16 +208,16 @@ flowchart TD
         ENQ["enqueue rag_eval_job<br/>(_job_id=rag_eval:&lt;eval_id&gt;)"]
     end
 
-    subgraph Registry ["RAGService / HandlerRegistry — rag_service.py + registry.py"]
-        RCTX["_build_context:<br/>character, chat/embedding/agent models,<br/>use_deterministic_router, book lookup"]
-        SEL{"first handler whose<br/>can_handle() is True"}
-        DET["DeterministicRAGHandler<br/>signals → _select_route →<br/>1 of 10 ADK Workflow path nodes<br/>→ universal fallback"]
-        LLMR["LLMRoutedRAGHandler<br/>_detect_intent → _llm_split →<br/>ADK ReAct loop (InMemoryRunner)"]
-        GC2["_grade_context<br/>(AGENT_MAX_CONTEXT_CHUNKS = 25)"]
-        SYN["generate_answer_stream<br/>answer_builder.py"]
-        EVAL{"rag_eval_enabled == 'true'?"}
-        REC[("rag_evaluations insert<br/>eval_status='skipped'")]
-        NOREC["no row written"]
+    subgraph Registry ["🗑️ RAGService / HandlerRegistry — DELETE (Task 5) — rag_service.py + registry.py"]
+        RCTX["🗑️ DELETE<br/>_build_context:<br/>character, chat/embedding/agent models,<br/>use_deterministic_router, book lookup"]
+        SEL{"🗑️ DELETE<br/>first handler whose<br/>can_handle() is True"}
+        DET["🗑️ DELETE<br/>DeterministicRAGHandler<br/>signals → _select_route →<br/>1 of 10 ADK Workflow path nodes<br/>→ universal fallback"]
+        LLMR["🗑️ DELETE<br/>LLMRoutedRAGHandler<br/>_detect_intent → _llm_split →<br/>ADK ReAct loop (InMemoryRunner)"]
+        GC2["🗑️ DELETE<br/>_grade_context<br/>(AGENT_MAX_CONTEXT_CHUNKS = 25)"]
+        SYN["🗑️ DELETE<br/>generate_answer_stream<br/>answer_builder.py"]
+        EVAL{"🗑️ DELETE<br/>rag_eval_enabled == 'true'?"}
+        REC[("🗑️ DELETE<br/>rag_evaluations insert<br/>eval_status='skipped'")]
+        NOREC["🗑️ DELETE<br/>no row written"]
     end
 
     subgraph Shared ["Shared retrieval — rag/agent/tools.py + rag/retrieval.py"]
@@ -272,12 +272,16 @@ flowchart TD
     classDef active fill:#fff3cd,stroke:#856404
     classDef done fill:#d4f1f4,stroke:#189ab4
     classDef fail fill:#ffcccb,stroke:#d32f2f
+    classDef delete fill:#ff8a80,stroke:#b71c1c,stroke-width:3px,color:#3d0000
 
-    class Q,LIMIT,EP,V2,PGATE,PAGEQ,RERANK,SEL,JUDGE,EVAL idle
-    class OCTX,SIG,RETR,EXACT,RR,GC1,ANSA,ENQ,RCTX,DET,LLMR,GC2,SYN,TOOLS,VS,WORKER,INC active
-    class CONV,PERSIST,PAGEHITS,REC,DATA,OUT,NOREC done
+    class Q,LIMIT,EP,PGATE,PAGEQ,RERANK,JUDGE idle
+    class OCTX,SIG,RETR,EXACT,RR,GC1,ANSA,ENQ,TOOLS,VS,WORKER,INC active
+    class CONV,PERSIST,PAGEHITS,DATA,OUT done
     class L429 fail
+    class V2,RCTX,SEL,DET,LLMR,GC2,SYN,EVAL,REC,NOREC,Registry delete
 ```
+
+> 🗑️ **Red nodes** (and the whole `Registry` subgraph box) are deleted by the ADK chat consolidation plan — see [`docs/superpowers/plans/2026-08-12-adk-chat-consolidation.md`](../superpowers/plans/2026-08-12-adk-chat-consolidation.md). `V2` is deleted because both endpoints route through `ChatOrchestrator` unconditionally once the legacy fallback is gone (Task 4); everything under `Registry` — `RAGService`, `HandlerRegistry`, `DeterministicRAGHandler`, `LLMRoutedRAGHandler`, and their `_grade_context`/`generate_answer_stream`/eval-gating logic — is deleted in Task 5. `SIG` survives but changes: `analyze_query_signals` moves out of `DeterministicRAGHandler` into its own module (Task 2) before that class is deleted, so `ChatOrchestrator` keeps working. `TOOLS`/`VS`/`DATA` under `Shared` are unaffected — both `DET`/`LLMR`'s edges into `TOOLS` disappear along with those nodes, but `RETR` (the orchestrator's retrieval agent) keeps using it.
 
 ## Component Responsibilities
 
