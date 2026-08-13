@@ -1,5 +1,4 @@
-"""Context grading and formatting helpers shared by the chat orchestrator
-and (until it's deleted) the legacy LLM-routed handler."""
+"""Context grading and formatting helpers used by the chat orchestrator."""
 
 from __future__ import annotations
 

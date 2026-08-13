@@ -226,7 +226,16 @@ class ChatOrchestrator:
             }
         else:
             # 2b. Fast signal pre-processing
-            signals = await analyze_query_signals(request_dto.question, ctx)
+            try:
+                signals = await analyze_query_signals(request_dto.question, ctx)
+            except Exception as exc:
+                log_json(
+                    logger,
+                    logging.WARNING,
+                    "analyze_query_signals failed, proceeding without signal hints",
+                    error=str(exc),
+                )
+                signals = {}
 
             intent = signals.get("intent", "open")
             yield {"type": "planning", "intent": intent}
@@ -400,10 +409,10 @@ class ChatOrchestrator:
 
         if skip_answer_synthesis:
             page_hits = format_page_hits(hits)
-            yield {"type": "page_hits", "hits": page_hits}
             accumulated_text = summarize_page_hits_as_text(
                 hits, phrase=", ".join(phrase_intent.phrases)
             )
+            yield {"type": "page_hits", "hits": page_hits, "text": accumulated_text}
         else:
             answer_agent = build_answer_agent(
                 model=chat_model,
@@ -540,6 +549,8 @@ class ChatOrchestrator:
         async for event in self.stream_response(request_dto, db_session, model_name):
             if isinstance(event, dict):
                 if event.get("type") == "chunk":
+                    answer_text += event.get("text", "")
+                elif event.get("type") == "page_hits":
                     answer_text += event.get("text", "")
                 elif event.get("type") == "done":
                     done_meta = event

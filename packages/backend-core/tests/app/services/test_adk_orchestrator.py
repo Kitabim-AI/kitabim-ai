@@ -10,7 +10,7 @@ from app.core.i18n import I18n
 from app.db.models import Conversation
 from app.services.chat.context import ChatRequestDTO
 from app.services.chat.orchestrator import ChatOrchestrator
-from app.services.chat.retrieval_agent import build_retrieval_agent
+from app.services.chat.retrieval_agent import ALL_TOOLS, build_retrieval_agent
 from app.services.chat.answer_agent import build_answer_agent
 
 _REPO_ROOT = Path(__file__).resolve().parents[5]
@@ -58,6 +58,20 @@ def test_build_agents():
     )
     assert answer_agent.name == "KitabimAnswerAgent"
     assert len(answer_agent.tools) == 0
+
+
+def test_knowledge_graph_tool_not_offered():
+    """The retrieval agent's live tool list must never expose a direct graph
+    query tool — knowledge-graph lookups are mediated through other tools,
+    not queried ad hoc by the agent. Formerly asserted against the deleted
+    adk_agent.py::build_rag_agent(); ALL_TOOLS is the live equivalent."""
+    assert "query_knowledge_graph" not in {tool.__name__ for tool in ALL_TOOLS}
+
+
+def test_lookup_synonyms_tool_included():
+    """Formerly asserted against the deleted adk_agent.py::build_rag_agent();
+    ALL_TOOLS is the live equivalent."""
+    assert "lookup_synonyms" in {tool.__name__ for tool in ALL_TOOLS}
 
 
 @pytest.mark.asyncio
@@ -375,6 +389,109 @@ async def test_stream_response_yields_streaming_chunks_with_sse_run_config():
     assert len(chunk_events) == 2
     assert chunk_events[0]["text"] == "Hello "
     assert chunk_events[1]["text"] == "World!"
+
+
+@pytest.mark.asyncio
+async def test_stream_response_tolerates_analyze_query_signals_failure():
+    """Regression test: analyze_query_signals can raise a plain ValueError
+    (too many tool-call iterations, missing JSON block) or a
+    json.JSONDecodeError. Before this fix that exception propagated straight
+    out of stream_response and chat_router.py's `except ValueError` handler
+    turned it into an HTTP 404 / SSE error carrying a raw internal message.
+    stream_response must instead log a warning and proceed with empty
+    signals, same as the legacy pipeline's fallback behavior."""
+    db_session = AsyncMock()
+
+    conv_repo = AsyncMock()
+    conv_repo.get_conversation.return_value = None
+    conv_repo.create_conversation.return_value = Conversation(
+        id="conv-1", user_id="user-1", book_id=None, is_global=True
+    )
+    conv_repo.get_recent_messages.return_value = []
+    conv_repo.save_turn.return_value = (MagicMock(), MagicMock())
+
+    eval_repo = AsyncMock()
+    eval_repo.create_evaluation.return_value = MagicMock(id=42)
+
+    inmemory_session_service = MagicMock()
+    inmemory_session_service.create_session = AsyncMock(
+        return_value=_mock_adk_session()
+    )
+
+    retrieval_runner = MagicMock()
+    retrieval_runner.run_async = MagicMock(return_value=_empty_async_gen())
+
+    answer_runner = MagicMock()
+    answer_runner.run_async = MagicMock(return_value=_empty_async_gen())
+
+    mock_analyze_query_signals = AsyncMock(
+        side_effect=ValueError("LLM response did not contain a JSON block")
+    )
+
+    mock_configs_repo = AsyncMock()
+    mock_configs_repo.get_value = AsyncMock(return_value="text-embedding-004")
+
+    mock_build_retrieval_agent = MagicMock(return_value=MagicMock())
+
+    with patch(
+        "app.services.chat.orchestrator.ConversationRepository",
+        return_value=conv_repo,
+    ), patch(
+        "app.services.chat.orchestrator.SystemConfigsRepository",
+        return_value=mock_configs_repo,
+    ), patch(
+        "app.services.chat.orchestrator.RAGEvaluationsRepository",
+        return_value=eval_repo,
+    ), patch(
+        "app.services.chat.orchestrator.analyze_query_signals",
+        mock_analyze_query_signals,
+    ), patch(
+        "app.services.chat.orchestrator.InMemorySessionService",
+        return_value=inmemory_session_service,
+    ), patch(
+        "app.services.chat.orchestrator.Runner", return_value=retrieval_runner
+    ), patch(
+        "app.services.chat.orchestrator.InMemoryRunner", return_value=answer_runner
+    ), patch(
+        "app.services.chat.orchestrator._extract_used_book_ids", return_value=[]
+    ), patch(
+        "app.services.chat.orchestrator._grade_context",
+        return_value=("", 0, 0),
+    ), patch(
+        "app.services.chat.orchestrator.build_retrieval_agent",
+        mock_build_retrieval_agent,
+    ), patch(
+        "app.services.chat.orchestrator.build_answer_agent", return_value=MagicMock()
+    ), patch(
+        "app.services.chat.orchestrator.fix_malformed_citations",
+        side_effect=lambda text: text,
+    ):
+        orchestrator = ChatOrchestrator(session_service=None)
+        dto = ChatRequestDTO(
+            question="يۇنۇسخان كىم؟",
+            user_id="user-1",
+            book_id=None,
+            is_global=True,
+        )
+
+        # Must not raise — a transient signal-extraction failure degrades
+        # gracefully instead of failing the whole turn.
+        events = [
+            event async for event in orchestrator.stream_response(dto, db_session)
+        ]
+
+    mock_analyze_query_signals.assert_awaited_once()
+    mock_build_retrieval_agent.assert_called_once()
+    assert mock_build_retrieval_agent.call_args.kwargs["intent_signals"] == {}
+
+    planning_events = [
+        e for e in events if isinstance(e, dict) and e.get("type") == "planning"
+    ]
+    assert len(planning_events) == 1
+    assert planning_events[0]["intent"] == "open"
+
+    done_events = [e for e in events if isinstance(e, dict) and e.get("type") == "done"]
+    assert len(done_events) == 1
 
 
 def _configs_get_value_side_effect(overrides):
@@ -1167,3 +1284,43 @@ async def test_answer_concatenates_chunks_and_returns_done_metadata(monkeypatch)
         "used_book_ids": ["book-1"],
         "eval_id": 7,
     }
+
+
+@pytest.mark.asyncio
+async def test_answer_falls_back_to_page_hits_text_when_no_chunks(monkeypatch):
+    """Regression test: for a page-finding exact-phrase question,
+    stream_response skips answer synthesis and yields only a `page_hits`
+    event, never a `chunk` event. Before this fix, answer() only ever
+    accumulated text from `chunk` events, so POST /api/chat/ returned an
+    empty string for this question type even though a summarized answer
+    text existed and was persisted to the DB. answer() must also accumulate
+    from `page_hits` events' `text` field."""
+    orchestrator = ChatOrchestrator()
+
+    async def fake_stream_response(
+        self, request_dto, db_session, model_name="gemini-2.5-flash"
+    ):
+        yield {"type": "answer_start"}
+        yield {
+            "type": "page_hits",
+            "hits": [{"bookId": "book-1", "page": 5, "snippet": "..."}],
+            "text": "1-توم، 5-بەت: king Babur ruled here",
+        }
+        yield {
+            "type": "done",
+            "eval_id": 7,
+            "conversation_id": "conv-xyz",
+            "used_book_ids": ["book-1"],
+        }
+
+    monkeypatch.setattr(ChatOrchestrator, "stream_response", fake_stream_response)
+
+    result = await orchestrator.answer(
+        ChatRequestDTO(
+            question='find pages with "king Babur"', user_id="u1", book_id="book-1"
+        ),
+        db_session=AsyncMock(),
+    )
+
+    assert result["answer"] == "1-توم، 5-بەت: king Babur ruled here"
+    assert result["conversation_id"] == "conv-xyz"
