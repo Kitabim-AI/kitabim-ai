@@ -83,7 +83,6 @@ packages/backend-core/app/
 │   └── user.py                     # UserRole enum, user Pydantic model
 ├── services/
 │   ├── cache_service.py           # Redis caching wrapper (circuit-breaker protected)
-│   ├── rag_service.py               # RAGService facade — builds QueryContext, dispatches via registry
 │   ├── ocr_service.py                 # OCR image → text extraction (interactive Gemini Vision)
 │   ├── batch_ocr_service.py             # Gemini Batch API OCR submission + result polling (feature-flagged)
 │   ├── chunking_service.py                # Text cleaning + chunk splitting
@@ -95,8 +94,8 @@ packages/backend-core/app/
 │   ├── storage_service.py                            # GCS / local filesystem storage abstraction
 │   ├── pdf_service.py, docx_service.py                  # PDF/DOCX parsing helpers
 │   ├── token_service.py, user_service.py, chat_limit_service.py
-│   ├── rag/                                              # RAG sub-package — HandlerRegistry-dispatched handlers (see below)
-│   └── chat/                                               # ADK-native ChatOrchestrator — persisted-conversation chat pipeline (see below)
+│   ├── rag/                                              # Retrieval primitives + ADK tools shared by the chat pipeline (see below)
+│   └── chat/                                               # ADK-native ChatOrchestrator — the chat pipeline (see below)
 ├── utils/
 │   ├── circuit_breaker.py     # Generic Redis-backed CircuitBreaker
 │   ├── rate_limiter.py          # RedisRateLimiter
@@ -107,13 +106,11 @@ packages/backend-core/app/
 └── jobs.py                       # create_or_reset_job / update_job_status helpers
 ```
 
-### `services/rag/` — RAG sub-package
+### `services/rag/` — shared retrieval primitives
 ```
 app/services/rag/
-├── registry.py            # HandlerRegistry — tries handlers in order, first can_handle()==True wins
-├── base_handler.py          # QueryHandler interface (handle / handle_stream / can_handle)
-├── context.py                 # QueryContext dataclass — per-request state threaded through both handlers
-├── answer_builder.py            # Shared instruction-building + generate_answer(_stream)()
+├── context.py                 # QueryContext dataclass — per-request state threaded through tool calls
+├── answer_builder.py            # Document/format_document/build_instructions (generate_answer_stream is now dead code)
 ├── query_rewriter.py              # Standalone pronoun-resolution helper
 ├── retrieval.py                     # vector_search, embed_query, find_books_by_title_in_question,
 │                                        exact_phrase_chunk_search (keyword-only leg)
@@ -123,33 +120,30 @@ app/services/rag/
 ├── llm_resources.py                     # Builds/caches the answer-generation LLM chain per model name
 ├── utils.py                               # normalize_uyghur, format_chat_history, empty-response text
 ├── handlers/
-│   └── catalog.py                          # CatalogHandler — helper class for catalog/author lookups, used by tools.py (not itself registered in HandlerRegistry)
+│   └── catalog.py                          # CatalogHandler — static helper class for catalog/author lookups, used by tools.py
 └── agent/
-    ├── prompts.py            # AGENT_SYSTEM_PROMPT for the LLM-routed ReAct loop
+    ├── prompts.py            # AGENT_SYSTEM_PROMPT for the retrieval agent
     ├── config.py               # AGENT_MAX_STEPS, grading thresholds, context-switch score threshold
     ├── tools.py                  # 19 ADK-callable tool functions + dispatch-with-retry
-    ├── adk_agent.py                 # build_rag_agent() — constructs the ADK Agent + tool list
-    ├── deterministic_handler.py       # DeterministicRAGHandler — signal extraction, intent classification, 10 fixed paths
-    ├── graph_router.py                  # google.adk.workflow.Workflow graph selecting one of the 10 paths
-    └── llm_routed_handler.py              # LLMRoutedRAGHandler — decomposition, context injection, InMemoryRunner ReAct loop
+    └── reranker.py               # rerank_context() — LLM reranker, called only from chat/orchestrator.py
 ```
 
-`HandlerRegistry` (`registry.py`) is built with `DeterministicRAGHandler` first and `LLMRoutedRAGHandler` last as the always-matching fallback. Which one actually runs a given request is controlled by the `use_deterministic_router` system config — `false` by default, so `LLMRoutedRAGHandler` is the handler that answers most chat traffic that goes through this registry. However, whether a chat request reaches this registry at all is a separate decision — see `services/chat/` below.
-
-### `services/chat/` — persisted-conversation chat pipeline
+### `services/chat/` — the chat pipeline
 ```
 app/services/chat/
 ├── context.py            # ChatRequestDTO (adds conversation_id), ToolDependencies
-├── history.py              # Formats ConversationMessage rows into LLM-readable history text
-├── answer_prompts.py          # build_answer_instructions() — a separate fork of answer_builder.py's citation prompt
-├── answer_agent.py               # build_answer_agent() — tools-less ADK Agent for answer synthesis
-├── retrieval_agent.py               # build_retrieval_agent() — reuses AGENT_SYSTEM_PROMPT + all 19 tools from rag/agent/
-├── exact_phrase.py                     # run_exact_phrase_retrieval() + page-hit formatting for the keyword-only leg
-│                                          (Phase 1 of keyword-search-rework-plan.md), driven by rag/phrase_intent.py
-└── orchestrator.py                     # ChatOrchestrator — the pipeline itself, see below
+├── context_grading.py      # _build_human_message / _grade_context / _extract_used_book_ids
+├── query_signals.py          # analyze_query_signals() — single-shot structured signal-extraction LLM call
+├── history.py                   # Formats ConversationMessage rows into LLM-readable history text
+├── answer_prompts.py              # build_answer_instructions() — citation/grammar prompt for the answer agent
+├── answer_agent.py                   # build_answer_agent() — tools-less ADK Agent for answer synthesis
+├── retrieval_agent.py                   # ALL_TOOLS + build_retrieval_agent() — the one retrieval agent, all 19 tools
+├── exact_phrase.py                         # run_exact_phrase_retrieval() + page-hit formatting for the keyword-only leg
+│                                              (Phase 1 of keyword-search-rework-plan.md), driven by rag/phrase_intent.py
+└── orchestrator.py                         # ChatOrchestrator — the pipeline itself, see below
 ```
 
-`ChatOrchestrator` does **not** go through `HandlerRegistry` or `RAGService` — it runs its own two-agent pipeline (retrieval agent → grading → answer agent) directly on an ADK `Runner`, persists every turn to `conversations`/`conversation_messages` via `ConversationRepository`, and is what backs the frontend's conversation-history sidebar. The streaming chat endpoint (`services/backend/api/endpoints/chat_router.py`) routes a request here whenever the `use_adk_chat_v2` system config is `true` (seeded on) or the request carries a `conversationId`; otherwise it falls through to `RAGService`/`HandlerRegistry` above, which has no conversation persistence. It reuses the `rag/agent/` tool implementations, system prompt, and grading helpers, but has its own copy of the answer-synthesis citation prompt (`answer_prompts.py`) rather than sharing `rag/answer_builder.py`. Before any of that, `detect_phrase_intent()` (`rag/phrase_intent.py`) checks the question for a quoted phrase or the explicit "Exact phrase" UI flag; if it matches, the turn is answered by `chat/exact_phrase.py`'s keyword-only leg instead (no vector/graph fusion), with page-finding phrasing ("find pages with...") rendered as raw page hits rather than an LLM-synthesized answer.
+`ChatOrchestrator` is the only chat pipeline — both `POST /api/chat/` (via its non-streaming `answer()` wrapper) and `POST /api/chat/stream` (via `stream_response()`) build one unconditionally. It runs a two-agent pipeline (retrieval agent → grading → answer agent) on an ADK `Runner`, persists every turn to `conversations`/`conversation_messages` via `ConversationRepository`, and is what backs the frontend's conversation-history sidebar. It uses the `rag/agent/` tool implementations and system prompt directly, but has its own copy of the answer-synthesis citation prompt (`answer_prompts.py`) rather than sharing `rag/answer_builder.py` (whose own `generate_answer_stream()` is now unused dead code, left over from a deleted legacy pipeline — see `docs/superpowers/plans/2026-08-12-adk-chat-consolidation.md`). Before any of that, `detect_phrase_intent()` (`rag/phrase_intent.py`) checks the question for a quoted phrase or the explicit "Exact phrase" UI flag; if it matches, the turn is answered by `chat/exact_phrase.py`'s keyword-only leg instead (no vector/graph fusion), with page-finding phrasing ("find pages with...") rendered as raw page hits rather than an LLM-synthesized answer.
 
 ---
 
@@ -288,7 +282,7 @@ PDF rendering uses `pdf.js` loaded from a CDN `<script>` tag at runtime (`pdfSer
 1. **Upload** → backend saves the PDF to GCS, creates `books`/`pages` rows with `pending` milestones.
 2. **OCR → Chunking → Embedding → Spell-check** run as an event-driven pipeline: each worker scanner leases `idle` pages, the matching job processes them, and the event dispatcher enqueues the next step immediately when a milestone succeeds (see `SYSTEM_DESIGN.md` §6A for the full sequence).
 3. **Book ready** → summary and (if enabled) knowledge-graph extraction run concurrently.
-4. **Chat** → the streaming endpoint routes each request to one of two independent pipelines: `ChatOrchestrator` (persisted conversation history, gated by the `use_adk_chat_v2` config or a `conversationId` on the request) or `RAGService.answer_question(_stream)`, which builds a `QueryContext` and dispatches through `HandlerRegistry` to whichever handler's `can_handle()` matches (no conversation persistence). Both record telemetry to `rag_evaluations`; only `ChatOrchestrator` also writes to `conversations`/`conversation_messages`.
+4. **Chat** → both the streaming and non-streaming endpoints build a `ChatOrchestrator` unconditionally: a retrieval agent → grading → answer agent pipeline that persists conversation history and records telemetry to `rag_evaluations`.
 
 ---
 
@@ -307,15 +301,10 @@ PDF rendering uses `pdf.js` loaded from a CDN `<script>` tag at runtime (`pdfSer
 | `packages/backend-core/app/core/config.py` | Env-backed `Settings` dataclass. Deliberately holds no AI model names — those live only in `system_configs`. |
 | `packages/backend-core/app/db/models.py` | All 25 SQLAlchemy ORM table definitions. |
 | `packages/backend-core/app/db/repositories/conversation_repository.py` | `ConversationRepository` — CRUD + soft-delete for `conversations`/`conversation_messages`, used only by `ChatOrchestrator`. |
-| `packages/backend-core/app/services/chat/orchestrator.py` | `ChatOrchestrator` — the ADK-native, conversation-persisting chat pipeline; bypasses `HandlerRegistry` entirely. |
+| `packages/backend-core/app/services/chat/orchestrator.py` | `ChatOrchestrator` — the only chat pipeline; `stream_response()` for `POST /api/chat/stream`, `answer()` for `POST /api/chat/`. |
 | `packages/backend-core/app/services/batch_ocr_service.py` / `batch_embedding_service.py` | Gemini Batch API submission + polling for OCR and embeddings, feature-flagged off by default. |
-| `packages/backend-core/app/db/seeds.py` | Default `system_configs` rows, including default model names and router toggles. |
+| `packages/backend-core/app/db/seeds.py` | Default `system_configs` rows, including default model names and pipeline-tuning toggles. |
 | `packages/backend-core/app/llm/models.py` | `ProtectedLLM`/`GeminiEmbeddings` clients wrapping `google-genai`, with per-call-type `CircuitBreaker`s and `RedisRateLimiter`. |
-| `packages/backend-core/app/services/rag_service.py` | Facade that resolves model names + config from `system_configs`, builds `QueryContext`, and dispatches to `HandlerRegistry`. |
-| `packages/backend-core/app/services/rag/registry.py` | `HandlerRegistry` — ordered `can_handle()` dispatch between `DeterministicRAGHandler` and `LLMRoutedRAGHandler`. |
-| `packages/backend-core/app/services/rag/agent/deterministic_handler.py` | `DeterministicRAGHandler` — signal extraction, intent classification, and the 10 fixed retrieval paths. |
-| `packages/backend-core/app/services/rag/agent/graph_router.py` | `google.adk.workflow.Workflow` graph that selects and runs one of the 10 paths above. |
-| `packages/backend-core/app/services/rag/agent/llm_routed_handler.py` | `LLMRoutedRAGHandler` — decomposition, context injection, and the ADK `InMemoryRunner` ReAct loop. |
-| `packages/backend-core/app/services/rag/agent/tools.py` | The 19 ADK-callable tool functions shared by both RAG handlers. |
+| `packages/backend-core/app/services/rag/agent/tools.py` | The 19 ADK-callable tool functions used by the retrieval agent. |
 | `services/backend/main.py` | FastAPI app factory — router registration, CORS, rate limiting, `/health`. |
 | `services/worker/worker.py` | ARQ `WorkerSettings` entrypoint wiring scanners and jobs into the worker process. |

@@ -1,4 +1,4 @@
-"""System prompt for the LLM-routed RAG retrieval loop (LLMRoutedRAGHandler)."""
+"""System prompt for ChatOrchestrator's retrieval agent."""
 
 _ROLE = (
     "You are a retrieval agent for Kitabim, a Uyghur digital library. "

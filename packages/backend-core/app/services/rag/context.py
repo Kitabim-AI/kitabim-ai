@@ -1,4 +1,4 @@
-"""QueryContext — per-request state passed to every RAG handler."""
+"""QueryContext — per-request state threaded through ChatOrchestrator's tool calls."""
 
 from __future__ import annotations
 
@@ -58,27 +58,31 @@ class QueryContext:
         default_factory=list
     )  # populated by retrieval, returned in done event
 
-    # ── Eval metadata — populated by handlers for facade _record_eval ───────
+    # ── Eval metadata. Set by the deleted legacy pipeline's `_build_context`/
+    # `_record_eval`; `ChatOrchestrator` computes its `rag_evaluations` insert
+    # from local variables directly instead of reading these back — dead
+    # fields, nothing sets or reads them today. ─────────────────────────────
     retrieved_count: int = 0
     context_chars: int = 0
     scores: List[float] = field(default_factory=list)
     category_filter: List[str] = field(default_factory=list)
 
-    # ── Agent-execution eval metadata — set by _populate_ctx_from_observations,
-    # shared by both DeterministicRAGHandler and LLMRoutedRAGHandler ───────────
+    # ── Agent-execution eval metadata. `_populate_ctx_from_observations`, which
+    # used to set these fields, was deleted with the legacy chat pipeline;
+    # nothing sets or reads them today — dead fields. ───────────────────────────
     agent_steps: Optional[int] = None
     agent_tools_called: List[str] = field(default_factory=list)
     agent_retry_count: Optional[int] = None
     agent_final_chunk_count: Optional[int] = None
-
-    # ── Ragas eval payload — set by populate_ctx_from_state ─────────────────
-    # Stores the final graded context text so _record_eval can persist it.
     graded_context: Optional[str] = None
 
     # ── Correlation/Request ID ──────────────────────────────────────────────
     request_id: Optional[str] = None
 
-    # ── Dynamic Agent Configurations ────────────────────────────────────────
+    # ── Dead config fields — populated by the deleted legacy pipeline's
+    # `_build_context` from `system_configs` keys that have since been
+    # removed (`agent_max_steps`, `agent_enough_chunks`, `use_deterministic_router`);
+    # nothing sets or reads them today. ──────────────────────────────────────
     agent_max_steps: int = 6
     agent_enough_chunks: int = 8
     use_deterministic_router: bool = False

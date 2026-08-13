@@ -1,4 +1,4 @@
-"""ChatOrchestrator — ADK-native chat orchestrator replacing RAGService and legacy handlers"""
+"""ChatOrchestrator — the ADK-native chat orchestrator, the sole chat pipeline"""
 
 from __future__ import annotations
 
