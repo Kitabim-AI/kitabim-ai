@@ -7,7 +7,7 @@ Kitabim.AI is a monorepo platform for OCR digitization, editorial curation, and 
 All AI calls — OCR, chat, embeddings, summarization, knowledge-graph extraction — go through **Google Gemini** models. Model names are never hardcoded: they are read from the `system_configs` table at request time (`gemini_ocr_model`, `gemini_chat_model`, `gemini_embedding_model`, `gemini_kg_extraction_model`, optionally `gemini_agent_loop_model`), so operators can change models without a deploy. If a required key is missing, the call fails loudly (`RuntimeError`) rather than silently falling back.
 
 The AI layer is built on two Google first-party stacks:
-- **`google-genai`** — direct generation, structured (Pydantic-schema) extraction, and embedding calls used throughout OCR, summarization, knowledge-graph extraction, and the deterministic RAG router's signal/intent classification.
+- **`google-genai`** — direct generation, structured (Pydantic-schema) extraction, and embedding calls used throughout OCR, summarization, knowledge-graph extraction, and ChatOrchestrator's signal-extraction call.
 - **`google-adk`** — powers `ChatOrchestrator`'s two-agent pipeline: a free-form ReAct retrieval agent, and a tool-less answer agent for synthesis.
 
 The backend API and worker are two separate deployable services that share one Python package, `packages/backend-core`, for models, repositories, LLM clients, and business logic.
@@ -177,7 +177,7 @@ The REST endpoints `POST/GET /api/chat/conversations`, `GET /api/chat/conversati
 The home page's search box drives a single tab bar (`SearchTabBar`) covering 11 modes, paginated 11-per-page with a More/Back toggle (currently a dormant no-op, since all 11 tabs already fit on the one page): `ask` (routes to RAG chat, §6B), `books` (title/author/category catalog browse), `content` (full-text search over `chunks.text_search` across the whole library), and eight reference-lookup tabs — dictionary, names, history terms, proverbs, synonyms, English↔Uyghur, Quran, and single-word spell-check. Only the active tab's hook performs a live, debounced fetch against its own existing lookup endpoint (dictionary/proverb/Quran/etc. — no LLM involved); the rest are cheap no-ops. The `content` tab is the one exception requiring pagination: `GET /api/books/content-search` (backed by `ChunksRepository.search_content_chunks`, an exact-phrase Postgres full-text match) returns snippet hits paginated for infinite scroll, page size 40 by default (matching, but not read from, the `collection_page_size` system config).
 
 ## 7) Gemini Integration Strategy
-- **`google-genai` SDK** — used for every direct (non-agentic) AI call: the File API for OCR image uploads, OCR text extraction, book summarization, structured knowledge-graph entity/relation extraction (Pydantic schemas), embedding generation, and the deterministic router's signal-extraction/intent-classification/query-rewrite/decomposition calls.
+- **`google-genai` SDK** — used for every direct (non-agentic) AI call: the File API for OCR image uploads, OCR text extraction, book summarization, structured knowledge-graph entity/relation extraction (Pydantic schemas), embedding generation, and ChatOrchestrator's signal-extraction and query-rewrite calls.
 - **Google ADK (`google-adk`)** — used for `ChatOrchestrator`'s two-agent pipeline: a free-form ReAct retrieval `Agent` over the 19-tool registry, and a tool-less answer `Agent` for synthesis, both run through an ADK `Runner`.
 
 ## 8) Reliability & Observability

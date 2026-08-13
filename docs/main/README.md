@@ -25,10 +25,10 @@ Kitabim.ai is a monorepo platform for OCR digitization, editorial curation, and 
 | [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md) | Gemini embedding generation, pgvector storage, batch embedding mode |
 | [SPELLCHECK_DESIGN.md](SPELLCHECK_DESIGN.md) | Spellcheck + auto-correct — independent quality layer, dictionary-based corrections |
 | [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md) | Book-level summary generation + embedding for RAG book routing |
-| [CHAT_RAG_DESIGN.md](CHAT_RAG_DESIGN.md) | `ChatOrchestrator` and `RAGService`/`HandlerRegistry` — retrieval, Google ADK agent tools, reranking, judge scoring, tool reference |
+| [CHAT_RAG_DESIGN.md](CHAT_RAG_DESIGN.md) | `ChatOrchestrator` — retrieval, Google ADK agent tools, reranking, judge scoring, tool reference |
 | [KNOWLEDGE_GRAPH_DESIGN.md](KNOWLEDGE_GRAPH_DESIGN.md) | Entity/relationship extraction and entity resolution into Neo4j (GraphRAG) |
 
-Two independent chat pipelines exist today: `ChatOrchestrator` (`packages/backend-core/app/services/chat/`) persists conversation history and is the default for the streaming endpoint; `RAGService`/`HandlerRegistry` (both covered in [CHAT_RAG_DESIGN.md](CHAT_RAG_DESIGN.md)) has no conversation persistence and is used otherwise. See [SYSTEM_DESIGN.md §6B](SYSTEM_DESIGN.md) for how the two relate.
+`ChatOrchestrator` (`packages/backend-core/app/services/chat/`) is the only chat pipeline today — it persists conversation history and backs both `POST /api/chat/` and `POST /api/chat/stream`. A legacy alternate pipeline (`RAGService`/`HandlerRegistry`) was deleted during the ADK-chat consolidation — see `docs/superpowers/plans/2026-08-12-adk-chat-consolidation.md` for the migration.
 
 ### Other
 

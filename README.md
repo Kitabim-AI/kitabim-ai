@@ -45,9 +45,7 @@ Uyghur literature and historical publications exist overwhelmingly in physical f
 - **Smart Chunking & Embeddings**: Overlapping window chunking stored with `pgvector` similarity indexes using Gemini Embedding v2.
 
 ### 🤖 Agentic RAG & Natural Language QA
-- **Dual Query Pipelines**:
-  - **`ChatOrchestrator`**: Persistent conversation history, query analysis, ADK Retrieval Agent (19 tools), context reranking, context grading, and ADK Answer Agent with streaming SSE output.
-  - **`RAGService` / `HandlerRegistry`**: Configurable router supporting `DeterministicRAGHandler` (Google ADK Workflow graph with 10 path selection nodes) and `LLMRoutedRAGHandler` (ADK ReAct reasoning loop).
+- **`ChatOrchestrator`** (the only chat pipeline): Persistent conversation history, query-signal analysis, ADK Retrieval Agent (19 tools), context reranking / context grading, and ADK Answer Agent with streaming SSE output.
 - **Hybrid Retrieval**: `pgvector` semantic search fused with PostgreSQL full-text keyword search via Reciprocal Rank Fusion (`rag_hybrid_search_enabled`), followed by an LLM-based reranking pass (`rag_reranker_enabled`) before context grading.
 - **19 Specialized ADK Tools**: Includes passage search, summary search, title/author matching, catalog lookup, current reader page text, sister volume discovery, Uyghur dictionary lookups, scripture (Quran) vector search, and post-vector knowledge graph entity lookup.
 - **Fine-Grained Citations**: Answers cite `ref:book_id:page_number` inline immediately after the relevant sentence (with multi-page and Quran surah:ayah variants), not just at the book level.
@@ -155,28 +153,18 @@ flowchart TD
 
 ### Agentic RAG Question Answering Pipeline
 
-Question answering supports both `ChatOrchestrator` (persistent multi-turn conversations) and `RAGService` (handler-registry architecture).
+Question answering is served entirely by `ChatOrchestrator` — the single pipeline behind both `POST /api/chat/` and `POST /api/chat/stream`.
 
 ```mermaid
 flowchart TD
-    Q(["User Question + Context"]) --> ROUTE{"Has conversationId or<br/>use_adk_chat_v2?"}
-
-    ROUTE -- Yes (Streaming Default) --> ORCH["ChatOrchestrator Pipeline"]
+    Q(["User Question + Context"]) --> ORCH["ChatOrchestrator"]
     ORCH --> RET_AGENT["[LLM] KitabimRetrievalAgent<br/>(Google ADK + 19 Tools)"]
     RET_AGENT --> RERANK{"rag_reranker_enabled?"}
     RERANK -- Yes --> RR["LLM Reranker"]
-    RERANK -- No --> GRADE1["Context Grading"]
-    RR --> GRADE1
-    GRADE1 --> ANS_AGENT["[LLM] KitabimAnswerAgent<br/>(Streaming Answer Synthesis)"]
+    RERANK -- No --> GRADE["Context Grading"]
+    RR --> ANS_AGENT
+    GRADE --> ANS_AGENT["[LLM] KitabimAnswerAgent<br/>(Streaming Answer Synthesis)"]
     ANS_AGENT --> SAVE["Save Turn & Enqueue Evaluation"]
-
-    ROUTE -- No --> REG["RAGService / HandlerRegistry"]
-    REG --> DET_CHECK{"use_deterministic_router?"}
-    DET_CHECK -- Yes --> DET["DeterministicRAGHandler<br/>(ADK Workflow Graph - 10 Nodes)"]
-    DET_CHECK -- No --> LLM_RAG["LLMRoutedRAGHandler<br/>(ADK ReAct Loop + 19 Tools)"]
-    DET --> GRADE2["Context Grading & Synthesis"]
-    LLM_RAG --> GRADE2
-    GRADE2 --> STREAM["Stream Response"]
 ```
 
 ### Knowledge Graph & Entity Resolution
@@ -215,7 +203,7 @@ kitabim-ai/
 - **`db/`**: SQLAlchemy models (`models.py` — 25 PostgreSQL tables), database engine factory (`session.py`), system configuration seeds (`seeds.py`), and 17 repository classes in `db/repositories/`.
 - **`llm/`**: `GeminiLLM` client, `TextChain` / `StructuredChain` wrappers, Redis rate limiting, and circuit breaker resilience.
 - **`services/`**: Core business services including OCR, chunking, embeddings, spell-check, auto-correction, summary generation, storage abstraction, and sub-packages:
-  - **`services/rag/`**: `RAGService`, `HandlerRegistry`, `DeterministicRAGHandler`, `LLMRoutedRAGHandler`, `graph_router.py` (10-node ADK Workflow), retrieval engine (`retrieval.py`), context grading, answer builder, and 19 ADK tools (`rag/agent/tools.py`).
+  - **`services/rag/`**: Shared retrieval primitives used by `ChatOrchestrator` — no handlers. Retrieval engine (`retrieval.py`), `QueryContext`, the 19 ADK tools (`rag/agent/tools.py`), the LLM reranker, and other tool-implementation helpers.
   - **`services/chat/`**: `ChatOrchestrator`, `KitabimRetrievalAgent`, `KitabimAnswerAgent`, conversation state management (`history.py`), and context builders.
 
 ---
@@ -333,7 +321,7 @@ Detailed architectural specs, milestone state machine details, and stage documen
 | [**`EMBEDDING_DESIGN.md`**](docs/main/EMBEDDING_DESIGN.md) | Vector embeddings, pgvector indexing, and batch embedding mode |
 | [**`SPELLCHECK_DESIGN.md`**](docs/main/SPELLCHECK_DESIGN.md) | Uyghur dictionary spell-checking and auto-correction engine |
 | [**`SUMMARY_DESIGN.md`**](docs/main/SUMMARY_DESIGN.md) | Book-level summary generation for RAG book selection |
-| [**`CHAT_RAG_DESIGN.md`**](docs/main/CHAT_RAG_DESIGN.md) | ChatOrchestrator, RAGService, 19 ADK tools, reranking, and evaluation |
+| [**`CHAT_RAG_DESIGN.md`**](docs/main/CHAT_RAG_DESIGN.md) | ChatOrchestrator, 19 ADK tools, reranking, and evaluation |
 | [**`KNOWLEDGE_GRAPH_DESIGN.md`**](docs/main/KNOWLEDGE_GRAPH_DESIGN.md) | Neo4j GraphRAG entity extraction and scheduled entity resolution |
 | [**`PROJECT_STRUCTURE.md`**](docs/main/PROJECT_STRUCTURE.md) | Directory structure map, module responsibilities, and key files |
 | [**`REQUIREMENTS.md`**](docs/main/REQUIREMENTS.md) | Business functional requirements and user role permission matrix |

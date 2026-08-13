@@ -21,7 +21,7 @@
 
 - An **OCR ingestion pipeline** (worker) that extracts text page-by-page from PDFs using Gemini Vision.
 - A **curation workspace** (frontend + backend) for spell-checking, dictionary lookups, and editorial review.
-- A **RAG chat system** with two interchangeable handlers — a fixed-path deterministic router and an LLM-driven Google ADK agent loop — both searching pgvector passages and a Neo4j knowledge graph.
+- A **RAG chat system** (`ChatOrchestrator`) — an LLM-driven Google ADK agent loop searching pgvector passages and a Neo4j knowledge graph.
 - **User identity**: JWT auth with four OAuth providers and role-based access control.
 
 ---
