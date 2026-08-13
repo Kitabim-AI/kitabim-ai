@@ -77,6 +77,18 @@ export const PageItem: React.FC<PageItemProps> = ({
     return () => observer.disconnect();
   }, [isEditing, adjustHeight]);
 
+  // Stable object identity so MarkdownContent's React.memo can actually skip
+  // re-parsing already-loaded pages when an unrelated page's state changes.
+  const contentStyle = React.useMemo(
+    () => ({ fontSize: `${fontSize}px`, fontFamily: contentFontFamily }),
+    [fontSize, contentFontFamily]
+  );
+
+  const displayText = React.useMemo(
+    () => (contentFontClassName === 'reader-font-adobe' ? normalizeArabic(page.text || '') : (page.text || "...")),
+    [contentFontClassName, page.text]
+  );
+
   return (
     <div onMouseEnter={onSetActive} className={`group relative p-6 rounded-[24px] transition-all duration-300 border ${isEditing ? 'flex-1 flex flex-col min-h-0' : ''} ${isActive ? 'bg-white dark:bg-slate-900/60 shadow-xl border-[#0369a1]/10 dark:border-[#38bdf8]/10' : 'border-transparent'}`}>
       <div className="flex items-center justify-between mb-4 border-b border-[#0369a1]/5 dark:border-slate-800 pb-3">
@@ -125,9 +137,9 @@ export const PageItem: React.FC<PageItemProps> = ({
               ref={textareaRef}
               value={contentFontClassName === 'reader-font-adobe' ? normalizeArabic(tempText) : tempText} 
               onChange={(e) => onTempTextChange(contentFontClassName === 'reader-font-adobe' ? normalizeArabic(e.target.value) : e.target.value)} 
-              className={`flex-1 w-full h-full p-4 uyghur-text border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl outline-none resize-none bg-white dark:bg-slate-800 text-[#1a1a1a] dark:text-slate-100 relative z-10 custom-scrollbar leading-relaxed ${contentFontClassName || ''}`} 
-              style={{ fontSize: `${fontSize}px`, fontFamily: contentFontFamily }} 
-              dir="rtl" 
+              className={`flex-1 w-full h-full p-4 uyghur-text border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl outline-none resize-none bg-white dark:bg-slate-800 text-[#1a1a1a] dark:text-slate-100 relative z-10 custom-scrollbar leading-relaxed ${contentFontClassName || ''}`}
+              style={contentStyle}
+              dir="rtl"
             />
           </div>
           <div className="flex items-center gap-3">
@@ -152,10 +164,10 @@ export const PageItem: React.FC<PageItemProps> = ({
         isLoading ? (
           <div className="flex flex-col items-center justify-center py-10 opacity-50"><Loader2 className="animate-spin text-[#0369a1] dark:text-[#38bdf8] mb-2" /><span className="text-xs uppercase dark:text-slate-400">{t('admin.table.recognizing')}</span></div>
         ) : (
-          <MarkdownContent 
-            content={contentFontClassName === 'reader-font-adobe' ? normalizeArabic(page.text || '') : (page.text || "...")} 
-            className={`uyghur-text text-[#1a1a1a] dark:text-slate-100 ${contentFontClassName || ''}`} 
-            style={{ fontSize: `${fontSize}px`, fontFamily: contentFontFamily }} 
+          <MarkdownContent
+            content={displayText}
+            className={`uyghur-text text-[#1a1a1a] dark:text-slate-100 ${contentFontClassName || ''}`}
+            style={contentStyle}
             contentPageOffset={contentPageOffset}
             onTocPageClick={onTocPageClick}
             isTocPage={page?.isToc ?? page?.is_toc}

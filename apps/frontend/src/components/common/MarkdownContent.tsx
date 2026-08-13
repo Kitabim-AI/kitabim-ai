@@ -357,7 +357,6 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ con
                     }
                   }}
                   className="w-full text-left rtl:text-right text-[#0369a1] dark:text-[#38bdf8] hover:underline cursor-pointer transition-colors block py-0.5 px-1 -mx-1 rounded hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 group"
-                  title={`Jump to page ${targetPhysicalPage}`}
                 >
                   <span className="group-hover:opacity-90">{cleanDisplay}</span>
                 </button>
@@ -485,7 +484,6 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ con
                           ${rowIdx % 2 === 1 ? 'bg-slate-50/50 dark:bg-slate-900/30' : ''}
                           ${isClickable ? 'cursor-pointer hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/15 text-[#0369a1] dark:text-[#38bdf8] transition-colors group' : ''}
                         `}
-                        title={isClickable ? `Jump to page ${targetPhysicalPage}` : undefined}
                       >
                         {row.map((cell, cellIdx) => (
                           <td key={cellIdx} className={`border border-slate-200 dark:border-slate-800 px-3 py-2 text-right ${isClickable ? 'group-hover:underline' : ''}`}>
@@ -525,7 +523,6 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ con
                           ${rowIdx % 2 === 1 ? 'bg-slate-50/50 dark:bg-slate-900/30' : ''}
                           ${isClickable ? 'cursor-pointer hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/15 text-[#0369a1] dark:text-[#38bdf8] transition-colors group' : ''}
                         `}
-                        title={isClickable ? `Jump to page ${targetPhysicalPage}` : undefined}
                       >
                         {row.map((cell, cellIdx) => (
                           <td key={cellIdx} className={`px-3 py-1.5 text-right ${isClickable ? 'group-hover:underline' : ''}`}>

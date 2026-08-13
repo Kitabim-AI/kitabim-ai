@@ -189,3 +189,16 @@ async def test_search_content_pages():
     assert hits[0]["page_number"] == 5
     assert hits[0]["snippet"] == "مۇھىم تېكىست"
     assert hits[0]["rank"] == 0.85
+
+
+@pytest.mark.asyncio
+async def test_sync_content_page_offset():
+    session = AsyncMock()
+    repo = PagesRepository(session)
+    mock_res = MagicMock()
+    mock_res.scalar_one.return_value = 6
+    session.execute.side_effect = [mock_res, MagicMock()]
+
+    offset = await repo.sync_content_page_offset("b1")
+    assert offset == 6
+    assert session.flush.called

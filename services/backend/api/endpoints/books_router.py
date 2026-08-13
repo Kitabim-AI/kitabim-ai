@@ -2382,8 +2382,10 @@ async def set_page_toc(
     if body.is_toc:
         await chunks_repo.delete_by_page(book_id, page_num)
 
+    new_offset = await pages_repo.sync_content_page_offset(book_id)
+
     await session.commit()
-    return {"status": "ok", "isToc": body.is_toc}
+    return {"status": "ok", "isToc": body.is_toc, "contentPageOffset": new_offset}
 
 
 @router.post("/admin/bulk-reset-incomplete-ocr")

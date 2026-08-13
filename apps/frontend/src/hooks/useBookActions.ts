@@ -130,12 +130,15 @@ export const useBookActions = (
       onConfirm: async () => {
         setModal((prev: any) => ({ ...prev, isOpen: false }));
         try {
-          await PersistenceService.setPageToc(bookId, pageNum, nextIsToc);
+          const res = await PersistenceService.setPageToc(bookId, pageNum, nextIsToc);
 
           setSelectedBook(prev => {
             if (!prev || prev.id !== bookId) return prev;
+            const updatedOffset = res?.contentPageOffset !== undefined ? res.contentPageOffset : prev.contentPageOffset;
             return {
               ...prev,
+              contentPageOffset: updatedOffset,
+              content_page_offset: updatedOffset,
               pages: (prev.pages || []).map(r =>
                 r.pageNumber === pageNum ? { ...r, isToc: nextIsToc } : r
               ),

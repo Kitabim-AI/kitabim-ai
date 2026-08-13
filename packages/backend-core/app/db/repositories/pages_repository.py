@@ -8,7 +8,7 @@ from typing import List, Optional
 from sqlalchemy import select, delete, func, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.models import Page
+from app.db.models import Page, Book
 from app.db.repositories.base_repository import BaseRepository
 
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
@@ -263,6 +263,25 @@ class PagesRepository(BaseRepository[Page]):
         result = await self.session.execute(stmt)
         await self.session.flush()
         return result.rowcount > 0
+
+    async def sync_content_page_offset(self, book_id: str) -> int:
+        """Calculate and update book.content_page_offset based on MAX(page_number) where is_toc IS TRUE."""
+        from sqlalchemy import update
+
+        stmt = select(func.coalesce(func.max(Page.page_number), 0)).where(
+            Page.book_id == book_id, Page.is_toc.is_(True)
+        )
+        res = await self.session.execute(stmt)
+        max_toc_page = res.scalar_one() or 0
+
+        update_stmt = (
+            update(Book)
+            .where(Book.id == book_id)
+            .values(content_page_offset=max_toc_page)
+        )
+        await self.session.execute(update_stmt)
+        await self.session.flush()
+        return max_toc_page
 
     async def delete_by_book(self, book_id: str) -> int:
         """Delete all pages for a book"""

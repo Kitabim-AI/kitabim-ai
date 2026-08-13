@@ -91,16 +91,24 @@ test('PageItem renders display page number and PDF page number with spacing when
   expect(screen.getByText('(PDF 204)')).toBeInTheDocument();
 });
 
-test('PageItem shows Mark as ToC button and calls onToggleToc(true) when page is not ToC', () => {
+test('PageItem shows Mark as Page 1 and Mark as ToC buttons for editor/admin users', () => {
+  vi.mocked(AuthModule.useIsEditor).mockReturnValue(true);
+  const onSetStartPage = vi.fn();
   const onToggleToc = vi.fn();
-  renderPageItem({ page: { ...mockPage, isToc: false }, onToggleToc });
+  renderPageItem({ page: { ...mockPage, isToc: false }, onSetStartPage, onToggleToc });
 
-  const button = screen.getByText('reader.markAsToc');
-  fireEvent.click(button);
+  expect(screen.getByText('reader.setPageOne')).toBeInTheDocument();
+  expect(screen.getByText('reader.markAsToc')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByText('reader.setPageOne'));
+  expect(onSetStartPage).toHaveBeenCalledTimes(1);
+
+  fireEvent.click(screen.getByText('reader.markAsToc'));
   expect(onToggleToc).toHaveBeenCalledWith(true);
 });
 
-test('PageItem shows Unmark as ToC button and calls onToggleToc(false) when page is ToC', () => {
+test('PageItem shows Unmark as ToC button when page is already marked as ToC', () => {
+  vi.mocked(AuthModule.useIsEditor).mockReturnValue(true);
   const onToggleToc = vi.fn();
   renderPageItem({ page: { ...mockPage, isToc: true }, onToggleToc });
 
@@ -109,10 +117,13 @@ test('PageItem shows Unmark as ToC button and calls onToggleToc(false) when page
   expect(onToggleToc).toHaveBeenCalledWith(false);
 });
 
-test('PageItem hides the ToC toggle button for non-editors', () => {
+test('PageItem hides both Mark as Page 1 and ToC toggle buttons for non-editors (readers/guests)', () => {
   vi.mocked(AuthModule.useIsEditor).mockReturnValue(false);
-  renderPageItem({ page: { ...mockPage, isToc: false }, onToggleToc: vi.fn() });
+  renderPageItem({ page: { ...mockPage, isToc: false }, onSetStartPage: vi.fn(), onToggleToc: vi.fn() });
 
+  expect(screen.queryByText('reader.setPageOne')).not.toBeInTheDocument();
   expect(screen.queryByText('reader.markAsToc')).not.toBeInTheDocument();
+  expect(screen.queryByText('reader.unmarkAsToc')).not.toBeInTheDocument();
 });
+
 

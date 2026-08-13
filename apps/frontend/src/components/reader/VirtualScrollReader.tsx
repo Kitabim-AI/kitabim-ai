@@ -200,6 +200,29 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
     return () => centerObserver.disconnect();
   }, [totalPages, scrollParentRef, onPageChange, isEditingAny]);
 
+  // Evict pages far from the current viewport back to unloaded placeholders. Without
+  // this, `pages` only ever grows over a reading session — every page ever scrolled
+  // past stays fully mounted (and gets fully re-rendered on every subsequent scroll
+  // update), which is what drives sustained CPU/battery cost on long books. The window
+  // is far wider than the loadObserver's rootMargin so it can't fight with eager-loading.
+  const EVICTION_WINDOW = 40;
+  useEffect(() => {
+    if (isEditingAny || isScrollingToTargetRef.current) return;
+    setPages(prev => {
+      if (prev.size === 0) return prev;
+      let changed = false;
+      const next = new Map(prev);
+      prev.forEach((_, pageNum) => {
+        if (Math.abs(pageNum - currentCenterPage) > EVICTION_WINDOW) {
+          next.delete(pageNum);
+          loadedPagesRef.current.delete(pageNum);
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [currentCenterPage, isEditingAny, isScrollingToTargetRef]);
+
   // Reset pages cache when bookId changes
   useEffect(() => {
     setPages(new Map());
