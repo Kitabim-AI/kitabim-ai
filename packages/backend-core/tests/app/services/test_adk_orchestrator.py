@@ -107,10 +107,7 @@ async def test_stream_response_builds_query_context_and_persists_turn():
     answer_runner = MagicMock()
     answer_runner.run_async = MagicMock(return_value=_empty_async_gen())
 
-    deterministic_handler = MagicMock()
-    deterministic_handler._llm_analyze_query = AsyncMock(
-        return_value={"intent": "open"}
-    )
+    mock_analyze_query_signals = AsyncMock(return_value={"intent": "open"})
 
     mock_configs_repo = AsyncMock()
     mock_configs_repo.get_value = AsyncMock(return_value="text-embedding-004")
@@ -125,8 +122,8 @@ async def test_stream_response_builds_query_context_and_persists_turn():
         "app.services.chat.orchestrator.RAGEvaluationsRepository",
         return_value=eval_repo,
     ), patch(
-        "app.services.chat.orchestrator.DeterministicRAGHandler",
-        return_value=deterministic_handler,
+        "app.services.chat.orchestrator.analyze_query_signals",
+        mock_analyze_query_signals,
     ), patch(
         "app.services.chat.orchestrator.InMemorySessionService",
         return_value=inmemory_session_service,
@@ -204,10 +201,7 @@ async def test_stream_response_reader_mode_sends_context_block_to_retrieval_agen
     answer_runner = MagicMock()
     answer_runner.run_async = MagicMock(return_value=_empty_async_gen())
 
-    deterministic_handler = MagicMock()
-    deterministic_handler._llm_analyze_query = AsyncMock(
-        return_value={"intent": "summary"}
-    )
+    mock_analyze_query_signals = AsyncMock(return_value={"intent": "summary"})
 
     mock_configs_repo = AsyncMock()
     mock_configs_repo.get_value = AsyncMock(return_value="text-embedding-004")
@@ -229,8 +223,8 @@ async def test_stream_response_reader_mode_sends_context_block_to_retrieval_agen
         "app.services.chat.orchestrator.BooksRepository",
         return_value=mock_books_repo,
     ), patch(
-        "app.services.chat.orchestrator.DeterministicRAGHandler",
-        return_value=deterministic_handler,
+        "app.services.chat.orchestrator.analyze_query_signals",
+        mock_analyze_query_signals,
     ), patch(
         "app.services.chat.orchestrator.InMemorySessionService",
         return_value=inmemory_session_service,
@@ -325,10 +319,7 @@ async def test_stream_response_yields_streaming_chunks_with_sse_run_config():
     answer_runner = MagicMock()
     answer_runner.run_async = _mock_answer_gen
 
-    deterministic_handler = MagicMock()
-    deterministic_handler._llm_analyze_query = AsyncMock(
-        return_value={"intent": "open"}
-    )
+    mock_analyze_query_signals = AsyncMock(return_value={"intent": "open"})
 
     mock_configs_repo = AsyncMock()
     mock_configs_repo.get_value = AsyncMock(return_value="text-embedding-004")
@@ -343,8 +334,8 @@ async def test_stream_response_yields_streaming_chunks_with_sse_run_config():
         "app.services.chat.orchestrator.RAGEvaluationsRepository",
         return_value=eval_repo,
     ), patch(
-        "app.services.chat.orchestrator.DeterministicRAGHandler",
-        return_value=deterministic_handler,
+        "app.services.chat.orchestrator.analyze_query_signals",
+        mock_analyze_query_signals,
     ), patch(
         "app.services.chat.orchestrator.InMemorySessionService",
         return_value=inmemory_session_service,
@@ -421,10 +412,7 @@ async def test_stream_response_enqueues_rag_eval_job_when_scoring_enabled():
     answer_runner = MagicMock()
     answer_runner.run_async = MagicMock(return_value=_empty_async_gen())
 
-    deterministic_handler = MagicMock()
-    deterministic_handler._llm_analyze_query = AsyncMock(
-        return_value={"intent": "open"}
-    )
+    mock_analyze_query_signals = AsyncMock(return_value={"intent": "open"})
 
     mock_configs_repo = AsyncMock()
     mock_configs_repo.get_value = AsyncMock(
@@ -447,8 +435,8 @@ async def test_stream_response_enqueues_rag_eval_job_when_scoring_enabled():
         "app.services.chat.orchestrator.RAGEvaluationsRepository",
         return_value=eval_repo,
     ), patch(
-        "app.services.chat.orchestrator.DeterministicRAGHandler",
-        return_value=deterministic_handler,
+        "app.services.chat.orchestrator.analyze_query_signals",
+        mock_analyze_query_signals,
     ), patch(
         "app.services.chat.orchestrator.InMemorySessionService",
         return_value=inmemory_session_service,
@@ -515,10 +503,7 @@ async def test_stream_response_skips_rag_eval_job_when_scoring_disabled():
     answer_runner = MagicMock()
     answer_runner.run_async = MagicMock(return_value=_empty_async_gen())
 
-    deterministic_handler = MagicMock()
-    deterministic_handler._llm_analyze_query = AsyncMock(
-        return_value={"intent": "open"}
-    )
+    mock_analyze_query_signals = AsyncMock(return_value={"intent": "open"})
 
     mock_configs_repo = AsyncMock()
     mock_configs_repo.get_value = AsyncMock(
@@ -539,8 +524,8 @@ async def test_stream_response_skips_rag_eval_job_when_scoring_disabled():
         "app.services.chat.orchestrator.RAGEvaluationsRepository",
         return_value=eval_repo,
     ), patch(
-        "app.services.chat.orchestrator.DeterministicRAGHandler",
-        return_value=deterministic_handler,
+        "app.services.chat.orchestrator.analyze_query_signals",
+        mock_analyze_query_signals,
     ), patch(
         "app.services.chat.orchestrator.InMemorySessionService",
         return_value=inmemory_session_service,
@@ -577,7 +562,7 @@ async def test_stream_response_skips_rag_eval_job_when_scoring_disabled():
 
 
 def _base_orchestrator_patches(
-    conv_repo, eval_repo, mock_configs_repo, deterministic_handler
+    conv_repo, eval_repo, mock_configs_repo, mock_analyze_query_signals
 ):
     """Shared set of patches every reranker-flag test needs, mirroring the
     harness used by the eval-scoring flag tests above."""
@@ -607,10 +592,7 @@ async def test_stream_response_uses_reranker_when_enabled():
     eval_repo = AsyncMock()
     eval_repo.create_evaluation.return_value = MagicMock(id=42)
 
-    deterministic_handler = MagicMock()
-    deterministic_handler._llm_analyze_query = AsyncMock(
-        return_value={"intent": "open"}
-    )
+    mock_analyze_query_signals = AsyncMock(return_value={"intent": "open"})
 
     mock_configs_repo = AsyncMock()
     mock_configs_repo.get_value = AsyncMock(
@@ -619,7 +601,7 @@ async def test_stream_response_uses_reranker_when_enabled():
 
     retrieval_runner, answer_runner, inmemory_session_service = (
         _base_orchestrator_patches(
-            conv_repo, eval_repo, mock_configs_repo, deterministic_handler
+            conv_repo, eval_repo, mock_configs_repo, mock_analyze_query_signals
         )
     )
 
@@ -636,8 +618,8 @@ async def test_stream_response_uses_reranker_when_enabled():
         "app.services.chat.orchestrator.RAGEvaluationsRepository",
         return_value=eval_repo,
     ), patch(
-        "app.services.chat.orchestrator.DeterministicRAGHandler",
-        return_value=deterministic_handler,
+        "app.services.chat.orchestrator.analyze_query_signals",
+        mock_analyze_query_signals,
     ), patch(
         "app.services.chat.orchestrator.InMemorySessionService",
         return_value=inmemory_session_service,
@@ -686,10 +668,7 @@ async def test_stream_response_uses_grade_context_when_reranker_disabled():
     eval_repo = AsyncMock()
     eval_repo.create_evaluation.return_value = MagicMock(id=42)
 
-    deterministic_handler = MagicMock()
-    deterministic_handler._llm_analyze_query = AsyncMock(
-        return_value={"intent": "open"}
-    )
+    mock_analyze_query_signals = AsyncMock(return_value={"intent": "open"})
 
     mock_configs_repo = AsyncMock()
     mock_configs_repo.get_value = AsyncMock(
@@ -698,7 +677,7 @@ async def test_stream_response_uses_grade_context_when_reranker_disabled():
 
     retrieval_runner, answer_runner, inmemory_session_service = (
         _base_orchestrator_patches(
-            conv_repo, eval_repo, mock_configs_repo, deterministic_handler
+            conv_repo, eval_repo, mock_configs_repo, mock_analyze_query_signals
         )
     )
 
@@ -715,8 +694,8 @@ async def test_stream_response_uses_grade_context_when_reranker_disabled():
         "app.services.chat.orchestrator.RAGEvaluationsRepository",
         return_value=eval_repo,
     ), patch(
-        "app.services.chat.orchestrator.DeterministicRAGHandler",
-        return_value=deterministic_handler,
+        "app.services.chat.orchestrator.analyze_query_signals",
+        mock_analyze_query_signals,
     ), patch(
         "app.services.chat.orchestrator.InMemorySessionService",
         return_value=inmemory_session_service,
@@ -765,10 +744,7 @@ async def test_stream_response_falls_back_to_grade_context_when_reranker_fails()
     eval_repo = AsyncMock()
     eval_repo.create_evaluation.return_value = MagicMock(id=42)
 
-    deterministic_handler = MagicMock()
-    deterministic_handler._llm_analyze_query = AsyncMock(
-        return_value={"intent": "open"}
-    )
+    mock_analyze_query_signals = AsyncMock(return_value={"intent": "open"})
 
     mock_configs_repo = AsyncMock()
     mock_configs_repo.get_value = AsyncMock(
@@ -777,7 +753,7 @@ async def test_stream_response_falls_back_to_grade_context_when_reranker_fails()
 
     retrieval_runner, answer_runner, inmemory_session_service = (
         _base_orchestrator_patches(
-            conv_repo, eval_repo, mock_configs_repo, deterministic_handler
+            conv_repo, eval_repo, mock_configs_repo, mock_analyze_query_signals
         )
     )
 
@@ -794,8 +770,8 @@ async def test_stream_response_falls_back_to_grade_context_when_reranker_fails()
         "app.services.chat.orchestrator.RAGEvaluationsRepository",
         return_value=eval_repo,
     ), patch(
-        "app.services.chat.orchestrator.DeterministicRAGHandler",
-        return_value=deterministic_handler,
+        "app.services.chat.orchestrator.analyze_query_signals",
+        mock_analyze_query_signals,
     ), patch(
         "app.services.chat.orchestrator.InMemorySessionService",
         return_value=inmemory_session_service,
@@ -835,7 +811,7 @@ def _exact_phrase_orchestrator_patches(
     conv_repo, eval_repo, mock_configs_repo, retrieval_runner, answer_runner
 ):
     """Shared patch set for exact-phrase stream_response tests — the
-    retrieval_agent/DeterministicRAGHandler machinery must never run for an
+    retrieval_agent/analyze_query_signals machinery must never run for an
     exact-phrase question, so any call into it should surface as a test
     failure rather than being silently mocked away."""
     with ExitStack() as stack:
@@ -939,7 +915,7 @@ async def test_stream_response_exact_phrase_uses_configured_rag_keyword_top_k():
         conv_repo, eval_repo, mock_configs_repo, retrieval_runner, answer_runner
     ), patch(
         "app.services.chat.orchestrator.run_exact_phrase_retrieval", mock_run_retrieval
-    ), patch("app.services.chat.orchestrator.DeterministicRAGHandler"):
+    ):
         orchestrator = ChatOrchestrator(session_service=None)
         dto = ChatRequestDTO(
             question='find pages with "king Babur"',
@@ -1030,7 +1006,7 @@ async def test_stream_response_page_finding_exact_phrase_yields_page_hits_and_sk
                 },
             )
         ),
-    ), patch("app.services.chat.orchestrator.DeterministicRAGHandler") as mock_det:
+    ), patch("app.services.chat.orchestrator.analyze_query_signals") as mock_analyze:
         orchestrator = ChatOrchestrator(session_service=None)
         dto = ChatRequestDTO(
             question='find pages with "king Babur"',
@@ -1043,7 +1019,7 @@ async def test_stream_response_page_finding_exact_phrase_yields_page_hits_and_sk
             event async for event in orchestrator.stream_response(dto, db_session)
         ]
 
-    mock_det.assert_not_called()
+    mock_analyze.assert_not_called()
     page_hits_events = [e for e in events if e.get("type") == "page_hits"]
     assert len(page_hits_events) == 1
     assert page_hits_events[0]["hits"] == [
@@ -1137,8 +1113,8 @@ async def test_stream_response_non_page_finding_exact_phrase_still_synthesizes_a
         "app.services.chat.orchestrator._grade_context",
         return_value=("king Babur ruled here", 1, 1),
     ) as mock_grade, patch(
-        "app.services.chat.orchestrator.DeterministicRAGHandler"
-    ) as mock_det:
+        "app.services.chat.orchestrator.analyze_query_signals"
+    ) as mock_analyze:
         orchestrator = ChatOrchestrator(session_service=None)
         dto = ChatRequestDTO(
             question='what does "king Babur" mean',
@@ -1151,7 +1127,7 @@ async def test_stream_response_non_page_finding_exact_phrase_still_synthesizes_a
             event async for event in orchestrator.stream_response(dto, db_session)
         ]
 
-    mock_det.assert_not_called()
+    mock_analyze.assert_not_called()
     mock_grade.assert_called_once()
     graded_observations = mock_grade.call_args.args[0]
     assert graded_observations == [observation]
@@ -1159,3 +1135,35 @@ async def test_stream_response_non_page_finding_exact_phrase_still_synthesizes_a
     assert page_hits_events == []
     answer_start_events = [e for e in events if e.get("type") == "answer_start"]
     assert len(answer_start_events) == 1
+
+
+@pytest.mark.asyncio
+async def test_answer_concatenates_chunks_and_returns_done_metadata(monkeypatch):
+    orchestrator = ChatOrchestrator()
+
+    async def fake_stream_response(
+        self, request_dto, db_session, model_name="gemini-2.5-flash"
+    ):
+        yield {"type": "answer_start"}
+        yield {"type": "chunk", "text": "سالام"}
+        yield {"type": "chunk", "text": "، دۇنيا"}
+        yield {
+            "type": "done",
+            "eval_id": 7,
+            "conversation_id": "conv-xyz",
+            "used_book_ids": ["book-1"],
+        }
+
+    monkeypatch.setattr(ChatOrchestrator, "stream_response", fake_stream_response)
+
+    result = await orchestrator.answer(
+        ChatRequestDTO(question="q", user_id="u1", book_id="book-1"),
+        db_session=AsyncMock(),
+    )
+
+    assert result == {
+        "answer": "سالام، دۇنيا",
+        "conversation_id": "conv-xyz",
+        "used_book_ids": ["book-1"],
+        "eval_id": 7,
+    }

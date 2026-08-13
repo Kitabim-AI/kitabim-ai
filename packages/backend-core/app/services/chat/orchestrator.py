@@ -29,12 +29,12 @@ from app.services.chat.exact_phrase import (
 )
 from app.services.chat.history import format_history_for_analysis
 from app.services.chat.retrieval_agent import build_retrieval_agent
-from app.services.rag.agent.deterministic_handler import DeterministicRAGHandler
-from app.services.rag.agent.llm_routed_handler import (
+from app.services.chat.context_grading import (
     _build_human_message,
     _extract_used_book_ids,
     _grade_context,
 )
+from app.services.chat.query_signals import analyze_query_signals
 from app.services.rag.agent.reranker import rerank_context
 from app.services.rag.context import QueryContext, set_current_query_context
 from app.services.rag.phrase_intent import detect_phrase_intent
@@ -225,11 +225,8 @@ class ChatOrchestrator:
                 "found": len(hits),
             }
         else:
-            # 2b. Fast signal pre-processing via DeterministicRAGHandler
-            deterministic_handler = DeterministicRAGHandler()
-            signals = await deterministic_handler._llm_analyze_query(
-                request_dto.question, ctx
-            )
+            # 2b. Fast signal pre-processing
+            signals = await analyze_query_signals(request_dto.question, ctx)
 
             intent = signals.get("intent", "open")
             yield {"type": "planning", "intent": intent}
@@ -528,4 +525,27 @@ class ChatOrchestrator:
             "eval_id": eval_id,
             "conversation_id": conv_id,
             "used_book_ids": used_book_ids,
+        }
+
+    async def answer(
+        self,
+        request_dto: ChatRequestDTO,
+        db_session: AsyncSession,
+        model_name: str = "gemini-2.5-flash",
+    ) -> dict:
+        """Non-streaming convenience wrapper: drains stream_response and
+        returns the concatenated answer text plus the done-event metadata."""
+        answer_text = ""
+        done_meta: dict = {}
+        async for event in self.stream_response(request_dto, db_session, model_name):
+            if isinstance(event, dict):
+                if event.get("type") == "chunk":
+                    answer_text += event.get("text", "")
+                elif event.get("type") == "done":
+                    done_meta = event
+        return {
+            "answer": answer_text,
+            "conversation_id": done_meta.get("conversation_id"),
+            "used_book_ids": done_meta.get("used_book_ids", []),
+            "eval_id": done_meta.get("eval_id"),
         }
