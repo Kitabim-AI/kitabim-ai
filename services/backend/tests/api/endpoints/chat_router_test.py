@@ -33,7 +33,7 @@ async def test_chat_endpoint_uses_injected_rag_service():
     mock_user.id = "user-123"
     mock_user.role = "reader"
 
-    req = ChatRequest(book_id="book-abc", question="سۇئال", history=[])
+    req = ChatRequest(book_id="book-abc", question="سوئال", history=[])
 
     mock_usage = {"usage": 1, "limit": 10, "has_reached_limit": False}
     mock_limit_service = AsyncMock()
@@ -71,7 +71,7 @@ async def test_chat_stream_endpoint_uses_injected_rag_service():
     mock_user.id = "user-123"
     mock_user.role = "reader"
 
-    req = ChatRequest(book_id="book-abc", question="سۇئال", history=[])
+    req = ChatRequest(book_id="book-abc", question="سوئال", history=[])
 
     mock_usage = {"usage": 1, "limit": 10, "has_reached_limit": False}
     mock_limit_service = AsyncMock()

@@ -91,4 +91,39 @@ test('PageItem renders display page number and PDF page number with spacing when
   expect(screen.getByText('(PDF 204)')).toBeInTheDocument();
 });
 
+test('PageItem shows Mark as Page 1 and Mark as ToC buttons for editor/admin users', () => {
+  vi.mocked(AuthModule.useIsEditor).mockReturnValue(true);
+  const onSetStartPage = vi.fn();
+  const onToggleToc = vi.fn();
+  renderPageItem({ page: { ...mockPage, isToc: false }, onSetStartPage, onToggleToc });
+
+  expect(screen.getByText('reader.setPageOne')).toBeInTheDocument();
+  expect(screen.getByText('reader.markAsToc')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByText('reader.setPageOne'));
+  expect(onSetStartPage).toHaveBeenCalledTimes(1);
+
+  fireEvent.click(screen.getByText('reader.markAsToc'));
+  expect(onToggleToc).toHaveBeenCalledWith(true);
+});
+
+test('PageItem shows Unmark as ToC button when page is already marked as ToC', () => {
+  vi.mocked(AuthModule.useIsEditor).mockReturnValue(true);
+  const onToggleToc = vi.fn();
+  renderPageItem({ page: { ...mockPage, isToc: true }, onToggleToc });
+
+  const button = screen.getByText('reader.unmarkAsToc');
+  fireEvent.click(button);
+  expect(onToggleToc).toHaveBeenCalledWith(false);
+});
+
+test('PageItem hides both Mark as Page 1 and ToC toggle buttons for non-editors (readers/guests)', () => {
+  vi.mocked(AuthModule.useIsEditor).mockReturnValue(false);
+  renderPageItem({ page: { ...mockPage, isToc: false }, onSetStartPage: vi.fn(), onToggleToc: vi.fn() });
+
+  expect(screen.queryByText('reader.setPageOne')).not.toBeInTheDocument();
+  expect(screen.queryByText('reader.markAsToc')).not.toBeInTheDocument();
+  expect(screen.queryByText('reader.unmarkAsToc')).not.toBeInTheDocument();
+});
+
 

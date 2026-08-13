@@ -103,5 +103,53 @@ describe('MarkdownContent Table of Contents hyperlinks', () => {
     fireEvent.click(rowTr!);
     expect(onTocPageClick).toHaveBeenCalledWith(11);
   });
+
+  it('does NOT render hyperlinks on non-TOC pages (such as copyright/CIP catalog text) even when contentPageOffset is set', () => {
+    const onTocPageClick = vi.fn();
+    const cipContent = `
+(CIP) كىتابلارنىڭ نەشرىياتتىن بۇرۇنقى تىزىملەش ماتېرىيالى
+I. ها ... II. زە ... III. ئو ... - roman - لۇئان — يېقىنقى زامان IV. I378.44
+2000-يىل 7-ئاي 1-نەشىر، 2000-يىل 7-ئاي 1-بېسىلىشى بېسىلىش سانى: 1 4060 —
+`;
+    render(
+      <MarkdownContent
+        content={cipContent}
+        contentPageOffset={10}
+        onTocPageClick={onTocPageClick}
+      />
+    );
+
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.getByText(/ماتېرىيالى/)).toBeInTheDocument();
+  });
+
+  it('does NOT render hyperlinks when isTocPage is explicitly false', () => {
+    const onTocPageClick = vi.fn();
+    render(
+      <MarkdownContent
+        content={tocContent}
+        contentPageOffset={10}
+        isTocPage={false}
+        onTocPageClick={onTocPageClick}
+      />
+    );
+
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.getByText(/مۇقەددىمە/)).toBeInTheDocument();
+  });
+
+  it('renders hyperlinks when isTocPage is explicitly true', () => {
+    const onTocPageClick = vi.fn();
+    render(
+      <MarkdownContent
+        content={tocContent}
+        contentPageOffset={10}
+        isTocPage={true}
+        onTocPageClick={onTocPageClick}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: /مۇقەددىمە/ })).toBeInTheDocument();
+  });
 });
 

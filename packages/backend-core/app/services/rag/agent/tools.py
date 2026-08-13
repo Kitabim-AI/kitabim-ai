@@ -526,15 +526,33 @@ async def _dispatch_tool_with_retry(
 # ---------------------------------------------------------------------------
 
 
+def _extract_book_ids(args: dict) -> Optional[List[str]]:
+    """Extract and normalize book IDs from tool arguments.
+
+    Handles plural 'book_ids' and singular 'book_id' parameter names, and
+    coerces string inputs (e.g. '2ccc5b69363c') into a single-element list
+    ['2ccc5b69363c'] to prevent string-iteration character splitting.
+    Preserves None when no parameter was supplied vs [] when empty list was passed.
+    """
+    raw = args.get("book_ids")
+    if raw is None:
+        raw = args.get("book_id")
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        cleaned = raw.strip()
+        return [cleaned] if cleaned else []
+    if isinstance(raw, (list, tuple, set)):
+        return [str(item).strip() for item in raw if str(item).strip()]
+    return [str(raw).strip()]
+
+
 async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
     from app.services.rag.agent.config import CONTEXT_SWITCH_SCORE_THRESHOLD
 
     query = args.get("query", "")
     # Preserve None (agent omitted book_ids = global search) vs [] (agent passed empty = no books found).
-    book_ids_arg = args.get("book_ids")
-    book_ids: Optional[List[str]] = (
-        [str(bid) for bid in book_ids_arg] if book_ids_arg is not None else None
-    )
+    book_ids = _extract_book_ids(args)
     if book_ids is None and not ctx.is_global and ctx.book_id:
         book_ids = [ctx.book_id]
 
@@ -614,7 +632,7 @@ async def _run_search_books_by_summary(args: dict, ctx: QueryContext) -> List[st
     from app.core.config import settings
 
     query = args.get("query", "")
-    char_book_ids: Optional[List[str]] = args.get("book_ids")
+    char_book_ids = _extract_book_ids(args)
     if char_book_ids is None and not ctx.is_global and ctx.book_id:
         char_book_ids = [ctx.book_id]
 
@@ -660,7 +678,7 @@ async def _run_get_book_summary(args: dict, ctx: QueryContext) -> dict:
     from app.db.repositories.books_repository import BooksRepository
     from app.db.repositories.pages_repository import PagesRepository
 
-    book_ids = args.get("book_ids") or []
+    book_ids = _extract_book_ids(args) or []
     if not book_ids and not ctx.is_global and ctx.book_id:
         book_ids = [ctx.book_id]
 
@@ -742,7 +760,8 @@ async def _run_get_book_summary(args: dict, ctx: QueryContext) -> dict:
 async def _run_get_sister_volumes(args: dict, ctx: QueryContext) -> dict:
     from app.db.repositories.books_repository import BooksRepository
 
-    book_id = args.get("book_id", "")
+    extracted = _extract_book_ids(args)
+    book_id = extracted[0] if extracted else ""
     if not book_id and not ctx.is_global and ctx.book_id:
         book_id = ctx.book_id
 

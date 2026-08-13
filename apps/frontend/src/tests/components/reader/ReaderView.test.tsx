@@ -12,6 +12,10 @@ vi.mock('@/src/context/AppContext', () => ({
   useAppContext: vi.fn(),
 }));
 
+vi.mock('@/src/context/NotificationContext', () => ({
+  useNotification: () => ({ addNotification: vi.fn() }),
+}));
+
 vi.mock('@/src/hooks/useAuth', () => ({
   useAuth: vi.fn(),
   useIsEditor: vi.fn(),

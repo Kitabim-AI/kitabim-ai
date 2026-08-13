@@ -22,6 +22,7 @@ export interface HistoryTermEntry {
   transliteration?: string | null;
   definition?: string | null;
   letterGroup: string;
+  isAiGenerated?: boolean;
 }
 
 export interface ProverbEntry {
@@ -116,6 +117,7 @@ export const SearchTabsService = {
       transliteration: r.transliteration,
       definition: r.definition,
       letterGroup: r.letter_group,
+      isAiGenerated: r.is_ai_generated,
     }));
   },
 

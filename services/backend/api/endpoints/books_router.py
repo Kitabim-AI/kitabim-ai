@@ -36,6 +36,7 @@ from app.core.pipeline import (
 from app.db.session import get_session
 from app.db.repositories.books_repository import BooksRepository
 from app.db.repositories.pages_repository import PagesRepository
+from app.db.repositories.chunks_repository import ChunksRepository
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.db.models import (
     Book as BookDB,
@@ -50,6 +51,7 @@ from app.models.schemas import (
     ContentSearchHit,
     PaginatedContentHits,
     ExtractionResult,
+    PageTocUpdate,
     to_camel,
 )
 from app.models.user import User
@@ -2357,6 +2359,33 @@ async def update_page_text(
         "requires_rag": True,
         "synchronous": final_status == "indexed",
     }
+
+
+@router.post("/{book_id}/pages/{page_num}/toc")
+async def set_page_toc(
+    book_id: str,
+    page_num: int,
+    body: PageTocUpdate,
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """Manually mark or unmark a page as a Table of Contents page"""
+    pages_repo = PagesRepository(session)
+    chunks_repo = ChunksRepository(session)
+
+    updated = await pages_repo.set_is_toc(
+        book_id, page_num, body.is_toc, current_user.email
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=t("errors.page_not_found"))
+
+    if body.is_toc:
+        await chunks_repo.delete_by_page(book_id, page_num)
+
+    new_offset = await pages_repo.sync_content_page_offset(book_id)
+
+    await session.commit()
+    return {"status": "ok", "isToc": body.is_toc, "contentPageOffset": new_offset}
 
 
 @router.post("/admin/bulk-reset-incomplete-ocr")

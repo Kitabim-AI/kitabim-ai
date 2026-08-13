@@ -7,9 +7,40 @@ type MarkdownContentProps = {
   onReferenceClick?: (bookId: string, pageNums: number[]) => void;
   contentPageOffset?: number;
   onTocPageClick?: (targetPhysicalPage: number) => void;
+  isTocPage?: boolean;
 };
 
+export const isTocPageContent = (text: string): boolean => {
+  if (!text) return false;
 
+  // 1. Keyword check: "مۇندەرىجە" (Table of contents in Uyghur)
+  if (text.includes('مۇندەرىجە')) {
+    return true;
+  }
+
+  const lines = text
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean);
+
+  if (!lines.length) return false;
+
+  // 2. Dot/leader pattern (Standard TOC style, e.g. "Title ........ 12")
+  const dotLeaderPattern = /(?:[.\u00b7\u2022\u2219\u22c5\u2024\ufe52\u3002]\s*){4,}|…{2,}|_{4,}|-{4,}/;
+  const dotLeaderCount = lines.filter(line => dotLeaderPattern.test(line)).length;
+  if (dotLeaderCount >= 2) {
+    return true;
+  }
+
+  // 3. Pipe table TOC entries (e.g. "| Title | 12 |")
+  const pipeTocPattern = /^\|.*\|\s*[\d\u0660-\u0669\u06F0-\u06F9]+\s*\|?$/;
+  const pipeTocCount = lines.filter(line => pipeTocPattern.test(line)).length;
+  if (pipeTocCount >= 3 && (pipeTocCount / lines.length) >= 0.3) {
+    return true;
+  }
+
+  return false;
+};
 
 const ARABIC_DIACRITIC_RE = /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/;
 const ARABIC_SCRIPT_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/;
@@ -249,10 +280,11 @@ const extractRowPageNumber = (row: string[]): number | null => {
 
 const isTableRow = (line: string) => /^\s*\|/.test(line);
 const isTableSeparator = (line: string) => /^\s*\|[\s|:=-]+\|?\s*$/.test(line);
-const isBlockStart = (line: string) =>
-  isHr(line) || isHeading(line) || isQuote(line) || isTocLine(line) || isOrderedList(line) || isUnorderedList(line) || isTableRow(line);
+const isBlockStart = (line: string, isToc: boolean = false) =>
+  isHr(line) || isHeading(line) || isQuote(line) || (isToc && isTocLine(line)) || isOrderedList(line) || isUnorderedList(line) || isTableRow(line);
 
-export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ content, className, style, onReferenceClick, contentPageOffset, onTocPageClick }) => {
+export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ content, className, style, onReferenceClick, contentPageOffset, onTocPageClick, isTocPage }) => {
+  const effectiveIsTocPage = isTocPage !== undefined ? isTocPage : isTocPageContent(content);
   const normalized = (content || '').replace(/\\n/g, '\n').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const lines = normalized
     .split('\n')
@@ -260,7 +292,7 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ con
     .filter(line => {
       if (!line) return false;
       // Allow lines that contain text OR start with markdown block markers (including table rows/separators)
-      return /[A-Za-z\u0600-\u06FF]/.test(line) || isBlockStart(line) || isTableSeparator(line);
+      return /[A-Za-z\u0600-\u06FF]/.test(line) || isBlockStart(line, effectiveIsTocPage) || isTableSeparator(line);
     });
   const blocks: React.ReactNode[] = [];
   let i = 0;
@@ -279,7 +311,7 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ con
       continue;
     }
 
-    if (isTocLine(line)) {
+    if (effectiveIsTocPage && isTocLine(line)) {
       const tocLines: string[] = [];
       while (i < lines.length && lines[i].trim() && isTocLine(lines[i])) {
         tocLines.push(lines[i]);
@@ -302,7 +334,7 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ con
         }
       }
 
-      const hasOffset = contentPageOffset !== undefined && contentPageOffset !== null && contentPageOffset > 0;
+      const hasOffset = effectiveIsTocPage && contentPageOffset !== undefined && contentPageOffset !== null && contentPageOffset > 0;
 
       blocks.push(
         <div key={`toc-${key++}`} className="space-y-1 whitespace-pre-wrap tabular-nums">
@@ -325,7 +357,6 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ con
                     }
                   }}
                   className="w-full text-left rtl:text-right text-[#0369a1] dark:text-[#38bdf8] hover:underline cursor-pointer transition-colors block py-0.5 px-1 -mx-1 rounded hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 group"
-                  title={`Jump to page ${targetPhysicalPage}`}
                 >
                   <span className="group-hover:opacity-90">{cleanDisplay}</span>
                 </button>
@@ -371,9 +402,9 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ con
       continue;
     }
 
-    if (isOrderedList(line) && !isTocLine(line)) {
+    if (isOrderedList(line) && !(effectiveIsTocPage && isTocLine(line))) {
       const items: string[] = [];
-      while (i < lines.length && isOrderedList(lines[i]) && !isTocLine(lines[i])) {
+      while (i < lines.length && isOrderedList(lines[i]) && !(effectiveIsTocPage && isTocLine(lines[i]))) {
         items.push(lines[i].replace(/^\s*\d+[.)]\s+/, ''));
         i += 1;
       }
@@ -387,9 +418,9 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ con
       continue;
     }
 
-    if (isUnorderedList(line) && !isTocLine(line)) {
+    if (isUnorderedList(line) && !(effectiveIsTocPage && isTocLine(line))) {
       const items: string[] = [];
-      while (i < lines.length && isUnorderedList(lines[i]) && !isTocLine(lines[i])) {
+      while (i < lines.length && isUnorderedList(lines[i]) && !(effectiveIsTocPage && isTocLine(lines[i]))) {
         items.push(lines[i].replace(/^\s*[-*+•]\s+/, ''));
         i += 1;
       }
@@ -413,7 +444,7 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ con
         row.split('|').slice(1, -1).map(cell => cell.trim());
       const hasSeparator = tableLines.some(l => isTableSeparator(l));
       const dataLines = tableLines.filter(l => !isTableSeparator(l));
-      const hasOffset = contentPageOffset !== undefined && contentPageOffset !== null && contentPageOffset > 0;
+      const hasOffset = effectiveIsTocPage && contentPageOffset !== undefined && contentPageOffset !== null && contentPageOffset > 0;
 
       if (dataLines.length > 0) {
         if (hasSeparator) {
@@ -453,7 +484,6 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ con
                           ${rowIdx % 2 === 1 ? 'bg-slate-50/50 dark:bg-slate-900/30' : ''}
                           ${isClickable ? 'cursor-pointer hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/15 text-[#0369a1] dark:text-[#38bdf8] transition-colors group' : ''}
                         `}
-                        title={isClickable ? `Jump to page ${targetPhysicalPage}` : undefined}
                       >
                         {row.map((cell, cellIdx) => (
                           <td key={cellIdx} className={`border border-slate-200 dark:border-slate-800 px-3 py-2 text-right ${isClickable ? 'group-hover:underline' : ''}`}>
@@ -493,7 +523,6 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ con
                           ${rowIdx % 2 === 1 ? 'bg-slate-50/50 dark:bg-slate-900/30' : ''}
                           ${isClickable ? 'cursor-pointer hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/15 text-[#0369a1] dark:text-[#38bdf8] transition-colors group' : ''}
                         `}
-                        title={isClickable ? `Jump to page ${targetPhysicalPage}` : undefined}
                       >
                         {row.map((cell, cellIdx) => (
                           <td key={cellIdx} className={`px-3 py-1.5 text-right ${isClickable ? 'group-hover:underline' : ''}`}>
@@ -513,7 +542,7 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ con
     }
 
     const paragraphLines: string[] = [];
-    while (i < lines.length && lines[i].trim() && !isBlockStart(lines[i])) {
+    while (i < lines.length && lines[i].trim() && !isBlockStart(lines[i], effectiveIsTocPage)) {
       paragraphLines.push(lines[i]);
       i += 1;
     }

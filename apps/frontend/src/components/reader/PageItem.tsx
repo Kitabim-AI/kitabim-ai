@@ -1,4 +1,4 @@
-import { BookmarkCheck, Edit3, Loader2, RotateCcw, Save } from 'lucide-react';
+import { BookmarkCheck, Edit3, ListTree, ListX, Loader2, RotateCcw, Save } from 'lucide-react';
 import React from 'react';
 import { useIsEditor } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
@@ -24,6 +24,7 @@ interface PageItemProps {
   onEdit: () => void;
   onReprocess: () => void;
   onSetStartPage?: () => void;
+  onToggleToc?: (nextIsToc: boolean) => void;
 
   tempText: string;
   onTempTextChange: (text: string) => void;
@@ -37,7 +38,7 @@ interface PageItemProps {
 }
 
 export const PageItem: React.FC<PageItemProps> = ({
-  page, isActive, isEditing, fontSize, contentFontFamily, contentFontClassName, onSetActive, onEdit, onReprocess, onSetStartPage,
+  page, isActive, isEditing, fontSize, contentFontFamily, contentFontClassName, onSetActive, onEdit, onReprocess, onSetStartPage, onToggleToc,
   tempText, onTempTextChange, onSave, onCancel, isLoading, isSaving, isFullscreen, contentPageOffset, onTocPageClick
 }) => {
   const { t } = useI18n();
@@ -76,22 +77,44 @@ export const PageItem: React.FC<PageItemProps> = ({
     return () => observer.disconnect();
   }, [isEditing, adjustHeight]);
 
+  // Stable object identity so MarkdownContent's React.memo can actually skip
+  // re-parsing already-loaded pages when an unrelated page's state changes.
+  const contentStyle = React.useMemo(
+    () => ({ fontSize: `${fontSize}px`, fontFamily: contentFontFamily }),
+    [fontSize, contentFontFamily]
+  );
+
+  const displayText = React.useMemo(
+    () => (contentFontClassName === 'reader-font-adobe' ? normalizeArabic(page.text || '') : (page.text || "...")),
+    [contentFontClassName, page.text]
+  );
+
   return (
     <div onMouseEnter={onSetActive} className={`group relative p-6 rounded-[24px] transition-all duration-300 border ${isEditing ? 'flex-1 flex flex-col min-h-0' : ''} ${isActive ? 'bg-white dark:bg-slate-900/60 shadow-xl border-[#0369a1]/10 dark:border-[#38bdf8]/10' : 'border-transparent'}`}>
       <div className="flex items-center justify-between mb-4 border-b border-[#0369a1]/5 dark:border-slate-800 pb-3">
         <div className="flex items-center gap-2">
           {isEditor && !isEditing && (
             <div className={`flex items-center gap-2 transition-all ${isFullscreen ? 'hidden' : `${isActive ? 'opacity-100' : 'opacity-0'} sm:group-hover:opacity-100`}`}>
-              <button onClick={onReprocess} className="p-2 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg" title={t('reader.reprocessPage')}><RotateCcw size={14} /></button>
-              <button onClick={onEdit} className="flex items-center gap-2 px-3 py-1.5 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg text-xs font-bold uppercase"><Edit3 size={12} /> {t('reader.editPage')}</button>
+              <button onClick={onReprocess} className="flex items-center justify-center h-8 w-8 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg" title={t('reader.reprocessPage')}><RotateCcw size={14} /></button>
+              <button onClick={onEdit} className="flex items-center justify-center sm:justify-start gap-2 h-8 w-8 sm:w-auto sm:px-3 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg text-xs font-bold uppercase"><Edit3 size={14} /> <span className="hidden sm:inline">{t('reader.editPage')}</span></button>
               {onSetStartPage && (
                 <button
                   onClick={onSetStartPage}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg text-xs font-bold uppercase"
+                  className="flex items-center justify-center sm:justify-start gap-1.5 h-8 w-8 sm:w-auto sm:px-3 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg text-xs font-bold uppercase"
                   title={t('reader.setStartPageTitle') || "Mark this physical page as Content Page 1"}
                 >
-                  <BookmarkCheck size={12} />
-                  <span>{t('reader.setPageOne') || "Mark as Page 1"}</span>
+                  <BookmarkCheck size={14} />
+                  <span className="hidden sm:inline">{t('reader.setPageOne') || "Mark as Page 1"}</span>
+                </button>
+              )}
+              {onToggleToc && (
+                <button
+                  onClick={() => onToggleToc(!(page?.isToc ?? page?.is_toc))}
+                  className="flex items-center justify-center sm:justify-start gap-1.5 h-8 w-8 sm:w-auto sm:px-3 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg text-xs font-bold uppercase"
+                  title={(page?.isToc ?? page?.is_toc) ? t('reader.unmarkAsTocTitle') : t('reader.markAsTocTitle')}
+                >
+                  {(page?.isToc ?? page?.is_toc) ? <ListX size={14} /> : <ListTree size={14} />}
+                  <span className="hidden sm:inline">{(page?.isToc ?? page?.is_toc) ? t('reader.unmarkAsToc') : t('reader.markAsToc')}</span>
                 </button>
               )}
             </div>
@@ -114,9 +137,9 @@ export const PageItem: React.FC<PageItemProps> = ({
               ref={textareaRef}
               value={contentFontClassName === 'reader-font-adobe' ? normalizeArabic(tempText) : tempText} 
               onChange={(e) => onTempTextChange(contentFontClassName === 'reader-font-adobe' ? normalizeArabic(e.target.value) : e.target.value)} 
-              className={`flex-1 w-full h-full p-4 uyghur-text border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl outline-none resize-none bg-white dark:bg-slate-800 text-[#1a1a1a] dark:text-slate-100 relative z-10 custom-scrollbar leading-relaxed ${contentFontClassName || ''}`} 
-              style={{ fontSize: `${fontSize}px`, fontFamily: contentFontFamily }} 
-              dir="rtl" 
+              className={`flex-1 w-full h-full p-4 uyghur-text border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl outline-none resize-none bg-white dark:bg-slate-800 text-[#1a1a1a] dark:text-slate-100 relative z-10 custom-scrollbar leading-relaxed ${contentFontClassName || ''}`}
+              style={contentStyle}
+              dir="rtl"
             />
           </div>
           <div className="flex items-center gap-3">
@@ -141,12 +164,13 @@ export const PageItem: React.FC<PageItemProps> = ({
         isLoading ? (
           <div className="flex flex-col items-center justify-center py-10 opacity-50"><Loader2 className="animate-spin text-[#0369a1] dark:text-[#38bdf8] mb-2" /><span className="text-xs uppercase dark:text-slate-400">{t('admin.table.recognizing')}</span></div>
         ) : (
-          <MarkdownContent 
-            content={contentFontClassName === 'reader-font-adobe' ? normalizeArabic(page.text || '') : (page.text || "...")} 
-            className={`uyghur-text text-[#1a1a1a] dark:text-slate-100 ${contentFontClassName || ''}`} 
-            style={{ fontSize: `${fontSize}px`, fontFamily: contentFontFamily }} 
+          <MarkdownContent
+            content={displayText}
+            className={`uyghur-text text-[#1a1a1a] dark:text-slate-100 ${contentFontClassName || ''}`}
+            style={contentStyle}
             contentPageOffset={contentPageOffset}
             onTocPageClick={onTocPageClick}
+            isTocPage={page?.isToc ?? page?.is_toc}
           />
         )
       )}

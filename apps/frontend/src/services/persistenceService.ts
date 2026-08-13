@@ -345,6 +345,18 @@ export const PersistenceService = {
     }
   },
 
+  async setPageToc(bookId: string, pageNum: number, isToc: boolean): Promise<{ isToc: boolean; contentPageOffset?: number }> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/pages/${pageNum}/toc`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isToc })
+    });
+    if (!response.ok) {
+      throw new Error("Failed to update page ToC flag");
+    }
+    return response.json();
+  },
+
   async updateBookMetadata(book_id: string, updates: Partial<Book>): Promise<void> {
     const response = await authFetch(`${API_BASE}/books/${book_id}`, {
       method: 'PUT',

@@ -48,6 +48,14 @@ class ExtractionResult(BaseModel):
     is_toc: bool = False  # API: isToc
 
 
+class PageTocUpdate(BaseModel):
+    """Request body for manually marking/unmarking a page as ToC"""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    is_toc: bool  # API: isToc
+
+
 class Book(BaseModel):
     """
     Book schema with automatic camelCase conversion from SQLAlchemy models.
