@@ -576,6 +576,8 @@ async def resolve_entity(
         )
         try:
             semantic_weight = float(raw_semantic_weight)
+            if math.isnan(semantic_weight):
+                raise ValueError("entity_semantic_weight is NaN")
         except (TypeError, ValueError):
             log_json(
                 logger,

@@ -823,6 +823,47 @@ async def test_resolve_entity_falls_back_to_default_semantic_weight_on_malformed
 
 
 @pytest.mark.asyncio
+async def test_resolve_entity_falls_back_to_default_semantic_weight_on_nan_config():
+    session = AsyncMock()
+    graph_repo = AsyncMock()
+    config_repo = _resolve_entity_common_mocks(
+        graph_repo,
+        {
+            "entity_semantic_matching_enabled": "true",
+            # float("nan") does not raise ValueError, so it needs its own guard
+            # distinct from the "not a valid float" malformed-input case — an
+            # un-clamped NaN would otherwise flow into _graded_score's arithmetic.
+            "entity_semantic_weight": "nan",
+            "entity_semantic_candidate_limit": "5",
+        },
+    )
+
+    with (
+        patch(
+            "app.services.entity_resolution_service.GraphResolutionQueueRepository"
+        ) as MockQueueRepo,
+        patch(
+            "app.services.entity_resolution_service.GraphResolutionReviewsRepository"
+        ),
+        patch(
+            "app.services.entity_resolution_service.SystemConfigsRepository"
+        ) as MockConfigRepo,
+        patch(
+            "app.services.entity_resolution_service.update_alias_cache", new=AsyncMock()
+        ),
+        patch(
+            "app.services.entity_resolution_service._graded_score", return_value=0.1
+        ) as mock_graded_score,
+    ):
+        MockQueueRepo.return_value = AsyncMock()
+        MockConfigRepo.return_value = config_repo
+
+        await resolve_entity(session, graph_repo, "e1")
+
+        assert mock_graded_score.call_args.kwargs["semantic_weight"] == 0.15
+
+
+@pytest.mark.asyncio
 async def test_resolve_entity_falls_back_to_default_candidate_limit_on_malformed_config():
     session = AsyncMock()
     graph_repo = AsyncMock()
