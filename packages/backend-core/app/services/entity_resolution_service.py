@@ -512,6 +512,14 @@ async def resolve_entity(
     similarity_threshold = int(
         await config_repo.get_value("resolution_similarity_threshold", "2")
     )
+    semantic_matching_enabled = (
+        await config_repo.get_value("entity_semantic_matching_enabled", "false")
+    ).strip().lower() == "true"
+    semantic_weight = (
+        float(await config_repo.get_value("entity_semantic_weight", "0.15"))
+        if semantic_matching_enabled
+        else 0.0
+    )
 
     await graph_repo.set_resolution_status(entity_id, "resolving")
 
@@ -523,6 +531,22 @@ async def resolve_entity(
         book_id=book_id,
         edit_distance=similarity_threshold,
     )
+
+    if semantic_matching_enabled and entity.get("profile_embedding"):
+        candidate_limit = int(
+            await config_repo.get_value("entity_semantic_candidate_limit", "5")
+        )
+        semantic_candidates = await graph_repo.find_semantic_candidates(
+            entity_id=entity_id,
+            embedding=entity["profile_embedding"],
+            scope=scope,
+            book_id=book_id,
+            limit=candidate_limit,
+        )
+        seen_ids = {c["id"] for c in candidates}
+        candidates = candidates + [
+            c for c in semantic_candidates if c["id"] not in seen_ids
+        ]
 
     entity_facts = await graph_repo.get_entity_facts(entity_id)
     review_created = False
@@ -545,6 +569,7 @@ async def resolve_entity(
             entity_facts,
             candidate_facts,
             hard_match=(hard == "match"),
+            semantic_weight=semantic_weight,
         )
         if score >= STRONG_MERGE_SCORE:
             decision = "merge"

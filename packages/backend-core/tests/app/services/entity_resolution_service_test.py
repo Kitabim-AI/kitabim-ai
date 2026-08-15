@@ -484,6 +484,134 @@ async def test_resolve_entity_no_candidates_marks_succeeded_and_resolved():
 
 
 @pytest.mark.asyncio
+async def test_resolve_entity_skips_semantic_lookup_when_disabled():
+    session = AsyncMock()
+    graph_repo = AsyncMock()
+    graph_repo.get_entity_by_id.return_value = {
+        "id": "e1",
+        "canonical_name": "Solo",
+        "aliases": [],
+        "scope": "nonfiction",
+        "book_id": None,
+        "profile_embedding": [1.0, 0.0],
+    }
+    graph_repo.find_resolution_candidates.return_value = []
+    graph_repo.get_entity_facts.return_value = {
+        "child_of": [],
+        "born_in": [],
+        "died_in": [],
+        "neighbors": [],
+    }
+
+    with (
+        patch(
+            "app.services.entity_resolution_service.GraphResolutionQueueRepository"
+        ) as MockQueueRepo,
+        patch(
+            "app.services.entity_resolution_service.GraphResolutionReviewsRepository"
+        ),
+        patch(
+            "app.services.entity_resolution_service.SystemConfigsRepository"
+        ) as MockConfigRepo,
+        patch(
+            "app.services.entity_resolution_service.update_alias_cache", new=AsyncMock()
+        ),
+    ):
+        queue_repo = AsyncMock()
+        MockQueueRepo.return_value = queue_repo
+        config_repo = AsyncMock()
+        config_repo.get_value.side_effect = lambda key, default=None: {
+            "resolution_similarity_threshold": "2",
+            "entity_semantic_matching_enabled": "false",
+        }.get(key, default)
+        MockConfigRepo.return_value = config_repo
+
+        await resolve_entity(session, graph_repo, "e1")
+
+        graph_repo.find_semantic_candidates.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_resolve_entity_merges_semantic_candidates_when_enabled():
+    session = AsyncMock()
+    graph_repo = AsyncMock()
+    graph_repo.get_entity_by_id.side_effect = lambda eid: {
+        "e1": {
+            "id": "e1",
+            "canonical_name": "Temur",
+            "aliases": [],
+            "scope": "nonfiction",
+            "book_id": None,
+            "profile_embedding": [1.0, 0.0],
+        },
+        "sem-cand-1": {
+            "id": "sem-cand-1",
+            "canonical_name": "the Iron Ruler",
+            "aliases": [],
+            "profile_embedding": [1.0, 0.0],
+        },
+    }.get(eid)
+    graph_repo.find_resolution_candidates.return_value = []
+    graph_repo.find_semantic_candidates.return_value = [
+        {"id": "sem-cand-1", "canonical_name": "the Iron Ruler"}
+    ]
+    graph_repo.get_entity_facts.return_value = {
+        "child_of": [],
+        "born_in": [],
+        "died_in": [],
+        "neighbors": [],
+    }
+
+    with (
+        patch(
+            "app.services.entity_resolution_service.GraphResolutionQueueRepository"
+        ) as MockQueueRepo,
+        patch(
+            "app.services.entity_resolution_service.GraphResolutionReviewsRepository"
+        ) as MockReviewsRepo,
+        patch(
+            "app.services.entity_resolution_service.SystemConfigsRepository"
+        ) as MockConfigRepo,
+        patch(
+            "app.services.entity_resolution_service.update_alias_cache", new=AsyncMock()
+        ),
+        patch(
+            "app.services.entity_resolution_service._gray_zone_judge",
+            new=AsyncMock(
+                return_value=EntityResolutionVerdict(
+                    verdict="unsure", confidence=0.5, reasoning="test"
+                )
+            ),
+        ),
+    ):
+        queue_repo = AsyncMock()
+        MockQueueRepo.return_value = queue_repo
+        reviews_repo = AsyncMock()
+        MockReviewsRepo.return_value = reviews_repo
+        config_repo = AsyncMock()
+        config_repo.get_value.side_effect = lambda key, default=None: {
+            "resolution_similarity_threshold": "2",
+            "entity_semantic_matching_enabled": "true",
+            "entity_semantic_weight": "0.5",
+            "entity_semantic_candidate_limit": "5",
+        }.get(key, default)
+        MockConfigRepo.return_value = config_repo
+
+        await resolve_entity(session, graph_repo, "e1")
+
+        graph_repo.find_semantic_candidates.assert_called_once_with(
+            entity_id="e1",
+            embedding=[1.0, 0.0],
+            scope="nonfiction",
+            book_id=None,
+            limit=5,
+        )
+        # The semantic-only candidate reached the per-candidate loop (fetched via
+        # get_entity_by_id, same as any other candidate).
+        graph_repo.get_entity_by_id.assert_any_call("sem-cand-1")
+
+
+@pytest.mark.asyncio
 async def test_resolve_entity_hard_conflict_skips_candidate_and_succeeds():
     session = AsyncMock()
     graph_repo = AsyncMock()
