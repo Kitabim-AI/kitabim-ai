@@ -1,9 +1,12 @@
+import unicodedata
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.entity_resolution_service import (
     EntityResolutionVerdict,
     _check_hard_constraints,
+    _embed_texts_batched,
     _graded_score,
     build_entity_profile_text,
     cosine_similarity,
@@ -136,6 +139,21 @@ def test_build_entity_profile_text_handles_missing_optional_fields():
     assert build_entity_profile_text(entity_data) == "Solo"
 
 
+def test_build_entity_profile_text_nfc_normalizes_final_text():
+    # "Ü" as a single precomposed codepoint (NFC) vs. "U" + combining diaeresis
+    # (NFD) look visually identical but are different strings/embeddings unless
+    # normalized. Assemble the profile text so only the *joined* string is
+    # decomposed (each individual field is already NFC on its own) — this proves
+    # normalization is applied to the final assembled text, not just per-field.
+    entity_data = {
+        "canonical_name": "Uyghur",
+        "aliases": ["Ui" + "̈" + "ghur"],  # "Uïghur" in NFD form
+    }
+    text = build_entity_profile_text(entity_data)
+    assert text == unicodedata.normalize("NFC", text)
+    assert "̈" not in text  # combining diaeresis was folded into a precomposed char
+
+
 def test_graded_score_blends_semantic_similarity_when_weighted():
     entity = {
         "canonical_name": "Temur",
@@ -231,6 +249,87 @@ async def test_embed_and_store_entity_profiles_skips_store_on_count_mismatch():
     await embed_and_store_entity_profiles(graph_repo, entities, embeddings_model)
 
     graph_repo.store_profile_embeddings_bulk.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_embed_texts_batched_chunks_by_explicit_batch_size():
+    embeddings_model = AsyncMock()
+    embeddings_model.aembed_documents.side_effect = [
+        [[0.0], [0.1]],
+        [[0.2], [0.3]],
+        [[0.4]],
+    ]
+
+    vectors = await _embed_texts_batched(
+        embeddings_model, ["a", "b", "c", "d", "e"], batch_size=2
+    )
+
+    assert vectors == [[0.0], [0.1], [0.2], [0.3], [0.4]]
+    assert embeddings_model.aembed_documents.call_count == 3
+    embeddings_model.aembed_documents.assert_any_call(["a", "b"])
+    embeddings_model.aembed_documents.assert_any_call(["c", "d"])
+    embeddings_model.aembed_documents.assert_any_call(["e"])
+
+
+@pytest.mark.asyncio
+async def test_embed_texts_batched_defaults_to_settings_embed_batch_size():
+    embeddings_model = AsyncMock()
+    embeddings_model.aembed_documents.return_value = [[0.0]]
+
+    with patch("app.services.entity_resolution_service.settings") as mock_settings:
+        mock_settings.embed_batch_size = 50
+        await _embed_texts_batched(embeddings_model, ["a"])
+
+    # No explicit batch_size passed -> falls back to settings.embed_batch_size,
+    # matching services/worker/jobs/embedding_job.py's existing batching convention
+    # (rather than inventing a separate magic number for entity profile embeddings).
+    embeddings_model.aembed_documents.assert_called_once_with(["a"])
+
+
+@pytest.mark.asyncio
+async def test_embed_texts_batched_partial_batch_mismatch_does_not_misalign_later_batches():
+    embeddings_model = AsyncMock()
+    embeddings_model.aembed_documents.side_effect = [
+        [[0.0]],  # first batch of 2 short-responds with only 1 vector
+        [[0.2], [0.3]],  # second batch responds correctly
+    ]
+
+    vectors = await _embed_texts_batched(
+        embeddings_model, ["a", "b", "c", "d"], batch_size=2
+    )
+
+    # The mismatched first batch is represented as None for each of its items
+    # (never the short response), so "c"/"d"'s vectors stay correctly paired with
+    # their own positions instead of shifting up to fill the gap.
+    assert vectors == [None, None, [0.2], [0.3]]
+
+
+@pytest.mark.asyncio
+async def test_embed_and_store_entity_profiles_batches_large_entity_lists():
+    graph_repo = AsyncMock()
+    embeddings_model = AsyncMock()
+    embeddings_model.aembed_documents.side_effect = [
+        [[0.0], [0.1]],
+        [[0.2]],
+    ]
+    entities = [
+        {"id": "e1", "canonical_name": "A", "aliases": []},
+        {"id": "e2", "canonical_name": "B", "aliases": []},
+        {"id": "e3", "canonical_name": "C", "aliases": []},
+    ]
+
+    with patch("app.services.entity_resolution_service.settings") as mock_settings:
+        mock_settings.embed_batch_size = 2
+        await embed_and_store_entity_profiles(graph_repo, entities, embeddings_model)
+
+    assert embeddings_model.aembed_documents.call_count == 2
+    graph_repo.store_profile_embeddings_bulk.assert_called_once_with(
+        [
+            {"id": "e1", "embedding": [0.0]},
+            {"id": "e2", "embedding": [0.1]},
+            {"id": "e3", "embedding": [0.2]},
+        ]
+    )
 
 
 @pytest.mark.asyncio
@@ -609,6 +708,232 @@ async def test_resolve_entity_merges_semantic_candidates_when_enabled():
         # The semantic-only candidate reached the per-candidate loop (fetched via
         # get_entity_by_id, same as any other candidate).
         graph_repo.get_entity_by_id.assert_any_call("sem-cand-1")
+
+
+def _resolve_entity_common_mocks(graph_repo, config_overrides):
+    """Shared per-test patch context for the config-parsing/clamping tests below —
+    a single lexical candidate reaches _graded_score, which is patched so the test
+    can assert on the exact semantic_weight it was called with."""
+    graph_repo.get_entity_by_id.return_value = {
+        "id": "e1",
+        "canonical_name": "Temur",
+        "aliases": [],
+        "scope": "nonfiction",
+        "book_id": None,
+        "profile_embedding": [1.0, 0.0],
+    }
+    graph_repo.find_resolution_candidates.return_value = [
+        {"id": "cand-1", "canonical_name": "Temur"}
+    ]
+    graph_repo.find_semantic_candidates.return_value = []
+    graph_repo.get_entity_facts.return_value = {
+        "child_of": [],
+        "born_in": [],
+        "died_in": [],
+        "neighbors": [],
+    }
+    config_repo = AsyncMock()
+    config_repo.get_value.side_effect = lambda key, default=None: {
+        "resolution_similarity_threshold": "2",
+        **config_overrides,
+    }.get(key, default)
+    return config_repo
+
+
+@pytest.mark.asyncio
+async def test_resolve_entity_clamps_semantic_weight_above_one():
+    session = AsyncMock()
+    graph_repo = AsyncMock()
+    config_repo = _resolve_entity_common_mocks(
+        graph_repo,
+        {
+            "entity_semantic_matching_enabled": "true",
+            # A misconfigured admin typing "15" meaning "15%" — unclamped this drives
+            # lexical_weight negative in _graded_score, which can push the blended
+            # score above 1.0 and clear STRONG_MERGE_SCORE for nearly every candidate.
+            "entity_semantic_weight": "15",
+            "entity_semantic_candidate_limit": "5",
+        },
+    )
+
+    with (
+        patch(
+            "app.services.entity_resolution_service.GraphResolutionQueueRepository"
+        ) as MockQueueRepo,
+        patch(
+            "app.services.entity_resolution_service.GraphResolutionReviewsRepository"
+        ),
+        patch(
+            "app.services.entity_resolution_service.SystemConfigsRepository"
+        ) as MockConfigRepo,
+        patch(
+            "app.services.entity_resolution_service.update_alias_cache", new=AsyncMock()
+        ),
+        patch(
+            "app.services.entity_resolution_service._graded_score", return_value=0.1
+        ) as mock_graded_score,
+    ):
+        MockQueueRepo.return_value = AsyncMock()
+        MockConfigRepo.return_value = config_repo
+
+        await resolve_entity(session, graph_repo, "e1")
+
+        assert mock_graded_score.call_args.kwargs["semantic_weight"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_resolve_entity_falls_back_to_default_semantic_weight_on_malformed_config():
+    session = AsyncMock()
+    graph_repo = AsyncMock()
+    config_repo = _resolve_entity_common_mocks(
+        graph_repo,
+        {
+            "entity_semantic_matching_enabled": "true",
+            "entity_semantic_weight": "not-a-number",
+            "entity_semantic_candidate_limit": "5",
+        },
+    )
+
+    with (
+        patch(
+            "app.services.entity_resolution_service.GraphResolutionQueueRepository"
+        ) as MockQueueRepo,
+        patch(
+            "app.services.entity_resolution_service.GraphResolutionReviewsRepository"
+        ),
+        patch(
+            "app.services.entity_resolution_service.SystemConfigsRepository"
+        ) as MockConfigRepo,
+        patch(
+            "app.services.entity_resolution_service.update_alias_cache", new=AsyncMock()
+        ),
+        patch(
+            "app.services.entity_resolution_service._graded_score", return_value=0.1
+        ) as mock_graded_score,
+    ):
+        MockQueueRepo.return_value = AsyncMock()
+        MockConfigRepo.return_value = config_repo
+
+        # Must not raise — a malformed config value degrades to the documented
+        # 0.15 default instead of letting float(...) blow up the whole entity's
+        # resolution.
+        await resolve_entity(session, graph_repo, "e1")
+
+        assert mock_graded_score.call_args.kwargs["semantic_weight"] == 0.15
+
+
+@pytest.mark.asyncio
+async def test_resolve_entity_falls_back_to_default_candidate_limit_on_malformed_config():
+    session = AsyncMock()
+    graph_repo = AsyncMock()
+    config_repo = _resolve_entity_common_mocks(
+        graph_repo,
+        {
+            "entity_semantic_matching_enabled": "true",
+            "entity_semantic_weight": "0.15",
+            "entity_semantic_candidate_limit": "not-an-int",
+        },
+    )
+
+    with (
+        patch(
+            "app.services.entity_resolution_service.GraphResolutionQueueRepository"
+        ) as MockQueueRepo,
+        patch(
+            "app.services.entity_resolution_service.GraphResolutionReviewsRepository"
+        ),
+        patch(
+            "app.services.entity_resolution_service.SystemConfigsRepository"
+        ) as MockConfigRepo,
+        patch(
+            "app.services.entity_resolution_service.update_alias_cache", new=AsyncMock()
+        ),
+        patch("app.services.entity_resolution_service._graded_score", return_value=0.1),
+    ):
+        MockQueueRepo.return_value = AsyncMock()
+        MockConfigRepo.return_value = config_repo
+
+        await resolve_entity(session, graph_repo, "e1")
+
+        graph_repo.find_semantic_candidates.assert_called_once_with(
+            entity_id="e1",
+            embedding=[1.0, 0.0],
+            scope="nonfiction",
+            book_id=None,
+            limit=5,
+        )
+
+
+@pytest.mark.asyncio
+async def test_resolve_entity_degrades_to_lexical_only_when_semantic_lookup_raises():
+    session = AsyncMock()
+    graph_repo = AsyncMock()
+    graph_repo.get_entity_by_id.side_effect = lambda eid: {
+        "e1": {
+            "id": "e1",
+            "canonical_name": "Temur",
+            "aliases": [],
+            "scope": "nonfiction",
+            "book_id": None,
+            "profile_embedding": [1.0, 0.0],
+        },
+        "lex-cand-1": {
+            "id": "lex-cand-1",
+            "canonical_name": "Zeta",  # deliberately dissimilar -> low score -> "leave"
+            "aliases": [],
+        },
+    }.get(eid)
+    graph_repo.find_resolution_candidates.return_value = [
+        {"id": "lex-cand-1", "canonical_name": "Zeta"}
+    ]
+    graph_repo.find_semantic_candidates.side_effect = RuntimeError(
+        "vector index unavailable"
+    )
+    graph_repo.get_entity_facts.return_value = {
+        "child_of": [],
+        "born_in": [],
+        "died_in": [],
+        "neighbors": [],
+    }
+
+    with (
+        patch(
+            "app.services.entity_resolution_service.GraphResolutionQueueRepository"
+        ) as MockQueueRepo,
+        patch(
+            "app.services.entity_resolution_service.GraphResolutionReviewsRepository"
+        ),
+        patch(
+            "app.services.entity_resolution_service.SystemConfigsRepository"
+        ) as MockConfigRepo,
+        patch(
+            "app.services.entity_resolution_service.update_alias_cache", new=AsyncMock()
+        ),
+    ):
+        queue_repo = AsyncMock()
+        MockQueueRepo.return_value = queue_repo
+        config_repo = AsyncMock()
+        config_repo.get_value.side_effect = lambda key, default=None: {
+            "resolution_similarity_threshold": "2",
+            "entity_semantic_matching_enabled": "true",
+            "entity_semantic_weight": "0.15",
+            "entity_semantic_candidate_limit": "5",
+        }.get(key, default)
+        MockConfigRepo.return_value = config_repo
+
+        # Must not raise even though find_semantic_candidates blew up — resolution
+        # degrades to lexical-only candidates and still runs to completion, rather
+        # than leaving set_resolution_status(..., "resolving") stuck forever (every
+        # other candidate query in this file excludes 'resolving' nodes, so a stuck
+        # status would permanently poison the candidate pool for everyone else).
+        await resolve_entity(session, graph_repo, "e1")
+
+        graph_repo.find_semantic_candidates.assert_called_once()
+        # The lexical candidate from find_resolution_candidates still reached the
+        # per-candidate loop despite the semantic lookup failure.
+        graph_repo.get_entity_by_id.assert_any_call("lex-cand-1")
+        graph_repo.set_resolution_status.assert_any_call("e1", "resolved")
+        queue_repo.mark_status.assert_called_once_with("e1", "succeeded")
 
 
 @pytest.mark.asyncio
