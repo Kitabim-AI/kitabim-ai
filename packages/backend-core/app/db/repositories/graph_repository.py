@@ -510,8 +510,18 @@ class GraphRepository:
 
         Returns candidates shaped like `find_resolution_candidates`'s output so both
         candidate sources merge into one list in `resolve_entity` without reshaping.
-        Requests one extra result (`k = limit + 1`) since the entity's own node is
-        always the top hit against its own embedding and is filtered out below.
+
+        The vector index selects its `k` nearest neighbors *before* the `WHERE`
+        clause's scope/book_id filter runs (unlike `find_resolution_candidates`,
+        which filters via a streaming procedure before its `LIMIT`). Requesting only
+        `limit + 1` would mean the fixed top-k is chosen globally across the whole
+        graph, so for a scoped (fiction, book_id-scoped) entity the odds that any of
+        those globally-nearest neighbors happen to share its book are low — this
+        would routinely return zero candidates even when good semantic matches exist
+        within the correct scope/book. Over-fetching substantially (`limit * 10`,
+        floored at 50) before the post-filter narrows it down makes it far more
+        likely that enough same-scope/same-book neighbors survive the filter; the
+        final `LIMIT $limit` in `RETURN` still caps the result size.
         """
         query = """
         CALL db.index.vector.queryNodes('entity_profile_embedding_idx', $k, $embedding)
@@ -534,7 +544,7 @@ class GraphRepository:
                 entity_id=entity_id,
                 scope=scope,
                 book_id=book_id,
-                k=limit + 1,
+                k=max(limit * 10, 50),
                 limit=limit,
             )
             return await result.data()
