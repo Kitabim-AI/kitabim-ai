@@ -93,6 +93,8 @@ class GraphRepository:
         plugin is installed in either compose file) used by the resolution
         pass's fuzzy candidate lookup; the plain B-tree indexes remain for
         exact-match reads elsewhere (e.g. the admin search in GraphView.tsx).
+        `entity_profile_embedding_idx` is a vector index on entity profile embeddings
+        for semantic similarity search in entity resolution.
         """
         statements = [
             "DROP CONSTRAINT entity_name_unique IF EXISTS;",
@@ -104,6 +106,14 @@ class GraphRepository:
             "CREATE INDEX rel_rel_type_idx IF NOT EXISTS FOR ()-[r:RELATED_TO]-() ON (r.rel_type);",
             "CREATE INDEX rel_id_idx IF NOT EXISTS FOR ()-[r:RELATED_TO]-() ON (r.id);",
             "CREATE INDEX rel_chunk_refs_idx IF NOT EXISTS FOR ()-[r:RELATED_TO]-() ON (r.chunk_refs);",
+            """
+            CREATE VECTOR INDEX entity_profile_embedding_idx IF NOT EXISTS
+            FOR (e:Entity) ON (e.profile_embedding)
+            OPTIONS { indexConfig: {
+                `vector.dimensions`: 3072,
+                `vector.similarity_function`: 'cosine'
+            }};
+            """,
         ]
         async with self._driver.session() as session:
             for statement in statements:

@@ -32,12 +32,16 @@ async def test_graph_repository_init_constraints():
         repo = GraphRepository()
         await repo.init_constraints()
 
-        # DROP entity_name_unique, CREATE entity_id_unique, 2 entity btree indexes, 1 fulltext index, 4 relationship indexes
-        assert mock_session.run.call_count == 9
+        # DROP entity_name_unique, CREATE entity_id_unique, 2 entity btree indexes,
+        # 1 fulltext index, 4 relationship indexes, 1 vector index
+        assert mock_session.run.call_count == 10
         statements = [c[0][0] for c in mock_session.run.call_args_list]
         assert any("DROP CONSTRAINT entity_name_unique" in s for s in statements)
         assert any("CREATE CONSTRAINT entity_id_unique" in s for s in statements)
         assert any("CREATE FULLTEXT INDEX entity_search_idx" in s for s in statements)
+        assert any(
+            "CREATE VECTOR INDEX entity_profile_embedding_idx" in s for s in statements
+        )
 
         await GraphRepository.close_driver()
         assert mock_driver.close.called
