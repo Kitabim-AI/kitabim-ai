@@ -494,6 +494,51 @@ class GraphRepository:
             )
             return await result.data()
 
+    async def find_semantic_candidates(
+        self,
+        entity_id: str,
+        embedding: List[float],
+        scope: str,
+        book_id: Optional[str] = None,
+        limit: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """Live per-entity semantic candidate lookup via the native Neo4j vector index
+        (`entity_profile_embedding_idx`, Task 2). Unlike the GDS `kNN` methods below
+        (Items 6-9), this needs no graph projection/refresh lifecycle — the index
+        updates incrementally as `profile_embedding` is written, so a query always
+        sees current data.
+
+        Returns candidates shaped like `find_resolution_candidates`'s output so both
+        candidate sources merge into one list in `resolve_entity` without reshaping.
+        Requests one extra result (`k = limit + 1`) since the entity's own node is
+        always the top hit against its own embedding and is filtered out below.
+        """
+        query = """
+        CALL db.index.vector.queryNodes('entity_profile_embedding_idx', $k, $embedding)
+        YIELD node, score
+        WHERE node.id <> $entity_id
+          AND node.scope = $scope
+          AND coalesce(node.resolution_status, 'unresolved') <> 'resolving'
+          AND ($book_id IS NULL OR node.book_id = $book_id)
+        RETURN node.id AS id, node.canonical_name AS canonical_name, node.aliases AS aliases,
+               node.type AS type, node.subtype AS subtype, node.scope AS scope, node.book_id AS book_id,
+               node.year_hijri AS year_hijri, node.year_gregorian AS year_gregorian,
+               node.century_gregorian AS century_gregorian, score
+        ORDER BY score DESC
+        LIMIT $limit
+        """
+        async with self._driver.session() as session:
+            result = await session.run(
+                query,
+                embedding=embedding,
+                entity_id=entity_id,
+                scope=scope,
+                book_id=book_id,
+                k=limit + 1,
+                limit=limit,
+            )
+            return await result.data()
+
     async def search_entities_fulltext(
         self, query_terms: List[str], edit_distance: int = 1, limit: int = 5
     ) -> List[Dict[str, Any]]:
