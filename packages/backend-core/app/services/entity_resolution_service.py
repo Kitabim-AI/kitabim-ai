@@ -565,7 +565,7 @@ async def resolve_entity(
 
         score = _graded_score(
             entity,
-            candidate,
+            current_candidate,
             entity_facts,
             candidate_facts,
             hard_match=(hard == "match"),
