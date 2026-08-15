@@ -12,6 +12,7 @@ from __future__ import annotations
 import difflib
 import json
 import logging
+import math
 import unicodedata
 from typing import Any, Dict, List, Literal, Optional
 
@@ -79,6 +80,73 @@ def _name_similarity(a: Optional[str], b: Optional[str]) -> float:
     return difflib.SequenceMatcher(None, normalize_alias(a), normalize_alias(b)).ratio()
 
 
+def cosine_similarity(
+    a: Optional[List[float]], b: Optional[List[float]]
+) -> Optional[float]:
+    """Returns the cosine similarity of two equal-length vectors, or None if either is
+    missing/empty or their lengths don't match (e.g. one predates a model change)."""
+    if not a or not b or len(a) != len(b):
+        return None
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(y * y for y in b))
+    if norm_a == 0.0 or norm_b == 0.0:
+        return None
+    return dot / (norm_a * norm_b)
+
+
+def build_entity_profile_text(entity_data: Dict[str, Any]) -> str:
+    """Builds the normalized text an entity's semantic `profile_embedding` (Item 8,
+    knowledge-graph-improvement-backlog.md) is computed from: canonical name, aliases,
+    subtype/type, and context summary. Used both when embedding freshly extracted
+    entities (`embed_and_store_entity_profiles`, called from knowledge_graph_job) and
+    when re-embedding a merge-log snapshot for offline evaluation
+    (scripts/eval_entity_semantic_matching.py) — the two must build text identically
+    or evaluated similarity scores won't reflect what resolution actually saw.
+    """
+    parts = [entity_data.get("canonical_name") or ""]
+    parts.extend(entity_data.get("aliases") or [])
+    if entity_data.get("subtype"):
+        parts.append(entity_data["subtype"])
+    elif entity_data.get("type"):
+        parts.append(entity_data["type"])
+    if entity_data.get("context_summary"):
+        parts.append(entity_data["context_summary"])
+    return " — ".join(p for p in parts if p)
+
+
+async def embed_and_store_entity_profiles(
+    graph_repo: GraphRepository,
+    entities: List[Dict[str, Any]],
+    embeddings_model: Any,
+) -> None:
+    """Embeds each entity's profile text (`build_entity_profile_text`) and stores it
+    as `profile_embedding` on its Neo4j node — the write side of Item 8. Never raises
+    on a count mismatch; logs and skips the store instead, since a partial/misaligned
+    write would silently corrupt which embedding belongs to which entity.
+    `embeddings_model` must expose `aembed_documents(texts: list[str]) -> list[list[float]]`
+    (the `EmbeddingProvider` protocol / `GeminiEmbeddings`).
+    """
+    if not entities:
+        return
+    texts = [build_entity_profile_text(e) for e in entities]
+    vectors = await embeddings_model.aembed_documents(texts)
+    if len(vectors) != len(entities):
+        log_json(
+            logger,
+            logging.WARNING,
+            "entity profile embedding count mismatch — skipping store",
+            expected=len(entities),
+            got=len(vectors),
+        )
+        return
+    profile_data = [
+        {"id": e["id"], "embedding": vec} for e, vec in zip(entities, vectors) if vec
+    ]
+    if profile_data:
+        await graph_repo.store_profile_embeddings_bulk(profile_data)
+
+
 def _check_hard_constraints(
     entity_facts: Dict[str, Any], candidate_facts: Dict[str, Any]
 ) -> str:
@@ -116,9 +184,17 @@ def _graded_score(
     entity_facts: Dict[str, Any],
     candidate_facts: Dict[str, Any],
     hard_match: bool = False,
+    semantic_weight: float = 0.0,
 ) -> float:
     """Name/alias similarity + relationship-neighborhood overlap + weak subtype hint +
-    discounted shared-parent boost, roughly normalized to 0.0-1.0."""
+    discounted shared-parent boost, roughly normalized to 0.0-1.0.
+
+    When `semantic_weight` > 0 and both entities carry a `profile_embedding` (Item 8),
+    a semantic-similarity term is blended in, scaled down proportionally from the
+    other three signals so the total stays in [0, 1]. Falls back to the original
+    three-signal formula, byte-for-byte, when the weight is 0 (the default) or either
+    embedding is missing.
+    """
     name_score = max(
         _name_similarity(entity.get("canonical_name"), candidate.get("canonical_name")),
         max(
@@ -156,7 +232,22 @@ def _graded_score(
         else 0.0
     )
 
-    base_score = 0.55 * name_score + 0.35 * neighbor_score + 0.10 * subtype_score
+    semantic_score = None
+    if semantic_weight > 0.0:
+        semantic_score = cosine_similarity(
+            entity.get("profile_embedding"), candidate.get("profile_embedding")
+        )
+
+    if semantic_score is not None:
+        lexical_weight = 1.0 - semantic_weight
+        base_score = (
+            lexical_weight * 0.55 * name_score
+            + lexical_weight * 0.35 * neighbor_score
+            + lexical_weight * 0.10 * subtype_score
+            + semantic_weight * semantic_score
+        )
+    else:
+        base_score = 0.55 * name_score + 0.35 * neighbor_score + 0.10 * subtype_score
 
     # Item 3: Shared parent is a supporting signal, not an auto-merge.
     # Discount shared parent if neighbor degree indicates a high-degree hub ancestor.

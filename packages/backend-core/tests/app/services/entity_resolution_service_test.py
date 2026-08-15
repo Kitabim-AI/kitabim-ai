@@ -5,6 +5,9 @@ from app.services.entity_resolution_service import (
     EntityResolutionVerdict,
     _check_hard_constraints,
     _graded_score,
+    build_entity_profile_text,
+    cosine_similarity,
+    embed_and_store_entity_profiles,
     execute_merge,
     execute_split,
     execute_unmerge,
@@ -88,6 +91,146 @@ def test_graded_score_low_for_different_name_and_no_overlap():
     candidate_facts = {"neighbors": [{"neighbor_id": "n2"}]}
     score = _graded_score(entity, candidate, entity_facts, candidate_facts)
     assert score < 0.3
+
+
+def test_cosine_similarity_identical_vectors_is_one():
+    assert cosine_similarity([1.0, 0.0, 0.0], [1.0, 0.0, 0.0]) == pytest.approx(1.0)
+
+
+def test_cosine_similarity_orthogonal_vectors_is_zero():
+    assert cosine_similarity([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
+
+
+def test_cosine_similarity_none_when_missing_or_mismatched():
+    assert cosine_similarity(None, [1.0]) is None
+    assert cosine_similarity([1.0], None) is None
+    assert cosine_similarity([1.0, 0.0], [1.0]) is None
+    assert cosine_similarity([], [1.0]) is None
+
+
+def test_build_entity_profile_text_includes_all_fields():
+    entity_data = {
+        "canonical_name": "Temur",
+        "aliases": ["Temur Barlas", "the Iron Ruler"],
+        "type": "person",
+        "subtype": "Sultan",
+        "context_summary": "14th-century conqueror",
+    }
+    text = build_entity_profile_text(entity_data)
+    assert "Temur" in text
+    assert "Temur Barlas" in text
+    assert "the Iron Ruler" in text
+    assert "Sultan" in text
+    assert "14th-century conqueror" in text
+    assert "person" not in text  # subtype present, so type is not also included
+
+
+def test_build_entity_profile_text_falls_back_to_type_without_subtype():
+    entity_data = {"canonical_name": "Samarkand", "aliases": [], "type": "place"}
+    text = build_entity_profile_text(entity_data)
+    assert text == "Samarkand — place"
+
+
+def test_build_entity_profile_text_handles_missing_optional_fields():
+    entity_data = {"canonical_name": "Solo"}
+    assert build_entity_profile_text(entity_data) == "Solo"
+
+
+def test_graded_score_blends_semantic_similarity_when_weighted():
+    entity = {
+        "canonical_name": "Temur",
+        "aliases": [],
+        "subtype": None,
+        "profile_embedding": [1.0, 0.0],
+    }
+    candidate = {
+        "canonical_name": "the Iron Ruler",
+        "aliases": [],
+        "subtype": None,
+        "profile_embedding": [1.0, 0.0],
+    }
+    entity_facts = {"neighbors": []}
+    candidate_facts = {"neighbors": []}
+
+    score_without_semantic = _graded_score(
+        entity, candidate, entity_facts, candidate_facts
+    )
+    score_with_semantic = _graded_score(
+        entity, candidate, entity_facts, candidate_facts, semantic_weight=0.5
+    )
+
+    assert score_without_semantic < 0.3  # names look nothing alike
+    assert (
+        score_with_semantic > score_without_semantic
+    )  # identical embeddings pull it up
+
+
+def test_graded_score_unchanged_when_semantic_weight_zero_even_with_embeddings():
+    entity = {
+        "canonical_name": "Alpha",
+        "aliases": [],
+        "subtype": None,
+        "profile_embedding": [1.0, 0.0],
+    }
+    candidate = {
+        "canonical_name": "Zeta",
+        "aliases": [],
+        "subtype": None,
+        "profile_embedding": [1.0, 0.0],
+    }
+    entity_facts = {"neighbors": [{"neighbor_id": "n1"}]}
+    candidate_facts = {"neighbors": [{"neighbor_id": "n2"}]}
+    score = _graded_score(entity, candidate, entity_facts, candidate_facts)
+    assert (
+        score < 0.3
+    )  # identical to the existing test_graded_score_low_... expectation
+
+
+@pytest.mark.asyncio
+async def test_embed_and_store_entity_profiles_happy_path():
+    graph_repo = AsyncMock()
+    embeddings_model = AsyncMock()
+    embeddings_model.aembed_documents.return_value = [[0.1, 0.2], [0.3, 0.4]]
+    entities = [
+        {"id": "e1", "canonical_name": "A", "aliases": []},
+        {"id": "e2", "canonical_name": "B", "aliases": []},
+    ]
+
+    await embed_and_store_entity_profiles(graph_repo, entities, embeddings_model)
+
+    embeddings_model.aembed_documents.assert_called_once_with(["A", "B"])
+    graph_repo.store_profile_embeddings_bulk.assert_called_once_with(
+        [
+            {"id": "e1", "embedding": [0.1, 0.2]},
+            {"id": "e2", "embedding": [0.3, 0.4]},
+        ]
+    )
+
+
+@pytest.mark.asyncio
+async def test_embed_and_store_entity_profiles_noop_on_empty_list():
+    graph_repo = AsyncMock()
+    embeddings_model = AsyncMock()
+
+    await embed_and_store_entity_profiles(graph_repo, [], embeddings_model)
+
+    embeddings_model.aembed_documents.assert_not_called()
+    graph_repo.store_profile_embeddings_bulk.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_embed_and_store_entity_profiles_skips_store_on_count_mismatch():
+    graph_repo = AsyncMock()
+    embeddings_model = AsyncMock()
+    embeddings_model.aembed_documents.return_value = [[0.1, 0.2]]  # only 1, not 2
+    entities = [
+        {"id": "e1", "canonical_name": "A", "aliases": []},
+        {"id": "e2", "canonical_name": "B", "aliases": []},
+    ]
+
+    await embed_and_store_entity_profiles(graph_repo, entities, embeddings_model)
+
+    graph_repo.store_profile_embeddings_bulk.assert_not_called()
 
 
 @pytest.mark.asyncio
