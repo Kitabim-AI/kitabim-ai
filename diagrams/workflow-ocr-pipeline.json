@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Kitabim.AI - OCR & Document Processing Workflow",
+    "animation": "trace",
+    "visual_preset": "signal-flow",
+    "quality_profile": "standard",
+    "views": [
+      {
+        "id": "full-ocr-path",
+        "label": "End-to-end OCR processing",
+        "focus": ["user", "upload_api", "redis_broker", "page_splitter", "tesseract_ocr", "vector_embedder", "db_commit"],
+        "note": "Complete path from user PDF upload to page rendering, OCR text extraction, chunk embedding, and PostgreSQL commit."
+      }
+    ],
+    "output": "workflow-ocr-pipeline.html",
+    "viewBox": [1400, 980]
+  },
+  "lanes": [
+    { "id": "ui_intake", "label": "UI Intake" },
+    { "id": "api_gateway", "label": "API Gateway" },
+    { "id": "queue_broker", "label": "Task Broker" },
+    { "id": "splitter_lane", "label": "Page Splitter" },
+    { "id": "ocr_lane", "label": "OCR Engine" },
+    { "id": "embed_lane", "label": "AI Embeddings" },
+    { "id": "storage_lane", "label": "Database Storage" }
+  ],
+  "phases": [
+    { "id": "intake_phase", "label": "Upload Intake", "fromCol": 0, "toCol": 2 },
+    { "id": "ocr_phase", "label": "OCR Processing", "fromCol": 3, "toCol": 4, "variant": "emphasis" },
+    { "id": "persist_phase", "label": "Vector Index", "fromCol": 5, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": ["user", "upload_api", "redis_broker", "page_splitter", "tesseract_ocr", "vector_embedder", "db_commit"],
+  "nodes": [
+    { "id": "user", "lane": "ui_intake", "col": 0, "type": "external", "label": "User Upload", "sublabel": "selects PDF" },
+    { "id": "upload_api", "lane": "api_gateway", "col": 1, "type": "backend", "label": "FastAPI", "sublabel": "file intake" },
+    { "id": "redis_broker", "lane": "queue_broker", "col": 2, "type": "database", "label": "Redis Queue", "sublabel": "ARQ job" },
+    { "id": "page_splitter", "lane": "splitter_lane", "col": 3, "type": "backend", "label": "Page Splitter", "sublabel": "render PNGs" },
+    { "id": "tesseract_ocr", "lane": "ocr_lane", "col": 4, "type": "backend", "label": "Gemini OCR", "sublabel": "Vision API" },
+    { "id": "vector_embedder", "lane": "embed_lane", "col": 5, "type": "cloud", "label": "Gemini Vector", "sublabel": "embeddings" },
+    { "id": "db_commit", "lane": "storage_lane", "col": 5, "type": "database", "label": "PGVector", "sublabel": "save chunks" }
+  ],
+  "edges": [
+    { "id": "user-to-api", "from": "user", "to": "upload_api", "variant": "emphasis" },
+    { "id": "api-to-redis", "from": "upload_api", "to": "redis_broker", "variant": "dashed" },
+    { "id": "redis-to-splitter", "from": "redis_broker", "to": "page_splitter" },
+    { "id": "splitter-to-ocr", "from": "page_splitter", "to": "tesseract_ocr", "variant": "emphasis" },
+    { "id": "ocr-to-embed", "from": "tesseract_ocr", "to": "vector_embedder", "variant": "emphasis" },
+    { "id": "embed-to-db", "from": "vector_embedder", "to": "db_commit", "variant": "emphasis" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Page Processing & OCR",
+      "items": [
+        "PDF files are split into high-resolution PNG page images",
+        "Google Gemini Vision API executes page-by-page OCR for Uyghur script"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Text Normalization & Embeddings",
+      "items": [
+        "Raw OCR text passes through Uyghur spellcheck filter & auto-correct rules",
+        "Cleaned text is chunked into 500-token windows with 50-token overlap",
+        "Google Gemini API generates 768-dimensional embeddings saved to pgvector"
+      ]
+    }
+  ]
+}

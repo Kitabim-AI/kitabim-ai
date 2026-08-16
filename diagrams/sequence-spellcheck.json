@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Kitabim.AI - Uyghur Spellcheck & Lexicon Auto-Correct Sequence",
+    "output": "sequence-spellcheck.html",
+    "viewBox": [1000, 800],
+    "quality_profile": "standard",
+    "views": [
+      {
+        "id": "exact-match",
+        "label": "Exact dictionary match",
+        "focus": ["user", "web", "api", "lexicon_db"],
+        "note": "Word is found directly in the modern Uyghur dictionary without auto-correct replacement."
+      },
+      {
+        "id": "autocorrect-rules",
+        "label": "Phonetic rules & candidate ranking",
+        "focus": ["api", "rules_engine", "lexicon_db", "web", "user"],
+        "note": "Misspelled word triggers phonetic sound-alike rules and distance metric ranking for auto-correction."
+      }
+    ]
+  },
+  "participants": [
+    { "id": "user", "type": "external", "label": "User", "sublabel": "Browser input" },
+    { "id": "web", "type": "frontend", "label": "React UI", "sublabel": "Text Editor" },
+    { "id": "api", "type": "backend", "label": "FastAPI", "sublabel": "Spell Service" },
+    { "id": "rules_engine", "type": "backend", "label": "Rules Engine", "sublabel": "Phonetic Rules" },
+    { "id": "lexicon_db", "type": "database", "label": "PostgreSQL", "sublabel": "Uyghur Lexicon" }
+  ],
+  "segments": [
+    { "from": 140, "to": 370, "label": "Exact Lexicon Lookup Phase" },
+    { "from": 390, "to": 715, "label": "Phonetic Auto-Correct & Candidate Ranking Phase" }
+  ],
+  "messages": [
+    { "id": "input-word", "from": "user", "to": "web", "y": 160, "label": "Type Uyghur word", "variant": "default" },
+    { "id": "api-check", "from": "web", "to": "api", "y": 190, "label": "POST /api/v1/spellcheck/check", "variant": "emphasis" },
+    { "id": "lexicon-query", "from": "api", "to": "lexicon_db", "y": 220, "label": "Lookup exact word", "variant": "default" },
+    { "id": "lexicon-match", "from": "lexicon_db", "to": "api", "y": 250, "label": "Match found (valid = true)", "variant": "return" },
+    { "id": "return-valid", "from": "api", "to": "web", "y": 280, "label": "200 OK (no correction needed)", "variant": "return" },
+    { "id": "ui-valid", "from": "web", "to": "user", "y": 310, "label": "Highlight as valid", "variant": "return" },
+
+    { "id": "input-misspelled", "from": "user", "to": "web", "y": 410, "label": "Type misspelled Uyghur word", "variant": "default" },
+    { "id": "api-check-miss", "from": "web", "to": "api", "y": 440, "label": "POST /api/v1/spellcheck/check", "variant": "emphasis" },
+    { "id": "lexicon-miss", "from": "api", "to": "lexicon_db", "y": 470, "label": "Lookup word in lexicon", "variant": "default" },
+    { "id": "no-match", "from": "lexicon_db", "to": "api", "y": 500, "label": "No exact match", "variant": "return" },
+    { "id": "apply-rules", "from": "api", "to": "rules_engine", "y": 530, "label": "Apply phonetic rules", "variant": "emphasis" },
+    { "id": "fetch-candidates", "from": "rules_engine", "to": "lexicon_db", "y": 560, "label": "Fetch phonetic candidates", "variant": "default" },
+    { "id": "return-candidates", "from": "lexicon_db", "to": "rules_engine", "y": 590, "label": "Candidate words", "variant": "return" },
+    { "id": "rank-suggestions", "from": "rules_engine", "to": "api", "y": 620, "label": "Top ranked suggestions", "variant": "return" },
+    { "id": "return-suggestions", "from": "api", "to": "web", "y": 650, "label": "200 OK (suggestions array)", "variant": "return" },
+    { "id": "ui-suggestions", "from": "web", "to": "user", "y": 680, "label": "Display inline corrections", "variant": "return" }
+  ],
+  "activations": [
+    { "participant": "web", "from": 160, "to": 680, "type": "frontend" },
+    { "participant": "api", "from": 190, "to": 650, "type": "backend" },
+    { "participant": "rules_engine", "from": 530, "to": 620, "type": "backend" },
+    { "participant": "lexicon_db", "from": 220, "to": 250, "type": "database" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Exact Dictionary Match",
+      "items": [
+        "Words present in the verified Uyghur lexicon return immediately",
+        "Sub-10ms latency for direct PostgreSQL dictionary queries"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Phonetic Auto-Correct Engine",
+      "items": [
+        "Custom rules engine handles Uyghur vowel harmony and sound-alike replacements",
+        "Candidates ranked using edit-distance metrics and frequency weights"
+      ]
+    }
+  ]
+}

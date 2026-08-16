@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Kitabim.AI - Hybrid Search & RAG Data Flow Topology",
+    "output": "dataflow-rag-hybrid-search.html",
+    "viewBox": [1180, 850],
+    "animation": "trace",
+    "visual_preset": "signal-flow",
+    "quality_profile": "standard",
+    "views": [
+      { "id": "query-intake", "label": "Query intake & tokenization", "focus": ["query_input", "fastapi_router", "gemini_embedder"], "note": "Follow user question into FastApi router and vector embedder." },
+      { "id": "hybrid-retrieval", "label": "Hybrid retrieval (PGVector + Lexicon)", "focus": ["fastapi_router", "pgvector_db", "lexicon_db", "context_reranker"], "note": "Parallel retrieval across vector embeddings and Knowledge Graph word index." },
+      { "id": "llm-response", "label": "LLM context synthesis & streaming", "focus": ["context_reranker", "gemini_flash", "sse_stream"], "note": "Assembling top-K context chunks into Gemini 3.6 Flash prompt for streaming response." }
+    ]
+  },
+  "stages": [
+    { "label": "Client Request" },
+    { "label": "Embed & Route" },
+    { "label": "Parallel Indexes" },
+    { "label": "Context Reranking" },
+    { "label": "LLM Synthesis" }
+  ],
+  "nodes": [
+    { "id": "query_input", "type": "frontend", "label": "User Query", "sublabel": "Uyghur question", "stage": 0, "row": 0, "tag": "RTL prompt" },
+    { "id": "fastapi_router", "type": "backend", "label": "FastAPI Router", "sublabel": "/api/v1/chat", "stage": 1, "row": 0, "tag": "JWT auth" },
+    { "id": "gemini_embedder", "type": "cloud", "label": "Gemini Embedder", "sublabel": "text-embedding-004", "stage": 1, "row": 2, "tag": "768-dim vector" },
+    { "id": "pgvector_db", "type": "database", "label": "PGVector HNSW", "sublabel": "cosine similarity", "stage": 2, "row": 0, "tag": "book chunks" },
+    { "id": "lexicon_db", "type": "database", "label": "Knowledge Graph", "sublabel": "Uyghur word index", "stage": 2, "row": 2, "tag": "fact triples" },
+    { "id": "context_reranker", "type": "backend", "label": "Context Reranker", "sublabel": "hybrid fusion", "stage": 3, "row": 1, "tag": "Top-K chunks" },
+    { "id": "gemini_flash", "type": "cloud", "label": "Gemini 3.6 Flash", "sublabel": "LLM generator", "stage": 4, "row": 0, "tag": "English prompt" },
+    { "id": "sse_stream", "type": "frontend", "label": "SSE Response", "sublabel": "streamed tokens", "stage": 4, "row": 2, "tag": "UI renderer" }
+  ],
+  "flows": [
+    { "from": "query_input", "to": "fastapi_router", "label": "POST prompt", "classification": "HTTPS", "variant": "emphasis", "route": "auto" },
+    { "from": "fastapi_router", "to": "gemini_embedder", "label": "embed query", "classification": "API call", "variant": "default", "route": "vertical-channel", "labelDy": 25 },
+    { "from": "gemini_embedder", "to": "pgvector_db", "label": "query vector", "classification": "768-dim", "variant": "emphasis", "route": "vertical-channel", "labelDy": -30 },
+    { "from": "fastapi_router", "to": "lexicon_db", "label": "keyword lookup", "classification": "lexicon match", "variant": "default", "route": "vertical-channel", "labelDy": 30 },
+    { "from": "pgvector_db", "to": "context_reranker", "label": "vector matches", "classification": "K=10", "variant": "emphasis", "route": "vertical-channel" },
+    { "from": "lexicon_db", "to": "context_reranker", "label": "fact triples", "classification": "graph facts", "variant": "default", "route": "vertical-channel" },
+    { "from": "context_reranker", "to": "gemini_flash", "label": "context prompt", "classification": "English system prompt", "variant": "emphasis", "route": "vertical-channel", "labelDy": -50 },
+    { "from": "gemini_flash", "to": "sse_stream", "label": "stream tokens", "classification": "Uyghur text", "variant": "emphasis", "route": "vertical-channel", "labelDy": 25 }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Hybrid Search Mechanics",
+      "items": [
+        "Vector search uses PostgreSQL HNSW index for sub-50ms similarity lookup",
+        "Knowledge Graph word index retrieves exact historical facts and terminology"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "LLM Synthesis & Safety",
+      "items": [
+        "System prompt is strictly written in English specifying Uyghur output script",
+        "Responses are streamed token-by-token back to the React UI via SSE"
+      ]
+    }
+  ]
+}

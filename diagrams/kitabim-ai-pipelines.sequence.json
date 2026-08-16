@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Kitabim.AI - Book Ingestion & RAG Chat Sequence",
+    "output": "sequence-pipelines.html",
+    "viewBox": [1000, 800],
+    "quality_profile": "standard",
+    "views": [
+      {
+        "id": "book-ingestion-flow",
+        "label": "Book Ingestion Flow",
+        "focus": ["user", "web", "api", "redis", "worker", "ocr", "db"],
+        "note": "PDF upload -> Redis task queue -> ARQ Worker -> OCR -> Vector store"
+      },
+      {
+        "id": "rag-chat-flow",
+        "label": "RAG Chat Streaming Flow",
+        "focus": ["user", "web", "api", "db", "gemini"],
+        "note": "User question -> Hybrid PGVector retrieval -> Gemini 3.6 streaming response"
+      }
+    ]
+  },
+  "participants": [
+    { "id": "user", "type": "external", "label": "User / Admin", "sublabel": "Browser" },
+    { "id": "web", "type": "frontend", "label": "React SPA", "sublabel": "Frontend UI" },
+    { "id": "api", "type": "backend", "label": "FastAPI", "sublabel": "API Server" },
+    { "id": "redis", "type": "database", "label": "Redis Queue", "sublabel": "ARQ Broker" },
+    { "id": "worker", "type": "backend", "label": "ARQ Worker", "sublabel": "Background Job" },
+    { "id": "ocr", "type": "backend", "label": "OCR & Lexicon", "sublabel": "Gemini Vision OCR" },
+    { "id": "db", "type": "database", "label": "PostgreSQL", "sublabel": "PGVector + DB" },
+    { "id": "gemini", "type": "cloud", "label": "Gemini API", "sublabel": "AI Model" }
+  ],
+  "segments": [
+    { "from": 140, "to": 430, "label": "Book Ingestion & OCR Pipeline" },
+    { "from": 450, "to": 740, "label": "RAG Chat & Retrieval Flow" }
+  ],
+  "messages": [
+    { "id": "upload-pdf", "from": "user", "to": "web", "y": 160, "label": "Upload PDF Book", "variant": "default" },
+    { "id": "api-upload", "from": "web", "to": "api", "y": 190, "label": "POST /api/v1/books/upload", "variant": "emphasis" },
+    { "id": "init-db", "from": "api", "to": "db", "y": 220, "label": "Create Book Record", "variant": "default" },
+    { "id": "enqueue-job", "from": "api", "to": "redis", "y": 250, "label": "Enqueue process_book", "variant": "dashed" },
+    { "id": "worker-poll", "from": "worker", "to": "redis", "y": 280, "label": "Pop Task", "variant": "dashed" },
+    { "id": "run-ocr", "from": "worker", "to": "ocr", "y": 310, "label": "Extract Pages & Run OCR", "variant": "emphasis" },
+    { "id": "ocr-result", "from": "ocr", "to": "worker", "y": 340, "label": "Text & Lexicon Matches", "variant": "return" },
+    { "id": "gen-embed", "from": "worker", "to": "gemini", "y": 370, "label": "Generate Chunks & Embeddings", "variant": "default" },
+    { "id": "save-db", "from": "worker", "to": "db", "y": 400, "label": "Save Pages, Embeddings & Vectors", "variant": "return" },
+
+    { "id": "send-chat", "from": "user", "to": "web", "y": 470, "label": "Send Uyghur Question", "variant": "default" },
+    { "id": "api-chat", "from": "web", "to": "api", "y": 500, "label": "POST /api/v1/chat", "variant": "emphasis" },
+    { "id": "embed-query", "from": "api", "to": "gemini", "y": 530, "label": "Embed Query String", "variant": "default" },
+    { "id": "query-vector", "from": "gemini", "to": "api", "y": 560, "label": "Query Vector", "variant": "return" },
+    { "id": "hybrid-search", "from": "api", "to": "db", "y": 590, "label": "PGVector + Keyword Search", "variant": "emphasis" },
+    { "id": "context-chunks", "from": "db", "to": "api", "y": 620, "label": "Top Relevant Chunks", "variant": "return" },
+    { "id": "stream-prompt", "from": "api", "to": "gemini", "y": 650, "label": "Generate Response Stream", "variant": "emphasis" },
+    { "id": "stream-tokens", "from": "gemini", "to": "api", "y": 680, "label": "Stream Tokens", "variant": "return" },
+    { "id": "stream-ui", "from": "api", "to": "web", "y": 710, "label": "SSE Response", "variant": "return" }
+  ],
+  "activations": [
+    { "participant": "web", "from": 160, "to": 720, "type": "frontend" },
+    { "participant": "api", "from": 190, "to": 710, "type": "backend" },
+    { "participant": "worker", "from": 280, "to": 400, "type": "backend" },
+    { "participant": "db", "from": 590, "to": 620, "type": "database" },
+    { "participant": "gemini", "from": 650, "to": 680, "type": "cloud" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Asynchronous Processing",
+      "items": [
+        "PDF upload responds immediately to user",
+        "Heavy OCR & Vector embedding processed asynchronously by ARQ Worker"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Low-Latency RAG Search",
+      "items": [
+        "pgvector HNSW index provides sub-50ms context retrieval",
+        "Streaming response via SSE ensures real-time feedback"
+      ]
+    }
+  ]
+}
