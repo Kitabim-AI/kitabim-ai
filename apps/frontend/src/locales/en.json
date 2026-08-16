@@ -1004,18 +1004,21 @@
   },
   "share": {
     "shareBook": "Share Book",
+    "sharePage": "Share Page",
     "shareQA": "Share Answer",
     "shareQuote": "Share Quote",
     "shareSearchResult": "Share Search Result",
     "postToFacebook": "Post to Facebook",
     "postToX": "Post to X",
     "copyLink": "Copy Link",
+    "copyContent": "Copy Content",
+    "contentCopied": "Copied!",
     "linkCopied": "Copied!",
     "previewLabel": "Preview",
     "questionLabel": "Question",
     "answerLabel": "Answer",
     "textCopied": "Text Copied!",
-    "pasteHint": "Text copied — paste it into your post"
+    "pasteHint": "Full text copied — press Cmd+V / Ctrl+V in post window to paste full content"
   },
   "graph": {
     "title": "Knowledge Graph",
