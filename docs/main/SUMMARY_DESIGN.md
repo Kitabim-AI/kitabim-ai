@@ -23,7 +23,7 @@ Summary generation is a post-pipeline, book-level (not page-level) stage: once a
 | `embedding` | `vector(3072)`, not null | Embedding of the summary text (`GeminiEmbeddings`, same model as chunk embeddings via `gemini_embedding_model`), used for `summary_search`'s cosine-distance ranking. |
 | `generated_at` | `timestamptz`, default/server-default `now()` | Set on every insert and on every `upsert` (both the initial write and any regeneration). |
 
-`packages/backend-core/app/db/models.py`'s `BookSummary` model has only these four columns today. Two staging columns (`summary_v1`, `embedding_draft`) existed briefly for a resample/cutover migration (`039_summary_v1_backfill.sql` → `040_summary_embedding_cutover.sql`) and were dropped once the cutover completed; `BookSummariesRepository.upsert_draft()` (targets the now-dropped `embedding_draft` column) is dead code left over from that migration and is not called by `summary_job.py`, which uses `upsert()` exclusively.
+`packages/backend-core/app/db/models.py`'s `BookSummary` model has only these four columns today. Two staging columns (`summary_v1`, `embedding_draft`) existed briefly for a resample/cutover migration (`039_summary_v1_backfill.sql` → `040_summary_embedding_cutover.sql`) and were dropped once the cutover completed; `BookSummariesRepository` no longer has an `upsert_draft()` method (it targeted the now-dropped `embedding_draft` column) — it has been removed, and `summary_job.py` uses `upsert()` exclusively.
 
 ## Architecture
 
@@ -43,9 +43,10 @@ Summary generation is a post-pipeline, book-level (not page-level) stage: once a
 flowchart TD
     subgraph AutoTrigger ["Auto-trigger — once per book"]
         MANDATORY(["OCR + Chunking + Embedding<br/>all terminal for this book"])
-        DRIVER["PipelineDriver:<br/>marks book status=ready,<br/>pipeline_step=ready"]
-        NOSUM{"book_summaries row<br/>already exists?"}
-        ENQ1["enqueue summary_job<br/>(_job_id=summary:&lt;book_id&gt;)"]
+        CANDIDATE["PipelineDriver:<br/>compute fully_ready_ids<br/>(pre-update snapshot)"]
+        NOSUM{"book_summaries row<br/>already exists?<br/>(checked pre-update)"}
+        UPDATE["UPDATE Book SET<br/>status=ready, pipeline_step=ready<br/>(all fully_ready_ids), commit"]
+        ENQ1["enqueue summary_job<br/>(_job_id=summary:&lt;book_id&gt;)<br/>after commit, outside session"]
     end
 
     subgraph Backfill ["SummaryScanner — every 5 min, parallel path"]
@@ -54,24 +55,40 @@ flowchart TD
     end
 
     subgraph SummaryJobFlow ["SummaryJob"]
+        CONFIG{"gemini_chat_model &<br/>gemini_embedding_model<br/>set in system_configs?"}
+        LOADBOOK["Load Book row"]
+        NOBOOK{"book found?"}
         LOAD["Load all non-TOC page.text<br/>for the book, ordered by page_number"]
+        NOPAGES{"any page text found?"}
         SAMPLE["_sample_text: concatenate;<br/>if over max_chars, take<br/>first 40% + middle 20% + last 40%"]
         LLM["Gemini chat model:<br/>BOOK_SUMMARY_PROMPT<br/>(7-section structured Uyghur summary)"]
+        EMPTYCHK{"summary non-empty<br/>after strip()?"}
         EMBED["GeminiEmbeddings.aembed_documents"]
         UPSERT[("book_summaries:<br/>upsert(book_id, summary, embedding)")]
-        FAIL["exception propagates;<br/>no book_summaries row written<br/>(book status unaffected)"]
+        NOROW["log warning, return<br/>(no exception — arq records<br/>success; no row written)"]
+        EXC["exception propagates<br/>(arq marks job failed;<br/>no row written)"]
     end
 
-    MANDATORY --> DRIVER --> NOSUM
+    MANDATORY --> CANDIDATE
+    CANDIDATE --> UPDATE
+    CANDIDATE --> NOSUM
     NOSUM -- No --> ENQ1
     NOSUM -- Yes --> NOOP1["not re-enqueued"]
-    ENQ1 --> LOAD
+    UPDATE --> ENQ1
+    ENQ1 --> CONFIG
 
-    SCAN --> ENQ2 --> LOAD
+    SCAN --> ENQ2 --> CONFIG
 
-    LOAD --> SAMPLE --> LLM
-    LLM -->|success| EMBED --> UPSERT
-    LLM -->|exception, or empty pages/summary| FAIL
+    CONFIG -- missing --> EXC
+    CONFIG -- set --> LOADBOOK --> NOBOOK
+    NOBOOK -- no --> NOROW
+    NOBOOK -- yes --> LOAD --> NOPAGES
+    NOPAGES -- none --> NOROW
+    NOPAGES -- found --> SAMPLE --> LLM
+    LLM -->|raises| EXC
+    LLM -->|returns| EMPTYCHK
+    EMPTYCHK -- empty --> NOROW
+    EMPTYCHK -- non-empty --> EMBED --> UPSERT
 
     classDef idle fill:#e9edc9,stroke:#606c38
     classDef active fill:#fff3cd,stroke:#856404
@@ -79,9 +96,9 @@ flowchart TD
     classDef fail fill:#ffcccb,stroke:#d32f2f
 
     class MANDATORY,NOSUM idle
-    class DRIVER,ENQ1,SCAN,ENQ2,LOAD,SAMPLE,LLM,EMBED active
-    class UPSERT,NOOP1 done
-    class FAIL fail
+    class CANDIDATE,UPDATE,ENQ1,SCAN,ENQ2,CONFIG,LOADBOOK,NOBOOK,LOAD,NOPAGES,SAMPLE,LLM,EMPTYCHK,EMBED active
+    class UPSERT,NOOP1,NOROW done
+    class EXC fail
 ```
 
 ## Component Responsibilities
@@ -197,7 +214,7 @@ flowchart TD
 
 ## Related Docs
 
-- **Correction to a stale claim in this stage's own module docstring:** `summary_job.py`'s module docstring states that "books without summaries fall back to the existing category-based search in rag_service." (`WORKER_DESIGN.md` used to repeat this claim too, but Task 9's cleanup trimmed its `SummaryJob` coverage down to a one-line link to this doc, so it no longer asserts anything about the fallback behavior — the correction below applies only to the `summary_job.py` docstring.) As of current code, `rag_service.py` is a thin facade that delegates to the handler registry — it has no "category-based search" of its own, and `character_categories` is used throughout retrieval as a general scoping filter, not as a summary-failure-specific fallback. The actual current fallback chain, verified against `packages/backend-core/app/services/rag/agent/tools.py` and `deterministic_handler.py`: (1) `search_books_by_summary` (the tool wrapping `BookSummariesRepository.summary_search`) simply omits books with no `book_summaries` row from its vector-search results — no error, no special-case; (2) `get_book_summary`, if it finds zero summary rows for the requested book IDs, falls back to reading each book's first few pages via `PagesRepository.find_first_pages_with_text` and returns up to a 2,000-character "intro excerpt" per book as context instead (`test_get_book_summary_falls_back_to_intro_excerpt_when_precomputed_summary_missing` covers this); (3) if a `summary`-intent request still ends up with no summaries after that, the deterministic handler falls back further to `search_chunks` — ordinary chunk-level RAG retrieval. So the claim "a summary failure never blocks book availability" still holds, but the mechanism is a two-stage intro-excerpt → chunk-search fallback inside the RAG agent's own tool logic, not a distinct "category-based search" path.
+- **Correction to a stale claim in this stage's own module docstring:** `summary_job.py`'s module docstring states that "books without summaries fall back to the existing category-based search in rag_service." (`WORKER_DESIGN.md` used to repeat this claim too, but Task 9's cleanup trimmed its `SummaryJob` coverage down to a one-line link to this doc, so it no longer asserts anything about the fallback behavior — the correction below applies only to the `summary_job.py` docstring.) As of current code, `rag_service.py` and `deterministic_handler.py` no longer exist — both were deleted during the ADK-chat consolidation (see `docs/superpowers/plans/2026-08-12-adk-chat-consolidation.md`); `character_categories` is used throughout retrieval as a general scoping filter, not as a summary-failure-specific fallback. The actual current fallback chain, verified against `packages/backend-core/app/services/rag/agent/tools.py`'s `_run_get_book_summary`/`_run_search_books_by_summary`: (1) `search_books_by_summary` (the tool wrapping `BookSummariesRepository.summary_search`) simply omits books with no `book_summaries` row from its vector-search results — no error, no special-case; (2) `get_book_summary`, if it finds zero summary rows for the requested book IDs, falls back to reading each book's first few pages via `PagesRepository.find_first_pages_with_text` and returns up to a 2,000-character "intro excerpt" per book as context instead (`test_get_book_summary_falls_back_to_intro_excerpt_when_precomputed_summary_missing` covers this). Both tools are called from `ChatOrchestrator`'s single retrieval agent (`KitabimRetrievalAgent`, `chat/retrieval_agent.py`) now, not from a deleted handler; if a summary-intent question still yields nothing useful after that, the agent's own multi-turn tool-calling loop (not a hardcoded fallback step) remains free to call `search_chunks` for ordinary chunk-level retrieval instead. So the claim "a summary failure never blocks book availability" still holds, but the mechanism is the intro-excerpt fallback inside `get_book_summary` plus the retrieval agent's own tool-choice flexibility, not a distinct "category-based search" path.
 - [SPELLCHECK_DESIGN.md](SPELLCHECK_DESIGN.md) — the last mandatory-adjacent stage before a book reaches `ready`; spellcheck/auto-correct completion is not itself a dependency of this stage (only full OCR/chunking/embedding termination is).
 - [CHAT_RAG_DESIGN.md](CHAT_RAG_DESIGN.md) documents the `search_books_by_summary`/`get_book_summary` RAG agent tools and the "summary"/"identity" intent routing that consumes `book_summaries` as described above.
 - [WORKER_DESIGN.md](WORKER_DESIGN.md) — full pipeline, `PipelineDriver`, cron schedule, and shared conventions.

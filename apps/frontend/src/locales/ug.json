@@ -283,7 +283,7 @@
       "noRecordFound": "رېكورد تېپىلمىدى",
       "keptContent": "{{kept}}/{{total}} پارچە مەزمۇن تاللاندى",
       "keptBooks": "{{kept}}/{{total}} پارچە كىتاب تاللاندى",
-      "queryingGraph": "بىلىم گىرافىكىنى تەكشۈرۋاتىمەن",
+      "queryingGraph": "بىلىم گىرافىنى تەكشۈرۋاتىمەن",
       "foundRelations": "{{count}} مۇناسىۋەت تاپتىم",
       "noRelationsFound": "مۇناسىۋەت تېپىلمىدى"
     }
@@ -456,7 +456,7 @@
       "embedding": "ۋېكتورلاش",
       "summary": "قىسقىچە مەزمۇن",
       "spellCheck": "ئىملا تەكشۈرۈش",
-      "graph": "بىلىم گىرافىكى",
+      "graph": "بىلىم گىرافى",
       "history": "تارىخىي ئاتالغۇلار"
     },
     "table": {
@@ -859,7 +859,7 @@
       "title": "ئىملا تەكشۈرۈشنى قايتىلاش"
     },
     "reprocessGraph": {
-      "title": "بىلىم گىرافىكىنى قايتا قۇرۇش"
+      "title": "بىلىم گىرافىنى قايتا قۇرۇش"
     },
     "reprocessSummary": {
       "title": "قىسقىچە مەزمۇننى قايتا ھاسىللاش"
@@ -881,7 +881,7 @@
         "message": "ئىملا تەكشۈرۈشنى قايتا بىر تەرەپ قىلامسىز؟"
       },
       "graph": {
-        "message": "بۇ كىتابنىڭ بىلىم گىرافىكىنى (Knowledge Graph) قايتا قۇرامسىز؟"
+        "message": "بۇ كىتابنىڭ بىلىم گىرافىنى (Knowledge Graph) قايتا قۇرامسىز؟"
       },
       "summary": {
         "message": "بۇ كىتابنىڭ قىسقىچە مەزمۇنىنى قايتا ھاسىللامسىز؟."
@@ -1025,14 +1025,17 @@
   "share": {
     "shareBook": "كىتابنى ھەمبەھىرلەش",
     "shareQA": "جاۋابنى ھەمبەھىرلەش",
-    "postToFacebook": "Facebook تا ھەمبەھىرلەش",
+    "shareQuote": "ئىقتىباسنى ھەمبەھىرلەش",
+    "shareSearchResult": "ئىزدەش نەتىجىسىنى ھەمبەھىرلەش",
+    "postToFacebook": "Facebook قا يوللاش",
+    "postToX": "X قا يوللاش",
     "copyLink": "ئۇلانمىنى كۆچۈر",
     "linkCopied": "كۆچۈرۈلدى!",
-    "previewLabel": "Facebook تا كۆرۈنۈشى",
+    "previewLabel": "كۆرۈنۈشى",
     "questionLabel": "سوئال",
     "answerLabel": "جاۋاب",
     "textCopied": "مەزمۇن كۆچۈرۈلدى!",
-    "pasteHint": "مەزمۇن كۆچۈرۈلدى — Facebook خاتىرىڭىزغا چاپلاڭ"
+    "pasteHint": "مەزمۇن كۆچۈرۈلدى — خاتىرىڭىزگە چاپلاڭ"
   },
   "graph": {
     "title": "بىلىم گىرافى",

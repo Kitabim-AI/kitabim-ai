@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.services.rag.context import QueryContext
 from app.services.rag.retrieval import vector_search
 from app.services.rag.agent.reranker import rerank_context
-from app.services.rag.agent.llm_routed_handler import _grade_context
+from app.services.chat.context_grading import _grade_context
 
 
 @pytest.fixture

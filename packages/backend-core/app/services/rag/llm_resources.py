@@ -71,5 +71,5 @@ class LLMResources:
             )
 
 
-# Module-level singleton — shared across all RAGService instances and workers.
+# Module-level singleton — shared across all ChatOrchestrator instances and workers.
 llm_resources = LLMResources()

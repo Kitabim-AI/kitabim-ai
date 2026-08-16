@@ -1005,14 +1005,17 @@
   "share": {
     "shareBook": "Share Book",
     "shareQA": "Share Answer",
+    "shareQuote": "Share Quote",
+    "shareSearchResult": "Share Search Result",
     "postToFacebook": "Post to Facebook",
+    "postToX": "Post to X",
     "copyLink": "Copy Link",
     "linkCopied": "Copied!",
-    "previewLabel": "Preview on Facebook",
+    "previewLabel": "Preview",
     "questionLabel": "Question",
     "answerLabel": "Answer",
     "textCopied": "Text Copied!",
-    "pasteHint": "Text copied — paste it into your Facebook post"
+    "pasteHint": "Text copied — paste it into your post"
   },
   "graph": {
     "title": "Knowledge Graph",

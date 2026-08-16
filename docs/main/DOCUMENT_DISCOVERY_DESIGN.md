@@ -177,7 +177,7 @@ flowchart TD
 | `gcs_last_sync_at` (`system_configs`) | seed timestamp | Also not read or written by any code found in this repo — appears unused. |
 | `STORAGE_BACKEND` | `"local"` | `get_storage_provider()` in `storage_service.py` — `"gcs"` selects `GCSStorageProvider`, anything else uses `FileSystemStorageProvider`. |
 | `GCS_DATA_BUCKET` / `GCS_MEDIA_BUCKET` | none (required when `STORAGE_BACKEND=gcs`) | `get_storage_provider()`. |
-| `DATA_DIR` | `<repo_root>/data` | `settings.data_dir` — both entry points write temp download/cover files under here before upload to storage. |
+| `DATA_DIR` | `<repo_root>/data` | `settings.data_dir` — both entry points write temp download/cover files under here before upload to storage. GCS discovery writes directly under `settings.data_dir`; manual upload writes under `settings.uploads_dir` (`{DATA_DIR}/uploads`). |
 | `client_max_body_size` (nginx) | `512M` | `deploy/gcp/nginx/conf.d/kitabim.conf`, `apps/frontend/nginx.conf` — the only size cap on the uploaded book file for `POST /books/upload`; there is no application-level size check on the file itself. |
 
 ## API Endpoints
@@ -197,11 +197,11 @@ flowchart TD
 
 ## Testing
 
-- `services/worker/tests/scanners/gcs_discovery_scanner_test.py` — `GcsDiscoveryScanner`.
-- `packages/backend-core/tests/app/services/pdf_service_test.py` and `packages/backend-core/tests/app/services/pdf_docx_services_test.py` — `pdf_service.py` (and `docx_service.py`).
-- `packages/backend-core/tests/app/services/storage_service_test.py` — `storage_service.py`.
+- `services/worker/tests/scanners/gcs_discovery_scanner_test.py` is a one-assertion placeholder scaffold (`assert True`) — it does not actually exercise `GcsDiscoveryScanner`'s discovery/dedupe/creation logic.
+- `packages/backend-core/tests/app/services/pdf_docx_services_test.py` — the real coverage for `pdf_service.py` (`read_pdf_page_count`, `extract_pdf_cover`, `create_page_stubs`) and `docx_service.py` (`extract_docx_pages`, `extract_docx_cover`, footnote/heading helpers). `pdf_service_test.py` and `docx_service_test.py` alongside it are likewise one-assertion placeholder scaffolds.
+- `packages/backend-core/tests/app/services/storage_service_test.py` — `storage_service.py` (`FileSystemStorageProvider`, `GCSStorageProvider` via mocks, `get_storage_provider`).
 - `packages/backend-core/tests/app/db/books_repository_test.py` — `find_by_hash`/`find_by_filename` duplicate-detection lookups.
-- No dedicated test file exists for the `POST /books/upload` handler itself as of 2026-07-29 — `services/backend/tests/api/endpoints/books_router_test.py` (the router's test file) has no upload-related test, and no `test_upload*`/`*upload*_test.py` file was found under `services/backend/tests`.
+- No dedicated test file exists for the `POST /books/upload` handler itself — `services/backend/tests/api/endpoints/books_router_test.py` (the router's test file) has no upload-related test, and no `test_upload*`/`*upload*_test.py` file exists under `services/backend/tests`.
 
 ## Related Docs
 

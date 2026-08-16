@@ -93,6 +93,8 @@ class GraphRepository:
         plugin is installed in either compose file) used by the resolution
         pass's fuzzy candidate lookup; the plain B-tree indexes remain for
         exact-match reads elsewhere (e.g. the admin search in GraphView.tsx).
+        `entity_profile_embedding_idx` is a vector index on entity profile embeddings
+        for semantic similarity search in entity resolution.
         """
         statements = [
             "DROP CONSTRAINT entity_name_unique IF EXISTS;",
@@ -104,6 +106,14 @@ class GraphRepository:
             "CREATE INDEX rel_rel_type_idx IF NOT EXISTS FOR ()-[r:RELATED_TO]-() ON (r.rel_type);",
             "CREATE INDEX rel_id_idx IF NOT EXISTS FOR ()-[r:RELATED_TO]-() ON (r.id);",
             "CREATE INDEX rel_chunk_refs_idx IF NOT EXISTS FOR ()-[r:RELATED_TO]-() ON (r.chunk_refs);",
+            """
+            CREATE VECTOR INDEX entity_profile_embedding_idx IF NOT EXISTS
+            FOR (e:Entity) ON (e.profile_embedding)
+            OPTIONS { indexConfig: {
+                `vector.dimensions`: 3072,
+                `vector.similarity_function`: 'cosine'
+            }};
+            """,
         ]
         async with self._driver.session() as session:
             for statement in statements:
@@ -480,6 +490,61 @@ class GraphRepository:
                 scope=scope,
                 book_id=book_id,
                 edit_distance=str(edit_distance),
+                limit=limit,
+            )
+            return await result.data()
+
+    async def find_semantic_candidates(
+        self,
+        entity_id: str,
+        embedding: List[float],
+        scope: str,
+        book_id: Optional[str] = None,
+        limit: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """Live per-entity semantic candidate lookup via the native Neo4j vector index
+        (`entity_profile_embedding_idx`, Task 2). Unlike the GDS `kNN` methods below
+        (Items 6-9), this needs no graph projection/refresh lifecycle — the index
+        updates incrementally as `profile_embedding` is written, so a query always
+        sees current data.
+
+        Returns candidates shaped like `find_resolution_candidates`'s output so both
+        candidate sources merge into one list in `resolve_entity` without reshaping.
+
+        The vector index selects its `k` nearest neighbors *before* the `WHERE`
+        clause's scope/book_id filter runs (unlike `find_resolution_candidates`,
+        which filters via a streaming procedure before its `LIMIT`). Requesting only
+        `limit + 1` would mean the fixed top-k is chosen globally across the whole
+        graph, so for a scoped (fiction, book_id-scoped) entity the odds that any of
+        those globally-nearest neighbors happen to share its book are low — this
+        would routinely return zero candidates even when good semantic matches exist
+        within the correct scope/book. Over-fetching substantially (`limit * 10`,
+        floored at 50) before the post-filter narrows it down makes it far more
+        likely that enough same-scope/same-book neighbors survive the filter; the
+        final `LIMIT $limit` in `RETURN` still caps the result size.
+        """
+        query = """
+        CALL db.index.vector.queryNodes('entity_profile_embedding_idx', $k, $embedding)
+        YIELD node, score
+        WHERE node.id <> $entity_id
+          AND node.scope = $scope
+          AND coalesce(node.resolution_status, 'unresolved') <> 'resolving'
+          AND ($book_id IS NULL OR node.book_id = $book_id)
+        RETURN node.id AS id, node.canonical_name AS canonical_name, node.aliases AS aliases,
+               node.type AS type, node.subtype AS subtype, node.scope AS scope, node.book_id AS book_id,
+               node.year_hijri AS year_hijri, node.year_gregorian AS year_gregorian,
+               node.century_gregorian AS century_gregorian, score
+        ORDER BY score DESC
+        LIMIT $limit
+        """
+        async with self._driver.session() as session:
+            result = await session.run(
+                query,
+                embedding=embedding,
+                entity_id=entity_id,
+                scope=scope,
+                book_id=book_id,
+                k=max(limit * 10, 50),
                 limit=limit,
             )
             return await result.data()

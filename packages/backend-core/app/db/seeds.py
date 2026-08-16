@@ -89,29 +89,9 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Maximum number of concurrent LLM batch calls during knowledge graph extraction. Each call processes kg_chunk_batch_size chunks.",
         },
         {
-            "key": "agent_max_steps",
-            "value": "6",
-            "description": "Maximum ReAct iterations/steps per round in the agent loop.",
-        },
-        {
-            "key": "agent_enough_chunks",
-            "value": "8",
-            "description": "Early-exit threshold: stop agent loop once this many chunks are collected.",
-        },
-        {
             "key": "knowledge_graph_enabled",
             "value": "false",
             "description": "Globally enable/disable knowledge graph extraction and the graph scanner. Set to 'true' to activate.",
-        },
-        {
-            "key": "fictional_categories",
-            "value": "رومان, تارىخىي رومان, بالىلار رومانى, ساتىرىك رومان, پەلسەپىۋىي رومان, پوۋېست, پوۋېستلار, تارىخىي پوۋېست, ھېكايىلەر, تارىخىي ھېكايىلەر, بالىلار ھېكايىلېرى, چۆچەكلەر, قىسسە, تارىخىي قىسسە, داستان, داستانلار, تارىخىي داستان, رىۋايەتلەر, مەسەللەر, لەتىپىلەر, يۇمۇرلار, شېئىرلار, سەھنە ئەسەرلېرى, كىنو سېنارىيىلىرى",
-            "description": "Comma-separated list of categories that indicate a book is fictional. If a book's categories match any in this list, its Person entities will be namespaced to prevent cross-book duplication. Otherwise, it defaults to non-fictional.",
-        },
-        {
-            "key": "use_deterministic_router",
-            "value": "false",
-            "description": "Globally enable/disable the deterministic Python RAG router instead of the LLM-driven ADK ReAct agent. Set to 'true' to activate.",
         },
         {
             "key": "ocr_scanner_batch_size",
@@ -212,6 +192,11 @@ async def seed_system_configs(session: AsyncSession):
             "key": "rag_graph_top_k",
             "value": "10",
             "description": "Maximum number of knowledge-graph facts fed into RAG context per turn, highest-scoring first.",
+        },
+        {
+            "key": "rag_agent_max_llm_calls",
+            "value": "12",
+            "description": "Hard ceiling on ADK LLM calls per retrieval-agent run (google.adk.RunConfig.max_llm_calls), enforced by the ADK runner itself. AGENT_SYSTEM_PROMPT already asks the model to stop within 6 tool calls (10 for multi-sub-question turns), but that's prose the model can ignore; this is the code-enforced backstop. Set above the prompt's own budget (tool calls + 1 final no-tool-call round) so it only catches genuine runaway loops, not normal completions. When the limit is hit mid-run, the orchestrator logs a warning and proceeds to answer synthesis with whatever evidence was gathered so far, rather than failing the turn.",
         },
         {
             "key": "collection_page_size",

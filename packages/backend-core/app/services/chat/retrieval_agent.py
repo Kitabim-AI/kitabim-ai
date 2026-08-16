@@ -66,6 +66,12 @@ def build_retrieval_agent(
             hints.append(
                 f"- Query hint: Dictionary subtype identified as '{intent_signals['dictionary_subtype']}'"
             )
+        if intent_signals.get("dictionary_term"):
+            hints.append(
+                f"- Query hint: Dictionary term already extracted as '{intent_signals['dictionary_term']}' "
+                "— pass this exact string as the term argument to whichever dictionary tool you call; "
+                "do not re-extract or re-spell it from the raw question."
+            )
         if intent_signals.get("quran_surah") or intent_signals.get("quran_ayah"):
             hints.append(
                 f"- Query hint: Quran surah {intent_signals.get('quran_surah')}, ayah {intent_signals.get('quran_ayah')}"

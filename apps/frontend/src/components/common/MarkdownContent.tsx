@@ -88,7 +88,7 @@ const applyInline = (
   render: (match: string, group1: string, group2: string | undefined, key: number) => React.ReactNode
 ) => nodes.flatMap(node => (typeof node === 'string' ? splitInline(node, regex, render) : [node]));
 
-const renderInline = (text: string, onReferenceClick?: (bookId: string, pageNums: number[]) => void) => {
+const renderInline = (text: string, onReferenceClick?: (bookId: string, pageNums: number[], isGraph?: boolean, query?: string) => void) => {
   let nodes: React.ReactNode[] = [text];
 
   // Handle markdown links: [text](url)
@@ -97,17 +97,25 @@ const renderInline = (text: string, onReferenceClick?: (bookId: string, pageNums
     // extract the actual ref: URL from inside it.
     let effectiveUrl = url || '';
     if (!effectiveUrl.startsWith('ref:') && effectiveUrl.includes('ref:')) {
-      const nestedRef = effectiveUrl.match(/ref:[\w]+:(?:[\d,:]+|summary)/);
+      const nestedRef = effectiveUrl.match(/ref:[\w:-]+/);
       if (nestedRef) effectiveUrl = nestedRef[0];
     }
 
     if (effectiveUrl.startsWith('ref:')) {
       const parts = effectiveUrl.split(':');
-      const bookId = parts[1];
+      let isGraph = false;
+      let bookId = parts[1] || '';
       let pageNums: number[] = [];
       let isSummaryRef = false;
+      let graphQuery = '';
 
-      if (bookId === 'quran') {
+      if (parts[1] === 'graph' || parts[1] === 'knowledge_graph') {
+        isGraph = true;
+        bookId = parts[2] || 'knowledge_graph';
+        if (parts[3]) {
+          pageNums = parts[3].split(',').map(p => parseInt(p.trim(), 10)).filter(p => !isNaN(p));
+        }
+      } else if (bookId === 'quran') {
         const surah = parseInt(parts[2], 10);
         if (!isNaN(surah)) {
           pageNums.push(surah);
@@ -126,14 +134,26 @@ const renderInline = (text: string, onReferenceClick?: (bookId: string, pageNums
 
       // Clean up the text in case the LLM included the BookID inside the link name
       const cleanText = text.replace(/\s*\(?BookID:\s*[a-zA-Z0-9-]+\)?/gi, '');
+      if (
+        cleanText.includes('بىلىم گىرافىكى') ||
+        cleanText.includes('بىلىم گىرافى') ||
+        cleanText.includes('بىلىم گراپى') ||
+        cleanText.toLowerCase().includes('knowledge graph') ||
+        bookId === 'knowledge_graph' ||
+        bookId === 'graph'
+      ) {
+        isGraph = true;
+      }
 
       return (
         <button
           key={`ref-${key}`}
           onClick={(e) => {
             e.preventDefault();
-            if (onReferenceClick && bookId && (pageNums.length > 0 || isSummaryRef)) {
-              onReferenceClick(bookId, pageNums);
+            if (onReferenceClick) {
+              if (isGraph || (bookId && (pageNums.length > 0 || isSummaryRef))) {
+                onReferenceClick(bookId, pageNums, isGraph, graphQuery);
+              }
             }
           }}
           className="text-inherit hover:opacity-70 underline decoration-dotted underline-offset-4 font-normal transition-all"
@@ -232,9 +252,11 @@ const isTocLine = (line: string) => {
 
 const parseDigitString = (str: string): number | null => {
   if (!str) return null;
-  const normalized = str
+  const clean = str.trim().replace(/^[\s.:\-–—]+|[\s.:\-–—]+$/g, '');
+  const normalized = clean
     .replace(/[\u0660-\u0669]/g, d => String(d.charCodeAt(0) - 0x0660))
     .replace(/[\u06F0-\u06F9]/g, d => String(d.charCodeAt(0) - 0x06F0));
+  if (!/^\d+$/.test(normalized)) return null;
   const num = parseInt(normalized, 10);
   return isNaN(num) || num <= 0 ? null : num;
 };
@@ -256,6 +278,10 @@ const extractTocPageNumber = (line: string): number | null => {
 
   const startMatch = clean.match(/^([\d\u0660-\u0669\u06F0-\u06F9]+)/);
   if (startMatch) {
+    const rest = clean.slice(startMatch[0].length);
+    if (/^\s*[.\-:،](?![.\-:،])\s*\D/.test(rest)) {
+      return null;
+    }
     const num = parseDigitString(startMatch[1]);
     if (num !== null) return num;
   }
@@ -265,15 +291,17 @@ const extractTocPageNumber = (line: string): number | null => {
 
 const extractRowPageNumber = (row: string[]): number | null => {
   if (!row || row.length === 0) return null;
-  for (const cell of row) {
-    const num = parseDigitString(cell.trim());
+  for (let idx = row.length - 1; idx >= 0; idx--) {
+    const num = parseDigitString(row[idx]);
     if (num !== null && num > 0 && num < 5000) {
       return num;
     }
   }
-  for (const cell of row) {
-    const num = extractTocPageNumber(cell);
-    if (num !== null) return num;
+  for (let idx = row.length - 1; idx >= 0; idx--) {
+    const num = extractTocPageNumber(row[idx]);
+    if (num !== null && num > 0 && num < 5000) {
+      return num;
+    }
   }
   return null;
 };

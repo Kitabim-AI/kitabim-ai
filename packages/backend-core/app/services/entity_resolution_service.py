@@ -12,6 +12,7 @@ from __future__ import annotations
 import difflib
 import json
 import logging
+import math
 import unicodedata
 from typing import Any, Dict, List, Literal, Optional
 
@@ -79,6 +80,127 @@ def _name_similarity(a: Optional[str], b: Optional[str]) -> float:
     return difflib.SequenceMatcher(None, normalize_alias(a), normalize_alias(b)).ratio()
 
 
+def cosine_similarity(
+    a: Optional[List[float]], b: Optional[List[float]]
+) -> Optional[float]:
+    """Returns the cosine similarity of two equal-length vectors, or None if either is
+    missing/empty or their lengths don't match (e.g. one predates a model change)."""
+    if not a or not b or len(a) != len(b):
+        return None
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(y * y for y in b))
+    if norm_a == 0.0 or norm_b == 0.0:
+        return None
+    return dot / (norm_a * norm_b)
+
+
+def build_entity_profile_text(entity_data: Dict[str, Any]) -> str:
+    """Builds the normalized text an entity's semantic `profile_embedding` (Item 8,
+    knowledge-graph-improvement-backlog.md) is computed from: canonical name, aliases,
+    subtype/type, and context summary. Used both when embedding freshly extracted
+    entities (`embed_and_store_entity_profiles`, called from knowledge_graph_job) and
+    when re-embedding a merge-log snapshot for offline evaluation
+    (scripts/eval_entity_semantic_matching.py) — the two must build text identically
+    or evaluated similarity scores won't reflect what resolution actually saw.
+    """
+    parts = [entity_data.get("canonical_name") or ""]
+    parts.extend(entity_data.get("aliases") or [])
+    if entity_data.get("subtype"):
+        parts.append(entity_data["subtype"])
+    elif entity_data.get("type"):
+        parts.append(entity_data["type"])
+    if entity_data.get("context_summary"):
+        parts.append(entity_data["context_summary"])
+    text = " — ".join(p for p in parts if p)
+    # NFC-normalize before embedding (knowledge-graph-improvement-backlog.md Item 8):
+    # differing Unicode composition of visually-identical Uyghur text yields different
+    # embeddings otherwise. `normalize_alias` already does this for name comparisons;
+    # profile text needs it too since it feeds the embedding model directly.
+    return unicodedata.normalize("NFC", text)
+
+
+async def _embed_texts_batched(
+    embeddings_model: Any,
+    texts: List[str],
+    batch_size: Optional[int] = None,
+) -> List[Optional[List[float]]]:
+    """Embeds `texts` via `embeddings_model.aembed_documents`, chunked into batches of
+    `settings.embed_batch_size` (matching services/worker/jobs/embedding_job.py's
+    existing batching convention) — a single unbatched call fails once the list
+    exceeds Gemini's `batchEmbedContents` limit (observed around 100 items), which
+    real books/eval runs easily exceed.
+
+    Returns exactly one entry per input text, preserving order, so callers can safely
+    `zip()` the result against their original list. If a batch's response count
+    doesn't match its request count, that whole batch is logged and represented as
+    `None` for each of its items — never the short/misaligned response — so a partial
+    batch can't silently shift every embedding that follows it out of alignment.
+
+    Shared by `embed_and_store_entity_profiles` (below) and
+    `scripts/eval_entity_semantic_matching.py`, which both need identical batching
+    behavior — the eval script separately needs the raw vectors back (to compute
+    cosine similarity against re-embedded snapshot text) rather than the "store to
+    Neo4j" side effect `embed_and_store_entity_profiles` has, so this is the shared
+    seam between the two rather than one calling the other.
+    """
+    if not texts:
+        return []
+    size = batch_size or settings.embed_batch_size
+    vectors: List[Optional[List[float]]] = []
+    for i in range(0, len(texts), size):
+        batch = texts[i : i + size]
+        batch_vectors = await embeddings_model.aembed_documents(batch)
+        if len(batch_vectors) != len(batch):
+            log_json(
+                logger,
+                logging.WARNING,
+                "embedding batch count mismatch — skipping batch",
+                batch_start=i,
+                expected=len(batch),
+                got=len(batch_vectors),
+            )
+            vectors.extend([None] * len(batch))
+            continue
+        vectors.extend(batch_vectors)
+    return vectors
+
+
+async def embed_and_store_entity_profiles(
+    graph_repo: GraphRepository,
+    entities: List[Dict[str, Any]],
+    embeddings_model: Any,
+) -> None:
+    """Embeds each entity's profile text (`build_entity_profile_text`) and stores it
+    as `profile_embedding` on its Neo4j node — the write side of Item 8. Batches via
+    `_embed_texts_batched` so callers with hundreds of entities (a whole book's worth,
+    from `knowledge_graph_job`) don't send one oversized request that Gemini rejects.
+    Never raises on a count mismatch; logs and skips the store instead, since a
+    partial/misaligned write would silently corrupt which embedding belongs to which
+    entity. `embeddings_model` must expose
+    `aembed_documents(texts: list[str]) -> list[list[float]]`
+    (the `EmbeddingProvider` protocol / `GeminiEmbeddings`).
+    """
+    if not entities:
+        return
+    texts = [build_entity_profile_text(e) for e in entities]
+    vectors = await _embed_texts_batched(embeddings_model, texts)
+    if len(vectors) != len(entities):
+        log_json(
+            logger,
+            logging.WARNING,
+            "entity profile embedding count mismatch — skipping store",
+            expected=len(entities),
+            got=len(vectors),
+        )
+        return
+    profile_data = [
+        {"id": e["id"], "embedding": vec} for e, vec in zip(entities, vectors) if vec
+    ]
+    if profile_data:
+        await graph_repo.store_profile_embeddings_bulk(profile_data)
+
+
 def _check_hard_constraints(
     entity_facts: Dict[str, Any], candidate_facts: Dict[str, Any]
 ) -> str:
@@ -116,9 +238,17 @@ def _graded_score(
     entity_facts: Dict[str, Any],
     candidate_facts: Dict[str, Any],
     hard_match: bool = False,
+    semantic_weight: float = 0.0,
 ) -> float:
     """Name/alias similarity + relationship-neighborhood overlap + weak subtype hint +
-    discounted shared-parent boost, roughly normalized to 0.0-1.0."""
+    discounted shared-parent boost, roughly normalized to 0.0-1.0.
+
+    When `semantic_weight` > 0 and both entities carry a `profile_embedding` (Item 8),
+    a semantic-similarity term is blended in, scaled down proportionally from the
+    other three signals so the total stays in [0, 1]. Falls back to the original
+    three-signal formula, byte-for-byte, when the weight is 0 (the default) or either
+    embedding is missing.
+    """
     name_score = max(
         _name_similarity(entity.get("canonical_name"), candidate.get("canonical_name")),
         max(
@@ -156,7 +286,22 @@ def _graded_score(
         else 0.0
     )
 
-    base_score = 0.55 * name_score + 0.35 * neighbor_score + 0.10 * subtype_score
+    semantic_score = None
+    if semantic_weight > 0.0:
+        semantic_score = cosine_similarity(
+            entity.get("profile_embedding"), candidate.get("profile_embedding")
+        )
+
+    if semantic_score is not None:
+        lexical_weight = 1.0 - semantic_weight
+        base_score = (
+            lexical_weight * 0.55 * name_score
+            + lexical_weight * 0.35 * neighbor_score
+            + lexical_weight * 0.10 * subtype_score
+            + semantic_weight * semantic_score
+        )
+    else:
+        base_score = 0.55 * name_score + 0.35 * neighbor_score + 0.10 * subtype_score
 
     # Item 3: Shared parent is a supporting signal, not an auto-merge.
     # Discount shared parent if neighbor degree indicates a high-degree hub ancestor.
@@ -421,6 +566,32 @@ async def resolve_entity(
     similarity_threshold = int(
         await config_repo.get_value("resolution_similarity_threshold", "2")
     )
+    semantic_matching_enabled = (
+        await config_repo.get_value("entity_semantic_matching_enabled", "false")
+    ).strip().lower() == "true"
+    semantic_weight = 0.0
+    if semantic_matching_enabled:
+        raw_semantic_weight = await config_repo.get_value(
+            "entity_semantic_weight", "0.15"
+        )
+        try:
+            semantic_weight = float(raw_semantic_weight)
+            if math.isnan(semantic_weight):
+                raise ValueError("entity_semantic_weight is NaN")
+        except (TypeError, ValueError):
+            log_json(
+                logger,
+                logging.WARNING,
+                "invalid entity_semantic_weight config value — falling back to default",
+                value=raw_semantic_weight,
+            )
+            semantic_weight = 0.15
+        # Clamp: a misconfigured weight (e.g. an admin typing "15" meaning "15%")
+        # must never be able to drive lexical_weight negative in _graded_score, which
+        # could push the blended score above 1.0 and clear STRONG_MERGE_SCORE for
+        # nearly every candidate — merges are destructive and only recoverable one at
+        # a time via execute_unmerge.
+        semantic_weight = min(max(semantic_weight, 0.0), 1.0)
 
     await graph_repo.set_resolution_status(entity_id, "resolving")
 
@@ -432,6 +603,47 @@ async def resolve_entity(
         book_id=book_id,
         edit_distance=similarity_threshold,
     )
+
+    if semantic_matching_enabled and entity.get("profile_embedding"):
+        raw_candidate_limit = await config_repo.get_value(
+            "entity_semantic_candidate_limit", "5"
+        )
+        try:
+            candidate_limit = int(raw_candidate_limit)
+        except (TypeError, ValueError):
+            log_json(
+                logger,
+                logging.WARNING,
+                "invalid entity_semantic_candidate_limit config value — falling back to default",
+                value=raw_candidate_limit,
+            )
+            candidate_limit = 5
+        # Only this lookup is guarded (not the rest of resolve_entity): a Neo4j/index
+        # hiccup here must degrade to lexical-only candidates for this one entity, not
+        # leave set_resolution_status(..., "resolving") stuck forever — every other
+        # candidate query in this file excludes 'resolving' nodes, so an unguarded
+        # failure here would permanently poison the candidate pool for everyone else.
+        try:
+            semantic_candidates = await graph_repo.find_semantic_candidates(
+                entity_id=entity_id,
+                embedding=entity["profile_embedding"],
+                scope=scope,
+                book_id=book_id,
+                limit=candidate_limit,
+            )
+        except Exception as semantic_exc:
+            log_json(
+                logger,
+                logging.WARNING,
+                "semantic candidate lookup failed — degrading to lexical-only candidates",
+                entity_id=entity_id,
+                error=str(semantic_exc),
+            )
+            semantic_candidates = []
+        seen_ids = {c["id"] for c in candidates}
+        candidates = candidates + [
+            c for c in semantic_candidates if c["id"] not in seen_ids
+        ]
 
     entity_facts = await graph_repo.get_entity_facts(entity_id)
     review_created = False
@@ -450,10 +662,11 @@ async def resolve_entity(
 
         score = _graded_score(
             entity,
-            candidate,
+            current_candidate,
             entity_facts,
             candidate_facts,
             hard_match=(hard == "match"),
+            semantic_weight=semantic_weight,
         )
         if score >= STRONG_MERGE_SCORE:
             decision = "merge"

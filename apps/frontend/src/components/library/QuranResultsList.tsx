@@ -1,7 +1,8 @@
-import { RefreshCw, Search } from 'lucide-react';
-import React from 'react';
+import { RefreshCw, Search, Share2 } from 'lucide-react';
+import React, { useState } from 'react';
 import { useI18n } from '../../i18n/I18nContext';
 import { QuranAyah } from '../../services/searchTabsService';
+import { ShareSearchResultModal } from '../share/ShareSearchResultModal';
 
 interface QuranResultsListProps {
   items: QuranAyah[];
@@ -12,6 +13,7 @@ interface QuranResultsListProps {
 
 export const QuranResultsList: React.FC<QuranResultsListProps> = ({ items, isLoading, hasQuery, noResultsTitleKey }) => {
   const { t } = useI18n();
+  const [shareAyah, setShareAyah] = useState<QuranAyah | null>(null);
 
   if (isLoading && items.length === 0) {
     return (
@@ -49,9 +51,19 @@ export const QuranResultsList: React.FC<QuranResultsListProps> = ({ items, isLoa
         >
           <div className="flex items-center justify-between mb-3" dir="rtl">
             <span className="uyghur-text text-base text-[#1a1a1a] dark:text-slate-100">{ayah.surahNameUg}</span>
-            <span className="px-3 py-1 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] rounded-full text-xs">
-              {ayah.surah}:{ayah.ayah}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="px-3 py-1 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] rounded-full text-xs">
+                {ayah.surah}:{ayah.ayah}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShareAyah(ayah)}
+                className="p-1 text-slate-400 hover:text-[#0369a1] dark:hover:text-[#38bdf8] rounded-lg transition-colors"
+                title={t('share.shareSearchResult')}
+              >
+                <Share2 size={16} strokeWidth={2} />
+              </button>
+            </div>
           </div>
           <p dir="rtl" className="arabic-text text-xl sm:text-2xl leading-loose text-[#1a1a1a] dark:text-slate-100 mb-3">
             {ayah.textAr}
@@ -61,6 +73,15 @@ export const QuranResultsList: React.FC<QuranResultsListProps> = ({ items, isLoa
           </p>
         </div>
       ))}
+
+      {shareAyah && (
+        <ShareSearchResultModal
+          title={`${shareAyah.surahNameUg} (${shareAyah.surah}:${shareAyah.ayah})`}
+          content={`${shareAyah.textAr}\n\n${shareAyah.textUg}`}
+          sourceLabel={`Quran ${shareAyah.surah}:${shareAyah.ayah}`}
+          onClose={() => setShareAyah(null)}
+        />
+      )}
     </div>
   );
 };

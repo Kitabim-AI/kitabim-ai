@@ -87,7 +87,7 @@ const { t } = useI18n();
 
 ### 4. Translation with parameters
 
-While not currently implemented, you can extend the `t()` function to support parameters:
+The `t()` function supports simple `{{param}}` interpolation:
 
 ```typescript
 // In your component
@@ -105,17 +105,25 @@ Translations are organized by feature/section:
 
 - `common.*` - Common UI elements (buttons, labels)
 - `app.*` - Application-wide text (name, tagline, footer)
+- `auth.*` - Authentication (login/OAuth) UI
 - `nav.*` - Navigation menu items
 - `home.*` - Home page content
 - `library.*` - Library view content
+- `book.*` - Book detail content
 - `bookCard.*` - Book card component
 - `chat.*` - Chat interface
 - `reader.*` - Reader view
 - `admin.*` - Admin panel
 - `spellCheck.*` - Spell check panel
-- `pagination.*` - Pagination controls
 - `notifications.*` - Success/error messages
 - `modal.*` - Modal dialogs
+- `graph.*` - Knowledge graph view
+- `joinUs.*` - Join us / contact page
+- `proverbs.*` - Proverbs dictionary
+- `quran.*` - Quran view
+- `share.*` - Share chat/link modals
+- `suggestions.*` - Suggestion/question rotator
+- `theme.*` - Theme switcher
 
 ## Example: Updating a Component
 
@@ -139,25 +147,9 @@ const MyComponent = () => {
 
 ## Components Already Updated
 
-- ✅ Navbar - Navigation menu items and search placeholder
-- ✅ LanguageSwitcher - Language selection component
+i18n coverage is now broad: 50+ components across `admin/`, `auth/`, `chat/`, `graph/`, `layout/`, `library/`, `pages/`, `reader/`, `share/`, and `spell-check/` consume `useI18n`, including Navbar, LanguageSwitcher, HomeView, LibraryView, BookCard, ChatInterface, ReaderView, AdminView, AdminTabs, UserManagementPanel, SpellCheckPanel, and Modal.
 
-## Components to Update
-
-The following components still have hardcoded text and should be updated:
-
-- [ ] HomeView
-- [ ] LibraryView
-- [ ] BookCard
-- [ ] ChatInterface
-- [ ] ReaderView
-- [ ] AdminView
-- [ ] AdminTabs
-- [ ] UserManagementPanel
-- [ ] SpellCheckPanel
-- [ ] Pagination
-- [ ] Modal
-- [ ] NotificationContainer
+When adding a new component, check `grep -rl "useI18n" src` for examples of the current pattern rather than relying on this list, since it will drift as components are added.
 
 ## Best Practices
 
@@ -175,4 +167,4 @@ The default language is **Uyghur (ug)**. This is set in `i18n/i18n.ts`:
 export const defaultLanguage: Language = 'ug';
 ```
 
-Users can change the language using the LanguageSwitcher component, and their preference will persist for the session.
+Users can change the language using the LanguageSwitcher component, and their preference is saved to `localStorage` (`kitabim_language`), so it persists across sessions, not just the current one.

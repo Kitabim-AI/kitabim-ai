@@ -9,17 +9,20 @@
 ```
 /packages/backend-core
   /app
-    /api
-    /services
     /core
     /db
+    /decorators
+    /llm
     /models
+    /services
     /utils
+    jobs.py
+    queue.py
 ```
 
 ## Run (Dev)
-- `PYTHONPATH=packages/backend-core uvicorn app.main:app --reload --port 8000 --app-dir packages/backend-core`
-- Queue worker (required): `PYTHONPATH=packages/backend-core python -m arq app.worker.WorkerSettings`
+- `PYTHONPATH=packages/backend-core:services/backend uvicorn main:app --reload --port 8000 --app-dir services/backend`
+- Queue worker (required, runs from `services/worker/`): `PYTHONPATH=packages/backend-core:services/worker arq worker.WorkerSettings`
 
 ## Notes
 - Local dev uses Docker Compose.

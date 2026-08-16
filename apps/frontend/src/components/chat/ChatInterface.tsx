@@ -14,12 +14,14 @@ import {
   PanelRightOpen,
   Plus,
   Send,
+  Share2,
   ThumbsDown,
   ThumbsUp,
   Trash2,
   User,
   X,
 } from 'lucide-react';
+import { ShareChatModal } from '../share/ShareChatModal';
 import React, { useEffect, useRef, useState } from 'react';
 import { CHARACTERS, DEFAULT_CHARACTER_ID } from '../../constants/characters';
 import { useAppContext } from '../../context/AppContext';
@@ -150,7 +152,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const { fontSize, setModal } = useAppContext();
   const isGlobal = type === 'global';
   const chatFontSize = fontSize;
-  const [selectedReference, setSelectedReference] = React.useState<{ bookId: string; pageNums: number[] } | null>(null);
+  const [selectedReference, setSelectedReference] = React.useState<{ bookId: string; pageNums: number[]; isGraph?: boolean; graphQuery?: string } | null>(null);
+  const [shareMsg, setShareMsg] = useState<{ question: string; answer: string } | null>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 1024 : false);
   const inputRef = useRef<HTMLInputElement>(null);
   const readerOuterRef = useRef<HTMLDivElement>(null);
@@ -237,8 +240,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     };
   }, []);
 
-  const handleReferenceClick = (bookId: string, pageNums: number[]) => {
-    setSelectedReference({ bookId, pageNums });
+  const handleReferenceClick = (bookId: string, pageNums: number[], isGraph?: boolean, graphQuery?: string) => {
+    setSelectedReference({ bookId, pageNums, isGraph, graphQuery });
   };
 
   const currentCharacter = isGlobal
@@ -768,6 +771,19 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               )}
               {msg.role === 'model' && !isChatting && (
                 <div dir="ltr" className="flex gap-0.5 items-center px-1">
+                  <button
+                    onClick={() => {
+                      const userMsg = chatMessages.slice(0, idx).filter(m => m.role === 'user').pop();
+                      setShareMsg({
+                        question: userMsg ? userMsg.text : '',
+                        answer: msg.text,
+                      });
+                    }}
+                    title={t('share.shareQA')}
+                    className="p-1.5 rounded-lg text-slate-300 dark:text-slate-400 hover:text-[#0369a1] hover:bg-[#0369a1]/10 dark:hover:text-[#38bdf8] dark:hover:bg-[#38bdf8]/10 transition-all"
+                  >
+                    <Share2 size={18} strokeWidth={2} />
+                  </button>
                   {msg.evalId !== undefined && (
                     <>
                       <button
@@ -894,6 +910,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           onClose={() => setSelectedReference(null)}
           bookId={selectedReference?.bookId || ''}
           pageNumbers={selectedReference?.pageNums || []}
+        />
+      )}
+      {/* Share Q&A Modal */}
+      {shareMsg && (
+        <ShareChatModal
+          question={shareMsg.question}
+          answer={shareMsg.answer}
+          onClose={() => setShareMsg(null)}
         />
       )}
     </div>

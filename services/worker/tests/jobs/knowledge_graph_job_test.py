@@ -1,6 +1,9 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from services.worker.jobs.knowledge_graph_job import knowledge_graph_job
+from services.worker.jobs.knowledge_graph_job import (
+    knowledge_graph_job,
+    _maybe_embed_entity_profiles,
+)
 from app.db.models import Book, Chunk
 
 
@@ -439,3 +442,117 @@ async def test_knowledge_graph_job_failure():
 
             mock_graph_repo.close.assert_called_once()
             mock_session.commit.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_maybe_embed_entity_profiles_noop_when_disabled():
+    graph_repo = AsyncMock()
+    entities = [{"id": "e1", "canonical_name": "A", "aliases": []}]
+
+    with (
+        patch("app.db.session.async_session_factory") as mock_session_factory,
+        patch(
+            "services.worker.jobs.knowledge_graph_job.SystemConfigsRepository.get_value",
+            new_callable=AsyncMock,
+        ) as mock_get_value,
+        patch(
+            "services.worker.jobs.knowledge_graph_job.get_embedding_provider"
+        ) as mock_get_embedding_provider,
+        patch(
+            "services.worker.jobs.knowledge_graph_job.embed_and_store_entity_profiles",
+            new_callable=AsyncMock,
+        ) as mock_embed_and_store,
+    ):
+        mock_session = AsyncMock()
+        mock_session_factory.return_value.__aenter__.return_value = mock_session
+        mock_get_value.return_value = "false"
+
+        await _maybe_embed_entity_profiles(graph_repo, entities, "book-123")
+
+        mock_get_embedding_provider.assert_not_called()
+        mock_embed_and_store.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_maybe_embed_entity_profiles_embeds_when_enabled():
+    graph_repo = AsyncMock()
+    entities = [{"id": "e1", "canonical_name": "A", "aliases": []}]
+
+    with (
+        patch("app.db.session.async_session_factory") as mock_session_factory,
+        patch(
+            "services.worker.jobs.knowledge_graph_job.SystemConfigsRepository.get_value",
+            side_effect=_config_get_value(
+                overrides={
+                    "entity_semantic_matching_enabled": "true",
+                    "gemini_embedding_model": "gemini-embedding-2",
+                }
+            ),
+        ),
+        patch(
+            "services.worker.jobs.knowledge_graph_job.get_embedding_provider"
+        ) as mock_get_embedding_provider,
+        patch(
+            "services.worker.jobs.knowledge_graph_job.embed_and_store_entity_profiles",
+            new_callable=AsyncMock,
+        ) as mock_embed_and_store,
+    ):
+        mock_session = AsyncMock()
+        mock_session_factory.return_value.__aenter__.return_value = mock_session
+        mock_embeddings_model = AsyncMock()
+        mock_get_embedding_provider.return_value = mock_embeddings_model
+
+        await _maybe_embed_entity_profiles(graph_repo, entities, "book-123")
+
+        mock_get_embedding_provider.assert_called_once_with("gemini-embedding-2")
+        mock_embed_and_store.assert_called_once_with(
+            graph_repo, entities, mock_embeddings_model
+        )
+
+
+@pytest.mark.asyncio
+async def test_maybe_embed_entity_profiles_swallows_embedding_failure():
+    graph_repo = AsyncMock()
+    entities = [{"id": "e1", "canonical_name": "A", "aliases": []}]
+
+    with (
+        patch("app.db.session.async_session_factory") as mock_session_factory,
+        patch(
+            "services.worker.jobs.knowledge_graph_job.SystemConfigsRepository.get_value",
+            side_effect=_config_get_value(
+                overrides={
+                    "entity_semantic_matching_enabled": "true",
+                    "gemini_embedding_model": "gemini-embedding-2",
+                }
+            ),
+        ),
+        patch(
+            "services.worker.jobs.knowledge_graph_job.get_embedding_provider"
+        ) as mock_get_embedding_provider,
+        patch(
+            "services.worker.jobs.knowledge_graph_job.embed_and_store_entity_profiles",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("embedding API down"),
+        ),
+    ):
+        mock_session = AsyncMock()
+        mock_session_factory.return_value.__aenter__.return_value = mock_session
+        mock_get_embedding_provider.return_value = AsyncMock()
+
+        # Must not raise — an embedding failure is logged and swallowed, never
+        # allowed to fail the job (the graph write already succeeded by this point).
+        # Reaching get_embedding_provider confirms the failure happened where
+        # expected (inside embed_and_store_entity_profiles), not earlier.
+        await _maybe_embed_entity_profiles(graph_repo, entities, "book-123")
+        mock_get_embedding_provider.assert_called_once_with("gemini-embedding-2")
+
+
+@pytest.mark.asyncio
+async def test_maybe_embed_entity_profiles_noop_on_empty_entities():
+    graph_repo = AsyncMock()
+
+    with patch(
+        "services.worker.jobs.knowledge_graph_job.get_embedding_provider"
+    ) as mock_get_embedding_provider:
+        await _maybe_embed_entity_profiles(graph_repo, [], "book-123")
+        mock_get_embedding_provider.assert_not_called()
