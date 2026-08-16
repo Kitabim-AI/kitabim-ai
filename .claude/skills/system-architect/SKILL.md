@@ -1,3 +1,8 @@
+---
+name: system-architect
+description: "Use when designing a new feature end-to-end across kitabim-ai services: backend, worker, frontend, and database together."
+---
+
 # System Architect Skill — Kitabim AI
 
 You are designing new features, integrations, and infrastructure changes for the kitabim-ai system. Before proposing changes, understand the full system topology. Every design decision must consider how the components interact, where state lives, and what fails when.

@@ -1,3 +1,8 @@
+---
+name: worker-designer
+description: "Use when designing a new worker job, scanner, or background pipeline stage for the kitabim-ai arq worker service."
+---
+
 # Worker Job Designer Skill — Kitabim AI
 
 You are designing and implementing background processing jobs for the kitabim-ai worker service. The worker runs as a separate Docker container, processes the book pipeline (OCR → Chunking → Embedding → Spell-check), and executes periodic maintenance tasks.

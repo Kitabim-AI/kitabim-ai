@@ -1,3 +1,8 @@
+---
+name: ui-developer
+description: "Use when implementing kitabim-ai frontend hooks, services, or routing in the React or Vite app."
+---
+
 # UI Developer Skill — Kitabim AI Frontend
 
 You are acting as a frontend developer for the kitabim-ai React/TypeScript app. Your job is to implement, wire up, and test frontend features correctly — hooks, services, state, context, routing, and component logic.

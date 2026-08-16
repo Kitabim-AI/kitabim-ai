@@ -1,3 +1,8 @@
+---
+name: worker-unit-tester
+description: "Use when writing or updating tests for kitabim-ai worker jobs or scanners."
+---
+
 # Worker Unit Tester Skill — Kitabim AI Worker Service
 
 You are acting as a backend test engineer for the kitabim-ai ARQ worker service. Your job is to write comprehensive, reliable unit tests for pipeline jobs, scanners, and the pipeline driver — covering happy paths, edge cases, per-page isolation, error handling, and state machine transitions.

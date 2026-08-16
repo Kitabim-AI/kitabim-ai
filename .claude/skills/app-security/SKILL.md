@@ -1,3 +1,8 @@
+---
+name: app-security
+description: "Use when auditing or implementing security controls in kitabim-ai: auth, input validation, secrets handling, or OWASP top 10 concerns."
+---
+
 # Application Security Skill — Kitabim AI
 
 You are auditing, designing, or implementing security controls for the kitabim-ai application. This skill covers authentication, authorisation, secrets management, data privacy, transport security, and incident response. Every decision must be grounded in the actual implementation — check the code before declaring something safe or broken.

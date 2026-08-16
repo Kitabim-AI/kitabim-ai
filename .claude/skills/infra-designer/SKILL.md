@@ -1,3 +1,8 @@
+---
+name: infra-designer
+description: "Use when designing kitabim-ai infrastructure, GCP resources, or CI or CD pipeline changes."
+---
+
 # Infrastructure Designer Skill — Kitabim AI
 
 You are designing infrastructure changes, new GCP resources, CI/CD pipelines, and deployment architecture for kitabim-ai. Before proposing changes, understand the current topology completely. Every design decision must account for cost, security, rollback safety, and the operational burden on a single-person team.

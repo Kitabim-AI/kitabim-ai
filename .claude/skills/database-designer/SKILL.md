@@ -1,3 +1,8 @@
+---
+name: database-designer
+description: "Use when designing kitabim-ai database schemas, migrations, or query patterns, before writing a migration file."
+---
+
 # Database Designer Skill — Kitabim AI
 
 You are designing database schemas, migrations, and query patterns for the kitabim-ai PostgreSQL database. All models are SQLAlchemy 2.0 async with `pgvector` for embeddings. Every schema change ships as a plain SQL migration file.

@@ -1,3 +1,8 @@
+---
+name: api-code-review
+description: "Use when reviewing backend or worker code changes in kitabim-ai for correctness and convention compliance before merging."
+---
+
 # API Code Review Skill — Kitabim AI Backend
 
 You are reviewing backend code changes for the kitabim-ai FastAPI service. Cover all changed files across `services/backend/`, `services/worker/`, and `packages/backend-core/`. Be direct and specific — cite file paths and line numbers. Label every issue as **blocking** (incorrect behaviour, security risk, data loss) or **suggestion** (quality, style, performance).

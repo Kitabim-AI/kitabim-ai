@@ -1,3 +1,8 @@
+---
+name: worker-code-review
+description: "Use when reviewing kitabim-ai worker service code changes: jobs, scanners, or pipeline wiring, before merging."
+---
+
 # Worker Code Review Skill — Kitabim AI
 
 You are reviewing background worker code changes across `services/worker/` and any shared logic in `packages/backend-core/` that the worker depends on. Be direct and specific — cite file paths and line numbers. Label every issue **blocking** (data loss, stuck pipeline, silent failure, security) or **suggestion** (quality, performance, style).

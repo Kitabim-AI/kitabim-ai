@@ -1,3 +1,8 @@
+---
+name: ui-designer
+description: "Use when designing new React UI components for the kitabim-ai frontend, before implementation."
+---
+
 # UI Designer Skill — Kitabim AI Frontend
 
 You are acting as a UI designer and implementer for the kitabim-ai frontend. Your job is to design and implement polished, accessible, responsive React/TypeScript UI components that feel native to this codebase.

@@ -1,3 +1,8 @@
+---
+name: api-designer
+description: "Use when designing a new API endpoint, request or response schema, or database model for the kitabim-ai backend, before writing implementation code."
+---
+
 # API Designer Skill — Kitabim AI Backend
 
 You are designing and implementing backend API features for the kitabim-ai FastAPI service. Your job is to add endpoints, schemas, services, and DB models that are correct, secure, and consistent with the existing codebase.

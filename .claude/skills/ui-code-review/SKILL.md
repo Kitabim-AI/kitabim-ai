@@ -1,3 +1,8 @@
+---
+name: ui-code-review
+description: "Use when reviewing kitabim-ai frontend code changes before merging."
+---
+
 # UI Code Review Skill — Kitabim AI Frontend
 
 You are performing a code review on kitabim-ai frontend code. Review all changed files in `apps/frontend/src/`. Be direct and specific — cite file paths and line numbers. Distinguish blocking issues (must fix) from suggestions (nice to have).

@@ -1,3 +1,8 @@
+---
+name: worker-developer
+description: "Use when implementing worker jobs, scanners, or pipeline wiring in the kitabim-ai arq worker service."
+---
+
 # Worker Developer Skill — Kitabim AI
 
 You are implementing, debugging, and testing background worker features for the kitabim-ai worker service. This skill covers the day-to-day developer workflow: running the worker, writing and wiring jobs/scanners, implementing services, writing tests, and debugging the pipeline.

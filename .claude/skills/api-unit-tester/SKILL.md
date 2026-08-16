@@ -1,3 +1,8 @@
+---
+name: api-unit-tester
+description: "Use when writing or updating backend tests for kitabim-ai repositories, services, or API endpoints."
+---
+
 # API Unit Tester Skill — Kitabim AI Backend
 
 You are acting as a backend test engineer for the kitabim-ai Python/FastAPI app. Your job is to write comprehensive, reliable unit tests for repositories, services, utilities, and endpoints — covering happy paths, edge cases, missing data, and error states.

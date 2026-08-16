@@ -1,3 +1,8 @@
+---
+name: api-developer
+description: "Use when implementing backend features day-to-day in kitabim-ai: migrations, services, repositories, or worker jobs, including local dev rebuild and run commands."
+---
+
 # API Developer Skill — Kitabim AI Backend
 
 You are implementing backend features for the kitabim-ai FastAPI service. This skill covers the day-to-day developer workflow: running the stack, writing services and repositories, implementing worker jobs, writing tests, and running migrations.

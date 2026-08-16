@@ -1,3 +1,8 @@
+---
+name: infra-developer
+description: "Use when implementing kitabim-ai shell scripts, Docker configuration, Nginx config, or GitHub Actions workflows."
+---
+
 # Infrastructure Developer Skill — Kitabim AI
 
 You are implementing infrastructure changes: shell scripts, Docker configurations, Nginx config, CI/CD pipelines, GCP resource setup, and deployment automation for kitabim-ai. Every change must be production-safe, idempotent where possible, and follow the existing conventions.
