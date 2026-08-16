@@ -14,6 +14,11 @@ Separately, three near-identical share modals already exist (`ShareModal.tsx`, `
 - Shared quote links additionally highlight the matched text once the page renders.
 - **Out of scope:** fuzzy/normalized text matching for highlighting (exact substring match only — if the page text has since been edited and no longer contains the quote verbatim, the link still opens and scrolls to the page, just without a highlight); persisting or analytics-tracking shares; sharing to platforms beyond X/Facebook (matches existing patterns).
 
+## Access Control
+Page/quote sharing is **public** — no login required to see the buttons, use them, or open a shared link — matching how the reader and the existing book-level share button already work today: `ReaderView.tsx:520-528`'s `ShareModal` button has no auth check (only `selectedBook.status === 'ready'`), `App.tsx:118` renders `ReaderView` unconditionally, and every book-read backend endpoint (`get_book`, `get_book_page`, etc. in `books_router.py`) uses `Depends(get_current_user_optional)`, which returns `None` for guests instead of rejecting them. This feature follows the same pattern: the new page/quote share buttons in `PageItem.tsx` (§4) get no auth check, and the new `/api/share/page/{book_id}/{page_number}` endpoint (§6) gets no auth dependency — same as `share_book`/`share_qa`. The existing `status == "ready"` / `visibility != "private"` gate (already in `share_book`, reused in §6) is the only access restriction, and it applies equally to guests and logged-in users.
+
+Chat sharing (`ShareChatModal`, already shipped) needs no change here — it's already registered-user-only end-to-end, not by an explicit check on the Share button itself, but structurally: the chat input is hidden behind `isAuthenticated` (`ChatInterface.tsx:433/891`), so an anonymous user can never produce an answer to share, and the backend chat endpoints (`chat_router.py`) require `Depends(require_reader)`, which 401s guests. This is called out explicitly so the distinction is a documented decision rather than an accident of two features built at different times.
+
 ## Proposed Changes
 
 ### 1. `apps/frontend/src/utils/shareText.ts` (new)
