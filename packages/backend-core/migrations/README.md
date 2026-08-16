@@ -5,8 +5,13 @@ This directory contains SQL migration scripts for the Kitabim AI database.
 ## Migration Naming Convention
 
 Migrations follow the pattern: `NNN_description.sql`
-- `NNN` = Sequential migration number (e.g., 033)
+- `NNN` = Sequential migration number (e.g., 089)
 - `description` = Brief description of the migration
+
+Note: migrations `002`-`033` no longer exist as individual files. They were
+squashed into `001_initial_baseline.sql` (a `pg_dump` schema snapshot) on
+2026-03-20. The next migration after the baseline is `034`, so numbering
+jumps from `001` straight to `034`.
 
 ## Running Migrations
 
@@ -14,7 +19,7 @@ Migrations follow the pattern: `NNN_description.sql`
 
 ```bash
 # Run a specific migration on local database
-psql -h localhost -p 5432 -U omarjan -d kitabim-ai -f packages/backend-core/migrations/033_reset_spell_check_for_new_logic.sql
+psql -h localhost -p 5432 -U omarjan -d kitabim-ai -f packages/backend-core/migrations/089_remove_dead_system_configs.sql
 ```
 
 ### Production
@@ -23,7 +28,7 @@ psql -h localhost -p 5432 -U omarjan -d kitabim-ai -f packages/backend-core/migr
 
 ```bash
 # From project root
-./scripts/run_migration_prod.sh 033
+./scripts/run_migration_prod.sh 089
 ```
 
 This script will:
@@ -37,7 +42,7 @@ This script will:
 
 ```bash
 # Copy migration to production server
-gcloud compute scp packages/backend-core/migrations/033_reset_spell_check_for_new_logic.sql \
+gcloud compute scp packages/backend-core/migrations/089_remove_dead_system_configs.sql \
   kitabim-prod:/tmp/ --zone=us-south1-c
 
 # SSH to production
@@ -45,10 +50,10 @@ gcloud compute ssh kitabim-prod --zone=us-south1-c
 
 # Run migration
 PGPASSWORD='<password>' psql -h <CLOUD_SQL_PRIVATE_IP> -p 5432 -U kitabim -d kitabim-ai \
-  -f /tmp/033_reset_spell_check_for_new_logic.sql
+  -f /tmp/089_remove_dead_system_configs.sql
 
 # Clean up
-rm /tmp/033_reset_spell_check_for_new_logic.sql
+rm /tmp/089_remove_dead_system_configs.sql
 exit
 ```
 
@@ -62,36 +67,31 @@ gcloud compute ssh kitabim-prod --zone=us-south1-c
 cd /opt/kitabim
 docker compose -f deploy/gcp/docker-compose.yml exec backend \
   psql postgresql://kitabim:<password>@<CLOUD_SQL_PRIVATE_IP>:5432/kitabim-ai \
-  -f /app/packages/backend-core/migrations/033_reset_spell_check_for_new_logic.sql
+  -f /app/packages/backend-core/migrations/089_remove_dead_system_configs.sql
 ```
 
 ## Recent Migrations
 
-### 033_reset_spell_check_for_new_logic.sql
-**Date:** 2025-03-16
-**Purpose:** Reset spell check data to use new simplified logic
+This section is illustrative, not exhaustive — see the directory listing for
+the full, current set of migrations.
 
-This migration:
-- Truncates `page_spell_issues` table (removes all existing issues)
-- Resets `spell_check_milestone` to `'idle'` for all processed pages
-- Resets book-level spell check milestones
+### 089_remove_dead_system_configs.sql
+**Date:** 2026-08-16
+**Purpose:** Remove dead `system_configs` rows left over from superseded features
 
-**Reason:** The spell check logic was updated to only create issues for words with OCR corrections in the dictionary, eliminating false positives from rare/valid words.
+**Rollback:** See `089_rollback_remove_dead_system_configs.sql`
 
-**Impact:**
-- All existing spell check issues deleted
-- All pages will be reprocessed
-- Only genuine OCR errors will be flagged
+### 088_seed_entity_semantic_matching_config.sql
+**Date:** 2026-08-15
+**Purpose:** Seed config keys for entity semantic matching (default off)
 
-**Rollback:** See `033_rollback_reset_spell_check_for_new_logic.sql` (note: cannot restore deleted data)
+**Rollback:** See `088_rollback_seed_entity_semantic_matching_config.sql`
 
-### 032_cleanup_redundant_indexes.sql
-**Date:** 2025-03-15
-**Purpose:** Remove redundant database indexes for performance
+### 086_add_aliases_to_history_dictionary.sql
+**Date:** 2026-08-09
+**Purpose:** Add an `aliases` column to `history_dictionary` for alternate term names
 
-### 031_add_book_level_milestones.sql
-**Date:** 2025-03-15
-**Purpose:** Add book-level milestone tracking columns
+**Rollback:** See `086_rollback_add_aliases_to_history_dictionary.sql`
 
 ## Rollback Migrations
 
@@ -101,10 +101,10 @@ To rollback a migration:
 ```bash
 # Local
 psql -h localhost -p 5432 -U omarjan -d kitabim-ai \
-  -f packages/backend-core/migrations/033_rollback_reset_spell_check_for_new_logic.sql
+  -f packages/backend-core/migrations/089_rollback_remove_dead_system_configs.sql
 
 # Production
-./scripts/run_migration_prod.sh 033_rollback
+./scripts/run_migration_prod.sh 089_rollback
 ```
 
 **Important:** Not all migrations can be rolled back. Some operations (like `TRUNCATE`) are irreversible. Always check the rollback script comments for limitations.
@@ -121,19 +121,21 @@ psql -h localhost -p 5432 -U omarjan -d kitabim-ai \
 
 ## Creating New Migrations
 
-1. Find the latest migration number:
+1. Find the latest migration number (note: `ls | tail -1` alone will
+   incorrectly return this `README.md` since it sorts after numeric
+   filenames — restrict the glob to `*.sql`):
    ```bash
-   ls -1 packages/backend-core/migrations/ | tail -1
+   ls -1 packages/backend-core/migrations/*.sql | tail -1
    ```
 
 2. Create new migration with next number:
    ```bash
-   touch packages/backend-core/migrations/034_your_description.sql
+   touch packages/backend-core/migrations/090_your_description.sql
    ```
 
 3. Add migration header:
    ```sql
-   -- Migration: 034_your_description.sql
+   -- Migration: 090_your_description.sql
    -- Description: What this migration does
    -- Author: Your Name
    -- Date: YYYY-MM-DD
@@ -145,7 +147,11 @@ psql -h localhost -p 5432 -U omarjan -d kitabim-ai \
    COMMIT;
    ```
 
-4. Test locally, then run on production
+4. If this migration adds/changes a table, follow the repo-wide workflow
+   order: migration file first, ORM model second, repository third,
+   endpoint last (see project `CLAUDE.md`).
+
+5. Test locally, then run on production
 
 ## Troubleshooting
 

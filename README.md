@@ -61,8 +61,12 @@ Uyghur literature and historical publications exist overwhelmingly in physical f
 - **Bulk OCR Auto-Correction**: Scheduled daily job (`auto_correct_scanner`) applying auto-correction rules across processed pages.
 - **Interactive Reader & Curation UI**: Modern React 19 SPA with PDF viewer, in-reader query assistant, spellcheck review workspace, and admin analytics panel.
 
+### 📚 AI-Driven History Dictionary Extraction
+- **Gemini-Powered Fact Extraction**: Extracts structured Uyghur history-dictionary entries from book content (interactive and Gemini Batch API modes, `batch_history_poller_scanner` / `history_extraction_job`).
+- **Admin Review & Staging Workflow**: Extracted entries land in a staging queue for admin approval/conflict-resolution before merging into the live `history_dictionary` table (`admin_history_dictionary_router`, `history_dictionary_router`).
+
 ### 🔐 User Management & Access Control
-- **OAuth2 & JWT Authentication**: Support for Google, Facebook, and Twitter/X login with secure `httpOnly` cookies.
+- **OAuth2 & JWT Authentication**: Support for Google, Facebook, Twitter/X, and Instagram login with secure `httpOnly` cookies.
 - **Role Hierarchy**: Strict role-based access control (**Admin**, **Editor**, **Reader**, **Guest**).
 
 ---
@@ -185,7 +189,7 @@ kitabim-ai/
 │   └── shared/                # Generated OpenAPI TypeScript types (npm workspace package)
 ├── services/
 │   ├── backend/                # FastAPI HTTP API (routes, auth, middleware)
-│   └── worker/                 # ARQ background processing worker (14 scanners, 9 jobs)
+│   └── worker/                 # ARQ background processing worker (16 scanners, 10 jobs)
 ├── deploy/
 │   ├── local/                 # Local Docker Compose rebuild & execution scripts
 │   └── gcp/                    # Production GCP infrastructure & deployment scripts
@@ -200,7 +204,7 @@ kitabim-ai/
 ### Core Package Breakdown (`packages/backend-core/app/`)
 
 - **`core/`**: Environment configurations (`config.py`), cache templates (`cache_config.py`), pipeline state constants (`pipeline.py`), character personas (`characters.py`), and i18n (`i18n.py`).
-- **`db/`**: SQLAlchemy models (`models.py` — 25 PostgreSQL tables), database engine factory (`session.py`), system configuration seeds (`seeds.py`), and 17 repository classes in `db/repositories/`.
+- **`db/`**: SQLAlchemy models (`models.py` — 30 PostgreSQL tables), database engine factory (`session.py`), system configuration seeds (`seeds.py`), and 18 repository classes in `db/repositories/`.
 - **`llm/`**: `GeminiLLM` client, `TextChain` / `StructuredChain` wrappers, Redis rate limiting, and circuit breaker resilience.
 - **`services/`**: Core business services including OCR, chunking, embeddings, spell-check, auto-correction, summary generation, storage abstraction, and sub-packages:
   - **`services/rag/`**: Shared retrieval primitives used by `ChatOrchestrator` — no handlers. Retrieval engine (`retrieval.py`), `QueryContext`, the 19 ADK tools (`rag/agent/tools.py`), the LLM reranker, and other tool-implementation helpers.
@@ -213,14 +217,14 @@ kitabim-ai/
 | Layer | Technologies Used |
 |---|---|
 | **Frontend** | React 19, TypeScript, Vite, Tailwind CSS, Lucide Icons, PDF.js |
-| **Backend API** | Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy (Async IO) |
-| **Worker / Queue** | Python 3.11+, ARQ (Async Redis Queue) |
+| **Backend API** | Python 3.13, FastAPI, Pydantic v2, SQLAlchemy (Async IO) |
+| **Worker / Queue** | Python 3.13, ARQ (Async Redis Queue) |
 | **Relational Database** | PostgreSQL 16+ with `pgvector` extension (Vector Similarity Search) |
 | **Graph Database** | Neo4j 5+ (Cypher Graph Database for GraphRAG) |
 | **Cache & Locking** | Redis (L0-L3 Query Caching, Distributed `MultiPageLock`, Rate Limiting) |
 | **Storage** | Google Cloud Storage (GCS) with local `./data/` volume fallback |
 | **AI & LLM Frameworks** | Google Gemini API (`google-genai` SDK), Google ADK (`google-adk` framework) |
-| **Authentication** | JWT (httpOnly Cookies) + OAuth2 (Google, Facebook, Twitter/X) |
+| **Authentication** | JWT (httpOnly Cookies) + OAuth2 (Google, Facebook, Twitter/X, Instagram) |
 
 ---
 
@@ -243,13 +247,10 @@ cp .env.template .env
 Ensure `.env` contains at minimum:
 ```env
 GEMINI_API_KEY=your_actual_gemini_api_key
-POSTGRES_DB=kitabim
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
-POSTGRES_HOST=host.docker.internal
-POSTGRES_PORT=5432
+DATABASE_URL=postgresql://kitabim:kitabim@host.docker.internal:5432/kitabim-ai
 REDIS_URL=redis://redis:6379/0
 ```
+> Note: the app reads a single `DATABASE_URL` connection string (see `packages/backend-core/app/core/config.py`), not separate `POSTGRES_*` vars. `docker-compose.yml` overrides `DATABASE_URL`/`REDIS_URL` for the `backend` and `worker` containers regardless of what's in `.env`.
 
 ### Running with Docker Compose
 
