@@ -9,20 +9,20 @@
       {
         "id": "system-overview",
         "label": "Full System Architecture",
-        "focus": ["user_web", "nginx", "fastapi", "postgres", "redis", "arq_worker", "gcs_storage", "gemini_api"],
-        "note": "Overall system components: React frontend, FastAPI backend, ARQ worker, PostgreSQL, Redis, GCS, and Gemini AI."
+        "focus": ["user_web", "nginx", "fastapi", "postgres", "neo4j", "redis", "arq_worker", "gcs_storage", "gemini_api"],
+        "note": "Overall system components: React frontend, FastAPI backend, ARQ worker, PostgreSQL, Neo4j, Redis, GCS, and Gemini AI."
       },
       {
         "id": "book-pipeline",
         "label": "Book Ingestion & OCR Pipeline",
-        "focus": ["user_web", "fastapi", "gcs_storage", "redis", "arq_worker", "ocr_engine", "postgres"],
-        "note": "PDF upload -> GCS storage -> ARQ worker queue -> Page rendering & OCR -> Text chunking & vector embedding -> PostgreSQL storage."
+        "focus": ["user_web", "fastapi", "gcs_storage", "redis", "arq_worker", "ocr_engine", "postgres", "neo4j"],
+        "note": "PDF upload -> GCS storage -> ARQ worker queue -> Page rendering & OCR -> Text chunking & vector embedding -> PostgreSQL & Neo4j storage."
       },
       {
         "id": "rag-chat",
         "label": "RAG Chat & Knowledge Query",
-        "focus": ["user_web", "fastapi", "postgres", "gemini_api"],
-        "note": "User chat query -> Vector search (pgvector) + Knowledge Graph retrieval -> Context building -> Gemini 3.6 response generation."
+        "focus": ["user_web", "fastapi", "postgres", "neo4j", "gemini_api"],
+        "note": "User chat query -> Vector search (pgvector) + Knowledge Graph (Neo4j) lookup -> Context building -> Gemini 3.6 response generation."
       }
     ]
   },
@@ -34,13 +34,14 @@
     { "id": "fastapi", "type": "backend", "label": "FastAPI Service", "sublabel": "HTTP API Server", "pos": [500, 260], "size": [150, 64], "tag": "packages/backend-core" },
     { "id": "redis", "type": "database", "label": "Redis Store", "sublabel": "Cache & ARQ Queue", "pos": [500, 100], "size": [150, 60] },
     { "id": "arq_worker", "type": "backend", "label": "ARQ Worker", "sublabel": "Async Job Processor", "pos": [500, 420], "size": [150, 64] },
+    { "id": "neo4j", "type": "database", "label": "Neo4j Graph DB", "sublabel": "Knowledge Graph", "pos": [770, 100], "size": [160, 60], "tag": "Cypher & GraphRAG" },
     { "id": "postgres", "type": "database", "label": "PostgreSQL DB", "sublabel": "pgvector & Relations", "pos": [770, 260], "size": [160, 64], "tag": "Cloud SQL / Host" },
     { "id": "gcs_storage", "type": "cloud", "label": "Object Storage", "sublabel": "GCS & ./data/ Volume", "pos": [770, 420], "size": [160, 64], "tag": "PDF & Page Images" },
     { "id": "gemini_api", "type": "cloud", "label": "Google Gemini API", "sublabel": "Flash & Embeddings", "pos": [1040, 260], "size": [160, 64], "tag": "AI RAG & Spellcheck" },
     { "id": "ocr_engine", "type": "backend", "label": "OCR & Spell Engine", "sublabel": "Gemini Vision OCR", "pos": [1040, 420], "size": [160, 64], "tag": "Uyghur Text Processing" }
   ],
   "boundaries": [
-    { "kind": "region", "label": "Kitabim.AI Platform Infrastructure", "wraps": ["nginx", "auth_jwt", "fastapi", "redis", "arq_worker", "postgres", "gcs_storage", "ocr_engine"] },
+    { "kind": "region", "label": "Kitabim.AI Platform Infrastructure", "wraps": ["nginx", "auth_jwt", "fastapi", "redis", "arq_worker", "postgres", "neo4j", "gcs_storage", "ocr_engine"] },
     { "kind": "security-group", "label": "Backend Core Runtime", "wraps": ["fastapi", "redis", "arq_worker"] }
   ],
   "connections": [
@@ -51,7 +52,9 @@
     { "id": "fastapi-redis", "from": "fastapi", "to": "redis", "label": "Session & Cache", "fromSide": "top", "toSide": "bottom", "labelDx": 45 },
     { "id": "worker-poll-redis", "from": "arq_worker", "to": "redis", "label": "Consume Jobs", "variant": "dashed", "fromSide": "left", "toSide": "top", "via": [[210, 452], [210, 65], [575, 65]], "labelAt": [210, 200] },
     { "id": "fastapi-postgres", "from": "fastapi", "to": "postgres", "label": "SQL & Vectors", "variant": "emphasis", "labelAt": [710, 245] },
+    { "id": "fastapi-neo4j", "from": "fastapi", "to": "neo4j", "label": "Graph Lookups", "fromSide": "right", "toSide": "left", "via": [[700, 292], [700, 130]], "labelAt": [705, 200] },
     { "id": "worker-postgres", "from": "arq_worker", "to": "postgres", "label": "Save Vectors", "fromSide": "bottom", "toSide": "right", "via": [[575, 500], [970, 500], [970, 292]], "labelAt": [770, 500] },
+    { "id": "worker-neo4j", "from": "arq_worker", "to": "neo4j", "label": "Extract & Resolve Entities", "variant": "dashed", "fromSide": "bottom", "toSide": "right", "via": [[575, 520], [970, 520], [970, 130]], "labelAt": [770, 525] },
     { "id": "fastapi-gcs", "from": "fastapi", "to": "gcs_storage", "label": "Upload PDF", "fromSide": "bottom", "toSide": "top", "via": [[575, 360], [850, 360]], "labelAt": [640, 360] },
     { "id": "worker-gcs", "from": "arq_worker", "to": "gcs_storage", "label": "Read PDF / Images", "fromSide": "right", "toSide": "left", "labelAt": [710, 435] },
     { "id": "worker-ocr", "from": "arq_worker", "to": "ocr_engine", "label": "OCR & Spellcheck", "fromSide": "bottom", "toSide": "bottom", "via": [[575, 540], [1120, 540]], "labelAt": [845, 540] },
@@ -65,7 +68,7 @@
         "PDF uploaded via React UI to FastAPI endpoint",
         "File stored in GCS / ./data/ volume and task pushed to Redis",
         "ARQ Worker extracts pages, runs OCR, generates chunks & embeddings",
-        "Extracted text, word index, and vectors saved in PostgreSQL"
+        "Extracted text & vectors in PostgreSQL; entities & relations in Neo4j"
       ]
     },
     {
@@ -73,7 +76,7 @@
       "title": "RAG Chat & Search Pipeline",
       "items": [
         "User sends query via /api/v1/chat endpoint",
-        "Hybrid search: pgvector similarity + Knowledge Graph word index",
+        "Hybrid search: pgvector similarity + Neo4j Knowledge Graph lookup",
         "Context assembled with book metadata & surrounding page chunks",
         "Google Gemini 3.6 Flash generates streaming response in Uyghur"
       ]
@@ -83,7 +86,7 @@
       "title": "Security & Architecture",
       "items": [
         "JWT Authentication + OAuth2 (Google, Facebook, Twitter/X)",
-        "Standalone Host PostgreSQL in Dev; Cloud SQL in Production",
+        "Standalone Host PostgreSQL & Neo4j in Dev; Cloud SQL in Production",
         "Shared business logic in packages/backend-core"
       ]
     }

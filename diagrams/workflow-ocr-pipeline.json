@@ -10,7 +10,7 @@
       {
         "id": "full-ocr-path",
         "label": "End-to-end OCR processing",
-        "focus": ["user", "upload_api", "redis_broker", "page_splitter", "tesseract_ocr", "vector_embedder", "db_commit"],
+        "focus": ["user", "upload_api", "redis_broker", "page_splitter", "gemini_ocr", "vector_embedder", "db_commit"],
         "note": "Complete path from user PDF upload to page rendering, OCR text extraction, chunk embedding, and PostgreSQL commit."
       }
     ],
@@ -31,13 +31,13 @@
     { "id": "ocr_phase", "label": "OCR Processing", "fromCol": 3, "toCol": 4, "variant": "emphasis" },
     { "id": "persist_phase", "label": "Vector Index", "fromCol": 5, "toCol": 5, "variant": "dashed" }
   ],
-  "mainPath": ["user", "upload_api", "redis_broker", "page_splitter", "tesseract_ocr", "vector_embedder", "db_commit"],
+  "mainPath": ["user", "upload_api", "redis_broker", "page_splitter", "gemini_ocr", "vector_embedder", "db_commit"],
   "nodes": [
     { "id": "user", "lane": "ui_intake", "col": 0, "type": "external", "label": "User Upload", "sublabel": "selects PDF" },
     { "id": "upload_api", "lane": "api_gateway", "col": 1, "type": "backend", "label": "FastAPI", "sublabel": "file intake" },
     { "id": "redis_broker", "lane": "queue_broker", "col": 2, "type": "database", "label": "Redis Queue", "sublabel": "ARQ job" },
     { "id": "page_splitter", "lane": "splitter_lane", "col": 3, "type": "backend", "label": "Page Splitter", "sublabel": "render PNGs" },
-    { "id": "tesseract_ocr", "lane": "ocr_lane", "col": 4, "type": "backend", "label": "Gemini OCR", "sublabel": "Vision API" },
+    { "id": "gemini_ocr", "lane": "ocr_lane", "col": 4, "type": "backend", "label": "Gemini OCR", "sublabel": "Vision API" },
     { "id": "vector_embedder", "lane": "embed_lane", "col": 5, "type": "cloud", "label": "Gemini Vector", "sublabel": "embeddings" },
     { "id": "db_commit", "lane": "storage_lane", "col": 5, "type": "database", "label": "PGVector", "sublabel": "save chunks" }
   ],
@@ -45,8 +45,8 @@
     { "id": "user-to-api", "from": "user", "to": "upload_api", "variant": "emphasis" },
     { "id": "api-to-redis", "from": "upload_api", "to": "redis_broker", "variant": "dashed" },
     { "id": "redis-to-splitter", "from": "redis_broker", "to": "page_splitter" },
-    { "id": "splitter-to-ocr", "from": "page_splitter", "to": "tesseract_ocr", "variant": "emphasis" },
-    { "id": "ocr-to-embed", "from": "tesseract_ocr", "to": "vector_embedder", "variant": "emphasis" },
+    { "id": "splitter-to-ocr", "from": "page_splitter", "to": "gemini_ocr", "variant": "emphasis" },
+    { "id": "ocr-to-embed", "from": "gemini_ocr", "to": "vector_embedder", "variant": "emphasis" },
     { "id": "embed-to-db", "from": "vector_embedder", "to": "db_commit", "variant": "emphasis" }
   ],
   "cards": [

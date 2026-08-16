@@ -5,7 +5,7 @@ This directory contains system architecture, workflow, data-flow, lifecycle, and
 ## Interactive HTML Diagrams
 
 1. **[System Architecture Map](file:///Users/Omarjan/Projects/kitabim-ai/diagrams/system-architecture.html)** (`system-architecture.html` — *Architecture*)
-   - **Infrastructure**: Web Frontend (React), Nginx Proxy, FastAPI, ARQ Worker, PostgreSQL (PGVector), Redis, GCS Storage, Gemini Vision OCR Engine, and Gemini 3.6 API.
+   - **Infrastructure**: Web Frontend (React), Nginx Proxy, FastAPI, ARQ Worker, PostgreSQL (PGVector), Neo4j Graph DB, Redis, GCS Storage, Gemini Vision OCR Engine, and Gemini 3.6 API.
    - **Preset Views**: *Full System Architecture*, *Book Ingestion & OCR Pipeline*, *RAG Chat & Knowledge Query*.
 
 2. **[Book Ingestion & RAG Chat Sequence](file:///Users/Omarjan/Projects/kitabim-ai/diagrams/sequence-pipelines.html)** (`sequence-pipelines.html` — *Sequence*)
@@ -32,13 +32,13 @@ Run the following commands from the repository root to regenerate HTML artifacts
 ```bash
 # 1. System Architecture Map
 node ~/.agents/skills/archify/bin/archify.mjs deliver architecture \
-  diagrams/kitabim-ai-system.architecture.json \
+  diagrams/system-architecture.json \
   diagrams/system-architecture.html \
   --quality standard --json
 
 # 2. Book Ingestion & RAG Chat Sequence
 node ~/.agents/skills/archify/bin/archify.mjs deliver sequence \
-  diagrams/kitabim-ai-pipelines.sequence.json \
+  diagrams/sequence-pipelines.json \
   diagrams/sequence-pipelines.html \
   --quality standard --json
 

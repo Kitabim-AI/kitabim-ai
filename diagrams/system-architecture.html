@@ -4840,7 +4840,7 @@
       </div>
     </div>
 
-    <script id="archify-guided-views-data" type="application/json">[{"id":"system-overview","label":"Full System Architecture","focus":["user_web","nginx","fastapi","postgres","redis","arq_worker","gcs_storage","gemini_api"],"note":"Overall system components: React frontend, FastAPI backend, ARQ worker, PostgreSQL, Redis, GCS, and Gemini AI."},{"id":"book-pipeline","label":"Book Ingestion \u0026 OCR Pipeline","focus":["user_web","fastapi","gcs_storage","redis","arq_worker","ocr_engine","postgres"],"note":"PDF upload -\u003e GCS storage -\u003e ARQ worker queue -\u003e Page rendering \u0026 OCR -\u003e Text chunking \u0026 vector embedding -\u003e PostgreSQL storage."},{"id":"rag-chat","label":"RAG Chat \u0026 Knowledge Query","focus":["user_web","fastapi","postgres","gemini_api"],"note":"User chat query -\u003e Vector search (pgvector) + Knowledge Graph retrieval -\u003e Context building -\u003e Gemini 3.6 response generation."}]</script>
+    <script id="archify-guided-views-data" type="application/json">[{"id":"system-overview","label":"Full System Architecture","focus":["user_web","nginx","fastapi","postgres","neo4j","redis","arq_worker","gcs_storage","gemini_api"],"note":"Overall system components: React frontend, FastAPI backend, ARQ worker, PostgreSQL, Neo4j, Redis, GCS, and Gemini AI."},{"id":"book-pipeline","label":"Book Ingestion \u0026 OCR Pipeline","focus":["user_web","fastapi","gcs_storage","redis","arq_worker","ocr_engine","postgres","neo4j"],"note":"PDF upload -\u003e GCS storage -\u003e ARQ worker queue -\u003e Page rendering \u0026 OCR -\u003e Text chunking \u0026 vector embedding -\u003e PostgreSQL \u0026 Neo4j storage."},{"id":"rag-chat","label":"RAG Chat \u0026 Knowledge Query","focus":["user_web","fastapi","postgres","neo4j","gemini_api"],"note":"User chat query -\u003e Vector search (pgvector) + Knowledge Graph (Neo4j) lookup -\u003e Context building -\u003e Gemini 3.6 response generation."}]</script>
 
     <div class="guided-views no-print" id="guided-views" hidden aria-label="Guided diagram views">
       <button id="guided-view-prev" type="button" aria-label="Previous guided view" title="Previous guided view ([)">&#8592;</button>
@@ -4923,11 +4923,13 @@
         <path data-edge-from="fastapi" data-edge-to="redis" data-edge-label="Session &amp; Cache" data-edge-key="4" data-edge-id="fastapi-redis" data-composition-points="575,260;575,160" d="M 575 260 L 575 160" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="arq_worker" data-edge-to="redis" data-edge-label="Consume Jobs" data-edge-key="5" data-edge-id="worker-poll-redis" data-composition-points="500,452;210,452;210,65;575,65;575,100" d="M 500 452 L 218 452 Q 210 452 210 444 L 210 73 Q 210 65 218 65 L 567 65 Q 575 65 575 73 L 575 100" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
         <path data-edge-from="fastapi" data-edge-to="postgres" data-edge-label="SQL &amp; Vectors" data-edge-key="6" data-edge-id="fastapi-postgres" data-composition-points="650,292;770,292" d="M 650 292 L 770 292" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="arq_worker" data-edge-to="postgres" data-edge-label="Save Vectors" data-edge-key="7" data-edge-id="worker-postgres" data-composition-points="575,484;575,500;970,500;970,292;930,292" d="M 575 484 L 575 492 Q 575 500 583 500 L 962 500 Q 970 500 970 492 L 970 300 Q 970 292 962 292 L 930 292" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="fastapi" data-edge-to="gcs_storage" data-edge-label="Upload PDF" data-edge-key="8" data-edge-id="fastapi-gcs" data-composition-points="575,324;575,360;850,360;850,420" d="M 575 324 L 575 352 Q 575 360 583 360 L 842 360 Q 850 360 850 368 L 850 420" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="arq_worker" data-edge-to="gcs_storage" data-edge-label="Read PDF / Images" data-edge-key="9" data-edge-id="worker-gcs" data-composition-points="650,452;770,452" d="M 650 452 L 770 452" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="arq_worker" data-edge-to="ocr_engine" data-edge-label="OCR &amp; Spellcheck" data-edge-key="10" data-edge-id="worker-ocr" data-composition-points="575,484;575,540;1120,540;1120,484" d="M 575 484 L 575 532 Q 575 540 583 540 L 1112 540 Q 1120 540 1120 532 L 1120 484" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="fastapi" data-edge-to="gemini_api" data-edge-label="RAG Prompt &amp; Embeddings" data-edge-key="11" data-edge-id="fastapi-gemini" data-composition-points="650,292;700,292;700,40;1120,40;1120,260" d="M 650 292 L 692 292 Q 700 292 700 284 L 700 48 Q 700 40 708 40 L 1112 40 Q 1120 40 1120 48 L 1120 260" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="fastapi" data-edge-to="neo4j" data-edge-label="Graph Lookups" data-edge-key="7" data-edge-id="fastapi-neo4j" data-composition-points="650,292;700,292;700,130;770,130" d="M 650 292 L 692 292 Q 700 292 700 284 L 700 138 Q 700 130 708 130 L 770 130" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="arq_worker" data-edge-to="postgres" data-edge-label="Save Vectors" data-edge-key="8" data-edge-id="worker-postgres" data-composition-points="575,484;575,500;970,500;970,292;930,292" d="M 575 484 L 575 492 Q 575 500 583 500 L 962 500 Q 970 500 970 492 L 970 300 Q 970 292 962 292 L 930 292" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="arq_worker" data-edge-to="neo4j" data-edge-label="Extract &amp; Resolve Entities" data-edge-key="9" data-edge-id="worker-neo4j" data-composition-points="575,484;575,520;970,520;970,130;930,130" d="M 575 484 L 575 512 Q 575 520 583 520 L 962 520 Q 970 520 970 512 L 970 138 Q 970 130 962 130 L 930 130" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="fastapi" data-edge-to="gcs_storage" data-edge-label="Upload PDF" data-edge-key="10" data-edge-id="fastapi-gcs" data-composition-points="575,324;575,360;850,360;850,420" d="M 575 324 L 575 352 Q 575 360 583 360 L 842 360 Q 850 360 850 368 L 850 420" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="arq_worker" data-edge-to="gcs_storage" data-edge-label="Read PDF / Images" data-edge-key="11" data-edge-id="worker-gcs" data-composition-points="650,452;770,452" d="M 650 452 L 770 452" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="arq_worker" data-edge-to="ocr_engine" data-edge-label="OCR &amp; Spellcheck" data-edge-key="12" data-edge-id="worker-ocr" data-composition-points="575,484;575,540;1120,540;1120,484" d="M 575 484 L 575 532 Q 575 540 583 540 L 1112 540 Q 1120 540 1120 532 L 1120 484" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="fastapi" data-edge-to="gemini_api" data-edge-label="RAG Prompt &amp; Embeddings" data-edge-key="13" data-edge-id="fastapi-gemini" data-composition-points="650,292;700,292;700,40;1120,40;1120,260" d="M 650 292 L 692 292 Q 700 292 700 284 L 700 48 Q 700 40 708 40 L 1112 40 Q 1120 40 1120 48 L 1120 260" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
 
         <!-- Components -->
         <g id="node-user_web" data-node-id="user_web" data-node-label="Web Frontend" tabindex="0" role="button" aria-label="Focus Web Frontend, React 19 / Vite SPA, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="React 19 / Vite SPA" data-node-tag="Uyghur RTL UI" data-node-context="Architecture component">
@@ -5014,6 +5016,19 @@
         <text data-detail="context" x="575" y="466" class="t-muted" font-size="9" text-anchor="middle">Async Job Processor</text>
         </g>
 
+        <g id="node-neo4j" data-node-id="neo4j" data-node-label="Neo4j Graph DB" tabindex="0" role="button" aria-label="Focus Neo4j Graph DB, Knowledge Graph, Kitabim.AI Platform Infrastructure" aria-pressed="false" data-node-kind="database" data-node-sublabel="Knowledge Graph" data-node-tag="Cypher &amp; GraphRAG" data-node-context="Kitabim.AI Platform Infrastructure">
+          <title>Neo4j Graph DB · Knowledge Graph · Kitabim.AI Platform Infrastructure · Cypher &amp; GraphRAG</title>
+          <rect x="770" y="100" width="160" height="60" rx="6" class="c-mask"/>
+          <rect x="770" y="100" width="160" height="60" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(776 106) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-detail-anchor x="850" y="128" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Neo4j Graph DB</text>
+        <text data-detail="context" x="850" y="144" class="t-muted" font-size="9" text-anchor="middle">Knowledge Graph</text>
+        <text data-detail="fine" x="850" y="152" class="t-database" font-size="7" text-anchor="middle">Cypher &amp; GraphRAG</text>
+        </g>
+
         <g id="node-postgres" data-node-id="postgres" data-node-label="PostgreSQL DB" tabindex="0" role="button" aria-label="Focus PostgreSQL DB, pgvector &amp; Relations, Kitabim.AI Platform Infrastructure" aria-pressed="false" data-node-kind="database" data-node-sublabel="pgvector &amp; Relations" data-node-tag="Cloud SQL / Host" data-node-context="Kitabim.AI Platform Infrastructure">
           <title>PostgreSQL DB · pgvector &amp; Relations · Kitabim.AI Platform Infrastructure · Cloud SQL / Host</title>
           <rect x="770" y="260" width="160" height="64" rx="6" class="c-mask"/>
@@ -5092,23 +5107,31 @@
           <rect x="673.8" y="235" width="72.4" height="14" rx="3" class="c-mask"/>
           <text x="710" y="245" class="t-backend" font-size="8" text-anchor="middle">SQL &amp; Vectors</text>
         </g>
-        <g data-detail="context" data-edge-from="arq_worker" data-edge-to="postgres" data-edge-label="Save Vectors" data-edge-key="7" data-edge-id="worker-postgres">
+        <g data-detail="context" data-edge-from="fastapi" data-edge-to="neo4j" data-edge-label="Graph Lookups" data-edge-key="7" data-edge-id="fastapi-neo4j">
+          <rect x="668.8" y="190" width="72.4" height="14" rx="3" class="c-mask"/>
+          <text x="705" y="200" class="t-muted" font-size="8" text-anchor="middle">Graph Lookups</text>
+        </g>
+        <g data-detail="context" data-edge-from="arq_worker" data-edge-to="postgres" data-edge-label="Save Vectors" data-edge-key="8" data-edge-id="worker-postgres">
           <rect x="736.2" y="490" width="67.6" height="14" rx="3" class="c-mask"/>
           <text x="770" y="500" class="t-muted" font-size="8" text-anchor="middle">Save Vectors</text>
         </g>
-        <g data-detail="context" data-edge-from="fastapi" data-edge-to="gcs_storage" data-edge-label="Upload PDF" data-edge-key="8" data-edge-id="fastapi-gcs">
+        <g data-detail="context" data-edge-from="arq_worker" data-edge-to="neo4j" data-edge-label="Extract &amp; Resolve Entities" data-edge-key="9" data-edge-id="worker-neo4j">
+          <rect x="702.6" y="515" width="134.8" height="14" rx="3" class="c-mask"/>
+          <text x="770" y="525" class="t-messagebus" font-size="8" text-anchor="middle">Extract &amp; Resolve Entities</text>
+        </g>
+        <g data-detail="context" data-edge-from="fastapi" data-edge-to="gcs_storage" data-edge-label="Upload PDF" data-edge-key="10" data-edge-id="fastapi-gcs">
           <rect x="611" y="350" width="58" height="14" rx="3" class="c-mask"/>
           <text x="640" y="360" class="t-muted" font-size="8" text-anchor="middle">Upload PDF</text>
         </g>
-        <g data-detail="context" data-edge-from="arq_worker" data-edge-to="gcs_storage" data-edge-label="Read PDF / Images" data-edge-key="9" data-edge-id="worker-gcs">
+        <g data-detail="context" data-edge-from="arq_worker" data-edge-to="gcs_storage" data-edge-label="Read PDF / Images" data-edge-key="11" data-edge-id="worker-gcs">
           <rect x="664.2" y="425" width="91.6" height="14" rx="3" class="c-mask"/>
           <text x="710" y="435" class="t-muted" font-size="8" text-anchor="middle">Read PDF / Images</text>
         </g>
-        <g data-detail="context" data-edge-from="arq_worker" data-edge-to="ocr_engine" data-edge-label="OCR &amp; Spellcheck" data-edge-key="10" data-edge-id="worker-ocr">
+        <g data-detail="context" data-edge-from="arq_worker" data-edge-to="ocr_engine" data-edge-label="OCR &amp; Spellcheck" data-edge-key="12" data-edge-id="worker-ocr">
           <rect x="801.6" y="530" width="86.8" height="14" rx="3" class="c-mask"/>
           <text x="845" y="540" class="t-muted" font-size="8" text-anchor="middle">OCR &amp; Spellcheck</text>
         </g>
-        <g data-detail="context" data-edge-from="fastapi" data-edge-to="gemini_api" data-edge-label="RAG Prompt &amp; Embeddings" data-edge-key="11" data-edge-id="fastapi-gemini">
+        <g data-detail="context" data-edge-from="fastapi" data-edge-to="gemini_api" data-edge-label="RAG Prompt &amp; Embeddings" data-edge-key="13" data-edge-id="fastapi-gemini">
           <rect x="849.8" y="30" width="120.39999999999999" height="14" rx="3" class="c-mask"/>
           <text x="910" y="40" class="t-backend" font-size="8" text-anchor="middle">RAG Prompt &amp; Embeddings</text>
         </g>
@@ -5329,7 +5352,7 @@
           <li>&bull; PDF uploaded via React UI to FastAPI endpoint</li>
           <li>&bull; File stored in GCS / ./data/ volume and task pushed to Redis</li>
           <li>&bull; ARQ Worker extracts pages, runs OCR, generates chunks &amp; embeddings</li>
-          <li>&bull; Extracted text, word index, and vectors saved in PostgreSQL</li>
+          <li>&bull; Extracted text &amp; vectors in PostgreSQL; entities &amp; relations in Neo4j</li>
         </ul>
       </div>
 
@@ -5340,7 +5363,7 @@
         </div>
         <ul>
           <li>&bull; User sends query via /api/v1/chat endpoint</li>
-          <li>&bull; Hybrid search: pgvector similarity + Knowledge Graph word index</li>
+          <li>&bull; Hybrid search: pgvector similarity + Neo4j Knowledge Graph lookup</li>
           <li>&bull; Context assembled with book metadata &amp; surrounding page chunks</li>
           <li>&bull; Google Gemini 3.6 Flash generates streaming response in Uyghur</li>
         </ul>
@@ -5353,7 +5376,7 @@
         </div>
         <ul>
           <li>&bull; JWT Authentication + OAuth2 (Google, Facebook, Twitter/X)</li>
-          <li>&bull; Standalone Host PostgreSQL in Dev; Cloud SQL in Production</li>
+          <li>&bull; Standalone Host PostgreSQL &amp; Neo4j in Dev; Cloud SQL in Production</li>
           <li>&bull; Shared business logic in packages/backend-core</li>
         </ul>
       </div>

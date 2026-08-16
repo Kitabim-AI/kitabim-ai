@@ -4840,7 +4840,7 @@
       </div>
     </div>
 
-    <script id="archify-guided-views-data" type="application/json">[{"id":"full-ocr-path","label":"End-to-end OCR processing","focus":["user","upload_api","redis_broker","page_splitter","tesseract_ocr","vector_embedder","db_commit"],"note":"Complete path from user PDF upload to page rendering, OCR text extraction, chunk embedding, and PostgreSQL commit."}]</script>
+    <script id="archify-guided-views-data" type="application/json">[{"id":"full-ocr-path","label":"End-to-end OCR processing","focus":["user","upload_api","redis_broker","page_splitter","gemini_ocr","vector_embedder","db_commit"],"note":"Complete path from user PDF upload to page rendering, OCR text extraction, chunk embedding, and PostgreSQL commit."}]</script>
 
     <div class="guided-views no-print" id="guided-views" hidden aria-label="Guided diagram views">
       <button id="guided-view-prev" type="button" aria-label="Previous guided view" title="Previous guided view ([)">&#8592;</button>
@@ -4948,8 +4948,8 @@
         <path data-edge-from="user" data-edge-to="upload_api" data-edge-key="0" data-edge-id="user-to-api" data-composition-points="134,119;134,166;174,166;174,243" d="M 134 119 L 134 166 L 174 166 L 174 243" class="a-emphasis" data-animate="edge" style="--step:0" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <path data-edge-from="upload_api" data-edge-to="redis_broker" data-edge-key="1" data-edge-id="api-to-redis" data-composition-points="266,243;266,290;254,290;254,367" d="M 266 243 L 266 290 L 254 290 L 254 367" class="a-dashed" data-animate="edge" style="--step:1" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
         <path data-edge-from="redis_broker" data-edge-to="page_splitter" data-edge-key="2" data-edge-id="redis-to-splitter" data-composition-points="346,367;346,414;384,414;384,491" d="M 346 367 L 346 414 L 384 414 L 384 491" class="a-default" data-animate="edge" style="--step:2" stroke-width="1.4" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="page_splitter" data-edge-to="tesseract_ocr" data-edge-key="3" data-edge-id="splitter-to-ocr" data-composition-points="476,491;476,538;454,538;454,615" d="M 476 491 L 476 538 L 454 538 L 454 615" class="a-emphasis" data-animate="edge" style="--step:3" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="tesseract_ocr" data-edge-to="vector_embedder" data-edge-key="4" data-edge-id="ocr-to-embed" data-composition-points="546,615;546,662;579,662;579,739" d="M 546 615 L 546 662 L 579 662 L 579 739" class="a-emphasis" data-animate="edge" style="--step:4" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="page_splitter" data-edge-to="gemini_ocr" data-edge-key="3" data-edge-id="splitter-to-ocr" data-composition-points="476,491;476,538;454,538;454,615" d="M 476 491 L 476 538 L 454 538 L 454 615" class="a-emphasis" data-animate="edge" style="--step:3" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="gemini_ocr" data-edge-to="vector_embedder" data-edge-key="4" data-edge-id="ocr-to-embed" data-composition-points="546,615;546,662;579,662;579,739" d="M 546 615 L 546 662 L 579 662 L 579 739" class="a-emphasis" data-animate="edge" style="--step:4" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <path data-edge-from="vector_embedder" data-edge-to="db_commit" data-edge-key="5" data-edge-id="embed-to-db" data-composition-points="625,765;625,786;625,786;625,837" d="M 625 765 L 625 786 L 625 786 L 625 837" class="a-emphasis" data-animate="edge" style="--step:5" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
 
         <!-- Nodes -->
@@ -4999,7 +4999,7 @@
           <text data-detail="context" x="430" y="503" class="t-muted" font-size="8" text-anchor="middle">render PNGs</text>
         </g>
 
-        <g id="node-tesseract_ocr" data-node-id="tesseract_ocr" data-node-label="Gemini OCR" tabindex="0" role="button" aria-label="Focus Gemini OCR, Vision API, OCR Engine › OCR Processing" aria-pressed="false" data-node-kind="backend" data-node-sublabel="Vision API" data-node-context="OCR Engine › OCR Processing">
+        <g id="node-gemini_ocr" data-node-id="gemini_ocr" data-node-label="Gemini OCR" tabindex="0" role="button" aria-label="Focus Gemini OCR, Vision API, OCR Engine › OCR Processing" aria-pressed="false" data-node-kind="backend" data-node-sublabel="Vision API" data-node-context="OCR Engine › OCR Processing">
           <title>Gemini OCR · Vision API · OCR Engine › OCR Processing</title>
           <rect x="454" y="589" width="92" height="52" rx="6" class="c-mask"/>
           <rect x="454" y="589" width="92" height="52" rx="6" class="c-backend" data-animate="node" style="--step:4" stroke-width="1.5"/>
